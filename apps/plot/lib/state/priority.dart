@@ -697,18 +697,24 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Reorder a priority's block within a single time period.
   ///
-  /// `periodReferenceTime` is the moment the new ordering should be in
-  /// effect from — `now` for a do-now reorder (the gap containing now),
-  /// or the gap's start for a future-period reorder. `above` and `below`
-  /// identify the block's new neighbours (null = top / bottom).
+  /// `periodReferenceTime` is the agenda moment from which the new
+  /// ordering applies — typically the target gap's start. `above` and
+  /// `below` identify the block's new neighbours (null = top / bottom).
   ///
-  /// Writes a `priority_block` row at:
-  ///   - `effective_at = now` (with archivePast: true) when reordering
-  ///     do-now, so the new order applies "from now forward" and any
-  ///     stale past rows for this priority are soft-archived.
-  ///   - `effective_at = periodReferenceTime` (without archivePast)
-  ///     when reordering a future period, so the new order takes effect
-  ///     from that moment onward and the current order is preserved.
+  /// `effectiveAt` on the written `priority_block` row is purely an
+  /// agenda coordinate (the gap's anchor). It has no relation to
+  /// wall-clock `now`: a reorder of a past gap, the current gap, or a
+  /// future gap all anchor at the gap itself, and time-traveled
+  /// sessions behave the same as live ones. Earlier this used
+  /// `now` for "do-now" reorders, which silently broke ordering for
+  /// past gaps because `effectivePriorityOrderAt` filters out rows
+  /// whose `effectiveAt > moment`.
+  ///
+  /// Re-reordering the *same* gap soft-archives the previous row at
+  /// the same `effectiveAt` so the new one wins unambiguously. Rows
+  /// at *different* `effectiveAt`s (older or newer reorders of other
+  /// gaps) are preserved — they form a timeline where each gap has
+  /// the ordering the user last set for it.
   Future<void> reorderBlockWithinPeriod({
     required PriorityId priorityId,
     required DateTime periodReferenceTime,
@@ -739,12 +745,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       ));
     }
     final newOrder = Order.between(aboveOrder, belowOrder);
-    final isDoNow = !periodReferenceTime.isAfter(now);
-    final effectiveAt = isDoNow ? now : periodReferenceTime;
+    final effectiveAt = periodReferenceTime;
 
     log.info(
       '[reorderBlockWithinPeriod] priority=$priorityId '
-      'order=${newOrder.value} effectiveAt=$effectiveAt isDoNow=$isDoNow',
+      'order=${newOrder.value} effectiveAt=$effectiveAt',
     );
 
     // Optimistic: splice a synthetic row into the cache so the next
@@ -764,14 +769,16 @@ class PriorityBloc extends Cubit<PriorityState> {
         entry.key: List.of(entry.value),
     };
     final list = updated.putIfAbsent(priorityId, () => <PriorityBlockRow>[]);
-    if (isDoNow) {
-      // Soft-archive locally any past rows (server-side mirror happens
-      // below via PriorityBlock.save's archivePast option).
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].effectiveAt.isBefore(effectiveAt) &&
-            list[i].archivedAt == null) {
-          list[i] = list[i].copyWith(archivedAt: Value(now));
-        }
+    // Soft-archive any existing non-archived row at the same
+    // effectiveAt for this priority — re-reorders of the same gap
+    // replace the previous entry rather than accumulating duplicates
+    // that effectivePriorityOrderAt would pick between
+    // non-deterministically. Rows at *other* effectiveAts represent
+    // orderings the user established for other gaps and stay intact.
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].effectiveAt.isAtSameMomentAs(effectiveAt) &&
+          list[i].archivedAt == null) {
+        list[i] = list[i].copyWith(archivedAt: Value(now));
       }
     }
     list.add(optimisticRow);
@@ -784,7 +791,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       orderValue: newOrder,
       effectiveAt: effectiveAt,
     );
-    unawaited(block.save(archivePast: isDoNow));
+    unawaited(block.save(archiveSameEffectiveAt: true));
   }
 
   /// Drop a thread inside another priority's block — reparents and
@@ -1787,6 +1794,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       // Load the corresponding draft note for this thread
       final draftNote = await Note.getDraftByActivity(existingDraft.id);
+
+      if (isClosed) return;
 
       // Preserve the draft's filed priority — don't reassign to context.
       emit(

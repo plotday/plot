@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
@@ -20,12 +21,22 @@ import 'package:plot/page/priority.dart'
 @RoutePage(name: "ThreadRoute")
 class ThreadPage implements AutoRouteWrapper {
   ThreadPage({@PathParam("threadId") required String threadIdString})
-    : threadId = ThreadId.fromShortString(threadIdString);
+    : threadId = ThreadId.tryFromShortString(threadIdString);
 
-  final ThreadId threadId;
+  final ThreadId? threadId;
 
   @override
   Widget wrappedRoute(BuildContext context) {
+    final threadId = this.threadId;
+    if (threadId == null) {
+      // Invalid base58 thread id (e.g. /p/<pid>/login). Redirect to home
+      // instead of crashing in the parser.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        context.router.replaceAll([EmptyShellRoute("Now")()]);
+      });
+      return const SizedBox.shrink();
+    }
     return ThreadBlocProvider(
       threadId: threadId,
       thread: null, // Let the bloc load the thread

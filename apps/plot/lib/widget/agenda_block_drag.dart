@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
-import 'package:logging/logging.dart';
+import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
-
-final _log = Logger('plot.widget.agenda_block_drag');
 
 /// Payload carried by the block-level drag system.
 ///
@@ -101,6 +99,131 @@ class BlockDropTarget extends Equatable {
 typedef BlockDropDispatcher =
     void Function(BlockDragPayload payload, BlockDropTarget target);
 
+/// Pure boundary builder.
+///
+/// Walks an agenda's flat item list and emits the [BlockDropTarget]
+/// metadata for each [BlockDropZone] the page renders.
+///
+/// Returns:
+///   * `before[i]` — boundary rendered ABOVE item `i` (block-introducing
+///     headers and date/text section breaks).
+///   * `after[i]` — boundary rendered BELOW item `i` (only set on date
+///     headers of empty sections so users can still drop on those dates).
+///   * `afterList` — boundary rendered after the last item, when the
+///     trailing section ended on a non-empty block.
+///
+/// **Period attribution rule** (the subtle bit):
+/// the boundary just ABOVE a *gap header* belongs to that gap's own
+/// period, not the surrounding period. Visually the boundary is the top
+/// edge of the gap block — dragging another block onto it should land
+/// inside that block. Boundaries above events / priority blocks keep
+/// the surrounding period because those blocks live IN that period.
+({
+  Map<int, BlockDropTarget> before,
+  Map<int, BlockDropTarget> after,
+  BlockDropTarget? afterList,
+}) computeBlockDropBoundaries({
+  required List<AgendaItem> items,
+}) {
+  final before = <int, BlockDropTarget>{};
+  final after = <int, BlockDropTarget>{};
+  BlockDropTarget? afterList;
+
+  Date? currentDate;
+  DateTime? currentPeriodStart;
+  String? prevBlockId;
+  PriorityId? prevPriorityId;
+  int? sectionDateIndex;
+  Date? sectionDateValue;
+
+  void resetSection() {
+    currentDate = null;
+    currentPeriodStart = null;
+    prevBlockId = null;
+    prevPriorityId = null;
+  }
+
+  void maybeEmitEmptySectionAfter() {
+    if (sectionDateIndex == null || sectionDateValue == null) return;
+    if (prevBlockId != null) return;
+    after[sectionDateIndex] = BlockDropTarget(
+      targetDate: sectionDateValue,
+      targetPeriodStart: null,
+      prevBlockId: null,
+      prevPriorityId: null,
+      nextBlockId: null,
+      nextPriorityId: null,
+    );
+  }
+
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    if (item is! AgendaHeaderItem) continue;
+    final isSectionBreak = item.date != null ||
+        (item.text != null &&
+            item.dateTimeRange == null &&
+            item.thread == null &&
+            item.parentBlockId == null);
+    if (isSectionBreak) {
+      if (prevBlockId != null) {
+        before[i] = BlockDropTarget(
+          targetDate: currentDate,
+          targetPeriodStart: currentPeriodStart,
+          prevBlockId: prevBlockId,
+          prevPriorityId: prevPriorityId,
+          nextBlockId: null,
+          nextPriorityId: null,
+        );
+      }
+      maybeEmitEmptySectionAfter();
+      resetSection();
+      if (item.date != null) {
+        currentDate = item.date;
+        sectionDateIndex = i;
+        sectionDateValue = item.date;
+      } else {
+        sectionDateIndex = null;
+        sectionDateValue = null;
+      }
+      continue;
+    }
+    if (item.parentBlockId != null) {
+      final isGapHeader = item.dateTimeRange != null &&
+          item.thread == null &&
+          item.sourcePeriodStart != null;
+      before[i] = BlockDropTarget(
+        targetDate: currentDate,
+        targetPeriodStart: isGapHeader
+            ? item.sourcePeriodStart
+            : currentPeriodStart,
+        prevBlockId: prevBlockId,
+        prevPriorityId: prevPriorityId,
+        nextBlockId: item.parentBlockId,
+        nextPriorityId: item.blockPriority?.id,
+        nextIsEvent: item.thread != null,
+      );
+      if (isGapHeader) {
+        currentPeriodStart = item.sourcePeriodStart;
+      }
+      prevBlockId = item.parentBlockId;
+      prevPriorityId = item.blockPriority?.id;
+    }
+  }
+  maybeEmitEmptySectionAfter();
+  if (prevBlockId != null) {
+    afterList = BlockDropTarget(
+      targetDate: currentDate,
+      targetPeriodStart: currentPeriodStart,
+      prevBlockId: prevBlockId,
+      prevPriorityId: prevPriorityId,
+      nextBlockId: null,
+      nextPriorityId: null,
+    );
+  }
+
+  return (before: before, after: after, afterList: afterList);
+}
+
 /// Builds a dimmed preview widget representing the dragged block's
 /// content (its header + visible thread rows). The active
 /// [BlockDropZone] renders this so the gap shows what will land there
@@ -110,14 +233,32 @@ typedef BlockDropDispatcher =
 typedef BlockDragPreviewBuilder = Widget? Function(BlockDragPayload payload);
 
 /// Internal record of one [BlockDropZone] currently mounted in the tree.
+///
+/// [owner] is an opaque identity (the registering State instance) used to
+/// guard against stale unregisters. When two widgets transiently share a
+/// slotKey across a rebuild — Flutter mounts the new State, the new State
+/// calls `registerSlot`, and only THEN does the old State's `dispose` fire
+/// `unregisterSlot` with the same key — the old State's unregister would
+/// otherwise wipe the entry the new State just wrote. By comparing
+/// `owner`, the controller skips unregisters from a State that's no
+/// longer the rightful owner of the slot.
 class _SlotEntry {
-  _SlotEntry({required this.target, required this.contextProvider});
+  _SlotEntry({
+    required this.target,
+    required this.contextProvider,
+    required this.owner,
+  });
 
   final BlockDropTarget target;
 
   /// Closure that yields the current [BuildContext] of the zone — used
   /// to read its [RenderBox] for vertical anchor capture.
   final BuildContext Function() contextProvider;
+
+  /// Identity of the State that registered this entry. Used by
+  /// [BlockDragController.unregisterSlot] to skip stale unregisters
+  /// from a previous-but-displaced State.
+  final Object owner;
 }
 
 /// Helper record for the block-center activation algorithm.
@@ -138,8 +279,10 @@ class _OrderedSlot {
 class BlockDragActivation {
   const BlockDragActivation({this.key, this.target});
 
-  /// Stable key of the active slot. Null when no slot is active
-  /// (pointer in source's deadzone, over an event, or off the agenda).
+  /// Stable key of the active slot. Null when the cursor sits inside
+  /// the source's at-rest region with no prior active slot (= "no
+  /// swap" / preview-at-source / cancel-on-release), or when the
+  /// agenda has no valid drop slots at all.
   final Object? key;
 
   /// Target metadata of the active slot. Always paired with [key]:
@@ -149,25 +292,57 @@ class BlockDragActivation {
   static const none = BlockDragActivation();
 }
 
-/// Pure activation logic, exposed for unit testing. Given a list of
-/// slots (key + screen Y + target metadata) and the dragged block's
-/// id + pointer Y, returns which slot should be active.
+/// Pure activation logic, exposed for unit testing.
 ///
-/// Algorithm: sort slots by Y. Find the bracketing pair for the
-/// pointer (the gap between consecutive slots is one block region).
-/// Top half of the block → "before" slot; bottom half → "after" slot.
-/// Filtered out: slots adjacent to the dragged block (no-op drops),
-/// and slots whose `nextIsEvent` is true (events are deadzones —
-/// pointer over an event activates nothing).
+/// **Model — drop areas tile the agenda; thresholds at block tops.**
 ///
-/// Returns [BlockDragActivation.none] when pointer is past the
-/// agenda's edges, in source's deadzone (both flanks filtered), or
-/// over an event.
+/// Each non-source block X owns a "drop area" = X's region in the
+/// live layout. Cursor in X → preview at K_after_X (the slot just
+/// after X). The threshold for the swap from one slot to the next
+/// is at the next block's TOP edge, not at the block's center.
+///
+/// **Carve-outs:**
+///
+///   1. **Tie-breaker — never move a placeholder while the cursor is
+///      inside it.** If a slot is currently active and the cursor is
+///      inside its expanded preview band `[Y, Y + activeSlotExpansion]`,
+///      no transition. If no slot is active and the cursor is inside
+///      the source's at-rest region (the bracket between
+///      `K_above_source` and `K_after_source`), no transition. This
+///      takes precedence over every other rule.
+///
+///   2. **Source-flank no-swap.** A block whose K_after slot is filtered
+///      (the immediate upper neighbor of the source) has no valid drop
+///      target — cursor here holds the previously-active slot, or
+///      sits at "no swap" (preview at source) if nothing has activated
+///      yet. Per "preview never bounces back to source," once a slot
+///      has been active, returning to a no-swap zone holds it.
+///
+///   3. **First-block-of-agenda split.** When the very first block of
+///      the agenda is not source AND `K_above_first` is valid, the
+///      first block's drop area is split: top H pixels (where H =
+///      `activeSlotExpansion` = source's height) → `K_above_first`;
+///      remaining → `K_after_first`. This avoids needing the cursor
+///      to go off-agenda above to reach the top slot.
+///
+///   4. **Combined event deadzone.** When two or more events are
+///      adjacent with no gap between them, the slots between them
+///      (where prev and next are both events) are filtered just like
+///      no-op slots — nothing can drop there. The combined region
+///      uses a halfway-flip: top half holds at the slot above the
+///      first event of the chain; bottom half snaps to the first
+///      valid slot below the chain.
+///
+/// [activeSlotKey]/[activeSlotExpansion] describe the currently-active
+/// slot at call time. Pass `null` and `0` for a fresh activation.
 @visibleForTesting
 BlockDragActivation computeBlockDragActivation({
   required List<({Object key, double y, BlockDropTarget target})> slots,
   required String draggingId,
   required double pointerY,
+  Object? activeSlotKey,
+  double activeSlotExpansion = 0,
+  double? sourceAtRestTopY,
 }) {
   if (slots.isEmpty) return BlockDragActivation.none;
   final ordered = [
@@ -175,77 +350,259 @@ BlockDragActivation computeBlockDragActivation({
       _OrderedSlot(key: s.key, y: s.y, target: s.target),
   ]..sort((a, b) => a.y.compareTo(b.y));
 
-  if (pointerY < ordered.first.y || pointerY >= ordered.last.y) {
-    return BlockDragActivation.none;
+  bool isFiltered(BlockDropTarget t) =>
+      t.prevBlockId == draggingId || t.nextBlockId == draggingId;
+
+  // === TIE-BREAKER: cursor inside the active slot's preview band ===
+  // No transition. Stability fallback — the active slot's expansion
+  // is part of its own activation zone, so cursor over the preview
+  // keeps the slot active even if the live layout would otherwise
+  // bracket it differently.
+  if (activeSlotKey != null && activeSlotExpansion > 0) {
+    for (final s in ordered) {
+      if (s.key == activeSlotKey &&
+          pointerY >= s.y &&
+          pointerY < s.y + activeSlotExpansion) {
+        return BlockDragActivation(key: activeSlotKey, target: s.target);
+      }
+    }
   }
 
+  // Off-agenda: pointer past the agenda's ends → hold the previously
+  // active slot. Falls through to none on the first pointer event.
+  if (pointerY < ordered.first.y || pointerY >= ordered.last.y) {
+    return _holdActive(activeSlotKey, ordered);
+  }
+
+  // === FIND THE BLOCK CONTAINING THE CURSOR ===
+  // Each consecutive pair (ordered[i], ordered[i+1]) brackets one
+  // block. Boundaries between source and a neighbor belong to the
+  // neighbor (non-source side). Concretely:
+  //   - Source's block: bracket is exclusive at any boundary shared
+  //     with an adjacent (non-source) block.
+  //   - Non-source block: standard [start, end), except the upper
+  //     boundary becomes inclusive when the next slot is K_above_source
+  //     (= the next block IS source) — so the boundary belongs to this
+  //     block, not to source.
   var blockIdx = 0;
   for (var i = 0; i < ordered.length - 1; i++) {
-    if (pointerY >= ordered[i].y && pointerY < ordered[i + 1].y) {
+    final isSourceBlock = ordered[i].target.nextBlockId == draggingId &&
+        ordered[i + 1].target.prevBlockId == draggingId;
+    final bool inLower;
+    final bool inUpper;
+    if (isSourceBlock) {
+      final hasBlockAbove = i > 0;
+      final hasBlockBelow = i + 1 < ordered.length - 1;
+      inLower = hasBlockAbove
+          ? pointerY > ordered[i].y
+          : pointerY >= ordered[i].y;
+      inUpper = hasBlockBelow
+          ? pointerY < ordered[i + 1].y
+          : pointerY <= ordered[i + 1].y;
+    } else {
+      final upperIsAboveSource =
+          ordered[i + 1].target.nextBlockId == draggingId;
+      inLower = pointerY >= ordered[i].y;
+      inUpper = upperIsAboveSource
+          ? pointerY <= ordered[i + 1].y
+          : pointerY < ordered[i + 1].y;
+    }
+    if (inLower && inUpper) {
       blockIdx = i;
       break;
     }
   }
 
-  final beforeSlot = ordered[blockIdx];
-  final afterSlot = ordered[blockIdx + 1];
+  final kAbove = ordered[blockIdx];
+  final kAfter = ordered[blockIdx + 1];
 
-  // Event-block deadzone: pointer over a scheduled event never
-  // activates anything. The block bracketed by (beforeSlot,
-  // afterSlot) is identified by `beforeSlot.target.nextIsEvent`.
-  if (beforeSlot.target.nextIsEvent) return BlockDragActivation.none;
+  // Source block (both flanks reference source): only fires when no
+  // slot is active. With an active slot, source is collapsed to 0
+  // height in the live layout, so the bracket between K_above_source
+  // and K_after_source is degenerate and should not catch the cursor
+  // (which is over a different live block that happens to overlap
+  // source's at-rest screen area). The date-aware swap-back below
+  // handles the active case.
+  final isSource = kAbove.target.nextBlockId == draggingId &&
+      kAfter.target.prevBlockId == draggingId;
+  if (isSource && activeSlotKey == null) {
+    return _holdActive(activeSlotKey, ordered);
+  }
 
-  final center = (beforeSlot.y + afterSlot.y) / 2;
-  final candidate = pointerY < center ? beforeSlot : afterSlot;
+  // === SWAP-BACK: cursor in source's at-rest screen region ===
+  // Cursor inside the source's original screen area means "preview
+  // at source" — return none, regardless of whether a slot is
+  // currently active. Firing this in the inactive state too is what
+  // prevents oscillation: without it, mid-animation (slot deactivating
+  // → layout settling) the bracketing finds a same-day block whose
+  // K_after is filtered (= source-flank), and the default rule's
+  // fall-back would re-activate the same slot, kicking off another
+  // animation cycle. With the swap-back firing in both states, the
+  // result stays "none" once the cursor is in source's at-rest.
+  //
+  // The date-match guard ensures different-day blocks that have
+  // shifted into source's at-rest screen area (because of source-
+  // collapse) keep their own day's activation rules — only same-day
+  // blocks trigger return-to-source.
+  if (sourceAtRestTopY != null && activeSlotExpansion > 0) {
+    final topY = sourceAtRestTopY;
+    final bottomY = sourceAtRestTopY + activeSlotExpansion;
+    var sourceAtTop = false;
+    var sourceAtBottom = false;
+    Date? sourceDate;
+    for (final s in ordered) {
+      if (s.target.nextBlockId == draggingId) {
+        if (s.target.prevBlockId == null) sourceAtTop = true;
+        sourceDate = s.target.targetDate;
+      }
+      if (s.target.prevBlockId == draggingId &&
+          s.target.nextBlockId == null) {
+        sourceAtBottom = true;
+      }
+    }
+    final inLower = sourceAtTop ? pointerY >= topY : pointerY > topY;
+    final inUpper =
+        sourceAtBottom ? pointerY <= bottomY : pointerY < bottomY;
+    if (inLower && inUpper) {
+      // Same date as source → cursor is returning to source's day,
+      // deactivate. Different date → cursor is over a different day's
+      // content, fall through to that block's activation rules.
+      if (kAbove.target.targetDate == sourceDate) {
+        return BlockDragActivation.none;
+      }
+    }
+  }
 
-  final filtered = candidate.target.prevBlockId == draggingId ||
-      candidate.target.nextBlockId == draggingId;
-  if (filtered) return BlockDragActivation.none;
+  // === COMBINED EVENT DEADZONE ===
+  // Block X is an event AND the next block is also an event (= the
+  // slot K_after_X is between two events). The chain might span
+  // several events; find its full extent and apply the halfway flip.
+  final isEvent = kAbove.target.nextIsEvent;
+  if (isEvent &&
+      blockIdx + 1 < ordered.length - 1 &&
+      ordered[blockIdx + 1].target.nextIsEvent) {
+    var chainStart = blockIdx;
+    while (chainStart > 0 && ordered[chainStart - 1].target.nextIsEvent) {
+      chainStart--;
+    }
+    var chainEnd = blockIdx;
+    while (chainEnd + 1 < ordered.length - 1 &&
+        ordered[chainEnd + 1].target.nextIsEvent) {
+      chainEnd++;
+    }
+    final chainTop = ordered[chainStart].y;
+    final chainBottom = ordered[chainEnd + 1].y;
+    final midpoint = (chainTop + chainBottom) / 2;
+    if (pointerY < midpoint) {
+      // Last valid slot at or before the chain start.
+      var idx = chainStart;
+      while (idx >= 0 && isFiltered(ordered[idx].target)) {
+        idx--;
+      }
+      if (idx < 0) return _holdActive(activeSlotKey, ordered);
+      return BlockDragActivation(
+        key: ordered[idx].key,
+        target: ordered[idx].target,
+      );
+    }
+    // First valid slot at or after the chain end.
+    var idx = chainEnd + 1;
+    while (idx < ordered.length && isFiltered(ordered[idx].target)) {
+      idx++;
+    }
+    if (idx >= ordered.length) return _holdActive(activeSlotKey, ordered);
+    return BlockDragActivation(
+      key: ordered[idx].key,
+      target: ordered[idx].target,
+    );
+  }
 
-  return BlockDragActivation(key: candidate.key, target: candidate.target);
+  // === FIRST-BLOCK-OF-SECTION SPLIT ===
+  // Any block that's the first of its section (K_above.prev == null,
+  // meaning the boundary builder reset prevBlockId at a date/section
+  // header just before this block) owns its top H pixels for
+  // K_above_X. The remaining height falls through to the default
+  // rule. This lets the user reach "drop at the top of this section"
+  // without going off-agenda above, AND it makes the swap into first
+  // position of any new day (not just the first block of the agenda)
+  // work both ways: drag down enters the top-H zone first, drag back
+  // up re-enters the same zone.
+  if (kAbove.target.prevBlockId == null && !isFiltered(kAbove.target)) {
+    final topThreshold = kAbove.y + activeSlotExpansion;
+    if (pointerY <= topThreshold) {
+      return BlockDragActivation(key: kAbove.key, target: kAbove.target);
+    }
+    // Fall through to the default rule for the bottom portion.
+  }
+
+  // === DEFAULT RULE: cursor in block X → K_after_X ===
+  // If K_after_X is filtered (X is source's upper neighbor — the
+  // block immediately above source), fall back to K_above_X if it's
+  // valid. This lets the user swap source with X by dragging over X
+  // (drop = above X, source moves to X's position). Without this
+  // fallback, cursor over the block right above source would hit a
+  // no-swap zone and the user couldn't swap with that neighbor.
+  if (isFiltered(kAfter.target)) {
+    if (!isFiltered(kAbove.target)) {
+      return BlockDragActivation(key: kAbove.key, target: kAbove.target);
+    }
+    return _holdActive(activeSlotKey, ordered);
+  }
+  return BlockDragActivation(key: kAfter.key, target: kAfter.target);
+}
+
+/// Return the [BlockDragActivation] for [key] if it's still in
+/// [ordered]; otherwise [BlockDragActivation.none].
+BlockDragActivation _holdActive(Object? key, List<_OrderedSlot> ordered) {
+  if (key == null) return BlockDragActivation.none;
+  for (final s in ordered) {
+    if (s.key == key) {
+      return BlockDragActivation(key: key, target: s.target);
+    }
+  }
+  return BlockDragActivation.none;
 }
 
 /// Controller for the block drag interaction.
 ///
-/// **Model — block-center activation with live reads.** On every
-/// pointer event we read each registered slot's CURRENT screen Y from
-/// its [RenderBox]. We sort by Y; the gap between two consecutive
-/// slots is one block.
+/// **Model — block-region drop areas with thresholds at block tops.**
+/// See [computeBlockDragActivation] for the full algorithm; in
+/// summary:
 ///
-///   1. Find the block region the pointer falls inside (the gap whose
-///      bounds bracket the pointer's Y).
-///   2. The block's center splits it in half. Pointer above center →
-///      candidate is the "before" slot (top of block). Below center →
-///      "after" slot (bottom of block).
-///   3. If the candidate would be a no-op drop (`prevBlockId == source`
-///      or `nextBlockId == source`), set active = null.
+///   1. **Default rule**: cursor in block X → preview at K_after_X
+///      (the slot just after X). The threshold for swapping to the
+///      next slot is at the next block's TOP edge in the live layout
+///      (not at the block's center).
 ///
-/// **Why live reads (not snapshot at drag start).** During a drag
-/// three things shift slot positions: source collapse (removes source's
-/// height above), active slot expansion (adds source's height back at
-/// the active slot), and auto-scroll. A drag-start snapshot drifts out
-/// of sync as soon as any of these happen, so the pointer no longer
-/// maps to the slot it's visually over. Live reads always see the
-/// CURRENT layout, which is what the user is interacting with.
+///   2. **Tie-breaker**: cursor inside the current placeholder
+///      (active slot's preview band, or source's at-rest region with
+///      no prior active) → no transition. The placeholder you're
+///      hovering over never moves under you.
 ///
-/// **Why this doesn't oscillate.** With block-center activation the
-/// active slot is determined by which BLOCK the pointer is in (= gap
-/// between consecutive slots) and which HALF, not by closest-slot
-/// distance. When source collapses + active slot S expands by exactly
-/// the same amount, total agenda height is conserved: the layout
-/// shift moves OTHER slots' positions, but the gap between the slots
-/// flanking the block the pointer is in shifts coherently. The pointer
-/// stays in the same logical block, so the same slot stays active.
+///   3. **Source-flank no-swap**: a block whose K_after is filtered
+///      (the upper neighbor of source) has no valid drop target —
+///      cursor here holds the previously-active slot, or no swap if
+///      nothing has activated yet. Per "preview never bounces back to
+///      source," once a slot has been active, returning to a no-swap
+///      zone holds it.
 ///
-/// **Implicit deadzone.** Source's own block region has both flanking
-/// slots filtered (top half → "before source", bottom half → "after
-/// source", both no-ops). Pointer in source's range therefore never
-/// activates anything.
+///   4. **First-block-of-agenda split**: when the very first block
+///      is not source AND K_above_first is valid, the first block's
+///      top H pixels (H = source's height) → K_above_first; the rest
+///      → K_after_first. Avoids needing the cursor to go off-agenda.
 ///
-/// **Symmetric activation.** Each non-source block has a clean
-/// top-half/bottom-half split, so dragging past a neighbour requires
-/// crossing its center — not its top edge — before the neighbour
-/// shifts.
+///   5. **Combined event deadzone**: when adjacent events have no
+///      gap between them, the slot between them is filtered (nothing
+///      can drop there) and the combined region uses a halfway-flip
+///      between the slot above the chain and the first valid slot
+///      below the chain.
+///
+/// **Why live reads (not snapshot at drag start).** Auto-scroll and
+/// pagination shift slot positions independently of activation. Live
+/// reads always see the current layout, which is what the user is
+/// interacting with. Activation-induced layout shift (source collapse
+/// + active slot expansion = total height conserved) is handled by
+/// the tie-breaker rule above, not by trying to lock slot Ys.
 class BlockDragController extends ChangeNotifier {
   String? _draggingBlockId;
   BlockDragPayload? _draggingPayload;
@@ -260,6 +617,14 @@ class BlockDragController extends ChangeNotifier {
   /// this height so the agenda's overall height is conserved when
   /// source collapses and slot expands together.
   double? _sourceTotalHeight;
+
+  /// Screen-Y of the source block's TOP at drag start (= top of the
+  /// source row's RenderBox). Together with [_sourceTotalHeight], this
+  /// defines the source's at-rest screen region — used by the
+  /// activation algorithm so cursor returning to the source's
+  /// original visual position deactivates whatever slot is active and
+  /// brings the source back (swap-back).
+  double? _sourceAtRestTopY;
 
   /// Total height of the source block, or `null` if no drag is in
   /// progress. Used by [BlockDropZone] to size its expanded gap.
@@ -331,28 +696,31 @@ class BlockDragController extends ChangeNotifier {
     required Object key,
     required BlockDropTarget target,
     required BuildContext Function() contextProvider,
+    required Object owner,
   }) {
-    _slots[key] =
-        _SlotEntry(target: target, contextProvider: contextProvider);
+    _slots[key] = _SlotEntry(
+      target: target,
+      contextProvider: contextProvider,
+      owner: owner,
+    );
   }
 
   /// Remove a previously-registered slot. Clears the active reference
   /// if it pointed at this slot.
-  void unregisterSlot(Object key) {
-    final removed = _slots.remove(key);
-    if (removed == null) return;
+  void unregisterSlot(Object key, {required Object owner}) {
+    final entry = _slots[key];
+    if (entry == null) return;
+    if (!identical(entry.owner, owner)) {
+      // A newer State has claimed this key. The caller is the old
+      // State whose dispose is firing AFTER the new State already
+      // registered. Skip the removal — otherwise we'd wipe the
+      // entry the new State just wrote.
+      return;
+    }
+    _slots.remove(key);
     if (_activeSlotKey == key) {
-      _log.info(
-        '[block-drag] unregisterSlot cleared active target: '
-        'slotKey=$key dragging=$_draggingBlockId',
-      );
       _activeSlotKey = null;
       _activeTarget = null;
-    } else if (_draggingBlockId != null) {
-      _log.fine(
-        '[block-drag] unregisterSlot (non-active): slotKey=$key '
-        'dragging=$_draggingBlockId',
-      );
     }
   }
 
@@ -378,10 +746,6 @@ class BlockDragController extends ChangeNotifier {
     _draggingBlockId = payload.blockId;
     _draggingPayload = payload;
     _captureSourceHeight(sourceContextProvider);
-    _log.info(
-      '[block-drag] start: blockId=${payload.blockId} '
-      'sourceTotalHeight=$_sourceTotalHeight slots=${_slots.length}',
-    );
     notifyListeners();
   }
 
@@ -397,13 +761,16 @@ class BlockDragController extends ChangeNotifier {
   /// is mounted.
   void _captureSourceHeight(BuildContext Function() sourceContextProvider) {
     _sourceTotalHeight = null;
+    _sourceAtRestTopY = null;
 
     final sourceCtx = sourceContextProvider();
     final sourceRO = sourceCtx.findRenderObject();
     final draggingId = _draggingBlockId;
+    final payload = _draggingPayload;
     if (sourceRO is! RenderBox || !sourceRO.hasSize) return;
     final sourceTopY = sourceRO.localToGlobal(Offset.zero).dy;
     final sourceHeaderHeight = sourceRO.size.height;
+    _sourceAtRestTopY = sourceTopY;
 
     double? afterSourceY;
     for (final entry in _slots.entries) {
@@ -412,9 +779,27 @@ class BlockDragController extends ChangeNotifier {
         if (afterSourceY != null) break;
       }
     }
-    _sourceTotalHeight = afterSourceY != null
-        ? afterSourceY - sourceTopY
-        : sourceHeaderHeight;
+
+    // Primary: use the K_after_source slot's Y to compute the source's
+    // full block height (header + threads + separators).
+    if (afterSourceY != null) {
+      _sourceTotalHeight = afterSourceY - sourceTopY;
+      return;
+    }
+
+    // Fallback: estimate from payload.visibleThreadCount + header.
+    // The slot-based measurement fails when K_after_source's
+    // BlockDropZone is not yet mounted/registered (e.g., a rebuild is
+    // in flight when the drag started). Vastly better than the
+    // header-only fallback, which would leave the agenda treating this
+    // drag as if the source were a 23 px block.
+    if (payload != null && payload.visibleThreadCount > 0) {
+      _sourceTotalHeight = sourceHeaderHeight +
+          payload.visibleThreadCount * kThreadRowApproxHeight;
+      return;
+    }
+
+    _sourceTotalHeight = sourceHeaderHeight;
   }
 
   void updatePointer(Offset global) {
@@ -433,14 +818,6 @@ class BlockDragController extends ChangeNotifier {
     final dispatcher = _dispatcher;
     final payload = _draggingPayload;
     final target = _activeTarget;
-    _log.info(
-      '[block-drag] end: dispatch=$dispatch '
-      'blockId=${payload?.blockId} '
-      'hasTarget=${target != null} '
-      'targetPrev=${target?.prevBlockId} targetNext=${target?.nextBlockId} '
-      'targetDate=${target?.targetDate} '
-      'targetPeriodStart=${target?.targetPeriodStart}',
-    );
 
     _draggingBlockId = null;
     _draggingPayload = null;
@@ -448,6 +825,7 @@ class BlockDragController extends ChangeNotifier {
     _activeSlotKey = null;
     _activeTarget = null;
     _sourceTotalHeight = null;
+    _sourceAtRestTopY = null;
     notifyListeners();
 
     if (dispatch && dispatcher != null && payload != null && target != null) {
@@ -491,16 +869,16 @@ class BlockDragController extends ChangeNotifier {
       slots: slots,
       draggingId: draggingId,
       pointerY: pointer.dy,
+      activeSlotKey: _activeSlotKey,
+      activeSlotExpansion: _sourceTotalHeight ?? 0,
+      sourceAtRestTopY: _sourceAtRestTopY,
     );
+
     _setActive(result.key, result.target);
   }
 
   void _setActive(Object? key, BlockDropTarget? target) {
     if (key == _activeSlotKey && target == _activeTarget) return;
-    _log.fine(
-      '[block-drag] setActive: key=$key '
-      'targetPrev=${target?.prevBlockId} targetNext=${target?.nextBlockId}',
-    );
     _activeSlotKey = key;
     _activeTarget = target;
     notifyListeners();
@@ -667,13 +1045,14 @@ class _BlockDropZoneState extends State<BlockDropZone> {
     final newController = BlockDragScope.maybeOf(context);
     if (newController != _controller) {
       _controller?.removeListener(_onChanged);
-      _controller?.unregisterSlot(widget.slotKey);
+      _controller?.unregisterSlot(widget.slotKey, owner: this);
       _controller = newController;
       _controller?.addListener(_onChanged);
       _controller?.registerSlot(
         key: widget.slotKey,
         target: widget.target,
         contextProvider: () => context,
+        owner: this,
       );
     }
   }
@@ -681,13 +1060,30 @@ class _BlockDropZoneState extends State<BlockDropZone> {
   @override
   void didUpdateWidget(BlockDropZone oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.slotKey != widget.slotKey ||
-        oldWidget.target != widget.target) {
-      _controller?.unregisterSlot(oldWidget.slotKey);
+    if (oldWidget.slotKey != widget.slotKey) {
+      // Genuine slot change — unregister the old key, register the
+      // new one. If the old key was the active slot, the controller
+      // clears `_activeSlotKey` (the next pointer event re-resolves
+      // activation against the new slots).
+      _controller?.unregisterSlot(oldWidget.slotKey, owner: this);
       _controller?.registerSlot(
         key: widget.slotKey,
         target: widget.target,
         contextProvider: () => context,
+        owner: this,
+      );
+    } else if (oldWidget.target != widget.target) {
+      // Same slot key, fresh target metadata (e.g., parent rebuilt
+      // because items shifted but the boundary's logical position is
+      // unchanged). Overwrite the entry without unregister/register
+      // churn — `_activeSlotKey` is preserved, so an in-flight drag
+      // with this slot active doesn't lose its activation when the
+      // parent rebuilds.
+      _controller?.registerSlot(
+        key: widget.slotKey,
+        target: widget.target,
+        contextProvider: () => context,
+        owner: this,
       );
     }
   }
@@ -695,7 +1091,11 @@ class _BlockDropZoneState extends State<BlockDropZone> {
   @override
   void dispose() {
     _clearHeldTimer?.cancel();
-    _controller?.unregisterSlot(widget.slotKey);
+    // Pass `this` as owner so the controller can guard against the
+    // dispose-after-new-mount ordering: if a new State has already
+    // registered the same slotKey before this old State's dispose
+    // runs, the controller skips the unregister.
+    _controller?.unregisterSlot(widget.slotKey, owner: this);
     _controller?.removeListener(_onChanged);
     super.dispose();
   }

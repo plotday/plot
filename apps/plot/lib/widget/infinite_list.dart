@@ -709,6 +709,24 @@ class InfiniteListState extends State<InfiniteList> {
       key: _listKey,
       itemCount: count,
       itemBuilder: _buildItem,
+      // Mirror the SliverList path's key-based child reuse so reorders
+      // migrate State (BlockDropZones, focused fields, animations,
+      // image caches) instead of disposing + recreating each moved
+      // child. Without this, Flutter can only match children by index,
+      // and every reorder runs a mount-before-unmount race that
+      // wipes State even though the keys are stable.
+      findChildIndexCallback: widget.itemKey == null
+          ? null
+          : (Key key) {
+              if (key is ValueKey<String>) {
+                for (var i = 0; i < count; i++) {
+                  if (widget.itemKey!(i + offset) == key.value) {
+                    return i;
+                  }
+                }
+              }
+              return null;
+            },
       onReorderStart: (reorderIndex) {
         widget.controller.setDragging(reorderIndex + offset);
       },

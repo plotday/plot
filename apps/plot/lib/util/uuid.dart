@@ -19,6 +19,13 @@ extension type Uuid(uuid.UuidValue value) {
         '${withoutDashes.substring(20)}';
     return Uuid.fromString(withDashes);
   }
+  static Uuid? tryFromShortString(String value) {
+    try {
+      return Uuid.fromShortString(value);
+    } catch (_) {
+      return null;
+    }
+  }
   factory Uuid.fromBytes(Uint8List byteList) =>
       Uuid(uuid.UuidValue.fromByteList(byteList));
 

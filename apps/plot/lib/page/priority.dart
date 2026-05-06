@@ -63,18 +63,32 @@ class PriorityWrapper implements AutoRouteWrapper {
   PriorityWrapper({
     @PathParam("priorityId") required String priorityIdString,
     @QueryParam('tab') this.tab,
-  }) : priorityId = PriorityId.fromShortString(priorityIdString),
+  }) : priorityId = PriorityId.tryFromShortString(priorityIdString),
        _routerKey = GlobalKey(
-         debugLabel:
-             'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
+         debugLabel: 'PriorityWrapper_$priorityIdString',
        );
 
-  final PriorityId priorityId;
+  final PriorityId? priorityId;
   final String? tab;
   final GlobalKey _routerKey;
 
   @override
   Widget wrappedRoute(BuildContext context) {
+    final priorityId = this.priorityId;
+    if (priorityId == null) {
+      // Invalid base58 priority id (e.g. /p/login from a stale or
+      // malformed link). Redirect to the user's default landing instead
+      // of crashing in the parser.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        context.router.replaceAll([EmptyShellRoute("Now")()]);
+      });
+      return const SizedBox.shrink();
+    }
+    return _build(context, priorityId);
+  }
+
+  Widget _build(BuildContext context, PriorityId priorityId) {
     // When a tab is specified (e.g. from notification tap), update the shared
     // notifier so all PriorityPage instances (including PriorityOnlyPage on
     // mobile) pick up the correct tab. Deferred to after this build frame
@@ -665,9 +679,9 @@ class PriorityOnlyPage extends StatefulWidget {
   PriorityOnlyPage({
     @PathParam.inherit("priorityId") required String priorityIdString,
     super.key,
-  }) : priorityId = PriorityId.fromShortString(priorityIdString);
+  }) : priorityId = PriorityId.tryFromShortString(priorityIdString);
 
-  final PriorityId priorityId;
+  final PriorityId? priorityId;
 
   @override
   State<PriorityOnlyPage> createState() => _PriorityOnlyPageState();
@@ -700,6 +714,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
 
   @override
   Widget build(BuildContext context) {
+    final priorityId = widget.priorityId;
+    if (priorityId == null) {
+      // Parent PriorityWrapper handles redirect for invalid ids.
+      return const SizedBox.shrink();
+    }
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         if (layoutState.middlePanelVisible) {
@@ -714,7 +733,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
           }
           return const LoadingPage();
         }
-        return PriorityPage(priorityId: widget.priorityId);
+        return PriorityPage(priorityId: priorityId);
       },
     );
   }
@@ -1331,121 +1350,11 @@ class _PriorityPageState extends State<PriorityPage> {
     final showEmptyHint = !hasThreads;
 
     // Precompute block-boundary metadata for [BlockDropZone] insertion.
-    // Boundaries live ABOVE block-introducing rows and ABOVE date/text
-    // headers (representing "end of previous section"). For empty date
-    // sections (e.g. a Tuesday with no blocks), we additionally place
-    // a boundary BELOW the date header so users can still drop blocks
-    // onto that date — without it, an empty day would be untargetable
-    // and dragging past it would skip straight to the next non-empty
-    // section. The final boundary, if any, lives BELOW the last item.
-    final beforeBoundaries = <int, BlockDropTarget>{};
-    final afterBoundaries = <int, BlockDropTarget>{};
-    BlockDropTarget? afterListBoundary;
-    {
-      Date? currentDate;
-      DateTime? currentPeriodStart;
-      String? prevBlockId;
-      PriorityId? prevPriorityId;
-      // Position + date of the most recent date header. We use these
-      // to emit an "anywhere on this date" boundary on empty sections
-      // when we discover (at the next section break or end of list)
-      // that no blocks lived in the just-finishing section.
-      int? sectionDateIndex;
-      Date? sectionDateValue;
-
-      void resetSection() {
-        currentDate = null;
-        currentPeriodStart = null;
-        prevBlockId = null;
-        prevPriorityId = null;
-      }
-
-      void maybeEmitEmptySectionAfter() {
-        if (sectionDateIndex == null || sectionDateValue == null) return;
-        if (prevBlockId != null) return; // section had blocks
-        afterBoundaries[sectionDateIndex] = BlockDropTarget(
-          targetDate: sectionDateValue,
-          targetPeriodStart: null,
-          prevBlockId: null,
-          prevPriorityId: null,
-          nextBlockId: null,
-          nextPriorityId: null,
-        );
-      }
-
-      for (var i = 0; i < listItems.length; i++) {
-        final item = listItems[i];
-        if (item is! AgendaHeaderItem) continue;
-        // Date / text section breaks.
-        if (item.date != null ||
-            (item.text != null &&
-                item.dateTimeRange == null &&
-                item.thread == null &&
-                item.parentBlockId == null)) {
-          if (prevBlockId != null) {
-            beforeBoundaries[i] = BlockDropTarget(
-              targetDate: currentDate,
-              targetPeriodStart: currentPeriodStart,
-              prevBlockId: prevBlockId,
-              prevPriorityId: prevPriorityId,
-              nextBlockId: null,
-              nextPriorityId: null,
-            );
-          }
-          // The just-finishing section may have been empty (date header
-          // with no blocks). If so, attach a "drop on this date" slot
-          // to that date header so the user has somewhere to land.
-          maybeEmitEmptySectionAfter();
-          resetSection();
-          if (item.date != null) {
-            currentDate = item.date;
-            sectionDateIndex = i;
-            sectionDateValue = item.date;
-          } else {
-            sectionDateIndex = null;
-            sectionDateValue = null;
-          }
-          continue;
-        }
-        // Block-introducing header (PriorityBlock, GapBlock, EventBlock).
-        if (item.parentBlockId != null) {
-          beforeBoundaries[i] = BlockDropTarget(
-            targetDate: currentDate,
-            targetPeriodStart: currentPeriodStart,
-            prevBlockId: prevBlockId,
-            prevPriorityId: prevPriorityId,
-            nextBlockId: item.parentBlockId,
-            nextPriorityId: item.blockPriority?.id,
-            // EventBlock headers carry a `thread`; gap and priority
-            // blocks don't. Flagging this lets the drag controller
-            // deadzone the event's vertical footprint so a drop can
-            // never open inside or land on a scheduled event.
-            nextIsEvent: item.thread != null,
-          );
-          // The gap header advances the period anchor for blocks that
-          // follow it within the same section.
-          if (item.dateTimeRange != null &&
-              item.thread == null &&
-              item.sourcePeriodStart != null) {
-            currentPeriodStart = item.sourcePeriodStart;
-          }
-          prevBlockId = item.parentBlockId;
-          prevPriorityId = item.blockPriority?.id;
-        }
-      }
-      // The last section might also be empty — handle the same way.
-      maybeEmitEmptySectionAfter();
-      if (prevBlockId != null) {
-        afterListBoundary = BlockDropTarget(
-          targetDate: currentDate,
-          targetPeriodStart: currentPeriodStart,
-          prevBlockId: prevBlockId,
-          prevPriorityId: prevPriorityId,
-          nextBlockId: null,
-          nextPriorityId: null,
-        );
-      }
-    }
+    // See [computeBlockDropBoundaries] for the period-attribution rules.
+    final boundaries = computeBlockDropBoundaries(items: listItems);
+    final beforeBoundaries = boundaries.before;
+    final afterBoundaries = boundaries.after;
+    final afterListBoundary = boundaries.afterList;
 
     final bloc = context.read<PriorityBloc>();
     final list = InfiniteList(
@@ -1488,11 +1397,22 @@ class _PriorityPageState extends State<PriorityPage> {
             afterBoundaries[index] ??
             ((index == listItems.length - 1) ? afterListBoundary : null);
 
+        // Gap headers render their before-boundary BELOW the row
+        // instead of above. Blocks can only land in gaps, so the
+        // drop preview should appear inside the gap (after the gap
+        // header) rather than in the empty space between the
+        // preceding event and the gap header.
+        final isGapHeader = current is AgendaHeaderItem &&
+            current.dateTimeRange != null &&
+            current.thread == null &&
+            current.parentBlockId != null &&
+            current.sourcePeriodStart != null;
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           key: ValueKey(current.stableKey),
           children: [
-            if (beforeBoundary != null)
+            if (beforeBoundary != null && !isGapHeader)
               BlockDropZone(
                 key: ValueKey('block_drop_before_${current.stableKey}'),
                 slotKey: 'block_drop_before_${current.stableKey}',
@@ -1644,6 +1564,18 @@ class _PriorityPageState extends State<PriorityPage> {
                 ];
               },
             ),
+            if (beforeBoundary != null && isGapHeader)
+              // Gap headers: the slot is rendered HERE, below the
+              // gap header row, so the drop preview opens in the
+              // gap rather than between the preceding block and the
+              // gap header. Distinct slotKey from block_drop_before_*
+              // and block_drop_after_* so the State machinery doesn't
+              // confuse it with either category.
+              BlockDropZone(
+                key: ValueKey('block_drop_in_gap_${current.stableKey}'),
+                slotKey: 'block_drop_in_gap_${current.stableKey}',
+                target: beforeBoundary,
+              ),
             if (afterBoundary != null)
               BlockDropZone(
                 key: ValueKey('block_drop_after_${current.stableKey}'),
@@ -2403,10 +2335,16 @@ class _PriorityPageState extends State<PriorityPage> {
     }
 
     // Same-period reorder — find bracketing priority-bearing blocks
-    // within the target's section to compute the order. Standalone
-    // priority blocks (thread == null) bracket the new ordering;
-    // events (thread != null) are skipped because they're anchored to
-    // a fixed time and don't participate in priority_block ordering.
+    // within the TARGET'S period only. Standalone priority blocks
+    // (thread == null) bracket the new ordering; events (thread != null)
+    // are skipped because they're anchored to a fixed time and don't
+    // participate in priority_block ordering. Headers whose period
+    // anchor differs from the target's are skipped — without this, the
+    // walk crosses period boundaries and brackets against blocks in the
+    // previous period (e.g. dropping at the top of the 1:30 period
+    // would bracket against the 12:00 financial_mgmt block above the
+    // lunch event), which writes a nonsensical order and visually
+    // leaves the source where it was.
     //
     // Outside-priority blocks DO count: the user sees them in the
     // agenda, can drag past them, and expects the visual order to
@@ -2420,6 +2358,12 @@ class _PriorityPageState extends State<PriorityPage> {
       '[block-drop] walks: sourceIndex=$sourceIndex '
       'insertionIndex=$insertionIndex listLen=${listItems.length}',
     );
+    final targetPeriod = target.targetPeriodStart;
+    bool inSamePeriod(AgendaHeaderItem h) {
+      // Gap headers carry their own period; other block headers
+      // (events, priority blocks) inherit the surrounding period.
+      return h.sourcePeriodStart == targetPeriod;
+    }
     PriorityId? above;
     for (var i = insertionIndex - 1; i >= 0; i--) {
       final candidate = listItems[i];
@@ -2429,10 +2373,12 @@ class _PriorityPageState extends State<PriorityPage> {
         'blockPriority=${candidate.blockPriority?.id} '
         'thread=${candidate.thread != null} '
         'date=${candidate.date} '
+        'sourcePeriodStart=${candidate.sourcePeriodStart} '
         'isOutside=${candidate.isOutsidePriority}',
       );
       if (candidate.date != null) break;
       if (candidate.parentBlockId == payload.blockId) continue;
+      if (!inSamePeriod(candidate)) break;
       if (candidate.blockPriority != null && candidate.thread == null) {
         above = candidate.blockPriority!.id;
         break;
@@ -2447,10 +2393,12 @@ class _PriorityPageState extends State<PriorityPage> {
         'blockPriority=${candidate.blockPriority?.id} '
         'thread=${candidate.thread != null} '
         'date=${candidate.date} '
+        'sourcePeriodStart=${candidate.sourcePeriodStart} '
         'isOutside=${candidate.isOutsidePriority}',
       );
       if (candidate.date != null) break;
       if (candidate.parentBlockId == payload.blockId) continue;
+      if (!inSamePeriod(candidate)) break;
       if (candidate.blockPriority != null && candidate.thread == null) {
         below = candidate.blockPriority!.id;
         break;

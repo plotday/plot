@@ -137,22 +137,44 @@ class PriorityBlock extends PriorityBlockRow {
   }
 
 
-  /// Persist this row locally and queue a push. Set [archivePast] to true to
-  /// soft-archive every existing non-archived row for the same priority
-  /// whose effective_at is earlier than this row's effective_at — used when
-  /// reordering in the do-now slot. Each archived row is pushed to the
-  /// server as a regular update with archived_at set.
-  Future<void> save({bool archivePast = false}) async {
-    if (archivePast) {
-      final past = await (Store.get.select(table)
-            ..where(
-              (t) =>
-                  t.priorityId.equals(priorityId.toBytes()) &
-                  t.effectiveAt.isSmallerThanValue(effectiveAt) &
-                  t.archivedAt.isNull(),
-            ))
-          .get();
-      for (final row in past) {
+  /// Persist this row locally and queue a push.
+  ///
+  /// Set [archiveSameEffectiveAt] to true to soft-archive every existing
+  /// non-archived row for the same priority whose `effective_at` equals
+  /// this row's — re-reorders of the same gap should replace the
+  /// previous entry rather than accumulating duplicates.
+  /// `effectivePriorityOrderAt` picks between rows with the same
+  /// `effective_at` non-deterministically, so without this archive a
+  /// rewrite can lose to its own predecessor.
+  ///
+  /// Set [archivePast] to true to soft-archive every existing
+  /// non-archived row for the same priority whose `effective_at` is
+  /// strictly earlier than this row's — used when the caller wants to
+  /// collapse an entire historical timeline into a single ordering. New
+  /// callers should prefer [archiveSameEffectiveAt] so different gaps
+  /// keep their independent orderings.
+  ///
+  /// Each archived row is pushed to the server as a regular update
+  /// with `archived_at` set.
+  Future<void> save({
+    bool archivePast = false,
+    bool archiveSameEffectiveAt = false,
+  }) async {
+    if (archivePast || archiveSameEffectiveAt) {
+      final query = Store.get.select(table)
+        ..where(
+          (t) =>
+              t.priorityId.equals(priorityId.toBytes()) &
+              t.archivedAt.isNull() &
+              t.id.isNotValue(id.toBytes()) &
+              (archivePast && archiveSameEffectiveAt
+                  ? t.effectiveAt.isSmallerOrEqualValue(effectiveAt)
+                  : archivePast
+                      ? t.effectiveAt.isSmallerThanValue(effectiveAt)
+                      : t.effectiveAt.equals(effectiveAt)),
+        );
+      final stale = await query.get();
+      for (final row in stale) {
         final archived = row.copyWith(
           archivedAt: Value(DateTime.now()),
           updatedAt: DateTime.now(),
