@@ -164,6 +164,24 @@ class LinksBase extends BaseTable {
 
     return LinkRow.fromJson(json);
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // See SchedulesBase.processPulledRows — same race protection.
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final linkRow = row as LinkRow;
+      final local = await (store.select(store.links)
+            ..where((l) => l.id.equals(linkRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.pending != null) continue;
+      result.add(row);
+    }
+    return result;
+  }
 }
 
 class Link extends Equatable {

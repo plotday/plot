@@ -531,6 +531,29 @@ class SchedulesBase extends BaseTable {
 
     return ScheduleRow.fromJson(json);
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // A pull racing with an in-flight push (e.g. broadcast for an unrelated
+    // schedule wakes the orchestrator while our own archive is mid-flight)
+    // would otherwise insertOrReplace the local row with the pre-push
+    // server snapshot, dropping the user's pending change. Skip rows that
+    // still have local pending bits — the next pull after push completes
+    // will pick up the server's authoritative state.
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final scheduleRow = row as ScheduleRow;
+      final local = await (store.select(store.schedules)
+            ..where((s) => s.id.equals(scheduleRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.pending != null) continue;
+      result.add(row);
+    }
+    return result;
+  }
 }
 
 class ThreadAssociationsBase extends BaseTable {
@@ -548,6 +571,24 @@ class ThreadAssociationsBase extends BaseTable {
     // Remove view-only fields
     json.remove('user_id');
     return ThreadAssociationRow.fromJson(json);
+  }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // See SchedulesBase.processPulledRows — same race protection.
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final assocRow = row as ThreadAssociationRow;
+      final local = await (store.select(store.threadAssociations)
+            ..where((a) => a.id.equals(assocRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.pending != null) continue;
+      result.add(row);
+    }
+    return result;
   }
 }
 
