@@ -1,14 +1,18 @@
 -- Notes that a twist should receive for the "update" callback
--- Only returns notes the twist created (created_by = twist_instance_id)
--- updated_at is aggregated with note_tags to include tag changes
+-- Only returns notes the twist created (created_by = twist_instance_id).
+-- The view's seq is n.seq directly (not GREATEST(n.seq, note_tag.seq)) so the
+-- outer query's seq filter pushes down to idx_note_created_by_seq. The
+-- existing emission filter (`n.updated_at > n.created_at`) only references
+-- note.* columns, so tag-only changes don't drive new emissions today —
+-- note_tags is joined purely as an enrichment column for callbacks.
 CREATE OR REPLACE VIEW "public"."twist_instance_note_update" --
 AS
 SELECT
     n.created_by AS twist_instance_id,
     n.id,
     n.created_at,
-    GREATEST (n.updated_at, COALESCE(nt.updated_at, 'epoch'::timestamptz)) AS updated_at,
-    GREATEST (n.seq, COALESCE(nt.seq, '0'::xid8)) AS seq,
+    n.updated_at,
+    n.seq,
     n.source_created_at,
     n.author_id,
     n.created_by,
@@ -44,6 +48,4 @@ WHERE
     AND updated_by_uuid (pt.id) != n.updated_by
     AND a.archived_at IS NULL
     AND pt.archived_at IS NULL
-    AND n.updated_at > pt.created_at
-ORDER BY
-    n.updated_at ASC;
+    AND n.updated_at > pt.created_at;

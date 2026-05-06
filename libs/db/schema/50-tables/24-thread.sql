@@ -64,6 +64,12 @@ CREATE INDEX idx_thread_created_by ON "public"."thread" ("created_by")
 WHERE
     archived_at IS NULL;
 
+-- Support twist_instance_thread_update's seq-bounded scan by twist owner.
+-- Pattern: WHERE created_by = $1 AND seq >= $2 AND seq < $3.
+-- Unconditional (no archived_at filter) because the view returns archived
+-- threads so twists learn when their threads are archived.
+CREATE INDEX idx_thread_created_by_seq ON "public"."thread" ("created_by", "seq");
+
 COMMENT ON COLUMN "public"."thread"."key" IS 'Identifier for cross-user deduplication within a twist. Scoped by twist_id via thread_twist_key_unique. Not synced to clients.';
 
 -- Ensure one active thread per (twist_id, key). The `archived_at IS NULL`

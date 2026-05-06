@@ -73,6 +73,10 @@ CREATE INDEX idx_note_updated_at ON "public"."note" ("updated_at");
 -- Support seq-based incremental sync queries
 CREATE INDEX idx_note_seq ON "public"."note" ("seq");
 
+-- Support twist_instance_note_update's seq-bounded scan by twist owner.
+-- Pattern: WHERE created_by = $1 AND seq >= $2 AND seq < $3.
+CREATE INDEX idx_note_created_by_seq ON "public"."note" ("created_by", "seq");
+
 -- Composite index for common join + filter pattern in user_thread and other views
 CREATE INDEX idx_note_thread_archived ON "public"."note" ("thread_id", "archived_at");
 

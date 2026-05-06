@@ -377,7 +377,21 @@ export class TwistSync extends DurableObject<Bindings> {
         return [];
       };
 
-      const updatedActivities = extractResult(results[0], 0);
+      // The twist_instance_thread_update view UNION-ALLs thread changes with
+      // thread_tag changes, so a thread can appear twice in one window when
+      // both seqs land in [cursor, horizon). Keep the row with the larger
+      // seq. Postgres types `id` and `seq` as nullable through UNION ALL,
+      // but both halves always select non-null values from indexed columns.
+      const rawUpdatedActivities = extractResult(results[0], 0);
+      const dedupedActivities = new Map<string, (typeof rawUpdatedActivities)[number]>();
+      for (const row of rawUpdatedActivities) {
+        if (row.id == null || row.seq == null) continue;
+        const existing = dedupedActivities.get(row.id);
+        if (!existing || BigInt(row.seq as string) > BigInt(existing.seq as string)) {
+          dedupedActivities.set(row.id, row);
+        }
+      }
+      const updatedActivities = Array.from(dedupedActivities.values());
       const newNotes = extractResult(results[1], 1);
       const updatedNotes = extractResult(results[2], 2);
       const channelNewLinks = extractResult(results[3], 3);
