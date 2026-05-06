@@ -1768,11 +1768,6 @@ class _PriorityPageState extends State<PriorityPage> {
                   }
                 }
 
-                final newOrder = Order.between(
-                  prevTodo?.order,
-                  nextTodo?.order,
-                );
-
                 // Determine target day and event from drop position.
                 // newListIndex is in post-removal coordinates, but
                 // listItems is pre-removal. When dragging down,
@@ -1849,6 +1844,30 @@ class _PriorityPageState extends State<PriorityPage> {
                       prevTodoDate ?? nextTodoDate ?? targetDate;
                 }
 
+                // Restrict the order math to neighbors in the same
+                // arrival-time group as effectiveTargetDate. Overdue
+                // todos roll forward into today's section but keep
+                // their original todoSortDate, so a today-todo and a
+                // yesterday-todo can be visually adjacent yet sit in
+                // different arrival groups. Averaging across that
+                // boundary produces a manual order that lands inside
+                // the user's previous position (e.g. midpoint of the
+                // far neighbors equals the dragged item's stored
+                // order if it was placed there before), and even if
+                // committed it wouldn't move the visible row because
+                // the arrival-time DESC rule still puts it in the
+                // wrong group. Drop into the prev neighbor's group
+                // by ignoring next when their dates differ (or vice
+                // versa).
+                final prevTodoForOrder =
+                    prevTodoDate == effectiveTargetDate ? prevTodo : null;
+                final nextTodoForOrder =
+                    nextTodoDate == effectiveTargetDate ? nextTodo : null;
+                final newOrder = Order.between(
+                  prevTodoForOrder?.order,
+                  nextTodoForOrder?.order,
+                );
+
                 final currentDate =
                     activity.on?.start ?? activity.at?.start?.toDate();
                 final dateChanged = effectiveTargetDate != currentDate;
@@ -1874,7 +1893,12 @@ class _PriorityPageState extends State<PriorityPage> {
                     !wasPinned) {
                   _log.info(
                     '[onReorder] "${activity.title}" '
-                    'order unchanged (${newOrder.value}), skipping',
+                    'order unchanged (${newOrder.value}) '
+                    'old=$oldListIndex -> new=$newListIndex '
+                    'destBlock=$destBlockId '
+                    'prevTodo="${prevTodo?.title}" (${prevTodo?.order.value}) '
+                    'nextTodo="${nextTodo?.title}" (${nextTodo?.order.value}), '
+                    'skipping',
                   );
                   return;
                 }
