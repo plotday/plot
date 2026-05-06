@@ -42,7 +42,7 @@ restoration of *its* identity.
 | `thread.title`, `thread.icon`, `thread.topic` | Target wins (unchanged). | Source's original is on source row; target untouched. |
 | `thread.created_at`, `thread.created_by` | Target wins. | Source's original on source row; target untouched. |
 | `thread.readAt`, `thread.unread` | Target wins. | Untouched. |
-| `thread.contacts`, `thread.groups` | **Union** source ∪ target. | Target untouched. (Lossy — accepted.) |
+| `thread.contacts`, `thread.groups` | **Union** source ∪ target. | `target.contacts -= (source.contacts \ otherActiveSources.contacts)`, same for `groups`. Removes contacts/groups that only this source contributed; keeps any that another still-merged source carries. Lossy only in the rare case where a contact was in both the pre-merge target and source (the overlap is dropped from target on split). |
 | `thread.importance` | `max(source, target)`. | Target untouched. (Lossy — accepted.) |
 | `thread.urgency` | More urgent of the two by `_urgencyRank` (`interrupt < inform-requests < inform-updates < passive < null`). | Target untouched. (Lossy — accepted.) |
 | `thread.twist_id`, `thread.key` | Copy from source to target. **If target already has both set and they differ from source's, abort merge** with user-facing error "this thread is already linked to a different external item". Source row keeps its values. | If `target.(twist_id, key) == source.(twist_id, key)`, clear them on target. (At most one source can match because merge refuses the conflict case.) |
@@ -181,10 +181,15 @@ sync pushes for the same row.
 2. After existing note/link/schedule restore for the chosen source:
    - If `target.(twist_id, key) == source.(twist_id, key)`, clear
      them on target. Source's are already preserved.
+   - **Audience subtract**: collect `otherActiveSources` for this
+     target via the same reverse-lookup, excluding the source being
+     split. Compute `removeContacts = source.contacts \ ⋃
+     otherActiveSources.contacts`. Apply
+     `target.contacts -= removeContacts`. Same for `groups`.
    - Set `source.merged_into_thread_id = NULL`, `archived_at = NULL`.
 3. `thread_association` rows are not restored.
-4. Target's `contacts`/`groups`/`importance`/`urgency` are
-   not modified.
+4. Target's `importance`/`urgency` are not modified (no clean inverse
+   of `max`).
 
 ### Server-side sync surface
 
@@ -225,7 +230,8 @@ existing merged content remains splittable. New merges set
 ## Out of scope
 
 - Three-way merge or interactive conflict resolution UI.
-- Restoring target's audience/importance/urgency on split.
+- Restoring target's `importance`/`urgency` on split (no clean
+  inverse for `max`).
 - Restoring `thread_association` on split.
 - Per-merge audit log of which fields were absorbed.
 - Adding a "absorb…" entry point on the target thread.
