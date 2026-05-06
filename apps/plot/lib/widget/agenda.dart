@@ -780,10 +780,17 @@ class _BlockHeaderState extends State<_BlockHeader> {
   /// the raw pointer stream without claiming the pointer in the
   /// gesture arena, so the surrounding [Draggable] / [LongPressDraggable]
   /// is unaffected.
+  ///
+  /// `HitTestBehavior.opaque` is required because the row's content is
+  /// plain [Text] inside [ColoredBox] wrappers — neither [RenderParagraph]
+  /// (for plain text without hit-testable spans) nor [RenderColoredBox]
+  /// add themselves to hit tests, so a default `deferToChild` listener
+  /// would silently miss taps on most of the header.
   Widget _wrapPressToCollapse(Widget child) {
     final blockId = widget.parentBlockId;
     if (blockId == null) return child;
     return Listener(
+      behavior: HitTestBehavior.opaque,
       onPointerDown: (_) {
         final bloc = context.read<PriorityBloc>();
         if (bloc.state.expandedBlockId == blockId) {
