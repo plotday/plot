@@ -537,7 +537,10 @@ class NewThreadPageState extends State<NewThreadPage> {
         mainAxisSize: MainAxisSize.min,
         spacing: 6,
         children: [
-          label,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: label,
+          ),
           Icon(
             PlotIcon.verticalExpand,
             size: context.theme.iconSizes.xs,
@@ -1085,11 +1088,15 @@ class NewThreadPageState extends State<NewThreadPage> {
             tooltip: false,
           ),
         ),
-        child: Text(
-          actor.name ?? actor.email ?? 'Unknown',
-          style: (!selected && !hovered)
-              ? TextStyle(color: context.theme.plotColors.veryMuted)
-              : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(
+            actor.name ?? actor.email ?? 'Unknown',
+            overflow: TextOverflow.ellipsis,
+            style: (!selected && !hovered)
+                ? TextStyle(color: context.theme.plotColors.veryMuted)
+                : null,
+          ),
         ),
       );
     }
