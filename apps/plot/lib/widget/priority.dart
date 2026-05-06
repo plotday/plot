@@ -230,6 +230,11 @@ class PriorityLabel extends StatelessWidget {
           final ancestorColor =
               color ??
               context.colour.colours.fromTheme(displayColors[i], muted: muted);
+          final ancestorText = Text(
+            ancestor.title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          );
           return [
             Flexible(
               key: ValueKey('ancestor_${ancestor.id}'),
@@ -239,22 +244,12 @@ class PriorityLabel extends StatelessWidget {
                   fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height,
                 ),
-                child: Tapable(
-                  onTap: () async {
-                    if (onSelect != null) {
-                      onSelect?.call(ancestor.id);
-                    } else {
-                      final priority = await Priority.getOne(ancestor.id);
-                      if (!context.mounted) return;
-                      context.run(ChangeCurrentPriority(priority));
-                    }
-                  },
-                  child: Text(
-                    ancestor.title,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
+                child: onSelect != null
+                    ? Tapable(
+                        onTap: () => onSelect!.call(ancestor.id),
+                        child: ancestorText,
+                      )
+                    : ancestorText,
               ),
             ),
             if (!isLast || priority != null)
