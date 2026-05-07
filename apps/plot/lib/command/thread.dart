@@ -353,21 +353,37 @@ class AddThreadWithNote extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Add the thread (handles saving, note creation, title generation, and draft reset)
     final priorityBloc = context.read<PriorityBloc>();
-    final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
 
-    // Only navigate if requested
+    // Kick off persistence without awaiting so navigation can happen
+    // optimistically in parallel. priorityBloc.add runs synchronously up to
+    // its first DB await, so the thread row insert is queued on Drift's
+    // FIFO executor before the new ThreadBloc's watch streams subscribe —
+    // by the time the watch query runs, the row is already there.
+    final persistFuture = priorityBloc.add(_data.thread, note: _data.note);
+
     if (!navigate) {
+      await persistFuture;
       return const CommandDone();
     }
 
-    // Replace NewThreadRoute with ThreadRoute on the inner stack
+    // Mirrors the savedThread priorityBloc.add computes internally — both
+    // are just thread.copyWith(draft: false). Pre-cache it on PriorityBloc
+    // before navigation so ThreadBlocProvider builds synchronously from
+    // cache instead of refetching via Thread.getOne.
+    final savedThread = _data.thread.copyWith(draft: false);
+
     if (context.mounted) {
+      priorityBloc.setThread(savedThread);
       await context.router.replace(
         ThreadRoute(threadIdString: savedThread.id.toShortString()),
       );
     }
+
+    // Surface persistence errors after the route flips. The saving overlay
+    // lived on the now-disposed NewThreadPage NoteEditor; ThreadPage has
+    // its own NoteEditor that is unaffected.
+    await persistFuture;
 
     return const CommandDone();
   }
@@ -403,6 +419,7 @@ class AddThreadWithLink extends Command {
       title: hasUserTitle ? const Value.absent() : Value(linkTitle ?? linkUrl),
       icon: hasUserIcon ? const Value.absent() : Value(linkFavicon ?? 'link'),
     );
+    final savedThread = thread.copyWith(draft: false);
 
     // The draft note may have been persisted locally while the user added
     // the link (NoteEditor saves on every edit). The link is being moved
@@ -414,35 +431,43 @@ class AddThreadWithLink extends Command {
     // (`archivedAt is null`).
     final hasPersistedActions = (draftNote.actions?.isNotEmpty ?? false);
     final hasPersistedContent = (draftNote.content?.isNotEmpty ?? false);
-    if (hasPersistedActions || hasPersistedContent) {
-      await draftNote
-          .copyWith(draft: false, archivedAt: Value(DateTime.now()))
-          .save(pushToRemote: false);
-    }
 
-    // Save the thread via PriorityBloc.add (handles draft reset)
-    final savedThread = await priorityBloc.add(thread);
+    // Kick off all persistence on Drift's FIFO executor without awaiting,
+    // then navigate optimistically. By the time the new ThreadPage's watch
+    // streams query, the thread + link rows have already been queued ahead
+    // of them.
+    final persistFuture = () async {
+      if (hasPersistedActions || hasPersistedContent) {
+        await draftNote
+            .copyWith(draft: false, archivedAt: Value(DateTime.now()))
+            .save(pushToRemote: false);
+      }
+      await priorityBloc.add(thread);
+      final now = DateTime.now();
+      final linkRow = LinkRow(
+        id: Uuid.generate(),
+        createdAt: now,
+        updatedAt: now,
+        threadId: savedThread.id,
+        sourceCreatedAt: now,
+        sourceUrl: linkUrl,
+        title: linkTitle,
+        logo: linkFavicon,
+      );
+      await Store.get.save(Store.get.links, linkRow, LinksBase());
+    }();
 
-    // Create and save the link row
-    final now = DateTime.now();
-    final linkRow = LinkRow(
-      id: Uuid.generate(),
-      createdAt: now,
-      updatedAt: now,
-      threadId: savedThread.id,
-      sourceCreatedAt: now,
-      sourceUrl: linkUrl,
-      title: linkTitle,
-      logo: linkFavicon,
-    );
-    await Store.get.save(Store.get.links, linkRow, LinksBase());
-
-    // Navigate to the new thread
+    // Navigate to the new thread. Set the thread on PriorityBloc first so
+    // ThreadBlocProvider builds synchronously from cache instead of
+    // refetching via Thread.getOne.
     if (context.mounted) {
+      priorityBloc.setThread(savedThread);
       await context.router.replace(
         ThreadRoute(threadIdString: savedThread.id.toShortString()),
       );
     }
+
+    await persistFuture;
 
     return const CommandDone();
   }
@@ -484,6 +509,12 @@ class ArchiveThread extends Command {
     final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
     final isAgenda =
         priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
+    // [DIAG-archive] temporary diagnostic
+    log.info(
+      '[DIAG-archive] ArchiveThread.run id=${thread.id} '
+      'isArchived=$isArchived bloc=${priorityBloc != null} '
+      'isCurrentThread=$isCurrentThread isAgenda=$isAgenda',
+    );
     CommandReturn? navigationResult;
     if (!isArchived && isCurrentThread && isAgenda) {
       navigationResult = await OpenNextThread().run(context);
@@ -723,7 +754,6 @@ abstract class _UpdateThreadCommand extends Command {
     super.icon,
     super.hoverIcon,
     super.shortcut,
-    super.on,
   }) : onUpdate = onUpdate ?? ((thread) => thread.save());
 
   final Thread thread;
@@ -1333,25 +1363,6 @@ class ToggleThreadTag extends _UpdateThreadCommand {
         }
       }
     }
-    return const CommandDone();
-  }
-}
-
-class ToggleThreadPrivate extends _UpdateThreadCommand {
-  ToggleThreadPrivate(super.thread, {super.onUpdate})
-    : super(
-        title: 'Private',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.tagged,
-        icon: PlotIcon.private,
-        on: null,
-      );
-
-  @override
-  bool enabled(BuildContext context) => false;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
     return const CommandDone();
   }
 }
@@ -3060,7 +3071,6 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent) ToggleThreadPrivate(thread),
     if (!skipInfrequent && !hideArchive) ArchiveThread(thread),
   ];
 }

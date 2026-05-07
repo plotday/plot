@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/toast.dart';
@@ -278,19 +279,37 @@ class ThreadBlocProvider extends StatefulWidget {
 }
 
 class ThreadBlocProviderState extends State<ThreadBlocProvider> {
-  late Future<ThreadBloc> _bloc;
+  // When the thread is known up front (passed via [widget.thread] or already
+  // sitting in PriorityBloc state), the bloc is built synchronously and
+  // [_syncBloc] is non-null — the FutureBuilder is bypassed entirely so there
+  // is no LoadingPage flash on the way into ThreadPage. Otherwise we fall
+  // through to [_asyncBloc], which fetches via Thread.getOne.
+  ThreadBloc? _syncBloc;
+  Future<ThreadBloc>? _asyncBloc;
   bool _hasNavigatedAway = false;
 
   @override
   void initState() {
     super.initState();
-    _bloc =
-        (widget.thread != null
-                ? Future.value(widget.thread!)
-                : Thread.getOne(widget.threadId))
-            .then((thread) {
-              return ThreadBloc(thread: thread);
-            });
+    final initial = widget.thread ?? _cachedThread();
+    if (initial != null) {
+      _syncBloc = ThreadBloc(thread: initial);
+    } else {
+      _asyncBloc = Thread.getOne(
+        widget.threadId,
+      ).then((thread) => ThreadBloc(thread: thread));
+    }
+  }
+
+  /// Returns the thread held in PriorityBloc when its id matches
+  /// [widget.threadId]. Callers (ChangeCurrentThread, AddThread,
+  /// AddThreadWithNote, AddThreadWithLink) call `priorityBloc.setThread`
+  /// before routing, so the thread is already in memory by the time
+  /// ThreadBlocProvider mounts.
+  Thread? _cachedThread() {
+    final cached = context.read<PriorityBloc?>()?.state.thread;
+    if (cached != null && cached.id == widget.threadId) return cached;
+    return null;
   }
 
   @override
@@ -298,38 +317,58 @@ class ThreadBlocProviderState extends State<ThreadBlocProvider> {
     super.didUpdateWidget(oldWidget);
 
     if (widget.thread != null && widget.thread != oldWidget.thread) {
-      _bloc.then((bloc) async {
-        final thread = widget.thread;
-        if (thread == null) return;
-        // Create new bloc with updated thread
-        bloc.close();
-        final newBloc = ThreadBloc(thread: thread);
-        setState(() {
-          _bloc = Future.value(newBloc);
-        });
-      });
+      _replaceWithSync(ThreadBloc(thread: widget.thread!));
     } else if (widget.threadId != oldWidget.threadId) {
-      _bloc.then((bloc) async {
-        bloc.close();
-        final thread = await Thread.getOne(widget.threadId);
-        final newBloc = ThreadBloc(thread: thread);
-        setState(() {
-          _bloc = Future.value(newBloc);
-        });
-      });
+      final cached = _cachedThread();
+      if (cached != null) {
+        _replaceWithSync(ThreadBloc(thread: cached));
+      } else {
+        _replaceWithAsync(
+          Thread.getOne(
+            widget.threadId,
+          ).then((thread) => ThreadBloc(thread: thread)),
+        );
+      }
     }
+  }
+
+  void _replaceWithSync(ThreadBloc next) {
+    final oldSync = _syncBloc;
+    final oldAsync = _asyncBloc;
+    setState(() {
+      _syncBloc = next;
+      _asyncBloc = null;
+    });
+    oldSync?.close();
+    oldAsync?.then((bloc) => bloc.close());
+  }
+
+  void _replaceWithAsync(Future<ThreadBloc> next) {
+    final oldSync = _syncBloc;
+    final oldAsync = _asyncBloc;
+    setState(() {
+      _syncBloc = null;
+      _asyncBloc = next;
+    });
+    oldSync?.close();
+    oldAsync?.then((bloc) => bloc.close());
   }
 
   @override
   void dispose() {
-    _bloc.then((bloc) => bloc.close());
+    _syncBloc?.close();
+    _asyncBloc?.then((bloc) => bloc.close());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: _bloc,
+    final sync = _syncBloc;
+    if (sync != null) {
+      return BlocProvider.value(value: sync, child: widget.child);
+    }
+    return FutureBuilder<ThreadBloc>(
+      future: _asyncBloc,
       builder: (context, snapshot) {
         if (snapshot.hasError && !_hasNavigatedAway) {
           _hasNavigatedAway = true;

@@ -607,9 +607,14 @@ class Note extends Equatable implements Comparable<Note> {
           ));
     }
 
-    // Push to remote (fire-and-forget, like Store.save)
+    // Push to remote. Deferred to idle so it doesn't compete for CPU with
+    // navigation transitions running concurrently (e.g. the new-thread
+    // submit → ThreadPage flip).
     if (pushToRemote) {
-      unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+      _deferIdle(
+        () => SyncOrchestrator.instance.push(SyncOrchestrator.note),
+        debugLabel: 'note sync push',
+      );
     }
   }
 

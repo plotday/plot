@@ -4017,9 +4017,10 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
 
-    // Trigger full push including activity_read changes (fire and forget)
-    // This ensures activity_read is synced immediately, not just during sync cycles
-    Thread.push();
+    // Trigger full push including activity_read changes. Deferred to idle
+    // so it doesn't compete for CPU with navigation transitions running
+    // concurrently (e.g. the new-thread submit → ThreadPage flip).
+    _deferIdle(Thread.push, debugLabel: 'thread push');
 
     // Generate AI title on first non-draft save. Fire-and-forget so callers
     // (e.g. NewThreadPage submit → navigation) don't block on a /summary
@@ -4030,24 +4031,29 @@ class Thread extends Equatable implements Comparable<Thread> {
       final content = preview;
       if (content != null && content.trim().isNotEmpty) {
         final threadId = id;
-        unawaited(() async {
-          try {
-            final response = await api.post<Map<String, dynamic>>(
-              '/summary',
-              body: {'body': content},
-            );
-            final generatedTitle = response['title'] as String?;
-            if (generatedTitle != null && generatedTitle.isNotEmpty) {
-              log.info("Generated AI title for thread $threadId: $generatedTitle");
-              await copyWith(title: Value(generatedTitle)).save();
+        _deferIdle(
+          () async {
+            try {
+              final response = await api.post<Map<String, dynamic>>(
+                '/summary',
+                body: {'body': content},
+              );
+              final generatedTitle = response['title'] as String?;
+              if (generatedTitle != null && generatedTitle.isNotEmpty) {
+                log.info(
+                  "Generated AI title for thread $threadId: $generatedTitle",
+                );
+                await copyWith(title: Value(generatedTitle)).save();
+              }
+            } catch (e, t) {
+              log.warning(
+                "AI title generation failed for thread $threadId "
+                "(will retry on sync): $e\n$t",
+              );
             }
-          } catch (e, t) {
-            log.warning(
-              "AI title generation failed for thread $threadId "
-              "(will retry on sync): $e\n$t",
-            );
-          }
-        }());
+          },
+          debugLabel: 'thread AI title',
+        );
       }
     }
   }

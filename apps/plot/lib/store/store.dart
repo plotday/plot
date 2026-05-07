@@ -3,6 +3,9 @@ import 'dart:io';
 import 'dart:math';
 
 import 'dart:convert';
+// Prefixed: store.dart's own [Priority] class (in priority.dart) shadows
+// the scheduler one without it.
+import 'package:flutter/scheduler.dart' as flutter_scheduler;
 import 'package:flutter/widgets.dart'
     show
         AppLifecycleState,
@@ -79,6 +82,24 @@ part 'channel.dart';
 part 'group.dart';
 
 part 'store.g.dart';
+
+/// Fire-and-forget [task] via the Flutter scheduler at [Priority.idle], so
+/// it yields to in-flight rendering. Lets save() side effects (remote push,
+/// AI summarization) overlap navigation transitions like the new-thread
+/// submit → ThreadPage flip without competing for CPU during the frames
+/// that actually paint the destination page.
+void _deferIdle<T>(
+  FutureOr<T> Function() task, {
+  required String debugLabel,
+}) {
+  unawaited(
+    flutter_scheduler.SchedulerBinding.instance.scheduleTask(
+      task,
+      flutter_scheduler.Priority.idle,
+      debugLabel: debugLabel,
+    ),
+  );
+}
 
 mixin SyncableTable on Table {
   DateTimeColumn get updatedAt => dateTime()
@@ -2144,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 324;
+  int get schemaVersion => 325;
 
   @override
   MigrationStrategy get migration {
@@ -3130,6 +3151,11 @@ class Store extends _$Store {
       // notes.mergedFromThreadId / links.mergedFromThreadId fallback path.
       await _safeAddColumn(m, threads, threads.mergedIntoThreadId);
     }
+    if (from < 325) {
+      // Backfill idx_notes_thread_id. ThreadPage's Note.watch runs on every
+      // navigation and was full-scanning the notes table.
+      await _createPerfIndexes(m.database);
+    }
   }
 
   /// Foreign-key indexes used by the activity-feed and search queries.
@@ -3154,6 +3180,12 @@ class Store extends _$Store {
     await db.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_threads_priority_id '
       'ON threads(priority_id)',
+    );
+    // notes.thread_id is the hot path for ThreadPage: every open runs
+    // `WHERE thread_id = ? ORDER BY source_created_at DESC` (Note.watch).
+    // Without this index it was a full notes scan on every navigation.
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_notes_thread_id ON notes(thread_id)',
     );
   }
 
