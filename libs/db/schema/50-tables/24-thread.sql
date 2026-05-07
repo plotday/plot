@@ -35,7 +35,12 @@ CREATE TABLE "public"."thread" (
     -- thread, maintained by update_thread_on_note_change. Used by user.thread
     -- to project view.seq = GREATEST(thread.seq, last_note_seq, ...) so
     -- note-only changes propagate through the seq cursor.
-    "last_note_seq" xid8 NOT NULL DEFAULT '0'::xid8
+    "last_note_seq" xid8 NOT NULL DEFAULT '0'::xid8,
+    -- When set, this thread is a merge source whose content has been moved
+    -- to merged_into_thread_id. The row is archived but its identity columns
+    -- (contacts, groups, importance, urgency, twist_id, key) are preserved
+    -- so SplitThread can restore them. Many sources may point at one target.
+    "merged_into_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL
 );
 
 ALTER TABLE "public"."thread"
@@ -95,6 +100,10 @@ WHERE
     topic IS NOT NULL;
 
 CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" halfvec_cosine_ops);
+
+-- Reverse-lookup: list all sources merged into a given target.
+CREATE INDEX idx_thread_merged_into ON "public"."thread" ("merged_into_thread_id")
+WHERE merged_into_thread_id IS NOT NULL;
 
 COMMENT ON COLUMN "public"."thread"."embedding" IS 'Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.';
 

@@ -46,6 +46,12 @@ class Threads extends Table
   /// Used to decide whether "move similar" rule options are available.
   BoolColumn get hasEmbedding =>
       boolean().withDefault(const Constant(false))();
+
+  /// When set, this thread was merged into the referenced thread and is
+  /// archived; its identity columns are preserved on this row so a Split
+  /// can restore them.
+  BlobColumn get mergedIntoThreadId =>
+      blob().nullable().map(const UuidConverter())();
 }
 
 @DataClassName('ScheduleRow')
@@ -2850,6 +2856,10 @@ class Thread extends Equatable implements Comparable<Thread> {
   String? get occurrence => _schedule?.occurrence;
   Uuid? get scheduleId => _schedule?.id;
 
+  /// When non-null, this thread was merged into the referenced target and
+  /// is archived. Discoverable via the back-reference column.
+  ThreadId? get mergedIntoThreadId => _thread.mergedIntoThreadId;
+
   /// The current user's RSVP status on this schedule ('attend', 'skip', or null).
   String? get currentUserRsvp => _schedule?.currentUserStatus;
 
@@ -3264,6 +3274,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? unread,
     Value<String?> preview = const Value.absent(),
     Value<String?> icon = const Value.absent(),
+    Value<ThreadId?> mergedIntoThreadId = const Value.absent(),
     Value<List<Note>?> notes = const Value.absent(),
 
     // These fields update the exception if this is a recurrence, or the root activity otherwise
@@ -3310,6 +3321,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         unread != null ||
         preview.present ||
         icon.present ||
+        mergedIntoThreadId.present ||
         archivedAt.present ||
         bumpedAt.present ||
         readAt.present ||
@@ -3325,6 +3337,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           inviteEmails.present ||
           preview.present ||
           icon.present ||
+          mergedIntoThreadId.present ||
           archivedAt.present ||
           title.present;
       activity = _thread.copyWith(
@@ -3339,6 +3352,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             : const Value.absent(),
         preview: preview,
         icon: icon,
+        mergedIntoThreadId: mergedIntoThreadId,
         createdAt: draft == false && _thread.draft ? now : null,
         updatedAt: now,
         archivedAt: archivedAt,

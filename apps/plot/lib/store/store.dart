@@ -2144,7 +2144,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 323;
+  int get schemaVersion => 324;
 
   @override
   MigrationStrategy get migration {
@@ -3122,6 +3122,13 @@ class Store extends _$Store {
       // search query (with its OR'd correlated EXISTS) was taking
       // multiple seconds on large databases.
       await _createPerfIndexes(m.database);
+    }
+    if (from < 324) {
+      // Adds thread.mergedIntoThreadId so SplitThread can discover all sources
+      // merged into a target by reverse-lookup. Existing archived merge sources
+      // (pre-324) have NULL here and remain discoverable via the
+      // notes.mergedFromThreadId / links.mergedFromThreadId fallback path.
+      await _safeAddColumn(m, threads, threads.mergedIntoThreadId);
     }
   }
 

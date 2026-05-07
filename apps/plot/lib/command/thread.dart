@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
+import 'package:plot/command/thread_merge.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
@@ -1501,7 +1502,12 @@ class MergeThreadInto extends ShowCommands {
       draft: false,
       order: ThreadOrder.reverse,
     );
-    final filtered = threads.where((t) => t.id != thread.id).toList();
+    final filtered = threads
+        .where((t) => t.id != thread.id)
+        // Exclude merge sources — they're archived placeholders that
+        // would silently re-archive any merge into them.
+        .where((t) => t.mergedIntoThreadId == null)
+        .toList();
     return Commands(
       groups: [
         StaticCommandGroup(
@@ -1526,124 +1532,205 @@ class _ExecuteMerge extends ThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // 1. Move all non-draft notes from source to target
-    final noteRows =
-        await (Store.get.select(Store.get.notes)
+    if (source.mergedIntoThreadId != null ||
+        target.mergedIntoThreadId != null) {
+      // Source is already absorbed, or target is itself a merge source.
+      // The picker filters this out; this is a guardrail.
+      return const CommandSkipped();
+    }
+
+    final db = Store.get;
+    final now = DateTime.now();
+
+    final sourceRow = await (db.select(
+      db.threads,
+    )..where((t) => t.id.equalsValue(source.id))).getSingleOrNull();
+    final targetRow = await (db.select(
+      db.threads,
+    )..where((t) => t.id.equalsValue(target.id))).getSingleOrNull();
+    if (sourceRow == null || targetRow == null) return const CommandSkipped();
+
+    // 1. Collect non-draft source notes for later move. The
+    // `note_thread_link_key_unique` server index scopes uniqueness to
+    // `(thread_id, link_id, key)`, so connector notes from different
+    // links coexist on the merged thread without client-side handling.
+    final sourceNoteRows =
+        await (db.select(db.notes)
               ..where((n) => n.threadId.equalsValue(source.id))
               ..where((n) => n.draft.equals(false)))
             .get();
 
-    for (final noteRow in noteRows) {
+    // 2. Absorb identity fields onto target in one row write.
+    final mergedContacts =
+        mergeAudienceUnion(target.contacts, source.contacts);
+    final mergedGroups = mergeAudienceUnion(target.groups, source.groups);
+    final newImportance =
+        mergeImportanceMax(targetRow.importance, sourceRow.importance);
+    final newUrgency =
+        mergeUrgencyMostUrgent(targetRow.urgency, sourceRow.urgency);
+
+    await db.add(
+      db.threads,
+      targetRow
+          .copyWith(
+            contacts: Value(mergedContacts),
+            groups: Value(mergedGroups),
+            importance: newImportance,
+            urgency: Value(newUrgency),
+            updatedAt: now,
+          )
+          .toCompanion(false),
+    );
+
+    // 3. Archive source and set the back-reference. The server-side
+    // transfer_twist_key_on_merge trigger handles (twist_id, key)
+    // migration on this update; the client doesn't read or write
+    // those columns since they're not synced down.
+    await source
+        .copyWith(
+          archivedAt: Value(now),
+          mergedIntoThreadId: Value(target.id),
+        )
+        .save();
+
+    // 4. Move notes.
+    for (final noteRow in sourceNoteRows) {
       final note = await Note.get(noteRow.id);
       if (note == null) continue;
       await note
-          .copyWith(threadId: target.id, mergedFromThreadId: Value(source.id))
+          .copyWith(
+            threadId: target.id,
+            mergedFromThreadId: Value(source.id),
+          )
           .save(pushToRemote: false);
     }
 
-    // 2. Move links from source to target
-    final linkRows = await (Store.get.select(
-      Store.get.links,
-    )..where((l) => l.threadId.equals(source.id.toBytes()))).get();
-
+    // 5. Move links.
+    final linkRows =
+        await (db.select(db.links)
+              ..where((l) => l.threadId.equals(source.id.toBytes())))
+            .get();
     for (final linkRow in linkRows) {
-      final updated = linkRow.copyWith(
-        threadId: Value(target.id),
-        mergedFromThreadId: Value(source.id),
-        updatedAt: DateTime.now(),
+      await db.add(
+        db.links,
+        linkRow
+            .copyWith(
+              threadId: Value(target.id),
+              mergedFromThreadId: Value(source.id),
+              updatedAt: now,
+            )
+            .toCompanion(false),
       );
-      await Store.get.add(Store.get.links, updated.toCompanion(false));
     }
 
-    // 3. Union tags: merge source thread tags into target (per occurrence)
-    final sourceTagRows = await (Store.get.select(
-      Store.get.threadTags,
+    // 6. Tag union (existing behavior).
+    final sourceTagRows = await (db.select(
+      db.threadTags,
     )..where((t) => t.id.equalsValue(source.id))).get();
-    final targetTagRows = await (Store.get.select(
-      Store.get.threadTags,
+    final targetTagRows = await (db.select(
+      db.threadTags,
     )..where((t) => t.id.equalsValue(target.id))).get();
-
-    // Build a map of occurrence -> tags for target
     final targetByOccurrence = <String, ThreadTagsRow>{};
     for (final row in targetTagRows) {
       targetByOccurrence[row.occurrence] = row;
     }
-
-    for (final sourceRow in sourceTagRows) {
-      final sourceTags = sourceRow.tags ?? {};
+    for (final sourceTagRow in sourceTagRows) {
+      final sourceTags = sourceTagRow.tags ?? const <Tag, List<ActorId>>{};
       if (sourceTags.isEmpty) continue;
-
-      final targetRow = targetByOccurrence[sourceRow.occurrence];
-      final targetTags = targetRow?.tags ?? <Tag, List<ActorId>>{};
-
-      // Merge: for each source tag, add actors not already in target
-      bool changed = false;
-      final merged = Map<Tag, List<ActorId>>.from(targetTags);
+      final targetTagRow = targetByOccurrence[sourceTagRow.occurrence];
+      final existing = targetTagRow?.tags ?? <Tag, List<ActorId>>{};
+      var changed = false;
+      final merged = Map<Tag, List<ActorId>>.from(existing);
       for (final entry in sourceTags.entries) {
-        final existing = merged[entry.key] ?? [];
-        final newActors = entry.value
-            .where((a) => !existing.contains(a))
-            .toList();
+        final current = merged[entry.key] ?? const [];
+        final newActors =
+            entry.value.where((a) => !current.contains(a)).toList();
         if (newActors.isNotEmpty) {
-          merged[entry.key] = [...existing, ...newActors];
+          merged[entry.key] = [...current, ...newActors];
           changed = true;
         }
       }
-
       if (changed) {
-        final updatedTags = targetRow != null
-            ? targetRow.copyWith(
+        final out = targetTagRow != null
+            ? targetTagRow.copyWith(
                 tags: Value(merged.isEmpty ? null : merged),
-                updatedAt: DateTime.now(),
+                updatedAt: now,
               )
             : ThreadTagsRow(
                 id: target.id,
-                occurrence: sourceRow.occurrence,
-                updatedAt: DateTime.now(),
+                occurrence: sourceTagRow.occurrence,
+                updatedAt: now,
                 tags: merged.isEmpty ? null : merged,
               );
-        await Store.get.add(
-          Store.get.threadTags,
-          updatedTags.toCompanion(false),
-        );
+        await db.add(db.threadTags, out.toCompanion(false));
       }
     }
 
-    // 4. Merge schedules: fill gaps (source schedule moves to target if user has none)
-    final sourceSchedules = await (Store.get.select(
-      Store.get.schedules,
+    // 7. Schedule fill-gaps (existing behavior).
+    final sourceSchedules = await (db.select(
+      db.schedules,
     )..where((s) => s.threadId.equalsValue(source.id))).get();
-    final targetSchedules = await (Store.get.select(
-      Store.get.schedules,
+    final targetSchedules = await (db.select(
+      db.schedules,
     )..where((s) => s.threadId.equalsValue(target.id))).get();
-
-    // Build a set of (userId, occurrence) keys for target schedules
-    final targetKeys = <String>{};
-    for (final s in targetSchedules) {
-      final key = '${s.userId ?? ''}_${s.occurrence ?? ''}';
-      targetKeys.add(key);
-    }
-
+    final targetSlots = <String>{
+      for (final s in targetSchedules)
+        '${s.userId ?? ''}_${s.occurrence ?? ''}',
+    };
     for (final s in sourceSchedules) {
-      final key = '${s.userId ?? ''}_${s.occurrence ?? ''}';
-      if (!targetKeys.contains(key)) {
-        // Move this schedule to target
-        final moved = s.copyWith(
-          threadId: Value(target.id),
-          updatedAt: DateTime.now(),
+      final slot = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      if (!targetSlots.contains(slot)) {
+        await db.add(
+          db.schedules,
+          s.copyWith(threadId: Value(target.id), updatedAt: now)
+              .toCompanion(false),
         );
-        await Store.get.add(Store.get.schedules, moved.toCompanion(false));
       }
     }
 
-    // 5. Archive source thread
-    await source.delete();
+    // 8. thread_association move.
+    final childRows = await (db.select(db.threadAssociations)
+          ..where((t) => t.childThreadId.equalsValue(source.id))
+          ..where((t) => t.archivedAt.isNull()))
+        .get();
+    final targetHasParent = (await (db.select(db.threadAssociations)
+              ..where((t) => t.childThreadId.equalsValue(target.id))
+              ..where((t) => t.archivedAt.isNull()))
+            .get())
+        .isNotEmpty;
+    for (final row in childRows) {
+      if (targetHasParent) {
+        await db.add(
+          db.threadAssociations,
+          row
+              .copyWith(archivedAt: Value(now), updatedAt: now)
+              .toCompanion(false),
+        );
+      } else {
+        await db.add(
+          db.threadAssociations,
+          row
+              .copyWith(childThreadId: target.id, updatedAt: now)
+              .toCompanion(false),
+        );
+      }
+    }
+    final parentRows = await (db.select(db.threadAssociations)
+          ..where((t) => t.parentThreadId.equalsValue(source.id))
+          ..where((t) => t.archivedAt.isNull()))
+        .get();
+    for (final row in parentRows) {
+      await db.add(
+        db.threadAssociations,
+        row
+            .copyWith(parentThreadId: target.id, updatedAt: now)
+            .toCompanion(false),
+      );
+    }
 
-    // 6. Push all changes
+    // 9. Push and navigate.
     unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
     unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.thread));
-
-    // 7. Navigate to target thread
     return CommandRoute(
       PriorityRoute(
         priorityIdString: target.priority.id.toShortString(),
@@ -1667,6 +1754,13 @@ class SplitThread extends Command {
   /// Check if this thread has any merged content (used to hide the command).
   static Future<bool> hasMergedContent(ThreadId threadId) async {
     final db = Store.get;
+    final viaRef =
+        await (db.select(db.threads)
+              ..where((t) => t.mergedIntoThreadId.equalsValue(threadId))
+              ..limit(1))
+            .get();
+    if (viaRef.isNotEmpty) return true;
+
     final notes =
         await (db.select(db.notes)
               ..where((n) => n.threadId.equalsValue(threadId))
@@ -1686,41 +1780,41 @@ class SplitThread extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Find distinct merged source threads
-    final noteRows =
-        await (Store.get.select(Store.get.notes)
-              ..where((n) => n.threadId.equalsValue(thread.id))
-              ..where((n) => n.mergedFromThreadId.isNotNull()))
-            .get();
+    final db = Store.get;
 
-    final linkRows =
-        await (Store.get.select(Store.get.links)
-              ..where((l) => l.threadId.equals(thread.id.toBytes()))
-              ..where((l) => l.mergedFromThreadId.isNotNull()))
-            .get();
+    // Primary: rows that point at this thread via the back-reference.
+    final viaRef = await (db.select(db.threads)
+          ..where((t) => t.mergedIntoThreadId.equalsValue(thread.id)))
+        .get();
+    final sourceIds = <ThreadId>{for (final r in viaRef) r.id};
 
-    final sourceIds = <ThreadId>{};
+    // Fallback: legacy merges before the back-reference column existed.
+    final noteRows = await (db.select(db.notes)
+          ..where((n) => n.threadId.equalsValue(thread.id))
+          ..where((n) => n.mergedFromThreadId.isNotNull()))
+        .get();
     for (final n in noteRows) {
       if (n.mergedFromThreadId != null) sourceIds.add(n.mergedFromThreadId!);
     }
+    final linkRows = await (db.select(db.links)
+          ..where((l) => l.threadId.equals(thread.id.toBytes()))
+          ..where((l) => l.mergedFromThreadId.isNotNull()))
+        .get();
     for (final l in linkRows) {
       if (l.mergedFromThreadId != null) sourceIds.add(l.mergedFromThreadId!);
     }
 
     if (sourceIds.isEmpty || !context.mounted) return const CommandSkipped();
 
-    // Load source threads
     final sourceThreads = <Thread>[];
     for (final id in sourceIds) {
       final threads = await Thread.get(id: id, archived: null);
       if (threads.isNotEmpty) sourceThreads.add(threads.first);
     }
-
     if (sourceThreads.isEmpty || !context.mounted) {
       return const CommandSkipped();
     }
 
-    // Show picker
     final commands = Commands(
       groups: [
         StaticCommandGroup(
@@ -1729,7 +1823,6 @@ class SplitThread extends Command {
         ),
       ],
     );
-
     return await CommandModal(commands, rootContext: context).run(context);
   }
 }
@@ -1747,13 +1840,22 @@ class _ExecuteSplit extends ThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // 1. Move notes back to source
-    final noteRows =
-        await (Store.get.select(Store.get.notes)
-              ..where((n) => n.threadId.equalsValue(current.id))
-              ..where((n) => n.mergedFromThreadId.equalsValue(source.id)))
-            .get();
+    final db = Store.get;
+    final now = DateTime.now();
 
+    final sourceRow = await (db.select(db.threads)
+          ..where((t) => t.id.equalsValue(source.id)))
+        .getSingleOrNull();
+    final currentRow = await (db.select(db.threads)
+          ..where((t) => t.id.equalsValue(current.id)))
+        .getSingleOrNull();
+    if (sourceRow == null || currentRow == null) return const CommandSkipped();
+
+    // 1. Move notes back.
+    final noteRows = await (db.select(db.notes)
+          ..where((n) => n.threadId.equalsValue(current.id))
+          ..where((n) => n.mergedFromThreadId.equalsValue(source.id)))
+        .get();
     for (final noteRow in noteRows) {
       final note = await Note.get(noteRow.id);
       if (note == null) continue;
@@ -1762,26 +1864,159 @@ class _ExecuteSplit extends ThreadCommand {
           .save(pushToRemote: false);
     }
 
-    // 2. Move links back to source
-    final linkRows =
-        await (Store.get.select(Store.get.links)
-              ..where((l) => l.threadId.equals(current.id.toBytes()))
-              ..where((l) => l.mergedFromThreadId.equals(source.id.toBytes())))
-            .get();
-
+    // 2. Move links back.
+    final linkRows = await (db.select(db.links)
+          ..where((l) => l.threadId.equals(current.id.toBytes()))
+          ..where((l) => l.mergedFromThreadId.equals(source.id.toBytes())))
+        .get();
     for (final linkRow in linkRows) {
-      final updated = linkRow.copyWith(
-        threadId: Value(source.id),
-        mergedFromThreadId: const Value(null),
-        updatedAt: DateTime.now(),
+      await db.add(
+        db.links,
+        linkRow
+            .copyWith(
+              threadId: Value(source.id),
+              mergedFromThreadId: const Value(null),
+              updatedAt: now,
+            )
+            .toCompanion(false),
       );
-      await Store.get.add(Store.get.links, updated.toCompanion(false));
     }
 
-    // 3. Unarchive source thread
-    await source.copyWith(archivedAt: const Value(null)).save();
+    // 2b. Move schedules back (fill-gaps inverse of merge step 7).
+    final allSourceSchedules = await (db.select(db.schedules)
+          ..where((s) => s.threadId.equalsValue(source.id)))
+        .get();
+    final sourceSlots = <String>{
+      for (final s in allSourceSchedules)
+        '${s.userId ?? ''}_${s.occurrence ?? ''}',
+    };
+    final currentSchedules = await (db.select(db.schedules)
+          ..where((s) => s.threadId.equalsValue(current.id)))
+        .get();
+    for (final s in currentSchedules) {
+      final slot = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      if (!sourceSlots.contains(slot)) {
+        await db.add(
+          db.schedules,
+          s.copyWith(threadId: Value(source.id), updatedAt: now)
+              .toCompanion(false),
+        );
+      }
+    }
 
-    // 4. Push changes
+    // Common query used in steps 2c and 3: other sources still merged into
+    // current (excluding the source being split out).
+    final otherActiveSourceRows = await (db.select(db.threads)
+          ..where((t) => t.mergedIntoThreadId.equalsValue(current.id))
+          ..where((t) => t.id.isNotValue(source.id.toBytes()))
+          ..where((t) => t.archivedAt.isNotNull()))
+        .get();
+
+    // 2c. Tag set-subtract on current. Source's thread_tag rows are still
+    // on source.id (untouched by merge — merge only copied actors into
+    // current's tag rows). Subtract source's actors per (tag, occurrence)
+    // from current, keeping any actors carried by other still-merged
+    // sources.
+    final sourceTagRows = await (db.select(db.threadTags)
+          ..where((t) => t.id.equalsValue(source.id)))
+        .get();
+    final otherSourceTagRows = <ThreadTagsRow>[];
+    for (final s in otherActiveSourceRows) {
+      otherSourceTagRows.addAll(await (db.select(db.threadTags)
+            ..where((t) => t.id.equalsValue(s.id)))
+          .get());
+    }
+    final currentTagRows = await (db.select(db.threadTags)
+          ..where((t) => t.id.equalsValue(current.id)))
+        .get();
+    for (final currentRow in currentTagRows) {
+      final occurrence = currentRow.occurrence;
+      final currentTags = currentRow.tags ?? const <Tag, List<ActorId>>{};
+      if (currentTags.isEmpty) continue;
+      // Actors from source for this occurrence:
+      final sourceActorsByTag = <Tag, Set<ActorId>>{};
+      for (final s in sourceTagRows) {
+        if (s.occurrence != occurrence) continue;
+        final m = s.tags ?? const <Tag, List<ActorId>>{};
+        for (final entry in m.entries) {
+          sourceActorsByTag.putIfAbsent(entry.key, () => <ActorId>{})
+              .addAll(entry.value);
+        }
+      }
+      if (sourceActorsByTag.isEmpty) continue;
+      // Actors carried by other still-merged sources for this occurrence:
+      final keptByOthers = <Tag, Set<ActorId>>{};
+      for (final o in otherSourceTagRows) {
+        if (o.occurrence != occurrence) continue;
+        final m = o.tags ?? const <Tag, List<ActorId>>{};
+        for (final entry in m.entries) {
+          keptByOthers.putIfAbsent(entry.key, () => <ActorId>{})
+              .addAll(entry.value);
+        }
+      }
+      // Compute new tags for current: drop actors that source contributed
+      // unless another active source still carries them.
+      var changed = false;
+      final updated = <Tag, List<ActorId>>{};
+      for (final entry in currentTags.entries) {
+        final remove = sourceActorsByTag[entry.key] ?? const <ActorId>{};
+        final keep = keptByOthers[entry.key] ?? const <ActorId>{};
+        final filtered = entry.value
+            .where((a) => !remove.contains(a) || keep.contains(a))
+            .toList();
+        if (filtered.length != entry.value.length) changed = true;
+        if (filtered.isNotEmpty) updated[entry.key] = filtered;
+      }
+      if (changed) {
+        await db.add(
+          db.threadTags,
+          currentRow
+              .copyWith(
+                tags: Value(updated.isEmpty ? null : updated),
+                updatedAt: now,
+              )
+              .toCompanion(false),
+        );
+      }
+    }
+
+    // 3. Audience subtract on current.
+    final otherContacts = otherActiveSourceRows.map((r) => r.contacts).toList();
+    final otherGroups = otherActiveSourceRows.map((r) => r.groups).toList();
+    final newCurrentContacts = splitAudienceSubtract(
+      target: currentRow.contacts,
+      source: sourceRow.contacts,
+      otherActiveSources: otherContacts,
+    );
+    final newCurrentGroups = splitAudienceSubtract(
+      target: currentRow.groups,
+      source: sourceRow.groups,
+      otherActiveSources: otherGroups,
+    );
+
+    await db.add(
+      db.threads,
+      currentRow
+          .copyWith(
+            contacts: Value(newCurrentContacts),
+            groups: Value(newCurrentGroups),
+            updatedAt: now,
+          )
+          .toCompanion(false),
+    );
+
+    // 4. Unarchive source and clear the back-reference. The server-side
+    // thread_merge_preconditions trigger validates that archived_at is cleared
+    // in the same UPDATE. (twist_id, key) stays on source's row untouched —
+    // upsert_thread() follows the chain to route connector resyncs.
+    await source
+        .copyWith(
+          archivedAt: const Value(null),
+          mergedIntoThreadId: const Value(null),
+        )
+        .save();
+
+    // 5. Push.
     unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
     unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.thread));
 

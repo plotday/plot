@@ -696,6 +696,7 @@ export interface Thread {
    * Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_thread view.
    */
   last_note_source_created_at: Timestamp | null;
+  merged_into_thread_id: string | null;
   /**
    * Contacts whose own sync wants to join but who have not yet been attested by another user's sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.
    */
@@ -798,6 +799,7 @@ export interface ThreadX {
   last_note_created_at: Timestamp | null;
   last_note_seq: string | null;
   last_note_source_created_at: Timestamp | null;
+  merged_into_thread_id: string | null;
   pending_contacts: string[] | null;
   preview: string | null;
   seq: string | null;
@@ -1468,6 +1470,7 @@ export interface UserThread {
   importance: number | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
+  merged_into_thread_id: string | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
