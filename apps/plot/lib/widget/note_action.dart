@@ -13,6 +13,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/widget/tapable.dart';
@@ -433,11 +434,19 @@ class ExternalLinkButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final favicon = link.favicon;
     return FButton(
       variant: variant ?? FButtonVariant.secondary,
       style: style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
+      prefix: favicon != null
+          ? LogoImage(
+              url: favicon,
+              size: 14,
+              fallback: const Icon(PlotIcon.link, size: 14),
+            )
+          : const Icon(PlotIcon.link, size: 14),
       child: Flexible(
         child: Text(
           link.title,

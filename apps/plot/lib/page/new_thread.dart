@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -22,6 +24,7 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
@@ -278,8 +281,43 @@ class NewThreadPageState extends State<NewThreadPage> {
           ],
         );
         await bloc.updateDraft(bloc.state.draft, note: updatedNote);
+        // Fire-and-forget metadata fetch — when it returns we replace the
+        // action so the link chip shows the page title and the thread
+        // (created via AddThreadWithLink on submit) gets the favicon.
+        unawaited(_resolveSharedUrlMetadata(widget.sharedUrl!));
       }
     }
+  }
+
+  /// Looks up `<title>` and favicon for [url] and updates the matching
+  /// `ExternalUserAction` in the draft. Matches by URL — the draft note may
+  /// have been mutated while the request was in flight, so identity isn't
+  /// safe.
+  Future<void> _resolveSharedUrlMetadata(String url) async {
+    final meta = await fetchUrlMetadata(url);
+    if (!mounted) return;
+    if (meta.title == null && meta.favicon == null) return;
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    final note = bloc.state.draftNote;
+    final actions = note.actions ?? const <UserAction>[];
+    final idx = actions.indexWhere(
+      (a) => a is ExternalUserAction && a.url == url,
+    );
+    if (idx < 0) return;
+    final existing = actions[idx] as ExternalUserAction;
+    // If the user already typed a custom title or the metadata didn't
+    // upgrade either field, don't overwrite.
+    final shouldUpdateTitle = meta.title != null && existing.title == url;
+    final shouldUpdateFavicon = meta.favicon != null && existing.favicon == null;
+    if (!shouldUpdateTitle && !shouldUpdateFavicon) return;
+    final replacement = ExternalUserAction(
+      title: shouldUpdateTitle ? meta.title! : existing.title,
+      url: existing.url,
+      favicon: shouldUpdateFavicon ? meta.favicon : existing.favicon,
+    );
+    final next = [...actions]..[idx] = replacement;
+    await bloc.updateDraft(bloc.state.draft, note: note.copyWith(actions: next));
   }
 
   @override

@@ -631,7 +631,18 @@ class NoteEditorState extends State<NoteEditor> {
       icon = Icon(PlotIcon.attachment, size: 12, color: context.colour.muted);
       label = action.fileName;
     } else if (action is ExternalUserAction) {
-      icon = Icon(PlotIcon.link, size: 12, color: context.colour.muted);
+      final favicon = action.favicon;
+      icon = favicon != null
+          ? LogoImage(
+              url: favicon,
+              size: 12,
+              fallback: Icon(
+                PlotIcon.link,
+                size: 12,
+                color: context.colour.muted,
+              ),
+            )
+          : Icon(PlotIcon.link, size: 12, color: context.colour.muted);
       label = action.title;
     } else {
       return const SizedBox.shrink();
@@ -1057,7 +1068,17 @@ class NoteEditorState extends State<NoteEditor> {
           ),
           style: ButtonStyle.primary,
           loading: _saving,
-          enabled: !_saving && !_isEmpty,
+          // Body-less submit is allowed only when there's an external link
+          // (handled below by AddThreadWithLink). Other action types
+          // (file attachments, connector create-actions) still need a body
+          // because they piggyback on the saved Note.
+          enabled:
+              !_saving &&
+              (!_isEmpty ||
+                  (widget.draft.actions
+                          ?.whereType<ExternalUserAction>()
+                          .isNotEmpty ??
+                      false)),
         ),
       ],
     );
@@ -1386,6 +1407,31 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<void> _onNewThreadSubmitted(String body, {bool alt = false}) async {
+    // Empty body + a link → create a thread *about* the link: title and
+    // favicon come from the link, no Note is saved, the link is stored as a
+    // thread-level LinkRow (matches how thread.dart renders link rows).
+    if (body.trim().isEmpty) {
+      final firstExternal = widget.draft.actions
+          ?.whereType<ExternalUserAction>()
+          .firstOrNull;
+      if (firstExternal != null) {
+        setState(() => _saving = true);
+        widget.onSubmitted?.call();
+        try {
+          await context.run(
+            AddThreadWithLink(
+              linkUrl: firstExternal.url,
+              linkTitle: firstExternal.title,
+              linkFavicon: firstExternal.favicon,
+            ),
+          );
+        } finally {
+          if (mounted) setState(() => _saving = false);
+        }
+        return;
+      }
+    }
+
     final data = await finalizeThreadDraft(
       body,
       twists: widget.twists!,

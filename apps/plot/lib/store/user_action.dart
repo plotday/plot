@@ -48,26 +48,36 @@ abstract class UserAction extends Equatable {
 }
 
 class ExternalUserAction extends UserAction {
-  const ExternalUserAction({required this.title, required this.url})
-    : super(type: UserActionType.external);
+  const ExternalUserAction({
+    required this.title,
+    required this.url,
+    this.favicon,
+  }) : super(type: UserActionType.external);
 
   final String title;
   final String url;
+  final String? favicon;
 
   factory ExternalUserAction.fromJson(Map<String, dynamic> json) {
     return ExternalUserAction(
       title: json['title'] as String,
       url: json['url'] as String,
+      favicon: json['favicon'] as String?,
     );
   }
 
   @override
   Map<String, dynamic> toJson() {
-    return {'type': type.name, 'title': title, 'url': url};
+    return {
+      'type': type.name,
+      'title': title,
+      'url': url,
+      if (favicon != null) 'favicon': favicon,
+    };
   }
 
   @override
-  List<Object?> get props => [type, title, url];
+  List<Object?> get props => [type, title, url, favicon];
 }
 
 class AuthUserAction extends UserAction {

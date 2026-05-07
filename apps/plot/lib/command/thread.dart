@@ -393,13 +393,32 @@ class AddThreadWithLink extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
     final draft = priorityBloc.state.draft;
+    final draftNote = priorityBloc.state.draftNote;
 
-    // Set the thread title to the fetched page title or the URL
-    final threadTitle = linkTitle ?? linkUrl;
+    // Honor a user-set title/icon (via the title or type chip on
+    // NewThreadPage). Otherwise derive from the link metadata.
+    final hasUserTitle = draft.title?.isNotEmpty ?? false;
+    final hasUserIcon = draft.icon?.isNotEmpty ?? false;
     final thread = draft.copyWith(
-      title: Value(threadTitle),
-      icon: Value(linkFavicon ?? 'link'),
+      title: hasUserTitle ? const Value.absent() : Value(linkTitle ?? linkUrl),
+      icon: hasUserIcon ? const Value.absent() : Value(linkFavicon ?? 'link'),
     );
+
+    // The draft note may have been persisted locally while the user added
+    // the link (NoteEditor saves on every edit). The link is being moved
+    // to a thread-level LinkRow and the body is empty, so retire the draft
+    // row — otherwise ThreadBloc.getDraftByActivity loads it on the new
+    // ThreadPage and the link reappears in the editor. Mark it
+    // `draft: false, archivedAt: now` so it's filtered out by both the
+    // draft lookup (`draft = true`) and the published-notes watch
+    // (`archivedAt is null`).
+    final hasPersistedActions = (draftNote.actions?.isNotEmpty ?? false);
+    final hasPersistedContent = (draftNote.content?.isNotEmpty ?? false);
+    if (hasPersistedActions || hasPersistedContent) {
+      await draftNote
+          .copyWith(draft: false, archivedAt: Value(DateTime.now()))
+          .save(pushToRemote: false);
+    }
 
     // Save the thread via PriorityBloc.add (handles draft reset)
     final savedThread = await priorityBloc.add(thread);

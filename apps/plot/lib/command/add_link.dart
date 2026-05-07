@@ -48,6 +48,7 @@ class AddLink extends Command {
       final linkAction = ExternalUserAction(
         title: result.title ?? result.url!,
         url: result.url!,
+        favicon: result.favicon,
       );
       onActionsChanged([...currentActions, linkAction]);
     }
