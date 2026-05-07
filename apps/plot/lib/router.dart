@@ -219,7 +219,13 @@ class AppRouter extends RootStackRouter {
       deepLinkTransformer: deepLinkTransformer ?? _legacyDeepLinkTransformer,
       deepLinkBuilder: deepLinkBuilder,
       navRestorationScopeId: navRestorationScopeId,
-      placeholder: placeholder,
+      // Without a placeholder, auto_route's navigator falls back to a
+      // `Container(color: Theme.of(context).scaffoldBackgroundColor)` while
+      // the initial route is resolving. On macOS we use MacosApp.router (no
+      // MaterialApp ancestor), so `Theme.of` returns the default light
+      // Material theme — producing a one-frame white flash between
+      // LoadingPage and the main panels in dark mode.
+      placeholder: placeholder ?? (_) => const LoadingPage(),
       navigatorObservers: () => [
         RouteLogger(),
         AutoRouteObserver(),

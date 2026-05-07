@@ -93,20 +93,37 @@ class AppState extends State<App> {
                           ),
                           routerConfig: routerConfig,
                         ),
-                        macOSBuilder: (context) => macos.MacosApp.router(
-                          title: 'Plot',
-                          localizationsDelegates:
-                              FLocalizations.localizationsDelegates,
-                          supportedLocales: FLocalizations.supportedLocales,
-                          theme:
-                              (context.colour.brightness == Brightness.light
-                                      ? macos.MacosThemeData.light()
-                                      : macos.MacosThemeData.dark())
-                                  .copyWith(
-                                    primaryColor: context.colour.accent,
-                                  ),
-                          debugShowCheckedModeBanner: false,
-                          routerConfig: routerConfig,
+                        // Provide a Material `Theme` above MacosApp so any
+                        // `Theme.of(context).scaffoldBackgroundColor` lookup
+                        // inside the app (e.g. auto_route's Navigator and
+                        // AutoTabsRouter empty-stack fallbacks) resolves to
+                        // our dark/light surface color instead of the
+                        // default light Material theme — which would
+                        // otherwise produce a white flash on macOS during
+                        // initial route resolution.
+                        macOSBuilder: (context) => material.Theme(
+                          data: material.ThemeData(
+                            brightness:
+                                context.colour.brightness == Brightness.light
+                                ? material.Brightness.light
+                                : material.Brightness.dark,
+                            scaffoldBackgroundColor: context.colour.background,
+                          ),
+                          child: macos.MacosApp.router(
+                            title: 'Plot',
+                            localizationsDelegates:
+                                FLocalizations.localizationsDelegates,
+                            supportedLocales: FLocalizations.supportedLocales,
+                            theme:
+                                (context.colour.brightness == Brightness.light
+                                        ? macos.MacosThemeData.light()
+                                        : macos.MacosThemeData.dark())
+                                    .copyWith(
+                                      primaryColor: context.colour.accent,
+                                    ),
+                            debugShowCheckedModeBanner: false,
+                            routerConfig: routerConfig,
+                          ),
                         ),
                       ),
                     ),
