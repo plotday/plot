@@ -1009,6 +1009,11 @@ class _PriorityPageState extends State<PriorityPage> {
                                 if (focusedIndex != null &&
                                     focusedIndex >= 0 &&
                                     focusedIndex < resolvedItems.length) {
+                                  // Capture bloc here so dispatched commands
+                                  // (e.g. Archive) keep their optimistic path
+                                  // alive when the modal context can't
+                                  // resolve PriorityBloc.
+                                  final capturedBloc = priorityBloc;
                                   context.run(
                                     OpenFocusedItemActions(resolvedController, (
                                       index,
@@ -1027,6 +1032,7 @@ class _PriorityPageState extends State<PriorityPage> {
                                         activity: (agendaActivity) =>
                                             threadCommandGroups(
                                               agendaActivity.thread,
+                                              priorityBloc: capturedBloc,
                                             ),
                                         header: (_) async =>
                                             <StaticCommandGroup>[],

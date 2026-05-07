@@ -387,10 +387,14 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                         ? _getNoteAtIndex(state, focusedIndex)
                         : null;
                     final threadBloc = context.read<ThreadBloc>();
+                    final priorityBloc = context.read<PriorityBloc?>();
                     return [
                       if (note != null)
                         ...noteCommandGroups(note, activityBloc: threadBloc),
-                      ...threadCommandGroupsSync(state.thread),
+                      ...threadCommandGroupsSync(
+                        state.thread,
+                        priorityBloc: priorityBloc,
+                      ),
                     ];
                   },
                   listenable: listController,

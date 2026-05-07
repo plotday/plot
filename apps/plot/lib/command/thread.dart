@@ -474,8 +474,9 @@ class AddThreadWithLink extends Command {
 }
 
 class ArchiveThread extends Command {
-  ArchiveThread(Thread thread)
+  ArchiveThread(Thread thread, {PriorityBloc? bloc})
     : _thread = Future.value(thread),
+      _bloc = bloc,
       super(
         title: thread.archivedAt != null ? 'Un-archive' : 'Archive',
         eventObject: EventObject.activity,
@@ -488,8 +489,9 @@ class ArchiveThread extends Command {
             : null,
       );
 
-  ArchiveThread.future(this._thread)
-    : super(
+  ArchiveThread.future(this._thread, {PriorityBloc? bloc})
+    : _bloc = bloc,
+      super(
         title: 'Archive',
         eventObject: EventObject.activity,
         eventAction: EventAction.archived,
@@ -498,6 +500,14 @@ class ArchiveThread extends Command {
 
   final Future<Thread> _thread;
 
+  /// Captured at construction time when the caller has a context that
+  /// resolves [PriorityBloc]. The CommandModal flow may dispatch `run` with
+  /// a context whose nearest ancestor is the global Overlay (no bloc above
+  /// it), so the run-time `context.read` returns null and the optimistic
+  /// update silently no-ops. Capturing here keeps the optimistic path firing
+  /// regardless of dispatch.
+  final PriorityBloc? _bloc;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final thread = await _thread;
@@ -505,16 +515,10 @@ class ArchiveThread extends Command {
 
     // Capture navigation BEFORE archive (only when archiving, not un-archiving)
     if (!context.mounted) return const CommandDone();
-    final priorityBloc = context.read<PriorityBloc?>();
+    final priorityBloc = _bloc ?? context.read<PriorityBloc?>();
     final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
     final isAgenda =
         priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
-    // [DIAG-archive] temporary diagnostic
-    log.info(
-      '[DIAG-archive] ArchiveThread.run id=${thread.id} '
-      'isArchived=$isArchived bloc=${priorityBloc != null} '
-      'isCurrentThread=$isCurrentThread isAgenda=$isAgenda',
-    );
     CommandReturn? navigationResult;
     if (!isArchived && isCurrentThread && isAgenda) {
       navigationResult = await OpenNextThread().run(context);
@@ -2059,8 +2063,21 @@ class ShowThreadCommands extends ShowCommands {
     : super(
         title: 'More commands',
         icon: PlotIcon.menu,
-        commandsBuilder: (context) async =>
-            Commands(groups: await threadCommandGroups(thread, open: open)),
+        commandsBuilder: (context) async {
+          // Capture the bloc here — `context` is the more-button's context,
+          // which lives inside the priority page's BlocProvider. Once the
+          // CommandModal opens, command dispatch may run with the modal's
+          // own context (in the global Overlay) where the bloc is not
+          // resolvable, so capture eagerly and pass it through.
+          final bloc = context.read<PriorityBloc?>();
+          return Commands(
+            groups: await threadCommandGroups(
+              thread,
+              open: open,
+              priorityBloc: bloc,
+            ),
+          );
+        },
       );
 }
 
@@ -2911,12 +2928,14 @@ class OpenFocusedItemActions extends ShowCommands {
 Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
+  PriorityBloc? priorityBloc,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   return threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: hasMerged,
+    priorityBloc: priorityBloc,
   );
 }
 
@@ -2926,6 +2945,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   Thread thread, {
   bool open = true,
   bool showSplitThread = false,
+  PriorityBloc? priorityBloc,
 }) {
   final isViewer = thread.priority.isViewer;
   final tags = Tag.getAll()
@@ -2936,6 +2956,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: showSplitThread,
+    priorityBloc: priorityBloc,
   );
   final remove = tags
       .where((cmd) => cmd.tag.type != TagType.compute && thread.hasTag(cmd.tag))
@@ -3028,6 +3049,7 @@ List<Command> threadCommands(
   bool skipPrimary = false,
   bool showSplitThread = false,
   bool showEventTiming = false,
+  PriorityBloc? priorityBloc,
 }) {
   // Viewers can only open threads, not modify them
   if (thread.priority.isViewer) {
@@ -3041,7 +3063,7 @@ List<Command> threadCommands(
     return [
       if (open) ChangeCurrentThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
-      if (!skipInfrequent) ArchiveThread(thread),
+      if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
   }
 
@@ -3071,7 +3093,8 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent && !hideArchive) ArchiveThread(thread),
+    if (!skipInfrequent && !hideArchive)
+      ArchiveThread(thread, bloc: priorityBloc),
   ];
 }
 

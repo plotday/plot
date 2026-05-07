@@ -612,8 +612,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
     // Desktop: right-click context menu, no drag handle
     if (!isTouchDevice) {
+      // Capture the bloc here so commands like Archive can fire their
+      // optimistic update even when dispatched from a context that has
+      // shed the priority page tree.
+      final priorityBloc = buildContext.read<PriorityBloc?>();
       return ContextMenu(
-        items: (close) => threadCommands(activity)
+        items: (close) => threadCommands(activity, priorityBloc: priorityBloc)
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),

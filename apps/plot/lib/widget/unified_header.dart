@@ -726,6 +726,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final thread = state.thread;
+        // Capture the bloc here — when ArchiveThread runs through the modal
+        // it may dispatch with an Overlay-rooted context that can't resolve
+        // the bloc, which would skip the optimistic feed update.
+        final priorityBloc = context.read<PriorityBloc?>();
         // Build priority groups before any await so BuildContext is not
         // carried across an async gap.
         final priorityGroups = currentPriorityCommandGroups(
@@ -733,7 +737,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           context: context,
         );
         final threadGroups = thread != null
-            ? await threadCommandGroups(thread)
+            ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
             : <StaticCommandGroup>[];
         return Commands(
           groups: [...threadGroups, ...priorityGroups],
