@@ -1,81 +1,46 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:plot/api/api.dart' show getHeaders;
+import 'package:plot/env.dart';
 
 /// Metadata extracted from a URL's HTML page.
 typedef UrlMetadata = ({String? title, String? favicon});
 
-/// Fetches the <title> and favicon from a URL's HTML.
-/// Returns nulls on any failure (timeout, parse error, non-HTML, etc.).
+/// Fetches the title and favicon for [url] via the Plot API.
+///
+/// The server handles per-host special cases (Reddit, YouTube, Twitter/X,
+/// Vimeo, Spotify) and the generic HTML scrape — needed because the Flutter
+/// web client can't fetch arbitrary cross-origin pages from the browser, and
+/// because many sites block default fetch User-Agents. Returns nulls on any
+/// failure (timeout, network error, server error, etc.).
 Future<UrlMetadata> fetchUrlMetadata(String url) async {
   try {
-    final uri = Uri.parse(url);
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 5),
+    final endpoint = Uri.parse(
+      '${Env.apiRoot}/metadata?url=${Uri.encodeComponent(url)}',
     );
+    final headers = await getHeaders();
+    final response = await http
+        .get(endpoint, headers: headers)
+        .timeout(const Duration(seconds: 8));
     if (response.statusCode != 200) return (title: null, favicon: null);
 
     final body = utf8.decode(response.bodyBytes, allowMalformed: true);
+    final dynamic decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) return (title: null, favicon: null);
 
-    // Extract <title>...</title> content
-    String? title;
-    final titleMatch = RegExp(
-      r'<title[^>]*>(.*?)</title>',
-      caseSensitive: false,
-      dotAll: true,
-    ).firstMatch(body);
-    if (titleMatch != null) {
-      title = titleMatch.group(1)?.trim();
-      if (title != null && title.isNotEmpty) {
-        // Decode common HTML entities
-        title = title
-            .replaceAll('&amp;', '&')
-            .replaceAll('&lt;', '<')
-            .replaceAll('&gt;', '>')
-            .replaceAll('&quot;', '"')
-            .replaceAll('&#39;', "'")
-            .replaceAll('&apos;', "'")
-            .replaceAll('&#x27;', "'")
-            .replaceAll('&nbsp;', ' ');
-
-        // Collapse whitespace (titles can span multiple lines in source)
-        title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (title.isEmpty) title = null;
-      } else {
-        title = null;
-      }
-    }
-
-    // Extract favicon URL from <link> tags
-    String? favicon;
-    final faviconMatch = RegExp(
-      r'''<link[^>]*\brel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*/?>''',
-      caseSensitive: false,
-    ).firstMatch(body);
-    // Also try the reverse attribute order (href before rel)
-    final faviconMatch2 = faviconMatch ?? RegExp(
-      r'''<link[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*\brel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*/?>''',
-      caseSensitive: false,
-    ).firstMatch(body);
-
-    if (faviconMatch2 != null) {
-      final href = faviconMatch2.group(1);
-      if (href != null && href.isNotEmpty) {
-        favicon = uri.resolve(href).toString();
-      }
-    }
-
-    // Fall back to /favicon.ico
-    favicon ??= uri.resolve('/favicon.ico').toString();
-
-    return (title: title, favicon: favicon);
+    final title = decoded['title'];
+    final favicon = decoded['favicon'];
+    return (
+      title: title is String && title.isNotEmpty ? title : null,
+      favicon: favicon is String && favicon.isNotEmpty ? favicon : null,
+    );
   } catch (_) {
     return (title: null, favicon: null);
   }
 }
 
-/// Fetches the <title> tag from a URL's HTML.
-/// Returns null on any failure (timeout, parse error, non-HTML, etc.).
+/// Fetches just the title for [url].
 Future<String?> fetchUrlTitle(String url) async {
   final metadata = await fetchUrlMetadata(url);
   return metadata.title;
