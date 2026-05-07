@@ -200,6 +200,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/plot
+          rm -rf .dart_tool
           flutter pub get
 
       - name: Install derry
@@ -344,6 +345,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/plot
+          rm -rf .dart_tool
           flutter pub get
 
       - name: Install derry
@@ -500,6 +502,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/plot
+          rm -rf .dart_tool
           flutter pub get
 
       - name: Install derry
@@ -660,6 +663,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/plot
+          rm -rf .dart_tool
           flutter pub get
 
       - name: Install derry
