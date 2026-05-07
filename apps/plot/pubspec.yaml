@@ -68,6 +68,10 @@ dependencies:
       url: git@github.com:plotday/font_awesome_flutter.git
   injector: ^3.0.0
   posthog_flutter: ^5.23.1
+  # Pinned directly because clerk_auth (transitive) brings this in but pub on
+  # GitHub Actions runners has been dropping it from resolution, leaving
+  # package_graph.json inconsistent and breaking `flutter pub get`.
+  retry: ^3.1.2
   b: ^0.2.0
   super_editor: 0.3.0-dev.48
   super_editor_spellcheck:
