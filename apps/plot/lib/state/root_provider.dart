@@ -23,6 +23,7 @@ import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/main.dart' show navigatorKey, setNavigatorKey;
 import 'package:plot/util/splash.dart';
+import 'package:plot/widget_bridge/widget_bridge.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -40,6 +41,10 @@ class RootProviderState extends State<RootProvider> {
   final PrioritiesBloc prioritiesBloc = PrioritiesBloc();
   late final AppRouter router;
   late final RouterConfig<UrlState> routerConfig;
+  late final WidgetBridge widgetBridge = WidgetBridge(
+    userBloc: userBloc,
+    nowBloc: nowBloc,
+  );
 
   void Function()? _nowBlocListener;
   StreamSubscription<Priority>? _contextPriorityListener;
@@ -60,6 +65,7 @@ class RootProviderState extends State<RootProvider> {
       reevaluateListenable: ReevaluateListenable.stream(userBloc.stream),
     );
     installThreadUrlOverride(router);
+    widgetBridge.start();
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -73,6 +79,7 @@ class RootProviderState extends State<RootProvider> {
     _contextPriorityListener?.cancel();
     _reAuthSubscription?.cancel();
     PendingShare.onReady = null;
+    unawaited(widgetBridge.stop());
     super.dispose();
   }
 

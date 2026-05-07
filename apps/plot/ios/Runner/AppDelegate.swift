@@ -8,6 +8,7 @@ import UIKit
   // as soon as that method returns and the handler block is dropped, producing
   // MissingPluginException on the Dart side.
   private var shareChannel: FlutterMethodChannel?
+  private var widgetBridgePlugin: WidgetBridgePlugin?
 
   override func application(
     _ application: UIApplication,
@@ -57,5 +58,7 @@ import UIKit
       }
     }
     self.shareChannel = channel
+
+    self.widgetBridgePlugin = WidgetBridgePlugin(messenger: registrar.messenger())
   }
 }

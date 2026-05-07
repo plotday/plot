@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Placeholder layout — empty FrameLayout. Replace when widget designs
+  land. RemoteViews supports a small subset of widgets; see
+  https://developer.android.com/reference/android/widget/RemoteViews.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />

@@ -28,5 +28,9 @@
     <array>
       <string>applinks:app.plot.day</string>
     </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+      <string>group.day.plot.app</string>
+    </array>
   </dict>
 </plist>

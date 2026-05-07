@@ -27,6 +27,11 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  tray_icon_ =
+      std::make_unique<plot::system_tray::TrayIcon>(GetHandle());
+  widget_bridge_ = std::make_unique<plot::widget_bridge::WidgetBridgePlugin>(
+      flutter_controller_->engine(), tray_icon_.get());
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -40,6 +45,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Drop the bridge before the engine — the channel holds a raw
+  // pointer into flutter_controller_'s messenger.
+  widget_bridge_.reset();
+  tray_icon_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

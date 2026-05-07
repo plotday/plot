@@ -23,13 +23,19 @@
 
 /* Begin PBXBuildFile section */
 		076CC44E5EE7570D2D07089D /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FF4B0E37095293BC779F231 /* Pods_RunnerTests.framework */; };
+		1C502155926DF891FC7CD49C /* PlotWidgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F95F07E4DB96CC12BB7592 /* PlotWidgetSharedStorage.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		4F71DA770BCEDD3EDA3C852B /* PlotWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F415D9FCCBBDDFDB2F2D14 /* PlotWidgetBundle.swift */; };
+		940C91AF2388E225508A664E /* PlotWidgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F95F07E4DB96CC12BB7592 /* PlotWidgetSharedStorage.swift */; };
+		9FA0DD3DAF348FCAF6618C23 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */; };
 		A358D8587084D7DFEA69B39F /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 78CF2FD4FFE2497580AEEDED /* Pods_Runner.framework */; };
+		D240F70BC06BD99F1E6E3C2D /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B548BBC367A48C49BD4BA6B /* Cocoa.framework */; };
+		E33FC8803FB21BDE91123FE9 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8528C0F1010BC909839B9D35 /* WidgetBridgePlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +69,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1B548BBC367A48C49BD4BA6B /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
@@ -85,11 +92,18 @@
 		78CF2FD4FFE2497580AEEDED /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		827A4F929309F20866BEC494 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		8528C0F1010BC909839B9D35 /* WidgetBridgePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		9FF4B0E37095293BC779F231 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0C7E74CD8C7D9A065CFFFD8 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
+		B9F415D9FCCBBDDFDB2F2D14 /* PlotWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlotWidgetBundle.swift; sourceTree = "<group>"; };
+		C2F95F07E4DB96CC12BB7592 /* PlotWidgetSharedStorage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlotWidgetSharedStorage.swift; sourceTree = "<group>"; };
 		C3AE0120E14729CBA113A4A5 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		C48A400B98B05C092B906879 /* PlotWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = PlotWidget.entitlements; sourceTree = "<group>"; };
+		CCD016FE74CF42D17735AA0C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CEE07B3FD6E7C62AFC99C71D /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		EF529F85F501DDD031BB90B4 /* PlotWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PlotWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +120,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A358D8587084D7DFEA69B39F /* Pods_Runner.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3F3ECDC15BF14E18220D7101 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D240F70BC06BD99F1E6E3C2D /* Cocoa.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,6 +163,7 @@
 				33CC10EE2044A3C60003C045 /* Products */,
 				D73912EC22F37F3D000D13A0 /* Frameworks */,
 				E561E46FC494813039268212 /* Pods */,
+				3BDA060FAFDF17C287519F72 /* PlotWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -149,6 +172,7 @@
 			children = (
 				33CC10ED2044A3C60003C045 /* Plot.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
+				EF529F85F501DDD031BB90B4 /* PlotWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -184,8 +208,29 @@
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
 				33BA886A226E78AF003329D5 /* Configs */,
+				FADD9B107141A190C2943A13 /* WidgetBridge */,
+				FAA7B6C70CB8EF1BFFE986FA /* MenuBar */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		3BDA060FAFDF17C287519F72 /* PlotWidget */ = {
+			isa = PBXGroup;
+			children = (
+				B9F415D9FCCBBDDFDB2F2D14 /* PlotWidgetBundle.swift */,
+				CCD016FE74CF42D17735AA0C /* Info.plist */,
+				C48A400B98B05C092B906879 /* PlotWidget.entitlements */,
+			);
+			name = PlotWidget;
+			path = PlotWidget;
+			sourceTree = SOURCE_ROOT;
+		};
+		C4928E9E0D6F637601576827 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				1B548BBC367A48C49BD4BA6B /* Cocoa.framework */,
+			);
+			name = "OS X";
 			sourceTree = "<group>";
 		};
 		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
@@ -193,6 +238,7 @@
 			children = (
 				78CF2FD4FFE2497580AEEDED /* Pods_Runner.framework */,
 				9FF4B0E37095293BC779F231 /* Pods_RunnerTests.framework */,
+				C4928E9E0D6F637601576827 /* OS X */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -209,6 +255,25 @@
 			);
 			path = Pods;
 			sourceTree = "<group>";
+		};
+		FAA7B6C70CB8EF1BFFE986FA /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				FCE38688A3E0DFCBF95D0D5F /* MenuBarController.swift */,
+			);
+			name = MenuBar;
+			path = Runner/MenuBar;
+			sourceTree = SOURCE_ROOT;
+		};
+		FADD9B107141A190C2943A13 /* WidgetBridge */ = {
+			isa = PBXGroup;
+			children = (
+				8528C0F1010BC909839B9D35 /* WidgetBridgePlugin.swift */,
+				C2F95F07E4DB96CC12BB7592 /* PlotWidgetSharedStorage.swift */,
+			);
+			name = WidgetBridge;
+			path = Runner/WidgetBridge;
+			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
 
@@ -255,6 +320,23 @@
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* Plot.app */;
 			productType = "com.apple.product-type.application";
+		};
+		6B90EDEF7B666628BDE93BA9 /* PlotWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 97916C5126CDC70183DD0499 /* Build configuration list for PBXNativeTarget "PlotWidget" */;
+			buildPhases = (
+				717D8DE3DA173384FDD2D2D9 /* Sources */,
+				3F3ECDC15BF14E18220D7101 /* Frameworks */,
+				2605C4A70FBAEF5A0A069209 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PlotWidget;
+			productName = PlotWidget;
+			productReference = EF529F85F501DDD031BB90B4 /* PlotWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -303,11 +385,19 @@
 				33CC10EC2044A3C60003C045 /* Runner */,
 				331C80D4294CF70F00263BE5 /* RunnerTests */,
 				33CC111A2044C6BA0003C045 /* Flutter Assemble */,
+				6B90EDEF7B666628BDE93BA9 /* PlotWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		2605C4A70FBAEF5A0A069209 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C80D3294CF70F00263BE5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -404,6 +494,44 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		A1B2C3D4E5F6A7B800ENVCHK /* Ensure Env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Ensure Env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$PROJECT_DIR/scripts/ensure-env.sh\"\n";
+		};
+		A1B2C3D4E5F6A7B900ENVRES /* Restore Env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Restore Env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$PROJECT_DIR/scripts/restore-env.sh\"\n";
+		};
 		DA39CEF91B67C221EAB11E41 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -443,44 +571,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		A1B2C3D4E5F6A7B800ENVCHK /* Ensure Env */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Ensure Env";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"$PROJECT_DIR/scripts/ensure-env.sh\"\n";
-		};
-		A1B2C3D4E5F6A7B900ENVRES /* Restore Env */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Restore Env";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"$PROJECT_DIR/scripts/restore-env.sh\"\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -499,6 +589,18 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+				E33FC8803FB21BDE91123FE9 /* WidgetBridgePlugin.swift in Sources */,
+				940C91AF2388E225508A664E /* PlotWidgetSharedStorage.swift in Sources */,
+				9FA0DD3DAF348FCAF6618C23 /* MenuBarController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		717D8DE3DA173384FDD2D2D9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F71DA770BCEDD3EDA3C852B /* PlotWidgetBundle.swift in Sources */,
+				1C502155926DF891FC7CD49C /* PlotWidgetSharedStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -530,6 +632,29 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		0627B943396E7E874032374E /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = PlotWidget/PlotWidget.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = PlotWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.PlotWidget;
+				PRODUCT_NAME = PlotWidget;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
 		331C80DB294CF71000263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = CEE07B3FD6E7C62AFC99C71D /* Pods-RunnerTests.debug.xcconfig */;
@@ -845,6 +970,52 @@
 			};
 			name = Release;
 		};
+		51BF65D7566A2FC7C9E60BAD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = PlotWidget/PlotWidget.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = PlotWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.PlotWidget;
+				PRODUCT_NAME = PlotWidget;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5C103D04F02661DD79AEE42C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = PlotWidget/PlotWidget.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = PlotWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.PlotWidget;
+				PRODUCT_NAME = PlotWidget;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -884,6 +1055,16 @@
 				33CC111C2044C6BA0003C045 /* Debug */,
 				33CC111D2044C6BA0003C045 /* Release */,
 				338D0CEB231458BD00FA5F75 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		97916C5126CDC70183DD0499 /* Build configuration list for PBXNativeTarget "PlotWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				51BF65D7566A2FC7C9E60BAD /* Release */,
+				5C103D04F02661DD79AEE42C /* Debug */,
+				0627B943396E7E874032374E /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
