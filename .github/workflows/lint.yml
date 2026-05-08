@@ -63,8 +63,8 @@ jobs:
       - name: Set up Rust (for super_clipboard native extensions)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Fake Flutter .env
-        run: echo "FOO=bar" >> apps/plot/.env
+      - name: Fake Flutter app.env
+        run: echo "FOO=bar" >> apps/plot/app.env
 
       - name: Generate Flutter code
         run: cd apps/plot && flutter pub run build_runner build

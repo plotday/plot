@@ -166,7 +166,10 @@ flutter:
   uses-material-design: true
 
   assets:
-    - .env
+    # `app.env` (not `.env`) — Cloudflare's WAF blocks request paths whose
+    # final segment is `.env`, so a `.env` asset is unreachable from
+    # app.plot.day. See lib/env.dart for the matching dotenv.load call.
+    - app.env
     - assets/
     - shorebird.yaml
 

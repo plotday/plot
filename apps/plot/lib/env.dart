@@ -7,7 +7,12 @@ import 'package:device_info_plus/device_info_plus.dart';
 abstract class Env {
   static Future<void> init() async {
     inAndroidEmulator = await _inAndroidEmuilator();
-    await dotenv.load(fileName: ".env");
+    // Asset filename is intentionally not `.env`: Cloudflare's WAF blocks any
+    // request whose final path segment is `.env` with a 403 (a managed
+    // anti-credential-scraping rule). Flutter web fetches bundled assets via
+    // HTTP, so a `.env` asset is unreachable in production and dotenv would
+    // throw FileNotFoundError, leaving the app stuck at the splash screen.
+    await dotenv.load(fileName: "app.env");
 
     appBaseUrl = getEnvOrThrow('APP_ROOT');
 

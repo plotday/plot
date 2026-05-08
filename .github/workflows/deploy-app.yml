@@ -66,10 +66,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Write .env file
+      - name: Write app.env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
-        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
+        # NOTE: bundled as `app.env`, not `.env`, because Cloudflare's WAF
+        # blocks any request path ending in `/.env`. See apps/plot/lib/env.dart.
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/app.env
 
       - uses: subosito/flutter-action@v2
         with:

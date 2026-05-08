@@ -263,12 +263,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Write .env file
+      - name: Write app.env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
         run: |
           printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env.production
-          cp apps/plot/.env.production apps/plot/.env
+          cp apps/plot/.env.production apps/plot/app.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -443,10 +443,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Write .env file
+      - name: Write app.env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
-        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/app.env
 
       - name: Create key.properties
         run: |
@@ -632,12 +632,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Write .env file
+      - name: Write app.env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
         run: |
           printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env.production
-          cp apps/plot/.env.production apps/plot/.env
+          cp apps/plot/.env.production apps/plot/app.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -889,11 +889,11 @@ jobs:
         with:
           package_json_file: package.json
 
-      - name: Write .env file
+      - name: Write app.env file
         shell: bash
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
-        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/app.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
