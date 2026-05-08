@@ -92,6 +92,22 @@ jobs:
       - name: Cache-bust web font URLs
         run: cd apps/plot && bash scripts/cache-bust-fonts.sh
 
+      - name: Smoke test web build
+        run: |
+          cd apps/plot
+          npm install --silent --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+          node scripts/smoke-test-web.mjs --dir build/web
+
+      - name: Upload smoke test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-artifacts
+          path: apps/plot/build/smoke-test/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Install wrangler
         run: pnpm install -w wrangler --ignore-scripts
 
@@ -102,6 +118,32 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: pages deploy apps/plot/build/web --project-name=app --commit-hash ${{ env.GITHUB_SHA }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post-deploy smoke test
+        run: |
+          cd apps/plot
+          # Cloudflare Pages can take a moment to roll the new deployment to
+          # the production domain. Retry the smoke test for a short window.
+          attempt=1
+          max_attempts=6
+          until node scripts/smoke-test-web.mjs --url https://app.plot.day; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::Post-deploy smoke test failed against https://app.plot.day after $attempt attempts"
+              exit 1
+            fi
+            echo "::warning::Post-deploy smoke test attempt $attempt failed, retrying in 20s..."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
+
+      - name: Upload post-deploy smoke test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-smoke-test-artifacts
+          path: apps/plot/build/smoke-test/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Deployment summary
         run: |

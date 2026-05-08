@@ -1,0 +1,77 @@
+name: Monitor App (Web)
+
+# Runs the web smoke test against https://app.plot.day on a schedule. Catches
+# fully-broken-app regressions that happen between deploys (CDN cache issues,
+# env-var rotations, expired keys, etc.) and that an in-app PostHog client
+# would miss because Tracker.captureException itself fails when initialization
+# fails before it.
+
+on:
+  schedule:
+    # Every 15 minutes
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: monitor-app
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke test app.plot.day
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run smoke test
+        run: |
+          cd apps/plot
+          npm install --silent --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+          node scripts/smoke-test-web.mjs --url https://app.plot.day
+
+      - name: Upload smoke test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/plot/build/smoke-test/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Notify PostHog on failure
+        if: failure()
+        env:
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${POSTHOG_API_KEY:-}" ]; then
+            echo "::warning::POSTHOG_API_KEY not set; skipping PostHog notification"
+            exit 0
+          fi
+          host="${POSTHOG_HOST:-https://us.i.posthog.com}"
+          curl -sS -X POST "$host/capture/" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+                  --arg key "$POSTHOG_API_KEY" \
+                  --arg url "$RUN_URL" \
+                  '{
+                    api_key: $key,
+                    event: "web_app_monitor_failed",
+                    distinct_id: "ci-monitor",
+                    properties: {
+                      run_url: $url,
+                      target: "https://app.plot.day"
+                    }
+                  }')" \
+            || echo "::warning::Failed to post failure event to PostHog"
