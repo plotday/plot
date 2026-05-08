@@ -163,10 +163,26 @@ class EditableAreaState extends State<EditableArea> {
   final FocusNode _focusNode = FocusNode();
   ValueNotifier<int>? _modalStackNotifier;
   int? _previousStackDepth;
+  // Flutter's FocusManager auto-clears primaryFocus to the Root Focus Scope
+  // on every inactive/hidden/paused lifecycle transition (focus_manager.dart
+  // `_appLifecycleChange` calls `applyFocusChangesIfNeeded` synchronously).
+  // On macOS those transitions fire spuriously at launch (widget refresh,
+  // dock/window animations) — and worse, often without a follow-up
+  // `resumed`, so the app sits in `inactive` indefinitely with no focus
+  // owner. That breaks every CallbackShortcuts in the page tree because no
+  // descendant widget is in the focus chain.
+  //
+  // Detect the clear via the FocusNode listener — only the lifecycle clear
+  // (and explicit programmatic clears) moves primaryFocus to the rootScope;
+  // user navigation always lands on a real focus node. When we see the
+  // loss-to-root signature, schedule an immediate post-frame re-focus
+  // instead of waiting for `resumed` (which may never fire).
+  bool _lastHadFocus = false;
 
   @override
   void initState() {
     super.initState();
+    _focusNode.addListener(_reclaimFocusIfClearedToRoot);
 
     // Request focus after first frame if autofocus is true
     if (widget.autofocus) {
@@ -176,6 +192,28 @@ class EditableAreaState extends State<EditableArea> {
         }
       });
     }
+  }
+
+  void _reclaimFocusIfClearedToRoot() {
+    final hasFocus = _focusNode.hasFocus;
+    if (_lastHadFocus && !hasFocus) {
+      final primary = FocusManager.instance.primaryFocus;
+      if (identical(primary, FocusManager.instance.rootScope)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _focusNode.hasFocus) return;
+          // Re-check that primaryFocus is still root — if the user has
+          // since clicked into another widget, don't fight them for focus.
+          if (!identical(
+            FocusManager.instance.primaryFocus,
+            FocusManager.instance.rootScope,
+          )) {
+            return;
+          }
+          _focusNode.requestFocus();
+        });
+      }
+    }
+    _lastHadFocus = hasFocus;
   }
 
   @override
@@ -225,6 +263,7 @@ class EditableAreaState extends State<EditableArea> {
 
   @override
   void dispose() {
+    _focusNode.removeListener(_reclaimFocusIfClearedToRoot);
     if (_modalStackNotifier != null) {
       _modalStackNotifier!.removeListener(_onModalStackChanged);
     }
