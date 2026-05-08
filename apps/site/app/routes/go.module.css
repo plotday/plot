@@ -174,3 +174,37 @@
     var(--mantine-color-brand-4)
   );
 }
+
+.stickyFooter {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  background: light-dark(rgba(255, 255, 255, 0.85), rgba(20, 21, 23, 0.85));
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-top: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+  box-shadow: 0 -8px 24px
+    light-dark(rgba(15, 23, 42, 0.06), rgba(0, 0, 0, 0.30));
+  padding-top: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform 240ms ease,
+    opacity 240ms ease;
+}
+
+.stickyFooterHidden {
+  transform: translateY(110%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stickyFooterInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

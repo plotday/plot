@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Anchor,
@@ -40,6 +40,9 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export default function Go() {
+  const inPageCtaRef = useRef<HTMLButtonElement>(null);
+  const [stickyHidden, setStickyHidden] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if ((window as unknown as { Cal?: unknown }).Cal) return;
@@ -47,6 +50,17 @@ export default function Go() {
     script.type = "text/javascript";
     script.text = CAL_SCRIPT;
     document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    const target = inPageCtaRef.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStickyHidden(entry.isIntersecting),
+      { threshold: 0.6 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
   }, []);
 
   return (
@@ -148,6 +162,7 @@ export default function Go() {
               Find a slot that works for you.
             </Text>
             <Button
+              ref={inPageCtaRef}
               size="xl"
               className={classes.bookCta}
               data-cal-link="team/plot/onboarding"
@@ -169,6 +184,24 @@ export default function Go() {
           </Stack>
         </Container>
       </Box>
+
+      <div
+        className={`${classes.stickyFooter} ${stickyHidden ? classes.stickyFooterHidden : ""}`}
+        aria-hidden={stickyHidden}
+      >
+        <Container size="sm" className={classes.stickyFooterInner}>
+          <Button
+            size="md"
+            className={classes.bookCta}
+            tabIndex={stickyHidden ? -1 : 0}
+            data-cal-link="team/plot/onboarding"
+            data-cal-namespace="onboarding"
+            data-cal-config='{"layout":"month_view","useSlotsViewOnSmallScreen":"true","theme":"auto"}'
+          >
+            Pick a time
+          </Button>
+        </Container>
+      </div>
     </Stack>
   );
 }
