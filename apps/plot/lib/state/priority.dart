@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:drift/drift.dart' hide Column;
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
@@ -115,6 +116,25 @@ class _OptimisticOverride {
       case _OverrideField.on:
         return actual.on == expected.on;
     }
+  }
+}
+
+/// Stopwatch-based instrumentation for priority loading. Logs each phase
+/// of the switch-priority/load-agenda pipeline at info level so the user
+/// can see exactly where time goes when threads are slow to render. The
+/// label encodes the trigger (e.g. `switch:<priorityId>`) so events from
+/// concurrent loads are easy to disambiguate.
+class _PriorityLoadProfile {
+  _PriorityLoadProfile(this.label) : _stopwatch = Stopwatch()..start();
+
+  final String label;
+  final Stopwatch _stopwatch;
+
+  void mark(String phase) {
+    log.info(
+      '[PriorityProfile][$label] $phase @ '
+      '${_stopwatch.elapsedMilliseconds}ms',
+    );
   }
 }
 
@@ -1223,17 +1243,28 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
+
+    // Profile the priority switch end-to-end. The same stopwatch is passed
+    // into _loadPriority/_loadAgenda so timestamps share an origin and the
+    // user can see exactly how each phase contributes to time-to-threads.
+    final profile = _PriorityLoadProfile('switch:${newPriority.id}');
+    profile.mark(
+      'setPriority start: ${state.context.title} -> ${newPriority.title}',
+    );
+
     // Track previous non-root context for new-thread priority chips
     if (!state.context.root) {
       _previousContextPriority = state.context;
     }
     _newThreadDefaultPriority = null;
+    // We're switching priorities, so any in-progress edit on the old draft
+    // is no longer relevant. Clearing the flag lets _loadDraft (called from
+    // _loadPriority below) populate the new priority's chain draft instead
+    // of bailing to preserve the old one.
+    _draftModified = false;
 
-    log.info(
-      'Updating priority from ${state.context.title} to ${newPriority.title}',
-    );
-
-    // Cancel existing subscriptions
+    // Cancel existing subscriptions immediately so old emissions don't race
+    // with the loading state we're about to push.
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -1248,111 +1279,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // and won't naturally settle in the new one.
     _optimisticOverrides.clear();
 
-    // Load or create draft for new priority.
-    log.info(
-      '[setPriority] Switching to priority: ${newPriority.id} (${newPriority.title})',
-    );
-
-    // Enrich the priority so computed fields are populated
-    final enrichedList = await Priority.get(id: newPriority.id, archived: null);
-    final contextPriority = enrichedList.isNotEmpty
-        ? enrichedList.first
-        : newPriority;
-
-    // Look up the most recent draft anywhere in the priority chain
-    // (ancestor, equal, or descendant). This keeps a draft sticky as the
-    // user navigates within the branch, and only forces a fresh draft when
-    // they switch to a sibling branch (e.g. Personal vs Work).
-    final existingDraft = await Thread.getDraftInChain(contextPriority);
-
-    Thread newDraft;
-    if (existingDraft != null) {
-      // Preserve the draft's filed priority — don't reassign to context.
-      newDraft = existingDraft;
-      log.info(
-        '[setPriority] Loaded existing chain draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
-      );
-
-      // Auto-organize is only meaningful in the root priority. If the chain
-      // draft was auto-filed at root and we're entering a non-root context,
-      // drop the auto flag and re-file to the new context priority so the
-      // chip reflects "where the user is working" instead of "Auto".
-      if (!contextPriority.root &&
-          ThreadsBase.autoFileIds.remove(newDraft.id.toString())) {
-        newDraft = newDraft.copyWith(priority: contextPriority);
-        await newDraft.save();
-      }
-    } else {
-      newDraft = Thread(priority: contextPriority, draft: true);
-      log.info(
-        '[setPriority] Creating new draft for priority: id=${newDraft.id}, priority=${contextPriority.id} (${contextPriority.title})',
-      );
-    }
-
-    // Clean up duplicate drafts at the chosen draft's priority (legacy).
-    final sameIdDrafts = await Thread.get(
-      priorityId: newDraft.priority.id,
-      draft: true,
-      archived: false,
-    );
-    if (sameIdDrafts.length > 1) {
-      sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      log.info(
-        '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
-      );
-      for (final stale in sameIdDrafts.skip(1)) {
-        if (stale.id != newDraft.id) await stale.delete();
-      }
-    }
-
-    // Load the latest active draft note for the draft thread
-    final draftNotes =
-        await (Store.get.select(Store.get.notes)
-              ..where((tbl) => tbl.threadId.equalsValue(newDraft.id))
-              ..where((tbl) => tbl.draft.equals(true))
-              ..where((tbl) => tbl.archivedAt.isNull())
-              ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
-              ..limit(1))
-            .get();
-    Note? draftNote = draftNotes.isEmpty
-        ? null
-        : Note(
-            id: draftNotes.first.id,
-            threadId: draftNotes.first.threadId,
-            authorId: draftNotes.first.authorId,
-            draft: draftNotes.first.draft,
-            accessContacts: draftNotes.first.accessContacts,
-            content: draftNotes.first.content,
-            actions: draftNotes.first.actions,
-            mentions: draftNotes.first.mentions,
-            createdAt: draftNotes.first.createdAt,
-            sourceCreatedAt: draftNotes.first.sourceCreatedAt,
-            updatedAt: draftNotes.first.updatedAt,
-            archivedAt: draftNotes.first.archivedAt,
-          );
-
-    if (draftNote != null) {
-      log.info(
-        '[setPriority] Loaded draft note: id=${draftNote.id}, threadId=${draftNote.threadId}, content="${draftNote.content?.substring(0, draftNote.content!.length > 50 ? 50 : draftNote.content!.length) ?? ''}", archived=${draftNote.archivedAt != null}',
-      );
-    } else {
-      // Create draft note in memory (will be saved when content is added)
-      draftNote = Note.draft(threadId: newDraft.id);
-      log.info(
-        '[setPriority] Created draft note in state: id=${draftNote.id}, threadId=${newDraft.id}',
-      );
-    }
-
     // Reset scroll offsets for the new priority
     agendaScrollOffset = 0.0;
     activityFeedScrollOffset = 0.0;
 
-    // Update context immediately for responsive switching
+    // EMIT LOADING STATE IMMEDIATELY so the spinner appears at click time
+    // instead of after several SQLite round trips. Uses the unenriched
+    // newPriority (path is already populated, which is all _loadAgenda needs);
+    // Priority.watchOne in _loadPriority refreshes context shortly with the
+    // full row, and the second emit below patches in the enriched copy.
     emit(
       state.copyWith(
-        context: contextPriority,
-        draft: newDraft,
-        draftNote: draftNote,
+        context: newPriority,
         agendaItems: const [],
         activityFeedItems: const [],
         agendaDoneEnd: false,
@@ -1361,9 +1299,157 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedLoaded: false,
       ),
     );
+    profile.mark('emitted loading state');
 
-    // Reload with new priority
-    _loadPriority();
+    // Reset agenda/feed pagination before subscriptions kick off.
+    _agendaLimit = 50;
+    _agendaHorizonDays = 90;
+    _agendaSyncNoMore = false;
+    _activityFeedLimit = 50;
+    _activityFeedSyncNoMore = false;
+    _activityFeedLastRawRowCount = 0;
+    _activityFeedLimitIncreased = false;
+
+    // Start subscriptions and the agenda Drift query NOW. Drafts load below
+    // in parallel — the agenda doesn't depend on them, so threads can render
+    // before draft loading finishes.
+    _loadPriority(profile: profile);
+    profile.mark('_loadPriority returned (subscriptions started)');
+
+    // Look up the chain draft so the new-thread input shows the right
+    // content. We deliberately DO NOT call `Priority.get(archived: null)` to
+    // re-enrich the priority — the profile data showed it cost ~1100ms
+    // (including a `pullArchived` call) and the only fields it adds
+    // (`active`/`unreadComputed`) are recomputed elsewhere by PrioritiesBloc;
+    // nothing in this bloc reads them off `state.context`. Priority.watchOne
+    // (registered inside _loadPriority) keeps state.context in sync with the
+    // raw row, which is enough.
+    final existingDraft = await Thread.getDraftInChain(newPriority);
+    profile.mark(
+      'chain draft lookup done (found=${existingDraft != null})',
+    );
+
+    Thread newDraft;
+    if (existingDraft != null) {
+      // Preserve the draft's filed priority — don't reassign to context.
+      newDraft = existingDraft;
+
+      // Auto-organize is only meaningful in the root priority. If the chain
+      // draft was auto-filed at root and we're entering a non-root context,
+      // drop the auto flag and re-file to the new context priority so the
+      // chip reflects "where the user is working" instead of "Auto".
+      if (!newPriority.root &&
+          ThreadsBase.autoFileIds.remove(newDraft.id.toString())) {
+        newDraft = newDraft.copyWith(priority: newPriority);
+        // Don't await — the save can finish in the background. The user only
+        // needs the in-memory draft to start typing.
+        unawaited(newDraft.save());
+      }
+    } else {
+      newDraft = Thread(priority: newPriority, draft: true);
+    }
+
+    if (isClosed) return;
+
+    // Emit the chosen draft right away so the new-thread input shows the
+    // right priority chip. The actual draft note (and the legacy duplicate
+    // cleanup) finish in the background — neither blocks typing because the
+    // editor mounts with the in-memory draft and patches in the saved note
+    // when it arrives.
+    emit(state.copyWith(draft: newDraft));
+    profile.mark('draft emitted');
+
+    unawaited(_finalizeDraftInBackground(newDraft, profile));
+  }
+
+  /// Background completion for [setPriority]'s draft work. Runs the legacy
+  /// duplicate-draft cleanup and loads the saved draft note, then emits the
+  /// note when ready. Runs after the agenda has had a chance to render so
+  /// it doesn't compete with the agenda's Drift query for the SQLite
+  /// connection during the user-visible spinner phase.
+  Future<void> _finalizeDraftInBackground(
+    Thread newDraft,
+    _PriorityLoadProfile profile,
+  ) async {
+    try {
+      // Clean up duplicate drafts at the chosen draft's priority (legacy).
+      // This used the heavy Thread._get JOIN, which the profile showed
+      // could take >1.5s with a full thread table — pushing it off the
+      // agenda's critical path makes the spinner phase the agenda query
+      // alone.
+      final sameIdDrafts = await Thread.get(
+        priorityId: newDraft.priority.id,
+        draft: true,
+        archived: false,
+      );
+      if (sameIdDrafts.length > 1) {
+        sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        log.info(
+          '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
+        );
+        for (final stale in sameIdDrafts.skip(1)) {
+          if (stale.id != newDraft.id) await stale.delete();
+        }
+      }
+      profile.mark('drafts deduped (background)');
+
+      // Load the latest active draft note for the draft thread
+      final draftNotes =
+          await (Store.get.select(Store.get.notes)
+                ..where((tbl) => tbl.threadId.equalsValue(newDraft.id))
+                ..where((tbl) => tbl.draft.equals(true))
+                ..where((tbl) => tbl.archivedAt.isNull())
+                ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
+                ..limit(1))
+              .get();
+      final loadedNote = draftNotes.isEmpty
+          ? null
+          : Note(
+              id: draftNotes.first.id,
+              threadId: draftNotes.first.threadId,
+              authorId: draftNotes.first.authorId,
+              draft: draftNotes.first.draft,
+              accessContacts: draftNotes.first.accessContacts,
+              content: draftNotes.first.content,
+              actions: draftNotes.first.actions,
+              mentions: draftNotes.first.mentions,
+              createdAt: draftNotes.first.createdAt,
+              sourceCreatedAt: draftNotes.first.sourceCreatedAt,
+              updatedAt: draftNotes.first.updatedAt,
+              archivedAt: draftNotes.first.archivedAt,
+            );
+
+      // No saved note for this draft → create an empty in-memory note. Do
+      // NOT clobber a note the user has already started typing — the
+      // editor controller writes through to state.draftNote, so any
+      // non-empty current note represents user input we should preserve.
+      final draftNote =
+          loadedNote ??
+          (state.draftNote.threadId == newDraft.id &&
+                  (state.draftNote.content?.isNotEmpty ?? false)
+              ? state.draftNote
+              : Note.draft(threadId: newDraft.id));
+      profile.mark('draft note loaded (background)');
+
+      if (isClosed) return;
+
+      // Skip the emit if the user has already started editing — replacing
+      // their note with a stale DB copy would lose keystrokes.
+      if (_draftModified) {
+        profile.mark('draft note emit skipped (user editing)');
+        return;
+      }
+
+      emit(state.copyWith(draftNote: draftNote));
+      profile.mark('setPriority done (background)');
+    } catch (e, stackTrace) {
+      log.warning(
+        '[setPriority] Background draft finalization failed',
+        e,
+        stackTrace,
+      );
+      Tracker.captureException(e, stackTrace);
+    }
   }
 
   /// Which list the user last selected a thread from.
@@ -1660,7 +1746,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     return ThreadListSource.activityFeed;
   }
 
-  void _loadPriority() {
+  void _loadPriority({_PriorityLoadProfile? profile}) {
     final priorityToLoad = state.context;
 
     _loadDraft(priorityToLoad);
@@ -1757,7 +1843,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaLimit = 50;
     _agendaHorizonDays = 90;
     _agendaSyncNoMore = false;
-    _loadAgenda();
+    _loadAgenda(profile: profile);
 
     _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
@@ -1868,11 +1954,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     return savedThread;
   }
 
-  void _loadAgenda({bool triggerSync = true}) {
+  void _loadAgenda({bool triggerSync = true, _PriorityLoadProfile? profile}) {
     final priorityToLoad = state.context;
 
+    profile?.mark('_loadAgenda subscribe start');
     log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
+    var firstEmissionLogged = false;
 
     // Three streams are combined:
     // 1. Main agenda: threads in the current priority (filtered by path)
@@ -2007,8 +2095,24 @@ class PriorityBloc extends Cubit<PriorityState> {
                 return ExpiringResult(value: result, expiry: expiry);
               }),
             )
-            .debounceTime(const Duration(milliseconds: 100))
+            // throttleTime with leading: true emits the first event
+            // immediately (no startup delay) while still coalescing the
+            // burst of stream re-fires that follow a sync (each table
+            // change re-fires the Drift stream). This was previously
+            // debounceTime(100ms), which delayed the first agenda render
+            // by ~100ms for no benefit on the initial emission.
+            .throttleTime(
+              const Duration(milliseconds: 100),
+              leading: true,
+              trailing: true,
+            )
             .listen((result) {
+              if (!firstEmissionLogged) {
+                firstEmissionLogged = true;
+                profile?.mark(
+                  'first agenda stream emission (threads=${result.threads.length})',
+                );
+              }
               final threads = result.threads;
 
               final now = DateTime.now();
@@ -2126,6 +2230,9 @@ class PriorityBloc extends Cubit<PriorityState> {
                 return;
               }
               _lastAgendaThreads = patchedThreads;
+              final buildStart = profile == null
+                  ? null
+                  : (Stopwatch()..start());
               final agenda = AgendaBuilder.build(
                 threads: patchedThreads,
                 context: priorityToLoad,
@@ -2133,6 +2240,13 @@ class PriorityBloc extends Cubit<PriorityState> {
                 associationsByParentId: _associations,
                 priorityBlocksByPriority: _priorityBlocksByPriority,
               );
+              if (buildStart != null) {
+                profile?.mark(
+                  'AgendaBuilder.build done in '
+                  '${buildStart.elapsedMilliseconds}ms '
+                  '(threads=${patchedThreads.length})',
+                );
+              }
               // Skip the emit when the rebuilt agenda matches what we
               // already have (e.g. background stream re-fires that don't
               // change visible content). bloc.emit's Equatable check
@@ -2144,6 +2258,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               if (agenda == state.agenda &&
                   state.agendaLoaded &&
                   state.reorderViewItems == null) {
+                profile?.mark('agenda emit skipped (unchanged)');
                 return;
               }
               emit(
@@ -2155,6 +2270,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                   reorderViewItems: const Value(null),
                 ),
               );
+              profile?.mark('agenda state emitted');
             });
 
     if (triggerSync) {
@@ -2605,9 +2721,20 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
+      // Stopwatch starts at the user-visible click time. Logs how long
+      // didUpdateWidget's pre-setPriority work takes so the [PriorityProfile]
+      // timeline covers the full click-to-threads window.
+      final didUpdateSw = Stopwatch()..start();
+      log.info(
+        '[PriorityProfile][didUpdate:${widget.priorityId}] start',
+      );
       _bloc.then((result) async {
         if (result.bloc == null) return;
         final priority = await Priority.getOne(widget.priorityId!);
+        log.info(
+          '[PriorityProfile][didUpdate:${widget.priorityId}] '
+          'Priority.getOne done @ ${didUpdateSw.elapsedMilliseconds}ms',
+        );
         result.bloc!.setPriority(priority);
         // Theme will be updated when new agenda loads (in _loadAgenda)
       });

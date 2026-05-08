@@ -2165,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 325;
+  int get schemaVersion => 326;
 
   @override
   MigrationStrategy get migration {
@@ -3156,6 +3156,13 @@ class Store extends _$Store {
       // navigation and was full-scanning the notes table.
       await _createPerfIndexes(m.database);
     }
+    if (from < 326) {
+      // Backfill idx_priorities_path. Priority._get's self-join uses
+      // `p.path LIKE base.path || '%'` and the priority_ancestry view
+      // joins on path — both full-scanned the priorities table on every
+      // priority switch (~200ms standalone, much worse under contention).
+      await _createPerfIndexes(m.database);
+    }
   }
 
   /// Foreign-key indexes used by the activity-feed and search queries.
@@ -3186,6 +3193,17 @@ class Store extends _$Store {
     // Without this index it was a full notes scan on every navigation.
     await db.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_notes_thread_id ON notes(thread_id)',
+    );
+    // priorities.path is the workhorse for Priority._get's self-join
+    // (`p.path LIKE base.path || '%'`) and for the recursive
+    // priority_ancestry view. Without this index, every priority lookup
+    // (didUpdateWidget on switch, sidebar load, _loadPriority's
+    // Priority.watchOne) full-scans the priorities table — measured
+    // ~200ms per call on a populated workspace. SQLite can use a btree
+    // index for `LIKE 'prefix%'` patterns when the column has the
+    // default BINARY collation, which it does here.
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_priorities_path ON priorities(path)',
     );
   }
 
