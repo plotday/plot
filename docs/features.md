@@ -171,6 +171,15 @@ Internal catalog of product features for marketing content generation. Direct an
 - Smart time display (relative/absolute)
 - Hoverable link previews
 
+### Onboarding
+- Guided first-run flow with full-screen and highlight steps
+- Inline OAuth for Google and Microsoft Calendar — auth runs on the same brand-styled button without a separate modal
+- Responsive connector grid for the rest of the available tools — N-up on wide screens, single column on narrow
+- Tabs in the priority shell switch automatically as the highlight steps advance, so the panel beneath the spotlight always shows the right view
+- Highlights resolve seeded threads by title (e.g. "Everything in its place" in Using Plot) so the per-user thread id doesn't need to be hardcoded
+- Plan-limit aware: when a user is at their connection cap, the setup modal swaps "Add connection" for "Upgrade to add more connections"
+- Back, dismiss, and replay (debug command) controls always available
+
 ### Editor Experience
 - Super Editor (markdown with live rendering)
 - Auto-detect @-mentions

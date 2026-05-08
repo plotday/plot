@@ -16,8 +16,8 @@ import { BenefitSection } from "~/components/home/BenefitSection";
 import { FeaturesStrip } from "~/components/home/FeaturesStrip";
 import { PlatformCallout } from "~/components/home/PlatformCallout";
 import { useScrollReveal } from "~/hooks/useScrollReveal";
-
 import { mergeMeta } from "~/lib/meta";
+
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -58,10 +58,14 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace.",
+        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and docs into one prioritized workspace.",
     },
     { name: "twitter:title", content: "Plot" },
-    { name: "twitter:description", content: "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace." },
+    {
+      name: "twitter:description",
+      content:
+        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and docs into one prioritized workspace.",
+    },
   ]);
 }
 
@@ -180,7 +184,9 @@ export default function Home() {
               {STORY_TABS.map((tab, i) => (
                 <button
                   key={tab.label}
-                  className={`${classes.storyTab} ${i === activeTab ? classes.storyTabActive : ""}`}
+                  className={`${classes.storyTab} ${
+                    i === activeTab ? classes.storyTabActive : ""
+                  }`}
                   onClick={() => handleTabChange(i)}
                   type="button"
                 >
@@ -192,7 +198,11 @@ export default function Home() {
             <div className={classes.storyCard}>
               <div className={classes.storyCardGlow} />
               <div
-                className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}
+                className={`${classes.storyImageWrap} ${
+                  STORY_TABS[activeTab].lightVignette
+                    ? classes.storyImageLightVignette
+                    : ""
+                }`}
               >
                 <img
                   src={STORY_TABS[activeTab].image}
@@ -201,7 +211,9 @@ export default function Home() {
                 />
               </div>
               <div
-                className={`${classes.storyContent} ${entering ? classes.storyContentEntering : ""}`}
+                className={`${classes.storyContent} ${
+                  entering ? classes.storyContentEntering : ""
+                }`}
               >
                 <div className={classes.storyCopyTitle}>
                   {STORY_TABS[activeTab].title}

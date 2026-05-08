@@ -4,6 +4,8 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/command/global.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/state/layout.dart';
+import 'package:plot/widget/onboarding/onboarding_overlay.dart';
 import 'app_context.dart';
 import 'modal.dart';
 
@@ -37,7 +39,13 @@ class _AppShellState extends State<AppShell> {
         child: Container(
           key: _contextKey,
           child: GlobalShortcuts(
-            child: AutoRouter(placeholder: (context) => const LoadingPage()),
+            child: LayoutStateProvider(
+              child: OnboardingOverlay(
+                child: AutoRouter(
+                  placeholder: (context) => const LoadingPage(),
+                ),
+              ),
+            ),
           ),
         ),
       ),

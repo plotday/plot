@@ -31,6 +31,12 @@ enum PriorityTab { agenda, activityFeed }
 
 class PriorityTabNotifier extends ValueNotifier<PriorityTab> {
   PriorityTabNotifier() : super(PriorityTab.agenda);
+
+  /// Most recently-mounted notifier, exposed so callers outside the
+  /// [PriorityTabProvider] subtree (e.g. the onboarding overlay) can drive
+  /// the current priority's active tab. The PrioritiesShell mounts a single
+  /// shell at any time so this is unambiguous in practice.
+  static PriorityTabNotifier? current;
 }
 
 class PriorityTabProvider extends InheritedWidget {

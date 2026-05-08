@@ -3,6 +3,7 @@ import 'package:plot/base.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/onboarding.dart';
 import 'package:plot/state/settings.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/cupertino.dart' show DefaultCupertinoLocalizations;
@@ -50,6 +51,7 @@ class AppState extends State<App> {
         BlocProvider(create: (_) => ThemeBloc()),
         BlocProvider(create: (_) => LocalPreferencesBloc()),
         BlocProvider(create: (_) => SettingsBloc()),
+        BlocProvider(create: (_) => OnboardingBloc()),
       ],
       child: Directionality(
         textDirection: TextDirection.ltr,

@@ -3093,6 +3093,7 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
+    if (!skipInfrequent) ToggleThreadPrivate(thread),
     if (!skipInfrequent && !hideArchive)
       ArchiveThread(thread, bloc: priorityBloc),
   ];

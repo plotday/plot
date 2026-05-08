@@ -135,9 +135,11 @@ twists.get("/sources/summary", async (c) => {
       .select([
         "twist_instance.id",
         "twist_instance.name",
+        "twist_instance.twist_id",
         "twist_instance.account_label",
         "twist_instance.team_id",
         "twist.name as twist_name",
+        "twist.twist_package_id",
         "twist.logo_url",
         "twist.logo_url_dark",
         "team.name as team_name",
@@ -188,6 +190,8 @@ twists.get("/sources/summary", async (c) => {
     const result = sources.map((source) => {
       return {
         id: source.id,
+        twist_id: source.twist_id,
+        twist_package_id: source.twist_package_id,
         name: source.name,
         twist_name: source.twist_name,
         logo_url: source.logo_url,

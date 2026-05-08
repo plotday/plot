@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-extension type ThemeColor(int index) {
+extension type const ThemeColor(int index) {
   const ThemeColor.defaultColor() : index = 7;
 
   static final List<ThemeColor> options = [

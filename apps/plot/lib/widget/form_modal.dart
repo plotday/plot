@@ -732,6 +732,18 @@ class FormModalState extends State<_FormModal> {
                                         .copyWith(fontWeight: FontWeight.w600),
                                   ),
                                 ),
+                                if (stackLength <= 1 && widget.form.dismissable)
+                                  FButton.icon(
+                                    variant: FButtonVariant.ghost,
+                                    onPress: () => Modal.pop<CommandReturn>(
+                                      context,
+                                      Value.absent(),
+                                    ),
+                                    child: Icon(
+                                      PlotIcon.close,
+                                      size: context.theme.iconSizes.sm,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

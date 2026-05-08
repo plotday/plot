@@ -2165,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 326;
+  int get schemaVersion => 327;
 
   @override
   MigrationStrategy get migration {
@@ -3162,6 +3162,9 @@ class Store extends _$Store {
       // joins on path — both full-scanned the priorities table on every
       // priority switch (~200ms standalone, much worse under contention).
       await _createPerfIndexes(m.database);
+    }
+    if (from < 327) {
+      await _safeAddColumn(m, userSettings, userSettings.onboardingCompleted);
     }
   }
 

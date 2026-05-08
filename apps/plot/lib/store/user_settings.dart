@@ -6,6 +6,7 @@ class UserSettings extends Table with SyncableTable {
   TextColumn get enterBehavior =>
       text().nullable().map(const EnumConverter<EnterBehavior>())();
   BoolColumn get aiEnabled => boolean().nullable()();
+  BoolColumn get onboardingCompleted => boolean().nullable()();
 
   @override
   Set<Column> get primaryKey => {userId};

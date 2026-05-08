@@ -1300,7 +1300,12 @@ class StaticFormGroup extends FormGroup {
 
 /// Form data structure
 class FormData {
-  const FormData({required this.title, required this.groups, this.onRefresh});
+  const FormData({
+    required this.title,
+    required this.groups,
+    this.onRefresh,
+    this.dismissable = false,
+  });
 
   final String title;
   final List<FormGroup> groups;
@@ -1308,6 +1313,12 @@ class FormData {
   /// Optional callback to rebuild form groups (e.g. after a child modal adds data).
   /// Called when a child modal is popped. Returns new resolved groups.
   final Future<List<StaticFormGroup>> Function()? onRefresh;
+
+  /// When true, the form modal renders a close (X) button in its header
+  /// even when the form is the only modal on the stack. Default: false —
+  /// the standard back-button-only header is shown when the form is
+  /// nested inside another modal.
+  final bool dismissable;
 
   Future<List<StaticFormGroup>> list() async {
     List<StaticFormGroup> staticGroups = [];

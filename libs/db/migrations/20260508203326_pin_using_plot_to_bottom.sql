@@ -1,12 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (p_user_id uuid)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
@@ -198,5 +191,25 @@ We''d love to know what brought you to Plot and what you''re hoping to make prog
     -- then picks that priority up automatically for similar future threads.
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
 
+-- Backfill: pin every existing Using Plot priority to the bottom for users
+-- who activated before this change. Skip rows that already have an explicit
+-- order setting so we don't clobber someone who deliberately reordered it.
+INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+SELECT p.user_id, p.id, 'order', to_jsonb(1e15::double precision)
+FROM public.priority p
+WHERE p.key = '@plot.app'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.priority_setting ps
+    WHERE ps.user_id = p.user_id
+      AND ps.priority_id = p.id
+      AND ps.key = 'order'
+  );
+
+-- Bump priority.updated_at so clients re-pull and pick up the new computed
+-- order from the user.priority view (priority_setting writes don't bump
+-- priority.seq on their own).
+UPDATE public.priority
+SET updated_at = now()
+WHERE key = '@plot.app';

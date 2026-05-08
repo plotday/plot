@@ -51,12 +51,14 @@ class PersonalUsage extends Equatable {
 class TeamUsage extends Equatable {
   final String id;
   final String name;
+  final String plan; // 'free' | 'core' | 'pro' | 'team'
   final ResourceUsage connections;
   final bool isAdmin;
 
   const TeamUsage({
     required this.id,
     required this.name,
+    this.plan = 'free',
     required this.connections,
     required this.isAdmin,
   });
@@ -65,6 +67,7 @@ class TeamUsage extends Equatable {
     return TeamUsage(
       id: json['id'] as String,
       name: json['name'] as String,
+      plan: json['plan'] as String? ?? 'free',
       connections: ResourceUsage.fromJson(
         json['connections'] as Map<String, dynamic>,
       ),
@@ -73,7 +76,7 @@ class TeamUsage extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, connections, isAdmin];
+  List<Object?> get props => [id, name, plan, connections, isAdmin];
 }
 
 /// Combined usage data for the current user

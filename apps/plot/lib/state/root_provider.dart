@@ -13,6 +13,7 @@ import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/onboarding.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/util/theme_color.dart';
@@ -146,10 +147,12 @@ class RootProviderState extends State<RootProvider> {
           switch (state) {
             case UserReady _:
               try {
+                final onboardingBloc = context.read<OnboardingBloc>();
                 await prioritiesBloc.start();
                 await TwistInstance.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
+                unawaited(onboardingBloc.start());
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
                 NotificationService.instance.onNavigateToPriority = (priorityId) {
                   if (!_routerInitialized) {

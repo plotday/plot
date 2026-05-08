@@ -57,6 +57,7 @@ userSettings.post("/sync/user-settings", async (c) => {
     return rpcUser(trx, "upsert_user_settings", {
       user_id: userId,
       p_enter_behavior: body.enter_behavior || null,
+      p_onboarding_completed: body.onboarding_completed ?? null,
     });
   });
 

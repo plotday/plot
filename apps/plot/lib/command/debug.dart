@@ -15,6 +15,7 @@ import 'package:plot/app_info.dart';
 import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/onboarding.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/developer_mode.dart';
@@ -31,12 +32,36 @@ StaticCommandGroup? buildDebugCommands() {
     commands: [
       TimeTravel(),
       if (Time.isFrozen()) UnfreezeTime(),
+      RestartOnboarding(),
       TriggerTestPush(),
       ShowTestNotification(),
       TestNotificationNavigation(),
       DiagnosePushNotifications(),
     ],
   );
+}
+
+/// Resets the onboarding completion flag and re-shows the flow from step 0.
+/// Useful for designers/developers iterating on onboarding copy and layout.
+class RestartOnboarding extends Command {
+  RestartOnboarding()
+    : super(
+        title: 'Restart onboarding',
+        subtitle: 'Replay the onboarding flow from the first step',
+        icon: FontAwesomeIcons.arrowRotateLeft,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await context.read<OnboardingBloc>().restart();
+      return CommandMessage('Onboarding restarted');
+    } catch (e) {
+      return CommandMessage('Failed to restart onboarding: $e', isError: true);
+    }
+  }
 }
 
 /// Command to freeze time to a specific date/time for testing and screenshots.

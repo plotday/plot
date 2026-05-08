@@ -520,12 +520,29 @@ export async function getUsage(
     teamMemberships.map(async (team) => {
       const teamId = String(team.team_id);
       const teamConnectionCount = await getTeamConnectionCount(db, teamId);
+      // Free team plans (no active subscription) reject every connection in
+      // checkChannelConnectionLimit regardless of connection_group_quantity,
+      // so surface limit=0 here so the client's isAtLimit check matches the
+      // server policy. Without this, EditSource pre-checks would say "ok"
+      // and Save would 403 with plan_limit_exceeded.
+      const teamPlan = (team.team_plan as
+        | "free"
+        | "core"
+        | "pro"
+        | "team"
+        | null
+        | undefined) ?? "free";
       const teamConnectionLimit =
-        team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
+        teamPlan === "pro" || teamPlan === "core"
+          ? null
+          : teamPlan === "team"
+            ? team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP
+            : 0;
 
       return {
         id: teamId,
         name: team.team_name,
+        plan: teamPlan,
         connections: {
           count: teamConnectionCount,
           limit: teamConnectionLimit,

@@ -915,6 +915,7 @@ class EditSource extends ShowForm {
     required this.name,
     this.isAccountBased = true,
     this.isNewlyActivated = false,
+    this.dismissable = false,
     this.logoUrl,
     this.logoUrlDark,
     this.accountLabel,
@@ -927,6 +928,7 @@ class EditSource extends ShowForm {
            name,
            isAccountBased,
            isNewlyActivated,
+           dismissable,
            logoUrl: logoUrl,
            logoUrlDark: logoUrlDark,
            initialAccountLabel: accountLabel,
@@ -942,6 +944,13 @@ class EditSource extends ShowForm {
 
   /// When true, hides the Archive button (source was just set up).
   final bool isNewlyActivated;
+
+  /// When true, the modal renders a close (X) button in the header even
+  /// when it's the only modal on the stack. Used by the onboarding flow,
+  /// which opens EditSource directly without a parent modal to fall back
+  /// to. Default: false — preserves the existing back-button-only header
+  /// for callers that open EditSource from inside ManageConnections.
+  final bool dismissable;
 
   /// Integrations prefetch kicked off by `_activateSource` so the first
   /// EditSource open after activation doesn't block on a fresh network call
@@ -959,7 +968,8 @@ class EditSource extends ShowForm {
     String twistInstanceId,
     String name,
     bool isAccountBased,
-    bool isNewlyActivated, {
+    bool isNewlyActivated,
+    bool dismissable, {
     String? logoUrl,
     String? logoUrlDark,
     String? initialAccountLabel,
@@ -1008,10 +1018,22 @@ class EditSource extends ShowForm {
     // For newly-activated sources whose draft was filed under personal because
     // the OAuth domain didn't match a team, prefer a team default so the
     // connection counts against team quota. Existing sources keep their
-    // current scope.
-    final initialTeamId = twistInstance?.teamId != null
-        ? twistInstance!.teamId.toString()
-        : (isNewlyActivated && teams.isNotEmpty ? teams.first.id : 'personal');
+    // current scope. Skip teams already at their connection limit (e.g.
+    // free-plan teams that can't host any connections) so we don't drop the
+    // user into a scope they can't save into; fall back to personal in that
+    // case and let the at-limit pre-check take over from there.
+    String pickInitialTeamId() {
+      if (twistInstance?.teamId != null) {
+        return twistInstance!.teamId.toString();
+      }
+      if (!isNewlyActivated) return 'personal';
+      for (final t in teams) {
+        if (!t.connections.isAtLimit) return t.id;
+      }
+      return 'personal';
+    }
+
+    final initialTeamId = pickInitialTeamId();
 
     // Default scope group selections per provider, used by both the setup-
     // style reauth path and any future scope tweaks.
@@ -1127,11 +1149,13 @@ class EditSource extends ShowForm {
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
-                // Only enforce the limit when the user is moving the connection
-                // to a different scope. An existing connection already counts
-                // toward its current scope, so saving in place must not be
-                // blocked even if that scope is at limit.
-                if (owner != initialTeamId) {
+                // Enforce the limit on newly-activated sources (the activation
+                // already incremented the count, so the channel-batch save
+                // would 403 with plan_limit_exceeded) and on scope changes
+                // (the destination's count will increment on save). Existing
+                // connections saving in place are exempt — they already count
+                // toward their current scope.
+                if (isNewlyActivated || owner != initialTeamId) {
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
@@ -1262,6 +1286,7 @@ class EditSource extends ShowForm {
       title: isNewlyActivated ? 'Set up $name' : name,
       onRefresh: refresh,
       groups: buildAllGroups(),
+      dismissable: dismissable,
     );
   }
 }
@@ -1387,15 +1412,22 @@ class AddSource extends ShowCommands {
 
 /// Shows source description and branded auth button for setup.
 class AddSourceDetail extends ShowForm {
-  AddSourceDetail(this.twist)
+  AddSourceDetail(this.twist, {this.dismissable = false})
     : super(
         title: twist.name,
         subtitle: twist.description,
         icon: PlotIcon.connection,
-        form: (context) => _buildForm(context, twist),
+        form: (context) => _buildForm(context, twist, dismissable),
       );
 
   final Twist twist;
+
+  /// When true, the form modal renders a close (X) in its header even when
+  /// it's the only modal on the stack. Used by the onboarding flow, which
+  /// opens AddSourceDetail with no parent modal to fall back to. Default:
+  /// false — preserves the existing back-button-only header for callers
+  /// that open AddSourceDetail from inside ManageConnections.
+  final bool dismissable;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -1455,11 +1487,16 @@ class AddSourceDetail extends ShowForm {
     _lastConnectResult = null;
   }
 
-  static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
+  static Future<FormData> _buildForm(
+    BuildContext context,
+    Twist twist,
+    bool dismissable,
+  ) async {
     final draftId = _currentDraftId;
     if (draftId == null) {
       return FormData(
         title: twist.name,
+        dismissable: dismissable,
         groups: [
           StaticFormGroup(
             items: [
@@ -1714,6 +1751,7 @@ class AddSourceDetail extends ShowForm {
     return FormData(
       title: 'Set up ${twist.name}',
       onRefresh: buildGroups,
+      dismissable: dismissable,
       groups: [
         StaticFormGroup(
           items: [
@@ -3400,6 +3438,23 @@ class SaveSource extends Command {
       );
 
       return CommandMessage('Connection "$name" saved');
+    } on ApiException catch (e, t) {
+      log.warning('Failed to save source', e, t);
+      // The client's usage data can disagree with the server's view of
+      // limits — pre-checks in EditSource use cached/stale usage, but the
+      // server tracks live state. When we hit plan_limit_exceeded mid-save
+      // (e.g. enabling a syncable trips a per-channel quota), open the
+      // upgrade page directly so the user has a path forward instead of a
+      // dead-end error toast.
+      if (e.isPlanLimitExceeded) {
+        if (context.mounted) {
+          await _UpgradeCommand(
+            'Upgrade to add more connections',
+          ).run(context);
+        }
+        return const CommandSkipped();
+      }
+      return CommandMessage('Failed to save connection', isError: true);
     } catch (e, t) {
       log.warning('Failed to save source', e, t);
       return CommandMessage('Failed to save connection', isError: true);

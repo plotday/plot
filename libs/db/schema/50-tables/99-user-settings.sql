@@ -10,6 +10,7 @@ CREATE TABLE "public"."user_settings" (
     -- their email_frequency preference without signing in. Generated lazily
     -- the first time a notification email is sent.
     "email_token" uuid,
+    "onboarding_completed" boolean,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 

@@ -24,6 +24,7 @@ class TwistTool extends Equatable {
 
 class Twist {
   final String id;
+  final String? twistPackageId;
   final String name;
   final String? description;
   final String? authorName;
@@ -45,6 +46,7 @@ class Twist {
 
   const Twist({
     required this.id,
+    this.twistPackageId,
     required this.name,
     this.description,
     this.authorName,
@@ -114,6 +116,7 @@ class Twist {
 
     return Twist(
       id: id,
+      twistPackageId: json['twist_package_id'] as String?,
       name: json['name'] as String,
       description: json['description'] as String?,
       authorName: json['author_name'] as String?,
@@ -475,6 +478,8 @@ class TwistApi {
 /// Summary of a connected source for the Connections modal list view.
 class SourceSummary {
   final String id; // twist_instance_id
+  final String? twistId; // underlying twist.id (nullable for backwards compat)
+  final String? twistPackageId; // stable connector package UUID
   final String name;
   final String? twistName;
   final String? logoUrl;
@@ -487,6 +492,8 @@ class SourceSummary {
 
   const SourceSummary({
     required this.id,
+    this.twistId,
+    this.twistPackageId,
     required this.name,
     this.twistName,
     this.logoUrl,
@@ -500,8 +507,13 @@ class SourceSummary {
 
   factory SourceSummary.fromJson(Map<String, dynamic> json) {
     final providerStr = json['provider'] as String?;
+    final twistIdRaw = json['twist_id'];
     return SourceSummary(
       id: json['id'] as String,
+      twistId: twistIdRaw is int
+          ? twistIdRaw.toString()
+          : twistIdRaw as String?,
+      twistPackageId: json['twist_package_id'] as String?,
       name: json['name'] as String,
       twistName: json['twist_name'] as String?,
       logoUrl: json['logo_url'] as String?,

@@ -1,16 +1,5 @@
--- Idempotently ensure the user has a Twist Development (@plot.twist-dev)
--- priority and return its id. Called from the twist deploy / logs flow so
--- the priority appears the first time a user develops a twist or connector
--- (rather than for every user at activation).
---
--- Returns NULL if the user has no root priority yet (not activated).
-CREATE OR REPLACE FUNCTION public.ensure_twist_dev_priority (
-    p_user_id uuid
-)
-    RETURNS uuid
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "ensure_twist_dev_priority" function
+CREATE OR REPLACE FUNCTION "public"."ensure_twist_dev_priority" ("p_user_id" uuid) RETURNS uuid LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_priority_id uuid;
     v_root_path ltree;
@@ -61,4 +50,24 @@ BEGIN
 
     RETURN v_priority_id;
 END;
-$function$;
+$$;
+
+-- Backfill: pin every existing Twist Development priority just above Using
+-- Plot. Skip rows that already have an explicit order setting so we don't
+-- clobber someone who deliberately reordered.
+INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+SELECT p.user_id, p.id, 'order', to_jsonb(1e14::double precision)
+FROM public.priority p
+WHERE p.key = '@plot.twist-dev'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.priority_setting ps
+    WHERE ps.user_id = p.user_id
+      AND ps.priority_id = p.id
+      AND ps.key = 'order'
+  );
+
+-- Bump priority.updated_at so clients re-pull and pick up the new computed
+-- order from the user.priority view.
+UPDATE public.priority
+SET updated_at = now()
+WHERE key = '@plot.twist-dev';

@@ -204,9 +204,26 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
     setState(() {
       _localSelectedChannels.addAll(suggestion.enabledChannels);
+      // The suggester can return an empty set (e.g. during onboarding before
+      // priorities have synced locally — see channel_defaults.dart's early
+      // return on `priorities.isEmpty`). The form's "Add connection" button
+      // is gated on at least one selected channel, so an empty default
+      // strands the user on a disabled button. Fall back to the first
+      // available channel so setup always has a sensible starting state.
+      if (_localSelectedChannels.isEmpty) {
+        final firstKey = _firstChannelKey(data.channels);
+        if (firstKey != null) _localSelectedChannels.add(firstKey);
+      }
     });
 
     _notifyChanged();
+  }
+
+  static String? _firstChannelKey(List<TwistChannel> channels) {
+    for (final c in channels) {
+      return '${c.providerKey}:${c.id}';
+    }
+    return null;
   }
 
   void _collectEnabledChannels(List<TwistChannel> channels) {

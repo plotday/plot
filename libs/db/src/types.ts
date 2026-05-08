@@ -2619,6 +2619,7 @@ export type Database = {
           email_frequency: Database["public"]["Enums"]["email_frequency"] | null
           email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed: boolean | null
           seq: unknown
           updated_at: string
           user_id: string
@@ -2630,6 +2631,7 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           seq?: unknown
           updated_at?: string
           user_id: string
@@ -2641,6 +2643,7 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           seq?: unknown
           updated_at?: string
           user_id?: string
@@ -5136,6 +5139,7 @@ export type Database = {
         Args: {
           p_ai_enabled?: boolean
           p_enter_behavior: Database["public"]["Enums"]["enter_behavior"]
+          p_onboarding_completed?: boolean
           user_id: string
         }
         Returns: Database["public"]["Tables"]["user_settings"]["Row"]

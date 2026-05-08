@@ -30,6 +30,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   void initState() {
     super.initState();
     _tabNotifier.addListener(_onTabChanged);
+    PriorityTabNotifier.current = _tabNotifier;
   }
 
   Widget _buildNavLabel(String text) {
@@ -72,6 +73,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void dispose() {
     _observer?.unsubscribe(this);
+    if (PriorityTabNotifier.current == _tabNotifier) {
+      PriorityTabNotifier.current = null;
+    }
     _tabNotifier.removeListener(_onTabChanged);
     _tabNotifier.dispose();
     super.dispose();
@@ -91,10 +95,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutStateProvider(
-      child: PriorityTabProvider(
-        notifier: _tabNotifier,
-        child: AutoTabsRouter(
+    return PriorityTabProvider(
+      notifier: _tabNotifier,
+      child: AutoTabsRouter(
           homeIndex: 1,
           routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
           transitionBuilder: (context, child, animation) => child,
@@ -339,7 +342,6 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
             );
           },
         ),
-      ),
     );
   }
 }
