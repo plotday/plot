@@ -293,10 +293,13 @@ class Tracker {
     // These are expected during offline periods and are already handled
     // by the sync orchestrator. HttpException and SocketException also
     // surface from NetworkImage loads when a remote host drops the
-    // connection mid-request — not a bug.
+    // connection mid-request — not a bug. http.ClientException covers
+    // package:http failures like "Connection closed before full header
+    // was received" surfaced by clerk_auth after its retries exhaust.
     if (error is NetworkException ||
         error is HttpException ||
-        error is SocketException) {
+        error is SocketException ||
+        error is http.ClientException) {
       return true;
     }
 
