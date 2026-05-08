@@ -677,6 +677,11 @@ class _BlockHeaderState extends State<_BlockHeader> {
                               thread.displayTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              strutStyle: StrutStyle(
+                                fontSize: fontSize,
+                                height: 1,
+                                forceStrutHeight: true,
+                              ),
                               style: TextStyle(
                                 color: fg,
                                 fontSize: fontSize,
@@ -849,26 +854,39 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // feedback can match the source row's shape instead of growing to the
     // full viewport (multi-panel renders the agenda narrower than the
     // window).
-    return _wrapPressToCollapse(MouseRegion(
-      onEnter: (_) {
-        if (_hover) return;
-        setState(() => _hover = true);
-      },
-      onExit: (_) {
-        if (!_hover) return;
-        setState(() => _hover = false);
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final rowWidth = constraints.maxWidth.isFinite
-              ? constraints.maxWidth
-              : MediaQuery.of(context).size.width;
-          // Desktop (mouse) → immediate Draggable so any click-and-drag on
-          // the header starts a drag. Mobile → LongPressDraggable so a
-          // short tap or scroll doesn't accidentally pick up the block.
-          if (hasPhysicalKeyboard()) {
-            return Draggable<BlockDragPayload>(
+    return _wrapPressToCollapse(
+      MouseRegion(
+        onEnter: (_) {
+          if (_hover) return;
+          setState(() => _hover = true);
+        },
+        onExit: (_) {
+          if (!_hover) return;
+          setState(() => _hover = false);
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final rowWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : MediaQuery.of(context).size.width;
+            // Desktop (mouse) → immediate Draggable so any click-and-drag on
+            // the header starts a drag. Mobile → LongPressDraggable so a
+            // short tap or scroll doesn't accidentally pick up the block.
+            if (hasPhysicalKeyboard()) {
+              return Draggable<BlockDragPayload>(
+                data: payload,
+                feedback: _buildFeedback(context, rowWidth: rowWidth),
+                childWhenDragging: draggingChild,
+                onDragStarted: () => _onDragStarted(payload),
+                onDragUpdate: _onDragUpdate,
+                onDragEnd: _onDragEndedWith,
+                onDraggableCanceled: (_, _) => _onDragEnded(),
+                child: source,
+              );
+            }
+            return LongPressDraggable<BlockDragPayload>(
               data: payload,
+              delay: const Duration(milliseconds: 300),
               feedback: _buildFeedback(context, rowWidth: rowWidth),
               childWhenDragging: draggingChild,
               onDragStarted: () => _onDragStarted(payload),
@@ -877,21 +895,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
               onDraggableCanceled: (_, _) => _onDragEnded(),
               child: source,
             );
-          }
-          return LongPressDraggable<BlockDragPayload>(
-            data: payload,
-            delay: const Duration(milliseconds: 300),
-            feedback: _buildFeedback(context, rowWidth: rowWidth),
-            childWhenDragging: draggingChild,
-            onDragStarted: () => _onDragStarted(payload),
-            onDragUpdate: _onDragUpdate,
-            onDragEnd: _onDragEndedWith,
-            onDraggableCanceled: (_, _) => _onDragEnded(),
-            child: source,
-          );
-        },
+          },
+        ),
       ),
-    ));
+    );
   }
 }
 
