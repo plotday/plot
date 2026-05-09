@@ -7,16 +7,18 @@ import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
-// Cloudflare surfaces DO resets in two shapes: the explicit
-// "storage operation exceeded timeout" message, and a generic
-// "internal error; reference = <id>" wrapper. Both are transient platform
-// noise — the DO is reset and the next notify schedules a fresh alarm.
+// Cloudflare surfaces transient platform errors in a few shapes: the
+// explicit "storage operation exceeded timeout" message, the generic
+// "internal error; reference = <id>" wrapper, and "Network connection
+// lost" when a DO-to-DO fetch drops mid-flight. All are platform noise
+// — the DO is reset and the next notify schedules a fresh alarm.
 function isTransientDoResetError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message;
   return (
     msg.includes("storage operation exceeded timeout") ||
-    msg.includes("internal error; reference")
+    msg.includes("internal error; reference") ||
+    msg.includes("Network connection lost")
   );
 }
 
@@ -24,6 +26,11 @@ function isTransientDoResetError(error: unknown): boolean {
 const MIN_WAIT_MS = 300; // Minimum time to wait before sending, allowing batching
 const MAX_WAIT_MS = 2000; // Maximum time a batch can sit waiting before forced flush
 const MIN_INTERVAL_MS = 500; // Minimum gap between sync deliveries
+
+// Reschedule cadence after a transient platform error. Capped so a
+// misclassified persistent error can't loop indefinitely — after the cap
+// we fall back to waiting for the next notify() to schedule a fresh alarm.
+const TRANSIENT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 
 interface UserSyncState {
   lastNotifyTime: number;
@@ -33,6 +40,9 @@ interface UserSyncState {
   // Reset to 0 after each successful broadcast.
   batchStartTime: number;
   pendingAlarm: boolean;
+  // Consecutive transient-error retries since the last fresh notify(). Reset
+  // in notify() so user activity restores the full retry budget.
+  transientRetries: number;
 }
 
 export class UserSync extends DurableObject<Bindings> {
@@ -46,6 +56,7 @@ export class UserSync extends DurableObject<Bindings> {
       lastSyncTime: 0,
       batchStartTime: 0,
       pendingAlarm: false,
+      transientRetries: 0,
     };
     // Load userId from storage on DO initialization to avoid storage reads
     // in the alarm handler, reducing the chance of hitting DO storage timeouts.
@@ -107,6 +118,9 @@ export class UserSync extends DurableObject<Bindings> {
 
     const now = Date.now();
     this.state.lastNotifyTime = now;
+    // Fresh user activity restores the transient-retry budget so a future
+    // alarm chain gets the full set of attempts again.
+    this.state.transientRetries = 0;
     if (this.state.batchStartTime === 0) {
       this.state.batchStartTime = now;
     }
@@ -350,16 +364,58 @@ export class UserSync extends DurableObject<Bindings> {
       });
     } catch (error) {
       timings.totalMs = Date.now() - alarmStart;
-      // DO resets are transient Cloudflare platform errors. The DO resets
-      // and will retry on the next notification — not actionable, so log
-      // as warning only. Timings show which step was in flight when the
-      // reset hit.
+      // DO resets and DO-to-DO network blips are transient Cloudflare
+      // platform errors. Reschedule a self-heal so a quiescent user (no
+      // further notify() incoming) doesn't sit on a stuck pending update.
+      // After TRANSIENT_RETRY_DELAYS_MS is exhausted, treat it as a real
+      // error so a misclassified persistent failure surfaces.
       if (isTransientDoResetError(error)) {
-        logger.warn("UserSync alarm interrupted by DO reset", {
-          user_id: this.userId,
+        const retryIndex = this.state.transientRetries;
+        const delayMs = TRANSIENT_RETRY_DELAYS_MS[retryIndex];
+        if (delayMs !== undefined) {
+          this.state.transientRetries = retryIndex + 1;
+          logger.warn("UserSync alarm interrupted by transient platform error, rescheduling", {
+            user_id: this.userId,
+            in_flight_step: currentStep,
+            transient_attempt: this.state.transientRetries,
+            retry_delay_ms: delayMs,
+            error_message: (error as Error).message,
+            ...timings,
+          });
+          try {
+            this.state.pendingAlarm = true;
+            await this.ctx.storage.setAlarm(Date.now() + delayMs);
+          } catch (rescheduleError) {
+            // setAlarm itself can fail if the DO storage is in the same
+            // transient state. Fall back to next-notify recovery — we
+            // can't do better without storage.
+            this.state.pendingAlarm = false;
+            logger.warn("Failed to reschedule UserSync alarm after transient error", {
+              user_id: this.userId,
+              reschedule_error: (rescheduleError as Error).message,
+            });
+          }
+          return;
+        }
+        // Retry budget exhausted. The error is no longer "transient" by
+        // any useful definition — capture it so we can investigate.
+        logger.error(
+          "UserSync alarm transient retries exhausted",
+          error as Error,
+          {
+            user_id: this.userId,
+            in_flight_step: currentStep,
+            transient_attempts: retryIndex,
+            ...timings,
+          },
+        );
+        this.captureException(error as Error, {
           in_flight_step: currentStep,
+          transient_attempts: retryIndex,
+          retries_exhausted: true,
           ...timings,
         });
+        this.state.transientRetries = 0;
         return;
       }
       logger.error("Error in UserSync alarm", error as Error, {
