@@ -690,13 +690,20 @@ class _FileImageWidgetState extends State<FileImageWidget> {
   @override
   void initState() {
     super.initState();
-    _loadImage();
+    final cached = FilePreviewCache.get(widget.link.fileId);
+    if (cached != null) {
+      _bytes = cached;
+      _loading = false;
+    } else {
+      _loadImage();
+    }
   }
 
   Future<void> _loadImage() async {
     try {
       final bytes = await api.getFileBytes(widget.link.fileId);
       if (mounted) {
+        FilePreviewCache.put(widget.link.fileId, bytes);
         setState(() {
           _bytes = bytes;
           _loading = false;
@@ -719,32 +726,12 @@ class _FileImageWidgetState extends State<FileImageWidget> {
   Future<void> _openViewer() async {
     final bytes = _bytes;
     if (bytes == null) return;
-
-    // Decode intrinsic dimensions to cap at 1:1 resolution
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    final intrinsicWidth = frame.image.width.toDouble();
-    final intrinsicHeight = frame.image.height.toDouble();
-    frame.image.dispose();
-    codec.dispose();
-
-    if (!mounted) return;
-
-    final mediaQuery = MediaQuery.of(context);
-    final maxWidth = intrinsicWidth.clamp(0.0, mediaQuery.size.width * 0.9);
-    final maxHeight = intrinsicHeight.clamp(0.0, mediaQuery.size.height * 0.9);
-
-    Modal(
-      constraints: BoxConstraints(maxHeight: maxHeight, maxWidth: maxWidth),
-      maxWidthPercentage: 0.9,
-      maxHeightPercentage: 0.9,
-      padding: EdgeInsets.zero,
-      builder: (context) => _FullImageViewer(
-        bytes: bytes,
-        fileName: widget.link.fileName,
-        mimeType: widget.link.mimeType,
-      ),
-    ).show<void>(context);
+    await _showFullImageViewer(
+      context,
+      bytes: bytes,
+      fileName: widget.link.fileName,
+      mimeType: widget.link.mimeType,
+    );
   }
 
   @override
@@ -996,6 +983,216 @@ class _FullImageViewerState extends State<_FullImageViewer> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// In-memory cache of image bytes keyed by file id. Populated when an image
+/// is pasted/attached locally (so the thumbnail and full-image viewer can
+/// render immediately without re-downloading the bytes that were just
+/// uploaded). Bounded by a simple LRU to avoid unbounded growth.
+class FilePreviewCache {
+  FilePreviewCache._();
+
+  static const int _maxEntries = 32;
+  static final Map<String, Uint8List> _entries = <String, Uint8List>{};
+
+  static void put(String fileId, Uint8List bytes) {
+    _entries.remove(fileId);
+    _entries[fileId] = bytes;
+    while (_entries.length > _maxEntries) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  static Uint8List? get(String fileId) {
+    final bytes = _entries.remove(fileId);
+    if (bytes != null) _entries[fileId] = bytes;
+    return bytes;
+  }
+
+  /// Re-key bytes from a temporary id (e.g. the optimistic pending id used
+  /// while an upload is in flight) to the real id assigned by the server.
+  static void rekey(String fromId, String toId) {
+    final bytes = _entries.remove(fromId);
+    if (bytes != null) put(toId, bytes);
+  }
+
+  static void evict(String fileId) {
+    _entries.remove(fileId);
+  }
+}
+
+/// Open the full-image viewer modal for a loaded image. Caps the modal at
+/// intrinsic resolution so small images don't get blurrily upscaled.
+Future<void> _showFullImageViewer(
+  BuildContext context, {
+  required Uint8List bytes,
+  required String fileName,
+  required String mimeType,
+}) async {
+  final codec = await ui.instantiateImageCodec(bytes);
+  final frame = await codec.getNextFrame();
+  final intrinsicWidth = frame.image.width.toDouble();
+  final intrinsicHeight = frame.image.height.toDouble();
+  frame.image.dispose();
+  codec.dispose();
+
+  if (!context.mounted) return;
+
+  final mediaQuery = MediaQuery.of(context);
+  final maxWidth = intrinsicWidth.clamp(0.0, mediaQuery.size.width * 0.9);
+  final maxHeight = intrinsicHeight.clamp(0.0, mediaQuery.size.height * 0.9);
+
+  await Modal(
+    constraints: BoxConstraints(maxHeight: maxHeight, maxWidth: maxWidth),
+    maxWidthPercentage: 0.9,
+    maxHeightPercentage: 0.9,
+    padding: EdgeInsets.zero,
+    builder: (context) => _FullImageViewer(
+      bytes: bytes,
+      fileName: fileName,
+      mimeType: mimeType,
+    ),
+  ).show<void>(context);
+}
+
+/// A compact square thumbnail of an image attachment. Tapping it opens the
+/// same zoomable modal as [FileImageWidget]. Designed for use in tight rows
+/// (e.g. attachment lists in the note editor) where a full inline preview
+/// would be too large.
+class FileImageThumbnail extends StatefulWidget {
+  const FileImageThumbnail({
+    required this.link,
+    this.size = 32,
+    super.key,
+  });
+
+  final FileUserAction link;
+  final double size;
+
+  @override
+  State<FileImageThumbnail> createState() => _FileImageThumbnailState();
+}
+
+class _FileImageThumbnailState extends State<FileImageThumbnail> {
+  Uint8List? _bytes;
+  bool _loading = true;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final cached = FilePreviewCache.get(widget.link.fileId);
+    if (cached != null) {
+      _bytes = cached;
+      _loading = false;
+    } else {
+      _loadImage();
+    }
+  }
+
+  @override
+  void didUpdateWidget(FileImageThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.link.fileId == widget.link.fileId) return;
+    final cached = FilePreviewCache.get(widget.link.fileId);
+    if (cached != null) {
+      setState(() {
+        _bytes = cached;
+        _loading = false;
+        _error = false;
+      });
+    } else {
+      setState(() {
+        _bytes = null;
+        _loading = true;
+        _error = false;
+      });
+      _loadImage();
+    }
+  }
+
+  Future<void> _loadImage() async {
+    try {
+      final bytes = await api.getFileBytes(widget.link.fileId);
+      if (mounted) {
+        FilePreviewCache.put(widget.link.fileId, bytes);
+        setState(() {
+          _bytes = bytes;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      log.warning(
+        'Failed to load thumbnail: ${widget.link.fileName} (mimeType=${widget.link.mimeType})',
+        e,
+      );
+      if (mounted) {
+        setState(() {
+          _error = true;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openViewer() async {
+    final bytes = _bytes;
+    if (bytes == null) return;
+    await _showFullImageViewer(
+      context,
+      bytes: bytes,
+      fileName: widget.link.fileName,
+      mimeType: widget.link.mimeType,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(borderRadiusSm);
+
+    if (_loading) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: const _SkeletonBox(),
+        ),
+      );
+    }
+
+    if (_error || _bytes == null) {
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: Icon(
+          PlotIcon.attachment,
+          size: 14,
+          color: context.theme.colors.mutedForeground,
+        ),
+      );
+    }
+
+    return Tapable(
+      onTap: _openViewer,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: Image.memory(
+            _bytes!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Icon(
+              PlotIcon.attachment,
+              size: 14,
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

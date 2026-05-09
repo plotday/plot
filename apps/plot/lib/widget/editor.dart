@@ -313,6 +313,7 @@ class Editor extends StatefulWidget {
     this.onChange,
     this.onIsEmptyChanged,
     this.onImagePasted,
+    this.onUrlPastedWhenEmpty,
     this.focusNode,
     this.twists = const [],
     this.actors = const [],
@@ -330,6 +331,11 @@ class Editor extends StatefulWidget {
   /// Called when an image is pasted from the clipboard.
   /// The callback receives the raw image bytes (PNG format).
   final void Function(Uint8List imageBytes)? onImagePasted;
+
+  /// Called when a plain-text URL is pasted into an otherwise empty editor.
+  /// When set and invoked, the URL is NOT inserted into the editor body —
+  /// the host is expected to attach it as a link (e.g. as an action row).
+  final void Function(String url)? onUrlPastedWhenEmpty;
   final FocusNode? focusNode;
   final List<TwistInstance> twists;
   final List<Actor> actors;
@@ -1709,8 +1715,14 @@ class EditorState extends State<Editor> {
       }
     }
 
-    // 4b. If text is a URL (collapsed cursor), insert with title resolution
+    // 4b. If text is a URL (collapsed cursor), insert with title resolution.
+    // When the editor is otherwise empty and the host opts in, hand the URL
+    // off to be attached as a link instead of inserting it into the body.
     if (selection.isCollapsed && _isUrl(text)) {
+      if (_isEmpty && widget.onUrlPastedWhenEmpty != null) {
+        widget.onUrlPastedWhenEmpty!(text);
+        return;
+      }
       _pasteUrlWithTitleResolution(text);
       return;
     }

@@ -14,6 +14,7 @@ import 'package:plot/util/image_utils.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/util/url_title.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
@@ -205,7 +206,10 @@ class NoteEditorState extends State<NoteEditor> {
       !widget.isNewThreadMode &&
       context.read<ThreadBloc>().state.editingNote != null;
 
-  /// Handle an image pasted from clipboard: upload and add as file attachment.
+  /// Handle an image pasted from clipboard: insert a placeholder attachment
+  /// immediately (so the preview appears without waiting on the network) and
+  /// upload in the background, swapping the placeholder for the real
+  /// attachment once the server returns the file id.
   Future<void> _handleImagePaste(Uint8List imageBytes) async {
     final priorityId = widget.isNewThreadMode
         ? widget.thread!.priority.id.toString()
@@ -213,6 +217,27 @@ class NoteEditorState extends State<NoteEditor> {
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final fileName = 'pasted-image-$timestamp.png';
+    final pendingFileId = '__pending_$timestamp';
+
+    final dims = await getImageDimensions(imageBytes);
+    if (!mounted) return;
+    final imageWidth = dims?.$1;
+    final imageHeight = dims?.$2;
+
+    final placeholder = FileUserAction(
+      fileId: pendingFileId,
+      fileName: fileName,
+      fileSize: imageBytes.lengthInBytes,
+      mimeType: 'image/png',
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
+    );
+
+    FilePreviewCache.put(pendingFileId, imageBytes);
+    _updateActions([
+      ...(widget.draft.actions ?? const <UserAction>[]),
+      placeholder,
+    ]);
 
     try {
       final response = await api.uploadFile(
@@ -222,41 +247,42 @@ class NoteEditorState extends State<NoteEditor> {
         bytes: imageBytes,
       );
 
-      final mimeType = response['mimeType'] as String;
-      int? imageWidth;
-      int? imageHeight;
-      if (mimeType.startsWith('image/')) {
-        final dims = await getImageDimensions(imageBytes);
-        if (dims != null) {
-          imageWidth = dims.$1;
-          imageHeight = dims.$2;
-        }
+      if (!mounted) {
+        FilePreviewCache.evict(pendingFileId);
+        return;
       }
 
-      final fileAction = FileUserAction(
-        fileId: response['fileId'] as String,
+      final realFileId = response['fileId'] as String;
+      final realAction = FileUserAction(
+        fileId: realFileId,
         fileName: response['fileName'] as String,
         fileSize: response['fileSize'] as int,
-        mimeType: mimeType,
+        mimeType: response['mimeType'] as String,
         imageWidth: imageWidth,
         imageHeight: imageHeight,
       );
 
-      if (!mounted) return;
+      FilePreviewCache.rekey(pendingFileId, realFileId);
 
-      final currentActions = widget.draft.actions ?? const [];
-      final updatedActions = [...currentActions, fileAction];
-
-      if (widget.isNewThreadMode) {
-        widget.onDraftChanged!(
-          widget.thread!,
-          note: widget.draft.copyWith(actions: updatedActions),
-        );
-      } else {
-        final updatedDraft = widget.draft.copyWith(actions: updatedActions);
-        context.read<ThreadBloc>().updateDraft(updatedDraft);
+      final actions = widget.draft.actions ?? const <UserAction>[];
+      var replaced = false;
+      final updated = actions.map((a) {
+        if (!replaced && a is FileUserAction && a.fileId == pendingFileId) {
+          replaced = true;
+          return realAction;
+        }
+        return a;
+      }).toList();
+      if (!replaced) {
+        // The user removed the placeholder mid-upload — drop the cached bytes
+        // and the just-uploaded file is orphaned (server-side cleanup, not
+        // ours to manage here).
+        FilePreviewCache.evict(realFileId);
+        return;
       }
+      _updateActions(updated);
     } on NetworkException {
+      _removePendingAttachment(pendingFileId);
       if (mounted) {
         context.showToast(
           message: "You're offline. Please try again when connected.",
@@ -264,6 +290,7 @@ class NoteEditorState extends State<NoteEditor> {
         );
       }
     } catch (e, t) {
+      _removePendingAttachment(pendingFileId);
       log.warning('Failed to upload pasted image', e, t);
       Tracker.captureException(e, t);
       if (mounted) {
@@ -272,6 +299,56 @@ class NoteEditorState extends State<NoteEditor> {
           isError: true,
         );
       }
+    }
+  }
+
+  void _removePendingAttachment(String pendingFileId) {
+    FilePreviewCache.evict(pendingFileId);
+    if (!mounted) return;
+    final actions = widget.draft.actions ?? const <UserAction>[];
+    final filtered = actions
+        .where((a) => !(a is FileUserAction && a.fileId == pendingFileId))
+        .toList();
+    if (filtered.length == actions.length) return;
+    _updateActions(filtered);
+  }
+
+  /// Handle a URL pasted into an otherwise empty editor: attach it as an
+  /// `ExternalUserAction` (the same shape the link command produces) and
+  /// asynchronously resolve title and favicon to update the placeholder.
+  Future<void> _handleUrlPasteWhenEmpty(String url) async {
+    final placeholder = ExternalUserAction(title: url, url: url);
+    final currentActions = widget.draft.actions ?? const <UserAction>[];
+    _updateActions([...currentActions, placeholder]);
+
+    final metadata = await fetchUrlMetadata(url);
+    if (!mounted) return;
+    if (metadata.title == null && metadata.favicon == null) return;
+
+    final actions = widget.draft.actions ?? const <UserAction>[];
+    final resolved = ExternalUserAction(
+      title: metadata.title ?? url,
+      url: url,
+      favicon: metadata.favicon,
+    );
+    var replaced = false;
+    final updated = actions.map((a) {
+      if (!replaced && a == placeholder) {
+        replaced = true;
+        return resolved;
+      }
+      return a;
+    }).toList();
+    if (!replaced) return;
+    _updateActions(updated);
+  }
+
+  void _updateActions(List<UserAction> actions) {
+    final updatedDraft = widget.draft.copyWith(actions: actions);
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged!(widget.thread!, note: updatedDraft);
+    } else {
+      context.read<ThreadBloc>().updateDraft(updatedDraft);
     }
   }
 
@@ -386,6 +463,7 @@ class NoteEditorState extends State<NoteEditor> {
               ? _onNewThreadSubmitted
               : _onNoteSubmitted,
           onImagePasted: (imageBytes) => _handleImagePaste(imageBytes),
+          onUrlPastedWhenEmpty: (url) => _handleUrlPasteWhenEmpty(url),
         );
 
         return CallbackShortcuts(
@@ -626,9 +704,12 @@ class NoteEditorState extends State<NoteEditor> {
 
     final Widget icon;
     final String label;
+    final bool isImageThumb = action is FileUserAction && action.isImage;
 
     if (action is FileUserAction) {
-      icon = Icon(PlotIcon.attachment, size: 12, color: context.colour.muted);
+      icon = action.isImage
+          ? FileImageThumbnail(link: action, size: 28)
+          : Icon(PlotIcon.attachment, size: 12, color: context.colour.muted);
       label = action.fileName;
     } else if (action is ExternalUserAction) {
       final favicon = action.favicon;
@@ -653,7 +734,7 @@ class NoteEditorState extends State<NoteEditor> {
       child: Row(
         children: [
           icon,
-          const SizedBox(width: 6),
+          SizedBox(width: isImageThumb ? 8 : 6),
           Expanded(
             child: Text(
               label,
