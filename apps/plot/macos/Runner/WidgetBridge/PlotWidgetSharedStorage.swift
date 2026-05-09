@@ -15,15 +15,32 @@ enum PlotWidgetSharedStorage {
   /// JSON-encoded `WidgetState` (see `lib/widget_bridge/widget_data.dart`).
   static let widgetStateKey = "widgetState"
 
-  /// Bool flag controlling whether the status-item (macOS menu bar)
-  /// surface is created at app launch. Defaults to `false`. Toggling
-  /// this is reserved for the future settings flow; today nothing
-  /// writes it.
-  static let statusItemEnabledKey = "statusItemEnabled"
+  /// Master gate for all App Group access from the host app. Stored in
+  /// `UserDefaults.standard` (the app's PRIVATE container) so reading
+  /// or writing it never crosses the sandbox boundary, and therefore
+  /// never triggers the macOS App Management TCC prompt
+  /// ("Plot would like to access data from other apps").
+  ///
+  /// While this is `false`, every caller in Runner skips
+  /// `sharedDefaults()` entirely. Flip it to `true` only when the user
+  /// enables a widget surface (status item, home-screen widget, etc.).
+  /// Today no UI flips it — the surfaces don't exist yet — so no
+  /// launch ever touches the App Group.
+  static let widgetSurfaceEnabledKey = "widgetSurfaceEnabled"
+
+  static func widgetSurfaceEnabled() -> Bool {
+    UserDefaults.standard.bool(forKey: widgetSurfaceEnabledKey)
+  }
+
+  static func setWidgetSurfaceEnabled(_ enabled: Bool) {
+    UserDefaults.standard.set(enabled, forKey: widgetSurfaceEnabledKey)
+  }
 
   /// Returns the shared `UserDefaults` suite, or `nil` if the App Group
   /// entitlement is misconfigured (e.g. development build without the
-  /// group provisioned).
+  /// group provisioned). Callers MUST gate on `widgetSurfaceEnabled()`
+  /// first — otherwise launching with no widget surface enabled trips
+  /// the macOS App Management TCC prompt.
   static func sharedDefaults() -> UserDefaults? {
     UserDefaults(suiteName: appGroup)
   }

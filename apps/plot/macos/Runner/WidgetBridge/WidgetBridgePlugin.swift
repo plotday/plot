@@ -40,9 +40,21 @@ final class WidgetBridgePlugin: NSObject {
         result(FlutterError(code: "bad-args", message: "writeState requires {json}", details: nil))
         return
       }
+      // Skip the App Group write when no widget surface is enabled —
+      // otherwise the first call (which Flutter fires immediately on
+      // launch) trips the macOS App Management TCC prompt for state
+      // nothing currently reads.
+      guard PlotWidgetSharedStorage.widgetSurfaceEnabled() else {
+        result(nil)
+        return
+      }
       PlotWidgetSharedStorage.sharedDefaults()?.set(json, forKey: PlotWidgetSharedStorage.widgetStateKey)
       result(nil)
     case "reloadAll":
+      guard PlotWidgetSharedStorage.widgetSurfaceEnabled() else {
+        result(nil)
+        return
+      }
       if #available(macOS 11.0, *) {
         WidgetCenter.shared.reloadAllTimelines()
       }

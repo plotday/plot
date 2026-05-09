@@ -109,27 +109,23 @@ class OnboardingOverlay extends StatelessWidget {
             onDismiss: onDismiss,
           );
         } else if (step is HighlightStep) {
-          overlay = Positioned.fill(
-            // Asymmetric cross-fade: the outgoing foreground reaches
-            // opacity 0 around the midpoint while the incoming one only
-            // starts becoming visible shortly before that. Avoids the
-            // muddy frame where a straight cross-fade has both layers
-            // sitting at ~50% and the two designs blend together.
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              switchOutCurve:
-                  const Interval(0.5, 1.0, curve: Curves.easeIn),
-              switchInCurve:
-                  const Interval(0.4, 1.0, curve: Curves.easeOut),
-              child: OnboardingHighlight(
-                key: ValueKey(state.currentStep),
-                step: step,
-                currentStep: state.currentStep,
-                totalSteps: state.totalSteps,
-                onNext: onNext,
-                onBack: onBack,
-                onDismiss: onDismiss,
-              ),
+          // Asymmetric cross-fade: the outgoing foreground reaches
+          // opacity 0 around the midpoint while the incoming one only
+          // starts becoming visible shortly before that. Avoids the
+          // muddy frame where a straight cross-fade has both layers
+          // sitting at ~50% and the two designs blend together.
+          overlay = AnimatedSwitcher(
+            duration: const Duration(milliseconds: 400),
+            switchOutCurve: const Interval(0.5, 1.0, curve: Curves.easeIn),
+            switchInCurve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+            child: OnboardingHighlight(
+              key: ValueKey(state.currentStep),
+              step: step,
+              currentStep: state.currentStep,
+              totalSteps: state.totalSteps,
+              onNext: onNext,
+              onBack: onBack,
+              onDismiss: onDismiss,
             ),
           );
         }
@@ -145,7 +141,18 @@ class OnboardingOverlay extends StatelessWidget {
                   color: backdropColor,
                 ),
               ),
-              overlay,
+              // Override the inherited DefaultTextStyle so descendants don't
+              // fall back to Flutter's debug yellow-underline style. The
+              // overlay sits outside the app's Scaffold (which provides this
+              // via material.Material), so without this, any Text in the
+              // overlay tree that doesn't explicitly set `decoration` shows
+              // the debug underline on Android.
+              Positioned.fill(
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(decoration: TextDecoration.none),
+                  child: overlay,
+                ),
+              ),
             ],
           );
         }
@@ -264,9 +271,8 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
     // The pager is OUTSIDE the AnimatedSwitcher so it persists across
     // step swaps (no fade on the pager itself). Same goes for the X
     // dismiss button, which lives in the outer Stack.
-    return Positioned.fill(
-      child: SafeArea(
-        child: Stack(
+    return SafeArea(
+      child: Stack(
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
@@ -360,7 +366,6 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 }

@@ -7,6 +7,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/widget/modal.dart';
 
 enum TextFieldStyle { outline, ghost }
@@ -172,17 +173,17 @@ class EditableAreaState extends State<EditableArea> {
   // owner. That breaks every CallbackShortcuts in the page tree because no
   // descendant widget is in the focus chain.
   //
-  // Detect the clear via the FocusNode listener — only the lifecycle clear
-  // (and explicit programmatic clears) moves primaryFocus to the rootScope;
-  // user navigation always lands on a real focus node. When we see the
-  // loss-to-root signature, schedule an immediate post-frame re-focus
-  // instead of waiting for `resumed` (which may never fire).
+  // Touch platforms tie focus to the soft keyboard, so silently re-claiming
+  // focus there would re-open the keyboard after every backgrounding.
+  // Restrict the workaround to physical-keyboard platforms.
   bool _lastHadFocus = false;
 
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(_reclaimFocusIfClearedToRoot);
+    if (hasPhysicalKeyboard()) {
+      _focusNode.addListener(_reclaimFocusIfClearedToRoot);
+    }
 
     // Request focus after first frame if autofocus is true
     if (widget.autofocus) {
@@ -263,7 +264,9 @@ class EditableAreaState extends State<EditableArea> {
 
   @override
   void dispose() {
-    _focusNode.removeListener(_reclaimFocusIfClearedToRoot);
+    if (hasPhysicalKeyboard()) {
+      _focusNode.removeListener(_reclaimFocusIfClearedToRoot);
+    }
     if (_modalStackNotifier != null) {
       _modalStackNotifier!.removeListener(_onModalStackChanged);
     }

@@ -1502,6 +1502,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               ChangeCurrentThread(thread),
                                             );
                                           },
+                                          autofocus: !isMobilePlatform(),
                                         ),
                                       ),
                                     ],

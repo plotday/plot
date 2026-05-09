@@ -2,11 +2,11 @@ import Cocoa
 
 /// Owns the (optional) macOS status-item / menu-bar surface.
 ///
-/// Always instantiated at app launch; only takes effect when the
-/// `statusItemEnabled` flag in the shared App Group `UserDefaults` is
-/// `true`. Default is `false` so this controller is a no-op until a
-/// future settings toggle (or the user editing UserDefaults directly)
-/// flips it on.
+/// Always instantiated at app launch; only takes effect when
+/// `PlotWidgetSharedStorage.widgetSurfaceEnabled()` returns `true`.
+/// That flag lives in the app's private `UserDefaults.standard` (NOT
+/// the shared App Group), so reading it on launch never trips the
+/// macOS App Management TCC prompt.
 ///
 /// Today the controller has no menu items — it exists so that the
 /// menu-bar integration can be designed and dropped into [refresh]
@@ -32,8 +32,7 @@ final class MenuBarController {
   }
 
   private func isEnabled() -> Bool {
-    PlotWidgetSharedStorage.sharedDefaults()?
-      .bool(forKey: PlotWidgetSharedStorage.statusItemEnabledKey) ?? false
+    PlotWidgetSharedStorage.widgetSurfaceEnabled()
   }
 
   private func ensureStatusItem() {

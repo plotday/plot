@@ -138,12 +138,19 @@ class Avatar extends StatelessWidget {
       ),
     );
 
-    final initials = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Text(
-        _initialsFrom(name: displayName, email: email),
-        softWrap: false,
-        maxLines: 1,
+    // Horizontal padding keeps wide glyph pairs (e.g. "MW") from kissing the
+    // circle's curved edge: without it FittedBox.scaleDown only fires when
+    // text exceeds the full diameter, so letters flush to the bounding box
+    // visually clip against the circle on smaller sizes.
+    final initials = Padding(
+      padding: EdgeInsets.symmetric(horizontal: s * 0.1),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          _initialsFrom(name: displayName, email: email),
+          softWrap: false,
+          maxLines: 1,
+        ),
       ),
     );
 

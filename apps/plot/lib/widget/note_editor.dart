@@ -40,6 +40,7 @@ class NoteEditor extends StatefulWidget {
     this.onTwistSelected,
     // Link/navigation callbacks
     this.onNavigateToThread,
+    this.autofocus,
     super.key,
   });
 
@@ -79,6 +80,10 @@ class NoteEditor extends StatefulWidget {
 
   /// Called when user selects an existing thread from the link modal.
   final void Function(Thread thread)? onNavigateToThread;
+
+  /// Override the editor's default autofocus behavior. When null, the editor
+  /// autofocuses in new-thread mode or when a physical keyboard is present.
+  final bool? autofocus;
 
   bool get isNewThreadMode => thread != null;
 
@@ -437,7 +442,9 @@ class NoteEditorState extends State<NoteEditor> {
         final editor = Editor(
           key: _editorKey,
           hint: hint,
-          autofocus: widget.isNewThreadMode || hasPhysicalKeyboard(),
+          autofocus:
+              widget.autofocus ??
+              (widget.isNewThreadMode || hasPhysicalKeyboard()),
           focusNode: focusNode,
           twists: twists,
           actors: actors,
