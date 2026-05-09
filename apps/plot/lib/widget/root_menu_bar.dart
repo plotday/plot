@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/util/developer_mode.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'app_context.dart';
@@ -176,6 +178,19 @@ class RootMenuBar extends StatelessWidget {
     ];
   }
 
+  List<PlatformMenuItem> _buildDebugMenu() {
+    final group = buildDebugCommands();
+    if (group == null) return const <PlatformMenuItem>[];
+    return group.commands
+        .map(
+          (cmd) => PlatformMenuItem(
+            onSelected: () => _runCommand(cmd),
+            label: cmd.title,
+          ),
+        )
+        .toList();
+  }
+
   List<PlatformMenuItem> _buildWindowMenu() {
     return <PlatformMenuItem>[
       if (PlatformProvidedMenuItem.hasMenu(
@@ -201,15 +216,26 @@ class RootMenuBar extends StatelessWidget {
       builder: (context, userState) {
         final showUserMenus = userState is UserReady;
 
-        return PlatformMenuBar(
-          menus: <PlatformMenuItem>[
-            PlatformMenu(label: 'Plot', menus: _buildAppMenu(showUserMenus)),
-            PlatformMenu(label: 'Edit', menus: _buildEditMenu()),
-            if (showUserMenus)
-              PlatformMenu(label: 'View', menus: _buildViewMenu()),
-            PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
-          ],
-          child: child,
+        return ListenableBuilder(
+          listenable: DeveloperMode.notifier,
+          builder: (context, _) {
+            final showDebug = kDebugMode || DeveloperMode.isEnabled;
+            return PlatformMenuBar(
+              menus: <PlatformMenuItem>[
+                PlatformMenu(
+                  label: 'Plot',
+                  menus: _buildAppMenu(showUserMenus),
+                ),
+                PlatformMenu(label: 'Edit', menus: _buildEditMenu()),
+                if (showUserMenus)
+                  PlatformMenu(label: 'View', menus: _buildViewMenu()),
+                PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
+                if (showDebug)
+                  PlatformMenu(label: 'Debug', menus: _buildDebugMenu()),
+              ],
+              child: child,
+            );
+          },
         );
       },
     );
