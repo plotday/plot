@@ -431,6 +431,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       threads: _lastAgendaThreads,
       context: state.context,
       horizonDays: _agendaHorizonDays,
+      minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
@@ -438,7 +439,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         thread: thread,
         agenda: agenda,
-        agendaItems: agenda.flatItems(expandedBlockId: state.expandedBlockId),
+        agendaItems: agenda.flatItems(contextPriorityId: state.context.id),
         activityFeedItems: activityFeedItems,
       ),
     );
@@ -627,10 +628,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       threads: _lastAgendaThreads,
       context: state.context,
       horizonDays: _agendaHorizonDays,
+      minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
-    final flat = agenda.flatItems(expandedBlockId: state.expandedBlockId);
+    final flat = agenda.flatItems(contextPriorityId: state.context.id);
     emit(
       state.copyWith(
         agenda: agenda,
@@ -941,35 +943,32 @@ class PriorityBloc extends Cubit<PriorityState> {
     return null;
   }
 
-  /// Toggle which block is expanded. The agenda renders at most three
-  /// threads per priority block by default; the expanded block is shown
-  /// in full. Calling this with the currently-expanded block's id
-  /// collapses everything; passing a different id expands that block
-  /// and implicitly collapses the previous one.
-  void toggleBlockExpansion(String blockId) {
-    final newId = state.expandedBlockId == blockId ? null : blockId;
-    final flat = state.agenda.flatItems(expandedBlockId: newId);
-    emit(
-      state.copyWith(
-        expandedBlockId: Value(newId),
-        agendaItems: flat,
-      ),
-    );
-  }
-
   Future<void> fetchMoreAgendaItems(int first, int count) async {
     final needed = first + count;
     final currentItems = state.agendaItems.length;
+    var shouldReload = false;
     if (needed > _agendaLimit) {
       _agendaLimit = needed;
       _agendaHorizonDays += 90;
-      _loadAgenda(triggerSync: !_agendaSyncNoMore);
+      shouldReload = true;
     } else if (!state.agendaDoneEnd && currentItems < needed) {
       // JOIN multiplication: need more raw rows to get enough unique threads.
       // Only bump when we actually don't have enough items — spurious fetcher
       // calls during first-frame layout (pageSize=1) should not inflate limits.
       _agendaLimit += 50;
       _agendaHorizonDays += 90;
+      shouldReload = true;
+    }
+    // When the visible list is shorter than what the InfiniteList wants,
+    // grow the empty-day fill so the rebuild produces more date headers.
+    // Without this, agendas with sparse content stall at
+    // last-content-date + 14 days no matter how far the horizon extends,
+    // leaving the loading spinner stuck at the bottom.
+    if (currentItems < needed && _agendaFillDays < _agendaHorizonDays) {
+      _agendaFillDays = (_agendaFillDays + 90).clamp(0, _agendaHorizonDays);
+      shouldReload = true;
+    }
+    if (shouldReload) {
       _loadAgenda(triggerSync: !_agendaSyncNoMore);
     }
     // Wait for sync so InfiniteList's _fetching stays true until data arrives
@@ -1263,15 +1262,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // of bailing to preserve the old one.
     _draftModified = false;
 
-    // Cancel existing subscriptions immediately so old emissions don't race
-    // with the loading state we're about to push.
+    // Cancel priority-scoped subscriptions only. The agenda subscription
+    // is global — it's not scoped to any priority — so leave it alone.
+    // Re-subscribing it here would tear down and rebuild the SQLite query
+    // for the same data, producing the visible reload the user is trying
+    // to avoid. The activity feed, drafts, tags, and icon counts ARE
+    // priority-scoped, so they get cancelled and re-initialized below.
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
     _subscriptions.clear();
     _threadSubscription?.cancel();
     _watchingThreadId = null;
-    _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
 
@@ -1279,41 +1281,46 @@ class PriorityBloc extends Cubit<PriorityState> {
     // and won't naturally settle in the new one.
     _optimisticOverrides.clear();
 
-    // Reset scroll offsets for the new priority
-    agendaScrollOffset = 0.0;
+    // Reset only the activity-feed scroll. Agenda scroll is preserved so
+    // the user lands on the same visible block region after the switch.
     activityFeedScrollOffset = 0.0;
 
-    // EMIT LOADING STATE IMMEDIATELY so the spinner appears at click time
-    // instead of after several SQLite round trips. Uses the unenriched
-    // newPriority (path is already populated, which is all _loadAgenda needs);
-    // Priority.watchOne in _loadPriority refreshes context shortly with the
-    // full row, and the second emit below patches in the enriched copy.
+    // Switch context and rebuild the agenda model from cached threads
+    // so the new context's blocks become the expanded ones (and
+    // [isOutside] flags reflect the new context). agendaItems is NOT
+    // cleared — the same threads are valid across all priorities (the
+    // agenda query is global), only the blocks' presentation changes.
+    final newAgenda = AgendaBuilder.build(
+      threads: _lastAgendaThreads,
+      context: newPriority,
+      horizonDays: _agendaHorizonDays,
+      minFillDays: _agendaFillDays,
+      associationsByParentId: _associations,
+      priorityBlocksByPriority: _priorityBlocksByPriority,
+    );
     emit(
       state.copyWith(
         context: newPriority,
-        agendaItems: const [],
+        agenda: newAgenda,
+        agendaItems: newAgenda.flatItems(contextPriorityId: newPriority.id),
         activityFeedItems: const [],
-        agendaDoneEnd: false,
-        agendaLoaded: false,
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
       ),
     );
-    profile.mark('emitted loading state');
+    profile.mark('emitted context-switched state');
 
-    // Reset agenda/feed pagination before subscriptions kick off.
-    _agendaLimit = 50;
-    _agendaHorizonDays = 90;
-    _agendaSyncNoMore = false;
+    // Reset only the activity-feed pagination — the agenda's pagination
+    // and sync state carry over because the data hasn't been re-fetched.
     _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
     _activityFeedLastRawRowCount = 0;
     _activityFeedLimitIncreased = false;
 
-    // Start subscriptions and the agenda Drift query NOW. Drafts load below
-    // in parallel — the agenda doesn't depend on them, so threads can render
-    // before draft loading finishes.
-    _loadPriority(profile: profile);
+    // Re-init priority-scoped subscriptions (drafts, tags, icons,
+    // activity feed). reloadAgenda: false skips the global agenda
+    // subscription — it's still alive from the initial load.
+    _loadPriority(profile: profile, reloadAgenda: false);
     profile.mark('_loadPriority returned (subscriptions started)');
 
     // Look up the chain draft so the new-thread input shows the right
@@ -1746,7 +1753,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     return ThreadListSource.activityFeed;
   }
 
-  void _loadPriority({_PriorityLoadProfile? profile}) {
+  void _loadPriority({
+    _PriorityLoadProfile? profile,
+    bool reloadAgenda = true,
+  }) {
     final priorityToLoad = state.context;
 
     _loadDraft(priorityToLoad);
@@ -1840,10 +1850,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       }),
     );
 
-    _agendaLimit = 50;
-    _agendaHorizonDays = 90;
-    _agendaSyncNoMore = false;
-    _loadAgenda(profile: profile);
+    if (reloadAgenda) {
+      _agendaLimit = 50;
+      _agendaHorizonDays = 90;
+      _agendaFillDays = 0;
+      _agendaSyncNoMore = false;
+      _loadAgenda(profile: profile);
+    }
 
     _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
@@ -1962,17 +1975,17 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     var firstEmissionLogged = false;
 
-    // Three streams are combined:
-    // 1. Main agenda: threads in the current priority (filtered by path)
-    // 2. Associated threads: children of active thread associations
-    // 3. Cross-priority link events: link-scheduled threads from all priorities
-    //    (shown dimmed when outside the current priority)
+    // Two streams are combined:
+    // 1. Main agenda: threads across all priorities (no path filter), so
+    //    every priority block is visible regardless of which priority
+    //    page is active. The page [context] only determines which block
+    //    is expanded by default, not which threads load.
+    // 2. Associated threads: children of active thread associations.
     final dateRange = CustomBoundedDateRange(
       Date.today(),
       Date.today().addDays(_agendaHorizonDays),
     );
     final agendaStream = Thread.watch(
-      priorityPath: priorityToLoad.path,
       archived: state.showArchived,
       filter: state.filter.isNotEmpty ? state.filter : null,
       iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
@@ -1984,50 +1997,29 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     final associatedStream = Thread.watchAssociatedThreads();
 
-    // Only fetch cross-priority link events when no active filters/search
-    // (filters are priority-scoped, cross-priority events don't match).
-    final hasActiveFilters =
-        state.filter.isNotEmpty ||
-        state.iconFilter.isNotEmpty ||
-        state.search.isNotEmpty;
-    final crossPriorityStream = hasActiveFilters
-        ? Stream.value(<Thread>[])
-        : Thread.watch(
-            linkScheduledOnly: true,
-            archived: false,
-            order: ThreadOrder.sorted,
-            includeUnscheduled: false,
-            range: dateRange,
-          ).map((result) => result.threads);
-
     _agendaSubscription =
-        Rx.combineLatest3<
+        Rx.combineLatest2<
               ThreadWatchResult,
               List<Thread>,
-              List<Thread>,
               ThreadWatchResult
-            >(agendaStream, associatedStream, crossPriorityStream, (
+            >(agendaStream, associatedStream, (
               agendaResult,
               associatedThreads,
-              crossPriorityThreads,
             ) {
               final agendaIds = agendaResult.threads.map((t) => t.id).toSet();
 
               // Merge associated threads that aren't already in the agenda.
-              // Only include associated threads whose parent event is in the
-              // current priority — prevents threads from other priorities
-              // leaking into the agenda.
-              final currentPriorityEventIds = agendaResult.threads
+              // Include any associated child whose parent event is visible
+              // in the (now global) agenda.
+              final visibleEventIds = agendaResult.threads
                   .where((t) => t.isLinkScheduleInstance || t.hasLinkSchedule)
                   .map((t) => t.id)
                   .toSet();
               final extra = associatedThreads.where((t) {
                 if (agendaIds.contains(t.id)) return false;
-                // Check if this thread is associated with an event in the
-                // current priority (via _associations map)
                 if (_associations != null) {
                   for (final entry in _associations!.entries) {
-                    if (currentPriorityEventIds.contains(entry.key) &&
+                    if (visibleEventIds.contains(entry.key) &&
                         entry.value.any((a) => a.childThreadId == t.id)) {
                       return true;
                     }
@@ -2036,26 +2028,8 @@ class PriorityBloc extends Cubit<PriorityState> {
                 return false;
               }).toList();
 
-              // Merge cross-priority link events not already in agenda.
-              // Only include actual link schedule instances from the
-              // cross-priority stream — base threads (e.g. todos that
-              // happen to have a link) should not leak through. Whether
-              // each thread is dimmed is decided at render time in
-              // [_makeAgenda] via a direct path check on the thread's
-              // priority, so this step does not need to track them.
-              final crossExtra = <Thread>[
-                for (final t in crossPriorityThreads)
-                  if (!agendaIds.contains(t.id) && t.isLinkScheduleInstance) t,
-              ];
-
-              final allThreads = [
-                ...agendaResult.threads,
-                ...extra,
-                ...crossExtra,
-              ];
-
               return (
-                threads: allThreads,
+                threads: [...agendaResult.threads, ...extra],
                 rawRowCount: agendaResult.rawRowCount,
               );
             })
@@ -2237,6 +2211,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 threads: patchedThreads,
                 context: priorityToLoad,
                 horizonDays: _agendaHorizonDays,
+                minFillDays: _agendaFillDays,
                 associationsByParentId: _associations,
                 priorityBlocksByPriority: _priorityBlocksByPriority,
               );
@@ -2264,7 +2239,9 @@ class PriorityBloc extends Cubit<PriorityState> {
               emit(
                 state.copyWith(
                   agenda: agenda,
-                  agendaItems: agenda.flatItems(expandedBlockId: state.expandedBlockId),
+                  agendaItems: agenda.flatItems(
+                    contextPriorityId: state.context.id,
+                  ),
                   agendaDoneEnd: false,
                   agendaLoaded: true,
                   reorderViewItems: const Value(null),
@@ -2553,6 +2530,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
   int _agendaLimit = 50;
   int _agendaHorizonDays = 90;
+  // Minimum days from today to populate with empty headers. Starts at 0
+  // so [makeAgendaItems]'s 14-day buffer past the last-content date
+  // dominates on the initial render. Grows in [fetchMoreAgendaItems] as
+  // the user scrolls past the buffer so more empty days appear instead
+  // of leaving the user on a stuck spinner.
+  int _agendaFillDays = 0;
   int _activityFeedLimit = 50;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;

@@ -929,6 +929,11 @@ const double kThreadRowApproxHeight = 56;
 
 const Duration kBlockBoundaryAnimDuration = Duration(milliseconds: 150);
 
+/// Duration of a priority block's expand/collapse animation. Matches
+/// the boundary animation so the two transitions read as one motion
+/// when a block-drag drop lands inside a collapsing block.
+const Duration kBlockExpandAnimDuration = Duration(milliseconds: 200);
+
 /// Compute the expanded height of a [BlockDropZone] for a payload —
 /// matches the dragged block's (header + visible threads) height so
 /// dropping in a zone "fits" the source block.

@@ -73,7 +73,7 @@ dependencies:
   # package_graph.json inconsistent and breaking `flutter pub get`.
   retry: ^3.1.2
   b: ^0.2.0
-  super_editor: 0.3.0-dev.48
+  super_editor: 0.3.0-dev.51
   super_editor_spellcheck:
     git:
       url: https://github.com/Flutter-Bounty-Hunters/super_editor.git

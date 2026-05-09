@@ -38,3 +38,15 @@ class OnboardingCompleted extends OnboardingState {
   @override
   List<Object?> get props => [];
 }
+
+/// Thrown when an onboarding action requires the [Store] but it's unavailable
+/// — typically because a sign-out / sign-in is racing with the overlay still
+/// mounted. Callers should treat this as transient (show a retry hint) and
+/// not report it to error tracking; the underlying Injector
+/// `NotDefinedException` is environmental, not a bug in the calling code.
+class OnboardingStoreUnavailable implements Exception {
+  const OnboardingStoreUnavailable();
+
+  @override
+  String toString() => 'OnboardingStoreUnavailable';
+}

@@ -21,6 +21,7 @@ class AgendaBuilder {
     required List<Thread> threads,
     required Priority context,
     required int horizonDays,
+    int minFillDays = 0,
     Map<Uuid, List<ThreadAssociationRow>>? associationsByParentId,
     DateTime? now,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
@@ -31,6 +32,7 @@ class AgendaBuilder {
       threads,
       context: context,
       horizonDays: horizonDays,
+      minFillDays: minFillDays,
       associationsByParentId: associationsByParentId,
     );
 

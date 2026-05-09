@@ -141,6 +141,14 @@ class RolesStepData {
   /// top-level priorities. Idempotent — calling again after success is a
   /// no-op.
   Future<void> commit() async {
+    // Bail out early if Store has been torn down (sign-out racing with the
+    // onboarding overlay still mounted). Without this, `Priority.getDefault`
+    // below calls `Store.get` and the Injector throws a generic
+    // `NotDefinedException` that gets reported as a code bug.
+    if (!Store.isAvailable) {
+      throw const OnboardingStoreUnavailable();
+    }
+
     for (final e in archived) {
       final id = e.priorityId;
       if (id == null) continue;

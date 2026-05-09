@@ -167,9 +167,14 @@ class PriorityWrapper implements AutoRouteWrapper {
   }
 }
 
-/// Auto-switches `PriorityTab` to `activityFeed` when the current priority's
-/// agenda is empty, or when the open thread isn't part of the agenda.
-/// Only ever switches *to* activityFeed — manual user choices stick.
+/// Auto-switches `PriorityTab` to `activityFeed` when the open thread
+/// isn't part of the agenda. Only ever switches *to* activityFeed —
+/// manual user choices stick.
+///
+/// The empty-agenda case no longer triggers a switch: the agenda is
+/// global across priorities (all blocks visible, just collapsed when
+/// not in the current context), so there's always *something* in the
+/// agenda for the user to see.
 class _AutoTabSwitcher extends StatelessWidget {
   const _AutoTabSwitcher({required this.child});
 
@@ -192,25 +197,19 @@ class _AutoTabSwitcher extends StatelessWidget {
         final notifier = PriorityTabProvider.maybeOf(context);
         if (notifier == null || notifier.value != PriorityTab.agenda) return;
 
-        // Items from outside the current priority are shown dimmed but
-        // don't make the agenda meaningfully populated for this priority.
-        final agendaIsEmpty = !state.agendaItems.any(
+        final thread = state.thread;
+        if (thread == null) return;
+
+        // Hidden rows belong to a collapsed block — the user can't see
+        // them, so the agenda doesn't currently surface this thread.
+        final threadInAgenda = state.agendaItems.any(
           (item) => item.when(
             header: (_) => false,
-            activity: (a) => !a.isOutsidePriority,
+            activity: (a) => !a.hidden && a.thread.id == thread.id,
           ),
         );
-        final thread = state.thread;
-        final threadInAgenda =
-            thread == null ||
-            state.agendaItems.any(
-              (item) => item.when(
-                header: (_) => false,
-                activity: (a) => a.thread.id == thread.id,
-              ),
-            );
 
-        if (agendaIsEmpty || !threadInAgenda) {
+        if (!threadInAgenda) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             notifier.value = PriorityTab.activityFeed;
           });
@@ -1265,6 +1264,16 @@ class _PriorityPageState extends State<PriorityPage> {
         : next is AgendaThreadItem
         ? next.parentBlockId
         : null;
+
+    // Hide every separator that sits directly above a hidden thread
+    // row. With the row itself at zero height, a stack of 1px lines
+    // would otherwise pile up at the collapsed block's location.
+    // The trailing separator (the one above the *next* block's header)
+    // remains and serves as the visible boundary between blocks.
+    // [AnimatedSize] below interpolates the height change so the
+    // separators slide closed in sync with the thread rows during a
+    // priority context switch.
+    final isAboveHiddenThread = next is AgendaThreadItem && next.hidden;
     return ListenableBuilder(
       listenable: _blockDragController,
       builder: (context, _) {
@@ -1277,9 +1286,10 @@ class _PriorityPageState extends State<PriorityPage> {
         // everything below the source while the surrounding animations
         // catch up.
         final shouldHide =
-            nextParentId != null &&
-            _blockDragController.draggingBlockId == nextParentId &&
-            !_blockDragController.isSourceVisible;
+            isAboveHiddenThread ||
+            (nextParentId != null &&
+                _blockDragController.draggingBlockId == nextParentId &&
+                !_blockDragController.isSourceVisible);
 
         // Selected: full 1px tinted border (still shown during a drag —
         // selection is a persistent state, not a hover affordance).
@@ -1500,78 +1510,74 @@ class _PriorityPageState extends State<PriorityPage> {
                 ];
               },
               activity: (agendaActivity) {
-                // Overflow row: replace with a compact "expand" affordance
-                // (double-down chevron, hover-aware colour) instead of a
-                // thread row. Tapping it expands the block.
-                if (agendaActivity.isCollapsedOverflow &&
-                    agendaActivity.collapsedBlockId != null) {
-                  return [
-                    BlockDragHidden(
-                      parentBlockId: agendaActivity.parentBlockId,
-                      child: _BlockExpandRow(
-                        key: ValueKey(
-                          'expand_${agendaActivity.collapsedBlockId}',
-                        ),
-                        blockId: agendaActivity.collapsedBlockId!,
-                      ),
-                    ),
-                  ];
-                }
                 final isBeingDragged = controller.draggingIndex == index;
                 final itemKey = agendaActivity.stableKey;
                 final removalKey = _getRemovalKey(itemKey);
-                return [
-                  BlockDragHidden(
-                    parentBlockId: agendaActivity.parentBlockId,
-                    child: AnimatedRemoval(
-                      key: removalKey,
-                      onRemoved: () {
-                        // Drop the cached GlobalKey so the next render builds
-                        // a fresh AnimatedRemoval (with _removed=false). When
-                        // the thread is associated, the bloc rebuild puts A
-                        // back under its parent event with the same stableKey;
-                        // without clearing this we'd reparent the just-collapsed
-                        // State and render an empty box forever.
-                        _removalKeys.remove(itemKey);
-                        context.read<PriorityBloc>().optimisticallyRemoveThread(
-                          agendaActivity.thread.id,
-                          finishTodo: true,
-                        );
+                final row = BlockDragHidden(
+                  parentBlockId: agendaActivity.parentBlockId,
+                  child: AnimatedRemoval(
+                    key: removalKey,
+                    onRemoved: () {
+                      // Drop the cached GlobalKey so the next render builds
+                      // a fresh AnimatedRemoval (with _removed=false). When
+                      // the thread is associated, the bloc rebuild puts A
+                      // back under its parent event with the same stableKey;
+                      // without clearing this we'd reparent the just-collapsed
+                      // State and render an empty box forever.
+                      _removalKeys.remove(itemKey);
+                      context.read<PriorityBloc>().optimisticallyRemoveThread(
+                        agendaActivity.thread.id,
+                        finishTodo: true,
+                      );
+                    },
+                    child: ThreadWidget(
+                      key: ValueKey('widget_$itemKey'),
+                      activity: agendaActivity.thread,
+                      selected:
+                          !isBeingDragged &&
+                          state.thread != null &&
+                          agendaActivity.thread.id == state.thread!.id,
+                      now: agendaActivity.now,
+                      isNext: agendaActivity.isNext,
+                      isAssociated: agendaActivity.isAssociated,
+                      isOutsidePriority: agendaActivity.isOutsidePriority,
+                      focusNode: focusNode,
+                      context: state.context,
+                      onSwipeExit: (command) async {
+                        // Swipeable already slid the thread off-screen.
+                        // Now collapse the gap, then execute the command.
+                        await removalKey.currentState?.remove();
+                        if (context.mounted) {
+                          await context.run(command);
+                        }
                       },
-                      child: ThreadWidget(
-                        key: ValueKey('widget_$itemKey'),
-                        activity: agendaActivity.thread,
-                        selected:
-                            !isBeingDragged &&
-                            state.thread != null &&
-                            agendaActivity.thread.id == state.thread!.id,
-                        now: agendaActivity.now,
-                        isNext: agendaActivity.isNext,
-                        isAssociated: agendaActivity.isAssociated,
-                        isOutsidePriority: agendaActivity.isOutsidePriority,
-                        focusNode: focusNode,
-                        context: state.context,
-                        onSwipeExit: (command) async {
-                          // Swipeable already slid the thread off-screen.
-                          // Now collapse the gap, then execute the command.
-                          await removalKey.currentState?.remove();
-                          if (context.mounted) {
-                            await context.run(command);
-                          }
-                        },
-                        onMobileFinish: () async {
-                          await removalKey.currentState?.remove();
-                        },
-                        onDesktopFinish: () async {
-                          await removalKey.currentState?.remove(fade: true);
-                        },
-                        reorderableIndex:
-                            enableReorder &&
-                                !agendaActivity.thread.isLinkScheduleInstance
-                            ? reorderableIndex
-                            : null,
-                      ),
+                      onMobileFinish: () async {
+                        await removalKey.currentState?.remove();
+                      },
+                      onDesktopFinish: () async {
+                        await removalKey.currentState?.remove(fade: true);
+                      },
+                      reorderableIndex:
+                          enableReorder &&
+                              !agendaActivity.thread.isLinkScheduleInstance
+                          ? reorderableIndex
+                          : null,
                     ),
+                  ),
+                );
+                // Animate expand/collapse: rows for collapsed blocks are
+                // mounted but rendered as zero-height. [AnimatedSize]
+                // smoothly interpolates the layout slot when [hidden]
+                // flips, so toggling a priority context slides the
+                // affected blocks open/closed instead of jumping.
+                return [
+                  AnimatedSize(
+                    duration: kBlockExpandAnimDuration,
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: agendaActivity.hidden
+                        ? const SizedBox(width: double.infinity, height: 0)
+                        : row,
                   ),
                 ];
               },
@@ -2202,10 +2208,10 @@ class _PriorityPageState extends State<PriorityPage> {
           );
         },
         activity: (a) {
-          if (a.isCollapsedOverflow && a.collapsedBlockId != null) {
-            children.add(_BlockExpandRow(blockId: a.collapsedBlockId!));
-            return;
-          }
+          // Hidden rows (collapsed block) don't contribute to the
+          // drag preview — we render only what's actually visible in
+          // the agenda above the drop zone.
+          if (a.hidden) return;
           children.add(
             ThreadWidget(
               activity: a.thread,
@@ -3184,63 +3190,3 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   }
 }
 
-/// Compact row that replaces a block's third thread when the block has
-/// more than the collapse limit and is not expanded. Tapping the row
-/// dispatches `PriorityBloc.toggleBlockExpansion` so the block expands
-/// to show every thread.
-///
-/// Visuals: a single short row (smaller than a thread row) with a
-/// double-down chevron centred horizontally. The chevron is `veryMuted`
-/// by default and switches to `foreground` while the row is hovered.
-/// No border / hover surround — this is a lightweight affordance, not a
-/// real list row.
-class _BlockExpandRow extends StatefulWidget {
-  const _BlockExpandRow({super.key, required this.blockId});
-
-  final String blockId;
-
-  @override
-  State<_BlockExpandRow> createState() => _BlockExpandRowState();
-}
-
-class _BlockExpandRowState extends State<_BlockExpandRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _hovered
-        ? context.theme.colors.foreground
-        : context.theme.plotColors.veryMuted;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () =>
-            context.read<PriorityBloc>().toggleBlockExpansion(widget.blockId),
-        child: ColoredBox(
-          color: _hovered
-              ? context.colour.editableBackground
-              : const Color(0x00000000),
-          child: SizedBox(
-            height: 20,
-            child: Center(
-              // FaIcon places the chevron glyph in the lower portion of
-              // its em-box (the icon font's natural metric leaves empty
-              // space above), so a mathematically-centred Icon reads as
-              // visually low. Lift it ~2px to optically center.
-              child: Transform.translate(
-                offset: const Offset(0, -2),
-                child: FaIcon(
-                  FontAwesomeIcons.chevronDown,
-                  size: 12,
-                  color: color,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

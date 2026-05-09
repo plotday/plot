@@ -778,29 +778,41 @@ class _BlockHeaderState extends State<_BlockHeader> {
     );
   }
 
-  /// Wraps [child] in a press handler that collapses this block when
-  /// it is currently expanded. Fires on pointer-down — before any drag
-  /// recognition — so the collapse happens immediately and any
-  /// subsequent drag operates on the collapsed block. [Listener] taps
-  /// the raw pointer stream without claiming the pointer in the
-  /// gesture arena, so the surrounding [Draggable] / [LongPressDraggable]
-  /// is unaffected.
+  /// Wraps [child] in a tap handler that switches the page's context
+  /// priority to this block's priority — collapsing the previous
+  /// context's blocks and expanding this priority's blocks (without
+  /// reloading the agenda data). Applies uniformly to priority,
+  /// gap-with-threads, and event block headers; tapping an event
+  /// header expands its thread row + any associated children, just
+  /// like tapping a priority header expands that priority's threads.
+  /// The dedicated event row beneath the header retains its own
+  /// "open the event" tap target.
+  ///
+  /// Uses [GestureDetector] so the tap recognizer competes in the
+  /// gesture arena with any surrounding [Draggable] / [LongPressDraggable] —
+  /// movement past the drag slop hands the pointer to the drag and
+  /// suppresses the tap, so a click switches context while a drag
+  /// reorders.
   ///
   /// `HitTestBehavior.opaque` is required because the row's content is
   /// plain [Text] inside [ColoredBox] wrappers — neither [RenderParagraph]
   /// (for plain text without hit-testable spans) nor [RenderColoredBox]
-  /// add themselves to hit tests, so a default `deferToChild` listener
+  /// add themselves to hit tests, so a default `deferToChild` detector
   /// would silently miss taps on most of the header.
-  Widget _wrapPressToCollapse(Widget child) {
-    final blockId = widget.parentBlockId;
-    if (blockId == null) return child;
-    return Listener(
+  Widget _wrapTapToOpen(Widget child) {
+    return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) {
+      onTap: () {
         final bloc = context.read<PriorityBloc>();
-        if (bloc.state.expandedBlockId == blockId) {
-          bloc.toggleBlockExpansion(blockId);
-        }
+        if (bloc.state.context.id == widget.priority.id) return;
+        // Same flow as the PrioritiesPage / modal switchers: routes
+        // through ChangeCurrentPriority so the URL updates and any
+        // sibling indicators (NowBloc highlight) flip immediately. The
+        // resulting navigation lands on PriorityBlocProvider's
+        // didUpdateWidget, which calls bloc.setPriority — and after
+        // recent changes that path no longer reloads the agenda data,
+        // it just recomputes which block is expanded.
+        context.run(ChangeCurrentPriority(widget.priority));
       },
       child: child,
     );
@@ -809,7 +821,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   @override
   Widget build(BuildContext context) {
     if (!_isDraggable || widget.parentBlockId == null) {
-      return _wrapPressToCollapse(_buildRow(context));
+      return _wrapTapToOpen(_buildRow(context));
     }
 
     final payload = BlockDragPayload(
@@ -854,7 +866,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // feedback can match the source row's shape instead of growing to the
     // full viewport (multi-panel renders the agenda narrower than the
     // window).
-    return _wrapPressToCollapse(
+    return _wrapTapToOpen(
       MouseRegion(
         onEnter: (_) {
           if (_hover) return;

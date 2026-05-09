@@ -245,6 +245,16 @@ class _FullScreenLayerState extends State<_FullScreenLayer> {
       await hook(context);
       if (!mounted) return;
       widget.onNext();
+    } on OnboardingStoreUnavailable {
+      // Transient: sign-out raced with the overlay. Don't capture — the
+      // underlying Injector miss is environmental, not a code bug.
+      log.warning('Onboarding step blocked: store not ready');
+      if (mounted) {
+        context.showToast(
+          message: 'Still loading — please try again in a moment.',
+          isError: true,
+        );
+      }
     } catch (e, t) {
       log.warning('Onboarding step onBeforeNext failed', e, t);
       Tracker.captureException(e, t);

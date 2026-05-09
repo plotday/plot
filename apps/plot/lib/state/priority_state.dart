@@ -32,7 +32,6 @@ class PriorityState extends Equatable {
     bool remoteSearchInProgress = false,
     bool remoteSearchOffline = false,
     bool hasArchivedMatches = false,
-    String? expandedBlockId,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -45,7 +44,6 @@ class PriorityState extends Equatable {
       agendaItems: agendaItems != null && agendaItems.isNotEmpty
           ? List.unmodifiable(agendaItems)
           : agendaItems ?? const [],
-      expandedBlockId: expandedBlockId,
       agendaDoneEnd: agendaDoneEnd,
       agendaLoaded: agendaLoaded,
       showArchived: showArchived,
@@ -106,7 +104,6 @@ class PriorityState extends Equatable {
     this.remoteSearchInProgress = false,
     this.remoteSearchOffline = false,
     this.hasArchivedMatches = false,
-    this.expandedBlockId,
   });
 
   final Priority context;
@@ -155,12 +152,6 @@ class PriorityState extends Equatable {
   /// additional matches. Drives the "View archived items matching this
   /// search" ghost button. Only meaningful when [showArchived] is false.
   final bool hasArchivedMatches;
-
-  /// The id of the priority block (or gap block) currently expanded —
-  /// rendered with all its threads visible while every other block
-  /// stays truncated to the collapse limit. Null when nothing is
-  /// expanded. Toggled by [PriorityBloc.toggleBlockExpansion].
-  final String? expandedBlockId;
 
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
@@ -218,9 +209,8 @@ class PriorityState extends Equatable {
           isOutsidePriority: item.isOutsidePriority,
           associationParentId: item.associationParentId,
           associationOrder: item.associationOrder,
-          isCollapsedOverflow: item.isCollapsedOverflow,
-          collapsedBlockId: item.collapsedBlockId,
           parentBlockId: item.parentBlockId,
+          hidden: item.hidden,
         );
         if (i > 0 && result[i - 1] is AgendaHeaderItem) {
           final h = result[i - 1] as AgendaHeaderItem;
@@ -342,6 +332,7 @@ class PriorityState extends Equatable {
     List<Thread> threads, {
     required Priority context,
     required int horizonDays,
+    int minFillDays = 0,
     Map<Uuid, List<ThreadAssociationRow>>? associationsByParentId,
   }) {
     // A thread is "outside" the current view when its priority is neither
@@ -1090,6 +1081,11 @@ class PriorityState extends Equatable {
     final horizon = today.addDays(horizonDays);
     final contentEnd = lastContentDate ?? today;
     var fillUntil = contentEnd.addDays(emptyDayBufferDays);
+    // Once the user scrolls past the buffer, [minFillDays] grows so the
+    // agenda keeps producing more empty-day headers instead of stranding
+    // them on a stuck "loading more" spinner.
+    final minFillEnd = today.addDays(minFillDays);
+    if (minFillEnd > fillUntil) fillUntil = minFillEnd;
     if (fillUntil > horizon) fillUntil = horizon;
 
     final missingHeaders = <AgendaHeaderItem>[];
@@ -1157,7 +1153,6 @@ class PriorityState extends Equatable {
     bool? remoteSearchInProgress,
     bool? remoteSearchOffline,
     bool? hasArchivedMatches,
-    Value<String?> expandedBlockId = const Value.absent(),
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1206,7 +1201,6 @@ class PriorityState extends Equatable {
           remoteSearchInProgress ?? this.remoteSearchInProgress,
       remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
-      expandedBlockId: expandedBlockId.or(this.expandedBlockId),
     );
   }
 
@@ -1237,7 +1231,6 @@ class PriorityState extends Equatable {
     remoteSearchInProgress,
     remoteSearchOffline,
     hasArchivedMatches,
-    expandedBlockId,
   ];
 
   @override
