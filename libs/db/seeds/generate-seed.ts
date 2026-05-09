@@ -1225,6 +1225,20 @@ function generateSQL(
   lines.push(
     `DELETE FROM user_contact WHERE user_id = ${sqlString(userId)} AND COALESCE(source, '') <> 'self';`
   );
+  // Archive prior personal twists/instances created by previous seed runs.
+  // processSource/processTwist fall back to a personal twist when no public
+  // twist matches by name; without this cleanup, each re-seed leaves the
+  // previous run's personal twists in the user's "Available connections"
+  // list (with a "Personal" badge) and the next run adds duplicates.
+  // We archive (not DELETE) because thread/link.created_by still references
+  // the prior twist_instance UUIDs from rows the seed itself just deleted —
+  // and because twist/twist_instance are synced to clients via user.twist.
+  lines.push(
+    `UPDATE twist_instance SET archived_at = now() WHERE archived_at IS NULL AND twist_id IN (SELECT id FROM twist WHERE user_id = ${sqlString(userId)} AND environment = 'personal');`
+  );
+  lines.push(
+    `UPDATE twist SET archived_at = now() WHERE user_id = ${sqlString(userId)} AND environment = 'personal' AND archived_at IS NULL;`
+  );
   lines.push("");
 
   // Build reference maps
@@ -1813,6 +1827,13 @@ function processSource(
   // Note: twist_instance no longer has priority_id (per-user filing now lives in
   // thread_priority); the source's priority is conveyed via the threads filed
   // under it, not the twist_instance row itself.
+  //
+  // The personal-twist fallback is created with `archived_at = now()` so it does
+  // NOT appear in the user's "Available connections" list (get_accessible_twists
+  // filters on archived_at IS NULL). The row still exists so links/threads can
+  // reference its twist_instance as `created_by`. Without this, every source the
+  // seed file lists that has no matching public twist (e.g. Notion, Google Sheets)
+  // would surface as a "Personal" connector that the user can't actually use.
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
   outLines.push(`  v_twist_id bigint;`);
@@ -1822,10 +1843,10 @@ function processSource(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
   );
   outLines.push(
-    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)}, now())`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
@@ -1860,7 +1881,8 @@ function processTwist(
 
   // Try to use a public twist if one exists with the same name, otherwise create
   // a personal one. See processSource for the rationale on twist.user_id /
-  // twist_package_id / twist_instance.options.
+  // twist_package_id / twist_instance.options and the `archived_at = now()` on
+  // the personal fallback (keeps the row out of the user's connector list).
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
   outLines.push(`  v_twist_id bigint;`);
@@ -1870,10 +1892,10 @@ function processTwist(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
   );
   outLines.push(
-    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)}, now())`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
