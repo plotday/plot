@@ -1595,13 +1595,16 @@ class _ExecuteMerge extends ThreadCommand {
             .get();
 
     // 2. Absorb identity fields onto target in one row write.
-    final mergedContacts =
-        mergeAudienceUnion(target.contacts, source.contacts);
+    final mergedContacts = mergeAudienceUnion(target.contacts, source.contacts);
     final mergedGroups = mergeAudienceUnion(target.groups, source.groups);
-    final newImportance =
-        mergeImportanceMax(targetRow.importance, sourceRow.importance);
-    final newUrgency =
-        mergeUrgencyMostUrgent(targetRow.urgency, sourceRow.urgency);
+    final newImportance = mergeImportanceMax(
+      targetRow.importance,
+      sourceRow.importance,
+    );
+    final newUrgency = mergeUrgencyMostUrgent(
+      targetRow.urgency,
+      sourceRow.urgency,
+    );
 
     await db.add(
       db.threads,
@@ -1621,10 +1624,7 @@ class _ExecuteMerge extends ThreadCommand {
     // migration on this update; the client doesn't read or write
     // those columns since they're not synced down.
     await source
-        .copyWith(
-          archivedAt: Value(now),
-          mergedIntoThreadId: Value(target.id),
-        )
+        .copyWith(archivedAt: Value(now), mergedIntoThreadId: Value(target.id))
         .save();
 
     // 4. Move notes.
@@ -1632,18 +1632,14 @@ class _ExecuteMerge extends ThreadCommand {
       final note = await Note.get(noteRow.id);
       if (note == null) continue;
       await note
-          .copyWith(
-            threadId: target.id,
-            mergedFromThreadId: Value(source.id),
-          )
+          .copyWith(threadId: target.id, mergedFromThreadId: Value(source.id))
           .save(pushToRemote: false);
     }
 
     // 5. Move links.
-    final linkRows =
-        await (db.select(db.links)
-              ..where((l) => l.threadId.equals(source.id.toBytes())))
-            .get();
+    final linkRows = await (db.select(
+      db.links,
+    )..where((l) => l.threadId.equals(source.id.toBytes()))).get();
     for (final linkRow in linkRows) {
       await db.add(
         db.links,
@@ -1677,8 +1673,9 @@ class _ExecuteMerge extends ThreadCommand {
       final merged = Map<Tag, List<ActorId>>.from(existing);
       for (final entry in sourceTags.entries) {
         final current = merged[entry.key] ?? const [];
-        final newActors =
-            entry.value.where((a) => !current.contains(a)).toList();
+        final newActors = entry.value
+            .where((a) => !current.contains(a))
+            .toList();
         if (newActors.isNotEmpty) {
           merged[entry.key] = [...current, ...newActors];
           changed = true;
@@ -1716,22 +1713,25 @@ class _ExecuteMerge extends ThreadCommand {
       if (!targetSlots.contains(slot)) {
         await db.add(
           db.schedules,
-          s.copyWith(threadId: Value(target.id), updatedAt: now)
+          s
+              .copyWith(threadId: Value(target.id), updatedAt: now)
               .toCompanion(false),
         );
       }
     }
 
     // 8. thread_association move.
-    final childRows = await (db.select(db.threadAssociations)
-          ..where((t) => t.childThreadId.equalsValue(source.id))
-          ..where((t) => t.archivedAt.isNull()))
-        .get();
-    final targetHasParent = (await (db.select(db.threadAssociations)
-              ..where((t) => t.childThreadId.equalsValue(target.id))
+    final childRows =
+        await (db.select(db.threadAssociations)
+              ..where((t) => t.childThreadId.equalsValue(source.id))
               ..where((t) => t.archivedAt.isNull()))
-            .get())
-        .isNotEmpty;
+            .get();
+    final targetHasParent =
+        (await (db.select(db.threadAssociations)
+                  ..where((t) => t.childThreadId.equalsValue(target.id))
+                  ..where((t) => t.archivedAt.isNull()))
+                .get())
+            .isNotEmpty;
     for (final row in childRows) {
       if (targetHasParent) {
         await db.add(
@@ -1749,10 +1749,11 @@ class _ExecuteMerge extends ThreadCommand {
         );
       }
     }
-    final parentRows = await (db.select(db.threadAssociations)
-          ..where((t) => t.parentThreadId.equalsValue(source.id))
-          ..where((t) => t.archivedAt.isNull()))
-        .get();
+    final parentRows =
+        await (db.select(db.threadAssociations)
+              ..where((t) => t.parentThreadId.equalsValue(source.id))
+              ..where((t) => t.archivedAt.isNull()))
+            .get();
     for (final row in parentRows) {
       await db.add(
         db.threadAssociations,
@@ -1817,23 +1818,25 @@ class SplitThread extends Command {
     final db = Store.get;
 
     // Primary: rows that point at this thread via the back-reference.
-    final viaRef = await (db.select(db.threads)
-          ..where((t) => t.mergedIntoThreadId.equalsValue(thread.id)))
-        .get();
+    final viaRef = await (db.select(
+      db.threads,
+    )..where((t) => t.mergedIntoThreadId.equalsValue(thread.id))).get();
     final sourceIds = <ThreadId>{for (final r in viaRef) r.id};
 
     // Fallback: legacy merges before the back-reference column existed.
-    final noteRows = await (db.select(db.notes)
-          ..where((n) => n.threadId.equalsValue(thread.id))
-          ..where((n) => n.mergedFromThreadId.isNotNull()))
-        .get();
+    final noteRows =
+        await (db.select(db.notes)
+              ..where((n) => n.threadId.equalsValue(thread.id))
+              ..where((n) => n.mergedFromThreadId.isNotNull()))
+            .get();
     for (final n in noteRows) {
       if (n.mergedFromThreadId != null) sourceIds.add(n.mergedFromThreadId!);
     }
-    final linkRows = await (db.select(db.links)
-          ..where((l) => l.threadId.equals(thread.id.toBytes()))
-          ..where((l) => l.mergedFromThreadId.isNotNull()))
-        .get();
+    final linkRows =
+        await (db.select(db.links)
+              ..where((l) => l.threadId.equals(thread.id.toBytes()))
+              ..where((l) => l.mergedFromThreadId.isNotNull()))
+            .get();
     for (final l in linkRows) {
       if (l.mergedFromThreadId != null) sourceIds.add(l.mergedFromThreadId!);
     }
@@ -1877,19 +1880,20 @@ class _ExecuteSplit extends ThreadCommand {
     final db = Store.get;
     final now = DateTime.now();
 
-    final sourceRow = await (db.select(db.threads)
-          ..where((t) => t.id.equalsValue(source.id)))
-        .getSingleOrNull();
-    final currentRow = await (db.select(db.threads)
-          ..where((t) => t.id.equalsValue(current.id)))
-        .getSingleOrNull();
+    final sourceRow = await (db.select(
+      db.threads,
+    )..where((t) => t.id.equalsValue(source.id))).getSingleOrNull();
+    final currentRow = await (db.select(
+      db.threads,
+    )..where((t) => t.id.equalsValue(current.id))).getSingleOrNull();
     if (sourceRow == null || currentRow == null) return const CommandSkipped();
 
     // 1. Move notes back.
-    final noteRows = await (db.select(db.notes)
-          ..where((n) => n.threadId.equalsValue(current.id))
-          ..where((n) => n.mergedFromThreadId.equalsValue(source.id)))
-        .get();
+    final noteRows =
+        await (db.select(db.notes)
+              ..where((n) => n.threadId.equalsValue(current.id))
+              ..where((n) => n.mergedFromThreadId.equalsValue(source.id)))
+            .get();
     for (final noteRow in noteRows) {
       final note = await Note.get(noteRow.id);
       if (note == null) continue;
@@ -1899,10 +1903,11 @@ class _ExecuteSplit extends ThreadCommand {
     }
 
     // 2. Move links back.
-    final linkRows = await (db.select(db.links)
-          ..where((l) => l.threadId.equals(current.id.toBytes()))
-          ..where((l) => l.mergedFromThreadId.equals(source.id.toBytes())))
-        .get();
+    final linkRows =
+        await (db.select(db.links)
+              ..where((l) => l.threadId.equals(current.id.toBytes()))
+              ..where((l) => l.mergedFromThreadId.equals(source.id.toBytes())))
+            .get();
     for (final linkRow in linkRows) {
       await db.add(
         db.links,
@@ -1917,22 +1922,23 @@ class _ExecuteSplit extends ThreadCommand {
     }
 
     // 2b. Move schedules back (fill-gaps inverse of merge step 7).
-    final allSourceSchedules = await (db.select(db.schedules)
-          ..where((s) => s.threadId.equalsValue(source.id)))
-        .get();
+    final allSourceSchedules = await (db.select(
+      db.schedules,
+    )..where((s) => s.threadId.equalsValue(source.id))).get();
     final sourceSlots = <String>{
       for (final s in allSourceSchedules)
         '${s.userId ?? ''}_${s.occurrence ?? ''}',
     };
-    final currentSchedules = await (db.select(db.schedules)
-          ..where((s) => s.threadId.equalsValue(current.id)))
-        .get();
+    final currentSchedules = await (db.select(
+      db.schedules,
+    )..where((s) => s.threadId.equalsValue(current.id))).get();
     for (final s in currentSchedules) {
       final slot = '${s.userId ?? ''}_${s.occurrence ?? ''}';
       if (!sourceSlots.contains(slot)) {
         await db.add(
           db.schedules,
-          s.copyWith(threadId: Value(source.id), updatedAt: now)
+          s
+              .copyWith(threadId: Value(source.id), updatedAt: now)
               .toCompanion(false),
         );
       }
@@ -1940,29 +1946,32 @@ class _ExecuteSplit extends ThreadCommand {
 
     // Common query used in steps 2c and 3: other sources still merged into
     // current (excluding the source being split out).
-    final otherActiveSourceRows = await (db.select(db.threads)
-          ..where((t) => t.mergedIntoThreadId.equalsValue(current.id))
-          ..where((t) => t.id.isNotValue(source.id.toBytes()))
-          ..where((t) => t.archivedAt.isNotNull()))
-        .get();
+    final otherActiveSourceRows =
+        await (db.select(db.threads)
+              ..where((t) => t.mergedIntoThreadId.equalsValue(current.id))
+              ..where((t) => t.id.isNotValue(source.id.toBytes()))
+              ..where((t) => t.archivedAt.isNotNull()))
+            .get();
 
     // 2c. Tag set-subtract on current. Source's thread_tag rows are still
     // on source.id (untouched by merge — merge only copied actors into
     // current's tag rows). Subtract source's actors per (tag, occurrence)
     // from current, keeping any actors carried by other still-merged
     // sources.
-    final sourceTagRows = await (db.select(db.threadTags)
-          ..where((t) => t.id.equalsValue(source.id)))
-        .get();
+    final sourceTagRows = await (db.select(
+      db.threadTags,
+    )..where((t) => t.id.equalsValue(source.id))).get();
     final otherSourceTagRows = <ThreadTagsRow>[];
     for (final s in otherActiveSourceRows) {
-      otherSourceTagRows.addAll(await (db.select(db.threadTags)
-            ..where((t) => t.id.equalsValue(s.id)))
-          .get());
+      otherSourceTagRows.addAll(
+        await (db.select(
+          db.threadTags,
+        )..where((t) => t.id.equalsValue(s.id))).get(),
+      );
     }
-    final currentTagRows = await (db.select(db.threadTags)
-          ..where((t) => t.id.equalsValue(current.id)))
-        .get();
+    final currentTagRows = await (db.select(
+      db.threadTags,
+    )..where((t) => t.id.equalsValue(current.id))).get();
     for (final currentRow in currentTagRows) {
       final occurrence = currentRow.occurrence;
       final currentTags = currentRow.tags ?? const <Tag, List<ActorId>>{};
@@ -1973,7 +1982,8 @@ class _ExecuteSplit extends ThreadCommand {
         if (s.occurrence != occurrence) continue;
         final m = s.tags ?? const <Tag, List<ActorId>>{};
         for (final entry in m.entries) {
-          sourceActorsByTag.putIfAbsent(entry.key, () => <ActorId>{})
+          sourceActorsByTag
+              .putIfAbsent(entry.key, () => <ActorId>{})
               .addAll(entry.value);
         }
       }
@@ -1984,7 +1994,8 @@ class _ExecuteSplit extends ThreadCommand {
         if (o.occurrence != occurrence) continue;
         final m = o.tags ?? const <Tag, List<ActorId>>{};
         for (final entry in m.entries) {
-          keptByOthers.putIfAbsent(entry.key, () => <ActorId>{})
+          keptByOthers
+              .putIfAbsent(entry.key, () => <ActorId>{})
               .addAll(entry.value);
         }
       }
@@ -2718,9 +2729,7 @@ class ShareThreadGroup extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       if (_isShared) {
-        final newGroups = thread.groups
-            .where((id) => id != group.id)
-            .toList();
+        final newGroups = thread.groups.where((id) => id != group.id).toList();
         final newContacts = _contactsWithSelfIfGroupMember(thread, group);
         await onUpdate(
           thread.copyWith(
@@ -3093,7 +3102,6 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent) ToggleThreadPrivate(thread),
     if (!skipInfrequent && !hideArchive)
       ArchiveThread(thread, bloc: priorityBloc),
   ];

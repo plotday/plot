@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/profile_preferences.dart';
+import 'onboarding_hoverable.dart';
 import 'onboarding_steps.dart';
 import 'onboarding_progress.dart';
 
@@ -120,9 +121,10 @@ class _DesktopHighlight extends StatelessWidget {
             Positioned(
               top: 16,
               right: 16,
-              child: GestureDetector(
+              child: OnboardingHoverable(
                 onTap: onDismiss,
-                child: const _DismissButton(),
+                builder: (context, hovered) =>
+                    _DismissButton(hovered: hovered),
               ),
             ),
             // Content on the overlay
@@ -300,9 +302,10 @@ class _MobileHighlight extends StatelessWidget {
                       Positioned(
                         top: 8,
                         right: 12,
-                        child: GestureDetector(
+                        child: OnboardingHoverable(
                           onTap: onDismiss,
-                          child: const _DismissButton(),
+                          builder: (context, hovered) =>
+                              _DismissButton(hovered: hovered),
                         ),
                       ),
                       // Content + progress
@@ -368,18 +371,27 @@ class _MobileHighlight extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _DismissButton extends StatelessWidget {
-  const _DismissButton();
+  const _DismissButton({this.hovered = false});
+
+  final bool hovered;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
       width: 40,
       height: 40,
+      decoration: BoxDecoration(
+        color: hovered ? const Color(0x26FFFFFF) : const Color(0x00FFFFFF),
+        shape: BoxShape.circle,
+      ),
       child: Center(
         child: Text(
           '\u00D7',
           style: TextStyle(
-            color: Color(0xB3FFFFFF),
+            color: hovered
+                ? const Color(0xFFFFFFFF)
+                : const Color(0xB3FFFFFF),
             fontSize: 24,
             fontWeight: FontWeight.w300,
             decoration: TextDecoration.none,

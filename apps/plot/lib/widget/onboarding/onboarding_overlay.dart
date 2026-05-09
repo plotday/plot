@@ -11,9 +11,12 @@ import 'package:plot/state/onboarding.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/widget/logging.dart';
+import 'package:plot/widget/toast.dart';
 import 'onboarding_steps.dart';
 import 'onboarding_full_screen.dart';
 import 'onboarding_highlight.dart';
+import 'onboarding_hoverable.dart';
+import 'onboarding_progress.dart';
 
 /// Wraps the app's router output and conditionally shows the onboarding
 /// overlay on top.
@@ -91,10 +94,13 @@ class OnboardingOverlay extends StatelessWidget {
           }
         }
 
-        Widget? foreground;
+        Widget? overlay;
         if (step is FullScreenStep) {
-          foreground = OnboardingFullScreen(
-            key: ValueKey(state.currentStep),
+          // Full-screen steps render their content inside an AnimatedSwitcher
+          // (managed by [_FullScreenLayer]) but the pager sits outside it,
+          // so it persists across step swaps and the active dot smoothly
+          // slides to the next position via its existing AnimatedContainer.
+          overlay = _FullScreenLayer(
             step: step,
             currentStep: state.currentStep,
             totalSteps: state.totalSteps,
@@ -103,18 +109,32 @@ class OnboardingOverlay extends StatelessWidget {
             onDismiss: onDismiss,
           );
         } else if (step is HighlightStep) {
-          foreground = OnboardingHighlight(
-            key: ValueKey(state.currentStep),
-            step: step,
-            currentStep: state.currentStep,
-            totalSteps: state.totalSteps,
-            onNext: onNext,
-            onBack: onBack,
-            onDismiss: onDismiss,
+          overlay = Positioned.fill(
+            // Asymmetric cross-fade: the outgoing foreground reaches
+            // opacity 0 around the midpoint while the incoming one only
+            // starts becoming visible shortly before that. Avoids the
+            // muddy frame where a straight cross-fade has both layers
+            // sitting at ~50% and the two designs blend together.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchOutCurve:
+                  const Interval(0.5, 1.0, curve: Curves.easeIn),
+              switchInCurve:
+                  const Interval(0.4, 1.0, curve: Curves.easeOut),
+              child: OnboardingHighlight(
+                key: ValueKey(state.currentStep),
+                step: step,
+                currentStep: state.currentStep,
+                totalSteps: state.totalSteps,
+                onNext: onNext,
+                onBack: onBack,
+                onDismiss: onDismiss,
+              ),
+            ),
           );
         }
 
-        if (foreground != null) {
+        if (overlay != null) {
           return Stack(
             children: [
               child,
@@ -125,12 +145,7 @@ class OnboardingOverlay extends StatelessWidget {
                   color: backdropColor,
                 ),
               ),
-              Positioned.fill(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  child: foreground,
-                ),
-              ),
+              overlay,
             ],
           );
         }
@@ -178,5 +193,174 @@ class OnboardingOverlay extends StatelessWidget {
       log.warning('Failed to navigate to onboarding thread', e, t);
       Tracker.captureException(e, t);
     }
+  }
+}
+
+/// Full-screen step layer. Cross-fades the per-step content (X dismiss +
+/// title/body/illustration) but keeps the progress pager mounted across
+/// step swaps so it doesn't fade in and out — the active dot just slides
+/// to its new position via [OnboardingProgress]'s existing
+/// [AnimatedContainer]. Owns the `_committing` flag because the pager's
+/// Next button (now external to the content) drives [FullScreenStep.onBeforeNext].
+class _FullScreenLayer extends StatefulWidget {
+  const _FullScreenLayer({
+    required this.step,
+    required this.currentStep,
+    required this.totalSteps,
+    required this.onNext,
+    required this.onDismiss,
+    this.onBack,
+  });
+
+  final FullScreenStep step;
+  final int currentStep;
+  final int totalSteps;
+  final VoidCallback onNext;
+  final VoidCallback onDismiss;
+  final VoidCallback? onBack;
+
+  @override
+  State<_FullScreenLayer> createState() => _FullScreenLayerState();
+}
+
+class _FullScreenLayerState extends State<_FullScreenLayer> {
+  bool _committing = false;
+
+  Future<void> _handleNext() async {
+    if (_committing) return;
+    final hook = widget.step.onBeforeNext;
+    if (hook == null) {
+      widget.onNext();
+      return;
+    }
+    setState(() => _committing = true);
+    try {
+      await hook(context);
+      if (!mounted) return;
+      widget.onNext();
+    } catch (e, t) {
+      log.warning('Onboarding step onBeforeNext failed', e, t);
+      Tracker.captureException(e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Something went wrong. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _committing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Single outer scroll containing both the per-step content (in an
+    // AnimatedSwitcher) and the pager. The pager sits directly below the
+    // content in normal flow — it scrolls with the content rather than
+    // being pinned to the viewport. When content fits, the whole group
+    // (content + pager) centers vertically; when it doesn't, the user
+    // scrolls down to reach the pager.
+    //
+    // The pager is OUTSIDE the AnimatedSwitcher so it persists across
+    // step swaps (no fade on the pager itself). Same goes for the X
+    // dismiss button, which lives in the outer Stack.
+    return Positioned.fill(
+      child: SafeArea(
+        child: Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Vertical space the pager block occupies in normal flow:
+                // 32px gap above the pager + ~40px pager intrinsic
+                // height + 24px breathing room below. The page content
+                // is given a min-height of (viewport - this) so when
+                // it's short it fills exactly the area above the pager
+                // (centering within it), and when tall it grows past
+                // the min and the whole column scrolls naturally.
+                const pagerBlockHeight = 96.0;
+                final contentMinHeight =
+                    constraints.maxHeight - pagerBlockHeight;
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight:
+                              contentMinHeight > 0 ? contentMinHeight : 0,
+                        ),
+                        child: Padding(
+                          // X button clearance (40px button at top:16).
+                          padding: const EdgeInsets.only(top: 56),
+                          child: Center(
+                            // Per-step content cross-fades. Same
+                            // asymmetric curves as the highlight branch.
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 400),
+                              switchOutCurve: const Interval(0.5, 1.0,
+                                  curve: Curves.easeIn),
+                              switchInCurve: const Interval(0.4, 1.0,
+                                  curve: Curves.easeOut),
+                              child: OnboardingFullScreen(
+                                key: ValueKey(widget.currentStep),
+                                step: widget.step,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      // Persistent pager — single instance across all
+                      // full-screen steps. Label flip ("Next" →
+                      // "Finish") is acceptable as a one-frame change.
+                      OnboardingProgress(
+                        currentStep: widget.currentStep,
+                        totalSteps: widget.totalSteps,
+                        onNext: _handleNext,
+                        onBack: widget.onBack,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                );
+              },
+            ),
+            // Persistent X dismiss — stays in place while the page
+            // scrolls and across step swaps.
+            Positioned(
+              top: 16,
+              right: 16,
+              child: OnboardingHoverable(
+                onTap: widget.onDismiss,
+                builder: (context, hovered) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: hovered
+                        ? const Color(0x26FFFFFF)
+                        : const Color(0x00FFFFFF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '×',
+                      style: TextStyle(
+                        color: hovered
+                            ? const Color(0xFFFFFFFF)
+                            : const Color(0xB3FFFFFF),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w300,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

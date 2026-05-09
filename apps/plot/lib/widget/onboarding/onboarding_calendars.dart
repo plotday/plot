@@ -8,6 +8,7 @@ import 'package:plot/command/twist.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/logging.dart';
+import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 import 'package:plot/widget/toast.dart';
 
 /// Calendar providers surfaced in the onboarding "Connect your calendars"
@@ -343,19 +344,23 @@ class _ConnectedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accountLabel = source.accountLabel ?? source.name;
-    return GestureDetector(
+    return OnboardingHoverable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
+      builder: (context, hovered) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF),
+          color: hovered
+              ? const Color(0xFFF5F3FF)
+              : const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 12,
-              offset: Offset(0, 2),
+              color: hovered
+                  ? const Color(0x33000000)
+                  : const Color(0x1A000000),
+              blurRadius: hovered ? 16 : 12,
+              offset: const Offset(0, 2),
             ),
           ],
         ),

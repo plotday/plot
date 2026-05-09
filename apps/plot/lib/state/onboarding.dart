@@ -32,12 +32,27 @@ class OnboardingBloc extends Cubit<OnboardingState> {
     final settings = await UserSettingsEntity.get();
     if (settings?.onboardingCompleted == true) {
       emit(const OnboardingCompleted());
-    } else {
-      emit(OnboardingActive(
-        currentStep: 0,
-        steps: OnboardingSteps.all,
-      ));
+      return;
     }
+
+    // Second-device short-circuit: critical sync has already pulled the
+    // user's priorities by the time we get here, so any non-root priority
+    // is positive evidence the user has used Plot before. Persist the flag
+    // so future launches skip immediately without re-running this check.
+    if (await Priority.hasNonRoot()) {
+      await UserSettingsEntity.save(
+        UserSettingsCompanion(
+          onboardingCompleted: const drift.Value(true),
+        ),
+      );
+      emit(const OnboardingCompleted());
+      return;
+    }
+
+    emit(OnboardingActive(
+      currentStep: 0,
+      steps: OnboardingSteps.all,
+    ));
   }
 
   /// Advance to the next step, or complete if at the end.

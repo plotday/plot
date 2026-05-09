@@ -9,6 +9,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/modal.dart';
+import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 import 'package:plot/widget/toast.dart';
 
 /// Suggested roles surfaced in the "What fills your days?" onboarding step.
@@ -279,39 +280,51 @@ class _RoleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? const Color(0xFFFFFFFF) : const Color(0x33FFFFFF);
     final fg = selected ? const Color(0xFF1F1F1F) : const Color(0xFFFFFFFF);
     final icon = selected ? FontAwesomeIcons.check : FontAwesomeIcons.plus;
-    return GestureDetector(
+    return OnboardingHoverable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? const Color(0x00000000) : const Color(0x66FFFFFF),
-            width: 1,
+      builder: (context, hovered) {
+        // Selected (white) chips deepen toward a soft tint on hover; unselected
+        // translucent chips brighten by adding white alpha. Border on the
+        // unselected variant brightens to match.
+        final Color bg;
+        if (selected) {
+          bg = hovered ? const Color(0xFFF5F3FF) : const Color(0xFFFFFFFF);
+        } else {
+          bg = hovered ? const Color(0x4DFFFFFF) : const Color(0x33FFFFFF);
+        }
+        final borderColor = selected
+            ? const Color(0x00000000)
+            : (hovered
+                ? const Color(0x99FFFFFF)
+                : const Color(0x66FFFFFF));
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: borderColor, width: 1),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: fg),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: fg,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.none,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -395,15 +408,18 @@ class _RolePromptContentState extends State<_RolePromptContent> {
         Row(
           children: [
             const Spacer(),
-            GestureDetector(
+            OnboardingHoverable(
               onTap: _submit,
-              child: Container(
+              builder: (context, hovered) => AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
                 padding: EdgeInsets.symmetric(
                   horizontal: theme.spacing.lg,
                   vertical: theme.spacing.sm,
                 ),
                 decoration: BoxDecoration(
-                  color: theme.colors.primary,
+                  color: hovered
+                      ? theme.colors.hover(theme.colors.primary)
+                      : theme.colors.primary,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(

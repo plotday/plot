@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'onboarding_hoverable.dart';
+
 /// Progress dots and Next button for onboarding steps.
 ///
 /// Shows a subtle back chevron (when [onBack] is provided), pill-shaped
@@ -35,14 +37,24 @@ class OnboardingProgress extends StatelessWidget {
           width: 28,
           height: 28,
           child: onBack != null
-              ? GestureDetector(
-                  onTap: onBack,
-                  behavior: HitTestBehavior.opaque,
-                  child: const Center(
-                    child: Icon(
-                      FontAwesomeIcons.chevronLeft,
-                      size: 14,
-                      color: Color(0xB3FFFFFF),
+              ? OnboardingHoverable(
+                  onTap: onBack!,
+                  builder: (context, hovered) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    decoration: BoxDecoration(
+                      color: hovered
+                          ? const Color(0x26FFFFFF)
+                          : const Color(0x00FFFFFF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        FontAwesomeIcons.chevronLeft,
+                        size: 14,
+                        color: hovered
+                            ? const Color(0xFFFFFFFF)
+                            : const Color(0xB3FFFFFF),
+                      ),
                     ),
                   ),
                 )
@@ -73,13 +85,25 @@ class OnboardingProgress extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         // Next button
-        GestureDetector(
+        OnboardingHoverable(
           onTap: onNext,
-          child: Container(
+          builder: (context, hovered) => AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFFFFF),
+              color: hovered
+                  ? const Color(0xFFE8E5FF)
+                  : const Color(0xFFFFFFFF),
               borderRadius: BorderRadius.circular(8),
+              boxShadow: hovered
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x33000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 2),
+                      ),
+                    ]
+                  : null,
             ),
             child: Text(
               currentStep == totalSteps - 1 ? 'Finish' : 'Next',

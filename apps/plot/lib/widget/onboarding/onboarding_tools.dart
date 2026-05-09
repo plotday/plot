@@ -7,6 +7,7 @@ import 'package:plot/api/twist_api.dart';
 import 'package:plot/command/twist.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/logging.dart';
+import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 
 /// Calendar connector twist_package_ids excluded from the tools step —
 /// those are handled by the dedicated "Connect your calendars" step.
@@ -228,14 +229,25 @@ class _ToolTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return OnboardingHoverable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
+      builder: (context, hovered) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF),
+          color: hovered
+              ? const Color(0xFFF5F3FF)
+              : const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(10),
+          boxShadow: hovered
+              ? const [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -273,19 +285,23 @@ class _ConnectedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accountLabel = source.accountLabel ?? source.name;
-    return GestureDetector(
+    return OnboardingHoverable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
+      builder: (context, hovered) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF),
+          color: hovered
+              ? const Color(0xFFF5F3FF)
+              : const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 12,
-              offset: Offset(0, 2),
+              color: hovered
+                  ? const Color(0x33000000)
+                  : const Color(0x1A000000),
+              blurRadius: hovered ? 16 : 12,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
