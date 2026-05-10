@@ -215,6 +215,20 @@ class ClerkDartAuthService implements AuthService {
   Future<TokenResult> getSessionTokenWithReason({
     bool forceRefresh = false,
   }) async {
+    // If clerk_auth has no local session, `_auth.sessionToken()` throws a
+    // generic `noSessionTokenRetrieved` error that isn't recognised as
+    // non-recoverable (see [isNonRecoverableAuthError] doc — that code is
+    // intentionally treated as transient because outages can also surface
+    // it). Without this early-return we'd retry forever in the sync layer.
+    // The state happens whenever the SDK couldn't load or kept no usable
+    // session at startup — e.g. a build pointed at a different Clerk
+    // environment from the one that wrote the cache, or a sign-out that
+    // didn't fully tear local identity down. The web implementation
+    // already does the same null-session check.
+    if (!_auth.isSignedIn) {
+      return (token: null, failure: TokenFailureReason.sessionInvalid);
+    }
+
     // The sync layer calls with [forceRefresh] = true after the API
     // returns 401 — we *know* the previous token was rejected, so the
     // locally cached JWT (which `_auth.sessionToken()` would otherwise
@@ -266,6 +280,16 @@ class ClerkDartAuthService implements AuthService {
       try {
         log.info('Attempting session recovery via refreshClient');
         await _auth.refreshClient();
+        // refreshClient may have reconciled to "no session" without
+        // throwing (e.g. server reports the client has no active session
+        // for this environment). Calling sessionToken() now would throw
+        // the same generic noSessionTokenRetrieved we already saw — and
+        // the caller would treat it as transient and loop. Detect the
+        // signed-out state directly and return sessionInvalid so Base
+        // forces sign-out.
+        if (!_auth.isSignedIn) {
+          return (token: null, failure: TokenFailureReason.sessionInvalid);
+        }
         final token = await _auth.sessionToken();
         log.info('Session recovery succeeded');
         return (token: token.jwt, failure: null);

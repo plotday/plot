@@ -201,6 +201,15 @@ Internal catalog of product features for marketing content generation. Direct an
 - Full-text search
 - Modify individual recurring occurrences
 
+### Activity Tab Sections
+The Activity tab on each priority is the consolidated home for thread management, organized into four sections:
+- **Today** — Active threads (marked "Do today" via the sentinel, or scheduled for today/past)
+- **Scheduled** — One section per future day (Tomorrow, Friday, "Apr 28") for threads scheduled ahead
+- **New** — Unread threads that aren't active or scheduled
+- **Done** — Inactive threads (read, no active todo)
+
+Drag-and-drop moves threads between sections (drop on Today to make active, on a future day to schedule, on New to mark unread, on Done to finish) and reorders within Today / Scheduled. Drop slots expand to hold the dragged row's height so the surrounding list stays stable.
+
 ### Priority Features
 - Unlimited nesting depth
 - Path syntax (Work/Projects/Q1)

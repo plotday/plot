@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' hide Column;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so it
@@ -46,6 +47,7 @@ enum _OverrideField {
   unread,
   at,
   on,
+  order,
 }
 
 /// A per-thread optimistic override applied to stream results until the
@@ -115,6 +117,8 @@ class _OptimisticOverride {
         return actual.at == expected.at;
       case _OverrideField.on:
         return actual.on == expected.on;
+      case _OverrideField.order:
+        return actual.order.value == expected.order.value;
     }
   }
 }
@@ -157,6 +161,32 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Persisted scroll offsets for scroll restoration across route changes.
   double agendaScrollOffset = 0.0;
   double activityFeedScrollOffset = 0.0;
+
+  /// Per-row [Thread.loadRepresentativeForFeed] cache. Without it, every
+  /// `_ActivityFeedItem` reissues the schedule lookup in `initState`,
+  /// producing N parallel Drift queries on first render and another batch
+  /// each time an item rebuilds. Keyed by `(threadId, scheduleId,
+  /// currentUserRsvp)` so a thread whose representative inputs change
+  /// (recurring instance moved, RSVP changed) transparently re-resolves
+  /// — these are the same fields the old `_ActivityFeedItem.didUpdateWidget`
+  /// watched.
+  final Map<(ThreadId, Uuid?, String?), Future<Thread?>>
+  _representativeCache = {};
+
+  /// Returns the cached `Thread.loadRepresentativeForFeed` Future for the
+  /// given base thread, creating one on first access. Cache lifetime is
+  /// the lifetime of the bloc — `close()` drops the map.
+  Future<Thread?> loadRepresentativeForFeed(Thread base, {DateTime? now}) {
+    final key = (base.id, base.scheduleId, base.currentUserRsvp);
+    final existing = _representativeCache[key];
+    if (existing != null) return existing;
+    final future = Thread.loadRepresentativeForFeed(
+      base,
+      now: now ?? DateTime.now(),
+    );
+    _representativeCache[key] = future;
+    return future;
+  }
 
   PriorityBloc({required Priority priority, Thread? thread})
     : _subscriptions = [],
@@ -246,6 +276,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       threadListSource = ThreadListSource.activityFeed;
       // Cancel stale subscriptions so unfiltered results don't flash
       _activityFeedSubscription?.cancel();
+      _todoThreadsSubscription?.cancel();
       _agendaSubscription?.cancel();
     } else {
       threadListSource = null;
@@ -862,6 +893,129 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
+  /// Apply an Activity-feed drag-and-drop. Decodes the target's section
+  /// and applies the appropriate state transition (todo / unread /
+  /// schedule date) plus an intra-section order rewrite.
+  ///
+  /// Section transitions:
+  ///   * Today      → todo=true, schedule = `Thread.todoNowDate` sentinel
+  ///   * Scheduled  → todo=true, schedule.startOn = `targetScheduledDate`
+  ///   * New        → unread=true, archive any user schedule
+  ///   * Done       → unread=false, archive any user schedule, bump
+  ///                  `bumpedAt` so it surfaces at the top of Done
+  ///
+  /// Intra-section order is computed from the prev/next thread's
+  /// `userSchedule.order` (fractional indexing). For New/Done where
+  /// threads have no `userSchedule.order`, the resulting display order
+  /// is governed by the bloc's existing sort.
+  Future<void> applyActivityFeedThreadDrop({
+    required ThreadId draggedId,
+    required ActivitySection targetSection,
+    required Date? targetScheduledDate,
+    required ThreadId? prevId,
+    required ThreadId? nextId,
+  }) async {
+    Thread? dragged;
+    for (final t in _todoThreads) {
+      if (t.id == draggedId) {
+        dragged = t;
+        break;
+      }
+    }
+    if (dragged == null) {
+      for (final t in _activityFeedRawThreads) {
+        if (t.id == draggedId) {
+          dragged = t;
+          break;
+        }
+      }
+    }
+    if (dragged == null) return;
+
+    Order? newOrder;
+    if (targetSection == ActivitySection.today ||
+        targetSection == ActivitySection.scheduled) {
+      Thread? above;
+      Thread? below;
+      if (prevId != null) {
+        for (final t in _todoThreads) {
+          if (t.id == prevId) {
+            above = t;
+            break;
+          }
+        }
+      }
+      if (nextId != null) {
+        for (final t in _todoThreads) {
+          if (t.id == nextId) {
+            below = t;
+            break;
+          }
+        }
+      }
+      newOrder = Order.between(above?.order, below?.order);
+    }
+
+    Thread updated;
+    switch (targetSection) {
+      case ActivitySection.today:
+        updated = dragged.asActiveToday(order: newOrder);
+        break;
+      case ActivitySection.scheduled:
+        if (targetScheduledDate == null) return;
+        updated = dragged.asScheduled(
+          targetScheduledDate,
+          order: newOrder,
+        );
+        break;
+      case ActivitySection.newSection:
+        updated = dragged.asUnread();
+        break;
+      case ActivitySection.done:
+        updated = dragged.asInactive();
+        // Sticky-unread keeps a thread pinned to the New section even
+        // after its `unread` flag flips to false (so opening an unread
+        // thread doesn't make it disappear from New mid-read). An
+        // explicit drop on Done is a deliberate move — clear the sticky
+        // entry so `_rebuildActivityFeedSections` routes the thread to
+        // Done, not back to New.
+        _stickyUnreadIds.remove(draggedId);
+        break;
+    }
+
+    // Re-shape the source lists that drive `_rebuildActivityFeedSections`
+    // before the override is recorded. `optimisticallyUpdateThread` only
+    // patches `state.activityFeedItems` in place — the dragged row keeps
+    // its old position until the DB stream re-emits with the saved
+    // change, producing a visible bounce. Updating `_todoThreads` /
+    // `_activityFeedRawThreads` here lets us rebuild the sections
+    // synchronously below so the row lands in its target section
+    // immediately, and the eventual stream emission is a no-op.
+    _todoThreads = _todoThreads.where((t) => t.id != draggedId).toList();
+    _activityFeedRawThreads =
+        _activityFeedRawThreads.where((t) => t.id != draggedId).toList();
+    if (updated.todo) {
+      _todoThreads = [..._todoThreads, updated];
+    } else {
+      _activityFeedRawThreads = [updated, ..._activityFeedRawThreads];
+    }
+
+    // Watch order — within Today/Scheduled the only thing changing on a
+    // reorder is the user-schedule order, and the watched-fields default
+    // (todo/at/on/...) is unchanged from the start. Without `order` in
+    // the watched set, the override settles on the first stream emission
+    // (before the schedule write completes) and the row snaps back to
+    // its pre-drop position.
+    optimisticallyUpdateThread(updated, watchOrder: true);
+
+    // Final emit: rebuild the sectioned feed from the now-updated source
+    // lists. This wins over the in-place map `optimisticallyUpdateThread`
+    // performs, so the row is rendered in its new section/order.
+    _rebuildActivityFeedSections();
+
+    await updated.save();
+  }
+
   /// Shared implementation for `dropThreadIntoBlock` /
   /// `dropThreadOutsideBlock`. Both end up doing the same thing on the
   /// thread side — only the page-level intent differs.
@@ -992,6 +1146,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
+    _todoThreadsSubscription?.cancel();
     _associationsSubscription?.cancel();
     _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
@@ -1026,7 +1181,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // alive (it remains as an event) but flips its todo flag so the
     // builder treats it as the user's scheduled completion.
     // Associated threads are also kept so they continue to render
-    // nested under their parent event — "Remove from agenda" must
+    // nested under their parent event — "Finish" must
     // not strip the event nesting (that's "Remove from event"'s job).
     final isAssociated =
         _associations?.values.any(
@@ -1136,14 +1291,39 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Optimistically update a thread in the agenda for instant UI feedback.
   /// The stream-based update will confirm the same state when it catches up.
-  void optimisticallyUpdateThread(Thread updatedThread) {
+  ///
+  /// [watchOrder] adds [_OverrideField.order] to the watched set so the
+  /// override won't settle until the stream's `userSchedule.order` matches
+  /// the expected value. Required for reorders within a section (Activity
+  /// feed Today/Scheduled drop, todo reorder) — the visible-state fields
+  /// (todo/at/on/...) are unchanged from the start, so without watching
+  /// `order` the override settles on the very first stream emission while
+  /// the schedule write is still pending, and the row visibly snaps back
+  /// to its old position before the saved order arrives.
+  void optimisticallyUpdateThread(
+    Thread updatedThread, {
+    bool watchOrder = false,
+  }) {
     if (updatedThread.draft) return;
     // Record the expected post-update state. The default watched set covers
     // the visible-state fields any save() could flip (todo, archived,
     // priority, schedule, unread) while ignoring fields the server may
-    // rewrite on its own (e.g. AI-generated title).
+    // rewrite on its own (e.g. AI-generated title). When [watchOrder] is
+    // set, also require the order to match before settling.
+    final fields = watchOrder
+        ? <_OverrideField>{
+            _OverrideField.todo,
+            _OverrideField.archived,
+            _OverrideField.priorityId,
+            _OverrideField.unread,
+            _OverrideField.at,
+            _OverrideField.on,
+            _OverrideField.order,
+          }
+        : null;
     _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(
       expected: updatedThread,
+      fields: fields,
     );
 
     // Keep sticky cache in sync so edits (rename, archive, etc.) aren't
@@ -1275,6 +1455,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _watchingThreadId = null;
     _activityFeedSubscription?.cancel();
+    _todoThreadsSubscription?.cancel();
     _tagsSubscription?.cancel();
 
     // Drop optimistic overrides — they apply to the old priority's streams
@@ -2334,6 +2515,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _loadActivityFeed({bool triggerSync = true}) {
     final priorityToLoad = state.context;
     _activityFeedSubscription?.cancel();
+    // Reset distinct tracker so the first emission from this new
+    // subscription is always processed.
+    _lastActivityFeedSig = null;
     _activityFeedSubscription =
         Thread.watch(
           order: ThreadOrder.reverse,
@@ -2344,6 +2528,26 @@ class PriorityBloc extends Cubit<PriorityState> {
           search: state.search.isNotEmpty ? state.search : null,
           limit: _activityFeedLimit,
         ).listen((result) {
+          // Always signal that a stream emission has been observed, even
+          // when the signature is identical to the previous one (e.g. a
+          // limit bump returned the same data). This unblocks any
+          // [fetchMoreActivityFeedItems] caller awaiting the next
+          // emission so InfiniteList's `_fetching` guard releases only
+          // after data has actually arrived.
+          final emissionCompleter = _activityFeedNextEmission;
+          if (emissionCompleter != null && !emissionCompleter.isCompleted) {
+            _activityFeedNextEmission = null;
+            emissionCompleter.complete();
+          }
+
+          // Drop identical re-emissions before paying the optimistic-
+          // override and section-rebuild cost. Drift streams re-fire on
+          // every table change, including unrelated tags/notes that don't
+          // move a thread.
+          final sig = _activityFeedSig(result);
+          if (sig == _lastActivityFeedSig) return;
+          _lastActivityFeedSig = sig;
+
           final (:threads, :rawRowCount) = result;
           _activityFeedLastRawRowCount = rawRowCount;
 
@@ -2394,68 +2598,240 @@ class PriorityBloc extends Cubit<PriorityState> {
             }
           }
 
-          final items = <AgendaItem>[];
-
-          // Partition into unread and read
-          final unreadThreads = <Thread>[];
-          final readThreads = <Thread>[];
-          for (final thread in allThreads) {
-            if (thread.unread || _stickyUnreadIds.containsKey(thread.id)) {
-              unreadThreads.add(thread);
-            } else {
-              readThreads.add(thread);
-            }
-          }
-
-          // Sort unread by urgency rank (lower = higher priority), then importance desc,
-          // with activityAt as stable tiebreaker.
-          // For sticky threads (being viewed), use stored sort values so they
-          // don't jump position when urgency is cleared by sync.
-          unreadThreads.sort((a, b) {
-            final aSticky = _stickyUnreadIds[a.id];
-            final bSticky = _stickyUnreadIds[b.id];
-            final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
-            final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
-            final urgencyCmp = aRank.compareTo(bRank);
-            if (urgencyCmp != 0) return urgencyCmp;
-            final aImp = aSticky?.importance ?? a.importance;
-            final bImp = bSticky?.importance ?? b.importance;
-            final importanceCmp = bImp.compareTo(aImp);
-            if (importanceCmp != 0) return importanceCmp;
-            final aAt = aSticky?.activityAt ?? a.activityAt;
-            final bAt = bSticky?.activityAt ?? b.activityAt;
-            return bAt.compareTo(aAt);
-          });
-
-          // Add unread threads (no section header - they're at the very top)
-          for (final thread in unreadThreads) {
-            items.add(AgendaThreadItem(thread));
-          }
-
-          // Add read threads with time-ago bucket headers
-          String? currentBucket;
-          for (final thread in readThreads) {
-            final (label, bucketDate) = PriorityState._timeAgoBucket(
-              thread.activityAt.toDate(),
-            );
-            if (label != currentBucket) {
-              currentBucket = label;
-              items.add(AgendaHeaderItem(text: label, date: bucketDate));
-            }
-            items.add(AgendaThreadItem(thread));
-          }
-          emit(
-            state.copyWith(
-              activityFeedItems: items,
-              activityFeedDoneEnd: doneEnd,
-              activityFeedLoaded: true,
-            ),
-          );
+          _activityFeedRawThreads = allThreads;
+          _activityFeedDoneEnd = doneEnd;
+          _scheduleActivityFeedRebuild();
         });
+
+    _loadTodoThreads();
 
     if (triggerSync) {
       _activityFeedSyncFuture = _triggerActivityFeedSync(priorityToLoad);
     }
+  }
+
+  /// Watches every non-archived todo (`todo=true`) for the priority, with
+  /// no LIMIT. The Activity tab uses this in parallel with the
+  /// reverse-chronological feed so every Active and Scheduled thread is
+  /// visible regardless of pagination. Filter / icon-filter / search are
+  /// passed through so the Today and Scheduled sections shrink to the
+  /// matching subset while a search/filter is active.
+  void _loadTodoThreads() {
+    final priorityToLoad = state.context;
+    _todoThreadsSubscription?.cancel();
+    _todoThreadsSubscription =
+        Thread.watch(
+          order: ThreadOrder.sorted,
+          priorityPath: priorityToLoad.path,
+          archived: state.showArchived,
+          // SQL-side todo filter: returns only threads whose user_schedule
+          // is the canonical `Thread.todo` shape. Replaces the previous
+          // `includeUnscheduled: false` over-fetch + Dart-side
+          // `.where((t) => t.todo)`, which on calendar-heavy priorities
+          // returned every shared/link-scheduled event before discarding
+          // the bulk client-side.
+          todoOnly: true,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: state.search.isNotEmpty ? state.search : null,
+        )
+        // Drop identical re-emissions before re-running the section rebuild.
+        .distinct((a, b) => _activityFeedSig(a) == _activityFeedSig(b))
+        .listen((result) {
+          // Apply optimistic overrides BEFORE filtering by `todo`. Without
+          // this, intermediate stream emissions during a multi-step save
+          // (e.g. `asActiveToday` writes the thread row, then the user
+          // schedule — between those two writes the SQL `todoOnly` filter
+          // excludes the thread because the schedule isn't yet restored)
+          // would temporarily revert `_todoThreads` to a non-optimistic
+          // snapshot, producing a visible "bounce" after a drop. The
+          // override application both replaces patched-in stream rows
+          // with their expected state AND injects expected-but-missing
+          // threads, so a row dropped into Today stays in Today across
+          // the entire save lifecycle.
+          final patched = _applyOptimisticOverrides(result.threads);
+          _todoThreads = patched.where((t) => t.todo).toList();
+          _scheduleActivityFeedRebuild();
+        });
+  }
+
+  /// Compact signature for [ThreadWatchResult] that captures the fields
+  /// the activity-feed sectioning actually depends on. Identical
+  /// signatures across consecutive emissions mean the rebuild would
+  /// produce the same output and can be skipped.
+  static String _activityFeedSig(ThreadWatchResult r) {
+    final buf = StringBuffer()
+      ..write(r.rawRowCount)
+      ..write('|')
+      ..write(r.threads.length)
+      ..write('|');
+    for (final t in r.threads) {
+      buf
+        ..write(t.id)
+        ..write(':')
+        ..write(t.updatedAt.microsecondsSinceEpoch)
+        ..write(':')
+        ..write(t.todo ? 1 : 0)
+        ..write(':')
+        ..write(t.unread ? 1 : 0)
+        ..write(':')
+        ..write(t.archivedAt?.microsecondsSinceEpoch ?? 0)
+        ..write(':')
+        ..write(t.activityAt.microsecondsSinceEpoch)
+        ..write(':')
+        ..write(t.scheduleId ?? '')
+        ..write(',');
+    }
+    return buf.toString();
+  }
+
+  /// Schedule a microtask-coalesced [_rebuildActivityFeedSections]. When
+  /// both `_loadActivityFeed` and `_loadTodoThreads` re-emit on the same
+  /// underlying write, only one rebuild runs.
+  void _scheduleActivityFeedRebuild() {
+    if (_activityFeedRebuildScheduled) return;
+    _activityFeedRebuildScheduled = true;
+    scheduleMicrotask(() {
+      _activityFeedRebuildScheduled = false;
+      if (isClosed) return;
+      _rebuildActivityFeedSections();
+    });
+  }
+
+  /// Build the Activity-feed item list from `_todoThreads` (Active /
+  /// Scheduled) and `_activityFeedRawThreads` (everything else,
+  /// reverse-chronological). Emits the final sectioned list to state.
+  ///
+  /// Sections, in order:
+  ///   1. Today      — Active threads (todo with sentinel or past/today date)
+  ///   2. Tomorrow / Friday / "MMM d" — one section per future-scheduled day
+  ///   3. New        — Unread threads that aren't active or scheduled
+  ///   4. Done       — Inactive threads (read, no active todo)
+  ///
+  /// Section headers carry an `ActivitySectionMarker`-encoded text so the
+  /// drag dispatcher can recover the section identity.
+  void _rebuildActivityFeedSections() {
+    final todoIds = _todoThreads.map((t) => t.id).toSet();
+    final feedNonTodo = _activityFeedRawThreads
+        .where((t) => !todoIds.contains(t.id))
+        .toList();
+
+    final active = <Thread>[];
+    final scheduledByDate = <Date, List<Thread>>{};
+    for (final t in _todoThreads) {
+      if (t.isActiveThread) {
+        active.add(t);
+      } else if (t.isScheduledThread) {
+        final date =
+            t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+        scheduledByDate.putIfAbsent(date, () => []).add(t);
+      }
+    }
+
+    // Use [Thread.activityCompareTo] (order-only) rather than
+    // `todoCompareTo` (date-then-order). See the doc comment on
+    // [Thread.activityCompareTo] for the full rationale; the short
+    // version is that Today flattens 1970-sentinel, past-overdue, and
+    // today's-elapsed rows into one section, so the hidden date bucket
+    // in `todoCompareTo` breaks drag-drop placement.
+    active.sort((a, b) => a.activityCompareTo(b));
+    final scheduledDates = scheduledByDate.keys.toList()..sort();
+    for (final d in scheduledDates) {
+      // Within a single Scheduled day all rows share the same
+      // `todoSortDate`, so `todoCompareTo` collapses to the same key as
+      // `activityCompareTo`. Use the activity comparator for parity with
+      // Today and to make the intent explicit.
+      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
+    }
+
+    final unread = <Thread>[];
+    final done = <Thread>[];
+    for (final t in feedNonTodo) {
+      if (t.isUnreadOnly || _stickyUnreadIds.containsKey(t.id)) {
+        unread.add(t);
+      } else {
+        done.add(t);
+      }
+    }
+    unread.sort((a, b) {
+      final aSticky = _stickyUnreadIds[a.id];
+      final bSticky = _stickyUnreadIds[b.id];
+      final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
+      final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
+      final urgencyCmp = aRank.compareTo(bRank);
+      if (urgencyCmp != 0) return urgencyCmp;
+      final aImp = aSticky?.importance ?? a.importance;
+      final bImp = bSticky?.importance ?? b.importance;
+      final importanceCmp = bImp.compareTo(aImp);
+      if (importanceCmp != 0) return importanceCmp;
+      final aAt = aSticky?.activityAt ?? a.activityAt;
+      final bAt = bSticky?.activityAt ?? b.activityAt;
+      return bAt.compareTo(aAt);
+    });
+
+    final items = <AgendaItem>[];
+
+    // Section order, per the Activity-tab spec:
+    //   1. Today (active)
+    //   2. New (unread)
+    //   3. Scheduled (one section per future day)
+    //   4. Done (inactive)
+    //
+    // Today, New, and Done headers are always emitted — even when empty —
+    // so they remain valid drag-and-drop targets. Scheduled headers stay
+    // dynamic (one per future day with threads); to schedule for a day
+    // not yet represented, drag onto an existing day or use the per-
+    // thread schedule picker.
+
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.today),
+      ),
+    );
+    for (final t in active) {
+      items.add(AgendaThreadItem(t));
+    }
+
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.newSection),
+      ),
+    );
+    for (final t in unread) {
+      items.add(AgendaThreadItem(t));
+    }
+
+    for (final d in scheduledDates) {
+      items.add(
+        AgendaHeaderItem(
+          date: d,
+          text: ActivitySectionMarker.encode(
+            ActivitySection.scheduled,
+            label: relativeDateLabel(d),
+          ),
+        ),
+      );
+      for (final t in scheduledByDate[d]!) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.done),
+      ),
+    );
+    for (final t in done) {
+      items.add(AgendaThreadItem(t));
+    }
+
+    emit(
+      state.copyWith(
+        activityFeedItems: items,
+        activityFeedDoneEnd: _activityFeedDoneEnd,
+        activityFeedLoaded: true,
+      ),
+    );
   }
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
@@ -2515,21 +2891,47 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
+    // The previous query maxed out the LIMIT — either because there are
+    // more rows beyond it, or because JOIN multiplication produced fewer
+    // unique threads than rows. In both cases bumping the limit can
+    // surface more threads. Only checked once a stream emission has
+    // populated `_activityFeedLastRawRowCount`; without this guard the
+    // limit ratcheted up by 50 on every scroll tick before the previous
+    // bump's emission had landed.
+    final queryMaxedOut =
+        _activityFeedLastRawRowCount >= _activityFeedLimit;
+
+    Completer<void>? emissionCompleter;
     if (needed > _activityFeedLimit) {
       _activityFeedLimitIncreased = true;
       _activityFeedLimit = needed;
+      emissionCompleter = Completer<void>();
+      _activityFeedNextEmission = emissionCompleter;
       _loadActivityFeed(
         triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
       );
-    } else if (!state.activityFeedDoneEnd) {
-      // JOIN multiplication: need more raw rows to get enough unique threads
+    } else if (!state.activityFeedDoneEnd && queryMaxedOut) {
+      // JOIN multiplication or full page: need more raw rows to surface
+      // additional unique threads.
       _activityFeedLimitIncreased = true;
       _activityFeedLimit += 50;
+      emissionCompleter = Completer<void>();
+      _activityFeedNextEmission = emissionCompleter;
       _loadActivityFeed(
         triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
       );
     }
-    // Wait for sync so InfiniteList's _fetching stays true until data arrives
+
+    // Hold InfiniteList's `_fetching` guard until the watcher has emitted
+    // the result of the new limit. Without this the fetcher resolves
+    // before data arrives and every subsequent scroll tick fires another
+    // (pointless) fetch.
+    if (emissionCompleter != null) {
+      await emissionCompleter.future;
+    }
+
+    // Also wait for any in-flight sync so remote rows are reflected
+    // before the guard releases.
     final future = _activityFeedSyncFuture;
     if (future != null) {
       try {
@@ -2543,8 +2945,30 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<void>? _activityFeedSubscription;
+  StreamSubscription<void>? _todoThreadsSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
+
+  /// Latest reverse-chronological feed result, kept so the section
+  /// rebuilder can rerun when the parallel todo stream emits without
+  /// re-issuing the feed query.
+  List<Thread> _activityFeedRawThreads = const [];
+
+  /// Latest todo set (Active + Scheduled) for the priority. Sourced from
+  /// the unbounded `Thread.watch(includeUnscheduled: false)` stream and
+  /// filtered to `t.todo` in `_loadTodoThreads`.
+  List<Thread> _todoThreads = const [];
+
+  /// Latest "done end" flag from the activity feed stream — preserved
+  /// across todo-stream emissions so the rebuilder doesn't toggle it.
+  bool _activityFeedDoneEnd = false;
+
+  /// True while a microtask-coalesced [_rebuildActivityFeedSections] is
+  /// already scheduled. Both watch streams (`_loadActivityFeed` and
+  /// `_loadTodoThreads`) re-fire on overlapping table writes; without
+  /// coalescing every shared write reruns the entire sectioning pipeline
+  /// twice in a row.
+  bool _activityFeedRebuildScheduled = false;
   int _agendaLimit = 50;
   int _agendaHorizonDays = 90;
   // Minimum days from today to populate with empty headers. Starts at 0
@@ -2560,6 +2984,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void>? _activityFeedSyncFuture;
   int _activityFeedLastRawRowCount = 0;
   bool _activityFeedLimitIncreased = false;
+
+  /// Resolved by the activity feed watcher's `listen` callback every time
+  /// it fires. [fetchMoreActivityFeedItems] sets this before re-issuing
+  /// the watch and awaits it, so InfiniteList's `_fetching` guard only
+  /// releases after the new data has actually been delivered.
+  Completer<void>? _activityFeedNextEmission;
+
+  /// Last [_activityFeedSig] processed by the watcher's `listen` callback.
+  /// Drives manual distinct-emission filtering; reset to `null` whenever
+  /// [_loadActivityFeed] re-subscribes so the new subscription's first
+  /// emission is always processed.
+  String? _lastActivityFeedSig;
 }
 
 /// Provides the [ThreadListSource] to descendant widgets so that

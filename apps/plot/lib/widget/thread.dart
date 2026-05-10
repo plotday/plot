@@ -286,9 +286,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
         final Widget todoIcon;
         final hasPending = activity.outstandingTasks;
-        final String leadingTitle = !isTodo
-            ? 'Add to agenda'
-            : 'Remove from agenda';
+        final String leadingTitle = !isTodo ? 'Do today' : 'Finish';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;

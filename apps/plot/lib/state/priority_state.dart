@@ -225,29 +225,6 @@ class PriorityState extends Equatable {
     return result;
   }
 
-  /// Returns a coarse time bucket label and representative date for grouping.
-  static (String, Date) _timeAgoBucket(Date date) {
-    final today = Date.today();
-    final days = today.difference(date).inDays;
-
-    if (days <= 0) return ('Today', today);
-    if (days == 1) return ('Yesterday', today.addDays(-1));
-    if (days <= 6) return ('$days days ago', date);
-    if (days <= 13) return ('A week ago', date);
-    if (days <= 20) return ('2 weeks ago', date);
-    if (days <= 29) return ('3 weeks ago', date);
-
-    // Month-based buckets
-    final months = (days / 30).floor();
-    if (months <= 1) return ('A month ago', date);
-    if (months < 12) return ('$months months ago', date);
-
-    // Year-based buckets
-    final years = (days / 365).floor();
-    if (years <= 1) return ('A year ago', date);
-    return ('$years years ago', date);
-  }
-
   /// Finds the first gap of at least 1 hour in a day's schedule.
   ///
   /// Returns the start time of the first hour-long gap, or null if no such gap exists.

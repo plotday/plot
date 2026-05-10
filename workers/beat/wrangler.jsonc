@@ -35,6 +35,7 @@
   "observability": {
     "logs": {
       "enabled": true,
+      "invocation_logs": false,
       "destinations": ["posthog-logs"]
     }
   }

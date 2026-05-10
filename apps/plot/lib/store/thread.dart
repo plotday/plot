@@ -921,6 +921,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
     bool linkScheduledOnly = false,
+    bool todoOnly = false,
     int? limit,
     int? offset,
   }) {
@@ -946,6 +947,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         includeAllFutureEvents: includeAllFutureEvents,
         includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
         linkScheduledOnly: linkScheduledOnly,
+        todoOnly: todoOnly,
         limit: limit,
         offset: offset,
       ).watch().asyncMap((results) async {
@@ -1338,6 +1340,13 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
     bool linkScheduledOnly = false,
+    /// SQL form of [Thread.todo]: an active per-user schedule with at least
+    /// one date set. Lets the activity feed's todo stream skip the
+    /// `includeUnscheduled: false` over-fetch (which admits any thread
+    /// joined to ANY schedule, including shared/link-only events) followed
+    /// by a Dart-side `.where((t) => t.todo)` discard. Mirrors the
+    /// `activeTodo` sub-expression below at lines ~1582-1586.
+    bool todoOnly = false,
     String? search,
     /// Per-search-word lists of actor UUID strings whose name has a word
     /// starting with that search word (resolved via [Actor.idsMatchingWordPrefix]).
@@ -1464,6 +1473,22 @@ class Thread extends Equatable implements Comparable<Thread> {
       query.where(
         a.unread.equals(true) &
             a.readAt.isNull(),
+      );
+    }
+    if (todoOnly) {
+      // SQL translation of [Thread.isTodoUserSchedule]:
+      //   userScheduleId != null
+      //   && archivedAt == null
+      //   && (startOn != null || startAt != null)
+      //
+      // **Keep in lockstep with [Thread.isTodoUserSchedule] and the
+      // fixture matrix in `test/store/thread_todo_predicate_test.dart`.**
+      // Identical shape to the `activeTodo` sub-expression in the range
+      // branch.
+      query.where(
+        userSched.id.isNotNull() &
+            userSched.archivedAt.isNull() &
+            (userSched.startOn.isNotNull() | userSched.startAt.isNotNull()),
       );
     }
     if (archived != null) {
@@ -2723,11 +2748,35 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Compare todos by original schedule date first, then by order.
+  ///
+  /// **Used by the agenda**, where each day is its own visible section so
+  /// the date-then-order sort produces a coherent within-day ordering. Do
+  /// **not** use this in the Activity tab's Today section — that section
+  /// flattens "anytime today" todos (`startOn = todoNowDate (1970)`),
+  /// past-overdue todos, and today's elapsed events into a single list,
+  /// so the date dimension would silently bucket the rows into 1970 / past
+  /// / today groups and break drag-and-drop placement (the user drops
+  /// after the visible last row, but the dragged row's
+  /// `startOn = todoNowDate` makes it sort with the 1970 group). Use
+  /// [activityCompareTo] instead.
   int todoCompareTo(Thread other) {
     final dateComp = todoSortDate.compareTo(other.todoSortDate);
     if (dateComp != 0) return dateComp;
     return order.compareTo(other.order);
   }
+
+  /// Compare todos for the Activity tab by `userSchedule.order` alone.
+  ///
+  /// The Activity tab's Today section is a single visible list that mixes
+  /// "anytime today" todos (`startOn = todoNowDate`), past-overdue todos,
+  /// and today's elapsed events. The user reorders this list with
+  /// drag-and-drop, which writes `userSchedule.order` via
+  /// [Order.between] — date is not part of the drop semantics and the
+  /// section has no per-date sub-headers, so order alone is the natural
+  /// sort key. Sorting by [todoCompareTo] (date-then-order) instead would
+  /// silently bucket rows by date and place a freshly-dropped row in the
+  /// wrong group regardless of the chosen order.
+  int activityCompareTo(Thread other) => order.compareTo(other.order);
 
   /// Timestamp for activity feed ordering and bucket headers.
   /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt, pastScheduleEnd),
@@ -2797,10 +2846,36 @@ class Thread extends Equatable implements Comparable<Thread> {
     return null;
   }
 
-  bool get todo =>
-      _userSchedule != null &&
-      _userSchedule.archivedAt == null &&
-      (_userSchedule.startOn != null || _userSchedule.startAt != null);
+  bool get todo => isTodoUserSchedule(
+    userScheduleId: _userSchedule?.id,
+    archivedAt: _userSchedule?.archivedAt,
+    startOn: _userSchedule?.startOn,
+    startAt: _userSchedule?.startAt,
+  );
+
+  /// Canonical "is this thread a user todo?" predicate, factored out so the
+  /// Dart [todo] getter and the SQL `todoOnly` clause in [_getQuery] both
+  /// reference a single source of truth.
+  ///
+  /// A thread is a todo when the current user has a non-archived
+  /// `user_schedule` row with at least one date column set. Note that
+  /// [userScheduleId] standing in for "row exists" is intentional —
+  /// `LEFT JOIN user_schedule` returns NULL id when the user has no row.
+  ///
+  /// **Keep this in lockstep with the SQL clause guarded by `todoOnly` in
+  /// [_getQuery].** The SQL form is the same conjunction translated to
+  /// Drift expressions; if you change one, change the other and the
+  /// fixtures in `test/store/thread_todo_predicate_test.dart`.
+  static bool isTodoUserSchedule({
+    required Object? userScheduleId,
+    required DateTime? archivedAt,
+    required Date? startOn,
+    required DateTime? startAt,
+  }) {
+    return userScheduleId != null &&
+        archivedAt == null &&
+        (startOn != null || startAt != null);
+  }
 
   /// Returns the pinned-after time for a todo that was dragged after an event.
   /// A todo is "pinned" when it has a userSchedule.startAt but no real startOn
@@ -2820,6 +2895,28 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// A thread is "done" when it has no active per-user schedule (archived or absent)
   /// and no dates set. Effectively: not a todo.
   bool get done => _userSchedule != null && !todo;
+
+  /// Active = marked "Do today" (user schedule with `todoNowDate` sentinel)
+  /// or todo with a user-schedule date that is today or in the past.
+  ///
+  /// Primary state for threads currently being worked on; rendered in the
+  /// Today section of the Activity feed and recorded using the sentinel
+  /// `Thread.todoNowDate` when no explicit date is set.
+  bool get isActiveThread => todo && !isFuture;
+
+  /// Scheduled = todo with a user-schedule date in the future. Rendered in
+  /// per-day sections of the Activity feed ("Tomorrow", "Friday", etc.).
+  bool get isScheduledThread => todo && isFuture;
+
+  /// Unread but not active or scheduled. Rendered in the "New" section.
+  /// Active and scheduled threads that happen to be unread render in their
+  /// own date-anchored section instead.
+  bool get isUnreadOnly => unread && !todo;
+
+  /// Inactive = neither active, scheduled, nor unread. Rendered in the
+  /// "Done" section. Includes threads with no user schedule and read
+  /// non-todo threads.
+  bool get isInactiveThread => !todo && !unread;
   bool get outstandingTasks => _userSchedule?.outstandingTasks ?? false;
   DateTime? get bumpedAt => _thread.bumpedAt;
   bool get hasUserSchedule => _userSchedule != null;
@@ -3032,6 +3129,43 @@ class Thread extends Equatable implements Comparable<Thread> {
       ),
     );
   }
+
+  /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
+  /// Preserves the existing user-schedule order if [order] is null.
+  /// Marks the thread read (acknowledged) since the user is committing to
+  /// work on it now. Used by the Activity-tab drag dispatcher when a
+  /// thread is dropped in the Today section.
+  Thread asActiveToday({Order? order}) {
+    final effectiveOrder =
+        order ?? _userSchedule?.order ?? Order.first();
+    return withScheduleRestored(order: effectiveOrder)
+        .copyWith(unread: false);
+  }
+
+  /// Returns a copy in the "scheduled" state for [date]. Sets the user
+  /// schedule's `startOn` to the given date, clears time fields, and
+  /// marks the thread read (acknowledged) since the user has committed
+  /// it to a future day.
+  Thread asScheduled(Date date, {Order? order}) {
+    final effectiveOrder =
+        order ?? _userSchedule?.order ?? Order.first();
+    return withScheduleRestored(order: effectiveOrder, date: date)
+        .copyWith(unread: false);
+  }
+
+  /// Returns a copy in the "new (unread-only)" state — flips `unread` to
+  /// true and archives any user schedule so the thread isn't classed as
+  /// active or scheduled.
+  Thread asUnread() {
+    final base = _userSchedule == null ? this : withScheduleArchived();
+    return base.copyWith(unread: true, readAt: const Value(null));
+  }
+
+  /// Returns a copy in the "inactive (done)" state. The
+  /// `copyWith(todo: false, bump: true)` path archives any user schedule,
+  /// sets `unread=false` and `readAt`, and bumps `bumpedAt` so the
+  /// thread surfaces at the top of the Done section in the activity feed.
+  Thread asInactive() => copyWith(todo: false, bump: true);
 
   /// Returns a copy with [isLinkScheduleInstance] set to false.
   /// Used for optimistic insertion of the base todo duplicate when starting

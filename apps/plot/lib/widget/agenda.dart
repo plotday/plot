@@ -272,47 +272,60 @@ class AgendaHeader extends StatelessWidget {
       final Widget child;
       if (centerText != null) {
         final spacing = context.theme.spacing;
-        // Match the ListTile's right padding so duration aligns with
-        // the thread tag button icons.
-        final isWide = context.isMultiPanel;
-        child = Padding(
-          padding: EdgeInsets.only(
-            right: isWide
-                ? spacing.lg
-                : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
-                      .resolve(TextDirection.ltr)
-                      .right,
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: timeColWidth,
-                child: Padding(
-                  padding: EdgeInsets.only(right: spacing.sm),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      centerText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: timeStyle,
+        if (dateTimeRange == null) {
+          // Plain text section heading (e.g. Activity tab "Today",
+          // "New", "Scheduled", "Done") — center, not in the time column.
+          child = Center(
+            child: Text(
+              centerText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: timeStyle,
+            ),
+          );
+        } else {
+          // Match the ListTile's right padding so duration aligns with
+          // the thread tag button icons.
+          final isWide = context.isMultiPanel;
+          child = Padding(
+            padding: EdgeInsets.only(
+              right: isWide
+                  ? spacing.lg
+                  : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                        .resolve(TextDirection.ltr)
+                        .right,
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: timeColWidth,
+                  child: Padding(
+                    padding: EdgeInsets.only(right: spacing.sm),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        centerText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: timeStyle,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (durationText != null)
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      durationText,
-                      style: TextStyle(color: veryMuted, fontSize: fontSize),
+                if (durationText != null)
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        durationText,
+                        style: TextStyle(color: veryMuted, fontSize: fontSize),
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        );
+              ],
+            ),
+          );
+        }
       } else {
         final double textHeight = (TextPainter(
           text: TextSpan(

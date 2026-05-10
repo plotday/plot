@@ -800,7 +800,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
     bool stateIcon = false,
     String? title,
   }) : super(
-         title: title ?? (thread.todo ? 'Remove from agenda' : 'Add to agenda'),
+         title: title ?? (thread.todo ? 'Finish' : 'Do today'),
          eventObject: EventObject.activity,
          eventAction: EventAction.started,
          icon: stateIcon
@@ -820,7 +820,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 class StartThread extends _UpdateThreadCommand {
   StartThread(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'Add to agenda',
+        title: 'Do today',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
@@ -838,7 +838,7 @@ class StartThread extends _UpdateThreadCommand {
 class DisassociateThread extends Command {
   DisassociateThread(this.thread, {this.finish = false, this.onBeforeRun})
     : super(
-        title: finish ? 'Remove from agenda' : 'Remove from event',
+        title: finish ? 'Finish' : 'Remove from event',
         eventObject: EventObject.activity,
         eventAction: finish ? EventAction.finished : EventAction.updated,
         icon: finish ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.xmark,
@@ -896,6 +896,28 @@ class MarkReadThread extends _UpdateThreadCommand {
   }
 }
 
+class MarkUnreadThread extends _UpdateThreadCommand {
+  MarkUnreadThread(super.thread, {super.onUpdate})
+    : super(
+        title: 'Mark unread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: FontAwesomeIcons.eyeSlash,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (thread.unread) return const CommandDone();
+    // Clear `readAt` so the unread state isn't suppressed by the
+    // local-override the activity feed query checks alongside `unread = true`.
+    await saveOptimistically(
+      context,
+      thread.copyWith(unread: true, readAt: const Value(null)),
+    );
+    return const CommandDone();
+  }
+}
+
 class FinishThread extends _UpdateThreadCommand {
   FinishThread(
     super.thread, {
@@ -904,7 +926,7 @@ class FinishThread extends _UpdateThreadCommand {
     this.bump = true,
     this.onBeforeRun,
   }) : super(
-         title: 'Remove from agenda',
+         title: 'Finish',
          eventObject: EventObject.activity,
          eventAction: EventAction.finished,
          icon: stateIcon && thread.todo

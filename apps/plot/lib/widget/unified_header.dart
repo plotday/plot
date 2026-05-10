@@ -610,7 +610,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           hoverIcon: hasPending
               ? Value(FontAwesomeIcons.circleCheck)
               : const Value<IconData?>.absent(),
-          title: 'Remove from agenda',
+          title: 'Finish',
         ),
         selected: true,
         selectedColor: threadColor,
