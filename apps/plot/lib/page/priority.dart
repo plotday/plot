@@ -2766,7 +2766,8 @@ class _PriorityPageState extends State<PriorityPage> {
             state.remoteSearchOffline ||
             (state.hasArchivedMatches && !state.showArchived));
 
-    if (displayItems.isEmpty &&
+    final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+    if (!hasAnyThread &&
         !showFooter &&
         state.activityFeedDoneEnd &&
         state.activityFeedLoaded) {
@@ -2844,6 +2845,10 @@ class _PriorityPageState extends State<PriorityPage> {
         }
         final current = displayItems[index];
         final dropAbove = boundaries.before[index];
+        // Trailing boundary attached to the last list item (skip when the
+        // search footer occupies the last index).
+        final isLast = !showFooter && index == displayItems.length - 1;
+        final tail = isLast ? boundaries.afterList : null;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -2903,23 +2908,16 @@ class _PriorityPageState extends State<PriorityPage> {
                 ];
               },
             ),
+            if (tail != null)
+              BlockDropZone(target: tail, slotKey: 'feed_drop_tail'),
           ],
         );
       },
     );
 
-    final tail = boundaries.afterList;
     return BlockDragScope(
       controller: _activityFeedDragController,
-      child: tail == null
-          ? list
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Expanded(child: list),
-                BlockDropZone(target: tail, slotKey: 'feed_drop_tail'),
-              ],
-            ),
+      child: list,
     );
   }
 }

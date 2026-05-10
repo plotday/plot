@@ -2483,7 +2483,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Watches every non-archived todo (`todo=true`) for the priority, with
   /// no LIMIT. The Activity tab uses this in parallel with the
   /// reverse-chronological feed so every Active and Scheduled thread is
-  /// visible regardless of pagination.
+  /// visible regardless of pagination. Filter / icon-filter / search are
+  /// passed through so the Today and Scheduled sections shrink to the
+  /// matching subset while a search/filter is active.
   void _loadTodoThreads() {
     final priorityToLoad = state.context;
     _todoThreadsSubscription?.cancel();
@@ -2493,6 +2495,9 @@ class PriorityBloc extends Cubit<PriorityState> {
           priorityPath: priorityToLoad.path,
           archived: state.showArchived,
           includeUnscheduled: false,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: state.search.isNotEmpty ? state.search : null,
         ).listen((result) {
           // Filter to genuine user todos — `includeUnscheduled: false` lets
           // through any thread with a schedule (shared, user, or link),
@@ -2566,17 +2571,20 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final items = <AgendaItem>[];
 
-    if (active.isNotEmpty) {
-      items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.today),
-        ),
-      );
-      for (final t in active) {
-        items.add(AgendaThreadItem(t));
-      }
+    // Always emit the Today header so a drag-and-drop target exists even
+    // when no active threads are present yet.
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.today),
+      ),
+    );
+    for (final t in active) {
+      items.add(AgendaThreadItem(t));
     }
 
+    // Scheduled sections remain dynamic (one per future day with threads).
+    // To schedule for an unrepresented day, the user can drag onto an
+    // existing day or use the per-thread schedule picker.
     for (final d in scheduledDates) {
       items.add(
         AgendaHeaderItem(
@@ -2592,26 +2600,23 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    if (unread.isNotEmpty) {
-      items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.newSection),
-        ),
-      );
-      for (final t in unread) {
-        items.add(AgendaThreadItem(t));
-      }
+    // Always emit New + Done headers so they're available as drop targets.
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.newSection),
+      ),
+    );
+    for (final t in unread) {
+      items.add(AgendaThreadItem(t));
     }
 
-    if (done.isNotEmpty) {
-      items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.done),
-        ),
-      );
-      for (final t in done) {
-        items.add(AgendaThreadItem(t));
-      }
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.done),
+      ),
+    );
+    for (final t in done) {
+      items.add(AgendaThreadItem(t));
     }
 
     emit(

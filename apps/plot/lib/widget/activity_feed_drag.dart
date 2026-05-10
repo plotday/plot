@@ -42,10 +42,12 @@ import 'package:plot/widget/agenda_block_drag.dart';
           ? null
           : ActivitySectionMarker.tryDecode(item.text!);
       if (marker != null) {
-        // Tail-of-previous-section boundary: drop here lands at the bottom
-        // of the previous section (which is whatever currentSection points
-        // to right now).
-        if (currentSection != null && prevThreadId != null) {
+        // Tail-of-previous-section boundary. Emitted whenever there's a
+        // previous section, regardless of whether it had threads — when
+        // the previous section was empty (`prevThreadId == null`), the
+        // boundary still targets that empty section so it remains a
+        // valid drop target.
+        if (currentSection != null) {
           before[i] = BlockDropTarget(
             targetDate: currentSection == ActivitySection.scheduled
                 ? currentScheduledDate
@@ -66,9 +68,6 @@ import 'package:plot/widget/agenda_block_drag.dart';
     if (item is AgendaThreadItem) {
       if (currentSection == null) continue;
       final threadIdStr = item.thread.id.toString();
-      // Skip emitting a self-boundary for the dragged row itself; the
-      // dispatcher resolves no-op drops anyway, but emitting it adds
-      // pointless flicker in the activation algorithm.
       before[i] = BlockDropTarget(
         targetDate: currentSection == ActivitySection.scheduled
             ? currentScheduledDate
@@ -83,7 +82,9 @@ import 'package:plot/widget/agenda_block_drag.dart';
     }
   }
 
-  if (currentSection != null && prevThreadId != null) {
+  // Tail boundary: always present when there's an active section so the
+  // last section remains a valid drop target even when empty.
+  if (currentSection != null) {
     afterList = BlockDropTarget(
       targetDate: currentSection == ActivitySection.scheduled
           ? currentScheduledDate
