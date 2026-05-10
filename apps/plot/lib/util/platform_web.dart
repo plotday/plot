@@ -25,3 +25,8 @@ bool isMobilePlatform() {
       userAgent.contains('ipad') ||
       userAgent.contains('ipod');
 }
+
+/// True for platforms where the primary input is touch (no physical
+/// keyboard). Used to switch UI affordances between hover-revealed
+/// (desktop) and tap-to-modal (touch) treatments.
+bool isTouchPlatform() => !hasPhysicalKeyboard();
