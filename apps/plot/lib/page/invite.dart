@@ -107,7 +107,7 @@ class _InvitePageState extends State<InvitePage> {
 
       // Navigate to the main app
       if (mounted) {
-        context.router.replaceAll([EmptyShellRoute("Now")()]);
+        context.router.replaceAll([const RootRoute()]);
       }
     } on ApiException catch (e) {
       log.warning('Error redeeming invitation', e);

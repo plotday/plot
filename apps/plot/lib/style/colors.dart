@@ -239,10 +239,13 @@ class ColourSchemeData extends Equatable {
     );
   }
 
-  /// Background color darkened by 2 steps, matching the unified header background.
+  /// Background color darkened by 3 steps, matching the unified section
+  /// header background shared by agenda date headers, agenda gap headers,
+  /// PriorityPage activity-feed section headers ("Today"/"New"/...), and
+  /// PrioritiesPage section headers ("Top Priorities"/"All Priorities").
   Color get headerBackground {
     final factor = brightness == Brightness.light ? 1.015 : 1.05;
-    return copyWith(darken: pow(factor, 2).toDouble()).background;
+    return copyWith(darken: pow(factor, 3).toDouble()).background;
   }
 
   Color get barrier => _colours.barrier.toColor();

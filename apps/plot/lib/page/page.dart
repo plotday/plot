@@ -8,4 +8,5 @@ export 'new_thread.dart';
 export 'password_setup.dart';
 export 'priorities.dart';
 export 'priority.dart';
+export 'root.dart';
 export 'sign_in.dart';

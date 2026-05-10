@@ -15,7 +15,7 @@ import 'package:plot/widget/duration_control.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Width of the leading column: widest possible time string + horizontal padding.
-/// Used by both [AgendaHeader] gap rows and [ThreadWidget] leading areas.
+/// Used by both [AgendaTile] gap rows and [ThreadWidget] leading areas.
 double agendaLeadingWidth(BuildContext context) {
   final isWide = context.isMultiPanel;
   final maxTimeText = isWide ? '12:55 pm' : '12:55p';
@@ -32,8 +32,8 @@ double agendaLeadingWidth(BuildContext context) {
   return textWidth + pad * 2;
 }
 
-class AgendaHeader extends StatelessWidget {
-  const AgendaHeader({
+class AgendaTile extends StatelessWidget {
+  const AgendaTile({
     this.dateTimeRange,
     this.date,
     this.now = false,
@@ -192,9 +192,10 @@ class AgendaHeader extends StatelessWidget {
     // Date headers: simple container with darkened background, no ListTile needed
     if (date != null) {
       final headerBg = context.colour.headerBackground;
-      final dateFontSize = dateCenterLeft == null
-          ? context.theme.typography.xs.fontSize
-          : context.theme.typography.md.fontSize;
+      // Match PriorityPage section headers: sm font, md+xs (12px) vertical
+      // padding so the agenda date header reads at the same weight as the
+      // activity-feed "Today"/"New"/"Scheduled"/"Done" markers.
+      final dateFontSize = context.theme.typography.sm.fontSize;
       final mutedStyle = TextStyle(
         color: context.theme.plotColors.veryMuted,
         fontSize: dateFontSize,
@@ -246,9 +247,8 @@ class AgendaHeader extends StatelessWidget {
         child = Center(child: Text(centerText!, style: mutedStyle));
       }
 
-      final verticalPad = dateCenterLeft != null
-          ? context.theme.spacing.lg
-          : context.theme.spacing.sm;
+      final verticalPad =
+          context.theme.spacing.md + context.theme.spacing.xs;
       return Container(
         color: headerBg,
         padding: EdgeInsets.symmetric(vertical: verticalPad),
@@ -338,18 +338,35 @@ class AgendaHeader extends StatelessWidget {
         child = SizedBox(height: textHeight);
       }
 
-      // Empty gap headers (no priority) share the date-header background
-      // so they read as a neutral time marker rather than a priority block.
-      Widget result = Container(
-        color: isGapHeader ? context.colour.headerBackground : null,
-        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
-        child: child,
-      );
-      if (!isGapHeader) {
-        result = Padding(
-          padding: EdgeInsets.symmetric(vertical: verticalMargin),
-          child: result,
+      // Text-only section headings (e.g. Activity tab "Today"/"New"/...)
+      // share the unified darker section-header background with agenda
+      // date headers and PrioritiesPage section headers — a single
+      // Container carries the full md+xs vertical padding so the tinted
+      // band reaches all the way around the text.
+      // Empty gap headers (no priority) keep that same background so they
+      // read as a neutral time marker rather than a priority block.
+      final isTextOnlyHeading = !isGapHeader && dateTimeRange == null;
+      Widget result;
+      if (isTextOnlyHeading) {
+        result = Container(
+          color: context.colour.headerBackground,
+          padding: EdgeInsets.symmetric(
+            vertical: context.theme.spacing.md + context.theme.spacing.xs,
+          ),
+          child: child,
         );
+      } else {
+        result = Container(
+          color: isGapHeader ? context.colour.headerBackground : null,
+          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
+          child: child,
+        );
+        if (!isGapHeader) {
+          result = Padding(
+            padding: EdgeInsets.symmetric(vertical: verticalMargin),
+            child: result,
+          );
+        }
       }
 
       final cmd = command;

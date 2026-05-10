@@ -133,14 +133,9 @@ class AppRouter extends RootStackRouter {
           guards: [AuthGuard()],
         ),
         AutoRoute(
-          page: EmptyShellRoute("Now"),
+          page: RootRoute.page,
           path: '',
-          guards: [
-            AuthGuard(),
-            AutoRouteGuardCallback((resolver, router) async {
-              router.replaceAll([const AgendaRoute()]);
-            }),
-          ],
+          guards: [AuthGuard()],
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
@@ -298,8 +293,8 @@ class AuthGuard extends AutoRouteGuard {
           SignInRoute.page.name,
           EmailSignInRoute.page.name,
         ].contains(resolver.route.name)) {
-          _logger.info('AuthGuard: Redirecting to Now');
-          router.replaceAll([EmptyShellRoute("Now")()]);
+          _logger.info('AuthGuard: Redirecting to RootRoute');
+          router.replaceAll([const RootRoute()]);
         } else {
           // User is authenticated and active, proceed with navigation
           // (includes InviteRoute for token redemption)

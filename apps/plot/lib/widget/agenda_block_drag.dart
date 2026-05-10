@@ -916,7 +916,7 @@ class BlockDragScope extends InheritedWidget {
 /// Default heights for [BlockDropZone].
 const double kBlockBoundaryRestHeight = 0;
 
-/// Approximate intrinsic height of an [AgendaHeader] block-header row
+/// Approximate intrinsic height of an [AgendaTile] block-header row
 /// (priority-tinted breadcrumb at xs typography + vertical padding).
 /// Used as a baseline when the dropped block has no thread rows.
 const double kBlockHeaderApproxHeight = 28;

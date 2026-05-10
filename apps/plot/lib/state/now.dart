@@ -25,15 +25,19 @@ class NowBloc extends Cubit<NowState> {
   Future<void> start() {
     final completer = Completer<void>();
     _subscription =
-        Rx.combineLatest3(
+        Rx.combineLatest5(
           Priority.watchDefault(),
           ScheduledDay.watchToday(),
           Session.watchCurrent(),
-          (priority, day, session) {
+          Priority.watch(archived: false),
+          streamPriorityBlocksGroupedByPriority(),
+          (priority, day, session, priorities, blocksByPriority) {
             return NowLoaded(
               defaultPriority: priority,
               day: day,
               session: session,
+              priorities: priorities,
+              priorityBlocksByPriority: blocksByPriority,
               context: state is NowLoaded ? (state as NowLoaded).context : null,
             );
           },

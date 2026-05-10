@@ -12,13 +12,20 @@ import 'header.dart';
 class ResizablePanelLayout extends StatefulWidget {
   const ResizablePanelLayout({
     required this.left,
+    this.leftTop,
     required this.middle,
     required this.child,
     super.key,
   });
 
-  /// Left panel
+  /// Left panel (bottom of the vertical split when [leftTop] is provided).
   final Widget left;
+
+  /// Optional top section of the left panel. When provided, the left panel
+  /// is split vertically with [leftTop] on top and [left] on the bottom,
+  /// separated by a draggable horizontal divider whose position is
+  /// persisted across sessions.
+  final Widget? leftTop;
 
   /// Middle panel when all three are shown.
   /// When only two are shown, child is in the middle
@@ -34,6 +41,7 @@ class ResizablePanelLayout extends StatefulWidget {
 class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _leftPanelWidth = 280.0;
   double _middlePanelRatio = 0.5;
+  double _leftTopHeight = LayoutState.leftTopPanelDefaultHeight;
   late final Future<void> _loadPreferencesFuture;
 
   @override
@@ -51,6 +59,12 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         ? 280.0
         : savedLeft;
     _middlePanelRatio = prefs.getDouble('layout_middle_panel_ratio') ?? 0.5;
+    final savedLeftTop = prefs.getDouble('layout_left_top_panel_height');
+    _leftTopHeight = savedLeftTop == null
+        ? LayoutState.leftTopPanelDefaultHeight
+        : savedLeftTop < LayoutState.leftTopPanelMinHeight
+        ? LayoutState.leftTopPanelDefaultHeight
+        : savedLeftTop;
   }
 
   /// Calculate effective left panel width
@@ -163,7 +177,20 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                             context.colour,
                             steps: 2,
                           ),
-                          child: widget.left,
+                          child: widget.leftTop == null
+                              ? widget.left
+                              : _LeftPanelVerticalSplit(
+                                  top: widget.leftTop!,
+                                  bottom: widget.left,
+                                  initialTopHeight: _leftTopHeight,
+                                  onTopHeightChanged: (height) {
+                                    _leftTopHeight = height;
+                                    ProfilePreferences.instance.setDouble(
+                                      'layout_left_top_panel_height',
+                                      height,
+                                    );
+                                  },
+                                ),
                         ),
                       ),
                     ),
@@ -438,6 +465,120 @@ class _HoverableResizableState extends State<_HoverableResizable> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+}
+
+/// Vertically splits the left panel into a top and bottom region with a
+/// draggable horizontal divider. The top height is bounded by
+/// [LayoutState.leftTopPanelMinHeight] / [LayoutState.leftBottomPanelMinHeight]
+/// and persisted by the parent via [onTopHeightChanged].
+class _LeftPanelVerticalSplit extends StatefulWidget {
+  const _LeftPanelVerticalSplit({
+    required this.top,
+    required this.bottom,
+    required this.initialTopHeight,
+    required this.onTopHeightChanged,
+  });
+
+  final Widget top;
+  final Widget bottom;
+  final double initialTopHeight;
+  final ValueChanged<double> onTopHeightChanged;
+
+  @override
+  State<_LeftPanelVerticalSplit> createState() =>
+      _LeftPanelVerticalSplitState();
+}
+
+class _LeftPanelVerticalSplitState extends State<_LeftPanelVerticalSplit> {
+  static const double _hitRegionExtent = 10.0;
+
+  double _topHeight = 0;
+  bool _hovered = false;
+  bool _dragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _topHeight = widget.initialTopHeight;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LeftPanelVerticalSplit oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Don't fight the parent's persisted value if it changes while we're
+    // not dragging (e.g. profile switch). During a drag, ignore parent
+    // pushes so the divider tracks the pointer cleanly.
+    if (!_dragging && oldWidget.initialTopHeight != widget.initialTopHeight) {
+      _topHeight = widget.initialTopHeight;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colour;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalHeight = constraints.maxHeight;
+        final maxTopHeight =
+            (totalHeight - LayoutState.leftBottomPanelMinHeight).clamp(
+              LayoutState.leftTopPanelMinHeight,
+              double.infinity,
+            );
+        final clampedTopHeight = _topHeight.clamp(
+          LayoutState.leftTopPanelMinHeight,
+          maxTopHeight,
+        );
+
+        return Stack(
+          children: [
+            Column(
+              children: [
+                SizedBox(height: clampedTopHeight, child: widget.top),
+                Expanded(child: widget.bottom),
+              ],
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: clampedTopHeight - (_hitRegionExtent / 2),
+              height: _hitRegionExtent,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: (_) => setState(() => _dragging = true),
+                onVerticalDragUpdate: (details) {
+                  setState(() {
+                    _topHeight = (clampedTopHeight + details.delta.dy).clamp(
+                      LayoutState.leftTopPanelMinHeight,
+                      maxTopHeight,
+                    );
+                  });
+                },
+                onVerticalDragEnd: (_) {
+                  setState(() => _dragging = false);
+                  widget.onTopHeightChanged(_topHeight);
+                },
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.resizeUpDown,
+                  onEnter: (_) => setState(() => _hovered = true),
+                  onExit: (_) => setState(() => _hovered = false),
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeInOut,
+                      height: (_hovered || _dragging) ? 2.0 : 1.0,
+                      color: (_hovered || _dragging)
+                          ? colorScheme.accent
+                          : context.theme.colors.border,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

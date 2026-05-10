@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:collection/collection.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
@@ -23,6 +24,18 @@ class PrioritiesShell extends StatefulWidget {
 
 class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   AutoRouteObserver? _observer;
+
+  /// Returns the short-string priority id to use when the user invokes
+  /// Activity or New from a non-priority route (e.g. `/agenda`). Prefers
+  /// the priority the user was last viewing (`NowBloc.context`) and falls
+  /// back to the default priority. Returns `null` only while [NowBloc] is
+  /// still loading.
+  String? _activityPriorityIdString(BuildContext context) {
+    final nowState = context.read<NowBloc>().state;
+    if (nowState is! NowLoaded) return null;
+    final priority = nowState.context ?? nowState.defaultPriority;
+    return priority.id.toShortString();
+  }
 
   Widget _buildNavLabel(String text) {
     return Builder(
@@ -163,6 +176,20 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                   tabsRouter.activeIndex == 1) {
                                 // On ThreadPage - pop back to PriorityPage
                                 context.router.back();
+                              } else if (pathSegments.isNotEmpty &&
+                                  pathSegments.first == 'agenda') {
+                                // On Agenda — push the activity feed for
+                                // the user's current context priority
+                                // (or default priority if none yet).
+                                final priorityIdString =
+                                    _activityPriorityIdString(context);
+                                if (priorityIdString != null) {
+                                  context.router.push(
+                                    PriorityRoute(
+                                      priorityIdString: priorityIdString,
+                                    ),
+                                  );
+                                }
                               } else {
                                 tabsRouter.setActiveIndex(1);
                               }
@@ -219,6 +246,21 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                 } else {
                                   // Fallback: navigate with full route
                                   final priorityIdString = pathSegments[1];
+                                  context.router.push(
+                                    PriorityRoute(
+                                      priorityIdString: priorityIdString,
+                                      children: [NewThreadRoute()],
+                                    ),
+                                  );
+                                }
+                              } else if (pathSegments.isNotEmpty &&
+                                  pathSegments.first == 'agenda') {
+                                // On Agenda — push New for the user's
+                                // current context priority (or default
+                                // priority if none yet).
+                                final priorityIdString =
+                                    _activityPriorityIdString(context);
+                                if (priorityIdString != null) {
                                   context.router.push(
                                     PriorityRoute(
                                       priorityIdString: priorityIdString,

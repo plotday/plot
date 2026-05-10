@@ -182,7 +182,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // the date (e.g. a calendar event); plain todos hide it.
       if (isTodoBase && !activity.hasLinkSchedule) return null;
       // Events with their own start time never show a schedule label here;
-      // the agenda's AgendaHeader carries the time and the activity feed
+      // the agenda's AgendaTile carries the time and the activity feed
       // shows it via the priority-hover row below.
       if (!isTodoBase && hasEventTime) return null;
       if (activity.recurring) {

@@ -3024,6 +3024,7 @@ class PriorityBlocProvider extends StatefulWidget {
     this.priorityId,
     this.threadId,
     this.priority,
+    this.setContext = true,
     required this.child,
     super.key,
   });
@@ -3031,6 +3032,14 @@ class PriorityBlocProvider extends StatefulWidget {
   final PriorityId? priorityId;
   final ThreadId? threadId;
   final Priority? priority;
+
+  /// When true (default), the loaded priority is published to [NowBloc] as
+  /// the user's current context. Universal views like the agenda — which
+  /// are keyed to the default priority but are not "the user navigated
+  /// here" — should pass `false` so they don't clobber the context the
+  /// user actually chose.
+  final bool setContext;
+
   final Widget child;
 
   @override
@@ -3093,11 +3102,13 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
             ));
 
       // Success - update theme and create bloc
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          context.read<NowBloc>().setContext(priority);
-        }
-      });
+      if (widget.setContext) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<NowBloc>().setContext(priority);
+          }
+        });
+      }
 
       return _LoadResult.success(PriorityBloc(priority: priority));
     } catch (e, stackTrace) {
@@ -3120,11 +3131,13 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         final defaultPriority = await Priority.getDefault();
 
         // Update theme with fallback priority
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<NowBloc>().setContext(defaultPriority);
-          }
-        });
+        if (widget.setContext) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              context.read<NowBloc>().setContext(defaultPriority);
+            }
+          });
+        }
 
         return _LoadResult.success(
           PriorityBloc(priority: defaultPriority),

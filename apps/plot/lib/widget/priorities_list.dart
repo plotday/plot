@@ -1,5 +1,4 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
@@ -178,9 +177,12 @@ class _PrioritiesListState extends State<PrioritiesList>
         final isMultiPanel = layoutState.multiPanel;
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
-        final headerStyle = isLeftPanel
-            ? context.theme.typography.xs
-            : context.theme.typography.sm;
+        // Unified section-header style: matches PriorityPage's activity-feed
+        // section headers ("Today"/"New"/"Scheduled"/"Done"). sm font with
+        // md+xs (12px) vertical padding applied via the surrounding Padding
+        // below — ListTile already contributes 2px internally for header
+        // style, so the wrapper supplies the remaining md (10px).
+        final headerStyle = context.theme.typography.sm;
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
@@ -407,36 +409,20 @@ class _PrioritiesListState extends State<PrioritiesList>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // First group: Agenda (only on multi-panel layouts; the
-              // bottom nav already exposes Agenda on touch layouts).
-              if (context.isMultiPanel)
-                ListTile(
-                  title: 'Agenda',
-                  command: OpenAgenda(),
-                  leadingBuilder: (isHovered, hasFocus) => Padding(
-                    padding: EdgeInsets.only(
-                      left: context.theme.spacing.lg,
-                      right: context.theme.spacing.sm,
-                      bottom: 2,
-                    ),
-                    child: FaIcon(
-                      FontAwesomeIcons.calendar,
-                      size: 16,
-                      color: context.colour.foreground,
-                    ),
-                  ),
-                  textStyle: itemStyle,
-                ),
-
-              // Second group: Top Priorities
+              // Top Priorities
               if (widget.topPriorities.isNotEmpty) ...[
-                SizedBox(height: 16),
-                ListTile(
-                  title: 'Top Priorities',
-                  style: ListTileStyle.header,
-                  textStyle: headerStyle,
-                  noHoverHighlight: true,
-                  centered: true,
+                Container(
+                  color: context.colour.headerBackground,
+                  padding: EdgeInsets.symmetric(
+                    vertical: context.theme.spacing.md,
+                  ),
+                  child: ListTile(
+                    title: 'Top Priorities',
+                    style: ListTileStyle.header,
+                    textStyle: headerStyle,
+                    noHoverHighlight: true,
+                    centered: true,
+                  ),
                 ),
                 ReorderableListView<Priority>(
                   list: widget.topPriorities,
@@ -487,13 +473,18 @@ class _PrioritiesListState extends State<PrioritiesList>
                 final allPriorities = widget.root.children;
 
                 return [
-                  SizedBox(height: 16),
-                  ListTile(
-                    title: 'All Priorities',
-                    style: ListTileStyle.header,
-                    textStyle: headerStyle,
-                    noHoverHighlight: true,
-                    centered: true,
+                  Container(
+                    color: context.colour.headerBackground,
+                    padding: EdgeInsets.symmetric(
+                      vertical: context.theme.spacing.md,
+                    ),
+                    child: ListTile(
+                      title: 'All Priorities',
+                      style: ListTileStyle.header,
+                      textStyle: headerStyle,
+                      noHoverHighlight: true,
+                      centered: true,
+                    ),
                   ),
                   ...buildReorderablePriorityItems(
                     context,

@@ -33,7 +33,7 @@ class ThreadPage implements AutoRouteWrapper {
       // instead of crashing in the parser.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        context.router.replaceAll([EmptyShellRoute("Now")()]);
+        context.router.replaceAll([const RootRoute()]);
       });
       return const SizedBox.shrink();
     }
