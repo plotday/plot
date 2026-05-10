@@ -1763,12 +1763,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (threadListSource != null) return threadListSource!;
     // Check if current thread is in the agenda
     if (state.thread != null) {
-      final inAgenda = state.agendaItems.any(
-        (item) => item.when(
-          header: (_) => false,
-          activity: (a) => a.thread.id == state.thread!.id,
-        ),
-      );
+      final inAgenda = state.agenda.sections
+          .expand((s) => s.blocks)
+          .expand((b) => b.threads)
+          .any((t) => t.id == state.thread!.id);
       if (inAgenda) return ThreadListSource.agenda;
     }
     return ThreadListSource.activityFeed;

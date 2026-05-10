@@ -223,15 +223,13 @@ class OpenNextThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      final source = priorityBloc.resolveThreadListSource();
 
-      // Search for next root thread in the resolved list
+      // The agenda no longer contains thread items — only priority block
+      // headers. Thread navigation only operates on the activity feed.
       int offset = 1;
       while (offset < 100) {
         // Safety limit
-        final item = source == ThreadListSource.agenda
-            ? priorityBloc.getAgendaItem(offset)
-            : priorityBloc.getActivityFeedItem(offset);
+        final item = priorityBloc.getActivityFeedItem(offset);
         if (item == null) {
           return const CommandSkipped();
         }
@@ -268,15 +266,13 @@ class OpenPreviousThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      final source = priorityBloc.resolveThreadListSource();
 
-      // Search for previous root thread in the resolved list
+      // The agenda no longer contains thread items — only priority block
+      // headers. Thread navigation only operates on the activity feed.
       int offset = -1;
       while (offset > -100) {
         // Safety limit
-        final item = source == ThreadListSource.agenda
-            ? priorityBloc.getAgendaItem(offset)
-            : priorityBloc.getActivityFeedItem(offset);
+        final item = priorityBloc.getActivityFeedItem(offset);
         if (item == null) {
           return const CommandSkipped();
         }
