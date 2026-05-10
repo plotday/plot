@@ -257,6 +257,16 @@ sealed class AgendaBlock extends Equatable {
 
   @override
   List<Object?> get props => [id, priority, threads, isOutside];
+
+  /// Joined `displayTitle` of threads in this block with non-empty
+  /// titles, separated by ` · `. Empty when no titled threads exist.
+  String get summaryLine => threads
+      .map((t) => t.displayTitle)
+      .where((s) => s.isNotEmpty)
+      .join(' · ');
+
+  /// True if any thread in this block is unread.
+  bool get hasUnread => threads.any((t) => t.unread);
 }
 
 /// Threads belonging to a single [Priority], rendered under a priority
