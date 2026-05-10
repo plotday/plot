@@ -439,7 +439,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         thread: thread,
         agenda: agenda,
-        agendaItems: agenda.flatItems(contextPriorityId: state.context.id),
+        agendaItems: agenda.flatItems(),
         activityFeedItems: activityFeedItems,
       ),
     );
@@ -456,12 +456,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
       if (thread != null && thread.id == id) return thread;
     }
-    for (final item in state.agendaItems) {
-      final thread = item.when(
-        header: (_) => null,
-        activity: (a) => a.thread,
-      );
-      if (thread != null && thread.id == id) return thread;
+    for (final section in state.agenda.sections) {
+      for (final block in section.blocks) {
+        for (final thread in block.threads) {
+          if (thread.id == id) return thread;
+        }
+      }
     }
     return null;
   }
@@ -632,7 +632,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
-    final flat = agenda.flatItems(contextPriorityId: state.context.id);
+    final flat = agenda.flatItems();
     emit(
       state.copyWith(
         agenda: agenda,
@@ -1302,7 +1302,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         context: newPriority,
         agenda: newAgenda,
-        agendaItems: newAgenda.flatItems(contextPriorityId: newPriority.id),
+        agendaItems: newAgenda.flatItems(),
         activityFeedItems: const [],
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
@@ -2239,9 +2239,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               emit(
                 state.copyWith(
                   agenda: agenda,
-                  agendaItems: agenda.flatItems(
-                    contextPriorityId: state.context.id,
-                  ),
+                  agendaItems: agenda.flatItems(),
                   agendaDoneEnd: false,
                   agendaLoaded: true,
                   reorderViewItems: const Value(null),
