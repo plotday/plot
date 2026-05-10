@@ -301,7 +301,7 @@ class AgendaBuilder {
 
     // Aggregate all threads by priority (gap.threads is the lead block).
     final byPriority = <Uuid, _PriorityAccum>{};
-    void add(Priority p, Iterable<Thread> threads, bool blockIsOutside) {
+    void add(Priority p, Iterable<Thread> threads) {
       final accum = byPriority.putIfAbsent(
         p.id,
         () => _PriorityAccum(priority: p),
@@ -309,16 +309,13 @@ class AgendaBuilder {
       for (final t in threads) {
         accum.threads.add(t);
       }
-      // A priority is "outside" if every contributing block was outside.
-      // If any contributor was inside, treat the merged block as inside.
-      accum.allOutside = accum.allOutside && blockIsOutside;
     }
 
     if (gap.threads.isNotEmpty) {
-      add(gap.priority, gap.threads, gap.isOutside);
+      add(gap.priority, gap.threads);
     }
     for (final pb in followingPriorityBlocks) {
-      add(pb.priority, pb.threads, pb.isOutside);
+      add(pb.priority, pb.threads);
     }
 
     if (byPriority.isEmpty) {
@@ -394,7 +391,6 @@ class AgendaBuilder {
         () => _PriorityAccum(priority: pb.priority),
       );
       accum.threads.addAll(pb.threads);
-      accum.allOutside = accum.allOutside && pb.isOutside;
     }
 
     final ranked = byPriority.values.toList()
@@ -714,26 +710,22 @@ class _SectionBuilder {
   /// Open priority-block accumulator: priority + threads collected so far.
   Priority? _openPriority;
   final List<Thread> _openThreads = <Thread>[];
-  bool _openAllOutside = true;
 
   void appendStandalone(AgendaThreadItem item) {
     final t = item.thread;
     if (_openPriority == null) {
       _openPriority = t.priority;
       _openThreads.add(t);
-      _openAllOutside = item.isOutsidePriority;
       return;
     }
     if (_openPriority == t.priority) {
       _openThreads.add(t);
-      _openAllOutside = _openAllOutside && item.isOutsidePriority;
       return;
     }
     // Priority transition — flush and start a new run.
     flushPriorityBlock();
     _openPriority = t.priority;
     _openThreads.add(t);
-    _openAllOutside = item.isOutsidePriority;
   }
 
   void flushPriorityBlock() {
@@ -748,7 +740,6 @@ class _SectionBuilder {
     );
     _openPriority = null;
     _openThreads.clear();
-    _openAllOutside = true;
   }
 
   AgendaSection build() {
@@ -781,5 +772,4 @@ class _PriorityAccum {
   _PriorityAccum({required this.priority});
   final Priority priority;
   final List<Thread> threads = <Thread>[];
-  bool allOutside = true;
 }

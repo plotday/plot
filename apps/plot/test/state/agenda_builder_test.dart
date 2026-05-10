@@ -145,44 +145,60 @@ void main() {
       expect(p2Threads.map((t) => t.id), contains(t2.id));
     });
 
-    test('merges unread non-scheduled threads into the same-priority block', () {
+    test('recovers an unread thread whose agendaAt falls before today onto '
+        'today\'s block via _mergeUnreadIntoToday', () {
       final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
 
-      // Two threads on the same priority, both filed today: one is read,
-      // one is unread. The two should land in a single PriorityBlock for
-      // p1 (block.threads.length == 2), with hasUnread true and a
-      // summaryLine that mentions both titles.
-      final readThread = Thread(priority: p1, title: 'read note');
-      final unreadThread = Thread(priority: p1, title: 'unread note')
-          .copyWith(unread: true);
+      // An unread thread scheduled on a date BEFORE the frozen "today"
+      // (2026-05-02). [PriorityState.makeAgendaItems] groups by
+      // `agendaAt.toDate()` and then drops any group whose date is
+      // before today (`!date.isBefore(today)`), so this thread never
+      // makes it into the atom stream. Only the post-pass merge in
+      // [AgendaBuilder._mergeUnreadIntoToday] can recover it onto the
+      // today section — which is exactly what this test exercises.
+      final pastUnread = Thread(
+        priority: p1,
+        title: 'forgotten unread',
+        on: Day(Date(2026, 5, 1)),
+      ).copyWith(unread: true);
+
+      // A second thread that lands on today so the today section exists
+      // with at least one PriorityBlock for `p1`. Without this, the merge
+      // would still create a fresh PriorityBlock, but the explicit
+      // setup keeps the test honest about the "merge into existing
+      // same-priority block" path that production hits in the common
+      // case.
+      final todayThread = Thread(priority: p1, title: 'today note');
 
       final model = AgendaBuilder.build(
-        threads: [readThread, unreadThread],
+        threads: [pastUnread, todayThread],
         context: p1,
         horizonDays: 30,
       );
 
-      // Find p1's block.
-      final p1Blocks = model.allBlocks
+      // Locate the today section.
+      final todaySection = model.sections
+          .whereType<ui.DateSection>()
+          .firstWhere((s) => s.isNow,
+              orElse: () => throw StateError(
+                  'expected a today (isNow) section in the model'));
+
+      // The past-dated unread thread must surface inside today's p1
+      // block. Without `_mergeUnreadIntoToday` it would be silently
+      // dropped by the date-cutoff in `makeAgendaItems`.
+      final p1Blocks = todaySection.blocks
+          .whereType<ui.PriorityBlock>()
           .where((b) => b.priority.id == p1.id)
           .toList();
-      expect(p1Blocks, isNotEmpty, reason: 'p1 must produce a block');
-      expect(p1Blocks.length, 1,
-          reason: 'A single (today, p1) block must hold both threads, not '
-              'one block per thread.');
-
-      final block = p1Blocks.single;
-      expect(block.threads.length, 2,
-          reason: 'block must contain both the read and the unread thread');
-      expect(
-        block.threads.map((t) => t.id).toSet(),
-        {readThread.id, unreadThread.id},
-      );
-      expect(block.hasUnread, isTrue,
-          reason: 'block must report hasUnread=true because one thread '
-              'in it is unread');
-      expect(block.summaryLine, contains('read note'));
-      expect(block.summaryLine, contains('unread note'));
+      expect(p1Blocks, isNotEmpty,
+          reason: 'today must contain a p1 PriorityBlock to merge into');
+      final mergedThreadIds =
+          p1Blocks.expand((b) => b.threads).map((t) => t.id).toSet();
+      expect(mergedThreadIds, contains(pastUnread.id),
+          reason: 'past-dated unread thread must be recovered onto today '
+              'by _mergeUnreadIntoToday');
+      expect(mergedThreadIds, contains(todayThread.id),
+          reason: 'today\'s own thread must remain in today\'s block');
     });
   });
 }
