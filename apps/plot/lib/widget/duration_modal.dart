@@ -24,10 +24,6 @@ class DurationModal extends Modal {
     Duration(hours: 1),
     Duration(hours: 2),
   ];
-
-  Future<Value<Duration?>> run(BuildContext context) {
-    return super.show<Duration?>(context);
-  }
 }
 
 class _DurationModalBody extends StatefulWidget {
@@ -59,64 +55,61 @@ class _DurationModalBodyState extends State<_DurationModalBody> {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final spacing = theme.spacing;
-    return Padding(
-      padding: EdgeInsets.all(spacing.lg),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            _format(_value),
-            style: theme.typography.xl3.copyWith(fontWeight: FontWeight.w600),
-          ),
-          SizedBox(height: spacing.lg),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _StepButton(
-                label: '−',
-                onTap: () => _bump(-DurationModal._step),
-              ),
-              SizedBox(width: spacing.lg),
-              _StepButton(
-                label: '+',
-                onTap: () => _bump(DurationModal._step),
-              ),
-            ],
-          ),
-          SizedBox(height: spacing.lg),
-          Wrap(
-            spacing: spacing.sm,
-            runSpacing: spacing.sm,
-            alignment: WrapAlignment.center,
-            children: [
-              for (final p in DurationModal._presets)
-                FButton(
-                  variant: FButtonVariant.outline,
-                  onPress: () => _set(p),
-                  child: Text(_format(p)),
-                ),
-            ],
-          ),
-          SizedBox(height: spacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          _format(_value),
+          style: theme.typography.xl3.copyWith(fontWeight: FontWeight.w600),
+        ),
+        SizedBox(height: spacing.lg),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StepButton(
+              label: '−',
+              onTap: () => _bump(-DurationModal._step),
+            ),
+            SizedBox(width: spacing.lg),
+            _StepButton(
+              label: '+',
+              onTap: () => _bump(DurationModal._step),
+            ),
+          ],
+        ),
+        SizedBox(height: spacing.lg),
+        Wrap(
+          spacing: spacing.sm,
+          runSpacing: spacing.sm,
+          alignment: WrapAlignment.center,
+          children: [
+            for (final p in DurationModal._presets)
               FButton(
-                variant: FButtonVariant.ghost,
-                onPress: () => _commit(null),
-                child: const Text('Clear'),
+                variant: FButtonVariant.outline,
+                onPress: () => _set(p),
+                child: Text(_format(p)),
               ),
-              FButton(
-                variant: FButtonVariant.primary,
-                onPress: () =>
-                    _commit(_value == Duration.zero ? null : _value),
-                child: const Text('Done'),
-              ),
-            ],
-          ),
-        ],
-      ),
+          ],
+        ),
+        SizedBox(height: spacing.lg),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            FButton(
+              variant: FButtonVariant.ghost,
+              onPress: () => _commit(null),
+              child: const Text('Clear'),
+            ),
+            FButton(
+              variant: FButtonVariant.primary,
+              onPress: () =>
+                  _commit(_value == Duration.zero ? null : _value),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
