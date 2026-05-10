@@ -864,6 +864,93 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
+  /// Apply an Activity-feed drag-and-drop. Decodes the target's section
+  /// and applies the appropriate state transition (todo / unread /
+  /// schedule date) plus an intra-section order rewrite.
+  ///
+  /// Section transitions:
+  ///   * Today      → todo=true, schedule = `Thread.todoNowDate` sentinel
+  ///   * Scheduled  → todo=true, schedule.startOn = `targetScheduledDate`
+  ///   * New        → unread=true, archive any user schedule
+  ///   * Done       → unread=false, archive any user schedule, bump
+  ///                  `bumpedAt` so it surfaces at the top of Done
+  ///
+  /// Intra-section order is computed from the prev/next thread's
+  /// `userSchedule.order` (fractional indexing). For New/Done where
+  /// threads have no `userSchedule.order`, the resulting display order
+  /// is governed by the bloc's existing sort.
+  Future<void> applyActivityFeedThreadDrop({
+    required ThreadId draggedId,
+    required ActivitySection targetSection,
+    required Date? targetScheduledDate,
+    required ThreadId? prevId,
+    required ThreadId? nextId,
+  }) async {
+    Thread? dragged;
+    for (final t in _todoThreads) {
+      if (t.id == draggedId) {
+        dragged = t;
+        break;
+      }
+    }
+    if (dragged == null) {
+      for (final t in _activityFeedRawThreads) {
+        if (t.id == draggedId) {
+          dragged = t;
+          break;
+        }
+      }
+    }
+    if (dragged == null) return;
+
+    Order? newOrder;
+    if (targetSection == ActivitySection.today ||
+        targetSection == ActivitySection.scheduled) {
+      Thread? above;
+      Thread? below;
+      if (prevId != null) {
+        for (final t in _todoThreads) {
+          if (t.id == prevId) {
+            above = t;
+            break;
+          }
+        }
+      }
+      if (nextId != null) {
+        for (final t in _todoThreads) {
+          if (t.id == nextId) {
+            below = t;
+            break;
+          }
+        }
+      }
+      newOrder = Order.between(above?.order, below?.order);
+    }
+
+    Thread updated;
+    switch (targetSection) {
+      case ActivitySection.today:
+        updated = dragged.asActiveToday(order: newOrder);
+        break;
+      case ActivitySection.scheduled:
+        if (targetScheduledDate == null) return;
+        updated = dragged.asScheduled(
+          targetScheduledDate,
+          order: newOrder,
+        );
+        break;
+      case ActivitySection.newSection:
+        updated = dragged.asUnread();
+        break;
+      case ActivitySection.done:
+        updated = dragged.asInactive();
+        break;
+    }
+
+    optimisticallyUpdateThread(updated);
+    await updated.save();
+  }
+
   /// Shared implementation for `dropThreadIntoBlock` /
   /// `dropThreadOutsideBlock`. Both end up doing the same thing on the
   /// thread side — only the page-level intent differs.

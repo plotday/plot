@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/activity_feed_drag.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/widget/unified_header.dart';
@@ -762,6 +763,8 @@ class _PriorityPageState extends State<PriorityPage> {
   final InfiniteListController _agendaListController = InfiniteListController();
   final Map<String, GlobalKey<AnimatedRemovalState>> _removalKeys = {};
   final BlockDragController _blockDragController = BlockDragController();
+  final BlockDragController _activityFeedDragController =
+      BlockDragController();
 
   GlobalKey<AnimatedRemovalState> _getRemovalKey(String threadId) {
     return _removalKeys.putIfAbsent(
@@ -844,6 +847,7 @@ class _PriorityPageState extends State<PriorityPage> {
     _agendaListController.dispose();
     _tabNotifier?.removeListener(_onTabNotifierChanged);
     _blockDragController.dispose();
+    _activityFeedDragController.dispose();
     super.dispose();
   }
 
@@ -2785,7 +2789,42 @@ class _PriorityPageState extends State<PriorityPage> {
     final bloc = context.read<PriorityBloc>();
     final footerIndex = showFooter ? displayItems.length : -1;
     final totalCount = displayItems.length + (showFooter ? 1 : 0);
-    return InfiniteList(
+
+    // Compute drop boundaries once per build; the same map is re-read by
+    // the per-row builder. The dispatcher closure captures `displayItems`
+    // and the bloc so it can resolve section context on drop.
+    final boundaries = computeActivityFeedDropBoundaries(items: displayItems);
+    _activityFeedDragController.dispatcher = (payload, target) {
+      dispatchActivityFeedThreadDrop(
+        bloc: bloc,
+        items: displayItems,
+        payload: payload,
+        target: target,
+      );
+    };
+    _activityFeedDragController.previewBuilder = (payload) {
+      Thread? source;
+      for (final item in displayItems) {
+        if (item is AgendaThreadItem &&
+            item.thread.id.toString() == payload.blockId) {
+          source = item.thread;
+          break;
+        }
+      }
+      if (source == null) return null;
+      return ThreadWidget(
+        activity: source,
+        selected: false,
+        now: false,
+        focusNode: FocusNode(skipTraversal: true),
+        context: state.context,
+        showSubPriority: true,
+        bump: false,
+        showEventTiming: false,
+      );
+    };
+
+    final list = InfiniteList(
       controller: controller,
       scrollController: scrollController,
       scrollStorageKey: scrollStorageKey,
@@ -2804,6 +2843,7 @@ class _PriorityPageState extends State<PriorityPage> {
           return _SearchFooter(state: state);
         }
         final current = displayItems[index];
+        final dropAbove = boundaries.before[index];
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -2816,6 +2856,11 @@ class _PriorityPageState extends State<PriorityPage> {
             ),
           ),
           children: [
+            if (dropAbove != null)
+              BlockDropZone(
+                target: dropAbove,
+                slotKey: 'feed_drop_above_$index',
+              ),
             ...current.when(
               header: (header) {
                 String? displayText = header.text;
@@ -2839,15 +2884,21 @@ class _PriorityPageState extends State<PriorityPage> {
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
                 return [
-                  _ActivityFeedItem(
-                    key: ValueKey('feed_activitywidget_${baseThread.id}'),
-                    baseThread: baseThread,
-                    selected:
-                        state.thread != null &&
-                        baseThread.id == state.thread!.id,
-                    now: agendaActivity.now,
-                    focusNode: focusNode,
+                  ActivityFeedDraggableRow(
+                    threadId: baseThread.id,
                     priorityContext: state.context,
+                    child: _ActivityFeedItem(
+                      key: ValueKey(
+                        'feed_activitywidget_${baseThread.id}',
+                      ),
+                      baseThread: baseThread,
+                      selected:
+                          state.thread != null &&
+                          baseThread.id == state.thread!.id,
+                      now: agendaActivity.now,
+                      focusNode: focusNode,
+                      priorityContext: state.context,
+                    ),
                   ),
                 ];
               },
@@ -2855,6 +2906,20 @@ class _PriorityPageState extends State<PriorityPage> {
           ],
         );
       },
+    );
+
+    final tail = boundaries.afterList;
+    return BlockDragScope(
+      controller: _activityFeedDragController,
+      child: tail == null
+          ? list
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(child: list),
+                BlockDropZone(target: tail, slotKey: 'feed_drop_tail'),
+              ],
+            ),
     );
   }
 }

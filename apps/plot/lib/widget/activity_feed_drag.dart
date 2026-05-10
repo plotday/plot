@@ -1,0 +1,254 @@
+import 'package:flutter/widgets.dart';
+
+import 'package:plot/state/activity_section.dart';
+import 'package:plot/state/priority.dart';
+import 'package:plot/store/store.dart';
+import 'package:plot/util/platform.dart';
+import 'package:plot/widget/agenda_block_drag.dart';
+
+/// Walks the Activity tab item list and emits a [BlockDropTarget] for
+/// each drop boundary. Boundaries are placed:
+///   * Above each `AgendaHeaderItem` (so a drop just above a section
+///     header lands at the top of that section).
+///   * Above each `AgendaThreadItem` (between rows).
+///   * After the very last item ([afterList]).
+///
+/// Each emitted target carries the section identity in its
+/// `targetDate` slot when the section is Scheduled (so dispatch can
+/// recover the day to schedule for); the section name itself is
+/// recovered later by re-walking the items in the dispatcher.
+///
+/// The boundary just above a section header belongs to the **previous**
+/// section's tail — dropping above the "Tomorrow" header drops at the
+/// bottom of Today, not the top of Tomorrow. The first drop slot of a
+/// section is the boundary above that section's first thread row.
+({
+  Map<int, BlockDropTarget> before,
+  BlockDropTarget? afterList,
+}) computeActivityFeedDropBoundaries({
+  required List<AgendaItem> items,
+}) {
+  final before = <int, BlockDropTarget>{};
+  BlockDropTarget? afterList;
+
+  ActivitySection? currentSection;
+  Date? currentScheduledDate;
+  String? prevThreadId;
+
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    if (item is AgendaHeaderItem) {
+      final marker = item.text == null
+          ? null
+          : ActivitySectionMarker.tryDecode(item.text!);
+      if (marker != null) {
+        // Tail-of-previous-section boundary: drop here lands at the bottom
+        // of the previous section (which is whatever currentSection points
+        // to right now).
+        if (currentSection != null && prevThreadId != null) {
+          before[i] = BlockDropTarget(
+            targetDate: currentSection == ActivitySection.scheduled
+                ? currentScheduledDate
+                : null,
+            targetPeriodStart: null,
+            prevBlockId: prevThreadId,
+            prevPriorityId: null,
+            nextBlockId: null,
+            nextPriorityId: null,
+          );
+        }
+        currentSection = marker.section;
+        currentScheduledDate = item.date;
+        prevThreadId = null;
+      }
+      continue;
+    }
+    if (item is AgendaThreadItem) {
+      if (currentSection == null) continue;
+      final threadIdStr = item.thread.id.toString();
+      // Skip emitting a self-boundary for the dragged row itself; the
+      // dispatcher resolves no-op drops anyway, but emitting it adds
+      // pointless flicker in the activation algorithm.
+      before[i] = BlockDropTarget(
+        targetDate: currentSection == ActivitySection.scheduled
+            ? currentScheduledDate
+            : null,
+        targetPeriodStart: null,
+        prevBlockId: prevThreadId,
+        prevPriorityId: null,
+        nextBlockId: threadIdStr,
+        nextPriorityId: null,
+      );
+      prevThreadId = threadIdStr;
+    }
+  }
+
+  if (currentSection != null && prevThreadId != null) {
+    afterList = BlockDropTarget(
+      targetDate: currentSection == ActivitySection.scheduled
+          ? currentScheduledDate
+          : null,
+      targetPeriodStart: null,
+      prevBlockId: prevThreadId,
+      prevPriorityId: null,
+      nextBlockId: null,
+      nextPriorityId: null,
+    );
+  }
+
+  return (before: before, afterList: afterList);
+}
+
+/// Dispatch an Activity-feed drag drop. Recovers the target section by
+/// walking the items list to find the most recent section header above
+/// the drop slot, then calls
+/// `PriorityBloc.applyActivityFeedThreadDrop`.
+void dispatchActivityFeedThreadDrop({
+  required PriorityBloc bloc,
+  required List<AgendaItem> items,
+  required BlockDragPayload payload,
+  required BlockDropTarget target,
+}) {
+  // Walk items, tracking the section as we go. Stop when we encounter
+  // the row whose id == target.prevBlockId (the slot lives just below
+  // that row); the current section at that point is the slot's section.
+  // If prevBlockId is null, the slot is at the top of a section — the
+  // first header we encounter is the slot's section.
+  ActivitySection? section;
+  Date? scheduledDate;
+
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    if (item is AgendaHeaderItem) {
+      final marker = item.text == null
+          ? null
+          : ActivitySectionMarker.tryDecode(item.text!);
+      if (marker != null) {
+        section = marker.section;
+        scheduledDate = item.date;
+        if (target.prevBlockId == null) {
+          break;
+        }
+      }
+    } else if (item is AgendaThreadItem) {
+      if (target.prevBlockId != null &&
+          item.thread.id.toString() == target.prevBlockId) {
+        break;
+      }
+    }
+  }
+
+  if (section == null) return;
+
+  final draggedId = ThreadId.fromString(payload.blockId);
+  // Skip no-op drops: dragging a thread to a slot adjacent to itself.
+  if (target.prevBlockId == payload.blockId ||
+      target.nextBlockId == payload.blockId) {
+    return;
+  }
+  final prevId = target.prevBlockId == null
+      ? null
+      : ThreadId.fromString(target.prevBlockId!);
+  final nextId = target.nextBlockId == null
+      ? null
+      : ThreadId.fromString(target.nextBlockId!);
+
+  bloc.applyActivityFeedThreadDrop(
+    draggedId: draggedId,
+    targetSection: section,
+    targetScheduledDate: scheduledDate,
+    prevId: prevId,
+    nextId: nextId,
+  );
+}
+
+/// Wraps a single Activity-feed thread row as a [Draggable] over the
+/// shared [BlockDragController]. Each thread row is its own one-row
+/// "block" — payload carries the thread id (as `blockId`).
+class ActivityFeedDraggableRow extends StatefulWidget {
+  const ActivityFeedDraggableRow({
+    required this.threadId,
+    required this.priorityContext,
+    required this.child,
+    super.key,
+  });
+
+  final ThreadId threadId;
+  final Priority priorityContext;
+  final Widget child;
+
+  @override
+  State<ActivityFeedDraggableRow> createState() =>
+      _ActivityFeedDraggableRowState();
+}
+
+class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
+  final GlobalKey _rowKey = GlobalKey();
+
+  BlockDragPayload _payload() => BlockDragPayload(
+    blockId: widget.threadId.toString(),
+    priorityId: widget.priorityContext.id,
+    sourceDate: null,
+    sourcePeriodStart: null,
+    visibleThreadCount: 1,
+  );
+
+  void _onDragStarted() {
+    final controller = BlockDragScope.maybeOf(context);
+    controller?.start(
+      _payload(),
+      sourceContextProvider: () => _rowKey.currentContext ?? context,
+    );
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    BlockDragScope.maybeOf(context)?.updatePointer(details.globalPosition);
+  }
+
+  void _onDragEnd(DraggableDetails details) {
+    BlockDragScope.maybeOf(context)?.end();
+  }
+
+  void _onDragCancelled() {
+    BlockDragScope.maybeOf(context)?.end(dispatch: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final source = KeyedSubtree(key: _rowKey, child: widget.child);
+    final hidden = BlockDragHidden(
+      parentBlockId: widget.threadId.toString(),
+      child: source,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final feedback = SizedBox(
+          width: constraints.maxWidth,
+          child: widget.child,
+        );
+        if (hasPhysicalKeyboard()) {
+          return Draggable<BlockDragPayload>(
+            data: _payload(),
+            feedback: feedback,
+            childWhenDragging: hidden,
+            onDragStarted: _onDragStarted,
+            onDragUpdate: _onDragUpdate,
+            onDragEnd: _onDragEnd,
+            onDraggableCanceled: (_, _) => _onDragCancelled(),
+            child: hidden,
+          );
+        }
+        return LongPressDraggable<BlockDragPayload>(
+          data: _payload(),
+          feedback: feedback,
+          childWhenDragging: hidden,
+          onDragStarted: _onDragStarted,
+          onDragUpdate: _onDragUpdate,
+          onDragEnd: _onDragEnd,
+          onDraggableCanceled: (_, _) => _onDragCancelled(),
+          child: hidden,
+        );
+      },
+    );
+  }
+}
