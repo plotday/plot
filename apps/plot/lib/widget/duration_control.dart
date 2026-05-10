@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
-import 'package:plot/style/colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/duration_modal.dart';
 
@@ -75,32 +74,46 @@ class _DurationControlState extends State<DurationControl> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: SizedBox(
-        height: 20,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _HitHalf(
-              visible: _hover && !readOnly && value != null,
-              glyph: '−',
-              onTap: readOnly
-                  ? null
-                  : () =>
-                        widget.onChanged!(_bump(value, -DurationControl._step)),
-              fontSize: fontSize,
-            ),
-            _label(value, fontSize),
-            _HitHalf(
-              visible: _hover && !readOnly,
-              glyph: '+',
-              onTap: readOnly
-                  ? null
-                  : () =>
-                        widget.onChanged!(_bump(value, DurationControl._step)),
-              fontSize: fontSize,
-            ),
-          ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: readOnly
+            ? null
+            : (details) {
+          final box =
+              context.findRenderObject() as RenderBox?;
+          if (box == null) return;
+          final tapX = details.localPosition.dx;
+          final centerX = box.size.width / 2;
+          if (tapX < centerX) {
+            // Left half: decrement
+            widget.onChanged!(_bump(value, -DurationControl._step));
+          } else {
+            // Right half: increment
+            widget.onChanged!(_bump(value, DurationControl._step));
+          }
+        },
+        child: SizedBox(
+          height: 20,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _HitGlyph(
+                // hide − when no duration exists; + still shows to add the first 15m
+                visible: _hover && !readOnly && value != null,
+                glyph: '−',
+                fontSize: fontSize,
+                foreground: widget.foreground,
+              ),
+              _label(value, fontSize),
+              _HitGlyph(
+                visible: _hover && !readOnly,
+                glyph: '+',
+                fontSize: fontSize,
+                foreground: widget.foreground,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -114,7 +127,7 @@ class _DurationControlState extends State<DurationControl> {
         text,
         style: TextStyle(
           fontSize: fontSize,
-          color: context.colour.foreground,
+          color: widget.foreground,
           height: 1,
         ),
       ),
@@ -122,38 +135,34 @@ class _DurationControlState extends State<DurationControl> {
   }
 }
 
-class _HitHalf extends StatelessWidget {
-  const _HitHalf({
+class _HitGlyph extends StatelessWidget {
+  const _HitGlyph({
     required this.visible,
     required this.glyph,
-    required this.onTap,
     required this.fontSize,
+    required this.foreground,
   });
 
   final bool visible;
   final String glyph;
-  final VoidCallback? onTap;
   final double fontSize;
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 18,
-        height: 20,
-        child: AnimatedOpacity(
-          opacity: visible ? 1 : 0,
-          duration: const Duration(milliseconds: 120),
-          child: Center(
-            child: Text(
-              glyph,
-              style: TextStyle(
-                fontSize: fontSize + 1,
-                height: 1,
-                color: context.colour.foreground,
-              ),
+    return SizedBox(
+      width: 18,
+      height: 20,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 120),
+        child: Center(
+          child: Text(
+            glyph,
+            style: TextStyle(
+              fontSize: fontSize + 1,
+              height: 1,
+              color: foreground,
             ),
           ),
         ),
