@@ -558,7 +558,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
     final spacing = context.theme.spacing;
     final smSize = context.theme.typography.sm.fontSize ?? 14;
     final xsSize = context.theme.typography.xs.fontSize ?? 12;
-    final currentTime = Time.now();
 
     final hasTime = dateTimeRange != null;
     final timeOfDay = dateTimeRange?.start?.toTimeOfDay();
@@ -587,6 +586,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
     if (widget.now && thread?.at?.start != null) {
       // Active-timing display: ↑Xm elapsed in fg, /Ym remaining in muted.
+      final currentTime = Time.now();
       final start = thread!.at!.start!;
       final end = thread.at!.end;
       final elapsed = currentTime.difference(start).inMinutes;
@@ -791,7 +791,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isDraggable || widget.parentBlockId == null) {
+    if (!_isDraggable) {
       return _wrapTapToOpen(_buildRow(context));
     }
 

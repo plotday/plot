@@ -66,6 +66,7 @@ class _DurationControlState extends State<DurationControl> {
 
     if (isTouchPlatform()) {
       return GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: readOnly ? null : _openModal,
         child: _label(value, fontSize),
       );
