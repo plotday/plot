@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/colors.dart';
 
 /// Payload carried by the block-level drag system.
 ///
@@ -1018,6 +1020,7 @@ class BlockDropZone extends StatefulWidget {
     required this.target,
     required this.slotKey,
     this.silent = false,
+    this.dividerBelow = false,
     super.key,
   });
 
@@ -1037,6 +1040,13 @@ class BlockDropZone extends StatefulWidget {
   /// inside an activatable region while the visible gap stays anchored
   /// at the top of Done.
   final bool silent;
+
+  /// When true, a 1px divider in the standard border color is painted
+  /// at the bottom edge of the expanded gap. Use this when the zone
+  /// sits directly above another row in the same column, so the active
+  /// gap and the row below it are visually separated. Drawn within the
+  /// expanded height (so the total layout footprint is unchanged).
+  final bool dividerBelow;
 
   @override
   State<BlockDropZone> createState() => _BlockDropZoneState();
@@ -1197,12 +1207,28 @@ class _BlockDropZoneState extends State<BlockDropZone> {
     // block-center activation thresholds so the user has to drag
     // farther on each subsequent attempt. Each drag session starts
     // with a fresh, fully-collapsed slot.
+    final dividerColor = Color.alphaBlend(
+      context.theme.colors.border,
+      context.colour.background,
+    );
+
     return ClipRect(
       child: AnimatedContainer(
         key: ValueKey(payload != null),
         duration: kBlockBoundaryAnimDuration,
         curve: Curves.easeOut,
         height: isActive ? expandedHeight : kBlockBoundaryRestHeight,
+        // Bottom-border decoration paints inside the box's bounds, so
+        // the divider occupies the bottom 1px of the expanded gap
+        // without growing the footprint. Only applied when the zone is
+        // active and the caller opted in via `dividerBelow`.
+        decoration: isActive && widget.dividerBelow
+            ? BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: dividerColor, width: 1),
+                ),
+              )
+            : null,
         child: dimmed == null
             ? null
             : OverflowBox(

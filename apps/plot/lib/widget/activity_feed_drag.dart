@@ -284,6 +284,12 @@ class ActivityFeedDraggableRow extends StatefulWidget {
 class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
   final GlobalKey _rowKey = GlobalKey();
 
+  // Captured once via post-frame callback after the row first lays out.
+  // Avoids a per-row LayoutBuilder (which would force an extra layout
+  // pass for every visible row on every build); the one-shot capture
+  // costs a single callback per row's lifetime.
+  double? _renderedWidth;
+
   BlockDragPayload _payload() => BlockDragPayload(
     blockId: widget.threadId.toString(),
     priorityId: widget.priorityContext.id,
@@ -292,7 +298,21 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
     visibleThreadCount: 1,
   );
 
+  void _captureRenderedWidth() {
+    if (!mounted) return;
+    final ctx = _rowKey.currentContext;
+    if (ctx == null) return;
+    final ro = ctx.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) return;
+    final width = ro.size.width;
+    if (_renderedWidth == width) return;
+    setState(() => _renderedWidth = width);
+  }
+
   void _onDragStarted() {
+    // Refresh width at drag start so a pane resize since first layout
+    // doesn't leave the feedback sized to a stale width.
+    _captureRenderedWidth();
     final controller = BlockDragScope.maybeOf(context);
     controller?.start(
       _payload(),
@@ -314,18 +334,21 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
 
   @override
   Widget build(BuildContext context) {
+    // Capture the source row's rendered width once after first layout.
+    // Falls back to MediaQuery on the first frame; subsequent rebuilds
+    // see the cached value and skip the postFrameCallback.
+    if (_renderedWidth == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _captureRenderedWidth();
+      });
+    }
     final source = KeyedSubtree(key: _rowKey, child: widget.child);
     final hidden = BlockDragHidden(
       parentBlockId: widget.threadId.toString(),
       child: source,
     );
-    // Drag-feedback width comes from MediaQuery rather than a per-row
-    // LayoutBuilder. The previous LayoutBuilder forced an extra layout
-    // pass for every visible row on every build — for a 50-row feed
-    // that's 50 callbacks even when nothing was being dragged. The
-    // visible inaccuracy in multi-panel layouts (feedback slightly wider
-    // than the source row) is acceptable; the perf win is not.
-    final feedbackWidth = MediaQuery.sizeOf(context).width;
+    final feedbackWidth =
+        _renderedWidth ?? MediaQuery.sizeOf(context).width;
     // Solid-bg + flanking 1px dividers so the dragged row reads as
     // opaque content (not text-on-overlay) and matches the divider-
     // flanked silhouette of a row at rest in the list.
@@ -344,13 +367,12 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
       value: priorityBloc,
       child: SizedBox(
         width: feedbackWidth,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(height: 1, color: dividerColor),
-            ColoredBox(color: context.colour.background, child: widget.child),
-            Container(height: 1, color: dividerColor),
-          ],
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.colour.background,
+            border: Border.all(color: dividerColor, width: 1),
+          ),
+          child: widget.child,
         ),
       ),
     );

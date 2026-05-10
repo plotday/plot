@@ -72,9 +72,7 @@ class PriorityWrapper implements AutoRouteWrapper {
     @PathParam("priorityId") required String priorityIdString,
     @QueryParam('tab') this.tab,
   }) : priorityId = PriorityId.tryFromShortString(priorityIdString),
-       _routerKey = GlobalKey(
-         debugLabel: 'PriorityWrapper_$priorityIdString',
-       );
+       _routerKey = GlobalKey(debugLabel: 'PriorityWrapper_$priorityIdString');
 
   final PriorityId? priorityId;
   final String? tab;
@@ -763,8 +761,7 @@ class _PriorityPageState extends State<PriorityPage> {
   final InfiniteListController _agendaListController = InfiniteListController();
   final Map<String, GlobalKey<AnimatedRemovalState>> _removalKeys = {};
   final BlockDragController _blockDragController = BlockDragController();
-  final BlockDragController _activityFeedDragController =
-      BlockDragController();
+  final BlockDragController _activityFeedDragController = BlockDragController();
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
@@ -1347,7 +1344,8 @@ class _PriorityPageState extends State<PriorityPage> {
           // bright style if the adjacent item is being dragged in the
           // thread reorder list, or if any block-level drag is in
           // progress.
-          final isBlockDragging = _blockDragController.isDragging ||
+          final isBlockDragging =
+              _blockDragController.isDragging ||
               _activityFeedDragController.isDragging;
           final dragging = controller.draggingIndex;
           final prevHighlighted =
@@ -1456,7 +1454,8 @@ class _PriorityPageState extends State<PriorityPage> {
         // drop preview should appear inside the gap (after the gap
         // header) rather than in the empty space between the
         // preceding event and the gap header.
-        final isGapHeader = current is AgendaHeaderItem &&
+        final isGapHeader =
+            current is AgendaHeaderItem &&
             current.dateTimeRange != null &&
             current.thread == null &&
             current.parentBlockId != null &&
@@ -1909,10 +1908,12 @@ class _PriorityPageState extends State<PriorityPage> {
                 // wrong group. Drop into the prev neighbor's group
                 // by ignoring next when their dates differ (or vice
                 // versa).
-                final prevTodoForOrder =
-                    prevTodoDate == effectiveTargetDate ? prevTodo : null;
-                final nextTodoForOrder =
-                    nextTodoDate == effectiveTargetDate ? nextTodo : null;
+                final prevTodoForOrder = prevTodoDate == effectiveTargetDate
+                    ? prevTodo
+                    : null;
+                final nextTodoForOrder = nextTodoDate == effectiveTargetDate
+                    ? nextTodo
+                    : null;
                 final newOrder = Order.between(
                   prevTodoForOrder?.order,
                   nextTodoForOrder?.order,
@@ -2438,6 +2439,7 @@ class _PriorityPageState extends State<PriorityPage> {
       // (events, priority blocks) inherit the surrounding period.
       return h.sourcePeriodStart == targetPeriod;
     }
+
     PriorityId? above;
     for (var i = insertionIndex - 1; i >= 0; i--) {
       final candidate = listItems[i];
@@ -2829,10 +2831,7 @@ class _PriorityPageState extends State<PriorityPage> {
     // identity from `_rebuildActivityFeedSections`. Cache by reference so
     // unrelated parent rebuilds (e.g. RSVP changes elsewhere on the page)
     // don't re-walk the list and re-parse every section marker.
-    final ({
-      Map<int, FeedDropSlot> before,
-      FeedDropSlot? afterList,
-    }) boundaries;
+    final ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList}) boundaries;
     if (identical(_cachedDropBoundaryItems, displayItems) &&
         _cachedDropBoundaries != null) {
       boundaries = _cachedDropBoundaries!;
@@ -2896,6 +2895,11 @@ class _PriorityPageState extends State<PriorityPage> {
                 target: dropAbove.target,
                 silent: dropAbove.silent,
                 slotKey: 'feed_drop_above_$index',
+                // Active gap sits directly above the next row in this
+                // column — paint a 1px divider at the bottom of the
+                // expanded gap so the row below isn't flush against
+                // the dimmed preview.
+                dividerBelow: true,
               ),
             ...current.when(
               header: (header) {
@@ -2924,9 +2928,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     threadId: baseThread.id,
                     priorityContext: state.context,
                     child: _ActivityFeedItem(
-                      key: ValueKey(
-                        'feed_activitywidget_${baseThread.id}',
-                      ),
+                      key: ValueKey('feed_activitywidget_${baseThread.id}'),
                       baseThread: baseThread,
                       selected:
                           state.thread != null &&
@@ -2950,10 +2952,7 @@ class _PriorityPageState extends State<PriorityPage> {
       },
     );
 
-    return BlockDragScope(
-      controller: _activityFeedDragController,
-      child: list,
-    );
+    return BlockDragScope(controller: _activityFeedDragController, child: list);
   }
 }
 
@@ -3292,4 +3291,3 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
     );
   }
 }
-
