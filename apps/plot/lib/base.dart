@@ -12,6 +12,7 @@ import 'package:plot/util/uuid.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'env.dart';
 import 'cli_args.dart';
@@ -42,6 +43,7 @@ class Base {
       Injector.appInstance.get<Base>()._needsReAuthController.stream;
 
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
+  static Uuid? get userIdOrNull => Injector.appInstance.get<Base>()._userId;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
   static ActorId? get actorIdOrNull => Injector.appInstance.get<Base>()._actorId;
 
@@ -289,6 +291,17 @@ class Base {
     } on NetworkException {
       // Network unavailable — fall back to JWT identity
       log.info('Cannot reach /activate, falling back to JWT identity');
+    } on ApiException catch (e) {
+      // API reachable but unhealthy (502/503/504 etc.) — let returning users
+      // proceed with the identity claims already in their JWT. First-time
+      // sign-ups still fail at the JWT step below because external_id /
+      // contact_id only land in the JWT after a successful /activate. 4xx
+      // is rethrown — those indicate request-level problems that the JWT
+      // fallback can't paper over.
+      if (e.statusCode < 500) rethrow;
+      log.info(
+        '/activate returned ${e.statusCode}, falling back to JWT identity',
+      );
     }
 
     // Fallback: use JWT claims directly (original fast path)

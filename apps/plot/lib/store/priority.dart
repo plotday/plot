@@ -527,6 +527,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   ) async {
     if (ids.isEmpty) return {};
 
+    // Same race as `_watchActivePriorityIds` — callers can land here mid
+    // sign-out, after `Base.userId` has been nulled. Return an empty set
+    // instead of crashing the page that triggered the lookup.
+    final userId = Base.userIdOrNull;
+    if (userId == null) return {};
+
     final now = DateTime.now();
     final today = Date.today().toString();
     final idBytes = ids.map((id) => id.toBytes()).toList();
@@ -555,7 +561,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       innerJoin(
         us,
         us.threadId.equalsExp(a.id) &
-            us.userId.equalsValue(Base.userId) &
+            us.userId.equalsValue(userId) &
             us.occurrence.isNull() &
             us.archivedAt.isNull(),
       ),
@@ -630,6 +636,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Uses two separate queries to avoid column collision when aliasing the same table.
   /// Shared schedule time filtering is done in-memory to allow reactive updates.
   static Stream<Set<PriorityId>> _watchActivePriorityIds() {
+    // PrioritiesBloc.start() is invoked from the UserReady listener, which can
+    // race with a forced sign-out: the bloc-start await may resume after
+    // `_forceSignOut` has already nulled `_userId`. Without this guard, the
+    // user-schedules query below dereferences `Base.userId!` and crashes the
+    // post-auth setup before the UserSignedOut listener gets a chance to
+    // stop the bloc cleanly.
+    final userId = Base.userIdOrNull;
+    if (userId == null) {
+      return Stream<Set<PriorityId>>.value(const <PriorityId>{});
+    }
+
     final a = Store.get.threads;
 
     // Stream 1: Shared schedules (userId IS NULL) — time filtered in-memory
@@ -677,7 +694,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       innerJoin(
         us,
         us.threadId.equalsExp(a.id) &
-            us.userId.equalsValue(Base.userId) &
+            us.userId.equalsValue(userId) &
             us.occurrence.isNull() &
             us.archivedAt.isNull(),
       ),
