@@ -3082,16 +3082,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     return base.copyWith(unread: true, readAt: const Value(null));
   }
 
-  /// Returns a copy in the "inactive (done)" state — clears unread,
-  /// archives any user schedule, and bumps `bumpedAt` so the thread
-  /// surfaces at the top of the Done section in the activity feed.
-  Thread asInactive() {
-    final base = _userSchedule == null ? this : withScheduleArchived();
-    return base.copyWith(
-      unread: false,
-      bumpedAt: Value(DateTime.now()),
-    );
-  }
+  /// Returns a copy in the "inactive (done)" state. The
+  /// `copyWith(todo: false, bump: true)` path archives any user schedule,
+  /// sets `unread=false` and `readAt`, and bumps `bumpedAt` so the
+  /// thread surfaces at the top of the Done section in the activity feed.
+  Thread asInactive() => copyWith(todo: false, bump: true);
 
   /// Returns a copy with [isLinkScheduleInstance] set to false.
   /// Used for optimistic insertion of the base todo duplicate when starting
