@@ -3057,21 +3057,25 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
   /// Preserves the existing user-schedule order if [order] is null.
-  /// Used by the Activity-tab drag dispatcher when a thread is dropped
-  /// in the Today section.
+  /// Marks the thread read (acknowledged) since the user is committing to
+  /// work on it now. Used by the Activity-tab drag dispatcher when a
+  /// thread is dropped in the Today section.
   Thread asActiveToday({Order? order}) {
     final effectiveOrder =
         order ?? _userSchedule?.order ?? Order.first();
-    return withScheduleRestored(order: effectiveOrder);
+    return withScheduleRestored(order: effectiveOrder)
+        .copyWith(unread: false);
   }
 
   /// Returns a copy in the "scheduled" state for [date]. Sets the user
-  /// schedule's `startOn` to the given date and clears time fields so the
-  /// thread renders under the Tomorrow / Friday / etc. header.
+  /// schedule's `startOn` to the given date, clears time fields, and
+  /// marks the thread read (acknowledged) since the user has committed
+  /// it to a future day.
   Thread asScheduled(Date date, {Order? order}) {
     final effectiveOrder =
         order ?? _userSchedule?.order ?? Order.first();
-    return withScheduleRestored(order: effectiveOrder, date: date);
+    return withScheduleRestored(order: effectiveOrder, date: date)
+        .copyWith(unread: false);
   }
 
   /// Returns a copy in the "new (unread-only)" state — flips `unread` to
