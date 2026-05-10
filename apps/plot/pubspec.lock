@@ -1886,10 +1886,9 @@ packages:
   super_editor:
     dependency: "direct main"
     description:
-      name: super_editor
-      sha256: c10bcd53e8e5386ff74273a8afb639501ec0c21e8fdaea41b7b364dc9267417e
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/super_editor"
+      relative: true
+    source: path
     version: "0.3.0-dev.51"
   super_editor_spellcheck:
     dependency: "direct main"
