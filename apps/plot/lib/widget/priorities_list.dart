@@ -1,10 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatefulWidget {
@@ -407,55 +407,26 @@ class _PrioritiesListState extends State<PrioritiesList>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // First group: Everything root priority
-              ListTile(
-                title: widget.root.title,
-                command: ChangeCurrentPriority(widget.root),
-                longPressCommand: !hasPhysicalKeyboard()
-                    ? ShowPriorityCommands(widget.root)
-                    : null,
-                selected: widget.selected?.id == widget.root.id,
-                leadingBuilder: (isHovered, hasFocus) => Padding(
-                  padding: EdgeInsets.only(
-                    left: isMultiPanel
-                        ? context.theme.spacing.lg
-                        : context.theme.spacing.sm,
-                    right: context.theme.spacing.sm,
-                    bottom: 2,
-                  ),
-                  child: PriorityNotification(
-                    unread: _hasDescendantUnread(widget.root),
-                    active: _hasDescendantActive(widget.root),
-                    color: widget.root.displayColor,
-                  ),
-                ),
-                textStyle: itemStyle.copyWith(
-                  color: context.colour.colours.fromTheme(
-                    widget.root.displayColor,
-                    muted:
-                        !_hasDescendantActive(widget.root) &&
-                        !_hasDescendantUnread(widget.root),
-                  ),
-                ),
-                trailingBuilder: (isHovered, hasFocus) {
-                  final button = Padding(
+              // First group: Agenda (only on multi-panel layouts; the
+              // bottom nav already exposes Agenda on touch layouts).
+              if (context.isMultiPanel)
+                ListTile(
+                  title: 'Agenda',
+                  command: OpenAgenda(),
+                  leadingBuilder: (isHovered, hasFocus) => Padding(
                     padding: EdgeInsets.only(
-                      right: isMultiPanel
-                          ? context.theme.spacing.lg
-                          : context.theme.spacing.sm,
+                      left: context.theme.spacing.lg,
+                      right: context.theme.spacing.sm,
+                      bottom: 2,
                     ),
-                    child: Button.icon(ShowPriorityCommands(widget.root)),
-                  );
-                  if (isHovered || hasFocus) return button;
-                  return Visibility(
-                    visible: false,
-                    maintainSize: true,
-                    maintainAnimation: true,
-                    maintainState: true,
-                    child: button,
-                  );
-                },
-              ),
+                    child: FaIcon(
+                      FontAwesomeIcons.calendar,
+                      size: 16,
+                      color: context.colour.foreground,
+                    ),
+                  ),
+                  textStyle: itemStyle,
+                ),
 
               // Second group: Top Priorities
               if (widget.topPriorities.isNotEmpty) ...[
