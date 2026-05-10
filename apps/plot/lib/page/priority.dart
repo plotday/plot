@@ -10,6 +10,7 @@ import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:collection/collection.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
@@ -2817,6 +2818,11 @@ class _PriorityPageState extends State<PriorityPage> {
           children: [
             ...current.when(
               header: (header) {
+                String? displayText = header.text;
+                final marker = displayText == null
+                    ? null
+                    : ActivitySectionMarker.tryDecode(displayText);
+                if (marker != null) displayText = marker.label;
                 return [
                   AgendaHeader(
                     priorityContext: state.context,
@@ -2825,7 +2831,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     now: header.now,
                     thread: header.thread,
                     focusNode: focusNode,
-                    text: header.text,
+                    text: displayText,
                     scheduleAt: header.scheduleAt,
                   ),
                 ];

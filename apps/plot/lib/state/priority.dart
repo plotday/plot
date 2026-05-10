@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' hide Column;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so it
@@ -246,6 +247,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       threadListSource = ThreadListSource.activityFeed;
       // Cancel stale subscriptions so unfiltered results don't flash
       _activityFeedSubscription?.cancel();
+      _todoThreadsSubscription?.cancel();
       _agendaSubscription?.cancel();
     } else {
       threadListSource = null;
@@ -992,6 +994,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
+    _todoThreadsSubscription?.cancel();
     _associationsSubscription?.cancel();
     _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
@@ -1275,6 +1278,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _watchingThreadId = null;
     _activityFeedSubscription?.cancel();
+    _todoThreadsSubscription?.cancel();
     _tagsSubscription?.cancel();
 
     // Drop optimistic overrides — they apply to the old priority's streams
@@ -2377,68 +2381,159 @@ class PriorityBloc extends Cubit<PriorityState> {
             }
           }
 
-          final items = <AgendaItem>[];
-
-          // Partition into unread and read
-          final unreadThreads = <Thread>[];
-          final readThreads = <Thread>[];
-          for (final thread in allThreads) {
-            if (thread.unread || _stickyUnreadIds.containsKey(thread.id)) {
-              unreadThreads.add(thread);
-            } else {
-              readThreads.add(thread);
-            }
-          }
-
-          // Sort unread by urgency rank (lower = higher priority), then importance desc,
-          // with activityAt as stable tiebreaker.
-          // For sticky threads (being viewed), use stored sort values so they
-          // don't jump position when urgency is cleared by sync.
-          unreadThreads.sort((a, b) {
-            final aSticky = _stickyUnreadIds[a.id];
-            final bSticky = _stickyUnreadIds[b.id];
-            final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
-            final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
-            final urgencyCmp = aRank.compareTo(bRank);
-            if (urgencyCmp != 0) return urgencyCmp;
-            final aImp = aSticky?.importance ?? a.importance;
-            final bImp = bSticky?.importance ?? b.importance;
-            final importanceCmp = bImp.compareTo(aImp);
-            if (importanceCmp != 0) return importanceCmp;
-            final aAt = aSticky?.activityAt ?? a.activityAt;
-            final bAt = bSticky?.activityAt ?? b.activityAt;
-            return bAt.compareTo(aAt);
-          });
-
-          // Add unread threads (no section header - they're at the very top)
-          for (final thread in unreadThreads) {
-            items.add(AgendaThreadItem(thread));
-          }
-
-          // Add read threads with time-ago bucket headers
-          String? currentBucket;
-          for (final thread in readThreads) {
-            final (label, bucketDate) = PriorityState._timeAgoBucket(
-              thread.activityAt.toDate(),
-            );
-            if (label != currentBucket) {
-              currentBucket = label;
-              items.add(AgendaHeaderItem(text: label, date: bucketDate));
-            }
-            items.add(AgendaThreadItem(thread));
-          }
-          emit(
-            state.copyWith(
-              activityFeedItems: items,
-              activityFeedDoneEnd: doneEnd,
-              activityFeedLoaded: true,
-            ),
-          );
+          _activityFeedRawThreads = allThreads;
+          _activityFeedDoneEnd = doneEnd;
+          _rebuildActivityFeedSections();
         });
+
+    _loadTodoThreads();
 
     if (triggerSync) {
       _activityFeedSyncFuture = _triggerActivityFeedSync(priorityToLoad);
     }
+  }
+
+  /// Watches every non-archived todo (`todo=true`) for the priority, with
+  /// no LIMIT. The Activity tab uses this in parallel with the
+  /// reverse-chronological feed so every Active and Scheduled thread is
+  /// visible regardless of pagination.
+  void _loadTodoThreads() {
+    final priorityToLoad = state.context;
+    _todoThreadsSubscription?.cancel();
+    _todoThreadsSubscription =
+        Thread.watch(
+          order: ThreadOrder.sorted,
+          priorityPath: priorityToLoad.path,
+          archived: state.showArchived,
+          includeUnscheduled: false,
+        ).listen((result) {
+          // Filter to genuine user todos — `includeUnscheduled: false` lets
+          // through any thread with a schedule (shared, user, or link),
+          // including events with no user-todo. The `todo` getter is the
+          // canonical filter.
+          _todoThreads = result.threads.where((t) => t.todo).toList();
+          _rebuildActivityFeedSections();
+        });
+  }
+
+  /// Build the Activity-feed item list from `_todoThreads` (Active /
+  /// Scheduled) and `_activityFeedRawThreads` (everything else,
+  /// reverse-chronological). Emits the final sectioned list to state.
+  ///
+  /// Sections, in order:
+  ///   1. Today      — Active threads (todo with sentinel or past/today date)
+  ///   2. Tomorrow / Friday / "MMM d" — one section per future-scheduled day
+  ///   3. New        — Unread threads that aren't active or scheduled
+  ///   4. Done       — Inactive threads (read, no active todo)
+  ///
+  /// Section headers carry an `ActivitySectionMarker`-encoded text so the
+  /// drag dispatcher can recover the section identity.
+  void _rebuildActivityFeedSections() {
+    final todoIds = _todoThreads.map((t) => t.id).toSet();
+    final feedNonTodo = _activityFeedRawThreads
+        .where((t) => !todoIds.contains(t.id))
+        .toList();
+
+    final active = <Thread>[];
+    final scheduledByDate = <Date, List<Thread>>{};
+    for (final t in _todoThreads) {
+      if (t.isActiveThread) {
+        active.add(t);
+      } else if (t.isScheduledThread) {
+        final date =
+            t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+        scheduledByDate.putIfAbsent(date, () => []).add(t);
+      }
+    }
+
+    active.sort((a, b) => a.todoCompareTo(b));
+    final scheduledDates = scheduledByDate.keys.toList()..sort();
+    for (final d in scheduledDates) {
+      scheduledByDate[d]!.sort((a, b) => a.todoCompareTo(b));
+    }
+
+    final unread = <Thread>[];
+    final done = <Thread>[];
+    for (final t in feedNonTodo) {
+      if (t.isUnreadOnly || _stickyUnreadIds.containsKey(t.id)) {
+        unread.add(t);
+      } else {
+        done.add(t);
+      }
+    }
+    unread.sort((a, b) {
+      final aSticky = _stickyUnreadIds[a.id];
+      final bSticky = _stickyUnreadIds[b.id];
+      final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
+      final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
+      final urgencyCmp = aRank.compareTo(bRank);
+      if (urgencyCmp != 0) return urgencyCmp;
+      final aImp = aSticky?.importance ?? a.importance;
+      final bImp = bSticky?.importance ?? b.importance;
+      final importanceCmp = bImp.compareTo(aImp);
+      if (importanceCmp != 0) return importanceCmp;
+      final aAt = aSticky?.activityAt ?? a.activityAt;
+      final bAt = bSticky?.activityAt ?? b.activityAt;
+      return bAt.compareTo(aAt);
+    });
+
+    final items = <AgendaItem>[];
+
+    if (active.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.today),
+        ),
+      );
+      for (final t in active) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    for (final d in scheduledDates) {
+      items.add(
+        AgendaHeaderItem(
+          date: d,
+          text: ActivitySectionMarker.encode(
+            ActivitySection.scheduled,
+            label: relativeDateLabel(d),
+          ),
+        ),
+      );
+      for (final t in scheduledByDate[d]!) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    if (unread.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.newSection),
+        ),
+      );
+      for (final t in unread) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    if (done.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.done),
+        ),
+      );
+      for (final t in done) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    emit(
+      state.copyWith(
+        activityFeedItems: items,
+        activityFeedDoneEnd: _activityFeedDoneEnd,
+        activityFeedLoaded: true,
+      ),
+    );
   }
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
@@ -2526,8 +2621,23 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<void>? _activityFeedSubscription;
+  StreamSubscription<void>? _todoThreadsSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
+
+  /// Latest reverse-chronological feed result, kept so the section
+  /// rebuilder can rerun when the parallel todo stream emits without
+  /// re-issuing the feed query.
+  List<Thread> _activityFeedRawThreads = const [];
+
+  /// Latest todo set (Active + Scheduled) for the priority. Sourced from
+  /// the unbounded `Thread.watch(includeUnscheduled: false)` stream and
+  /// filtered to `t.todo` in `_loadTodoThreads`.
+  List<Thread> _todoThreads = const [];
+
+  /// Latest "done end" flag from the activity feed stream — preserved
+  /// across todo-stream emissions so the rebuilder doesn't toggle it.
+  bool _activityFeedDoneEnd = false;
   int _agendaLimit = 50;
   int _agendaHorizonDays = 90;
   // Minimum days from today to populate with empty headers. Starts at 0
