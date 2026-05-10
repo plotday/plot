@@ -9,15 +9,19 @@ import 'package:plot/store/store.dart';
 /// Build a minimal [Priority] usable in unit tests.
 /// Uses [Priority.fromStore] with [draft] = true so the constructor
 /// does not try to register the priority with a parent or the Store.
-Priority _testPriority() {
+Priority _testPriority({
+  String title = 'Test',
+  String path = 'test',
+  double order = 0,
+}) {
   final row = PriorityRow(
     id: Uuid.generate(),
     createdBy: Uuid.generate(),
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
-    title: 'Test',
-    path: Path('test'),
-    order: const Order(0),
+    title: title,
+    path: Path(path),
+    order: Order(order),
     root: false,
     unread: false,
     role: 'member',
@@ -91,5 +95,94 @@ void main() {
     );
 
     expect(model.blockById('does-not-exist'), isNull);
+  });
+
+  group('AgendaBuilder.build is universal across priorities', () {
+    setUp(() {
+      // Freeze time so today's date and "now" placement are deterministic.
+      Time.setFrozenTime(DateTime(2026, 5, 2, 14, 0));
+    });
+    tearDown(() => Time.unfreeze());
+
+    test('produces a block per priority even when the priority is outside '
+        'the in-context subtree', () {
+      // Two different priorities, neither a parent of the other.
+      final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
+      final p2 = _testPriority(title: 'P2', path: 'p2', order: 1);
+
+      // Two threads filed today (Thread() default createdAt = now).
+      // Both are unscheduled / non-todo / unread=false: the simplest case.
+      final t1 = Thread(priority: p1, title: 'on p1');
+      final t2 = Thread(priority: p2, title: 'on p2');
+
+      // Build with `context = p1`. Under the old behavior the agenda only
+      // surfaced threads belonging to `context` or its descendants, so a
+      // thread filed on `p2` (outside the subtree) would not appear in
+      // any block. The universal builder must produce a block for both
+      // priorities regardless of context.
+      final model = AgendaBuilder.build(
+        threads: [t1, t2],
+        context: p1,
+        horizonDays: 30,
+      );
+
+      // Find every PriorityBlock / GapBlock / EventBlock the model emits
+      // and group them by priority.
+      final blockPriorityIds = model.allBlocks.map((b) => b.priority.id).toSet();
+      expect(
+        blockPriorityIds,
+        containsAll(<Uuid>{p1.id, p2.id}),
+        reason: 'Both p1 and p2 must contribute at least one block, even '
+            'though p2 is outside p1\'s subtree (context=$p1).',
+      );
+
+      // The thread filed on p2 must end up inside a block whose priority
+      // is p2 — not silently bucketed into a p1 block.
+      final p2Threads = model.allBlocks
+          .where((b) => b.priority.id == p2.id)
+          .expand((b) => b.threads)
+          .toList();
+      expect(p2Threads.map((t) => t.id), contains(t2.id));
+    });
+
+    test('merges unread non-scheduled threads into the same-priority block', () {
+      final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
+
+      // Two threads on the same priority, both filed today: one is read,
+      // one is unread. The two should land in a single PriorityBlock for
+      // p1 (block.threads.length == 2), with hasUnread true and a
+      // summaryLine that mentions both titles.
+      final readThread = Thread(priority: p1, title: 'read note');
+      final unreadThread = Thread(priority: p1, title: 'unread note')
+          .copyWith(unread: true);
+
+      final model = AgendaBuilder.build(
+        threads: [readThread, unreadThread],
+        context: p1,
+        horizonDays: 30,
+      );
+
+      // Find p1's block.
+      final p1Blocks = model.allBlocks
+          .where((b) => b.priority.id == p1.id)
+          .toList();
+      expect(p1Blocks, isNotEmpty, reason: 'p1 must produce a block');
+      expect(p1Blocks.length, 1,
+          reason: 'A single (today, p1) block must hold both threads, not '
+              'one block per thread.');
+
+      final block = p1Blocks.single;
+      expect(block.threads.length, 2,
+          reason: 'block must contain both the read and the unread thread');
+      expect(
+        block.threads.map((t) => t.id).toSet(),
+        {readThread.id, unreadThread.id},
+      );
+      expect(block.hasUnread, isTrue,
+          reason: 'block must report hasUnread=true because one thread '
+              'in it is unread');
+      expect(block.summaryLine, contains('read note'));
+      expect(block.summaryLine, contains('unread note'));
+    });
   });
 }
