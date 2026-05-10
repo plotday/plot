@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/main.dart' show navigatorKey;
-import 'package:plot/page/priority.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/store/store.dart';
@@ -73,25 +72,27 @@ class OnboardingOverlay extends StatelessWidget {
           });
         }
 
-        // If the step targets the agenda or feed tab, drive the priority
-        // shell's tab notifier so the panel underneath the highlight cutout
-        // actually shows the right view. Defer with a post-frame callback
-        // because we're inside a build and the notifier triggers rebuilds
-        // in PrioritiesShell.
+        // If the step targets the agenda panel, route to the dedicated
+        // /agenda page so the panel underneath the highlight cutout
+        // actually shows the agenda. Defer with a post-frame callback
+        // because we're inside a build and navigation rebuilds the tree.
         if (step is HighlightStep && step.target is PanelTarget) {
           final target = step.target as PanelTarget;
-          PriorityTab? tab;
-          if (target == PanelTarget.agenda) tab = PriorityTab.agenda;
-          if (target == PanelTarget.feed) tab = PriorityTab.activityFeed;
-          if (tab != null) {
-            final notifier = PriorityTabNotifier.current;
-            if (notifier != null && notifier.value != tab) {
-              final selected = tab;
+          if (target == PanelTarget.agenda) {
+            final ctx = navigatorKey?.currentContext;
+            if (ctx != null &&
+                ctx.mounted &&
+                ctx.router.currentPath != '/agenda') {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                notifier.value = selected;
+                if (ctx.mounted) {
+                  ctx.router.push(const AgendaRoute());
+                }
               });
             }
           }
+          // PanelTarget.feed: PriorityPage now renders only the activity
+          // feed, so no tab switch is needed — the panel is whatever is
+          // currently routed.
         }
 
         Widget? overlay;

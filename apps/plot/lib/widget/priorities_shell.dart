@@ -12,7 +12,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/widget/icon.dart';
-import 'package:plot/page/priority.dart';
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget {
@@ -24,14 +23,6 @@ class PrioritiesShell extends StatefulWidget {
 
 class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   AutoRouteObserver? _observer;
-  final PriorityTabNotifier _tabNotifier = PriorityTabNotifier();
-
-  @override
-  void initState() {
-    super.initState();
-    _tabNotifier.addListener(_onTabChanged);
-    PriorityTabNotifier.current = _tabNotifier;
-  }
 
   Widget _buildNavLabel(String text) {
     return Builder(
@@ -52,14 +43,6 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
     );
   }
 
-  void _onTabChanged() {
-    // Defer setState — the notifier may fire during a build frame
-    // (e.g. when PriorityPage.didChangeDependencies forces the viewer tab).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -73,11 +56,6 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void dispose() {
     _observer?.unsubscribe(this);
-    if (PriorityTabNotifier.current == _tabNotifier) {
-      PriorityTabNotifier.current = null;
-    }
-    _tabNotifier.removeListener(_onTabChanged);
-    _tabNotifier.dispose();
     super.dispose();
   }
 
@@ -95,96 +73,102 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
 
   @override
   Widget build(BuildContext context) {
-    return PriorityTabProvider(
-      notifier: _tabNotifier,
-      child: AutoTabsRouter(
-          homeIndex: 1,
-          routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
-          transitionBuilder: (context, child, animation) => child,
-          builder: (context, child) {
-            final tabsRouter = AutoTabsRouter.of(context);
-            return BlocConsumer<LayoutBloc, LayoutState>(
-              listenWhen: (previous, current) =>
-                  previous.multiPanel != current.multiPanel,
-              listener: (context, layoutState) {
-                if (layoutState.multiPanel) {
-                  tabsRouter.setActiveIndex(1);
+    return AutoTabsRouter(
+        homeIndex: 1,
+        routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
+        transitionBuilder: (context, child, animation) => child,
+        builder: (context, child) {
+          final tabsRouter = AutoTabsRouter.of(context);
+          return BlocConsumer<LayoutBloc, LayoutState>(
+            listenWhen: (previous, current) =>
+                previous.multiPanel != current.multiPanel,
+            listener: (context, layoutState) {
+              if (layoutState.multiPanel) {
+                tabsRouter.setActiveIndex(1);
+              }
+            },
+            buildWhen: (previous, current) =>
+                previous.multiPanel != current.multiPanel,
+            builder: (context, layoutState) {
+              // Determine the correct tab index based on current route
+              int getCurrentIndex() {
+                final currentPath = context.router.currentPath;
+                // If on the dedicated Agenda page, highlight Agenda (1)
+                if (currentPath == '/agenda' ||
+                    currentPath.startsWith('/agenda/')) {
+                  return 1;
                 }
-              },
-              buildWhen: (previous, current) =>
-                  previous.multiPanel != current.multiPanel,
-              builder: (context, layoutState) {
-                // Determine the correct tab index based on current route
-                int getCurrentIndex() {
-                  final currentPath = context.router.currentPath;
-                  // If on NewThreadPage (/p/:priorityId/new), highlight New tab (index 3)
-                  if (currentPath.endsWith('/new')) {
-                    return 3;
-                  }
-                  // If on ThreadPage (/p/:priorityId/threadId), no tab highlighted
-                  final pathSegments = currentPath
-                      .split('/')
-                      .where((s) => s.isNotEmpty)
-                      .toList();
-                  if (pathSegments.length >= 3 ||
-                      (pathSegments.isNotEmpty && pathSegments.first == 't')) {
-                    return -1;
-                  }
-                  // On the Threads tab, highlight Agenda or Activity Feed based on tab notifier
-                  if (tabsRouter.activeIndex == 1) {
-                    return _tabNotifier.value == PriorityTab.agenda ? 1 : 2;
-                  }
-                  // Otherwise use the tab router's active index
-                  return tabsRouter.activeIndex;
+                // If on NewThreadPage (/p/:priorityId/new), highlight New tab (index 3)
+                if (currentPath.endsWith('/new')) {
+                  return 3;
                 }
-
-                // Hide bottom nav on full-screen routes (thread detail, new thread)
-                bool isFullScreenRoute() {
-                  final currentPath = context.router.currentPath;
-                  if (currentPath.endsWith('/new')) return true;
-                  final pathSegments = currentPath
-                      .split('/')
-                      .where((s) => s.isNotEmpty)
-                      .toList();
-                  return pathSegments.length >= 3 ||
-                      (pathSegments.isNotEmpty && pathSegments.first == 't');
+                // If on ThreadPage (/p/:priorityId/threadId), no tab highlighted
+                final pathSegments = currentPath
+                    .split('/')
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+                if (pathSegments.length >= 3 ||
+                    (pathSegments.isNotEmpty && pathSegments.first == 't')) {
+                  return -1;
                 }
+                // On the Threads tab, highlight Activity (2)
+                if (tabsRouter.activeIndex == 1) {
+                  return 2;
+                }
+                // Otherwise use the tab router's active index
+                return tabsRouter.activeIndex;
+              }
 
-                return BottomNavigationScope(
-                  config: layoutState.multiPanel || isFullScreenRoute()
-                      ? null
-                      : BottomNavigationConfig(
-                          currentIndex: getCurrentIndex(),
-                          onChange: (index) {
-                            final currentPath = context.router.currentPath;
+              // Hide bottom nav on full-screen routes (thread detail, new thread)
+              bool isFullScreenRoute() {
+                final currentPath = context.router.currentPath;
+                if (currentPath.endsWith('/new')) return true;
+                final pathSegments = currentPath
+                    .split('/')
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+                return pathSegments.length >= 3 ||
+                    (pathSegments.isNotEmpty && pathSegments.first == 't');
+              }
 
-                            if (index == 1 || index == 2) {
-                              // Agenda (1) or Activity Feed (2) — switch to tab 1 and set tab notifier
-                              final tab = index == 1
-                                  ? PriorityTab.agenda
-                                  : PriorityTab.activityFeed;
-                              _tabNotifier.value = tab;
+              return BottomNavigationScope(
+                config: layoutState.multiPanel || isFullScreenRoute()
+                    ? null
+                    : BottomNavigationConfig(
+                        currentIndex: getCurrentIndex(),
+                        onChange: (index) {
+                          final currentPath = context.router.currentPath;
 
-                              if (currentPath.endsWith('/new')) {
-                                // On NewThreadPage - pop back
+                          if (index == 1) {
+                            // Agenda — navigate to the dedicated /agenda page.
+                            if (currentPath == '/agenda' ||
+                                currentPath.startsWith('/agenda/')) {
+                              return;
+                            }
+                            context.router.push(const AgendaRoute());
+                          } else if (index == 2) {
+                            // Activity — switch to the priority shell (which
+                            // renders the activity feed).
+                            if (currentPath.endsWith('/new')) {
+                              // On NewThreadPage - pop back
+                              context.router.back();
+                            } else {
+                              final pathSegments = currentPath
+                                  .split('/')
+                                  .where((s) => s.isNotEmpty)
+                                  .toList();
+                              if ((pathSegments.length >= 3 ||
+                                      (pathSegments.isNotEmpty &&
+                                          pathSegments.first == 't')) &&
+                                  tabsRouter.activeIndex == 1) {
+                                // On ThreadPage - pop back to PriorityPage
                                 context.router.back();
                               } else {
-                                final pathSegments = currentPath
-                                    .split('/')
-                                    .where((s) => s.isNotEmpty)
-                                    .toList();
-                                if ((pathSegments.length >= 3 ||
-                                        (pathSegments.isNotEmpty &&
-                                            pathSegments.first == 't')) &&
-                                    tabsRouter.activeIndex == 1) {
-                                  // On ThreadPage - pop back to PriorityPage
-                                  context.router.back();
-                                } else {
-                                  tabsRouter.setActiveIndex(1);
-                                }
+                                tabsRouter.setActiveIndex(1);
                               }
-                              setState(() {});
-                            } else if (index == 3) {
+                            }
+                            setState(() {});
+                          } else if (index == 3) {
                               // Navigate to New Thread for current priority
                               final pathSegments = currentPath
                                   .split('/')
@@ -341,7 +325,6 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
               },
             );
           },
-        ),
-    );
+        );
   }
 }

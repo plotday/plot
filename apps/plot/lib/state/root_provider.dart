@@ -325,8 +325,8 @@ class RootProviderState extends State<RootProvider> {
 
   void _navigateToNotificationPriority(String priorityId) {
     final shortId = Uuid.fromString(priorityId).toShortString();
-    router.replaceAll([
-      PriorityRoute(priorityIdString: shortId, tab: 'activity'),
-    ]);
+    // PriorityPage now renders only the activity feed, so notifications
+    // just open the priority directly — no tab parameter needed.
+    router.replaceAll([PriorityRoute(priorityIdString: shortId)]);
   }
 }
