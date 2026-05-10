@@ -295,7 +295,13 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
     priorityId: widget.priorityContext.id,
     sourceDate: null,
     sourcePeriodStart: null,
-    visibleThreadCount: 1,
+    // 0 — not 1 — because the source RO is the entire thread row (no
+    // separate breadcrumb header sits above it). See the field's doc
+    // for the agenda-vs-activity-feed distinction. With 1, the height
+    // fallback in `_captureSourceHeight` would double-count when no
+    // `K_after_source` slot exists (e.g. dragging a Done thread, since
+    // Done collapses to a single boundary with `prevBlockId: null`).
+    visibleThreadCount: 0,
   );
 
   void _captureRenderedWidth() {

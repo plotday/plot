@@ -37,10 +37,17 @@ class BlockDragPayload {
   /// the source date).
   final DateTime? sourcePeriodStart;
 
-  /// Number of thread rows the source block currently renders. Combined
-  /// with the captured source bounds, this lets the controller leave
-  /// the source visually in place and only collapse it when the cursor
-  /// crosses out of the source's deadzone.
+  /// Number of thread row heights *below* the source's render box —
+  /// i.e. rows the source RO does NOT already cover. Used as a fallback
+  /// when [BlockDragController._captureSourceHeight] can't locate a
+  /// `K_after_source` slot at drag start, and as the deepest fallback
+  /// in [dropZoneHeightFor].
+  ///
+  /// In the agenda, a block's drag handle sits on a small priority-
+  /// breadcrumb header row; the N thread rows live below it, so this
+  /// equals N. In the activity feed, each draggable IS the thread row
+  /// itself (no separate header), so the source RO already accounts
+  /// for the row's full height — set this to 0 to avoid double-counting.
   final int visibleThreadCount;
 }
 

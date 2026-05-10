@@ -567,4 +567,103 @@ void main() {
       },
     );
   });
+
+  group('BlockDragController source-height fallback', () {
+    // Activity-feed-shaped source: the draggable IS the entire row
+    // (no separate breadcrumb header). When the dragged thread sits
+    // in a section that doesn't register a `K_after_source` slot
+    // (e.g. the activity feed's Done section, which collapses to a
+    // single boundary at the top with prevBlockId=null), height
+    // capture must fall back to the source RO's own height — NOT
+    // `sourceHeaderHeight + visibleThreadCount * row`, which would
+    // double-count.
+    testWidgets(
+      'falls back to source RO height when visibleThreadCount=0 '
+      '(activity-feed shape, no K_after_source slot)',
+      (tester) async {
+        final controller = BlockDragController();
+        final sourceKey = GlobalKey();
+        final pid = Uuid.fromString('00000000-0000-0000-0000-000000000001');
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: BlockDragScope(
+                controller: controller,
+                // No BlockDropZone whose target.prevBlockId == 'source':
+                // forces the height fallback path.
+                child: SizedBox(key: sourceKey, height: 64, width: 200),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        controller.start(
+          BlockDragPayload(
+            blockId: 'source',
+            priorityId: pid,
+            sourceDate: null,
+            sourcePeriodStart: null,
+            visibleThreadCount: 0,
+          ),
+          sourceContextProvider: () => sourceKey.currentContext!,
+        );
+
+        expect(
+          controller.sourceTotalHeight,
+          64,
+          reason: 'source RO already covers the row; fallback must NOT '
+              'add an extra row height (would produce 64 + 56 = 120)',
+        );
+      },
+    );
+
+    // Agenda-shaped source: the draggable is the small priority-
+    // breadcrumb header (~28 px) and N thread rows live below it.
+    // visibleThreadCount = N, so the fallback adds N row heights to
+    // estimate the block's full footprint.
+    testWidgets(
+      'adds visibleThreadCount × row height when source is a header only '
+      '(agenda shape, no K_after_source slot)',
+      (tester) async {
+        final controller = BlockDragController();
+        final headerKey = GlobalKey();
+        final pid = Uuid.fromString('00000000-0000-0000-0000-000000000001');
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: BlockDragScope(
+                controller: controller,
+                child: SizedBox(key: headerKey, height: 28, width: 200),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        controller.start(
+          BlockDragPayload(
+            blockId: 'source',
+            priorityId: pid,
+            sourceDate: null,
+            sourcePeriodStart: null,
+            visibleThreadCount: 3,
+          ),
+          sourceContextProvider: () => headerKey.currentContext!,
+        );
+
+        expect(
+          controller.sourceTotalHeight,
+          28 + 3 * kThreadRowApproxHeight,
+          reason: 'header height + 3 thread rows ≈ block footprint',
+        );
+      },
+    );
+  });
 }
