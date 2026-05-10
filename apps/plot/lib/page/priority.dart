@@ -2798,7 +2798,6 @@ class _PriorityPageState extends State<PriorityPage> {
     _activityFeedDragController.dispatcher = (payload, target) {
       dispatchActivityFeedThreadDrop(
         bloc: bloc,
-        items: displayItems,
         payload: payload,
         target: target,
       );

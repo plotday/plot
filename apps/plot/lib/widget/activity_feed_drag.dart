@@ -6,6 +6,40 @@ import 'package:plot/store/store.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 
+/// Sentinel DateTimes stashed in `BlockDropTarget.targetPeriodStart` to
+/// encode which Activity-feed section a drop slot belongs to. Needed
+/// because two empty-section slots otherwise produce equal
+/// [BlockDropTarget]s (same null prev/next ids), which the controller
+/// would treat as the same slot and the dispatcher couldn't distinguish.
+///
+/// Only used for non-Scheduled sections; Scheduled is identified by
+/// `targetDate` being non-null.
+final DateTime _todaySectionMarker = DateTime.utc(1, 1, 1, 0, 0, 1);
+final DateTime _newSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 2);
+final DateTime _doneSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 3);
+
+DateTime? _sectionToMarker(ActivitySection section) {
+  switch (section) {
+    case ActivitySection.today:
+      return _todaySectionMarker;
+    case ActivitySection.scheduled:
+      return null; // disambiguated by targetDate
+    case ActivitySection.newSection:
+      return _newSectionMarker;
+    case ActivitySection.done:
+      return _doneSectionMarker;
+  }
+}
+
+ActivitySection? _sectionFromTarget(BlockDropTarget target) {
+  if (target.targetDate != null) return ActivitySection.scheduled;
+  final marker = target.targetPeriodStart;
+  if (marker == _todaySectionMarker) return ActivitySection.today;
+  if (marker == _newSectionMarker) return ActivitySection.newSection;
+  if (marker == _doneSectionMarker) return ActivitySection.done;
+  return null;
+}
+
 /// Walks the Activity tab item list and emits a [BlockDropTarget] for
 /// each drop boundary. Boundaries are placed:
 ///   * Above each `AgendaHeaderItem` (so a drop just above a section
@@ -46,13 +80,14 @@ import 'package:plot/widget/agenda_block_drag.dart';
         // previous section, regardless of whether it had threads — when
         // the previous section was empty (`prevThreadId == null`), the
         // boundary still targets that empty section so it remains a
-        // valid drop target.
+        // valid drop target. The section is encoded via
+        // `targetPeriodStart` (or `targetDate` for Scheduled).
         if (currentSection != null) {
           before[i] = BlockDropTarget(
             targetDate: currentSection == ActivitySection.scheduled
                 ? currentScheduledDate
                 : null,
-            targetPeriodStart: null,
+            targetPeriodStart: _sectionToMarker(currentSection),
             prevBlockId: prevThreadId,
             prevPriorityId: null,
             nextBlockId: null,
@@ -72,7 +107,7 @@ import 'package:plot/widget/agenda_block_drag.dart';
         targetDate: currentSection == ActivitySection.scheduled
             ? currentScheduledDate
             : null,
-        targetPeriodStart: null,
+        targetPeriodStart: _sectionToMarker(currentSection),
         prevBlockId: prevThreadId,
         prevPriorityId: null,
         nextBlockId: threadIdStr,
@@ -89,7 +124,7 @@ import 'package:plot/widget/agenda_block_drag.dart';
       targetDate: currentSection == ActivitySection.scheduled
           ? currentScheduledDate
           : null,
-      targetPeriodStart: null,
+      targetPeriodStart: _sectionToMarker(currentSection),
       prevBlockId: prevThreadId,
       prevPriorityId: null,
       nextBlockId: null,
@@ -100,53 +135,25 @@ import 'package:plot/widget/agenda_block_drag.dart';
   return (before: before, afterList: afterList);
 }
 
-/// Dispatch an Activity-feed drag drop. Recovers the target section by
-/// walking the items list to find the most recent section header above
-/// the drop slot, then calls
+/// Dispatch an Activity-feed drag drop. Recovers the target section
+/// from the section-marker stashed in `target.targetPeriodStart` (or
+/// `targetDate` for Scheduled), then calls
 /// `PriorityBloc.applyActivityFeedThreadDrop`.
 void dispatchActivityFeedThreadDrop({
   required PriorityBloc bloc,
-  required List<AgendaItem> items,
   required BlockDragPayload payload,
   required BlockDropTarget target,
 }) {
-  // Walk items, tracking the section as we go. Stop when we encounter
-  // the row whose id == target.prevBlockId (the slot lives just below
-  // that row); the current section at that point is the slot's section.
-  // If prevBlockId is null, the slot is at the top of a section — the
-  // first header we encounter is the slot's section.
-  ActivitySection? section;
-  Date? scheduledDate;
-
-  for (var i = 0; i < items.length; i++) {
-    final item = items[i];
-    if (item is AgendaHeaderItem) {
-      final marker = item.text == null
-          ? null
-          : ActivitySectionMarker.tryDecode(item.text!);
-      if (marker != null) {
-        section = marker.section;
-        scheduledDate = item.date;
-        if (target.prevBlockId == null) {
-          break;
-        }
-      }
-    } else if (item is AgendaThreadItem) {
-      if (target.prevBlockId != null &&
-          item.thread.id.toString() == target.prevBlockId) {
-        break;
-      }
-    }
-  }
-
+  final section = _sectionFromTarget(target);
   if (section == null) return;
 
-  final draggedId = ThreadId.fromString(payload.blockId);
   // Skip no-op drops: dragging a thread to a slot adjacent to itself.
   if (target.prevBlockId == payload.blockId ||
       target.nextBlockId == payload.blockId) {
     return;
   }
+
+  final draggedId = ThreadId.fromString(payload.blockId);
   final prevId = target.prevBlockId == null
       ? null
       : ThreadId.fromString(target.prevBlockId!);
@@ -157,7 +164,7 @@ void dispatchActivityFeedThreadDrop({
   bloc.applyActivityFeedThreadDrop(
     draggedId: draggedId,
     targetSection: section,
-    targetScheduledDate: scheduledDate,
+    targetScheduledDate: target.targetDate,
     prevId: prevId,
     nextId: nextId,
   );
