@@ -1161,6 +1161,34 @@ class ScheduleEvent extends _UpdateThreadCommand {
   }
 }
 
+class SetThreadDuration extends _UpdateThreadCommand {
+  SetThreadDuration(super.thread, this.newDuration, {super.onUpdate})
+    : super(
+        title: 'Set duration',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Duration? newDuration;
+
+  /// Pure helper exposed for unit testing. Returns the new [DateTimeRange]
+  /// for [at] given a [newDuration] (null clears the end time, leaving an
+  /// open-ended scheduled-at-only event). Returns null if [at] has no start.
+  static DateTimeRange? computeAt(DateTimeRange? at, Duration? newDuration) {
+    if (at?.start == null) return null;
+    if (newDuration == null) return DateTimeRange(at!.start, null);
+    return DateTimeRange(at!.start, at.start!.add(newDuration));
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final newAt = computeAt(thread.at, newDuration);
+    if (newAt == null) return const CommandDone();
+    await saveOptimistically(context, thread.copyWith(at: Value(newAt)));
+    return const CommandDone();
+  }
+}
+
 class RescheduleEvent extends Command {
   RescheduleEvent(
     this.thread, {
