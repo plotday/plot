@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
-import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
 import 'page/page.dart';
@@ -139,17 +138,7 @@ class AppRouter extends RootStackRouter {
           guards: [
             AuthGuard(),
             AutoRouteGuardCallback((resolver, router) async {
-              if (resolver.context.read<NowBloc>().loading) {
-                return;
-              }
-              final priorityId = resolver.context
-                  .read<NowBloc>()
-                  .loadedState
-                  .defaultPriority
-                  .id;
-              router.replaceAll([
-                PriorityRoute(priorityIdString: priorityId.toShortString()),
-              ]);
+              router.replaceAll([const AgendaRoute()]);
             }),
           ],
         ),
@@ -162,6 +151,11 @@ class AppRouter extends RootStackRouter {
               page: EmptyShellRoute("PriorityShell"),
               path: '',
               children: [
+                AutoRoute(
+                  page: AgendaRoute.page,
+                  path: 'agenda',
+                  guards: [AuthGuard()],
+                ),
                 // Canonical priority URL: /p/:priorityId
                 AutoRoute(
                   page: PriorityRoute.page,

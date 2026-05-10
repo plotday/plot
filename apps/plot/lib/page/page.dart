@@ -1,3 +1,4 @@
+export 'agenda.dart';
 export 'thread.dart';
 export 'thread_lookup.dart';
 export 'email_sign_in.dart';
