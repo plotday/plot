@@ -1491,7 +1491,6 @@ class _PriorityPageState extends State<PriorityPage> {
                   ],
                   AgendaHeader(
                     key: ValueKey('agendaheader_${header.stableKey}'),
-                    priorityContext: state.context,
                     dateTimeRange: header.dateTimeRange,
                     date: header.date,
                     now: header.now,
@@ -1500,12 +1499,11 @@ class _PriorityPageState extends State<PriorityPage> {
                     focusNode: focusNode,
                     text: header.text,
                     scheduleAt: header.scheduleAt,
-                    blockPriority: header.blockPriority,
+                    block: header.block,
                     parentBlockId: header.parentBlockId,
                     sourceDate: header.sourceDate,
                     sourcePeriodStart: header.sourcePeriodStart,
                     parentBlockVisibleCount: header.parentBlockVisibleCount,
-                    isOutsidePriority: header.isOutsidePriority,
                   ),
                 ];
               },
@@ -2194,7 +2192,6 @@ class _PriorityPageState extends State<PriorityPage> {
           // collapse logic — we want a static visual.
           children.add(
             AgendaHeader(
-              priorityContext: state.context,
               dateTimeRange: h.dateTimeRange,
               date: h.date,
               now: h.now,
@@ -2202,8 +2199,7 @@ class _PriorityPageState extends State<PriorityPage> {
               thread: h.thread,
               text: h.text,
               scheduleAt: h.scheduleAt,
-              blockPriority: h.blockPriority,
-              isOutsidePriority: h.isOutsidePriority,
+              block: h.block,
             ),
           );
         },
@@ -2819,7 +2815,6 @@ class _PriorityPageState extends State<PriorityPage> {
               header: (header) {
                 return [
                   AgendaHeader(
-                    priorityContext: state.context,
                     dateTimeRange: header.dateTimeRange,
                     date: header.date,
                     now: header.now,

@@ -190,6 +190,7 @@ class PriorityLabel extends StatelessWidget {
     this.height,
     this.muted = false,
     this.color,
+    this.mutedAncestorColor,
     super.key,
   }) : ancestors = (() {
          final computed =
@@ -204,6 +205,12 @@ class PriorityLabel extends StatelessWidget {
   final double? height;
   final bool muted;
   final Color? color;
+
+  /// Optional color for ancestor crumbs and the separator. When set,
+  /// ancestor names + the trailing `>` use this color while the leaf
+  /// (current priority) keeps [color]. Defaults to [color] (preserves
+  /// the prior single-color behavior).
+  final Color? mutedAncestorColor;
 
   @override
   Widget build(BuildContext context) {
@@ -228,6 +235,7 @@ class PriorityLabel extends StatelessWidget {
           final ancestor = entry.$2;
           final isLast = i == ancestors.length - 1;
           final ancestorColor =
+              mutedAncestorColor ??
               color ??
               context.colour.colours.fromTheme(displayColors[i], muted: muted);
           final ancestorText = Text(
@@ -256,7 +264,10 @@ class PriorityLabel extends StatelessWidget {
               DefaultTextStyle(
                 key: ValueKey('separator_${ancestor.id}'),
                 style: DefaultTextStyle.of(context).style.copyWith(
-                  color: color ?? context.theme.colors.mutedForeground,
+                  color:
+                      mutedAncestorColor ??
+                      color ??
+                      context.theme.colors.mutedForeground,
                   fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height ?? 1,
                 ),

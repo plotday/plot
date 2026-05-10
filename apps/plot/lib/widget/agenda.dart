@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
@@ -10,6 +11,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
+import 'package:plot/widget/duration_control.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Width of the leading column: widest possible time string + horizontal padding.
@@ -32,7 +34,6 @@ double agendaLeadingWidth(BuildContext context) {
 
 class AgendaHeader extends StatelessWidget {
   const AgendaHeader({
-    this.priorityContext,
     this.dateTimeRange,
     this.date,
     this.now = false,
@@ -41,16 +42,14 @@ class AgendaHeader extends StatelessWidget {
     this.focusNode,
     this.text,
     this.scheduleAt,
-    this.blockPriority,
+    this.block,
     this.parentBlockId,
     this.sourceDate,
     this.sourcePeriodStart,
     this.parentBlockVisibleCount,
-    this.isOutsidePriority = false,
     super.key,
   });
 
-  final Priority? priorityContext;
   final DateTimeRange? dateTimeRange;
   final Date? date;
   final bool now;
@@ -60,9 +59,9 @@ class AgendaHeader extends StatelessWidget {
   final String? text;
   final DateTime? scheduleAt;
 
-  /// When set, render a combined block header carrying this priority's
-  /// breadcrumb plus a priority-tinted background.
-  final Priority? blockPriority;
+  /// When set, render a combined block header for this [AgendaBlock]'s
+  /// priority breadcrumb plus a priority-tinted background.
+  final AgendaBlock? block;
 
   /// Id of the [AgendaBlock] this header introduces, used as the drag
   /// payload's identifier. When non-null and the header is otherwise
@@ -84,16 +83,11 @@ class AgendaHeader extends StatelessWidget {
   /// themselves to the source block's height.
   final int? parentBlockVisibleCount;
 
-  /// Whether this header is for an outside-priority block. Outside
-  /// blocks are not drag sources.
-  final bool isOutsidePriority;
-
   @override
   Widget build(BuildContext context) {
-    if (blockPriority != null) {
+    if (block != null) {
       return _BlockHeader(
-        priority: blockPriority!,
-        priorityContext: priorityContext,
+        block: block!,
         dateTimeRange: dateTimeRange,
         thread: thread,
         now: now,
@@ -102,7 +96,6 @@ class AgendaHeader extends StatelessWidget {
         sourceDate: sourceDate,
         sourcePeriodStart: sourcePeriodStart,
         parentBlockVisibleCount: parentBlockVisibleCount,
-        isOutsidePriority: isOutsidePriority,
       );
     }
     // Determine what to show in the center
@@ -151,10 +144,9 @@ class AgendaHeader extends StatelessWidget {
       durationText = dateTimeRange!.duration!.format();
     }
 
-    // Use priorityContext color when available, otherwise muted.
-    final nowColor = priorityContext != null
-        ? context.colour.colours.fromTheme(priorityContext!.displayColor)
-        : context.theme.colors.mutedForeground;
+    // No priority-context tint anymore — the universal agenda no longer
+    // privileges a single priority for fallback time labels.
+    final nowColor = context.theme.colors.mutedForeground;
 
     final textColor = now ? nowColor : context.theme.colors.mutedForeground;
 
@@ -426,8 +418,7 @@ class AgendaHeader extends StatelessWidget {
 /// because hover state controls the drag-grip affordance.
 class _BlockHeader extends StatefulWidget {
   const _BlockHeader({
-    required this.priority,
-    required this.priorityContext,
+    required this.block,
     required this.dateTimeRange,
     required this.thread,
     required this.now,
@@ -436,11 +427,9 @@ class _BlockHeader extends StatefulWidget {
     required this.sourceDate,
     required this.sourcePeriodStart,
     required this.parentBlockVisibleCount,
-    required this.isOutsidePriority,
   });
 
-  final Priority priority;
-  final Priority? priorityContext;
+  final AgendaBlock block;
   final DateTimeRange? dateTimeRange;
   final Thread? thread;
   final bool now;
@@ -449,7 +438,8 @@ class _BlockHeader extends StatefulWidget {
   final Date? sourceDate;
   final DateTime? sourcePeriodStart;
   final int? parentBlockVisibleCount;
-  final bool isOutsidePriority;
+
+  Priority get priority => block.priority;
 
   @override
   State<_BlockHeader> createState() => _BlockHeaderState();
@@ -460,12 +450,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
   bool _hover = false;
   BlockDragController? _dragController;
 
-  /// True when this block header is itself a drag source (a non-event,
-  /// non-outside-priority block with a known parent block id).
+  /// True when this block header is itself a drag source (a non-event
+  /// block with a known parent block id). Outside-priority gating is
+  /// no longer relevant in the universal agenda — every priority's
+  /// blocks are equally first-class.
   bool get _isDraggable =>
-      widget.parentBlockId != null &&
-      widget.thread == null &&
-      !widget.isOutsidePriority;
+      widget.parentBlockId != null && widget.thread == null;
 
   /// True while THIS block is being dragged — the source row collapses
   /// to zero height while a feedback widget floats under the pointer.
@@ -552,16 +542,22 @@ class _BlockHeaderState extends State<_BlockHeader> {
   }
 
   Widget _buildRow(BuildContext context, {Widget? grip}) {
-    final priority = widget.priority;
+    final block = widget.block;
+    final priority = block.priority;
     final dateTimeRange = widget.dateTimeRange;
     final thread = widget.thread;
 
     final fg = context.colour.colours.fromTheme(priority.displayColor);
+    final mutedFg = context.colour.colours.fromTheme(
+      priority.displayColor,
+      muted: true,
+    );
     final bg = context.colour.colours.backgroundFromTheme(
       priority.displayColor,
     );
-    final fontSize = context.theme.typography.xs.fontSize;
     final spacing = context.theme.spacing;
+    final smSize = context.theme.typography.sm.fontSize ?? 14;
+    final xsSize = context.theme.typography.xs.fontSize ?? 12;
     final currentTime = Time.now();
 
     final hasTime = dateTimeRange != null;
@@ -571,176 +567,166 @@ class _BlockHeaderState extends State<_BlockHeader> {
               ? timeOfDay.formatShort(context)
               : timeOfDay.formatNarrow(context))
         : null;
-    final hasDuration =
-        dateTimeRange?.duration != null &&
-        dateTimeRange!.duration!.inSeconds > 0;
-    final isLastGapOfDay =
-        hasTime &&
-        thread == null &&
-        dateTimeRange.end?.hour == 0 &&
-        dateTimeRange.end?.minute == 0 &&
-        dateTimeRange.end?.second == 0;
 
-    // Build right-side metadata children for event blocks.
-    final rightParts = <Widget>[];
+    final summary = block.summaryLine;
+    final hasUnread = block.hasUnread;
+
+    // Right meta children (RSVP + duration / active timing).
+    final rightChildren = <Widget>[];
     if (thread != null && thread.hasOtherAttendees) {
-      rightParts.add(RsvpSummary(activity: thread));
+      rightChildren.add(RsvpSummary(activity: thread));
+      rightChildren.add(SizedBox(width: spacing.sm));
+      rightChildren.add(
+        Text(
+          '·',
+          style: TextStyle(color: mutedFg, fontSize: xsSize, height: 1),
+        ),
+      );
+      rightChildren.add(SizedBox(width: spacing.sm));
     }
-    if (widget.now && thread != null) {
-      // In-progress: elapsed ↑ since start, remaining ↓ until end.
-      final start = thread.at?.start;
-      final end = thread.at?.end;
-      if (start != null && currentTime.difference(start).inMinutes >= 1) {
-        rightParts.add(
+
+    if (widget.now && thread?.at?.start != null) {
+      // Active-timing display: ↑Xm elapsed in fg, /Ym remaining in muted.
+      final start = thread!.at!.start!;
+      final end = thread.at!.end;
+      final elapsed = currentTime.difference(start).inMinutes;
+      if (elapsed >= 1) {
+        rightChildren.add(
           Text(
-            Duration(minutes: currentTime.difference(start).inMinutes).format(),
+            '↑${Duration(minutes: elapsed).format()}',
+            style: TextStyle(color: fg, fontSize: xsSize, height: 1),
           ),
         );
       }
       if (end != null && end.isAfter(currentTime)) {
-        rightParts.add(
+        final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
+        rightChildren.add(SizedBox(width: spacing.xs));
+        rightChildren.add(
           Text(
-            Duration(
-              minutes: (end.difference(currentTime).inSeconds / 60).ceil(),
-            ).format(),
-            style: TextStyle(color: context.colour.foreground),
+            '/ ${Duration(minutes: remaining).format()}',
+            style: TextStyle(color: mutedFg, fontSize: xsSize, height: 1),
           ),
         );
       }
-    } else if (widget.isNext &&
-        thread?.at?.start != null &&
-        thread!.at!.start!.toDate() == Date.today()) {
-      rightParts.add(
-        Text(
-          'In ${Duration(minutes: (thread.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
-        ),
-      );
-    }
-    if (hasDuration && !isLastGapOfDay && !widget.now) {
-      rightParts.add(
-        Text(
-          dateTimeRange.duration!.format(),
-          style: TextStyle(
-            color: context.colour.foreground,
-            fontSize: fontSize,
-            height: 1,
-          ),
+    } else {
+      // Static duration with hover stepper / touch modal trigger.
+      rightChildren.add(
+        DurationControl(
+          value: dateTimeRange?.duration,
+          onChanged: thread == null
+              ? null
+              : (newDur) => SetThreadDuration(thread, newDur).run(context),
+          foreground: fg,
         ),
       );
     }
 
     final timeColWidth = agendaLeadingWidth(context);
 
+    // Unread dot color: priority accent at reduced alpha to mirror
+    // [PriorityNotification]'s _DotPainter treatment.
+    final unreadColor = fg.withValues(alpha: 0.7);
+
     return Container(
       color: bg,
       padding: EdgeInsets.symmetric(vertical: spacing.sm),
-      child: DefaultTextStyle(
-        style: TextStyle(color: fg, fontSize: fontSize, height: 1),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (grip != null) grip,
-            Row(
-              children: [
-                SizedBox(
-                  width: timeColWidth,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: spacing.sm),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: timeText == null
-                          ? const SizedBox.shrink()
-                          : ColoredBox(
-                              color: bg,
-                              child: Text(
-                                timeText,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: context.colour.foreground,
-                                  fontSize: fontSize,
-                                  height: 1,
-                                ),
-                              ),
-                            ),
-                    ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (grip != null) grip,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: timeColWidth,
+                child: Padding(
+                  padding: EdgeInsets.only(right: spacing.sm),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (timeText != null)
+                        Text(
+                          timeText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: xsSize,
+                            height: 1,
+                          ),
+                        ),
+                      if (hasUnread) ...[
+                        SizedBox(height: 4),
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: unreadColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      if (thread != null) ...[
-                        Flexible(
-                          child: ColoredBox(
-                            color: bg,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        if (thread != null) ...[
+                          Flexible(
                             child: Text(
                               thread.displayTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              strutStyle: StrutStyle(
-                                fontSize: fontSize,
-                                height: 1,
-                                forceStrutHeight: true,
-                              ),
                               style: TextStyle(
                                 color: fg,
-                                fontSize: fontSize,
-                                fontWeight: FontWeight.w500,
+                                fontSize: smSize,
+                                fontWeight: FontWeight.w600,
                                 height: 1,
                               ),
                             ),
                           ),
-                        ),
-                        ColoredBox(
-                          color: bg,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: spacing.sm,
-                            ),
-                            child: Text(
-                              '·',
-                              style: TextStyle(
-                                color: fg,
-                                fontSize: fontSize,
-                                height: 1,
-                              ),
-                            ),
-                          ),
-                        ),
-                        ColoredBox(
-                          color: bg,
+                          SizedBox(width: spacing.sm),
+                        ],
+                        Flexible(
                           child: PriorityLabel(
                             priority: priority,
-                            context: widget.priorityContext,
                             color: fg,
-                            fontSize: fontSize,
+                            mutedAncestorColor: mutedFg,
+                            fontSize: thread != null ? xsSize : smSize,
                             height: 1,
                           ),
                         ),
-                        SizedBox(width: spacing.md),
-                      ] else
-                        ColoredBox(
-                          color: bg,
-                          child: PriorityLabel(
-                            priority: priority,
-                            context: widget.priorityContext,
-                            color: fg,
-                            fontSize: fontSize,
-                            height: 1,
-                          ),
+                      ],
+                    ),
+                    if (summary.isNotEmpty) ...[
+                      SizedBox(height: spacing.xs),
+                      Text(
+                        summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: mutedFg,
+                          fontSize: xsSize,
+                          height: 1.25,
                         ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
-                for (var i = 0; i < rightParts.length; i++) ...[
-                  if (i > 0) SizedBox(width: spacing.sm),
-                  ColoredBox(color: bg, child: rightParts[i]),
-                ],
-                if (rightParts.isNotEmpty) SizedBox(width: spacing.lg),
-              ],
-            ),
-          ],
-        ),
+              ),
+              SizedBox(width: spacing.sm),
+              ...rightChildren,
+              SizedBox(width: spacing.lg),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -778,42 +764,27 @@ class _BlockHeaderState extends State<_BlockHeader> {
     );
   }
 
-  /// Wraps [child] in a tap handler that switches the page's context
-  /// priority to this block's priority — collapsing the previous
-  /// context's blocks and expanding this priority's blocks (without
-  /// reloading the agenda data). Applies uniformly to priority,
-  /// gap-with-threads, and event block headers; tapping an event
-  /// header expands its thread row + any associated children, just
-  /// like tapping a priority header expands that priority's threads.
-  /// The dedicated event row beneath the header retains its own
-  /// "open the event" tap target.
+  /// Wraps [child] in a tap handler that navigates to this block's
+  /// priority page. Applies uniformly to priority, gap-with-threads,
+  /// and event block headers — clicking the header always opens the
+  /// priority's full page (the dedicated event row beneath the header
+  /// retains its own "open the event" tap target).
   ///
   /// Uses [GestureDetector] so the tap recognizer competes in the
   /// gesture arena with any surrounding [Draggable] / [LongPressDraggable] —
   /// movement past the drag slop hands the pointer to the drag and
-  /// suppresses the tap, so a click switches context while a drag
-  /// reorders.
+  /// suppresses the tap, so a click navigates while a drag reorders.
   ///
   /// `HitTestBehavior.opaque` is required because the row's content is
-  /// plain [Text] inside [ColoredBox] wrappers — neither [RenderParagraph]
-  /// (for plain text without hit-testable spans) nor [RenderColoredBox]
-  /// add themselves to hit tests, so a default `deferToChild` detector
-  /// would silently miss taps on most of the header.
+  /// plain [Text] — [RenderParagraph] without hit-testable spans does
+  /// not add itself to hit tests, so a default `deferToChild` detector
+  /// would silently miss taps on most of the header. The inner
+  /// [DurationControl] uses its own opaque gesture detectors so taps
+  /// on the duration strip do not bubble up here.
   Widget _wrapTapToOpen(Widget child) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        final bloc = context.read<PriorityBloc>();
-        if (bloc.state.context.id == widget.priority.id) return;
-        // Same flow as the PrioritiesPage / modal switchers: routes
-        // through ChangeCurrentPriority so the URL updates and any
-        // sibling indicators (NowBloc highlight) flip immediately. The
-        // resulting navigation lands on PriorityBlocProvider's
-        // didUpdateWidget, which calls bloc.setPriority — and after
-        // recent changes that path no longer reloads the agenda data,
-        // it just recomputes which block is expanded.
-        context.run(ChangeCurrentPriority(widget.priority));
-      },
+      onTap: () => OpenPriority(widget.priority).run(context),
       child: child,
     );
   }

@@ -64,6 +64,7 @@ class AgendaModel extends Equatable {
             out.add(
               AgendaHeaderItem(
                 blockPriority: b.priority,
+                block: b,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
@@ -86,6 +87,7 @@ class AgendaModel extends Equatable {
               AgendaHeaderItem(
                 dateTimeRange: b.range,
                 blockPriority: hasThreads ? b.priority : null,
+                block: hasThreads ? b : null,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
@@ -106,6 +108,7 @@ class AgendaModel extends Equatable {
                 thread: b.event,
                 now: b.isCurrent,
                 blockPriority: b.priority,
+                block: b,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
@@ -320,6 +323,7 @@ class AgendaHeaderItem extends AgendaItem {
     this.scheduleAt,
     this.isOutsidePriority = false,
     this.blockPriority,
+    this.block,
     this.parentBlockId,
     this.sourceDate,
     this.sourcePeriodStart,
@@ -344,6 +348,12 @@ class AgendaHeaderItem extends AgendaItem {
   /// header. The renderer draws an accent + veryMuted border pair when
   /// this is set.
   final Priority? blockPriority;
+
+  /// The full [AgendaBlock] this header introduces. Set whenever
+  /// [blockPriority] is set, so the renderer can derive the joined
+  /// summary line, unread state, and other block-level metadata
+  /// without re-reading the agenda model.
+  final AgendaBlock? block;
 
   /// The id of the [AgendaBlock] this header introduces. Set for every
   /// block header ([PriorityBlock], [GapBlock], [EventBlock]) so the
@@ -380,6 +390,7 @@ class AgendaHeaderItem extends AgendaItem {
     scheduleAt,
     isOutsidePriority,
     blockPriority,
+    block,
     parentBlockId,
     sourceDate,
     sourcePeriodStart,
