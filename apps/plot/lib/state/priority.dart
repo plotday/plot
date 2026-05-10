@@ -2571,8 +2571,18 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final items = <AgendaItem>[];
 
-    // Always emit the Today header so a drag-and-drop target exists even
-    // when no active threads are present yet.
+    // Section order, per the Activity-tab spec:
+    //   1. Today (active)
+    //   2. New (unread)
+    //   3. Scheduled (one section per future day)
+    //   4. Done (inactive)
+    //
+    // Today, New, and Done headers are always emitted — even when empty —
+    // so they remain valid drag-and-drop targets. Scheduled headers stay
+    // dynamic (one per future day with threads); to schedule for a day
+    // not yet represented, drag onto an existing day or use the per-
+    // thread schedule picker.
+
     items.add(
       AgendaHeaderItem(
         text: ActivitySectionMarker.encode(ActivitySection.today),
@@ -2582,9 +2592,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       items.add(AgendaThreadItem(t));
     }
 
-    // Scheduled sections remain dynamic (one per future day with threads).
-    // To schedule for an unrepresented day, the user can drag onto an
-    // existing day or use the per-thread schedule picker.
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.newSection),
+      ),
+    );
+    for (final t in unread) {
+      items.add(AgendaThreadItem(t));
+    }
+
     for (final d in scheduledDates) {
       items.add(
         AgendaHeaderItem(
@@ -2598,16 +2614,6 @@ class PriorityBloc extends Cubit<PriorityState> {
       for (final t in scheduledByDate[d]!) {
         items.add(AgendaThreadItem(t));
       }
-    }
-
-    // Always emit New + Done headers so they're available as drop targets.
-    items.add(
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.newSection),
-      ),
-    );
-    for (final t in unread) {
-      items.add(AgendaThreadItem(t));
     }
 
     items.add(
