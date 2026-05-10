@@ -2820,6 +2820,28 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// A thread is "done" when it has no active per-user schedule (archived or absent)
   /// and no dates set. Effectively: not a todo.
   bool get done => _userSchedule != null && !todo;
+
+  /// Active = marked "Do today" (user schedule with `todoNowDate` sentinel)
+  /// or todo with a user-schedule date that is today or in the past.
+  ///
+  /// Primary state for threads currently being worked on; rendered in the
+  /// Today section of the Activity feed and recorded using the sentinel
+  /// `Thread.todoNowDate` when no explicit date is set.
+  bool get isActiveThread => todo && !isFuture;
+
+  /// Scheduled = todo with a user-schedule date in the future. Rendered in
+  /// per-day sections of the Activity feed ("Tomorrow", "Friday", etc.).
+  bool get isScheduledThread => todo && isFuture;
+
+  /// Unread but not active or scheduled. Rendered in the "New" section.
+  /// Active and scheduled threads that happen to be unread render in their
+  /// own date-anchored section instead.
+  bool get isUnreadOnly => unread && !todo;
+
+  /// Inactive = neither active, scheduled, nor unread. Rendered in the
+  /// "Done" section. Includes threads with no user schedule and read
+  /// non-todo threads.
+  bool get isInactiveThread => !todo && !unread;
   bool get outstandingTasks => _userSchedule?.outstandingTasks ?? false;
   DateTime? get bumpedAt => _thread.bumpedAt;
   bool get hasUserSchedule => _userSchedule != null;
@@ -3030,6 +3052,44 @@ class Thread extends Equatable implements Comparable<Thread> {
         outstandingTasks: false,
         reason: date != null ? 'schedule' : 'add',
       ),
+    );
+  }
+
+  /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
+  /// Preserves the existing user-schedule order if [order] is null.
+  /// Used by the Activity-tab drag dispatcher when a thread is dropped
+  /// in the Today section.
+  Thread asActiveToday({Order? order}) {
+    final effectiveOrder =
+        order ?? _userSchedule?.order ?? Order.first();
+    return withScheduleRestored(order: effectiveOrder);
+  }
+
+  /// Returns a copy in the "scheduled" state for [date]. Sets the user
+  /// schedule's `startOn` to the given date and clears time fields so the
+  /// thread renders under the Tomorrow / Friday / etc. header.
+  Thread asScheduled(Date date, {Order? order}) {
+    final effectiveOrder =
+        order ?? _userSchedule?.order ?? Order.first();
+    return withScheduleRestored(order: effectiveOrder, date: date);
+  }
+
+  /// Returns a copy in the "new (unread-only)" state — flips `unread` to
+  /// true and archives any user schedule so the thread isn't classed as
+  /// active or scheduled.
+  Thread asUnread() {
+    final base = _userSchedule == null ? this : withScheduleArchived();
+    return base.copyWith(unread: true, readAt: const Value(null));
+  }
+
+  /// Returns a copy in the "inactive (done)" state — clears unread,
+  /// archives any user schedule, and bumps `bumpedAt` so the thread
+  /// surfaces at the top of the Done section in the activity feed.
+  Thread asInactive() {
+    final base = _userSchedule == null ? this : withScheduleArchived();
+    return base.copyWith(
+      unread: false,
+      bumpedAt: Value(DateTime.now()),
     );
   }
 

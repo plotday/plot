@@ -1026,7 +1026,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // alive (it remains as an event) but flips its todo flag so the
     // builder treats it as the user's scheduled completion.
     // Associated threads are also kept so they continue to render
-    // nested under their parent event — "Remove from agenda" must
+    // nested under their parent event — "Finish" must
     // not strip the event nesting (that's "Remove from event"'s job).
     final isAssociated =
         _associations?.values.any(
