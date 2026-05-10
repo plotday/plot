@@ -29,9 +29,7 @@ class PriorityWrapper implements AutoRouteWrapper {
   PriorityWrapper({
     @PathParam("priorityId") required String priorityIdString,
   }) : priorityId = PriorityId.tryFromShortString(priorityIdString),
-       _routerKey = GlobalKey(
-         debugLabel: 'PriorityWrapper_$priorityIdString',
-       );
+       _routerKey = GlobalKey(debugLabel: 'PriorityWrapper_$priorityIdString');
 
   final PriorityId? priorityId;
   final GlobalKey _routerKey;
@@ -563,9 +561,10 @@ class PriorityPage extends StatefulWidget {
   State<PriorityPage> createState() => _PriorityPageState();
 }
 
-class _PriorityPageState extends State<PriorityPage> {
-  final BlockDragController _activityFeedDragController =
-      BlockDragController();
+class _PriorityPageState extends State<PriorityPage>
+    with TickerProviderStateMixin {
+  late final BlockDragController _activityFeedDragController =
+      BlockDragController(vsync: this);
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
@@ -952,10 +951,7 @@ class _PriorityPageState extends State<PriorityPage> {
     // identity from `_rebuildActivityFeedSections`. Cache by reference so
     // unrelated parent rebuilds (e.g. RSVP changes elsewhere on the page)
     // don't re-walk the list and re-parse every section marker.
-    final ({
-      Map<int, FeedDropSlot> before,
-      FeedDropSlot? afterList,
-    }) boundaries;
+    final ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList}) boundaries;
     if (identical(_cachedDropBoundaryItems, displayItems) &&
         _cachedDropBoundaries != null) {
       boundaries = _cachedDropBoundaries!;
@@ -1019,6 +1015,11 @@ class _PriorityPageState extends State<PriorityPage> {
                 target: dropAbove.target,
                 silent: dropAbove.silent,
                 slotKey: 'feed_drop_above_$index',
+                // Active gap sits directly above the next row in this
+                // column — paint a 1px divider at the bottom of the
+                // expanded gap so the row below isn't flush against
+                // the dimmed preview.
+                dividerBelow: true,
               ),
             ...current.when(
               header: (header) {
@@ -1046,9 +1047,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     threadId: baseThread.id,
                     priorityContext: state.context,
                     child: _ActivityFeedItem(
-                      key: ValueKey(
-                        'feed_activitywidget_${baseThread.id}',
-                      ),
+                      key: ValueKey('feed_activitywidget_${baseThread.id}'),
                       baseThread: baseThread,
                       selected:
                           state.thread != null &&
@@ -1072,10 +1071,7 @@ class _PriorityPageState extends State<PriorityPage> {
       },
     );
 
-    return BlockDragScope(
-      controller: _activityFeedDragController,
-      child: list,
-    );
+    return BlockDragScope(controller: _activityFeedDragController, child: list);
   }
 }
 
@@ -1204,4 +1200,3 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
     );
   }
 }
-

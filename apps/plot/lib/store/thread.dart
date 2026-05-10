@@ -3729,7 +3729,18 @@ class Thread extends Equatable implements Comparable<Thread> {
       notes: notes.present ? notes.value : _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
       rsvpInheritedFromSeries: rsvpInheritedFromSeries,
-      unreadComputed: unread != null ? null : _unreadComputed,
+      // Clear the cached query-computed `unread` whenever this copy
+      // changes the stored value — either via the explicit `unread`
+      // param above or via the bump branch (`bump && todo == false`,
+      // which forces `unread: false`). Without the bump-branch clear,
+      // a thread the query reported as unread keeps reporting unread
+      // through the [unread] getter (which prefers `_unreadComputed`
+      // over `_thread.unread`) even after [asInactive] flips the
+      // stored value, so the activity-feed rebuild routes the dropped
+      // thread back to New instead of Done.
+      unreadComputed: (unread != null || (bump && todo == false))
+          ? null
+          : _unreadComputed,
       activityDirty: activityDirty,
       activityRemoteDirty: activityRemoteDirty,
       scheduleDirty: scheduleDirty,
