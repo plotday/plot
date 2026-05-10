@@ -16,22 +16,11 @@ export type { Kysely };
 // returns them as strings, which breaks Dart's Drift ORM deserialization.
 pg.types.setTypeParser(20, (val: string) => parseInt(val, 10));
 
-let loggedConnectionOnce = false;
-
 /** Create a Kysely instance from Hyperdrive or direct connection. Call once per request. */
 export function createDb(env: Bindings) {
   const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
-  }
-
-  if (!loggedConnectionOnce) {
-    loggedConnectionOnce = true;
-    const source = env.HYPERDRIVE?.connectionString ? "HYPERDRIVE" : "DATABASE_URL";
-    // Mask password in connection string for logging
-    const masked = connectionString.replace(/:([^@]+)@/, ":***@");
-    const logger = createLogger({ source: "db" });
-    logger.info(`Database connection: ${source} → ${masked}`);
   }
 
   const pool = new pg.Pool({
