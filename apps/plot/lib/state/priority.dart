@@ -1612,15 +1612,29 @@ class PriorityBloc extends Cubit<PriorityState> {
         currentIndex = 0;
       }
     } else {
-      // Thread selected: find its index
-      for (int i = 0; i < state.agendaItems.length; i++) {
-        final thread = state.agendaItems[i].when<Thread?>(
-          header: (header) => null,
-          activity: (agendaItem) => agendaItem.thread,
-        );
-        if (thread?.id == state.thread!.id) {
-          currentIndex = i;
-          break;
+      // Thread selected: post-Task-3 agendaItems contains only header
+      // items (one per block), so locate which block contains the
+      // thread and use that block's header index. The header carries
+      // the block id via [parentBlockId]; fall back to the
+      // event-block case where the header itself references the
+      // event thread directly.
+      String? blockId;
+      for (final section in state.agenda.sections) {
+        for (final block in section.blocks) {
+          if (block.threads.any((t) => t.id == state.thread!.id)) {
+            blockId = block.id;
+            break;
+          }
+        }
+        if (blockId != null) break;
+      }
+      if (blockId != null) {
+        for (int i = 0; i < state.agendaItems.length; i++) {
+          final item = state.agendaItems[i];
+          if (item is AgendaHeaderItem && item.parentBlockId == blockId) {
+            currentIndex = i;
+            break;
+          }
         }
       }
       if (currentIndex == -1) {
@@ -1636,13 +1650,20 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    // Helper to check if an item matches the filter criteria
+    // Helper to check if an item matches the filter criteria.
+    // Post-Task-3, agendaItems contains only header items: per-block
+    // headers (date == null) and date/text section headers
+    // (date != null or pure text). [includeThread] is retained for
+    // backwards compatibility but, since there are no AgendaThreadItem
+    // rows on the agenda, it now controls whether per-block headers
+    // (which represent the threads) participate in navigation.
     bool matchesFilter(AgendaItem item) {
       return item.when<bool>(
         activity: (agendaItem) => includeThread,
         header: (header) =>
             (header.date != null && includeDate) ||
-            (header.date == null && includePriority),
+            (header.date == null &&
+                (includePriority || (includeThread && header.text == null))),
       );
     }
 
