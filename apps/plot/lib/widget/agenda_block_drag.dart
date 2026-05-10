@@ -303,12 +303,26 @@ class BlockDragActivation {
 
 /// Pure activation logic, exposed for unit testing.
 ///
-/// **Model — drop areas tile the agenda; thresholds at block tops.**
+/// **Model — direction-aware drop-target activation.**
 ///
 /// Each non-source block X owns a "drop area" = X's region in the
-/// live layout. Cursor in X → preview at K_after_X (the slot just
-/// after X). The threshold for the swap from one slot to the next
-/// is at the next block's TOP edge, not at the block's center.
+/// live layout. The slot the cursor activates depends on drag
+/// direction — cursor above vs. below source's CURRENT preview
+/// position (the active slot when one exists, else `sourceAtRestTopY`):
+///
+///   * **Drag-down** (cursor below the preview): cursor in X →
+///     K_after_X (the slot just after X). Threshold for the next
+///     swap is at the next block's TOP edge.
+///
+///   * **Drag-up** (cursor above the preview): cursor in X →
+///     K_above_X (the slot just before X). Threshold for the next
+///     swap is at X's TOP edge (= the previous block's BOTTOM edge).
+///
+/// The asymmetry mirrors how a drop reads visually: dragging down,
+/// the dropped block lands BELOW the cursor's block; dragging up,
+/// ABOVE. Without it, drag-up would not advance source as the
+/// cursor crosses each block boundary — the user would have to
+/// overshoot by a full block height before the next swap fired.
 ///
 /// **Carve-outs:**
 ///
@@ -544,20 +558,55 @@ BlockDragActivation computeBlockDragActivation({
     // Fall through to the default rule for the bottom portion.
   }
 
-  // === DEFAULT RULE: cursor in block X → K_after_X ===
-  // If K_after_X is filtered (X is source's upper neighbor — the
-  // block immediately above source), fall back to K_above_X if it's
-  // valid. This lets the user swap source with X by dragging over X
-  // (drop = above X, source moves to X's position). Without this
-  // fallback, cursor over the block right above source would hit a
-  // no-swap zone and the user couldn't swap with that neighbor.
-  if (isFiltered(kAfter.target)) {
-    if (!isFiltered(kAbove.target)) {
-      return BlockDragActivation(key: kAbove.key, target: kAbove.target);
+  // === DEFAULT RULE: direction-aware ===
+  // Drag-up (cursor above source's CURRENT preview position):
+  // cursor in X → K_above_X (drop just before X). As the cursor
+  // crosses each block boundary going up, source advances one
+  // position; threshold sits at the entered block's TOP edge.
+  //
+  // Drag-down (cursor at or below source's preview): cursor in X →
+  // K_after_X (drop just after X). Symmetric — entering each block
+  // going down advances source; threshold at the next block's TOP.
+  //
+  // **Reference tracks source's PREVIEW, not its at-rest top.**
+  // When a slot is active, source is collapsed and the active
+  // slot's expanded band stands in for source's vertical
+  // occupancy. After a downward drag, source's at-rest screen
+  // region is occupied by other blocks (the live layout shifted
+  // them up to fill source's collapse). Using `sourceAtRestTopY`
+  // as the reference there would mis-classify drag-up movement as
+  // drag-down for any block now sitting between source's at-rest
+  // bottom and the active band — landing the preview one position
+  // too low. The fallback is `sourceAtRestTopY` only when no slot
+  // is active (drag start, or after a swap-back deactivated).
+  //
+  // Source-flank fallback: if the preferred slot is filtered (its
+  // prev or next equals source — would be a no-op drop), use the
+  // other side. Both filtered → hold the previously active slot.
+  // The drag-up + drag-down rules already pick the correct slot
+  // for cursor-over-source's-immediate-neighbor cases; this
+  // fallback covers degenerate edges (unknown direction with a
+  // filtered preferred slot).
+  double? referenceTopY;
+  if (activeSlotKey != null) {
+    for (final s in ordered) {
+      if (s.key == activeSlotKey) {
+        referenceTopY = s.y;
+        break;
+      }
     }
-    return _holdActive(activeSlotKey, ordered);
   }
-  return BlockDragActivation(key: kAfter.key, target: kAfter.target);
+  referenceTopY ??= sourceAtRestTopY;
+  final isDragUp = referenceTopY != null && pointerY < referenceTopY;
+  final preferred = isDragUp ? kAbove : kAfter;
+  final fallback = isDragUp ? kAfter : kAbove;
+  if (!isFiltered(preferred.target)) {
+    return BlockDragActivation(key: preferred.key, target: preferred.target);
+  }
+  if (!isFiltered(fallback.target)) {
+    return BlockDragActivation(key: fallback.key, target: fallback.target);
+  }
+  return _holdActive(activeSlotKey, ordered);
 }
 
 /// Return the [BlockDragActivation] for [key] if it's still in
@@ -578,10 +627,15 @@ BlockDragActivation _holdActive(Object? key, List<_OrderedSlot> ordered) {
 /// See [computeBlockDragActivation] for the full algorithm; in
 /// summary:
 ///
-///   1. **Default rule**: cursor in block X → preview at K_after_X
-///      (the slot just after X). The threshold for swapping to the
-///      next slot is at the next block's TOP edge in the live layout
-///      (not at the block's center).
+///   1. **Default rule (direction-aware)**: cursor in block X →
+///      preview at K_after_X when dragging down (cursor below
+///      source's current preview), K_above_X when dragging up
+///      (cursor above it). The preview position is the active
+///      slot's live Y when a slot is active, else source's at-rest
+///      top. Threshold for the next swap sits at the next block's
+///      TOP for drag-down and at the current block's TOP for
+///      drag-up — so as the cursor crosses each block boundary in
+///      either direction, source advances by one position.
 ///
 ///   2. **Tie-breaker**: cursor inside the current placeholder
 ///      (active slot's preview band, or source's at-rest region with
@@ -613,6 +667,15 @@ BlockDragActivation _holdActive(Object? key, List<_OrderedSlot> ordered) {
 /// + active slot expansion = total height conserved) is handled by
 /// the tie-breaker rule above, not by trying to lock slot Ys.
 class BlockDragController extends ChangeNotifier {
+  BlockDragController({TickerProvider? vsync}) {
+    if (vsync != null) {
+      _animController = AnimationController(
+        vsync: vsync,
+        duration: kBlockBoundaryAnimDuration,
+      )..addListener(notifyListeners);
+    }
+  }
+
   String? _draggingBlockId;
   BlockDragPayload? _draggingPayload;
   Offset? _pointerPosition;
@@ -620,6 +683,26 @@ class BlockDragController extends ChangeNotifier {
   BlockDropTarget? _activeTarget;
   BlockDropDispatcher? _dispatcher;
   BlockDragPreviewBuilder? _previewBuilder;
+
+  /// Drives slot-height transitions via a single coordinated animation
+  /// instead of per-[BlockDropZone] [AnimatedContainer]s. Critical for
+  /// height conservation under rapid active-slot changes: independent
+  /// per-slot tweens retarget from mid-anim values, breaking the mirror
+  /// that keeps the running sum at `H` — items that should be stable
+  /// jiggle by a few pixels while the user drags. With one shared
+  /// controller, every active change snapshots the current configuration
+  /// and animates a unified `0→1` progress to the new configuration; sum
+  /// is `lerp(snapshot_sum, target_sum, p)` which stays at `H` because
+  /// both endpoints are `H`. Null when no [TickerProvider] was supplied
+  /// (synthetic test cases that exercise the algorithm only).
+  AnimationController? _animController;
+
+  /// Snapshot of every registered slot's height at the moment the
+  /// current animation began. Combined with each slot's target height
+  /// (`H` for the active slot, `0` otherwise) this lets [slotHeight]
+  /// return `lerp(snapshot, target, animProgress)` without per-slot
+  /// animation state.
+  Map<Object, double> _snapshotHeights = const {};
 
   /// Total height of the source block (header + visible threads),
   /// captured at drag start. The active drop slot expands to exactly
@@ -638,6 +721,26 @@ class BlockDragController extends ChangeNotifier {
   /// Total height of the source block, or `null` if no drag is in
   /// progress. Used by [BlockDropZone] to size its expanded gap.
   double? get sourceTotalHeight => _sourceTotalHeight;
+
+  /// Current animated height for a slot. Reads `lerp(snapshot, target,
+  /// easeOut(progress))` so all slots interpolate against a single
+  /// shared progress value — the mirror across active-slot transitions
+  /// is exact, and items that should be stable stay stable even when
+  /// active changes faster than the animation duration.
+  ///
+  /// Returns the static target height (no animation) when no
+  /// [TickerProvider] was supplied to the controller — used by
+  /// synthetic test cases that exercise the activation algorithm
+  /// without driving widget animations.
+  double slotHeight(Object slotKey) {
+    final isActive = _activeSlotKey == slotKey;
+    final to = isActive ? (_sourceTotalHeight ?? 0) : 0.0;
+    final ctrl = _animController;
+    if (ctrl == null) return to;
+    final from = _snapshotHeights[slotKey] ?? 0.0;
+    final p = Curves.easeOut.transform(ctrl.value);
+    return from + (to - from) * p;
+  }
 
   final Map<Object, _SlotEntry> _slots = <Object, _SlotEntry>{};
 
@@ -754,6 +857,18 @@ class BlockDragController extends ChangeNotifier {
     if (_draggingBlockId == payload.blockId) return;
     _draggingBlockId = payload.blockId;
     _draggingPayload = payload;
+
+    // Reset to a clean "no slot active" baseline. If the previous
+    // drag's close animation hadn't finished, residual snapshot
+    // heights would feed into the first activation animation as a
+    // non-zero "from" — sum would temporarily exceed `H` until they
+    // settle. Forcing the controller to its terminal value here
+    // makes [slotHeight] return the static target (0 for every
+    // slot, since `_activeSlotKey` is still null) until the first
+    // [_setActive] kicks off a fresh transition.
+    _snapshotHeights = const {};
+    _animController?.value = 1;
+
     _captureSourceHeight(sourceContextProvider);
     notifyListeners();
   }
@@ -831,10 +946,19 @@ class BlockDragController extends ChangeNotifier {
     _draggingBlockId = null;
     _draggingPayload = null;
     _pointerPosition = null;
+    // Snap slot heights to 0 immediately on drag end. `_setActive(null,
+    // null)` would animate them, but that leaves an in-flight 150ms
+    // close animation racing the user's next drag — and reading from
+    // `_sourceTotalHeight` mid-animation collides with the cleanup
+    // below. Snapping is consistent with the historical AnimatedContainer
+    // remount behavior (which forced fresh state on each drag boundary)
+    // and avoids visible drift if the user starts another drag immediately.
     _activeSlotKey = null;
     _activeTarget = null;
     _sourceTotalHeight = null;
     _sourceAtRestTopY = null;
+    _snapshotHeights = const {};
+    _animController?.value = 1;
     notifyListeners();
 
     if (dispatch && dispatcher != null && payload != null && target != null) {
@@ -888,9 +1012,44 @@ class BlockDragController extends ChangeNotifier {
 
   void _setActive(Object? key, BlockDropTarget? target) {
     if (key == _activeSlotKey && target == _activeTarget) return;
+
+    // Snapshot every registered slot's CURRENT animated height — this
+    // is the "from" state for the new transition. Capturing all slots
+    // (not just the changing pair) keeps the running sum at `H` even
+    // when active changes mid-animation: snapshot_sum equals the
+    // previous animation's running sum (which is `H` because that
+    // animation was conserving), and target_sum is `H` (one slot at
+    // `H`, others at `0`). Sum during the new animation is
+    // `lerp(H, H, p)` = `H`, so items in the stable region stay put.
+    //
+    // Read heights via the public [slotHeight] getter so the snapshot
+    // uses the same `_activeSlotKey`/`_animController.value` as the
+    // current frame's [BlockDropZone] paints. Computing snapshots
+    // BEFORE mutating `_activeSlotKey` is what makes this correct.
+    final ctrl = _animController;
+    if (ctrl != null) {
+      final snapshot = <Object, double>{};
+      for (final slotKey in _slots.keys) {
+        snapshot[slotKey] = slotHeight(slotKey);
+      }
+      _snapshotHeights = snapshot;
+    }
+
     _activeSlotKey = key;
     _activeTarget = target;
+
+    if (ctrl != null) {
+      ctrl.value = 0;
+      ctrl.forward();
+    }
+
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _animController?.dispose();
+    super.dispose();
   }
 }
 
@@ -1154,14 +1313,17 @@ class _BlockDropZoneState extends State<BlockDropZone> {
     final controller = _controller;
     final payload = controller?.draggingPayload;
     final isActive = _isActive && payload != null;
-    // Match the dragged block's *actual* footprint when expanding so the
-    // total agenda height stays constant as the source collapses. Falls
-    // back to the constant-based estimate if (for any reason) the
-    // controller didn't capture a height.
-    final expandedHeight = controller?.sourceTotalHeight ??
-        (payload != null
-            ? dropZoneHeightFor(payload)
-            : kThreadRowApproxHeight);
+
+    // Read the slot's height from the controller's coordinated animation.
+    // When no controller is in scope (the widget renders outside a
+    // [BlockDragScope]), there's no drag in progress so the slot is at
+    // rest. The coordinated animation keeps the running sum across all
+    // slots conserved during active-slot changes — items below a
+    // transitioning region stay stable even when the user crosses
+    // several block boundaries faster than the 150ms animation duration.
+    // See [BlockDragController.slotHeight].
+    final height = controller?.slotHeight(widget.slotKey) ??
+        kBlockBoundaryRestHeight;
 
     // Resolve the dimmed preview widget. While active, ask the
     // controller for a freshly-built preview and cache it. While
@@ -1199,32 +1361,19 @@ class _BlockDropZoneState extends State<BlockDropZone> {
           )
         : null;
 
-    // Wrap the preview in [OverflowBox] so it always renders at its
-    // natural intrinsic height regardless of the [AnimatedContainer]'s
-    // animating height. Without this, mid-animation frames (where the
-    // animating height is smaller than the preview) trip Flutter's
-    // RenderFlex overflow check on the preview's [Column]. The
-    // surrounding [ClipRect] still clips the visual to the box.
-    //
-    // Keying the [AnimatedContainer] on whether a drag is in progress
-    // forces a remount on drag boundaries — otherwise an in-flight
-    // collapse animation (started when the pointer left this slot
-    // shortly before release) keeps running past `end()`, leaving the
-    // slot at a partial height into the next drag and shifting
-    // block-center activation thresholds so the user has to drag
-    // farther on each subsequent attempt. Each drag session starts
-    // with a fresh, fully-collapsed slot.
+    // [OverflowBox] lets the preview render at its full intrinsic height
+    // even when the slot's animated height is smaller — without it, mid-
+    // animation frames (animated height < preview height) trip Flutter's
+    // RenderFlex overflow check on the preview's [Column]. The surrounding
+    // [ClipRect] still clips the visual to the slot's animated height.
     final dividerColor = Color.alphaBlend(
       context.theme.colors.border,
       context.colour.background,
     );
 
     return ClipRect(
-      child: AnimatedContainer(
-        key: ValueKey(payload != null),
-        duration: kBlockBoundaryAnimDuration,
-        curve: Curves.easeOut,
-        height: isActive ? expandedHeight : kBlockBoundaryRestHeight,
+      child: Container(
+        height: height,
         // Bottom-border decoration paints inside the box's bounds, so
         // the divider occupies the bottom 1px of the expanded gap
         // without growing the footprint. Only applied when the zone is

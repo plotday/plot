@@ -86,6 +86,217 @@ void main() {
     });
   });
 
+  group('computeBlockDragActivation — direction-aware drag-up rule', () {
+    test(
+        'drag-up (cursor above source\'s at-rest top): cursor in block X '
+        'activates K_above_X (drop just before X) — entering each block from '
+        'below advances source one position immediately, no thread-height '
+        'overshoot',
+        () {
+      // Section: [A, B, C, D, source]. Source at Y=400 (height H=100).
+      // Slots: before_A=0, before_B=100, before_C=200, before_D=300,
+      // before_source=400 (filtered next=source),
+      // after_source=500 (filtered prev=source).
+      final slots = <_Slot>[
+        _slot(key: 'before_A', y: 0, prev: null, next: 'A'),
+        _slot(key: 'before_B', y: 100, prev: 'A', next: 'B'),
+        _slot(key: 'before_C', y: 200, prev: 'B', next: 'C'),
+        _slot(key: 'before_D', y: 300, prev: 'C', next: 'D'),
+        _slot(key: 'before_source', y: 400, prev: 'D', next: 'source'),
+        _slot(key: 'after_source', y: 500, prev: 'source', next: null),
+      ];
+
+      // Cursor in D (350, the upper neighbor of source) → K_above_D =
+      // before_D. Same as the source-flank fall-back, but reached via
+      // the direction-aware rule directly.
+      var result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 350,
+        sourceAtRestTopY: 400,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_D',
+          reason: 'drag-up: cursor in upper neighbor → K_above_neighbor');
+
+      // Cursor in C (250) → K_above_C = before_C. Without the
+      // direction-aware rule, the old default would have activated
+      // before_D (= K_after_C, the slot already active from the
+      // previous swap), forcing the user to drag the cursor a full
+      // thread-height further up to swap.
+      result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 250,
+        activeSlotKey: 'before_D',
+        sourceAtRestTopY: 400,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_C',
+          reason: 'drag-up: cursor in C swaps to K_above_C (the bug fix — '
+              'old rule held before_D until cursor crossed C\'s top)');
+
+      // Cursor in B (150) → K_above_B = before_B.
+      result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 150,
+        activeSlotKey: 'before_C',
+        sourceAtRestTopY: 400,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_B',
+          reason: 'drag-up: cursor in B swaps to K_above_B');
+
+      // Cursor in A (50) → K_above_A = before_A (top of section).
+      result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 50,
+        activeSlotKey: 'before_B',
+        sourceAtRestTopY: 400,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_A',
+          reason: 'drag-up: cursor in A swaps to top of section');
+    });
+
+    test(
+        'drag-down (cursor at or below source\'s at-rest top) keeps '
+        'K_after_X semantics — symmetric to drag-up',
+        () {
+      // Section: [source, A, B, C, D]. Source at Y=0 (height H=100).
+      final slots = <_Slot>[
+        _slot(key: 'before_source', y: 0, prev: null, next: 'source'),
+        _slot(key: 'after_source', y: 100, prev: 'source', next: 'A'),
+        _slot(key: 'before_B', y: 200, prev: 'A', next: 'B'),
+        _slot(key: 'before_C', y: 300, prev: 'B', next: 'C'),
+        _slot(key: 'before_D', y: 400, prev: 'C', next: 'D'),
+        _slot(key: 'after_D', y: 500, prev: 'D', next: null),
+      ];
+
+      // Cursor in B (250) → K_after_B = before_C.
+      final result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 250,
+        sourceAtRestTopY: 0,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_C',
+          reason: 'drag-down: cursor in B → K_after_B (same as old rule)');
+    });
+
+    test(
+        'drag-down then drag-up: direction reference tracks the active '
+        'slot\'s live position, not source\'s at-rest top — cursor above the '
+        'active band uses K_above (drag-up rule) even when the cursor is '
+        'below source\'s original at-rest top',
+        () {
+      // Scenario from the bug report: source originally at position 3.
+      // User dragged source down to position 6 (active = before_G,
+      // which means "drop between F and G"). Cursor moves up to
+      // position 4 in the current list.
+      //
+      // Slot ys here are the LIVE layout values (what the controller
+      // reads from RenderBoxes during the drag). With C collapsed
+      // (height 0 at its original Y=200) and before_G expanded by
+      // H=100 below F, the relevant live ys are:
+      //   - before_C: 200 (C\'s old top, still anchored there)
+      //   - before_D: 200 (sits flush against C\'s collapse point)
+      //   - before_E: 300 (E shifted up by H from C\'s collapse)
+      //   - before_F: 400
+      //   - before_G: 500 (was 600, shifted up by H), active band
+      //     extends to 600
+      //   - before_H: 700
+      // The original at-rest layout would have had before_G at 600
+      // and before_C/before_D split apart by C\'s 100px height.
+      final slots = <_Slot>[
+        _slot(key: 'before_A', y: 0, prev: null, next: 'A'),
+        _slot(key: 'before_B', y: 100, prev: 'A', next: 'B'),
+        _slot(key: 'before_C', y: 200, prev: 'B', next: 'C'),
+        _slot(key: 'before_D', y: 200, prev: 'C', next: 'D'),
+        _slot(key: 'before_E', y: 300, prev: 'D', next: 'E'),
+        _slot(key: 'before_F', y: 400, prev: 'E', next: 'F'),
+        _slot(key: 'before_G', y: 500, prev: 'F', next: 'G'),
+        _slot(key: 'before_H', y: 700, prev: 'G', next: 'H'),
+        _slot(key: 'after_H', y: 800, prev: 'H', next: null),
+      ];
+
+      // Cursor at Y=350 → over E in the live layout (E at 300-400).
+      // sourceAtRestTopY=200 (C\'s original top). Active slot is
+      // before_G at live y=500.
+      //
+      // The bug: using sourceAtRestTopY as the direction reference,
+      // 350 > 200 → drag-down → preferred=K_after_E=before_F → drop
+      // between E and F = position 5. Placeholder one too low.
+      //
+      // The fix: using the active slot\'s live y as the reference,
+      // 350 < 500 → drag-up → preferred=K_above_E=before_E → drop
+      // between D and E = position 4.
+      final result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'C',
+        pointerY: 350,
+        activeSlotKey: 'before_G',
+        sourceAtRestTopY: 200,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_E',
+          reason: 'cursor over E in live layout activates K_above_E '
+              '(position 4), not K_after_E (position 5) — direction '
+              'reference must follow source\'s preview, not at-rest');
+    });
+
+    test(
+        'drag-up threshold sits at the entered block\'s TOP — crossing out of '
+        'the active slot\'s expanded band into the block above activates the '
+        'new K_above immediately',
+        () {
+      // [A, B, C, source]. H=100. sourceAtRestTopY=300.
+      final slots = <_Slot>[
+        _slot(key: 'before_A', y: 0, prev: null, next: 'A'),
+        _slot(key: 'before_B', y: 100, prev: 'A', next: 'B'),
+        _slot(key: 'before_C', y: 200, prev: 'B', next: 'C'),
+        _slot(key: 'before_source', y: 300, prev: 'C', next: 'source'),
+        _slot(key: 'after_source', y: 400, prev: 'source', next: null),
+      ];
+
+      // Active before_C has expansion band [200, 300). At Y=200 the
+      // tie-breaker still holds (cursor sits at the band's top edge,
+      // inside the placeholder).
+      var result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 200,
+        activeSlotKey: 'before_C',
+        sourceAtRestTopY: 300,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_C',
+          reason: 'tie-breaker: cursor at active slot\'s top edge is still '
+              'inside the placeholder band');
+
+      // Cursor at Y=199 (just outside the active band, in B\'s region in
+      // the live layout): bracket = (before_B, before_C). drag-up →
+      // K_above = before_B. This is the moment the swap fires —
+      // crossing the active band\'s top edge advances source by one
+      // position with no extra overshoot.
+      result = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'source',
+        pointerY: 199,
+        activeSlotKey: 'before_C',
+        sourceAtRestTopY: 300,
+        activeSlotExpansion: 100,
+      );
+      expect(result.key, 'before_B',
+          reason: 'drag-up: cursor 1px above active band immediately swaps '
+              'to K_above_B (the bug fix — old rule would have held '
+              'before_C until cursor reached Y < 100)');
+    });
+  });
+
   group('computeBlockDragActivation — tie-breakers', () {
     test(
         'cursor strictly inside source\'s at-rest region (boundaries excluded) '

@@ -754,14 +754,18 @@ class PriorityPage extends StatefulWidget {
   State<PriorityPage> createState() => _PriorityPageState();
 }
 
-class _PriorityPageState extends State<PriorityPage> {
+class _PriorityPageState extends State<PriorityPage>
+    with TickerProviderStateMixin {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
   bool _appliedInitialTab = false;
   final InfiniteListController _agendaListController = InfiniteListController();
   final Map<String, GlobalKey<AnimatedRemovalState>> _removalKeys = {};
-  final BlockDragController _blockDragController = BlockDragController();
-  final BlockDragController _activityFeedDragController = BlockDragController();
+  late final BlockDragController _blockDragController = BlockDragController(
+    vsync: this,
+  );
+  late final BlockDragController _activityFeedDragController =
+      BlockDragController(vsync: this);
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
