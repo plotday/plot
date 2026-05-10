@@ -13,3 +13,8 @@ bool hasPhysicalKeyboard() {
 bool isMobilePlatform() {
   return Platform.isIOS || Platform.isAndroid;
 }
+
+/// True for platforms where the primary input is touch (no physical
+/// keyboard). Used to switch UI affordances between hover-revealed
+/// (desktop) and tap-to-modal (touch) treatments.
+bool isTouchPlatform() => !hasPhysicalKeyboard();
