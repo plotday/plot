@@ -766,6 +766,15 @@ class _PriorityPageState extends State<PriorityPage> {
   final BlockDragController _activityFeedDragController =
       BlockDragController();
 
+  /// Memoized drop-boundary computation. Recomputing on every parent
+  /// rebuild would re-walk the entire feed and re-parse every section
+  /// marker. Cache by `displayItems` identity — `_rebuildActivityFeedSections`
+  /// produces a fresh `List.unmodifiable` on each emit, so reference
+  /// equality is the right key.
+  List<AgendaItem>? _cachedDropBoundaryItems;
+  ({Map<int, FeedDropSlot> before, FeedDropSlot? afterList})?
+  _cachedDropBoundaries;
+
   GlobalKey<AnimatedRemovalState> _getRemovalKey(String threadId) {
     return _removalKeys.putIfAbsent(
       threadId,
@@ -1279,8 +1288,21 @@ class _PriorityPageState extends State<PriorityPage> {
     // separators slide closed in sync with the thread rows during a
     // priority context switch.
     final isAboveHiddenThread = next is AgendaThreadItem && next.hidden;
+    // Activity-feed threads have a null `parentBlockId`, so the agenda
+    // condition (`next.parentBlockId == draggingBlockId`) never fires
+    // for them. Match the dragged thread directly by its id so the
+    // separator above the source thread collapses while it's hidden —
+    // without this, the source row vanishes (-thread height) but the
+    // surrounding 1px lines remain, leaving a visible 1px height shift
+    // after the drop zone elsewhere expands by `thread + divider`.
+    final activityNextThreadId = next is AgendaThreadItem
+        ? next.thread.id.toString()
+        : null;
     return ListenableBuilder(
-      listenable: _blockDragController,
+      listenable: Listenable.merge([
+        _blockDragController,
+        _activityFeedDragController,
+      ]),
       builder: (context, _) {
         // Hide separators inside the collapsing source block. Wrapped in
         // [AnimatedSize] below so the 1px collapse runs in sync with the
@@ -1294,7 +1316,11 @@ class _PriorityPageState extends State<PriorityPage> {
             isAboveHiddenThread ||
             (nextParentId != null &&
                 _blockDragController.draggingBlockId == nextParentId &&
-                !_blockDragController.isSourceVisible);
+                !_blockDragController.isSourceVisible) ||
+            (activityNextThreadId != null &&
+                _activityFeedDragController.draggingBlockId ==
+                    activityNextThreadId &&
+                !_activityFeedDragController.isSourceVisible);
 
         // Selected: full 1px tinted border (still shown during a drag —
         // selection is a persistent state, not a hover affordance).
@@ -1321,7 +1347,8 @@ class _PriorityPageState extends State<PriorityPage> {
           // bright style if the adjacent item is being dragged in the
           // thread reorder list, or if any block-level drag is in
           // progress.
-          final isBlockDragging = _blockDragController.isDragging;
+          final isBlockDragging = _blockDragController.isDragging ||
+              _activityFeedDragController.isDragging;
           final dragging = controller.draggingIndex;
           final prevHighlighted =
               prev is AgendaThreadItem &&
@@ -2749,13 +2776,20 @@ class _PriorityPageState extends State<PriorityPage> {
   }) {
     // Append remote search extras (threads surfaced by the server that
     // aren't visible locally) with a section header. Only when searching.
+    //
+    // Reuse the incoming `items` reference unchanged in the common case
+    // (no extras) so the boundary-cache below can hit by identity.
     final isSearching = state.search.isNotEmpty;
-    final displayItems = <AgendaItem>[...items];
+    final List<AgendaItem> displayItems;
     if (isSearching && state.remoteSearchExtras.isNotEmpty) {
-      displayItems.add(const AgendaHeaderItem(text: 'From the server'));
+      final merged = <AgendaItem>[...items];
+      merged.add(const AgendaHeaderItem(text: 'From the server'));
       for (final t in state.remoteSearchExtras) {
-        displayItems.add(AgendaThreadItem(t));
+        merged.add(AgendaThreadItem(t));
       }
+      displayItems = merged;
+    } else {
+      displayItems = items;
     }
 
     // A trailing synthetic row is appended when a search footer (spinner,
@@ -2791,10 +2825,22 @@ class _PriorityPageState extends State<PriorityPage> {
     final footerIndex = showFooter ? displayItems.length : -1;
     final totalCount = displayItems.length + (showFooter ? 1 : 0);
 
-    // Compute drop boundaries once per build; the same map is re-read by
-    // the per-row builder. The dispatcher closure captures `displayItems`
-    // and the bloc so it can resolve section context on drop.
-    final boundaries = computeActivityFeedDropBoundaries(items: displayItems);
+    // Drop boundaries depend only on `displayItems`, which gets a fresh
+    // identity from `_rebuildActivityFeedSections`. Cache by reference so
+    // unrelated parent rebuilds (e.g. RSVP changes elsewhere on the page)
+    // don't re-walk the list and re-parse every section marker.
+    final ({
+      Map<int, FeedDropSlot> before,
+      FeedDropSlot? afterList,
+    }) boundaries;
+    if (identical(_cachedDropBoundaryItems, displayItems) &&
+        _cachedDropBoundaries != null) {
+      boundaries = _cachedDropBoundaries!;
+    } else {
+      boundaries = computeActivityFeedDropBoundaries(items: displayItems);
+      _cachedDropBoundaryItems = displayItems;
+      _cachedDropBoundaries = boundaries;
+    }
     _activityFeedDragController.dispatcher = (payload, target) {
       dispatchActivityFeedThreadDrop(
         bloc: bloc,
@@ -2802,27 +2848,12 @@ class _PriorityPageState extends State<PriorityPage> {
         target: target,
       );
     };
-    _activityFeedDragController.previewBuilder = (payload) {
-      Thread? source;
-      for (final item in displayItems) {
-        if (item is AgendaThreadItem &&
-            item.thread.id.toString() == payload.blockId) {
-          source = item.thread;
-          break;
-        }
-      }
-      if (source == null) return null;
-      return ThreadWidget(
-        activity: source,
-        selected: false,
-        now: false,
-        focusNode: FocusNode(skipTraversal: true),
-        context: state.context,
-        showSubPriority: true,
-        bump: false,
-        showEventTiming: false,
-      );
-    };
+    // No preview builder for the activity feed: the drop zone shows a
+    // plain expanded gap. The floating drag-feedback already represents
+    // the thread under the cursor, so a dimmed-thread preview inside
+    // the gap would render the same row twice (once under the pointer,
+    // once at the destination).
+    _activityFeedDragController.previewBuilder = null;
 
     final list = InfiniteList(
       controller: controller,
@@ -2862,7 +2893,8 @@ class _PriorityPageState extends State<PriorityPage> {
           children: [
             if (dropAbove != null)
               BlockDropZone(
-                target: dropAbove,
+                target: dropAbove.target,
+                silent: dropAbove.silent,
                 slotKey: 'feed_drop_above_$index',
               ),
             ...current.when(
@@ -2908,7 +2940,11 @@ class _PriorityPageState extends State<PriorityPage> {
               },
             ),
             if (tail != null)
-              BlockDropZone(target: tail, slotKey: 'feed_drop_tail'),
+              BlockDropZone(
+                target: tail.target,
+                silent: tail.silent,
+                slotKey: 'feed_drop_tail',
+              ),
           ],
         );
       },
@@ -3212,9 +3248,8 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   @override
   void initState() {
     super.initState();
-    _representative = Thread.loadRepresentativeForFeed(
+    _representative = context.read<PriorityBloc>().loadRepresentativeForFeed(
       widget.baseThread,
-      now: DateTime.now(),
     );
   }
 
@@ -3225,9 +3260,8 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
         oldWidget.baseThread.scheduleId != widget.baseThread.scheduleId ||
         oldWidget.baseThread.currentUserRsvp !=
             widget.baseThread.currentUserRsvp) {
-      _representative = Thread.loadRepresentativeForFeed(
+      _representative = context.read<PriorityBloc>().loadRepresentativeForFeed(
         widget.baseThread,
-        now: DateTime.now(),
       );
     }
   }
@@ -3239,11 +3273,12 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
       builder: (context, snapshot) {
         final rep = snapshot.data;
         final display = rep ?? widget.baseThread;
+        // Key intentionally excludes the resolved scheduleId — including
+        // it would change identity once the Future resolves and force
+        // every ThreadWidget to remount, dropping focus and re-running
+        // layout.
         return ThreadWidget(
-          key: ValueKey(
-            'feed_activitywidget_${widget.baseThread.id}_'
-            '${rep?.scheduleId ?? widget.baseThread.scheduleId}',
-          ),
+          key: ValueKey('feed_activitywidget_${widget.baseThread.id}'),
           activity: display,
           selected: widget.selected,
           now: widget.now,

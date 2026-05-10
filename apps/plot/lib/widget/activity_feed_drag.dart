@@ -1,8 +1,11 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 
@@ -40,11 +43,21 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
   return null;
 }
 
+/// One drop boundary emitted by [computeActivityFeedDropBoundaries].
+/// `silent` zones still register with the drag controller for
+/// activation purposes but do not visually expand — see [BlockDropZone]
+/// for details.
+typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
+
 /// Walks the Activity tab item list and emits a [BlockDropTarget] for
 /// each drop boundary. Boundaries are placed:
 ///   * Above each `AgendaHeaderItem` (so a drop just above a section
 ///     header lands at the top of that section).
-///   * Above each `AgendaThreadItem` (between rows).
+///   * Above each `AgendaThreadItem` (between rows) — except inside
+///     the Done section, where only the boundary above the FIRST done
+///     thread is emitted as a visible gap. Between-done-thread gaps
+///     are intentionally omitted so dropping anywhere over Done lands
+///     at the top.
 ///   * After the very last item ([afterList]).
 ///
 /// Each emitted target carries the section identity in its
@@ -56,18 +69,49 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
 /// section's tail — dropping above the "Tomorrow" header drops at the
 /// bottom of Today, not the top of Tomorrow. The first drop slot of a
 /// section is the boundary above that section's first thread row.
+///
+/// The single Done boundary uses `prevBlockId: null` and
+/// `nextBlockId: null` even when there are done threads below it.
+/// Pinning both flanks to null serves two ends:
+///   1. The activation algorithm's no-op filter (`isFiltered` =
+///      either flank equals the dragged id) never excludes this slot,
+///      so dragging the topmost done thread still activates it.
+///   2. The dispatcher's no-op skip never short-circuits a drop on
+///      Done, so a same-position drop still bumps `bumpedAt` and
+///      surfaces the thread at the top.
+///
+/// Non-empty Done also emits a *silent* tail slot (same target as the
+/// visible top slot) at [afterList]. Without it, dragging anywhere
+/// below the visible slot's Y would fall outside any activatable
+/// bracket — the user would have to drag back up past the first done
+/// thread to make the drop fire. The phantom keeps the cursor inside
+/// an activatable region; the visible top slot stays expanded via
+/// target-equality (see [BlockDropZone]).
 ({
-  Map<int, BlockDropTarget> before,
-  BlockDropTarget? afterList,
+  Map<int, FeedDropSlot> before,
+  FeedDropSlot? afterList,
 }) computeActivityFeedDropBoundaries({
   required List<AgendaItem> items,
 }) {
-  final before = <int, BlockDropTarget>{};
-  BlockDropTarget? afterList;
+  final before = <int, FeedDropSlot>{};
+  FeedDropSlot? afterList;
 
   ActivitySection? currentSection;
   Date? currentScheduledDate;
   String? prevThreadId;
+  // Done collapses to a single drop zone above the first done thread
+  // (or as `afterList` when Done is empty). Tracks whether that single
+  // boundary has been emitted so subsequent done threads don't get one.
+  var doneBoundaryEmitted = false;
+
+  BlockDropTarget doneTopTarget() => BlockDropTarget(
+    targetDate: null,
+    targetPeriodStart: _sectionToMarker(ActivitySection.done),
+    prevBlockId: null,
+    prevPriorityId: null,
+    nextBlockId: null,
+    nextPriorityId: null,
+  );
 
   for (var i = 0; i < items.length; i++) {
     final item = items[i];
@@ -82,17 +126,33 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
         // boundary still targets that empty section so it remains a
         // valid drop target. The section is encoded via
         // `targetPeriodStart` (or `targetDate` for Scheduled).
+        //
+        // Done is the special case: its tail boundary is suppressed
+        // when it already has a top boundary (non-empty Done) so the
+        // section never gets a second visible drop slot. When Done is
+        // empty, emit the single Done top target here so the empty
+        // section remains a valid drop site.
         if (currentSection != null) {
-          before[i] = BlockDropTarget(
-            targetDate: currentSection == ActivitySection.scheduled
-                ? currentScheduledDate
-                : null,
-            targetPeriodStart: _sectionToMarker(currentSection),
-            prevBlockId: prevThreadId,
-            prevPriorityId: null,
-            nextBlockId: null,
-            nextPriorityId: null,
-          );
+          if (currentSection == ActivitySection.done) {
+            if (!doneBoundaryEmitted) {
+              before[i] = (target: doneTopTarget(), silent: false);
+              doneBoundaryEmitted = true;
+            }
+          } else {
+            before[i] = (
+              target: BlockDropTarget(
+                targetDate: currentSection == ActivitySection.scheduled
+                    ? currentScheduledDate
+                    : null,
+                targetPeriodStart: _sectionToMarker(currentSection),
+                prevBlockId: prevThreadId,
+                prevPriorityId: null,
+                nextBlockId: null,
+                nextPriorityId: null,
+              ),
+              silent: false,
+            );
+          }
         }
         currentSection = marker.section;
         currentScheduledDate = item.date;
@@ -102,34 +162,65 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
     }
     if (item is AgendaThreadItem) {
       if (currentSection == null) continue;
+      if (currentSection == ActivitySection.done) {
+        // Only the first done thread gets a drop zone — and the target
+        // is "top of Done" (prev/next null), not adjacent to the first
+        // done thread. Skip emitting a boundary for any subsequent
+        // done thread so the gap never opens between done rows.
+        if (!doneBoundaryEmitted) {
+          before[i] = (target: doneTopTarget(), silent: false);
+          doneBoundaryEmitted = true;
+        }
+        continue;
+      }
       final threadIdStr = item.thread.id.toString();
-      before[i] = BlockDropTarget(
-        targetDate: currentSection == ActivitySection.scheduled
-            ? currentScheduledDate
-            : null,
-        targetPeriodStart: _sectionToMarker(currentSection),
-        prevBlockId: prevThreadId,
-        prevPriorityId: null,
-        nextBlockId: threadIdStr,
-        nextPriorityId: null,
+      before[i] = (
+        target: BlockDropTarget(
+          targetDate: currentSection == ActivitySection.scheduled
+              ? currentScheduledDate
+              : null,
+          targetPeriodStart: _sectionToMarker(currentSection),
+          prevBlockId: prevThreadId,
+          prevPriorityId: null,
+          nextBlockId: threadIdStr,
+          nextPriorityId: null,
+        ),
+        silent: false,
       );
       prevThreadId = threadIdStr;
     }
   }
 
-  // Tail boundary: always present when there's an active section so the
-  // last section remains a valid drop target even when empty.
+  // Tail boundary:
+  //   * Empty Done → visible top-of-Done slot lives here so the empty
+  //     section stays droppable.
+  //   * Non-empty Done → silent phantom slot with the same target as
+  //     the visible top slot. Lets the cursor activate top-of-Done from
+  //     anywhere below the first done thread without having to drag
+  //     back up past it; visible expansion still fires at the top via
+  //     [BlockDropZone]'s target-equality check.
+  //   * Other sections → ordinary tail target.
   if (currentSection != null) {
-    afterList = BlockDropTarget(
-      targetDate: currentSection == ActivitySection.scheduled
-          ? currentScheduledDate
-          : null,
-      targetPeriodStart: _sectionToMarker(currentSection),
-      prevBlockId: prevThreadId,
-      prevPriorityId: null,
-      nextBlockId: null,
-      nextPriorityId: null,
-    );
+    if (currentSection == ActivitySection.done) {
+      afterList = (
+        target: doneTopTarget(),
+        silent: doneBoundaryEmitted,
+      );
+    } else {
+      afterList = (
+        target: BlockDropTarget(
+          targetDate: currentSection == ActivitySection.scheduled
+              ? currentScheduledDate
+              : null,
+          targetPeriodStart: _sectionToMarker(currentSection),
+          prevBlockId: prevThreadId,
+          prevPriorityId: null,
+          nextBlockId: null,
+          nextPriorityId: null,
+        ),
+        silent: false,
+      );
+    }
   }
 
   return (before: before, afterList: afterList);
@@ -228,35 +319,62 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
       parentBlockId: widget.threadId.toString(),
       child: source,
     );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final feedback = SizedBox(
-          width: constraints.maxWidth,
-          child: widget.child,
-        );
-        if (hasPhysicalKeyboard()) {
-          return Draggable<BlockDragPayload>(
-            data: _payload(),
-            feedback: feedback,
-            childWhenDragging: hidden,
-            onDragStarted: _onDragStarted,
-            onDragUpdate: _onDragUpdate,
-            onDragEnd: _onDragEnd,
-            onDraggableCanceled: (_, _) => _onDragCancelled(),
-            child: hidden,
-          );
-        }
-        return LongPressDraggable<BlockDragPayload>(
-          data: _payload(),
-          feedback: feedback,
-          childWhenDragging: hidden,
-          onDragStarted: _onDragStarted,
-          onDragUpdate: _onDragUpdate,
-          onDragEnd: _onDragEnd,
-          onDraggableCanceled: (_, _) => _onDragCancelled(),
-          child: hidden,
-        );
-      },
+    // Drag-feedback width comes from MediaQuery rather than a per-row
+    // LayoutBuilder. The previous LayoutBuilder forced an extra layout
+    // pass for every visible row on every build — for a 50-row feed
+    // that's 50 callbacks even when nothing was being dragged. The
+    // visible inaccuracy in multi-panel layouts (feedback slightly wider
+    // than the source row) is acceptable; the perf win is not.
+    final feedbackWidth = MediaQuery.sizeOf(context).width;
+    // Solid-bg + flanking 1px dividers so the dragged row reads as
+    // opaque content (not text-on-overlay) and matches the divider-
+    // flanked silhouette of a row at rest in the list.
+    final dividerColor = Color.alphaBlend(
+      context.theme.colors.border,
+      context.colour.background,
+    );
+    // Draggable.feedback is mounted in the root Overlay, which sits
+    // above the page-scoped [PriorityBloc] provider. The row subtree
+    // (`_ActivityFeedItem`) reads the bloc in `initState`, so without
+    // a re-provided value the feedback throws ProviderNotFoundError as
+    // soon as Flutter inflates it. Capture the bloc here and bridge it
+    // into the feedback subtree.
+    final priorityBloc = context.read<PriorityBloc>();
+    final feedback = BlocProvider<PriorityBloc>.value(
+      value: priorityBloc,
+      child: SizedBox(
+        width: feedbackWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(height: 1, color: dividerColor),
+            ColoredBox(color: context.colour.background, child: widget.child),
+            Container(height: 1, color: dividerColor),
+          ],
+        ),
+      ),
+    );
+    if (hasPhysicalKeyboard()) {
+      return Draggable<BlockDragPayload>(
+        data: _payload(),
+        feedback: feedback,
+        childWhenDragging: hidden,
+        onDragStarted: _onDragStarted,
+        onDragUpdate: _onDragUpdate,
+        onDragEnd: _onDragEnd,
+        onDraggableCanceled: (_, _) => _onDragCancelled(),
+        child: hidden,
+      );
+    }
+    return LongPressDraggable<BlockDragPayload>(
+      data: _payload(),
+      feedback: feedback,
+      childWhenDragging: hidden,
+      onDragStarted: _onDragStarted,
+      onDragUpdate: _onDragUpdate,
+      onDragEnd: _onDragEnd,
+      onDraggableCanceled: (_, _) => _onDragCancelled(),
+      child: hidden,
     );
   }
 }

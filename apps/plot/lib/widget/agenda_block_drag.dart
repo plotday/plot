@@ -1017,6 +1017,7 @@ class BlockDropZone extends StatefulWidget {
   const BlockDropZone({
     required this.target,
     required this.slotKey,
+    this.silent = false,
     super.key,
   });
 
@@ -1027,6 +1028,15 @@ class BlockDropZone extends StatefulWidget {
   /// row's stableKey + boundary position so reorders/scrolls don't
   /// churn registrations.
   final Object slotKey;
+
+  /// When true the zone never visually expands. It still registers as a
+  /// drop slot so the activation algorithm can pick it up — but a
+  /// sibling [BlockDropZone] with an equal [target] is what visually
+  /// shows the gap. Used by the Activity feed's Done section: a
+  /// "phantom" tail slot below the last done thread keeps the cursor
+  /// inside an activatable region while the visible gap stays anchored
+  /// at the top of Done.
+  final bool silent;
 
   @override
   State<BlockDropZone> createState() => _BlockDropZoneState();
@@ -1042,7 +1052,19 @@ class _BlockDropZoneState extends State<BlockDropZone> {
   Widget? _heldPreview;
   Timer? _clearHeldTimer;
 
-  bool get _isActive => _controller?.activeSlotKey == widget.slotKey;
+  /// True when this zone should visually display the active drop gap.
+  /// Silent zones never show; otherwise the zone activates either when
+  /// the controller picked its own slotKey (the normal 1:1 case) or
+  /// when a sibling slot with an equal target is active. Target-equality
+  /// is what lets the visible top-of-Done zone keep its gap open while
+  /// the cursor sits over a phantom sibling below the last done thread.
+  bool get _isActive {
+    if (widget.silent) return false;
+    final controller = _controller;
+    if (controller == null) return false;
+    if (controller.activeSlotKey == widget.slotKey) return true;
+    return controller.activeTarget == widget.target;
+  }
 
   @override
   void didChangeDependencies() {
