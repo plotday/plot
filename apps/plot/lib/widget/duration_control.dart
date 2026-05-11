@@ -41,7 +41,7 @@ class _DurationControlState extends State<DurationControl> {
     final m = d.inMinutes - h * 60;
     if (h == 0) return '${m}m';
     if (m == 0) return '${h}h';
-    return '${h}h${m}m';
+    return '${h}h ${m}m';
   }
 
   Duration? _bump(Duration? current, Duration delta) {
