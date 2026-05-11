@@ -7,6 +7,26 @@ import 'package:plot/widget/widget.dart';
 /// The current swipe zone based on drag distance.
 enum _SwipeZone { idle, short, long }
 
+/// HorizontalDragGestureRecognizer that accepts the gesture at hit-slop
+/// (≈18px touch, ≈1px mouse) instead of the default pan-slop (≈36px
+/// touch). Used by [Swipeable] so the swipe wins the gesture arena
+/// promptly when nested inside a long-press drag wrapper (which rejects
+/// itself at hit-slop on movement). The default pan-slop leaves the
+/// arena unresolved between 18–36px of horizontal motion, which feels
+/// like swipes "don't trigger".
+class _SwipeHorizontalDragRecognizer extends HorizontalDragGestureRecognizer {
+  _SwipeHorizontalDragRecognizer({super.debugOwner});
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    return globalDistanceMoved.abs() >
+        computeHitSlop(pointerDeviceKind, gestureSettings);
+  }
+}
+
 /// A widget that enables swipe gestures on touch devices to reveal and execute commands.
 ///
 /// Only works on touch devices. Supports optional start (right swipe) and end (left swipe) commands
@@ -37,8 +57,7 @@ class Swipeable extends StatefulWidget {
   State<Swipeable> createState() => _SwipeableState();
 }
 
-class _SwipeableState extends State<Swipeable>
-    with TickerProviderStateMixin {
+class _SwipeableState extends State<Swipeable> with TickerProviderStateMixin {
   static const double _shortThreshold = 80.0;
   static const double _longThreshold = 180.0;
   static const double _dragStartThreshold =
@@ -91,7 +110,8 @@ class _SwipeableState extends State<Swipeable>
 
   /// Whether a given direction has any command at all.
   bool _hasAnyCommand({required bool right}) {
-    if (right) return widget.startCommand != null || widget.startLongCommand != null;
+    if (right)
+      return widget.startCommand != null || widget.startLongCommand != null;
     return widget.endCommand != null || widget.endLongCommand != null;
   }
 
@@ -196,12 +216,10 @@ class _SwipeableState extends State<Swipeable>
       final screenWidth = MediaQuery.sizeOf(context).width;
       final target = isRight ? screenWidth : -screenWidth;
 
-      _slideOffAnimation = Tween<double>(
-        begin: _dragOffset,
-        end: target,
-      ).animate(
-        CurvedAnimation(parent: _slideOffController, curve: Curves.easeIn),
-      );
+      _slideOffAnimation = Tween<double>(begin: _dragOffset, end: target)
+          .animate(
+            CurvedAnimation(parent: _slideOffController, curve: Curves.easeIn),
+          );
 
       _slideOffController.reset();
       await _slideOffController.forward();
@@ -258,15 +276,27 @@ class _SwipeableState extends State<Swipeable>
   @override
   Widget build(BuildContext context) {
     return RawGestureDetector(
+      // Opaque so the recognizer receives pointer events anywhere in
+      // the row's bounds, even if the wrapped ListTile content's
+      // hit-tested children (Text, etc.) are sparse. Without this,
+      // RawGestureDetector defers to its child's hit-test, which is
+      // unreliable inside a Listener-wrapped ListTile on mobile.
+      behavior: HitTestBehavior.opaque,
       gestures: <Type, GestureRecognizerFactory>{
-        HorizontalDragGestureRecognizer:
+        // Use our subclass that claims the arena at hit-slop (~18px touch,
+        // ~1px mouse) instead of pan-slop (~36px touch). When the swipe
+        // row is wrapped in a LongPressDraggable (activity feed) or
+        // ReorderableDelayedDragStartListener (priorities) — both reject
+        // at hit-slop on movement — accepting at the same threshold makes
+        // Swipeable win the arena immediately on horizontal motion.
+        _SwipeHorizontalDragRecognizer:
             GestureRecognizerFactoryWithHandlers<
-              HorizontalDragGestureRecognizer
+              _SwipeHorizontalDragRecognizer
             >(
               () =>
-                  HorizontalDragGestureRecognizer(debugOwner: this)
+                  _SwipeHorizontalDragRecognizer(debugOwner: this)
                     ..dragStartBehavior = DragStartBehavior.down,
-              (HorizontalDragGestureRecognizer instance) {
+              (_SwipeHorizontalDragRecognizer instance) {
                 instance
                   ..onStart = _onHorizontalDragStart
                   ..onUpdate = _onHorizontalDragUpdate
@@ -296,10 +326,14 @@ class _SwipeableState extends State<Swipeable>
     // Determine which command to display — always show the command that
     // *would* execute so the icon+label are consistent throughout the gesture.
     final command = _activeCommand(right: isRightSwipe, zone: _zone);
-    final displayCommand = command ?? () {
-      final (shortCmd, longCmd) = _commandsForDirection(right: isRightSwipe);
-      return shortCmd ?? longCmd;
-    }();
+    final displayCommand =
+        command ??
+        () {
+          final (shortCmd, longCmd) = _commandsForDirection(
+            right: isRightSwipe,
+          );
+          return shortCmd ?? longCmd;
+        }();
     if (displayCommand == null) return const SizedBox.shrink();
 
     final isActivated = _zone != _SwipeZone.idle;
@@ -307,8 +341,8 @@ class _SwipeableState extends State<Swipeable>
     final backgroundColor = _zone == _SwipeZone.long
         ? context.colour.accentBackground.withValues(alpha: 0.2)
         : isActivated
-            ? context.colour.accentBackground
-            : context.colour.accentBackground.withAlpha(80);
+        ? context.colour.accentBackground
+        : context.colour.accentBackground.withAlpha(80);
 
     final foregroundColor = isActivated
         ? context.colour.accent
@@ -327,8 +361,11 @@ class _SwipeableState extends State<Swipeable>
       child: Container(
         color: backgroundColor,
         child: OverflowBox(
-          alignment: isRightSwipe ? Alignment.centerRight : Alignment.centerLeft,
+          alignment: isRightSwipe
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
           maxWidth: double.infinity,
+          maxHeight: double.infinity,
           child: Padding(
             padding: EdgeInsets.only(
               left: isRightSwipe ? 0 : contentInset,
@@ -336,10 +373,14 @@ class _SwipeableState extends State<Swipeable>
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.max,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 if (displayCommand.icon != null)
-                  Icon(displayCommand.icon, size: context.theme.iconSizes.lg, color: foregroundColor),
+                  Icon(
+                    displayCommand.icon,
+                    size: context.theme.iconSizes.lg,
+                    color: foregroundColor,
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   displayCommand.title,
