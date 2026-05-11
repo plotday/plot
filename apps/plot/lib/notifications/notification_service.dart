@@ -275,11 +275,15 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     _clearPersistedThreadIds();
     _quietHoursRetryTimer?.cancel();
     _quietHoursRetryTimer = null;
+    // Flutter's AppLifecycleState doesn't fire `resumed`/`inactive` on
+    // desktop window focus changes, so propagate focus → active manually.
+    BroadcastClient.instance.setActive(true);
   }
 
   @override
   void onWindowBlur() {
     _windowFocused = false;
+    BroadcastClient.instance.setActive(false);
   }
 
   /// Request permission and register the FCM token.

@@ -98,7 +98,15 @@ class BroadcastClient with WidgetsBindingObserver {
     });
   }
 
-  /// Whether the app is currently in the foreground.
+  /// Whether the app is currently in the foreground AND focused. Drives the
+  /// `active` flag we send to the Broadcast DO, which the server uses to
+  /// decide whether to defer push notifications.
+  ///
+  /// `inactive` and `hidden` count as not-active on top of `paused`/`detached`
+  /// — on desktop, losing window focus fires `inactive` while the app is
+  /// still running, and minimizing fires `hidden`. If we kept reporting
+  /// `active: true` in those states the server would think the user is
+  /// engaged and never push to their mobile.
   bool _appIsActive = true;
 
   @override
@@ -114,11 +122,15 @@ class BroadcastClient with WidgetsBindingObserver {
         // Already connected — tell server we're active again
         _sendPing(active: true);
       }
-    } else if (state == AppLifecycleState.paused ||
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _appIsActive = false;
       _sendPing(active: false);
-      // Cancel pending reconnect — don't reconnect while backgrounded
+      // Cancel pending reconnect — don't reconnect while backgrounded.
+      // (On `inactive`/`hidden` desktop we stay connected; we just stop
+      // racing to reconnect if the socket happens to be down.)
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
     }
@@ -258,11 +270,23 @@ class BroadcastClient with WidgetsBindingObserver {
     }
   }
 
-  /// Start sending periodic ping frames to keep the connection alive
+  /// External signal that the app's effective active state has changed —
+  /// callable from places that observe activity Flutter's lifecycle doesn't
+  /// surface, like desktop window focus/blur. Idempotent.
+  void setActive(bool active) {
+    if (_appIsActive == active) return;
+    _appIsActive = active;
+    _sendPing(active: active);
+  }
+
+  /// Start sending periodic ping frames to keep the connection alive.
+  /// Reports the current foreground/focus state so the server's "user is
+  /// active" view doesn't get clobbered by a heartbeat after the lifecycle
+  /// already told it the app went inactive.
   void _startPingTimer() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(_pingInterval, (_) {
-      _sendPing(active: true);
+      _sendPing(active: _appIsActive);
     });
   }
 

@@ -26,6 +26,16 @@ const DEFAULT_DELAY_MS: Record<string, number> = {
 /** Minimum interval between push notifications to the same user (ms) */
 const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * How long the user must be inactive on every connected client before we
+ * actually fire a push for unread threads they didn't read.
+ *
+ * The alarm reschedules itself while any client is reporting `active: true`
+ * (window focused + foreground); once nobody has pinged active for this
+ * long, the push fires.
+ */
+const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 export class PushNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
   private highestUrgency: string | null = null;
@@ -233,27 +243,46 @@ export class PushNotify extends DurableObject<Bindings> {
     }
 
     try {
-      // Check if user has connected WebSocket clients — skip if active
+      // Defer push while any of the user's clients is reporting active.
+      // We use the per-client `last_active_at` recorded in Broadcast's
+      // `device_activity` table rather than the raw connection count so
+      // that an open-but-unfocused desktop window stops blocking pushes
+      // to mobile once the user actually walks away.
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
       const broadcastResponse = await broadcast.fetch(
-        new Request("http://do/hasConnectedClients")
+        new Request("http://do/last-active")
       );
-      const broadcastData: any = await broadcastResponse.json();
+      const broadcastData = await broadcastResponse.json<{
+        lastActiveAt: string | null;
+      }>();
 
-      if (broadcastData.hasConnectedClients) {
-        logger.info("Skipping push — user has connected clients", {
-          user_id: this.userId,
-        });
-        this.resetState();
-        return;
+      const now = Date.now();
+      const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
+      const inactivityThresholdMs = INACTIVITY_THRESHOLD_MS * multiplier;
+
+      if (broadcastData.lastActiveAt && this.highestUrgency !== "interrupt") {
+        const lastActiveMs = Date.parse(broadcastData.lastActiveAt);
+        const idleFor = now - lastActiveMs;
+        if (Number.isFinite(lastActiveMs) && idleFor < inactivityThresholdMs) {
+          // User is still active (or was within the threshold). Reschedule
+          // the alarm to fire once the inactivity window has fully elapsed
+          // since the last active ping. The alarm will re-check then —
+          // if the user is still active it reschedules again.
+          const remainingMs = Math.max(1000, inactivityThresholdMs - idleFor);
+          await this.ctx.storage.setAlarm(now + remainingMs);
+          logger.info("Deferring push — user recently active", {
+            user_id: this.userId,
+            idle_for_ms: idleFor,
+            retry_in_ms: remainingMs,
+          });
+          return;
+        }
       }
 
       // Check minimum interval since last notification
       const lastSentAt =
         (await this.ctx.storage.get<number>("lastNotificationSentAt")) ?? 0;
-      const now = Date.now();
-      const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
       const effectiveMinInterval = MIN_PUSH_INTERVAL_MS * multiplier;
       if (now - lastSentAt < effectiveMinInterval && this.highestUrgency !== "interrupt") {
         // Too soon — reschedule

@@ -208,35 +208,44 @@ export class UserSync extends DurableObject<Bindings> {
       const hasClients = broadcastData.hasConnectedClients;
       markStep("hasConnectedClientsMs", tHasClients);
 
-      if (!hasClients) {
-        // No connected clients — trigger push notification in background.
-        // Fire-and-forget to avoid blocking the alarm handler (PushNotify
-        // runs a DB query + storage ops that can exceed DO timeout limits).
-        const pushNotifyId = this.env.PUSH_NOTIFY.idFromName(this.userId);
-        const pushNotifyDO = this.env.PUSH_NOTIFY.get(pushNotifyId);
-        this.ctx.waitUntil(
-          pushNotifyDO
-            .fetch(
-              new Request("http://do/notify", {
-                method: "POST",
-                body: JSON.stringify({ userId: this.userId }),
-              })
-            )
-            .catch((error) => {
-              // DO resets in PushNotify are transient platform noise;
-              // don't capture, but keep a warn-level breadcrumb.
-              if (isTransientDoResetError(error)) {
-                logger.warn("PushNotify DO interrupted by DO reset", {
-                  user_id: this.userId ?? undefined,
-                });
-                return;
-              }
-              logger.error("Error triggering PushNotify DO", error as Error, {
+      // Always invoke PushNotify, regardless of whether any client is
+      // currently connected. PushNotify owns the deferral logic — it
+      // reschedules its alarm while a client is active and only fires the
+      // push after the user has been inactive for the inactivity window.
+      // (Pre-change this was guarded by `!hasClients`, which meant a single
+      // open desktop tab suppressed pushes to all of the user's mobile
+      // devices forever.)
+      //
+      // Fire-and-forget to avoid blocking the alarm handler (PushNotify
+      // runs a DB query + storage ops that can exceed DO timeout limits).
+      const pushNotifyId = this.env.PUSH_NOTIFY.idFromName(this.userId);
+      const pushNotifyDO = this.env.PUSH_NOTIFY.get(pushNotifyId);
+      this.ctx.waitUntil(
+        pushNotifyDO
+          .fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ userId: this.userId }),
+            })
+          )
+          .catch((error) => {
+            // DO resets in PushNotify are transient platform noise;
+            // don't capture, but keep a warn-level breadcrumb.
+            if (isTransientDoResetError(error)) {
+              logger.warn("PushNotify DO interrupted by DO reset", {
                 user_id: this.userId ?? undefined,
               });
-              this.captureException(error as Error);
-            })
-        );
+              return;
+            }
+            logger.error("Error triggering PushNotify DO", error as Error, {
+              user_id: this.userId ?? undefined,
+            });
+            this.captureException(error as Error);
+          })
+      );
+
+      if (!hasClients) {
+        // Nothing to broadcast — PushNotify will handle the user wake-up.
         this.state.lastSyncTime = now;
         this.state.batchStartTime = 0;
         return;
