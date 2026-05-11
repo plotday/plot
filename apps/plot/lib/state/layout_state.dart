@@ -26,13 +26,6 @@ class LayoutState extends Equatable {
   static const double middlePanelMinWidth = 350.0;
   static const double rightPanelMinWidth = 350.0;
 
-  /// Minimum heights for the left panel's vertical split (agenda on top,
-  /// priorities on bottom). Below the combined minimum the split collapses
-  /// to the bottom panel only.
-  static const double leftTopPanelMinHeight = 180.0;
-  static const double leftBottomPanelMinHeight = 200.0;
-  static const double leftTopPanelDefaultHeight = 320.0;
-
   /// Minimum width for multi-panel layout
   /// Buffer accounts for dividers and ensures min < max for resizable regions
   static final double multiPanelMinWidth = max(

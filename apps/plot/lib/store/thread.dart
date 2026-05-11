@@ -1940,10 +1940,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     final linkTable = Store.get.alias(Store.get.links, 'l');
     final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
 
-    // Get all priorities needed for the activities
-    final priorities = await Priority.get(
-      archived: null,
-    );
+    // Get all priorities needed for the activities. Uses the raw lookup
+    // (no network pullArchived, no active/unread enrichment) — agenda
+    // rendering only needs identity / path / display fields, and this
+    // lookup runs on every Drift emission so the extra queries dominate
+    // the agenda's cold-start gating time.
+    final priorities = await Priority.getRaw(archived: null);
     final priorityMap = Priority.asMap(priorities);
 
     // Group results by activity ID to handle schedule occurrences

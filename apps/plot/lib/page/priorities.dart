@@ -16,12 +16,33 @@ import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/connection_status_tile.dart';
 import 'package:plot/widget/unified_header.dart';
-import 'package:plot/style/colors.dart';
-import 'package:plot/style/theme.dart';
+import 'package:plot/style/spacing.dart';
 
 @RoutePage(name: 'PrioritiesRoute')
 class PrioritiesPage extends StatelessWidget {
   const PrioritiesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // In single-panel mode the Priorities tab stands alone, so it renders
+    // its own UnifiedHeader (multi-panel mode hoists UnifiedHeader to the
+    // priority page above the layout).
+    return Scaffold(
+      header: context.isMultiPanel ? null : const UnifiedHeader(),
+      childPad: false,
+      scrollable: false,
+      body: const PrioritiesPanelContent(),
+    );
+  }
+}
+
+/// The priorities-list + footer body of the priorities panel, without the
+/// surrounding [Scaffold]/[FScaffold] wrapping. Used directly inside the
+/// left panel of the multi-panel layout so it can shrink-wrap to its
+/// content height (FScaffold's internal `Expanded(child)` would otherwise
+/// force the panel to fill its full allotted height).
+class PrioritiesPanelContent extends StatelessWidget {
+  const PrioritiesPanelContent({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -64,93 +85,86 @@ class PrioritiesPage extends StatelessWidget {
           });
         }
 
-        // In single-panel mode the Priorities tab stands alone, so it renders
-        // its own UnifiedHeader (multi-panel mode hoists UnifiedHeader to the
-        // priority page above the layout).
-        return Scaffold(
-          header: context.isMultiPanel ? null : const UnifiedHeader(),
-          childPad: false,
-          scrollable: false,
-          body: BlocBuilder<LayoutBloc, LayoutState>(
-            builder: (context, layoutState) {
-              return BlocBuilder<PrioritiesBloc, PrioritiesState>(
-                builder: (builderContext, state) {
-                  return BlocBuilder<NowBloc, NowState>(
-                    builder: (builderContext, nowState) {
-                      final selected = nowState is NowLoaded
-                          ? nowState.context
-                          : null;
-                      final root = state.root;
-                      if (root == null) {
-                        return const SizedBox.shrink();
-                      }
-                      return Column(
-                        children: [
-                          Expanded(
-                            child: PrioritiesList(
-                              root: root,
-                              priorities: state.priorities,
-                              selected: selected,
-                            ),
+        return BlocBuilder<LayoutBloc, LayoutState>(
+          builder: (context, layoutState) {
+            return BlocBuilder<PrioritiesBloc, PrioritiesState>(
+              builder: (builderContext, state) {
+                return BlocBuilder<NowBloc, NowState>(
+                  builder: (builderContext, nowState) {
+                    final selected = nowState is NowLoaded
+                        ? nowState.context
+                        : null;
+                    final root = state.root;
+                    if (root == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      mainAxisSize: layoutState.multiPanel
+                          ? MainAxisSize.min
+                          : MainAxisSize.max,
+                      children: [
+                        Flexible(
+                          fit: layoutState.multiPanel
+                              ? FlexFit.loose
+                              : FlexFit.tight,
+                          child: PrioritiesList(
+                            root: root,
+                            priorities: state.priorities,
+                            selected: selected,
                           ),
+                        ),
+                          // Footer renders at the same depth as the rest
+                          // of the priorities panel — no nested darkenTheme.
+                          // The divider above keeps it visually separated.
                           if (layoutState.multiPanel)
-                            FTheme(
-                              data: darkenTheme(
-                                context,
-                                context.theme,
-                                context.colour,
-                                steps: 2,
+                            Padding(
+                              padding: EdgeInsets.only(
+                                top: context.theme.spacing.sm,
                               ),
-                              child: Builder(
-                                builder: (context) => DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: context.theme.colors.background,
-                                    border: Border(
-                                      top: BorderSide(
-                                        color: context.theme.colors.border,
-                                        width: 1,
-                                      ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: context.theme.colors.border,
+                                      width: 1,
                                     ),
                                   ),
-                                  child: Builder(
-                                    builder: (context) {
-                                      return Column(
-                                        children: [
-                                          SizedBox(height: 8),
-                                          const ConnectionStatusTile(),
-                                          BlocBuilder<UserBloc, UserState>(
-                                            builder: (context, userState) {
-                                              if (userState is UserReady) {
-                                                final userName =
-                                                    userState.user.name ??
-                                                    userState
-                                                        .user
-                                                        .primaryEmail ??
-                                                    'User';
-                                                return ListTile(
-                                                  title: userName,
-                                                  subtitle: userState
-                                                      .user
-                                                      .primaryEmail,
-                                                  textStyle: context
-                                                      .theme
-                                                      .typography
-                                                      .sm,
-                                                  icon: PlotIcon.account,
-                                                  muted: true,
-                                                  command: CommandWrapper(
-                                                    ShowSettings(),
-                                                    icon: Value(null),
-                                                  ),
-                                                );
-                                              }
-                                              return const SizedBox.shrink();
-                                            },
-                                          ),
-                                          SizedBox(height: 12),
-                                        ],
-                                      );
-                                    },
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    top: context.theme.spacing.sm,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const ConnectionStatusTile(),
+                                      BlocBuilder<UserBloc, UserState>(
+                                        builder: (context, userState) {
+                                          if (userState is UserReady) {
+                                            final userName =
+                                                userState.user.name ??
+                                                userState.user.primaryEmail ??
+                                                'User';
+                                            return ListTile(
+                                              title: userName,
+                                              subtitle:
+                                                  userState.user.primaryEmail,
+                                              textStyle: context
+                                                  .theme
+                                                  .typography
+                                                  .sm,
+                                              icon: PlotIcon.account,
+                                              muted: true,
+                                              command: CommandWrapper(
+                                                ShowSettings(),
+                                                icon: Value(null),
+                                              ),
+                                            );
+                                          }
+                                          return const SizedBox.shrink();
+                                        },
+                                      ),
+                                      SizedBox(height: 12),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -162,10 +176,9 @@ class PrioritiesPage extends StatelessWidget {
                 },
               );
             },
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
   }
 }
 

@@ -60,7 +60,7 @@ class _DurationControlState extends State<DurationControl> {
 
   @override
   Widget build(BuildContext context) {
-    final fontSize = context.theme.typography.xs.fontSize ?? 11;
+    final fontSize = context.theme.typography.sm.fontSize ?? 13;
     final readOnly = widget.onChanged == null;
     final value = widget.value;
 
@@ -72,6 +72,12 @@ class _DurationControlState extends State<DurationControl> {
       );
     }
 
+    // Right edge of the visible text aligns with the container's inner
+    // right edge minus the label's 6px padding — so its right edge lands
+    // at the same x as gap-row durations. The "+" glyph is rendered as a
+    // [Positioned] overlay past the right edge so it does not push the
+    // label inward (which previously caused the event-block duration to
+    // sit ~18px more inset than gap durations).
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -86,32 +92,39 @@ class _DurationControlState extends State<DurationControl> {
           final tapX = details.localPosition.dx;
           final centerX = box.size.width / 2;
           if (tapX < centerX) {
-            // Left half: decrement
             widget.onChanged!(_bump(value, -DurationControl._step));
           } else {
-            // Right half: increment
             widget.onChanged!(_bump(value, DurationControl._step));
           }
         },
         child: SizedBox(
           height: 20,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
-              _HitGlyph(
-                // hide − when no duration exists; + still shows to add the first 15m
-                visible: _hover && !readOnly && value != null,
-                glyph: '−',
-                fontSize: fontSize,
-                foreground: widget.foreground,
-              ),
               _label(value, fontSize),
-              _HitGlyph(
-                visible: _hover && !readOnly,
-                glyph: '+',
-                fontSize: fontSize,
-                foreground: widget.foreground,
+              Positioned(
+                left: -18,
+                top: 0,
+                bottom: 0,
+                child: _HitGlyph(
+                  visible: _hover && !readOnly && value != null,
+                  glyph: '−',
+                  fontSize: fontSize,
+                  foreground: widget.foreground,
+                ),
+              ),
+              Positioned(
+                right: -18,
+                top: 0,
+                bottom: 0,
+                child: _HitGlyph(
+                  visible: _hover && !readOnly,
+                  glyph: '+',
+                  fontSize: fontSize,
+                  foreground: widget.foreground,
+                ),
               ),
             ],
           ),

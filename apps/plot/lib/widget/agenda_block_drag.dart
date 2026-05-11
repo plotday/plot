@@ -1186,6 +1186,7 @@ class BlockDropZone extends StatefulWidget {
     required this.target,
     required this.slotKey,
     this.silent = false,
+    this.dividerAbove = false,
     this.dividerBelow = false,
     super.key,
   });
@@ -1206,6 +1207,14 @@ class BlockDropZone extends StatefulWidget {
   /// inside an activatable region while the visible gap stays anchored
   /// at the top of Done.
   final bool silent;
+
+  /// When true, a 1px divider in the standard border color is painted
+  /// at the top edge of the expanded gap. Use this when the zone sits
+  /// directly below another row in the same column with no separator
+  /// between them, so the active gap and the row above are visually
+  /// separated. Drawn within the expanded height (so the total layout
+  /// footprint is unchanged).
+  final bool dividerAbove;
 
   /// When true, a 1px divider in the standard border color is painted
   /// at the bottom edge of the expanded gap. Use this when the zone
@@ -1371,17 +1380,24 @@ class _BlockDropZoneState extends State<BlockDropZone> {
       context.colour.background,
     );
 
+    // Top/bottom border paint inside the box's bounds, so each divider
+    // occupies a 1px slice of the expanded gap without growing the
+    // footprint. Only applied when the zone is active and the caller
+    // opted in via the corresponding flag.
+    final showTop = isActive && widget.dividerAbove;
+    final showBottom = isActive && widget.dividerBelow;
     return ClipRect(
       child: Container(
         height: height,
-        // Bottom-border decoration paints inside the box's bounds, so
-        // the divider occupies the bottom 1px of the expanded gap
-        // without growing the footprint. Only applied when the zone is
-        // active and the caller opted in via `dividerBelow`.
-        decoration: isActive && widget.dividerBelow
+        decoration: showTop || showBottom
             ? BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: dividerColor, width: 1),
+                  top: showTop
+                      ? BorderSide(color: dividerColor, width: 1)
+                      : BorderSide.none,
+                  bottom: showBottom
+                      ? BorderSide(color: dividerColor, width: 1)
+                      : BorderSide.none,
                 ),
               )
             : null,
@@ -1393,6 +1409,44 @@ class _BlockDropZoneState extends State<BlockDropZone> {
                 maxHeight: double.infinity,
                 child: dimmed,
               ),
+      ),
+    );
+  }
+}
+
+/// Wraps a row in the floating-feedback frame used by every block drag
+/// (activity-feed thread, agenda block, …). The 1px border is painted
+/// at double the theme's native border alpha so the lifted card reads
+/// as a distinct object on top of whatever it's dragged over —
+/// `theme.colors.border` is a translucent line built for at-rest
+/// separation between rows that share a background, which is too
+/// subtle on a transient overlay. Mirrors the brightened-border
+/// treatment used by hover/focus dividers in [BlockListSeparator].
+class DraggedRowFrame extends StatelessWidget {
+  const DraggedRowFrame({
+    required this.width,
+    required this.child,
+    super.key,
+  });
+
+  final double width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = context.theme.colors.border;
+    final bright = borderColor.withValues(
+      alpha: (borderColor.a * 2).clamp(0.0, 1.0),
+    );
+    final dividerColor = Color.alphaBlend(bright, context.colour.background);
+    return SizedBox(
+      width: width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colour.background,
+          border: Border.all(color: dividerColor, width: 1),
+        ),
+        child: child,
       ),
     );
   }

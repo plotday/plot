@@ -2051,8 +2051,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     if (reloadAgenda) {
-      _agendaLimit = 50;
-      _agendaHorizonDays = 90;
+      // Initial window is intentionally smaller than the viewport-equivalent
+      // 50-row default: a cold cache pays for every joined row in
+      // [Thread.watch], every Thread inflation in [_mapResultsToThreads],
+      // and every per-thread pass in [AgendaBuilder.build]. 25 rows + a
+      // 30-day horizon is enough to fill typical viewports (and the
+      // 14-day buffer past last-content date keeps the fill spinner from
+      // being immediate). [fetchMoreAgendaItems] already grows both bounds
+      // when the user scrolls near the end.
+      _agendaLimit = 25;
+      _agendaHorizonDays = 30;
       _agendaFillDays = 0;
       _agendaSyncNoMore = false;
       _loadAgenda(profile: profile);
@@ -2195,7 +2203,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       includeUnscheduled: false,
       range: dateRange,
     );
-    final associatedStream = Thread.watchAssociatedThreads();
+    // Seed the associations stream with an empty list so [combineLatest2]
+    // can fire on the FIRST emission of [agendaStream] alone. Without
+    // this, cold-start agenda render is gated on the 6-join associations
+    // SQL completing — which on a fresh app open is often empty anyway.
+    // When the real associations emission arrives moments later it will
+    // re-fire combineLatest2 and the throttleTime/distinct downstream
+    // collapses the burst.
+    final associatedStream = Thread.watchAssociatedThreads()
+        .startWith(const <Thread>[]);
 
     _agendaSubscription =
         Rx.combineLatest2<
@@ -2777,11 +2793,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     //   3. Scheduled (one section per future day)
     //   4. Done (inactive)
     //
-    // Today, New, and Done headers are always emitted — even when empty —
-    // so they remain valid drag-and-drop targets. Scheduled headers stay
-    // dynamic (one per future day with threads); to schedule for a day
-    // not yet represented, drag onto an existing day or use the per-
-    // thread schedule picker.
+    // Today and Done headers are always emitted — even when empty — so
+    // they remain valid drag-and-drop targets. The New header is omitted
+    // when there are no unread threads (it has no equivalent drag action).
+    // Scheduled headers stay dynamic (one per future day with threads);
+    // to schedule for a day not yet represented, drag onto an existing
+    // day or use the per-thread schedule picker.
 
     items.add(
       AgendaHeaderItem(
@@ -2792,13 +2809,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       items.add(AgendaThreadItem(t));
     }
 
-    items.add(
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.newSection),
-      ),
-    );
-    for (final t in unread) {
-      items.add(AgendaThreadItem(t));
+    if (unread.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.newSection),
+        ),
+      );
+      for (final t in unread) {
+        items.add(AgendaThreadItem(t));
+      }
     }
 
     for (final d in scheduledDates) {
@@ -2969,8 +2988,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// coalescing every shared write reruns the entire sectioning pipeline
   /// twice in a row.
   bool _activityFeedRebuildScheduled = false;
-  int _agendaLimit = 50;
-  int _agendaHorizonDays = 90;
+  // Initial cold-start window kept small for fast first paint; see the
+  // matching reset in [_loadPriority] for the rationale. Grows via
+  // [fetchMoreAgendaItems] as the user scrolls.
+  int _agendaLimit = 25;
+  int _agendaHorizonDays = 30;
   // Minimum days from today to populate with empty headers. Starts at 0
   // so [makeAgendaItems]'s 14-day buffer past the last-content date
   // dominates on the initial render. Grows in [fetchMoreAgendaItems] as

@@ -1,11 +1,8 @@
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/spacing.dart';
-import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 
@@ -24,6 +21,7 @@ class PriorityWidget extends StatelessWidget {
     this.reorderableIndex,
     this.onTap,
     this.subtitle,
+    this.borderRadius,
     super.key,
   });
 
@@ -64,6 +62,10 @@ class PriorityWidget extends StatelessWidget {
   /// Optional subtitle text shown below the priority title.
   final String? subtitle;
 
+  /// Border radius for the hover/selection highlight. When null, the
+  /// highlight is rectangular and may show top/bottom selection borders.
+  final BorderRadius? borderRadius;
+
   @override
   Widget build(BuildContext buildContext) {
     bool isContext = priority == context;
@@ -102,18 +104,12 @@ class PriorityWidget extends StatelessWidget {
             if (showDragHandle)
               ReorderableDragStartListener(
                 index: reorderableIndex!,
-                child: Container(
-                  color: const Color(0x00000000),
+                child: DragHandle(
                   padding: EdgeInsets.only(
                     left: 8,
                     right: leadingH,
                     top: 8,
                     bottom: 8,
-                  ),
-                  child: Icon(
-                    FontAwesomeIcons.gripDotsVertical,
-                    size: buildContext.theme.iconSizes.sm,
-                    color: buildContext.theme.plotColors.muted,
                   ),
                 ),
               ),
@@ -135,6 +131,7 @@ class PriorityWidget extends StatelessWidget {
       selected: selected,
       selectedBorder: selectedBorder,
       highlighted: selected,
+      borderRadius: borderRadius,
       onHover: onHover,
       indentLevel: indentLevel,
       textStyle: textStyle,
@@ -176,6 +173,13 @@ class PriorityWidget extends StatelessWidget {
 
 /// Standard widget for displaying a priority with its colored hierarchy.
 ///
+/// Ancestor crumbs and the separator render in a muted variant of their
+/// own colors so the leaf priority reads as the prominent label
+/// ("bolded leaf" pattern from the agenda). Pass [color] to force a
+/// single foreground for the whole label, or [mutedAncestorColor] to
+/// override only the ancestor + separator color (e.g. on a tinted
+/// background where the muted theme colors lose contrast).
+///
 /// Use this in all priority selection UIs:
 /// - In SelectModal: `itemBuilder: (p) => ListTile(body: PriorityLabel(priority: p))`
 /// - In FormSelect: `labelBuilder: (p) => PriorityLabel(priority: p)`
@@ -208,8 +212,9 @@ class PriorityLabel extends StatelessWidget {
 
   /// Optional color for ancestor crumbs and the separator. When set,
   /// ancestor names + the trailing `>` use this color while the leaf
-  /// (current priority) keeps [color]. Defaults to [color] (preserves
-  /// the prior single-color behavior).
+  /// (current priority) keeps [color]. When unset, ancestors default to
+  /// the muted variant of their own theme colors so the leaf stays
+  /// visually prominent.
   final Color? mutedAncestorColor;
 
   @override
@@ -237,7 +242,7 @@ class PriorityLabel extends StatelessWidget {
           final ancestorColor =
               mutedAncestorColor ??
               color ??
-              context.colour.colours.fromTheme(displayColors[i], muted: muted);
+              context.colour.colours.fromTheme(displayColors[i], muted: true);
           final ancestorText = Text(
             ancestor.title,
             overflow: TextOverflow.ellipsis,

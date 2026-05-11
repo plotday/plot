@@ -6,6 +6,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_feed_drag.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
+import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -65,7 +66,7 @@ class PriorityWrapper implements AutoRouteWrapper {
                     Expanded(
                       child: ResizablePanelLayout(
                         leftTop: const LeftPanelAgendaView(),
-                        left: PrioritiesPage(),
+                        left: PrioritiesPanelContent(),
                         middle: PriorityPage(priorityId: priorityId),
                         child: BlocSelector<PriorityBloc, PriorityState, int>(
                           selector: (state) =>
@@ -93,6 +94,14 @@ class PriorityWrapper implements AutoRouteWrapper {
                   ],
                 );
 
+                if (layoutState.multiPanel) {
+                  body = DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: context.colour.frameBackgroundGradient,
+                    ),
+                    child: body,
+                  );
+                }
                 return body;
               },
             ),
@@ -783,9 +792,6 @@ class _PriorityPageState extends State<PriorityPage>
     );
   }
 
-  /// Always 1px tall for stable layout. Default renders as 0.5px border +
-  /// 0.5px background (thin). Active states fill the full 1px (bolder, and
-  /// immune to sub-pixel anti-aliasing that dims the top border).
   Widget _buildSeparator(
     BuildContext context,
     List<AgendaItem> listItems,
@@ -793,98 +799,28 @@ class _PriorityPageState extends State<PriorityPage>
     PriorityState state,
     InfiniteListController controller,
   ) {
-    final borderColor = context.theme.colors.border;
-    final bg = context.colour.background;
-    final AgendaItem? prev = index > 0 && index - 1 < listItems.length
-        ? listItems[index - 1]
-        : null;
-    final AgendaItem? next = index < listItems.length ? listItems[index] : null;
-
     final selectedId = state.thread?.id;
-    final hovered = controller.hoveredIndex;
-    final focused = controller.focusedIndex;
-
-    // Activity-feed threads have a null `parentBlockId`, so we match the
-    // dragged thread directly by its id. While a thread is being dragged
-    // (and therefore hidden), the separator above it collapses — without
-    // this, the source row vanishes but the surrounding 1px lines remain,
-    // leaving a visible 1px height shift.
-    final activityNextThreadId = next is AgendaThreadItem
-        ? next.thread.id.toString()
-        : null;
-    return ListenableBuilder(
-      listenable: _activityFeedDragController,
-      builder: (context, _) {
-        // Hide the separator above the dragged source thread. Wrapped in
-        // [AnimatedSize] below so the 1px collapse runs in sync with the
-        // source row's [AnimatedSize] and the active drop zone's
-        // [AnimatedContainer].
-        final shouldHide =
-            activityNextThreadId != null &&
-            _activityFeedDragController.draggingBlockId ==
-                activityNextThreadId &&
-            !_activityFeedDragController.isSourceVisible;
-
-        // Selected: full 1px tinted border (still shown during a drag —
-        // selection is a persistent state, not a hover affordance).
-        final baseBorder = Color.alphaBlend(borderColor, bg);
-        Widget separator;
-        if (prev is AgendaThreadItem && prev.thread.id == selectedId) {
-          final accent = context.colour.colours
-              .fromTheme(prev.thread.priority.displayColor)
-              .withValues(alpha: 0.3);
-          separator = Container(
-            height: 1,
-            color: Color.alphaBlend(accent, baseBorder),
-          );
-        } else if (next is AgendaThreadItem && next.thread.id == selectedId) {
-          final accent = context.colour.colours
-              .fromTheme(next.thread.priority.displayColor)
-              .withValues(alpha: 0.3);
-          separator = Container(
-            height: 1,
-            color: Color.alphaBlend(accent, baseBorder),
-          );
-        } else {
-          // Hover/focus (threads only): full 1px bright border. Skip the
-          // bright style while a block-level drag is in progress.
-          final isBlockDragging = _activityFeedDragController.isDragging;
-          final dragging = controller.draggingIndex;
-          final prevHighlighted =
-              prev is AgendaThreadItem &&
-              !isBlockDragging &&
-              (hovered == index - 1 || focused == index - 1) &&
-              dragging != index - 1;
-          final nextHighlighted =
-              next is AgendaThreadItem &&
-              !isBlockDragging &&
-              (hovered == index || focused == index) &&
-              dragging != index;
-          if (prevHighlighted || nextHighlighted) {
-            final bright = borderColor.withValues(
-              alpha: (borderColor.a * 2).clamp(0.0, 1.0),
-            );
-            separator = Container(
-              height: 1,
-              color: Color.alphaBlend(bright, bg),
-            );
-          } else {
-            // Default: transparent for first item (avoids double border
-            // with header), otherwise the standard border color.
-            separator = Container(
-              height: 1,
-              color: prev == null ? bg : baseBorder,
-            );
-          }
+    return BlockListSeparator(
+      prev: index > 0 && index - 1 < listItems.length
+          ? listItems[index - 1]
+          : null,
+      next: index < listItems.length ? listItems[index] : null,
+      controller: controller,
+      dragController: _activityFeedDragController,
+      index: index,
+      selectedAccent: (item) {
+        if (item is AgendaThreadItem && item.thread.id == selectedId) {
+          return context.colour.colours
+              .fromTheme(item.thread.priority.displayColor);
         }
-
-        return AnimatedSize(
-          duration: kBlockBoundaryAnimDuration,
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: shouldHide ? const SizedBox.shrink() : separator,
-        );
+        return null;
       },
+      canHighlight: (item) => item is AgendaThreadItem,
+      // Activity-feed threads carry their thread id as the drag block id
+      // (each row is its own one-row "block"), so match next thread ids
+      // directly against the controller's draggingBlockId.
+      dragSourceId: (item) =>
+          item is AgendaThreadItem ? item.thread.id.toString() : null,
     );
   }
 

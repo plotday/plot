@@ -645,15 +645,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     if (reorderableIndex != null) {
       final dragHandle = ReorderableDragStartListener(
         index: reorderableIndex!,
-        child: Container(
-          color: const Color(0x00000000),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Icon(
-            FontAwesomeIcons.gripDotsVertical,
-            size: buildContext.theme.iconSizes.sm,
-            color: buildContext.theme.plotColors.muted,
-          ),
-        ),
+        child: const DragHandle(),
       );
 
       final content = hasSwipeCommands
@@ -1099,9 +1091,10 @@ class _ConferencingIconButton extends StatelessWidget {
 }
 
 class RsvpSummary extends StatelessWidget {
-  const RsvpSummary({required this.activity, super.key});
+  const RsvpSummary({required this.activity, this.fontSize, super.key});
 
   final Thread activity;
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1121,11 +1114,20 @@ class RsvpSummary extends StatelessWidget {
       spacing: 4,
       children: [
         if (counts.attend > 0)
-          Text('${counts.attend}✓', style: TextStyle(color: attendColor)),
+          Text(
+            '${counts.attend}✓',
+            style: TextStyle(color: attendColor, fontSize: fontSize),
+          ),
         if (counts.skip > 0)
-          Text('${counts.skip}✗', style: TextStyle(color: skipColor)),
+          Text(
+            '${counts.skip}✗',
+            style: TextStyle(color: skipColor, fontSize: fontSize),
+          ),
         if (counts.undecided > 0)
-          Text('${counts.undecided}?', style: TextStyle(color: undecidedColor)),
+          Text(
+            '${counts.undecided}?',
+            style: TextStyle(color: undecidedColor, fontSize: fontSize),
+          ),
       ],
     );
   }

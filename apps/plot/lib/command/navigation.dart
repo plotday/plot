@@ -45,10 +45,12 @@ class CloseModalCommand extends Command {
 class ToggleLeftSidebarCommand extends Command {
   ToggleLeftSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close priorities' : 'Open priorities',
+        title: isVisible
+            ? 'Hide agenda and priorities'
+            : 'Show agenda and priorities',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
+        icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.schedule,
       );
 
   final bool isVisible;

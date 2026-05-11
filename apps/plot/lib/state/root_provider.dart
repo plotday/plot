@@ -148,9 +148,15 @@ class RootProviderState extends State<RootProvider> {
             case UserReady _:
               try {
                 final onboardingBloc = context.read<OnboardingBloc>();
-                await prioritiesBloc.start();
-                await TwistInstance.start();
-                await nowBloc.start();
+                // Each .start() awaits its first Drift stream emission and they
+                // have no inter-dependencies — running them in parallel lets
+                // cold-start gate on the slowest single emission instead of
+                // the sum of all three.
+                await Future.wait([
+                  prioritiesBloc.start(),
+                  TwistInstance.start(),
+                  nowBloc.start(),
+                ]);
                 _setupNowBlocListener(themeBloc);
                 unawaited(onboardingBloc.start());
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));

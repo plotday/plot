@@ -215,6 +215,7 @@ class PriorityState extends Equatable {
         scheduleAt: h.scheduleAt,
         isOutsidePriority: h.isOutsidePriority,
         blockPriority: h.blockPriority,
+        block: h.block,
         parentBlockId: h.parentBlockId,
         sourceDate: h.sourceDate,
         sourcePeriodStart: h.sourcePeriodStart,

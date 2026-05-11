@@ -22,6 +22,7 @@ export 'form_modal.dart';
 export 'form_tile_layout.dart';
 export 'header.dart';
 export 'hoverable_link.dart';
+export 'drag_handle.dart';
 export 'icon.dart';
 export 'icon_input_row.dart';
 export 'input_tile.dart';
