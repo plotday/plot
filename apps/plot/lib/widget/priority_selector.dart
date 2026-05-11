@@ -15,6 +15,10 @@ class PrioritySelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PriorityLabel(priority: selected, onSelect: _onSelect);
+    return PriorityLabel(
+      priority: selected,
+      onSelect: _onSelect,
+      boldLeaf: true,
+    );
   }
 }

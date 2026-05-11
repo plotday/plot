@@ -1007,7 +1007,13 @@ class _PriorityPageState extends State<PriorityPage>
       },
     );
 
-    return BlockDragScope(controller: _activityFeedDragController, child: list);
+    return BlockDragScope(
+      controller: _activityFeedDragController,
+      child: ScrollEdgeFade(
+        background: context.colour.background,
+        child: list,
+      ),
+    );
   }
 }
 

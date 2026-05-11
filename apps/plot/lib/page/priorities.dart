@@ -12,10 +12,13 @@ import 'package:plot/state/user.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
+import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/connection_status_tile.dart';
 import 'package:plot/widget/unified_header.dart';
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 
 @RoutePage(name: 'PrioritiesRoute')
@@ -107,10 +110,12 @@ class PrioritiesPanelContent extends StatelessWidget {
                           fit: layoutState.multiPanel
                               ? FlexFit.loose
                               : FlexFit.tight,
-                          child: PrioritiesList(
-                            root: root,
-                            priorities: state.priorities,
-                            selected: selected,
+                          child: ScrollEdgeFade(
+                            child: PrioritiesList(
+                              root: root,
+                              priorities: state.priorities,
+                              selected: selected,
+                            ),
                           ),
                         ),
                           // Footer renders at the same depth as the rest
@@ -148,12 +153,50 @@ class PrioritiesPanelContent extends StatelessWidget {
                                               title: userName,
                                               subtitle:
                                                   userState.user.primaryEmail,
-                                              textStyle: context
-                                                  .theme
-                                                  .typography
-                                                  .sm,
-                                              icon: PlotIcon.account,
+                                              textStyle: context.theme.typography
+                                                  .sm
+                                                  .copyWith(
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                              leadingBuilder: (h, f) => Padding(
+                                                padding: EdgeInsets.only(
+                                                  left: context
+                                                      .theme
+                                                      .spacing
+                                                      .lg,
+                                                  right: context
+                                                      .theme
+                                                      .spacing
+                                                      .sm,
+                                                ),
+                                                child: SizedBox.square(
+                                                  dimension: context
+                                                      .theme
+                                                      .iconSizes
+                                                      .base,
+                                                  child: Center(
+                                                    child: Icon(
+                                                      PlotIcon.account,
+                                                      size: context
+                                                          .theme
+                                                          .iconSizes
+                                                          .base,
+                                                      color: (h || f)
+                                                          ? context
+                                                                .theme
+                                                                .colors
+                                                                .foreground
+                                                          : context
+                                                                .theme
+                                                                .plotColors
+                                                                .muted,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
                                               muted: true,
+                                              highlightColor:
+                                                  const Color(0x00000000),
                                               command: CommandWrapper(
                                                 ShowSettings(),
                                                 icon: Value(null),

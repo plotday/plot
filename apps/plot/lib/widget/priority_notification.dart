@@ -13,12 +13,18 @@ class PriorityNotification extends StatelessWidget {
     required this.unread,
     required this.active,
     required this.color,
+    this.colorOverride,
     super.key,
   });
 
   final bool unread;
   final bool active;
   final ThemeColor color;
+
+  /// When set, paint the active/unread indicator using this color instead of
+  /// the accent derived from [color]. Used by the monochrome priority frame
+  /// where the indicator dims to a single foreground tone at rest.
+  final Color? colorOverride;
 
   String? get _tooltip {
     if (active && unread) return 'Active and unread threads';
@@ -29,7 +35,7 @@ class PriorityNotification extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colour.colours.fromTheme(color);
+    final accent = colorOverride ?? context.colour.colours.fromTheme(color);
     final iconSize = isMobilePlatform() ? 13.0 : 12.0;
     final icon = _buildIcon(context, accent, iconSize);
     final tooltip = _tooltip;

@@ -38,6 +38,7 @@ export 'reorderable_list_view.dart';
 export 'reschedule_event_modal.dart';
 export 'scaffold.dart';
 export 'scroll_context.dart';
+export 'scroll_edge_fade.dart';
 export 'search.dart';
 export 'segmented_line.dart';
 export 'select.dart';

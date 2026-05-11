@@ -116,7 +116,8 @@ class LeftPanelAgendaView extends StatelessWidget {
               if (!state.agendaLoaded) {
                 return const _CenteredAgendaSpinner();
               }
-              return _ScrollEdgeFade(
+              return ScrollEdgeFade(
+                background: context.colour.background,
                 child: AgendaList(items: state.agendaViewItems),
               );
             },
@@ -164,72 +165,6 @@ class _CenteredAgendaSpinnerState extends State<_CenteredAgendaSpinner> {
   }
 }
 
-/// Fades the top and bottom edges of a scrollable child to communicate that
-/// the region scrolls independently of its surroundings. The top fade is
-/// hidden when the child is scrolled to its start; the bottom fade is hidden
-/// when scrolled to its end. Both default to visible until the first scroll
-/// notification (assume scrollable until proven otherwise).
-class _ScrollEdgeFade extends StatefulWidget {
-  const _ScrollEdgeFade({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ScrollEdgeFade> createState() => _ScrollEdgeFadeState();
-}
-
-class _ScrollEdgeFadeState extends State<_ScrollEdgeFade> {
-  static const double _fadeExtent = 16.0;
-
-  bool _atTop = true;
-  bool _atBottom = false;
-
-  bool _onScroll(ScrollNotification n) {
-    if (n.metrics.axis != Axis.vertical) return false;
-    final atTop = n.metrics.pixels <= n.metrics.minScrollExtent + 0.5;
-    final atBottom = n.metrics.pixels >= n.metrics.maxScrollExtent - 0.5;
-    if (atTop != _atTop || atBottom != _atBottom) {
-      setState(() {
-        _atTop = atTop;
-        _atBottom = atBottom;
-      });
-    }
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScroll,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final h = constraints.maxHeight;
-          // If the panel is shorter than ~3× the fade extent, skip the
-          // mask — the fades would consume most of the visible content.
-          if (h <= _fadeExtent * 3) return widget.child;
-          final topStop = _atTop ? 0.0 : _fadeExtent / h;
-          final bottomStop = _atBottom ? 1.0 : 1.0 - _fadeExtent / h;
-          return ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (rect) => LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: const [
-                Color(0x00000000),
-                Color(0xFF000000),
-                Color(0xFF000000),
-                Color(0x00000000),
-              ],
-              stops: [0.0, topStop, bottomStop, 1.0],
-            ).createShader(rect),
-            child: widget.child,
-          );
-        },
-      ),
-    );
-  }
-}
-
 /// Renders the agenda body as a vertical list of block headers with
 /// matching dividers and drag-to-reorder support.
 ///
@@ -249,10 +184,10 @@ class AgendaList extends StatefulWidget {
   State<AgendaList> createState() => _AgendaListState();
 }
 
-class _AgendaListState extends State<AgendaList>
-    with TickerProviderStateMixin {
-  late final BlockDragController _dragController =
-      BlockDragController(vsync: this);
+class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
+  late final BlockDragController _dragController = BlockDragController(
+    vsync: this,
+  );
   late final InfiniteListController _listController = InfiniteListController();
 
   /// Memoized drop-boundary computation. Keyed by `items` reference —
@@ -263,7 +198,8 @@ class _AgendaListState extends State<AgendaList>
     Map<int, BlockDropTarget> before,
     Map<int, BlockDropTarget> after,
     BlockDropTarget? afterList,
-  })? _cachedBoundaries;
+  })?
+  _cachedBoundaries;
 
   @override
   void dispose() {
@@ -292,7 +228,8 @@ class _AgendaListState extends State<AgendaList>
       Map<int, BlockDropTarget> before,
       Map<int, BlockDropTarget> after,
       BlockDropTarget? afterList,
-    }) boundaries;
+    })
+    boundaries;
     if (identical(_cachedBoundaryItems, items) && _cachedBoundaries != null) {
       boundaries = _cachedBoundaries!;
     } else {
@@ -330,8 +267,9 @@ class _AgendaListState extends State<AgendaList>
         selectedAccent: (item) {
           if (item is AgendaHeaderItem &&
               item.blockPriority?.id == currentPriorityId) {
-            return context.colour.colours
-                .fromTheme(item.blockPriority!.displayColor);
+            return context.colour.colours.fromTheme(
+              item.blockPriority!.displayColor,
+            );
           }
           return null;
         },
@@ -357,14 +295,16 @@ class _AgendaListState extends State<AgendaList>
         }
 
         final beforeBoundary = boundaries.before[index];
-        final afterBoundary = boundaries.after[index] ??
+        final afterBoundary =
+            boundaries.after[index] ??
             (index == items.length - 1 ? boundaries.afterList : null);
 
         // Gap headers render their before-boundary BELOW the row instead
         // of above. Blocks can only land inside a gap, so the drop
         // preview should appear inside the gap rather than between the
         // preceding block and the gap header.
-        final isGapHeader = current.dateTimeRange != null &&
+        final isGapHeader =
+            current.dateTimeRange != null &&
             current.thread == null &&
             current.parentBlockId != null &&
             current.sourcePeriodStart != null;

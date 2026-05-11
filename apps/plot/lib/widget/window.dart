@@ -38,8 +38,10 @@ class Window extends StatefulWidget {
     if (!Platform.instance.isMacOS) return;
     final originals = _trafficLightOriginalX;
     if (originals == null) return;
-    final y = ((headerHeight - _trafficLightHeight) / 2)
-        .clamp(0.0, double.infinity);
+    final y = ((headerHeight - _trafficLightHeight) / 2).clamp(
+      0.0,
+      double.infinity,
+    );
     if (_lastAppliedTrafficLightY != null &&
         (_lastAppliedTrafficLightY! - y).abs() < 0.5) {
       return;
@@ -300,25 +302,32 @@ class WindowState extends State<Window> with WindowListener {
   @override
   Widget build(BuildContext context) {
     return PlatformBuilder(
+      // Frosted NSVisualEffectView sits below Flutter's content; the
+      // priority-tinted gradient on top tints its gray vibrancy. We can't
+      // strip the frost entirely (Flutter's Metal layer doesn't honor
+      // isOpaque=false reliably on macOS, so a fully clear window renders
+      // black instead of translucent), so this hybrid is as translucent as
+      // the platform supports today.
       macOSBuilder: (_) => VisualEffectSubviewContainer(
         alphaValue: 1,
         material: NSVisualEffectViewMaterial.underWindowBackground,
         state: NSVisualEffectViewState.followsWindowActiveState,
-        // Due to the fact that visual effect subviews cannot be updated while the
-        // window is being resized, doing so can cause visual artifacts. To hide
-        // those artifacts, the TransparentMacOSBottomBar widget adds a large
-        // negative margin to the visual effect subview.
+        // Due to the fact that visual effect subviews cannot be updated while
+        // the window is being resized, doing so can cause visual artifacts.
+        // To hide those artifacts, the container adds a large negative
+        // margin to the visual effect subview.
         padding: const EdgeInsets.all(-2000.0),
-        child: Container(color: context.colour.background, child: widget.child),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: context.colour.frameBackgroundGradient,
+          ),
+          child: widget.child,
+        ),
       ),
       windowsBuilder: (_) => Stack(
         children: [
           widget.child,
-          const Positioned(
-            top: 0,
-            right: 0,
-            child: _WindowControls(),
-          ),
+          const Positioned(top: 0, right: 0, child: _WindowControls()),
         ],
       ),
       builder: (_) => widget.child,

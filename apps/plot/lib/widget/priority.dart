@@ -2,11 +2,12 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 
-class PriorityWidget extends StatelessWidget {
+class PriorityWidget extends StatefulWidget {
   const PriorityWidget({
     required this.priority,
     this.context,
@@ -20,8 +21,9 @@ class PriorityWidget extends StatelessWidget {
     this.active,
     this.reorderableIndex,
     this.onTap,
-    this.subtitle,
     this.borderRadius,
+    this.monochrome = false,
+    this.boldLeaf = false,
     super.key,
   });
 
@@ -59,51 +61,100 @@ class PriorityWidget extends StatelessWidget {
   /// Optional tap callback that overrides the default navigation behavior.
   final VoidCallback? onTap;
 
-  /// Optional subtitle text shown below the priority title.
-  final String? subtitle;
-
   /// Border radius for the hover/selection highlight. When null, the
   /// highlight is rectangular and may show top/bottom selection borders.
   final BorderRadius? borderRadius;
 
+  /// When true, render the tile in a monochrome resting state (foreground
+  /// with reduced opacity) and reintroduce the priority color on hover or
+  /// when selected — used for the left-panel priorities list which sits on
+  /// the tinted frame outside the squircles.
+  final bool monochrome;
+
+  /// When true and the priority label is displayed with ancestry, render the
+  /// leaf (this priority) in a heavier weight than its ancestor crumbs.
+  final bool boldLeaf;
+
+  @override
+  State<PriorityWidget> createState() => _PriorityWidgetState();
+}
+
+class _PriorityWidgetState extends State<PriorityWidget> {
+  bool _isHovered = false;
+
   @override
   Widget build(BuildContext buildContext) {
-    bool isContext = priority == context;
+    final priority = widget.priority;
+    bool isContext = priority == widget.context;
     final leadingH = buildContext.isMultiPanel
         ? buildContext.theme.spacing.lg
         : buildContext.theme.spacing.sm;
+
+    final isActive = widget.selected || _isHovered;
+    final priorityAccentBg = widget.monochrome
+        ? buildContext.colour.colours.backgroundFromTheme(priority.displayColor)
+        : null;
+    final priorityAccent = buildContext.colour.colours.fromTheme(
+      priority.displayColor,
+    );
+    // Resting color matches the `muted: true` color used by ListTile for the
+    // sibling connection / account tiles, so the whole left-panel frame reads
+    // as a single tone at rest. The title's fontWeight (w500) keeps it more
+    // prominent than the same-color subtitle.
+    final restingColor = buildContext.colour.muted;
+
+    // In monochrome mode, the resting text color is a single monochrome tone
+    // and the priority's own color only shows on hover or when selected. The
+    // hover background matches the selected background so the two states
+    // look identical.
+    final effectiveTextStyle = widget.monochrome && !isActive
+        ? widget.textStyle?.copyWith(color: restingColor)
+        : widget.textStyle;
+    final indicatorColor = widget.monochrome && !isActive
+        ? restingColor
+        : priorityAccent;
+
     final listTile = ListTile(
       command: !isContext
-          ? ChangeCurrentPriority(priority, ancestry: showAncestry)
+          ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
           : null,
-      onTap: onTap,
+      onTap: widget.onTap,
       longPressCommand: !hasPhysicalKeyboard()
           ? ShowPriorityCommands(priority)
           : null,
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
         final showDragHandle =
-            !hasPhysicalKeyboard() && reorderableIndex != null;
+            !hasPhysicalKeyboard() && widget.reorderableIndex != null;
+        // Reserve vertical space so the tile height doesn't jump when hover
+        // buttons appear. Width collapses to 0 when not hovered so the body
+        // gets full width.
+        final buttonSlotHeight = buildContext.theme.iconSizes.base * 2;
 
         return Row(
           children: [
             Padding(
               padding: EdgeInsets.only(right: showDragHandle ? 0 : leadingH),
-              child: Row(
-                children: [
-                  // Hover commands appear to the left
-                  if (hovered) ...[
-                    Button.icon(
-                      SetTopPriority(priority, priority.topOrder == null),
-                    ),
-                    Button.icon(ShowPriorityCommands(priority)),
-                  ],
-                ],
+              child: SizedBox(
+                height: buttonSlotHeight,
+                child: hovered
+                    ? Row(
+                        children: [
+                          Button.icon(
+                            SetTopPriority(
+                              priority,
+                              priority.topOrder == null,
+                            ),
+                          ),
+                          Button.icon(ShowPriorityCommands(priority)),
+                        ],
+                      )
+                    : null,
               ),
             ),
             if (showDragHandle)
               ReorderableDragStartListener(
-                index: reorderableIndex!,
+                index: widget.reorderableIndex!,
                 child: DragHandle(
                   padding: EdgeInsets.only(
                     left: 8,
@@ -116,25 +167,33 @@ class PriorityWidget extends StatelessWidget {
           ],
         );
       },
-      title: showAncestry ? null : priority.title,
-      subtitle: subtitle ??
-          (priority.isPlotApp
-              ? 'Updates, support, and suggestions'
-              : null),
-      body: showAncestry
+      title: widget.showAncestry ? null : priority.title,
+      body: widget.showAncestry
           ? PriorityLabel(
               priority: priority,
-              fontSize: textStyle?.fontSize,
-              height: textStyle?.height,
+              fontSize: widget.textStyle?.fontSize,
+              height: 1,
+              color: widget.monochrome && !isActive ? restingColor : null,
+              mutedAncestorColor: widget.monochrome && !isActive
+                  ? restingColor
+                  : null,
+              boldLeaf: widget.boldLeaf,
             )
           : null,
-      selected: selected,
-      selectedBorder: selectedBorder,
-      highlighted: selected,
-      borderRadius: borderRadius,
-      onHover: onHover,
-      indentLevel: indentLevel,
-      textStyle: textStyle,
+      selected: widget.selected,
+      selectedBorder: widget.selectedBorder,
+      selectedColor: priorityAccentBg,
+      highlightColor: priorityAccentBg,
+      highlighted: widget.selected,
+      borderRadius: widget.borderRadius,
+      onHover: (hovered) {
+        widget.onHover?.call(hovered);
+        if (mounted && _isHovered != hovered) {
+          setState(() => _isHovered = hovered);
+        }
+      },
+      indentLevel: widget.indentLevel,
+      textStyle: effectiveTextStyle,
       leadingBuilder: (isHovered, hasFocus) => Padding(
         padding: EdgeInsets.only(
           left: leadingH,
@@ -142,9 +201,10 @@ class PriorityWidget extends StatelessWidget {
           bottom: 2,
         ),
         child: PriorityNotification(
-          unread: unread ?? priority.unread,
-          active: active ?? priority.active,
+          unread: widget.unread ?? priority.unread,
+          active: widget.active ?? priority.active,
           color: priority.displayColor,
+          colorOverride: widget.monochrome ? indicatorColor : null,
         ),
       ),
     );
@@ -195,6 +255,7 @@ class PriorityLabel extends StatelessWidget {
     this.muted = false,
     this.color,
     this.mutedAncestorColor,
+    this.boldLeaf = false,
     super.key,
   }) : ancestors = (() {
          final computed =
@@ -217,6 +278,10 @@ class PriorityLabel extends StatelessWidget {
   /// visually prominent.
   final Color? mutedAncestorColor;
 
+  /// When true, render ancestor crumbs at regular weight and the leaf
+  /// (this priority) at semibold so the leaf reads as the primary label.
+  final bool boldLeaf;
+
   @override
   Widget build(BuildContext context) {
     // Compute display colors for each ancestor (with inheritance)
@@ -232,6 +297,68 @@ class PriorityLabel extends StatelessWidget {
       currentColor = priority!.displayColor;
     }
 
+    // When ancestors aren't individually tappable, render the whole label as
+    // a single Text.rich so ellipsis truncation happens at the end of the
+    // line without leaving leftover space between the content and the
+    // trailing slot (a multi-Flexible Row layout leaves a visible gap when
+    // one Flexible underuses its allocation).
+    if (onSelect == null) {
+      final resolvedFontSize =
+          fontSize ?? context.theme.typography.md.fontSize;
+      final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
+      final leafWeight = boldLeaf ? FontWeight.w600 : null;
+      final spans = <InlineSpan>[];
+      for (var i = 0; i < ancestors.length; i++) {
+        final ancestor = ancestors[i];
+        final isLast = i == ancestors.length - 1;
+        final ancestorColor =
+            mutedAncestorColor ??
+            color ??
+            context.colour.colours.fromTheme(displayColors[i], muted: true);
+        spans.add(TextSpan(
+          text: ancestor.title,
+          style: TextStyle(
+            color: ancestorColor,
+            fontSize: resolvedFontSize,
+            height: height,
+            fontWeight: ancestorWeight,
+          ),
+        ));
+        if (!isLast || priority != null) {
+          spans.add(TextSpan(
+            text: Priority.separator,
+            style: TextStyle(
+              color: mutedAncestorColor ??
+                  color ??
+                  context.theme.colors.mutedForeground,
+              fontSize: resolvedFontSize,
+              height: height ?? 1,
+              fontWeight: ancestorWeight,
+            ),
+          ));
+        }
+      }
+      if (priority != null) {
+        spans.add(TextSpan(
+          text: priority!.title,
+          style: TextStyle(
+            color: color ??
+                context.colour.colours.fromTheme(currentColor, muted: muted),
+            fontSize: resolvedFontSize,
+            height: height,
+            fontWeight: leafWeight,
+          ),
+        ));
+      }
+      return Text.rich(
+        TextSpan(children: spans),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      );
+    }
+
+    final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
+    final leafWeight = boldLeaf ? FontWeight.w600 : null;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -256,6 +383,7 @@ class PriorityLabel extends StatelessWidget {
                   color: ancestorColor,
                   fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height,
+                  fontWeight: ancestorWeight,
                 ),
                 child: onSelect != null
                     ? Tapable(
@@ -275,6 +403,7 @@ class PriorityLabel extends StatelessWidget {
                       context.theme.colors.mutedForeground,
                   fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height ?? 1,
+                  fontWeight: ancestorWeight,
                 ),
                 child: Text(Priority.separator),
               ),
@@ -292,6 +421,7 @@ class PriorityLabel extends StatelessWidget {
                     ),
                 fontSize: fontSize ?? context.theme.typography.md.fontSize,
                 height: height,
+                fontWeight: leafWeight,
               ),
               child: Text(
                 priority!.title,

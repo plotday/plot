@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:macos_window_utils/macos_window_utils.dart';
+import 'package:platform_builder/platform_builder.dart';
 import 'package:provider/provider.dart';
 import 'package:equatable/equatable.dart';
 import 'package:forui/forui.dart';
@@ -311,14 +313,26 @@ class ColourSchemeData extends Equatable {
     final isDark = brightness == Brightness.dark;
     final hue = themeColor.toHue();
     final c = themeColor.toChroma(isDark: isDark);
+    // The `underWindowBackground` NSVisualEffectView material is heavily
+    // gray-tinted, so at low alpha a pale low-chroma stop washes out into
+    // that gray. Lean on chroma (not lightness) to give the priority hue
+    // presence — high-chroma stops at moderate alpha tint the gray
+    // noticeably while still letting the wallpaper blur through. Alpha is
+    // kept identical across modes so light/dark feel like the same effect
+    // at different luminance.
     final Color start;
     final Color end;
     if (isDark) {
-      start = RayOklch.fromComponents(0.38, c * 0.12, hue).toColor();
-      end = RayOklch.fromComponents(0.28, c * 0.22, hue).toColor();
+      const alpha = 0.32;
+      // Lift lightness a touch (0.30 / 0.40 vs squircle interior 0.26) and
+      // crank chroma so the hue still reads through the dark vibrancy.
+      start = RayOklch.fromComponents(0.25, c * 0.10, hue, alpha).toColor();
+      end = RayOklch.fromComponents(0.15, c * 0.40, hue, alpha).toColor();
     } else {
-      start = RayOklch.fromComponents(0.89, c * 0.18, hue).toColor();
-      end = RayOklch.fromComponents(0.81, c * 0.38, hue).toColor();
+      // Drop lightness off pure white (0.99 → 0.95 / 0.86) — at L≈1 there's
+      // no headroom for the chroma to read against a white frost.
+      start = RayOklch.fromComponents(1, c * 0.2, hue, 0.4).toColor();
+      end = RayOklch.fromComponents(0.97, c * 0.4, hue, 0.5).toColor();
     }
     return LinearGradient(
       begin: Alignment.topLeft,
@@ -393,6 +407,8 @@ class ColourScheme extends StatefulWidget {
 
 class _ColourSchemeState extends State<ColourScheme>
     with WidgetsBindingObserver {
+  Brightness? _lastAppliedWindowBrightness;
+
   @override
   void initState() {
     super.initState();
@@ -412,11 +428,29 @@ class _ColourSchemeState extends State<ColourScheme>
     setState(() {});
   }
 
+  /// Sync the native macOS window appearance to the app's effective
+  /// brightness. NSVisualEffectView material (the frosted window background)
+  /// derives its vibrancy from `NSWindow.appearance`, which by default
+  /// follows the system. Without this override the frost stays dark when the
+  /// user has chosen light mode on a dark system (or vice-versa) and bleeds
+  /// through the semi-transparent gradient on top.
+  void _syncWindowBrightness(Brightness brightness) {
+    if (!Platform.instance.isMacOS) return;
+    if (_lastAppliedWindowBrightness == brightness) return;
+    _lastAppliedWindowBrightness = brightness;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WindowManipulator.overrideMacOSBrightness(
+        dark: brightness == Brightness.dark,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<ThemeBloc, ThemeState>(
       builder: (context, themeState) {
         final brightness = context.read<ThemeBloc>().getBrightness(context);
+        _syncWindowBrightness(brightness);
         return ProxyProvider0(
           update: (_, _) => ColourSchemeData(
             themeColor: themeState.priorityColor,

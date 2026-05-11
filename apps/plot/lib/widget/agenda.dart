@@ -126,8 +126,8 @@ class AgendaTile extends StatelessWidget {
         dateCenterLeft = date!.format(format: 'EEEE');
         dateCenterRight = date!.format(format: 'd');
         dateMonth = date!.year == Date.today().year
-            ? ' ${date!.format(format: 'MMMM')}'
-            : ' ${date!.format(format: 'MMMM yyyy')}';
+            ? date!.format(format: 'MMM')
+            : date!.format(format: 'MMM yyyy');
       }
     }
 
@@ -200,66 +200,68 @@ class AgendaTile extends StatelessWidget {
     // Date headers: simple container with darkened background, no ListTile needed
     if (date != null) {
       final headerBg = context.colour.headerBackground;
-      // Match PriorityPage section headers: sm font, md+xs (12px) vertical
-      // padding so the agenda date header reads at the same weight as the
-      // activity-feed "Today"/"New"/"Scheduled"/"Done" markers.
-      final dateFontSize = context.theme.typography.sm.fontSize;
-      final mutedStyle = TextStyle(
-        color: context.theme.plotColors.veryMuted,
-        fontSize: dateFontSize,
-      );
+      final smSize = context.theme.typography.sm.fontSize;
+      final veryMuted = context.theme.plotColors.veryMuted;
 
       final Widget child;
       if (dateCenterLeft != null) {
-        // Full date: [day-of-week] [day] [month]
-        final spacing = context.theme.spacing.md;
+        // Gutter holds "[Mon] [24]" right-aligned on a single sm line —
+        // short month name in veryMuted, date number in foreground. The
+        // main area renders the day-of-week (sm, veryMuted) on the same
+        // baseline.
+        final timeColWidth = agendaLeadingWidth(context);
+        final spacing = context.theme.spacing;
+        final gutter = Padding(
+          padding: EdgeInsets.only(right: spacing.sm),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text.rich(
+              TextSpan(
+                style: TextStyle(fontSize: smSize, fontWeight: FontWeight.w600),
+                children: [
+                  TextSpan(
+                    text: dateMonth!.trimLeft(),
+                    style: TextStyle(color: veryMuted),
+                  ),
+                  const TextSpan(text: ' '),
+                  TextSpan(
+                    text: dateCenterRight!,
+                    style: TextStyle(color: context.theme.colors.foreground),
+                  ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        );
         child = Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            SizedBox(width: timeColWidth, child: gutter),
             Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  dateCenterLeft,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mutedStyle,
-                ),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: spacing),
               child: Text(
-                dateCenterRight!,
-                style: TextStyle(
-                  color: context.theme.colors.mutedForeground,
-                  fontSize: dateFontSize,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  dateMonth!.trimLeft(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mutedStyle,
-                ),
+                dateCenterLeft,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: veryMuted, fontSize: smSize),
               ),
             ),
           ],
         );
       } else {
         // Relative date label ("Yesterday", "2 days ago", etc.)
-        child = Center(child: Text(centerText!, style: mutedStyle));
+        child = Center(
+          child: Text(
+            centerText!,
+            style: TextStyle(color: veryMuted, fontSize: smSize),
+          ),
+        );
       }
 
-      final verticalPad =
-          context.theme.spacing.md + context.theme.spacing.xs;
       return Container(
         color: headerBg,
-        padding: EdgeInsets.symmetric(vertical: verticalPad),
+        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.md),
         child: child,
       );
     }
@@ -358,15 +360,17 @@ class AgendaTile extends StatelessWidget {
       if (isTextOnlyHeading) {
         result = Container(
           color: context.colour.headerBackground,
-          padding: EdgeInsets.symmetric(
-            vertical: context.theme.spacing.sm,
-          ),
+          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
           child: child,
         );
       } else {
         result = Container(
           color: isGapHeader ? context.colour.headerBackground : null,
-          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
+          padding: EdgeInsets.symmetric(
+            vertical: isGapHeader
+                ? context.theme.spacing.md
+                : context.theme.spacing.sm,
+          ),
           child: child,
         );
         if (!isGapHeader) {
@@ -598,8 +602,8 @@ class _BlockHeaderState extends State<_BlockHeader> {
     final bg = widget.selected
         ? context.colour.colours.backgroundFromTheme(priority.displayColor)
         : _isHovered
-            ? context.colour.editableBackground
-            : context.colour.background;
+        ? context.colour.editableBackground
+        : context.colour.background;
     final spacing = context.theme.spacing;
     // Primary line (priority breadcrumb) reads at the same size as
     // thread titles in the activity feed; secondary line (summary,
@@ -639,7 +643,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
               style: TextStyle(color: context.theme.colors.foreground),
             ),
           if (eventTitle.isNotEmpty && associated.isNotEmpty)
-            TextSpan(text: ' · ', style: TextStyle(color: mutedColor)),
+            TextSpan(
+              text: ' · ',
+              style: TextStyle(color: mutedColor),
+            ),
           if (associated.isNotEmpty)
             TextSpan(
               text: associated.join(' · '),
@@ -677,7 +684,11 @@ class _BlockHeaderState extends State<_BlockHeader> {
         parts.add(
           Text(
             '/ ${Duration(minutes: remaining).format()}',
-            style: TextStyle(color: mutedFg, fontSize: secondarySize, height: 1),
+            style: TextStyle(
+              color: mutedFg,
+              fontSize: secondarySize,
+              height: 1,
+            ),
           ),
         );
       }
@@ -746,116 +757,116 @@ class _BlockHeaderState extends State<_BlockHeader> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              // Gutter: time (row 1) + unread dot (row 2). The unread
-              // dot lives in the gutter rather than the main content so
-              // it doesn't push the summary text and so multiple
-              // priority blocks with unread state read as a vertical
-              // column of indicators.
-              SizedBox(
-                width: timeColWidth,
-                child: Padding(
-                  padding: EdgeInsets.only(right: spacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      SizedBox(
-                        height: primarySize,
-                        child: timeText != null
-                            ? Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  timeText,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: context.theme.colors.foreground,
-                                    fontSize: secondarySize,
-                                    height: 1,
-                                  ),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                      if (hasSecondRow) ...[
-                        SizedBox(height: spacing.sm),
-                        SizedBox(
-                          height: secondarySize * 1.25,
-                          child: hasUnread
-                              ? Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: BoxDecoration(
-                                      color: unreadColor,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
+            // Gutter: time (row 1) + unread dot (row 2). The unread
+            // dot lives in the gutter rather than the main content so
+            // it doesn't push the summary text and so multiple
+            // priority blocks with unread state read as a vertical
+            // column of indicators.
+            SizedBox(
+              width: timeColWidth,
+              child: Padding(
+                padding: EdgeInsets.only(right: spacing.sm),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     SizedBox(
                       height: primarySize,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: PriorityLabel(
-                              priority: priority,
-                              color: fg,
-                              mutedAncestorColor: mutedFg,
-                              fontSize: secondarySize,
-                              height: 1,
-                            ),
-                          ),
-                          if (row1Trailing != null) ...[
-                            SizedBox(width: spacing.md),
-                            row1Trailing,
-                          ],
-                        ],
-                      ),
+                      child: timeText != null
+                          ? Align(
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                timeText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: context.theme.colors.mutedForeground,
+                                  fontSize: secondarySize,
+                                  height: 1,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                     if (hasSecondRow) ...[
                       SizedBox(height: spacing.sm),
                       SizedBox(
                         height: secondarySize * 1.25,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Expanded(
-                              child: Text.rich(
-                                summarySpan,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: secondarySize,
-                                  height: 1.25,
+                        child: hasUnread
+                            ? Align(
+                                alignment: Alignment.centerRight,
+                                child: Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: unreadColor,
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                            ),
-                            if (row2Trailing != null) ...[
-                              SizedBox(width: spacing.sm),
-                              row2Trailing,
-                            ],
-                          ],
-                        ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                     ],
                   ],
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: primarySize,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: PriorityLabel(
+                            priority: priority,
+                            color: fg,
+                            mutedAncestorColor: mutedFg,
+                            fontSize: secondarySize,
+                            height: 1,
+                          ),
+                        ),
+                        if (row1Trailing != null) ...[
+                          SizedBox(width: spacing.md),
+                          row1Trailing,
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (hasSecondRow) ...[
+                    SizedBox(height: spacing.sm),
+                    SizedBox(
+                      height: secondarySize * 1.25,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Expanded(
+                            child: Text.rich(
+                              summarySpan,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: secondarySize,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                          if (row2Trailing != null) ...[
+                            SizedBox(width: spacing.sm),
+                            row2Trailing,
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
 
     return Container(

@@ -6,6 +6,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:prism_flutter/prism_flutter.dart';
+
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';
@@ -123,8 +125,23 @@ class _HeaderState extends State<Header> {
             PanelPositionProvider.of(context) ??
             HeaderPosition.right;
 
-        final resolvedToolbarPadding =
-            Window.toolbarPadding.resolve(TextDirection.ltr);
+        final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+          TextDirection.ltr,
+        );
+
+        final frameRestingColor = context.colour.foreground.withValues(
+          alpha: 0.55,
+        );
+        final frameHoverColor = context.colour.foreground;
+        Widget frameIcon(Command cmd, {bool selected = false, Key? key}) {
+          return Button.icon(
+            cmd,
+            key: key,
+            selected: selected,
+            color: frameRestingColor,
+            hoverColor: frameHoverColor,
+          );
+        }
 
         // Build title with position-specific left buttons
         final titleChildren = <Widget>[
@@ -141,7 +158,7 @@ class _HeaderState extends State<Header> {
           if (position == HeaderPosition.right &&
               !layoutState.middlePanelVisible &&
               layoutState.multiPanel)
-            Button.icon(
+            frameIcon(
               ToggleMiddleSidebarCommand(
                 isVisible: layoutState.middlePanelVisible,
               ),
@@ -150,13 +167,13 @@ class _HeaderState extends State<Header> {
           if (layoutState.multiPanel &&
               position == HeaderPosition.middle &&
               !layoutState.leftPanelVisible)
-            Button.icon(
+            frameIcon(
               ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
             ),
           // Prefix actions provided by the page
           ...widget.prefixCommands.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
-            return Button.icon(entry.value, key: key);
+            return frameIcon(entry.value, key: key);
           }),
           // If search is expanded, show the search field here
           if (_searchExpanded && widget.onSearchChanged != null)
@@ -182,10 +199,7 @@ class _HeaderState extends State<Header> {
                     hint: 'Search…',
                     style: FTextFieldStyleDelta.delta(
                       contentPadding: EdgeInsetsGeometryDelta.value(
-                        const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       ),
                     ),
                     suffixBuilder: (context, style, states) {
@@ -195,14 +209,14 @@ class _HeaderState extends State<Header> {
                           final key = ValueKey(
                             Object.hash(entry.value.hashCode, entry.key),
                           );
-                          return Button.icon(
+                          return frameIcon(
                             entry.value,
                             key: key,
                             selected: entry.value.on == true,
                           );
                         }),
                         // Close search button
-                        Button.icon(
+                        frameIcon(
                           ToggleSearchCommand(
                             searchExpanded: _searchExpanded,
                             onToggle: () {
@@ -258,7 +272,7 @@ class _HeaderState extends State<Header> {
         final suffixes = <Widget>[
           // Add search button to activate search (only when not expanded)
           if (widget.onSearchChanged != null && !_searchExpanded)
-            Button.icon(
+            frameIcon(
               ToggleSearchCommand(
                 searchExpanded: _searchExpanded,
                 onToggle: () {
@@ -274,7 +288,7 @@ class _HeaderState extends State<Header> {
             ),
           ...widget.commands.asMap().entries.map((entry) {
             final key = ValueKey(Object.hash(entry.value.hashCode, entry.key));
-            return Button.icon(
+            return frameIcon(
               entry.value,
               key: key,
               selected: entry.value.on == true,
@@ -282,48 +296,52 @@ class _HeaderState extends State<Header> {
           }),
           // Left sidebar toggle for left position
           if (position == HeaderPosition.left)
-            Button.icon(
+            frameIcon(
               ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
             ),
           // Right sidebar show button for middle position when right panel is hidden
           if (position == HeaderPosition.middle)
-            Button.icon(
+            frameIcon(
               ToggleMiddleSidebarCommand(
                 isVisible: layoutState.middlePanelVisible,
               ),
             ),
           // Avoid window controls on the last panel (Windows - right side)
           if (resolvedToolbarPadding.right != 0 &&
-              (!layoutState.multiPanel ||
-                  position == HeaderPosition.right))
+              (!layoutState.multiPanel || position == HeaderPosition.right))
             SizedBox(width: resolvedToolbarPadding.right),
         ];
 
+        // On macOS the window background is frosted with a gradient tint
+        // (see `lib/widget/window.dart`); the header joins that continuous
+        // band, so we drop the opaque fill and keep only the hairline border.
+        // Other platforms keep the previous opaque tinted strip.
+        final isFrostedHost = Platform.instance.isMacOS;
         Widget header = FTheme(
-            data: darkenTheme(context, context.theme, context.colour, steps: 2),
-            child: Builder(
-              builder: (context) => ClipRect(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.theme.colors.background,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: context.theme.colors.border,
-                        width: 1,
-                      ),
+          data: darkenTheme(context, context.theme, context.colour, steps: 2),
+          child: Builder(
+            builder: (context) => ClipRect(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: isFrostedHost ? null : context.theme.colors.background,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: context.theme.colors.border,
+                      width: 1,
                     ),
                   ),
-                  child: FHeader(
-                    style: FHeaderStyleDelta.delta(
-                      padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-                    ),
-                    title: Row(spacing: 8, children: titleChildren),
-                    suffixes: suffixes,
+                ),
+                child: FHeader(
+                  style: FHeaderStyleDelta.delta(
+                    padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
                   ),
+                  title: Row(spacing: 8, children: titleChildren),
+                  suffixes: suffixes,
                 ),
               ),
             ),
-          );
+          ),
+        );
 
         // Wrap with DragToMoveArea on Windows for window dragging
         if (Platform.instance.isWindows) {

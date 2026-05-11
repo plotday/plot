@@ -508,6 +508,11 @@ class _ListTileState extends State<ListTile> {
           final iconSize = widget.style == ListTileStyle.header
               ? context.theme.iconSizes.sm
               : context.theme.iconSizes.base;
+          final iconIsHighlighted =
+              _focusNode.hasFocus || _isHovered || widget.highlighted;
+          final mutedIconColor = widget.muted && iconIsHighlighted
+              ? context.theme.colors.foreground
+              : context.theme.plotColors.muted;
           final iconWidget = () {
             // Skip command's buildIcon when leadingBuilder already provides
             // a visual indicator (avoids double icons in priority tiles).
@@ -530,7 +535,7 @@ class _ListTileState extends State<ListTile> {
                   size: iconSize,
                   color: widget.command?.on == true
                       ? context.theme.colors.primary
-                      : context.theme.plotColors.muted,
+                      : mutedIconColor,
                 ),
                 child: customIcon,
               );
@@ -549,7 +554,7 @@ class _ListTileState extends State<ListTile> {
                 size: iconSize,
                 color: widget.command?.on == true
                     ? context.theme.colors.primary
-                    : context.theme.plotColors.muted,
+                    : mutedIconColor,
               );
             }
 

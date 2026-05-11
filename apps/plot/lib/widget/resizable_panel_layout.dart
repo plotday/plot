@@ -22,6 +22,35 @@ const double _halfGap = 7.0;
 /// Corner radius for the squircle panel cards.
 const double _panelRadius = 14.0;
 
+/// Drop shadow used under a squircle panel card. Stronger in dark mode (the
+/// card is darker than the frame, so a softer/longer shadow gives depth
+/// without halo); in light mode a quieter shadow keeps the card from feeling
+/// heavy against the bright surround.
+BoxShadow _squircleShadow(BuildContext context) {
+  final isDark = context.colour.brightness == Brightness.dark;
+  return isDark
+      ? BoxShadow(
+          color: const Color(0xFF000000).withValues(alpha: 0.32),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+          spreadRadius: -2,
+        )
+      : BoxShadow(
+          color: const Color(0xFF000000).withValues(alpha: 0.06),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+          spreadRadius: -1,
+        );
+}
+
+/// Hairline border color for a squircle panel card (theme border tone
+/// pulled to ~60% opacity so it reads as a refined hairline rather than a
+/// hard outline).
+Color _squircleBorderColor(BuildContext context) {
+  final base = context.theme.colors.border;
+  return base.withValues(alpha: base.a * 0.6);
+}
+
 class ResizablePanelLayout extends StatefulWidget {
   const ResizablePanelLayout({
     required this.left,
@@ -130,52 +159,38 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// border, with [context.colour.background] filling the rounded shape.
   /// Modeled on Zen browser's content cards — visible but quiet edge and
   /// just enough shadow to lift the card off the tinted frame.
+  ///
+  /// When [paintChrome] is false, only the clip + background fill are
+  /// painted. Used for the middle and right main panels when they share a
+  /// single squircle: their combined shadow + border is drawn once at the
+  /// layout level by [_HoverableResizable], avoiding per-card shadows that
+  /// bleed across the shared seam (visible as a dark fade in dark mode).
   Widget _squircleCard(
     BuildContext context,
     Widget child, {
     required BorderRadiusGeometry borderRadius,
+    bool paintChrome = true,
   }) {
-    final isDark = context.colour.brightness == Brightness.dark;
-    // Drop shadow is stronger in dark mode (the card is darker than the
-    // frame, so a softer/longer shadow gives depth without halo); in light
-    // mode a quieter shadow keeps the card from feeling heavy against the
-    // bright surround.
-    final shadow = isDark
-        ? BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.32),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-            spreadRadius: -2,
-          )
-        : BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-            spreadRadius: -1,
-          );
-    // Border is the theme border tone pulled to ~60% opacity so it reads as
-    // a refined hairline rather than a hard outline.
-    final borderColor = context.theme.colors.border.withValues(
-      alpha: (context.theme.colors.border.a) * 0.6,
+    final clipped = ClipRSuperellipse(
+      borderRadius: borderRadius,
+      clipBehavior: Clip.antiAliasWithSaveLayer,
+      child: ColoredBox(color: context.colour.background, child: child),
     );
+    if (!paintChrome) return clipped;
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
-        shadows: [shadow],
+        shadows: [_squircleShadow(context)],
       ),
       child: DecoratedBox(
         position: DecorationPosition.foreground,
         decoration: ShapeDecoration(
           shape: RoundedSuperellipseBorder(
-            side: BorderSide(color: borderColor, width: 1),
+            side: BorderSide(color: _squircleBorderColor(context), width: 1),
             borderRadius: borderRadius,
           ),
         ),
-        child: ClipRSuperellipse(
-          borderRadius: borderRadius,
-          clipBehavior: Clip.antiAliasWithSaveLayer,
-          child: ColoredBox(color: context.colour.background, child: child),
-        ),
+        child: clipped,
       ),
     );
   }
@@ -278,9 +293,19 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         ? 0.0
         : (hasLeftSidebar ? _halfGap : _outerInset);
     final rightPad = sharesSquircleRight ? 0.0 : _outerInset;
+    // When this panel shares a squircle with a neighbor, _HoverableResizable
+    // paints the combined shadow + border as a single layer over the
+    // middle+right region. Drop per-card chrome here so the shared shadow
+    // doesn't bleed across the seam.
+    final shared = sharesSquircleLeft || sharesSquircleRight;
     return Padding(
       padding: EdgeInsets.fromLTRB(leftPad, 0, rightPad, _outerInset),
-      child: _squircleCard(context, child, borderRadius: borderRadius),
+      child: _squircleCard(
+        context,
+        child,
+        borderRadius: borderRadius,
+        paintChrome: !shared,
+      ),
     );
   }
 
@@ -574,6 +599,16 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   Widget build(BuildContext context) {
     final colorScheme = context.colour;
     final isMulti = widget.layoutState.multiPanel;
+    // Detect whether the layout currently has the middle and left regions
+    // by inspecting the region keys (the parent omits a region entirely
+    // when it can't fit, so layoutState's visibility flags can disagree).
+    final hasMiddle = widget.regions.any(
+      (r) => r.key == const ValueKey('MiddlePanel'),
+    );
+    final hasLeft = widget.regions.any(
+      (r) => r.key == const ValueKey('LeftPanel'),
+    );
+    final sharedSquircle = isMulti && hasMiddle;
 
     return ListenableBuilder(
       listenable: _controller,
@@ -590,6 +625,27 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                 ? (overlayHeight - _outerInset).clamp(0.0, overlayHeight)
                 : overlayHeight;
 
+            // Combined squircle bounds spanning middle + right. Outer left
+            // edge sits at _halfGap past the left↔middle divider (or at
+            // _outerInset when there is no left sidebar); outer right edge
+            // is the window inset from the right.
+            double? sharedLeft;
+            double? sharedWidth;
+            if (sharedSquircle) {
+              final leftEdge = (hasLeft && _dividerOffsets.isNotEmpty)
+                  ? _dividerOffsets[0] + _halfGap
+                  : _outerInset;
+              final rightEdge = constraints.maxWidth - _outerInset;
+              sharedLeft = leftEdge;
+              sharedWidth = (rightEdge - leftEdge).clamp(
+                0.0,
+                constraints.maxWidth,
+              );
+            }
+            const sharedRadius = BorderRadius.all(
+              Radius.circular(_panelRadius),
+            );
+
             // The divider between two main-panel regions (middle ↔ right)
             // sits INSIDE a single shared squircle and gets a visible 1px
             // line at rest. Any other divider (left sidebar ↔ main panel)
@@ -605,6 +661,27 @@ class _HoverableResizableState extends State<_HoverableResizable> {
 
             return Stack(
               children: [
+                // Shared squircle shadow behind the middle+right combined
+                // region. Painted once at the layout level so the shadow
+                // hugs only the outer perimeter; the seam between middle
+                // and right is invisible to the shadow.
+                if (sharedSquircle && sharedWidth! > 0)
+                  Positioned(
+                    left: sharedLeft,
+                    top: 0,
+                    width: sharedWidth,
+                    height: squircleHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: sharedRadius,
+                          ),
+                          shadows: [_squircleShadow(context)],
+                        ),
+                      ),
+                    ),
+                  ),
                 // The actual resizable widget with no divider
                 FResizable(
                   control: .managedCascade(controller: _controller),
@@ -612,6 +689,29 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                   divider: FResizableDivider.none,
                   children: widget.regions,
                 ),
+                // Shared squircle hairline above the combined region's
+                // content. Stays below the divider overlays so hover/drag
+                // highlights still paint on top of it.
+                if (sharedSquircle && sharedWidth! > 0)
+                  Positioned(
+                    left: sharedLeft,
+                    top: 0,
+                    width: sharedWidth,
+                    height: squircleHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          shape: RoundedSuperellipseBorder(
+                            side: BorderSide(
+                              color: _squircleBorderColor(context),
+                              width: 1,
+                            ),
+                            borderRadius: sharedRadius,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 // Overlay dividers with drag hysteresis handling.
                 // Use Transform.translate instead of Positioned to
                 // guarantee repaint on position change (RenderTransform
@@ -648,7 +748,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                                     (_hoveredDividerIndex == i ||
                                         _draggingDividerIndex == i)
                                     ? 2.0
-                                    : 1,
+                                    : (isInsideSquircle(i) ? 2.0 : 1),
                                 height: squircleHeight,
                                 color:
                                     (_hoveredDividerIndex == i ||

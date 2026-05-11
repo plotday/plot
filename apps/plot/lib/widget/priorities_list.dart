@@ -190,6 +190,10 @@ class _PrioritiesListState extends State<PrioritiesList>
         final BorderRadius? itemBorderRadius = isLeftPanel
             ? BorderRadius.circular(6)
             : null;
+        // Tiles outside the squircles (the left-panel priorities frame)
+        // render in a monochrome resting state, reintroducing priority color
+        // on hover or when selected.
+        final bool monochrome = isLeftPanel;
 
         // Automatic expansion logic
         bool shouldExpand(Priority priority) {
@@ -211,6 +215,7 @@ class _PrioritiesListState extends State<PrioritiesList>
             PriorityWidget(
               key: ValueKey('${topSection ? 'top' : 'all'}-${priority.id}'),
               priority: priority,
+              monochrome: monochrome,
               selected: widget.selected?.id == priority.id,
               selectedBorder: topSection || priority.topOrder == null,
               borderRadius: itemBorderRadius,
@@ -221,6 +226,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     : textStyle.color,
               ),
               showAncestry: topSection,
+              boldLeaf: topSection,
               unread: topSection
                   ? _hasDescendantUnread(priority)
                   : (!priorityExpanded && _hasDescendantUnread(priority)
@@ -280,6 +286,7 @@ class _PrioritiesListState extends State<PrioritiesList>
               PriorityWidget(
                 key: ValueKey('all-${priority.id}'),
                 priority: priority,
+                monochrome: monochrome,
                 selected: widget.selected?.id == priority.id,
                 selectedBorder: true,
                 borderRadius: itemBorderRadius,
@@ -289,7 +296,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                       ? context.theme.colors.mutedForeground
                       : context.colour.colours.fromTheme(
                           priority.displayColor,
-                          muted:
+                          muted: !monochrome &&
                               !(priorityExpanded
                                   ? priority.active
                                   : _hasDescendantActive(priority)) &&
@@ -350,6 +357,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                   children: [
                     PriorityWidget(
                       priority: priority,
+                      monochrome: monochrome,
                       selected: widget.selected?.id == priority.id,
                       selectedBorder: true,
                       borderRadius: itemBorderRadius,
@@ -359,7 +367,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                             ? context.theme.colors.mutedForeground
                             : context.colour.colours.fromTheme(
                                 priority.displayColor,
-                                muted:
+                                muted: !monochrome &&
                                     !(priorityExpanded
                                         ? priority.active
                                         : _hasDescendantActive(priority)) &&
@@ -417,54 +425,15 @@ class _PrioritiesListState extends State<PrioritiesList>
         // continuous dark block; the dark-frame treatment alone separates
         // it from the agenda above. A different visual treatment for the
         // two sections will land later.
-        final everythingTile = ListTile(
-          title: widget.root.title,
-          command: ChangeCurrentPriority(widget.root),
-          longPressCommand: !hasPhysicalKeyboard()
-              ? ShowPriorityCommands(widget.root)
-              : null,
-          selected: widget.selected?.id == widget.root.id,
+        final everythingTile = _EverythingTile(
+          root: widget.root,
+          isSelected: widget.selected?.id == widget.root.id,
+          isMultiPanel: isMultiPanel,
           borderRadius: itemBorderRadius,
-          leadingBuilder: (isHovered, hasFocus) => Padding(
-            padding: EdgeInsets.only(
-              left: isMultiPanel
-                  ? context.theme.spacing.lg
-                  : context.theme.spacing.sm,
-              right: context.theme.spacing.sm,
-              bottom: 2,
-            ),
-            child: PriorityNotification(
-              unread: _hasDescendantUnread(widget.root),
-              active: _hasDescendantActive(widget.root),
-              color: widget.root.displayColor,
-            ),
-          ),
-          textStyle: itemStyle.copyWith(
-            color: context.colour.colours.fromTheme(
-              widget.root.displayColor,
-              muted:
-                  !_hasDescendantActive(widget.root) &&
-                  !_hasDescendantUnread(widget.root),
-            ),
-          ),
-          trailingBuilder: (isHovered, hasFocus) {
-            final button = Padding(
-              padding: EdgeInsets.only(
-                right: isMultiPanel
-                    ? context.theme.spacing.lg
-                    : context.theme.spacing.sm,
-              ),
-              child: Button.icon(ShowPriorityCommands(widget.root)),
-            );
-            if (isHovered || hasFocus) return button;
-            return Visibility(
-              visible: false,
-              maintainSize: true,
-              maintainAnimation: true,
-              maintainState: true,
-              child: button,
-            );
-          },
+          textStyle: itemStyle,
+          monochrome: monochrome,
+          hasUnread: _hasDescendantUnread(widget.root),
+          hasActive: _hasDescendantActive(widget.root),
         );
 
         final hasTopPriorities = widget.topPriorities.isNotEmpty;
@@ -552,10 +521,11 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                     icon: PlotIcon.add,
                     iconOnly: true,
-                    borderRadius: itemBorderRadius,
-                    textStyle: itemStyle.copyWith(
-                      color: context.theme.colors.mutedForeground,
-                    ),
+                    muted: true,
+                    // Same hover treatment as the header icon buttons: no
+                    // rounded background pill, just the icon/text shift.
+                    highlightColor: monochrome ? const Color(0x00000000) : null,
+                    borderRadius: monochrome ? null : itemBorderRadius,
                   ),
 
                   if (allPriorities.isEmpty)
@@ -672,6 +642,107 @@ class _PrioritiesListState extends State<PrioritiesList>
           pending: const Value(2),
         )
         .save();
+  }
+}
+
+class _EverythingTile extends StatefulWidget {
+  final Priority root;
+  final bool isSelected;
+  final bool isMultiPanel;
+  final BorderRadius? borderRadius;
+  final TextStyle textStyle;
+  final bool monochrome;
+  final bool hasUnread;
+  final bool hasActive;
+
+  const _EverythingTile({
+    required this.root,
+    required this.isSelected,
+    required this.isMultiPanel,
+    required this.borderRadius,
+    required this.textStyle,
+    required this.monochrome,
+    required this.hasUnread,
+    required this.hasActive,
+  });
+
+  @override
+  State<_EverythingTile> createState() => _EverythingTileState();
+}
+
+class _EverythingTileState extends State<_EverythingTile> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.isSelected || _isHovered;
+    final rootAccent = context.colour.colours.fromTheme(
+      widget.root.displayColor,
+      muted: !widget.monochrome &&
+          !widget.hasActive &&
+          !widget.hasUnread,
+    );
+    final rootAccentBg = widget.monochrome
+        ? context.colour.colours.backgroundFromTheme(widget.root.displayColor)
+        : null;
+    final restingColor = context.colour.muted;
+    final textColor = widget.monochrome && !isActive
+        ? restingColor
+        : rootAccent;
+    final indicatorColor = widget.monochrome && !isActive
+        ? restingColor
+        : context.colour.colours.fromTheme(widget.root.displayColor);
+
+    return ListTile(
+      title: widget.root.title,
+      command: ChangeCurrentPriority(widget.root),
+      longPressCommand: !hasPhysicalKeyboard()
+          ? ShowPriorityCommands(widget.root)
+          : null,
+      selected: widget.isSelected,
+      selectedColor: rootAccentBg,
+      highlightColor: rootAccentBg,
+      borderRadius: widget.borderRadius,
+      onHover: (hovered) {
+        if (mounted && _isHovered != hovered) {
+          setState(() => _isHovered = hovered);
+        }
+      },
+      leadingBuilder: (isHovered, hasFocus) => Padding(
+        padding: EdgeInsets.only(
+          left: widget.isMultiPanel
+              ? context.theme.spacing.lg
+              : context.theme.spacing.sm,
+          right: context.theme.spacing.sm,
+          bottom: 2,
+        ),
+        child: PriorityNotification(
+          unread: widget.hasUnread,
+          active: widget.hasActive,
+          color: widget.root.displayColor,
+          colorOverride: widget.monochrome ? indicatorColor : null,
+        ),
+      ),
+      textStyle: widget.textStyle.copyWith(color: textColor),
+      trailingBuilder: (isHovered, hasFocus) {
+        final button = Padding(
+          padding: EdgeInsets.only(
+            right: widget.isMultiPanel
+                ? context.theme.spacing.lg
+                : context.theme.spacing.sm,
+          ),
+          child: Button.icon(ShowPriorityCommands(widget.root)),
+        );
+        if (isHovered || hasFocus) return button;
+        return Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: button,
+        );
+      },
+    );
   }
 }
 

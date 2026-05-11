@@ -5,7 +5,9 @@ import 'package:plot/analytics/conventions.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/pulsing_icon.dart';
@@ -21,6 +23,10 @@ import 'package:plot/widget/pulsing_icon.dart';
 /// All states except offline open the manage-connections modal on tap.
 class ConnectionStatusTile extends StatelessWidget {
   const ConnectionStatusTile({super.key});
+
+  /// Transparent highlight so the hover effect matches the header icon
+  /// buttons — only the text/icon color shifts, no rounded background pill.
+  static const _transparentHighlight = Color(0x00000000);
 
   @override
   Widget build(BuildContext context) {
@@ -55,12 +61,16 @@ class ConnectionStatusTile extends StatelessWidget {
     required List<TwistConnectionRow> connections,
     required List<TwistInstance> instances,
   }) {
-    final textStyle = context.theme.typography.sm;
+    // Match the resting priority tiles' weight so the priority frame reads
+    // as a single typographic family (sm / w500 / plotColors.muted).
+    final textStyle = context.theme.typography.sm.copyWith(
+      fontWeight: FontWeight.w500,
+    );
 
     if (!online) {
       return ListTile(
         title: 'Offline',
-        icon: PlotIcon.plugCircleXmark,
+        leadingBuilder: _leadingIcon(context, PlotIcon.plugCircleXmark),
         textStyle: textStyle,
         muted: true,
         noHoverHighlight: true,
@@ -75,13 +85,17 @@ class ConnectionStatusTile extends StatelessWidget {
       return ListTile(
         title: 'Reconnect ${reauthNeeded.join(', ')}',
         textStyle: textStyle.copyWith(color: context.theme.colors.destructive),
+        highlightColor: _transparentHighlight,
+        leadingBuilder: _leadingWidget(
+          context,
+          Icon(
+            PlotIcon.plugCircleExclamation,
+            size: context.theme.iconSizes.base,
+            color: context.theme.colors.destructive,
+          ),
+        ),
         command: _OpenManageConnections(
           title: 'Reconnect ${reauthNeeded.join(', ')}',
-          iconBuilder: (c) => Icon(
-            PlotIcon.plugCircleExclamation,
-            size: c.theme.iconSizes.base,
-            color: c.theme.colors.destructive,
-          ),
         ),
       );
     }
@@ -95,13 +109,17 @@ class ConnectionStatusTile extends StatelessWidget {
         title: 'Syncing ${syncing.join(', ')}',
         textStyle: textStyle,
         muted: true,
+        highlightColor: _transparentHighlight,
+        leadingBuilder: _leadingWidget(
+          context,
+          PulsingIcon(
+            icon: PlotIcon.plugCircleBolt,
+            size: context.theme.iconSizes.base,
+            primaryColor: context.theme.colors.primary,
+          ),
+        ),
         command: _OpenManageConnections(
           title: 'Syncing ${syncing.join(', ')}',
-          iconBuilder: (c) => PulsingIcon(
-            icon: PlotIcon.plugCircleBolt,
-            size: c.theme.iconSizes.base,
-            primaryColor: c.theme.colors.primary,
-          ),
         ),
       );
       if (syncing.length > 1) {
@@ -117,10 +135,50 @@ class ConnectionStatusTile extends StatelessWidget {
     final title = hasConnections ? 'Connections' : 'Add connection';
     return ListTile(
       title: title,
-      icon: hasConnections ? PlotIcon.connection : PlotIcon.plugCirclePlus,
+      leadingBuilder: _leadingIcon(
+        context,
+        hasConnections ? PlotIcon.connection : PlotIcon.plugCirclePlus,
+      ),
       textStyle: textStyle,
       muted: true,
+      highlightColor: _transparentHighlight,
       command: _OpenManageConnections(title: title),
+    );
+  }
+
+  /// Builds a leading-slot icon that aligns the icon and label with the
+  /// surrounding priority tiles (same left inset, same icon-to-label gap).
+  /// The icon color flips muted → foreground on hover, matching `muted: true`.
+  Widget? Function(bool, bool) _leadingIcon(
+    BuildContext context,
+    IconData icon,
+  ) => (isHovered, hasFocus) {
+    final highlighted = isHovered || hasFocus;
+    return _leadingWidget(
+      context,
+      Icon(
+        icon,
+        size: context.theme.iconSizes.base,
+        color: highlighted
+            ? context.theme.colors.foreground
+            : context.theme.plotColors.muted,
+      ),
+    )(isHovered, hasFocus);
+  };
+
+  Widget? Function(bool, bool) _leadingWidget(
+    BuildContext context,
+    Widget child,
+  ) {
+    return (isHovered, hasFocus) => Padding(
+      padding: EdgeInsets.only(
+        left: context.theme.spacing.lg,
+        right: context.theme.spacing.sm,
+      ),
+      child: SizedBox.square(
+        dimension: context.theme.iconSizes.base,
+        child: Center(child: child),
+      ),
     );
   }
 
@@ -145,17 +203,11 @@ class ConnectionStatusTile extends StatelessWidget {
 }
 
 /// Internal command that opens the manage-connections modal when the tile is
-/// tapped. Optionally renders a custom icon widget so the same tap target can
-/// surface a destructive or pulsing icon.
+/// tapped. The host tile renders the icon via `leadingBuilder`, so this
+/// command no longer needs to provide one.
 class _OpenManageConnections extends Command {
-  _OpenManageConnections({required super.title, this.iconBuilder})
+  _OpenManageConnections({required super.title})
     : super(eventObject: EventObject.twist, eventAction: EventAction.opened);
-
-  final Widget Function(BuildContext context)? iconBuilder;
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
-      iconBuilder?.call(context);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

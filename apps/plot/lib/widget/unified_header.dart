@@ -472,7 +472,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       return Expanded(
         child: Align(
           alignment: alignment,
-          child: PriorityLabel(priority: state.context),
+          child: PriorityLabel(priority: state.context, boldLeaf: true),
         ),
       );
     }
