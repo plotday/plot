@@ -1,13 +1,31 @@
 /*
   Cross-Origin-Opener-Policy: same-origin-allow-popups
 
-# Flutter's top-level JS bundles keep the same filename across builds but
-# their contents change every deploy. Cloudflare Pages' default cache for
-# JS is max-age=14400 (4 hours), which means every returning user within
-# that window sees stale code until their browser cache expires. Override
-# to require revalidation on every request — the response carries an etag,
-# so unchanged files return 304 Not Modified and cost almost nothing.
+# Flutter's top-level bundles keep the same filename across builds but their
+# contents change every deploy. Cloudflare Pages' default cache for JS/WASM is
+# max-age=14400 (4 hours), which means every returning user within that window
+# sees stale code until their browser cache expires — only Shift+Cmd+R (which
+# bypasses the browser cache) picks up the new deploy. Override to require
+# revalidation on every request — the response carries an etag, so unchanged
+# files return 304 Not Modified and cost almost nothing.
+#
+# index.html is served for the root AND for every SPA route (/p/*, /t/*) via
+# Cloudflare Pages' built-in SPA fallback. Cache-Control rules in _headers are
+# matched against the REQUEST path, not the resolved file, so the SPA routes
+# need their own entries.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/p/*
+  Cache-Control: public, max-age=0, must-revalidate
+/t/*
+  Cache-Control: public, max-age=0, must-revalidate
 /main.dart.js
+  Cache-Control: public, max-age=0, must-revalidate
+/main.dart.mjs
+  Cache-Control: public, max-age=0, must-revalidate
+/main.dart.wasm
   Cache-Control: public, max-age=0, must-revalidate
 /flutter.js
   Cache-Control: public, max-age=0, must-revalidate
@@ -16,6 +34,19 @@
 /flutter_service_worker.js
   Cache-Control: public, max-age=0, must-revalidate
 /drift_worker.js
+  Cache-Control: public, max-age=0, must-revalidate
+/version.json
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.json
+  Cache-Control: public, max-age=0, must-revalidate
+# AssetManifest / FontManifest are loaded by main.dart and are stable filenames
+# whose contents change every build. They drive which assets/fonts the app
+# fetches, so a stale manifest pins users to old asset URLs.
+/assets/AssetManifest.bin
+  Cache-Control: public, max-age=0, must-revalidate
+/assets/AssetManifest.bin.json
+  Cache-Control: public, max-age=0, must-revalidate
+/assets/FontManifest.json
   Cache-Control: public, max-age=0, must-revalidate
 
 /.well-known/apple-app-site-association
