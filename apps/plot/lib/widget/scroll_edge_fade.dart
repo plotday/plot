@@ -28,16 +28,29 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
   bool _atTop = true;
   bool _atBottom = false;
 
-  bool _onScroll(ScrollNotification n) {
-    if (n.metrics.axis != Axis.vertical) return false;
-    final atTop = n.metrics.pixels <= n.metrics.minScrollExtent + 0.5;
-    final atBottom = n.metrics.pixels >= n.metrics.maxScrollExtent - 0.5;
+  void _updateFromMetrics(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return;
+    final atTop = metrics.pixels <= metrics.minScrollExtent + 0.5;
+    final atBottom = metrics.pixels >= metrics.maxScrollExtent - 0.5;
     if (atTop != _atTop || atBottom != _atBottom) {
       setState(() {
         _atTop = atTop;
         _atBottom = atBottom;
       });
     }
+  }
+
+  bool _onScroll(ScrollNotification n) {
+    _updateFromMetrics(n.metrics);
+    return false;
+  }
+
+  // Fires on initial layout and when the scrollable's metrics change without
+  // a user scroll (e.g. content shorter than viewport). Without this, when
+  // the child fits in the viewport no [ScrollNotification] ever arrives and
+  // the bottom fade — assumed visible by default — would stay forever.
+  bool _onMetrics(ScrollMetricsNotification n) {
+    _updateFromMetrics(n.metrics);
     return false;
   }
 
@@ -46,58 +59,61 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
     final bg = widget.background;
     if (bg == null) return widget.child;
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScroll,
-      child: ColoredBox(
-        color: bg,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            // Skip the fade for short panels — it would consume most of the
-            // visible content.
-            if (constraints.maxHeight <= _fadeExtent * 3) return widget.child;
-            final transparent = bg.withValues(alpha: 0);
-            return Stack(
-              children: [
-                widget.child,
-                if (!_atTop)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: _fadeExtent,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [bg, transparent],
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _onMetrics,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: ColoredBox(
+          color: bg,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Skip the fade for short panels — it would consume most of the
+              // visible content.
+              if (constraints.maxHeight <= _fadeExtent * 3) return widget.child;
+              final transparent = bg.withValues(alpha: 0);
+              return Stack(
+                children: [
+                  widget.child,
+                  if (!_atTop)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: _fadeExtent,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [bg, transparent],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                if (!_atBottom)
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: _fadeExtent,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [transparent, bg],
+                  if (!_atBottom)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: _fadeExtent,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [transparent, bg],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
