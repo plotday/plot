@@ -56,15 +56,23 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
           : null,
       itemBuilder: (context, index) {
         if (hasPhysicalKeyboard()) {
-          // Desktop: full item is drag target
+          // Desktop: full item is drag target, starts immediately on
+          // pointer-down.
           return ReorderableDragStartListener(
             index: index,
             key: ValueKey(list[index]),
             child: widget.itemBuilder(context, list[index], null),
           );
         }
-        // Mobile: pass index so item can place its own drag handle
-        return widget.itemBuilder(context, list[index], index);
+        // Mobile: full item is drag target, but a long-press is required
+        // to start the drag so the list can still be scrolled by a
+        // normal touch-drag. No drag handle is rendered; items receive
+        // `null` for [reorderableIndex] and skip any handle rendering.
+        return material.ReorderableDelayedDragStartListener(
+          index: index,
+          key: ValueKey(list[index]),
+          child: widget.itemBuilder(context, list[index], null),
+        );
       },
       onReorder: (int oldIndex, int newIndex) {
         setState(() {

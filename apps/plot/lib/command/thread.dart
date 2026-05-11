@@ -3229,6 +3229,7 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
+      thread.unread ? MarkReadThread(thread) : MarkUnreadThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
       if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
@@ -3255,6 +3256,7 @@ List<Command> threadCommands(
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
+    thread.unread ? MarkReadThread(thread) : MarkUnreadThread(thread),
     if (!skipInfrequent) EditThread(thread),
     if (!skipInfrequent) MoveThreadToPriority(thread),
     PickThreadShared(thread),

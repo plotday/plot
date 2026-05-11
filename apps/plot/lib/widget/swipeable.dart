@@ -108,8 +108,12 @@ class _SwipeableState extends State<Swipeable>
 
     if (absOffset < _shortThreshold) return _SwipeZone.idle;
 
-    // Only long command: promote to short threshold
-    if (shortCmd == null && longCmd != null) return _SwipeZone.short;
+    // Only long command: require crossing the long threshold (no promotion).
+    // Keeps menu activation distance consistent across views even when a
+    // direction only has the long command wired.
+    if (shortCmd == null && longCmd != null) {
+      return absOffset >= _longThreshold ? _SwipeZone.long : _SwipeZone.idle;
+    }
 
     // Only short command: short zone extends past long threshold
     if (longCmd == null) return _SwipeZone.short;

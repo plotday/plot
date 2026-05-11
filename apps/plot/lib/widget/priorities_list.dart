@@ -693,12 +693,12 @@ class _EverythingTileState extends State<_EverythingTile> {
         ? restingColor
         : context.colour.colours.fromTheme(widget.root.displayColor);
 
-    return ListTile(
+    final listTile = ListTile(
       title: widget.root.title,
       command: ChangeCurrentPriority(widget.root),
-      longPressCommand: !hasPhysicalKeyboard()
-          ? ShowPriorityCommands(widget.root)
-          : null,
+      // Menu opens via long-left swipe on touch (see wrapper below); long-
+      // press is reserved for reorder drag.
+      longPressCommand: null,
       selected: widget.isSelected,
       selectedColor: rootAccentBg,
       highlightColor: rootAccentBg,
@@ -742,6 +742,15 @@ class _EverythingTileState extends State<_EverythingTile> {
           child: button,
         );
       },
+    );
+
+    if (hasPhysicalKeyboard()) return listTile;
+
+    // Touch: open the priority menu via a long-left swipe.
+    return Swipeable(
+      key: ValueKey(widget.root.id),
+      endLongCommand: ShowPriorityCommands(widget.root),
+      child: listTile,
     );
   }
 }

@@ -119,52 +119,35 @@ class _PriorityWidgetState extends State<PriorityWidget> {
           ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
           : null,
       onTap: widget.onTap,
-      longPressCommand: !hasPhysicalKeyboard()
-          ? ShowPriorityCommands(priority)
-          : null,
+      // Menu opens via long-left swipe on touch (see Swipeable wrapper
+      // below) and via right-click on desktop (see ContextMenu wrapper
+      // below). Long-press is reserved for starting a reorder drag.
+      longPressCommand: null,
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
-        final showDragHandle =
-            !hasPhysicalKeyboard() && widget.reorderableIndex != null;
         // Reserve vertical space so the tile height doesn't jump when hover
         // buttons appear. Width collapses to 0 when not hovered so the body
         // gets full width.
         final buttonSlotHeight = buildContext.theme.iconSizes.base * 2;
 
-        return Row(
-          children: [
-            Padding(
-              padding: EdgeInsets.only(right: showDragHandle ? 0 : leadingH),
-              child: SizedBox(
-                height: buttonSlotHeight,
-                child: hovered
-                    ? Row(
-                        children: [
-                          Button.icon(
-                            SetTopPriority(
-                              priority,
-                              priority.topOrder == null,
-                            ),
-                          ),
-                          Button.icon(ShowPriorityCommands(priority)),
-                        ],
-                      )
-                    : null,
-              ),
-            ),
-            if (showDragHandle)
-              ReorderableDragStartListener(
-                index: widget.reorderableIndex!,
-                child: DragHandle(
-                  padding: EdgeInsets.only(
-                    left: 8,
-                    right: leadingH,
-                    top: 8,
-                    bottom: 8,
-                  ),
-                ),
-              ),
-          ],
+        return Padding(
+          padding: EdgeInsets.only(right: leadingH),
+          child: SizedBox(
+            height: buttonSlotHeight,
+            child: hovered
+                ? Row(
+                    children: [
+                      Button.icon(
+                        SetTopPriority(
+                          priority,
+                          priority.topOrder == null,
+                        ),
+                      ),
+                      Button.icon(ShowPriorityCommands(priority)),
+                    ],
+                  )
+                : null,
+          ),
         );
       },
       title: widget.showAncestry ? null : priority.title,
@@ -227,7 +210,12 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       );
     }
 
-    return listTile;
+    // Touch: open the priority menu via a long-left swipe.
+    return Swipeable(
+      key: ValueKey(priority.id),
+      endLongCommand: ShowPriorityCommands(priority),
+      child: listTile,
+    );
   }
 }
 

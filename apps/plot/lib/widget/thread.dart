@@ -118,30 +118,25 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void Function(bool hovered)? get onHover => widget.onHover;
   int? get reorderableIndex => widget.reorderableIndex;
 
-  // Short right: Start (only if not already started/user-scheduled)
+  // Short right: Add to today. Universal "deal with this now" — works on
+  // unscheduled threads (adds them to today), future-scheduled threads
+  // (bumps to today), and already-today threads (no-op re-save).
   Command? _getSwipeRightShortCommand() {
     if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
-    if (activity.todo) return null;
     return StartThread(activity);
   }
 
-  // Long right: Schedule (any thread)
+  // Long right: Schedule for another day.
   Command? _getSwipeRightLongCommand() {
     if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
     return PickScheduleThread(activity);
   }
 
-  // Short left: Mark read (only if unread)
+  // Short left: Finish (only for scheduled/todo threads — inert on
+  // unscheduled threads, the user must reach the long zone for the menu).
   Command? _getSwipeLeftShortCommand() {
-    if (widget.isOutsidePriority) return null;
-    if (!activity.unread) return null;
-    return MarkReadThread(activity);
-  }
-
-  // Long left: Finish (only if started/user-scheduled)
-  Command? _getSwipeLeftLongCommand() {
     if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
     if (!activity.todo) return null;
@@ -157,6 +152,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           ? (_) async {}
           : null,
     );
+  }
+
+  // Long left: Menu. Universal across all list views. Mark read and the
+  // other less-frequent actions are accessible from here.
+  Command? _getSwipeLeftLongCommand() {
+    if (widget.isOutsidePriority) return null;
+    return ShowThreadCommands(activity);
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
@@ -229,7 +231,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
     final listTile = ListTile(
       command: CommandWrapper(ChangeCurrentThread(activity), icon: Value(null)),
-      longPressCommand: isTouchDevice ? ShowThreadCommands(activity) : null,
+      // Menu opens via long-left swipe on touch (see Swipeable wrapper
+      // below) and via right-click on desktop (see ContextMenu wrapper
+      // below). Long-press is reserved for starting a reorder drag.
+      longPressCommand: null,
       crossAxisAlignment: CrossAxisAlignment.start,
       title: activity.displayTitle,
       subtitle: activity.displayPreview,
@@ -638,34 +643,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         swipeLeftShort != null ||
         swipeLeftLong != null;
 
-    // Mobile with reorderable: trailing drag handle, swipeable only wraps content
-    if (reorderableIndex != null) {
-      final dragHandle = ReorderableDragStartListener(
-        index: reorderableIndex!,
-        child: const DragHandle(),
-      );
-
-      final content = hasSwipeCommands
-          ? Swipeable(
-              key: ValueKey(activity.id),
-              startCommand: swipeRightShort,
-              startLongCommand: swipeRightLong,
-              endCommand: swipeLeftShort,
-              endLongCommand: swipeLeftLong,
-              exitOnActivation: widget.onSwipeExit,
-              child: listTile,
-            )
-          : listTile;
-
-      return Row(
-        children: [
-          Expanded(child: content),
-          dragHandle,
-        ],
-      );
-    }
-
-    // Mobile without reorderable: wrap with swipeable if commands exist
+    // Mobile: long-press on the row starts a reorder drag (handled by the
+    // enclosing block-drag or ReorderableDelayedDragStartListener); swipes
+    // expose the quick actions and the menu.
     if (hasSwipeCommands) {
       return Swipeable(
         key: ValueKey(activity.id),

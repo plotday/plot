@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
+import 'package:plot/util/platform.dart';
 
 /// Payload carried by the block-level drag system.
 ///
@@ -857,6 +859,13 @@ class BlockDragController extends ChangeNotifier {
     if (_draggingBlockId == payload.blockId) return;
     _draggingBlockId = payload.blockId;
     _draggingPayload = payload;
+
+    // Confirm the long-press lift on touch with a medium impact —
+    // matches the iOS standard for reorderable lists. Desktop drags
+    // start on pointer-down and don't need confirmation.
+    if (!hasPhysicalKeyboard()) {
+      HapticFeedback.mediumImpact();
+    }
 
     // Reset to a clean "no slot active" baseline. If the previous
     // drag's close animation hadn't finished, residual snapshot

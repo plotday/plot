@@ -503,6 +503,11 @@ class _BlockHeaderState extends State<_BlockHeader> {
   BlockDragController? _dragController;
   bool _isHovered = false;
 
+  // TODO(agenda-menu): once time-management commands exist for agenda
+  // blocks, wrap the row returned from build() in a Swipeable on touch
+  // with `endLongCommand: ShowBlockCommands(...)` so the long-left swipe
+  // opens the block menu (matches ThreadWidget + PriorityWidget).
+
   /// True when this block header is itself a drag source (a non-event
   /// block with a known parent block id). Outside-priority gating is
   /// no longer relevant in the universal agenda — every priority's
