@@ -52,7 +52,7 @@ class _ThreadLookupPageState extends State<ThreadLookupPage> {
         stackTrace,
       );
       if (!mounted) return;
-      context.router.replaceAll([EmptyShellRoute("Now")()]);
+      context.router.replaceAll([const RootRoute()]);
     }
   }
 

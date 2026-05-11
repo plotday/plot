@@ -15,7 +15,6 @@ import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -218,17 +217,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
 
+      // All header icon buttons share the footer ListTile's coloring:
+      // [plotColors.muted] at rest and [theme.colors.foreground] on hover
+      // (the latter is Button.icon's default hoverColor when a [color] is
+      // set).
       // Single-panel with thread: back button clears the thread.
       if (hasActivity && !layoutState.multiPanel)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
-          color: context.theme.colors.foreground,
+          color: context.theme.plotColors.muted,
         )
       // Single-panel without thread: back to Priorities tab
       else if (!layoutState.multiPanel)
         Button.icon(
           BackToPrioritiesTabCommand(),
-          color: context.theme.colors.foreground,
+          color: context.theme.plotColors.muted,
         )
       // Multi-panel right-only with a thread visible: back + open priorities
       // + open threads. Back clears the thread but keeps the middle panel
@@ -242,17 +245,19 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Button.icon(
-              CommandWrapper(
-                ToggleLeftSidebarCommand(isVisible: false),
-                icon: Value(PlotIcon.priorities),
-              ),
+              ToggleLeftSidebarCommand(isVisible: false),
+              color: context.theme.plotColors.muted,
             ),
-            Button.icon(ToggleMiddleSidebarCommand(isVisible: false)),
+            Button.icon(
+              ToggleMiddleSidebarCommand(isVisible: false),
+              color: context.theme.plotColors.muted,
+            ),
             Button.icon(
               CommandWrapper(
                 ChangeCurrentThread(null),
                 icon: Value(PlotIcon.back),
               ),
+              color: context.theme.plotColors.muted,
             ),
           ],
         )
@@ -267,19 +272,26 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Button.icon(CyclePanelsCommand(layoutState: layoutState)),
+            Button.icon(
+              CyclePanelsCommand(layoutState: layoutState),
+              color: context.theme.plotColors.muted,
+            ),
             Button.icon(
               CommandWrapper(
                 ChangeCurrentThread(null),
                 icon: Value(PlotIcon.back),
               ),
+              color: context.theme.plotColors.muted,
             ),
           ],
         )
       // 2-panel browsing (960–1309px): cycle
       else if (layoutState.isTwoPanel &&
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
-        Button.icon(CyclePanelsCommand(layoutState: layoutState))
+        Button.icon(
+          CyclePanelsCommand(layoutState: layoutState),
+          color: context.theme.plotColors.muted,
+        )
       // ≥ 1310px right-only: priorities icon + open threads
       else if (layoutState.multiPanel &&
           !layoutState.leftPanelVisible &&
@@ -288,12 +300,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Button.icon(
-              CommandWrapper(
-                ToggleLeftSidebarCommand(isVisible: false),
-                icon: Value(PlotIcon.priorities),
-              ),
+              ToggleLeftSidebarCommand(isVisible: false),
+              color: context.theme.plotColors.muted,
             ),
-            Button.icon(ToggleMiddleSidebarCommand(isVisible: false)),
+            Button.icon(
+              ToggleMiddleSidebarCommand(isVisible: false),
+              color: context.theme.plotColors.muted,
+            ),
           ],
         )
       // ≥ 1310px with sidebar(s): explicit toggle buttons
@@ -302,12 +315,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Button.icon(
-              layoutState.leftPanelVisible
-                  ? ToggleLeftSidebarCommand(isVisible: true)
-                  : CommandWrapper(
-                      ToggleLeftSidebarCommand(isVisible: false),
-                      icon: Value(PlotIcon.priorities),
-                    ),
+              ToggleLeftSidebarCommand(
+                isVisible: layoutState.leftPanelVisible,
+              ),
+              color: context.theme.plotColors.muted,
             ),
             if (!(layoutState.leftPanelVisible &&
                 layoutState.middlePanelVisible))
@@ -315,29 +326,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 ToggleMiddleSidebarCommand(
                   isVisible: layoutState.middlePanelVisible,
                 ),
+                color: context.theme.plotColors.muted,
               ),
           ],
         ),
 
-      // Search field or title + search button
-      if (_searchExpanded) ...[
-        // Invisible button-height spacer to keep the row height constant
-        SizedBox(
-          width: 0,
-          child: Opacity(
-            opacity: 0,
-            child: IgnorePointer(child: _searchButton()),
-          ),
-        ),
-        _buildSearchField(context, layoutState, state, notifier),
-      ] else
-        _buildTitleWithSearch(
+      // Search field or title
+      if (_searchExpanded)
+        _buildSearchField(context, layoutState, state, notifier)
+      else
+        _buildTitle(
           context,
           layoutState,
           state,
           hasActivity,
           priorityPageHidden,
-          notifier,
         ),
     ];
 
@@ -352,7 +355,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
       // Edit thread (when thread is visible). Hidden for read-only viewers.
       if (thread != null && !thread.isReadOnly)
-        Button.icon(EditThread(thread)),
+        Button.icon(
+          EditThread(thread),
+          color: context.theme.plotColors.muted,
+        ),
 
       // Share thread (when thread is visible). Hidden for read-only viewers.
       if (thread != null && !thread.isReadOnly)
@@ -360,9 +366,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel && !state.context.isTwistDev)
-        Button.icon(NewThread()),
+        Button.icon(NewThread(), color: context.theme.plotColors.muted),
 
-      Button.icon(_buildMenuCommand(state, layoutState, notifier)),
+      _searchButton(),
+
+      Button.icon(
+        _buildMenuCommand(state, layoutState, notifier),
+        color: context.theme.plotColors.muted,
+      ),
 
       // Windows window control padding
       if (resolvedToolbarPadding.right != 0)
@@ -373,29 +384,32 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       const SizedBox.shrink(),
     ];
 
-    Widget header = FTheme(
-      data: darkenTheme(context, context.theme, context.colour, steps: 2),
-      child: Builder(
-        builder: (context) => ClipRect(
-          key: _headerKey,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.theme.colors.background,
-              border: Border(
-                bottom: BorderSide(
-                  color: context.theme.colors.border,
-                  width: 1,
-                ),
+    // In multi-panel mode, the header sits transparently on the priority-
+    // tinted frame background painted at the page level. In single-panel
+    // mode, paint the darkest panel background directly (a wrapping
+    // darkenTheme would dim foreground/muted lightness too and reduce icon
+    // contrast against the darkened surface).
+    final BoxDecoration decoration = layoutState.multiPanel
+        ? const BoxDecoration()
+        : BoxDecoration(
+            color: context.colour.panelDarkestBackground,
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 1,
               ),
             ),
-            child: FHeader(
-              style: FHeaderStyleDelta.delta(
-                padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-              ),
-              title: Row(spacing: 8, children: titleChildren),
-              suffixes: suffixes,
-            ),
+          );
+    Widget header = ClipRect(
+      key: _headerKey,
+      child: DecoratedBox(
+        decoration: decoration,
+        child: FHeader(
+          style: FHeaderStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
           ),
+          title: Row(spacing: 8, children: titleChildren),
+          suffixes: suffixes,
         ),
       ),
     );
@@ -414,19 +428,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         searchExpanded: _searchExpanded,
         onToggle: _toggleSearch,
       ),
-      color: context.theme.colors.foreground.withValues(alpha: 0.7),
+      color: context.theme.plotColors.muted,
     );
   }
 
-  Widget _buildTitleWithSearch(
+  Widget _buildTitle(
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
     bool hasActivity,
     bool priorityPageHidden,
-    ThreadHeaderNotifier? notifier,
   ) {
-    final search = _searchButton();
+    final alignment = layoutState.multiPanel
+        ? Alignment.center
+        : Alignment.centerLeft;
 
     // Thread open while the PriorityPage panel is hidden: show thread title
     // (or hide the title when the thread is a new draft without a title).
@@ -437,22 +452,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       }
 
       return Expanded(
-        child: Row(
-          spacing: 8,
-          children: [
-            Flexible(
-              child: Text(
-                thread.displayTitle,
-                overflow: TextOverflow.ellipsis,
-                textHeightBehavior: const TextHeightBehavior(),
-                style: context.theme.typography.sm.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: context.theme.colors.foreground,
-                ),
-              ),
+        child: Align(
+          alignment: alignment,
+          child: Text(
+            thread.displayTitle,
+            overflow: TextOverflow.ellipsis,
+            textHeightBehavior: const TextHeightBehavior(),
+            style: context.theme.typography.sm.copyWith(
+              fontWeight: FontWeight.w600,
+              color: context.theme.colors.foreground,
             ),
-            search,
-          ],
+          ),
         ),
       );
     }
@@ -460,29 +470,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // Single panel: show the priority label.
     if (!layoutState.multiPanel) {
       return Expanded(
-        child: Row(
-          spacing: 8,
-          children: [
-            Flexible(child: PriorityLabel(priority: state.context)),
-            search,
-          ],
+        child: Align(
+          alignment: alignment,
+          child: PriorityLabel(priority: state.context),
         ),
       );
     }
 
-    // Multi-panel: show PrioritySelector with dropdown
-    final selector = PrioritySelector(
-      selected: state.context,
-      onSelect: (p) => context.run(ChangeCurrentPriority(p)),
-    );
-
+    // Multi-panel: show PrioritySelector with dropdown, centered.
     return Expanded(
-      child: Row(
-        spacing: 8,
-        children: [
-          Flexible(child: selector),
-          search,
-        ],
+      child: Align(
+        alignment: alignment,
+        child: PrioritySelector(
+          selected: state.context,
+          onSelect: (p) => context.run(ChangeCurrentPriority(p)),
+        ),
       ),
     );
   }
@@ -522,7 +524,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     return Expanded(
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: layoutState.multiPanel
+            ? Alignment.center
+            : Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(
@@ -546,23 +550,15 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   ),
                 ),
                 suffixBuilder: (context, style, states) {
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (buildFilters(context).isNotEmpty)
-                        Button.icon(
-                          PickFilterCommand(
-                            filterCommandsBuilder: buildFilters,
-                          ),
-                          selected: hasActiveFilters,
-                        ),
-                      Button.icon(
-                        ToggleSearchCommand(
-                          searchExpanded: _searchExpanded,
-                          onToggle: _closeSearch,
-                        ),
-                      ),
-                    ],
+                  if (buildFilters(context).isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Button.icon(
+                    PickFilterCommand(
+                      filterCommandsBuilder: buildFilters,
+                    ),
+                    selected: hasActiveFilters,
+                    color: context.theme.plotColors.muted,
                   );
                 },
               ),
@@ -591,7 +587,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ),
       selected: isScheduled,
       selectedColor: threadColor,
-      color: isScheduled ? null : context.theme.plotColors.veryMuted,
+      color: isScheduled ? null : context.theme.plotColors.muted,
     );
 
     // Icon 2: To-do state icon
@@ -635,7 +631,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           return true;
         })
         .take(3)
-        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
+        .map(
+          (tag) => Button.icon(
+            ToggleThreadTag(thread, tag),
+            color: context.theme.plotColors.muted,
+          ),
+        )
         .toList();
   }
 
@@ -654,35 +655,38 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     ];
 
     final suffixes = <Widget>[
-      Button.icon(_buildNoPriorityMenuCommand()),
+      Button.icon(
+        _buildNoPriorityMenuCommand(),
+        color: context.theme.plotColors.muted,
+      ),
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
       const SizedBox.shrink(),
     ];
 
-    Widget header = FTheme(
-      data: darkenTheme(context, context.theme, context.colour, steps: 2),
-      child: Builder(
-        builder: (context) => ClipRect(
-          key: _headerKey,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.theme.colors.background,
-              border: Border(
-                bottom: BorderSide(
-                  color: context.theme.colors.border,
-                  width: 1,
-                ),
+    // Multi-panel: transparent over the priority-tinted frame painted at
+    // the page level. Single-panel: opaque darkest-panel background.
+    final BoxDecoration decoration = layoutState.multiPanel
+        ? const BoxDecoration()
+        : BoxDecoration(
+            color: context.colour.panelDarkestBackground,
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 1,
               ),
             ),
-            child: FHeader(
-              style: FHeaderStyleDelta.delta(
-                padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-              ),
-              title: Row(spacing: 8, children: titleChildren),
-              suffixes: suffixes,
-            ),
+          );
+    Widget header = ClipRect(
+      key: _headerKey,
+      child: DecoratedBox(
+        decoration: decoration,
+        child: FHeader(
+          style: FHeaderStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
           ),
+          title: Row(spacing: 8, children: titleChildren),
+          suffixes: suffixes,
         ),
       ),
     );

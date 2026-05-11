@@ -185,57 +185,42 @@ class PriorityState extends Equatable {
       result.removeAt(nowTextIdx);
     }
 
-    // Mark the first future event as isNext for countdown display.
-    // The preceding event header (if any) gets the flag too so the
-    // header's countdown matches what the thread row would have shown
-    // pre-refactor.
+    // Mark the next-upcoming scheduled block header as isNext so the
+    // header's countdown ("in N min") renders. Post-Task-3, agendaItems
+    // contains only header items (one per block); per-thread items are
+    // gone, so we identify the next block directly from its header's
+    // [dateTimeRange]. Gap and event blocks both carry a dateTimeRange.
+    int? nextIdx;
+    DateTime? nextStart;
     for (int i = 0; i < result.length; i++) {
       final item = result[i];
-      if (item is AgendaThreadItem &&
-          !item.now &&
-          item.thread.at?.start != null &&
-          item.thread.at!.start!.isAfter(now)) {
-        // Preserve every field on the original item; only [isNext]
-        // changes. Dropping fields here (notably [parentBlockId]) would
-        // detach the row from its block — e.g. block-drag's
-        // [BlockDragHidden] can't identify it and it stays at full
-        // opacity while the rest of the block dims/collapses, which the
-        // user perceives as the row "staying behind."
-        result[i] = AgendaThreadItem(
-          item.thread,
-          now: item.now,
-          isNext: true,
-          isAssociated: item.isAssociated,
-          isOutsidePriority: item.isOutsidePriority,
-          associationParentId: item.associationParentId,
-          associationOrder: item.associationOrder,
-          parentBlockId: item.parentBlockId,
-          hidden: item.hidden,
-        );
-        if (i > 0 && result[i - 1] is AgendaHeaderItem) {
-          final h = result[i - 1] as AgendaHeaderItem;
-          if (h.thread != null &&
-              h.thread!.id == item.thread.id &&
-              h.dateTimeRange != null) {
-            result[i - 1] = AgendaHeaderItem(
-              dateTimeRange: h.dateTimeRange,
-              date: h.date,
-              now: h.now,
-              isNext: true,
-              thread: h.thread,
-              text: h.text,
-              scheduleAt: h.scheduleAt,
-              isOutsidePriority: h.isOutsidePriority,
-              blockPriority: h.blockPriority,
-              parentBlockId: h.parentBlockId,
-              sourceDate: h.sourceDate,
-              sourcePeriodStart: h.sourcePeriodStart,
-              parentBlockVisibleCount: h.parentBlockVisibleCount,
-            );
-          }
-        }
-        break;
+      if (item is! AgendaHeaderItem) continue;
+      if (item.now) continue;
+      final start = item.dateTimeRange?.start;
+      if (start == null || !start.isAfter(now)) continue;
+      if (nextStart == null || start.isBefore(nextStart)) {
+        nextStart = start;
+        nextIdx = i;
       }
+    }
+    if (nextIdx != null) {
+      final h = result[nextIdx] as AgendaHeaderItem;
+      result[nextIdx] = AgendaHeaderItem(
+        dateTimeRange: h.dateTimeRange,
+        date: h.date,
+        now: h.now,
+        isNext: true,
+        thread: h.thread,
+        text: h.text,
+        scheduleAt: h.scheduleAt,
+        isOutsidePriority: h.isOutsidePriority,
+        blockPriority: h.blockPriority,
+        block: h.block,
+        parentBlockId: h.parentBlockId,
+        sourceDate: h.sourceDate,
+        sourcePeriodStart: h.sourcePeriodStart,
+        parentBlockVisibleCount: h.parentBlockVisibleCount,
+      );
     }
 
     return result;

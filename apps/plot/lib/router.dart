@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
-import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
 import 'page/page.dart';
@@ -134,24 +133,9 @@ class AppRouter extends RootStackRouter {
           guards: [AuthGuard()],
         ),
         AutoRoute(
-          page: EmptyShellRoute("Now"),
+          page: RootRoute.page,
           path: '',
-          guards: [
-            AuthGuard(),
-            AutoRouteGuardCallback((resolver, router) async {
-              if (resolver.context.read<NowBloc>().loading) {
-                return;
-              }
-              final priorityId = resolver.context
-                  .read<NowBloc>()
-                  .loadedState
-                  .defaultPriority
-                  .id;
-              router.replaceAll([
-                PriorityRoute(priorityIdString: priorityId.toShortString()),
-              ]);
-            }),
-          ],
+          guards: [AuthGuard()],
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
@@ -162,6 +146,11 @@ class AppRouter extends RootStackRouter {
               page: EmptyShellRoute("PriorityShell"),
               path: '',
               children: [
+                AutoRoute(
+                  page: AgendaRoute.page,
+                  path: 'agenda',
+                  guards: [AuthGuard()],
+                ),
                 // Canonical priority URL: /p/:priorityId
                 AutoRoute(
                   page: PriorityRoute.page,
@@ -304,8 +293,8 @@ class AuthGuard extends AutoRouteGuard {
           SignInRoute.page.name,
           EmailSignInRoute.page.name,
         ].contains(resolver.route.name)) {
-          _logger.info('AuthGuard: Redirecting to Now');
-          router.replaceAll([EmptyShellRoute("Now")()]);
+          _logger.info('AuthGuard: Redirecting to RootRoute');
+          router.replaceAll([const RootRoute()]);
         } else {
           // User is authenticated and active, proceed with navigation
           // (includes InviteRoute for token redemption)

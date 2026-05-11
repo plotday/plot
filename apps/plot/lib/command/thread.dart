@@ -223,15 +223,13 @@ class OpenNextThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      final source = priorityBloc.resolveThreadListSource();
 
-      // Search for next root thread in the resolved list
+      // The agenda no longer contains thread items — only priority block
+      // headers. Thread navigation only operates on the activity feed.
       int offset = 1;
       while (offset < 100) {
         // Safety limit
-        final item = source == ThreadListSource.agenda
-            ? priorityBloc.getAgendaItem(offset)
-            : priorityBloc.getActivityFeedItem(offset);
+        final item = priorityBloc.getActivityFeedItem(offset);
         if (item == null) {
           return const CommandSkipped();
         }
@@ -268,15 +266,13 @@ class OpenPreviousThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      final source = priorityBloc.resolveThreadListSource();
 
-      // Search for previous root thread in the resolved list
+      // The agenda no longer contains thread items — only priority block
+      // headers. Thread navigation only operates on the activity feed.
       int offset = -1;
       while (offset > -100) {
         // Safety limit
-        final item = source == ThreadListSource.agenda
-            ? priorityBloc.getAgendaItem(offset)
-            : priorityBloc.getActivityFeedItem(offset);
+        final item = priorityBloc.getActivityFeedItem(offset);
         if (item == null) {
           return const CommandSkipped();
         }
@@ -1183,6 +1179,34 @@ class ScheduleEvent extends _UpdateThreadCommand {
         on: const Value(null), // Clear any existing date-range scheduling
       ),
     );
+    return const CommandDone();
+  }
+}
+
+class SetThreadDuration extends _UpdateThreadCommand {
+  SetThreadDuration(super.thread, this.newDuration, {super.onUpdate})
+    : super(
+        title: 'Set duration',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Duration? newDuration;
+
+  /// Pure helper exposed for unit testing. Returns the new [DateTimeRange]
+  /// for [at] given a [newDuration] (null clears the end time, leaving an
+  /// open-ended scheduled-at-only event). Returns null if [at] has no start.
+  static DateTimeRange? computeAt(DateTimeRange? at, Duration? newDuration) {
+    if (at?.start == null) return null;
+    if (newDuration == null) return DateTimeRange(at!.start, null);
+    return DateTimeRange(at!.start, at.start!.add(newDuration));
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final newAt = computeAt(thread.at, newDuration);
+    if (newAt == null) return const CommandDone();
+    await saveOptimistically(context, thread.copyWith(at: Value(newAt)));
     return const CommandDone();
   }
 }

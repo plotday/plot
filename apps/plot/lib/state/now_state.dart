@@ -15,6 +15,8 @@ final class NowLoaded extends NowState {
   NowLoaded({
     required this.defaultPriority,
     required ScheduledDay day,
+    this.priorities = const [],
+    this.priorityBlocksByPriority = const {},
     this.session,
     this.context,
   }) : now = Time.now(),
@@ -25,6 +27,16 @@ final class NowLoaded extends NowState {
   final ScheduledDay _day;
   final Priority defaultPriority;
   final Priority? context;
+
+  /// Every non-archived priority. Used to rank "current priority" by
+  /// [effectivePriorityOrderAt] when neither an active session nor a
+  /// currently-running scheduled event applies.
+  final List<Priority> priorities;
+
+  /// Priority-block timeline rows grouped by priority id. Same shape the
+  /// agenda's [AgendaBuilder] consumes — keeps `NowLoaded.priority` in
+  /// sync with what the agenda renders as its lead block.
+  final Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority;
 
   List<Thread> get scheduled =>
       _day.scheduled.where((event) => event.at!.includes(now)).toList();
@@ -103,13 +115,49 @@ final class NowLoaded extends NowState {
     previous,
     context?.id,
     defaultPriority,
+    // Derived value standing in for `priorities` /
+    // `priorityBlocksByPriority`: only rebuild when the picked current
+    // priority actually changes, not on every block-row tweak.
+    priority.id,
   ];
 
+  /// The "current priority" — what the user should be working on right
+  /// now. Used by the `/` route redirect, focus commands, and other
+  /// callers that need a single canonical answer. Ordering, in priority:
+  ///   1. [context] — explicit programmatic override (the priority the
+  ///      user is currently viewing).
+  ///   2. [session] — the active focus session's priority.
+  ///   3. The first event currently in progress on today's schedule
+  ///      (matches an [EventBlock] with `isCurrent: true` in the agenda).
+  ///   4. The priority with the lowest [effectivePriorityOrderAt] at
+  ///      [now] — same ranking the agenda uses to choose each region's
+  ///      lead block.
+  ///   5. [defaultPriority] — last-resort fallback.
   Priority get priority =>
       context ??
       session?.priority ??
       scheduled.firstOrNull?.priority ??
+      _topByEffectiveOrder() ??
       defaultPriority;
+
+  Priority? _topByEffectiveOrder() {
+    if (priorities.isEmpty) return null;
+    final ranked = priorities.toList()
+      ..sort((a, b) {
+        final aOrd = effectivePriorityOrderAt(
+          moment: now,
+          blocksForPriority: priorityBlocksByPriority[a.id] ?? const [],
+          fallback: a.order.value,
+        );
+        final bOrd = effectivePriorityOrderAt(
+          moment: now,
+          blocksForPriority: priorityBlocksByPriority[b.id] ?? const [],
+          fallback: b.order.value,
+        );
+        return aOrd.compareTo(bOrd);
+      });
+    return ranked.first;
+  }
   Thread get current =>
       scheduled.firstOrNull ??
       Thread(
@@ -172,12 +220,17 @@ final class NowLoaded extends NowState {
     ScheduledDay? day,
     Priority? defaultPriority,
     Priority? context,
+    List<Priority>? priorities,
+    Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
   }) {
     return NowLoaded(
       session: session ?? this.session,
       day: day ?? _day,
       defaultPriority: defaultPriority ?? this.defaultPriority,
       context: context ?? this.context,
+      priorities: priorities ?? this.priorities,
+      priorityBlocksByPriority:
+          priorityBlocksByPriority ?? this.priorityBlocksByPriority,
     );
   }
 }

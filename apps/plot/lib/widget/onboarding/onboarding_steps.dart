@@ -58,6 +58,7 @@ class HighlightStep extends OnboardingStep {
     required super.body,
     required this.target,
     required this.overlay,
+    this.multiPanelAlignment = MultiPanelContentAlignment.center,
   });
 
   final HighlightTarget target;
@@ -65,6 +66,33 @@ class HighlightStep extends OnboardingStep {
   /// Story-arc theme color used to tint the dimmed overlay around the
   /// highlighted area. Resolved at render time via [ColourSchemeData].
   final ThemeColor overlay;
+
+  /// Where to place the step's text block within the available area beside
+  /// the highlighted panel. Only applies in multi-panel mode; single-panel
+  /// uses the horizontal split layout.
+  final MultiPanelContentAlignment multiPanelAlignment;
+}
+
+/// Multi-panel content placement for a [HighlightStep]. The text block is
+/// drawn beside the highlighted panel; this controls *where* beside it.
+enum MultiPanelContentAlignment {
+  /// Vertically centered on the far side of the cutout. (Default.)
+  center,
+
+  /// Top of the area on the far side of the cutout — used when the relevant
+  /// content sits at the top of the highlighted panel (e.g. agenda above
+  /// priorities in the left panel).
+  top,
+
+  /// Bottom of the area on the far side of the cutout — used when the
+  /// relevant content sits at the bottom of the highlighted panel (e.g.
+  /// priorities below agenda in the left panel).
+  bottom,
+
+  /// Vertically centered, but pushed toward the cutout instead of the far
+  /// edge — used when the step talks about the highlighted panel and the
+  /// text should visually anchor to it.
+  nearCutout,
 }
 
 /// What to highlight during a highlight step.
@@ -155,16 +183,24 @@ class OnboardingSteps {
           "Priorities capture what matters to you. You'll add projects and goals to your roles. Then you can zoom in on any priority to filter and focus, or zoom out to see everything.",
       target: PanelTarget.priorities,
       overlay: ThemeColor(4), // Turning Point
+      // In multi-panel the left panel stacks agenda on top of priorities, so
+      // anchor this step's text to the bottom — visually next to the
+      // priorities list it describes.
+      multiPanelAlignment: MultiPanelContentAlignment.bottom,
     ),
     const HighlightStep(
       title: 'Your agenda',
       body:
-          "Add anything that needs action to your agenda, where threads are grouped by priority. Then choose where to invest by blocking out time and arranging your day.",
+          "Choose where to invest your focus each day. Plot fills in your scheduled events and adds blocks for each priority with active threads. Order and schedule them to create your best day.",
       target: PanelTarget.agenda,
       overlay: ThemeColor(5), // Breakthrough
+      // Multi-panel: agenda sits at the top of the left panel, so anchor the
+      // text to the top. Single-panel: the overlay routes to /agenda and the
+      // mobile split layout handles placement.
+      multiPanelAlignment: MultiPanelContentAlignment.top,
     ),
     const HighlightStep(
-      title: 'Your activity feed',
+      title: 'Your activity',
       body:
           "Find everything you've done recently. Catch up on new activity from "
           "others, whether they're working in Plot or in any of your connected apps.",
@@ -182,6 +218,9 @@ class OnboardingSteps {
         threadTitle: 'Everything in its place',
       ),
       overlay: ThemeColor(2), // Rising Action — back into the arc
+      // The cutout is the right panel; pull the text block toward it so the
+      // copy reads as belonging to the thread that's highlighted.
+      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     FullScreenStep(
       title: 'Ready for action',

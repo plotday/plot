@@ -36,11 +36,147 @@ class AgendaBuilder {
       associationsByParentId: associationsByParentId,
     );
 
+    final effectiveNow = now ?? DateTime.now();
     final base = _atomsToModel(atoms, context: context);
-    return _consolidateAndSort(
+    final consolidated = _consolidateAndSort(
       base,
-      now: now ?? DateTime.now(),
+      now: effectiveNow,
       priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
+    );
+    // Merge unread threads from the input that the day-by-`agendaAt`
+    // grouping in [PriorityState.makeAgendaItems] dropped (e.g. an
+    // unread thread last touched on a past date is filtered out by the
+    // `!date.isBefore(today)` cutoff). Surface them on today's section
+    // so the universal /agenda view never silently hides an unread
+    // thread.
+    return _mergeUnreadIntoToday(
+      consolidated,
+      inputThreads: threads,
+      now: effectiveNow,
+    );
+  }
+
+  /// Append every input thread with [Thread.unread] true that is not
+  /// already part of any block in [model] into the today section,
+  /// grouped by priority. If a [PriorityBlock] for that priority already
+  /// exists on today, the unread thread is appended to it (after any
+  /// scheduled threads, sorted by `updatedAt` descending). Otherwise a
+  /// new [PriorityBlock] for that priority is created and appended at
+  /// the end of today's section.
+  ///
+  /// EventBlock and GapBlock contributions are never replaced — only
+  /// new [PriorityBlock]s get created. The today section is detected by
+  /// `isNow == true` on the [DateSection]; if no such section exists in
+  /// [model] (which can happen for an empty agenda before the today
+  /// header has been synthesized), this is a no-op.
+  static AgendaModel _mergeUnreadIntoToday(
+    AgendaModel model, {
+    required List<Thread> inputThreads,
+    required DateTime now,
+  }) {
+    // Collect the thread ids that already appear anywhere in any block
+    // in any section. We don't restrict to today because adding an
+    // unread thread that already shows up on a future date (e.g. it has
+    // an upcoming event-style schedule) would double-count it.
+    final placedIds = <Uuid>{};
+    for (final block in model.allBlocks) {
+      for (final t in block.threads) {
+        placedIds.add(t.id);
+      }
+    }
+
+    // Find unread threads that haven't been placed.
+    final unmergedUnread =
+        inputThreads.where((t) => t.unread && !placedIds.contains(t.id)).toList();
+    if (unmergedUnread.isEmpty) return model;
+
+    // Group unmerged unread by priority, sorted within group by
+    // updatedAt desc (newest unread on top).
+    final byPriority = <Uuid, List<Thread>>{};
+    final priorityOrder = <Uuid, Priority>{};
+    for (final t in unmergedUnread) {
+      byPriority.putIfAbsent(t.priority.id, () => <Thread>[]).add(t);
+      priorityOrder.putIfAbsent(t.priority.id, () => t.priority);
+    }
+    for (final list in byPriority.values) {
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    }
+
+    // Locate the today section (the one flagged isNow == true). The
+    // today header is always emitted by [PriorityState.makeAgendaItems]
+    // (see the "Ensure today always has a date header" tail), so for
+    // any non-empty agenda we will find one here.
+    final newSections = <AgendaSection>[];
+    var injected = false;
+    for (final section in model.sections) {
+      if (!injected && section is DateSection && section.isNow) {
+        newSections.add(_appendUnreadToSection(
+          section,
+          unreadByPriority: byPriority,
+          priorities: priorityOrder,
+        ));
+        injected = true;
+      } else {
+        newSections.add(section);
+      }
+    }
+
+    // If we never found a today section (defensive — shouldn't happen
+    // because makeAgendaItems always emits one), drop the unread merge
+    // rather than fabricating a section here.
+    if (!injected) return model;
+
+    return AgendaModel(sections: List.unmodifiable(newSections));
+  }
+
+  static DateSection _appendUnreadToSection(
+    DateSection section, {
+    required Map<Uuid, List<Thread>> unreadByPriority,
+    required Map<Uuid, Priority> priorities,
+  }) {
+    final newBlocks = <AgendaBlock>[...section.blocks];
+    final remaining = Map<Uuid, List<Thread>>.from(unreadByPriority);
+
+    // Append unread threads to existing PriorityBlocks first so a
+    // priority that already owns a block on today doesn't gain a
+    // duplicate.
+    for (var i = 0; i < newBlocks.length; i++) {
+      final block = newBlocks[i];
+      if (block is! PriorityBlock) continue;
+      final extras = remaining.remove(block.priority.id);
+      if (extras == null || extras.isEmpty) continue;
+      newBlocks[i] = PriorityBlock(
+        id: block.id,
+        priority: block.priority,
+        threads: List.unmodifiable([...block.threads, ...extras]),
+        isOutside: false,
+      );
+    }
+
+    // For priorities that have no PriorityBlock on today, append a new
+    // PriorityBlock at the end of the section. We append (not insert
+    // mid-section) so we don't disturb the gap-region ordering.
+    final leftoverPriorityIds = remaining.keys.toList()
+      // Stable order: the priority's compareTo (effective topOrder etc.).
+      ..sort((a, b) => priorities[a]!.compareTo(priorities[b]!));
+    for (final pid in leftoverPriorityIds) {
+      final p = priorities[pid]!;
+      final extras = remaining[pid]!;
+      newBlocks.add(
+        PriorityBlock(
+          id: 'p_${section.id}_${p.path.value}_unread',
+          priority: p,
+          threads: List.unmodifiable(extras),
+          isOutside: false,
+        ),
+      );
+    }
+
+    return DateSection(
+      date: section.date,
+      blocks: List.unmodifiable(newBlocks),
+      isNow: section.isNow,
+      scheduleAt: section.scheduleAt,
     );
   }
 
@@ -165,7 +301,7 @@ class AgendaBuilder {
 
     // Aggregate all threads by priority (gap.threads is the lead block).
     final byPriority = <Uuid, _PriorityAccum>{};
-    void add(Priority p, Iterable<Thread> threads, bool blockIsOutside) {
+    void add(Priority p, Iterable<Thread> threads) {
       final accum = byPriority.putIfAbsent(
         p.id,
         () => _PriorityAccum(priority: p),
@@ -173,16 +309,13 @@ class AgendaBuilder {
       for (final t in threads) {
         accum.threads.add(t);
       }
-      // A priority is "outside" if every contributing block was outside.
-      // If any contributor was inside, treat the merged block as inside.
-      accum.allOutside = accum.allOutside && blockIsOutside;
     }
 
     if (gap.threads.isNotEmpty) {
-      add(gap.priority, gap.threads, gap.isOutside);
+      add(gap.priority, gap.threads);
     }
     for (final pb in followingPriorityBlocks) {
-      add(pb.priority, pb.threads, pb.isOutside);
+      add(pb.priority, pb.threads);
     }
 
     if (byPriority.isEmpty) {
@@ -221,7 +354,7 @@ class AgendaBuilder {
       priority: lead.priority,
       range: gap.range,
       threads: List.unmodifiable(lead.threads),
-      isOutside: lead.allOutside,
+      isOutside: false,
     );
 
     final out = <AgendaBlock>[leadGap];
@@ -233,7 +366,7 @@ class AgendaBuilder {
               '_g${gap.range.start?.millisecondsSinceEpoch ?? 0}',
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
-          isOutside: r.allOutside,
+          isOutside: false,
         ),
       );
     }
@@ -258,7 +391,6 @@ class AgendaBuilder {
         () => _PriorityAccum(priority: pb.priority),
       );
       accum.threads.addAll(pb.threads);
-      accum.allOutside = accum.allOutside && pb.isOutside;
     }
 
     final ranked = byPriority.values.toList()
@@ -297,7 +429,7 @@ class AgendaBuilder {
           id: 'p_${sectionId}_${r.priority.path.value}',
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
-          isOutside: r.allOutside,
+          isOutside: false,
         ),
     ];
   }
@@ -394,7 +526,7 @@ class AgendaBuilder {
               event: event,
               associated: List.unmodifiable(associated),
               isCurrent: item.now,
-              isOutside: item.isOutsidePriority,
+              isOutside: false,
             ),
           );
           i = j;
@@ -444,7 +576,7 @@ class AgendaBuilder {
                 priority: gapPriority,
                 range: item.dateTimeRange!,
                 threads: const [],
-                isOutside: item.isOutsidePriority,
+                isOutside: false,
               ),
             );
           } else {
@@ -465,9 +597,7 @@ class AgendaBuilder {
                 threads: List.unmodifiable(
                   gapItems.sublist(0, k).map((a) => a.thread),
                 ),
-                isOutside: gapItems
-                    .sublist(0, k)
-                    .every((a) => a.isOutsidePriority),
+                isOutside: false,
               ),
             );
             // Remaining gap items group by consecutive priority into
@@ -486,7 +616,7 @@ class AgendaBuilder {
                       '_g${item.dateTimeRange!.start?.millisecondsSinceEpoch ?? 0}_$start',
                   priority: priority,
                   threads: List.unmodifiable(run.map((a) => a.thread)),
-                  isOutside: run.every((a) => a.isOutsidePriority),
+                  isOutside: false,
                 ),
               );
             }
@@ -580,26 +710,22 @@ class _SectionBuilder {
   /// Open priority-block accumulator: priority + threads collected so far.
   Priority? _openPriority;
   final List<Thread> _openThreads = <Thread>[];
-  bool _openAllOutside = true;
 
   void appendStandalone(AgendaThreadItem item) {
     final t = item.thread;
     if (_openPriority == null) {
       _openPriority = t.priority;
       _openThreads.add(t);
-      _openAllOutside = item.isOutsidePriority;
       return;
     }
     if (_openPriority == t.priority) {
       _openThreads.add(t);
-      _openAllOutside = _openAllOutside && item.isOutsidePriority;
       return;
     }
     // Priority transition — flush and start a new run.
     flushPriorityBlock();
     _openPriority = t.priority;
     _openThreads.add(t);
-    _openAllOutside = item.isOutsidePriority;
   }
 
   void flushPriorityBlock() {
@@ -609,12 +735,11 @@ class _SectionBuilder {
         id: 'p_${sectionId}_${_openPriority!.path.value}_${blocks.length}',
         priority: _openPriority!,
         threads: List.unmodifiable(_openThreads),
-        isOutside: _openAllOutside,
+        isOutside: false,
       ),
     );
     _openPriority = null;
     _openThreads.clear();
-    _openAllOutside = true;
   }
 
   AgendaSection build() {
@@ -647,5 +772,4 @@ class _PriorityAccum {
   _PriorityAccum({required this.priority});
   final Priority priority;
   final List<Thread> threads = <Thread>[];
-  bool allOutside = true;
 }

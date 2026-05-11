@@ -178,14 +178,18 @@ class _PrioritiesListState extends State<PrioritiesList>
         final isMultiPanel = layoutState.multiPanel;
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
-        final headerStyle = isLeftPanel
-            ? context.theme.typography.xs
-            : context.theme.typography.sm;
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
                     : context.theme.typography.md)
                 .copyWith(fontWeight: FontWeight.w500);
+        // In the left panel of multi-panel mode, the priorities list floats
+        // on the tinted frame with horizontal insets — round the hover/
+        // selection highlights so they read as discrete pills. In single
+        // panel mode the list goes edge-to-edge, so keep it rectangular.
+        final BorderRadius? itemBorderRadius = isLeftPanel
+            ? BorderRadius.circular(6)
+            : null;
 
         // Automatic expansion logic
         bool shouldExpand(Priority priority) {
@@ -209,6 +213,7 @@ class _PrioritiesListState extends State<PrioritiesList>
               priority: priority,
               selected: widget.selected?.id == priority.id,
               selectedBorder: topSection || priority.topOrder == null,
+              borderRadius: itemBorderRadius,
               indentLevel: indentLevel,
               textStyle: textStyle.copyWith(
                 color: priority.archivedAt != null
@@ -277,6 +282,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 priority: priority,
                 selected: widget.selected?.id == priority.id,
                 selectedBorder: true,
+                borderRadius: itemBorderRadius,
                 indentLevel: indentLevel,
                 textStyle: textStyle.copyWith(
                   color: priority.archivedAt != null
@@ -316,6 +322,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                       _ShowMoreItem(
                         indentLevel: indentLevel + 1,
                         textStyle: textStyle,
+                        borderRadius: itemBorderRadius,
                         onTap: () =>
                             setState(() => _showAllChildren.add(parentId)),
                       ),
@@ -345,6 +352,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                       priority: priority,
                       selected: widget.selected?.id == priority.id,
                       selectedBorder: true,
+                      borderRadius: itemBorderRadius,
                       indentLevel: indentLevel,
                       textStyle: textStyle.copyWith(
                         color: priority.archivedAt != null
@@ -387,6 +395,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                             _ShowMoreItem(
                               indentLevel: indentLevel + 1,
                               textStyle: textStyle,
+                              borderRadius: itemBorderRadius,
                               onTap: () => setState(
                                 () => _showAllChildren.add(parentId),
                               ),
@@ -402,71 +411,73 @@ class _PrioritiesListState extends State<PrioritiesList>
           ];
         }
 
+        // Everything (root) priority tile, rendered at the top of the
+        // all-priorities list. The "Top Priorities" / "All Priorities"
+        // headers were dropped here so the priorities panel renders as one
+        // continuous dark block; the dark-frame treatment alone separates
+        // it from the agenda above. A different visual treatment for the
+        // two sections will land later.
+        final everythingTile = ListTile(
+          title: widget.root.title,
+          command: ChangeCurrentPriority(widget.root),
+          longPressCommand: !hasPhysicalKeyboard()
+              ? ShowPriorityCommands(widget.root)
+              : null,
+          selected: widget.selected?.id == widget.root.id,
+          borderRadius: itemBorderRadius,
+          leadingBuilder: (isHovered, hasFocus) => Padding(
+            padding: EdgeInsets.only(
+              left: isMultiPanel
+                  ? context.theme.spacing.lg
+                  : context.theme.spacing.sm,
+              right: context.theme.spacing.sm,
+              bottom: 2,
+            ),
+            child: PriorityNotification(
+              unread: _hasDescendantUnread(widget.root),
+              active: _hasDescendantActive(widget.root),
+              color: widget.root.displayColor,
+            ),
+          ),
+          textStyle: itemStyle.copyWith(
+            color: context.colour.colours.fromTheme(
+              widget.root.displayColor,
+              muted:
+                  !_hasDescendantActive(widget.root) &&
+                  !_hasDescendantUnread(widget.root),
+            ),
+          ),
+          trailingBuilder: (isHovered, hasFocus) {
+            final button = Padding(
+              padding: EdgeInsets.only(
+                right: isMultiPanel
+                    ? context.theme.spacing.lg
+                    : context.theme.spacing.sm,
+              ),
+              child: Button.icon(ShowPriorityCommands(widget.root)),
+            );
+            if (isHovered || hasFocus) return button;
+            return Visibility(
+              visible: false,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: button,
+            );
+          },
+        );
+
+        final hasTopPriorities = widget.topPriorities.isNotEmpty;
         return SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // First group: Everything root priority
-              ListTile(
-                title: widget.root.title,
-                command: ChangeCurrentPriority(widget.root),
-                longPressCommand: !hasPhysicalKeyboard()
-                    ? ShowPriorityCommands(widget.root)
-                    : null,
-                selected: widget.selected?.id == widget.root.id,
-                leadingBuilder: (isHovered, hasFocus) => Padding(
-                  padding: EdgeInsets.only(
-                    left: isMultiPanel
-                        ? context.theme.spacing.lg
-                        : context.theme.spacing.sm,
-                    right: context.theme.spacing.sm,
-                    bottom: 2,
-                  ),
-                  child: PriorityNotification(
-                    unread: _hasDescendantUnread(widget.root),
-                    active: _hasDescendantActive(widget.root),
-                    color: widget.root.displayColor,
-                  ),
-                ),
-                textStyle: itemStyle.copyWith(
-                  color: context.colour.colours.fromTheme(
-                    widget.root.displayColor,
-                    muted:
-                        !_hasDescendantActive(widget.root) &&
-                        !_hasDescendantUnread(widget.root),
-                  ),
-                ),
-                trailingBuilder: (isHovered, hasFocus) {
-                  final button = Padding(
-                    padding: EdgeInsets.only(
-                      right: isMultiPanel
-                          ? context.theme.spacing.lg
-                          : context.theme.spacing.sm,
-                    ),
-                    child: Button.icon(ShowPriorityCommands(widget.root)),
-                  );
-                  if (isHovered || hasFocus) return button;
-                  return Visibility(
-                    visible: false,
-                    maintainSize: true,
-                    maintainAnimation: true,
-                    maintainState: true,
-                    child: button,
-                  );
-                },
-              ),
-
-              // Second group: Top Priorities
-              if (widget.topPriorities.isNotEmpty) ...[
-                SizedBox(height: 16),
-                ListTile(
-                  title: 'Top Priorities',
-                  style: ListTileStyle.header,
-                  textStyle: headerStyle,
-                  noHoverHighlight: true,
-                  centered: true,
-                ),
+              // lg top padding sets the priorities panel apart from the
+              // agenda above it.
+              SizedBox(height: context.theme.spacing.md),
+              // Top Priorities — no header (treatment landing later).
+              if (hasTopPriorities) ...[
                 ReorderableListView<Priority>(
                   list: widget.topPriorities,
                   shrinkWrap: true,
@@ -509,21 +520,25 @@ class _PrioritiesListState extends State<PrioritiesList>
                         .save();
                   },
                 ),
+                // Divider separates Top Priorities from the rest, with sm
+                // padding above and below.
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    vertical: context.theme.spacing.sm,
+                  ),
+                  child: Container(
+                    height: 1,
+                    color: context.theme.colors.border,
+                  ),
+                ),
               ],
 
-              // Third group: All Priorities
+              // All priorities — no header (treatment landing later).
               ...() {
                 final allPriorities = widget.root.children;
 
                 return [
-                  SizedBox(height: 16),
-                  ListTile(
-                    title: 'All Priorities',
-                    style: ListTileStyle.header,
-                    textStyle: headerStyle,
-                    noHoverHighlight: true,
-                    centered: true,
-                  ),
+                  everythingTile,
                   ...buildReorderablePriorityItems(
                     context,
                     allPriorities,
@@ -537,6 +552,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                     icon: PlotIcon.add,
                     iconOnly: true,
+                    borderRadius: itemBorderRadius,
                     textStyle: itemStyle.copyWith(
                       color: context.theme.colors.mutedForeground,
                     ),
@@ -687,11 +703,13 @@ class _ShowMoreItem extends StatefulWidget {
   final int indentLevel;
   final VoidCallback onTap;
   final TextStyle? textStyle;
+  final BorderRadius? borderRadius;
 
   const _ShowMoreItem({
     required this.indentLevel,
     required this.onTap,
     this.textStyle,
+    this.borderRadius,
   });
 
   @override
@@ -712,6 +730,7 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
         child: Container(
           decoration: BoxDecoration(
             color: _isHovered ? context.theme.plotColors.highlight : null,
+            borderRadius: widget.borderRadius,
           ),
           padding: EdgeInsets.only(
             left: widget.indentLevel * (16 + context.theme.spacing.sm),

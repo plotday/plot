@@ -148,9 +148,15 @@ class RootProviderState extends State<RootProvider> {
             case UserReady _:
               try {
                 final onboardingBloc = context.read<OnboardingBloc>();
-                await prioritiesBloc.start();
-                await TwistInstance.start();
-                await nowBloc.start();
+                // Each .start() awaits its first Drift stream emission and they
+                // have no inter-dependencies — running them in parallel lets
+                // cold-start gate on the slowest single emission instead of
+                // the sum of all three.
+                await Future.wait([
+                  prioritiesBloc.start(),
+                  TwistInstance.start(),
+                  nowBloc.start(),
+                ]);
                 _setupNowBlocListener(themeBloc);
                 unawaited(onboardingBloc.start());
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
@@ -325,8 +331,8 @@ class RootProviderState extends State<RootProvider> {
 
   void _navigateToNotificationPriority(String priorityId) {
     final shortId = Uuid.fromString(priorityId).toShortString();
-    router.replaceAll([
-      PriorityRoute(priorityIdString: shortId, tab: 'activity'),
-    ]);
+    // PriorityPage now renders only the activity feed, so notifications
+    // just open the priority directly — no tab parameter needed.
+    router.replaceAll([PriorityRoute(priorityIdString: shortId)]);
   }
 }

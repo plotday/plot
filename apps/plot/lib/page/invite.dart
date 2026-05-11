@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -107,7 +106,7 @@ class _InvitePageState extends State<InvitePage> {
 
       // Navigate to the main app
       if (mounted) {
-        context.router.replaceAll([EmptyShellRoute("Now")()]);
+        context.router.replaceAll([const RootRoute()]);
       }
     } on ApiException catch (e) {
       log.warning('Error redeeming invitation', e);

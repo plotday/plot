@@ -25,31 +25,15 @@ class AgendaModel extends Equatable {
     return null;
   }
 
-  /// Flatten the model into the legacy [AgendaItem] atom shape consumed
-  /// by callers that haven't migrated to direct block rendering yet.
+  /// Flattens this model into a render-friendly list. Each block emits
+  /// exactly one [AgendaHeaderItem]; per-thread items are not produced
+  /// for the agenda view (the new agenda renders the block as a unit
+  /// from the header's referenced [AgendaBlock] data).
   ///
   /// Output ordering:
-  ///   - Sections in order; date/text section header atom first
-  ///   - Within each section: blocks in order
-  ///     - [GapBlock]: gap header atom, then thread atoms (always emitted)
-  ///     - [EventBlock]: event header atom, then event row + associated
-  ///       child atoms (always emitted)
-  ///     - [PriorityBlock]: header atom, then thread atoms (always emitted)
-  ///
-  /// Expansion: thread atoms are always emitted regardless of expansion
-  /// state. Their [AgendaThreadItem.hidden] flag tells the renderer
-  /// whether to render them at full height or animate them down to zero.
-  /// A block is "expanded" iff its priority is an exact match for
-  /// [contextPriorityId] (not a descendant). Outside-priority
-  /// [EventBlock]s are always hidden (regardless of context).
-  ///
-  /// Always emitting thread atoms keeps a stable list across expansion
-  /// flips — the per-row [AnimatedSize] in the renderer can interpolate
-  /// between full and zero height instead of items mounting/unmounting.
-  List<AgendaItem> flatItems({PriorityId? contextPriorityId}) {
-    bool isBlockExpanded(AgendaBlock b) =>
-        b.priority.id == contextPriorityId;
-
+  ///   - Sections in order; date/text section header item first
+  ///   - Within each section: one header item per block in order
+  List<AgendaItem> flatItems() {
     final out = <AgendaItem>[];
     for (final section in sections) {
       // Track the section's date and the most recent gap anchor so
@@ -77,25 +61,16 @@ class AgendaModel extends Equatable {
       for (final block in section.blocks) {
         switch (block) {
           case PriorityBlock b:
-            final isExpanded = isBlockExpanded(b);
             out.add(
               AgendaHeaderItem(
                 blockPriority: b.priority,
+                block: b,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
                 sourcePeriodStart: currentPeriodStart,
-                parentBlockVisibleCount: isExpanded ? b.threads.length : 0,
               ),
             );
-            for (final t in b.threads) {
-              out.add(AgendaThreadItem(
-                t,
-                isOutsidePriority: b.isOutside,
-                parentBlockId: b.id,
-                hidden: !isExpanded,
-              ));
-            }
           case GapBlock b:
             // Empty gaps are pure visual time markers — no priority,
             // neutral background. Gaps with threads carry the
@@ -108,26 +83,17 @@ class AgendaModel extends Equatable {
             // period.
             final hasThreads = b.threads.isNotEmpty;
             final gapStart = b.range.start;
-            final isExpanded = hasThreads && isBlockExpanded(b);
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
                 blockPriority: hasThreads ? b.priority : null,
+                block: hasThreads ? b : null,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
                 sourcePeriodStart: gapStart,
-                parentBlockVisibleCount: isExpanded ? b.threads.length : 0,
               ),
             );
-            for (final t in b.threads) {
-              out.add(AgendaThreadItem(
-                t,
-                isOutsidePriority: b.isOutside,
-                parentBlockId: b.id,
-                hidden: !isExpanded,
-              ));
-            }
             if (gapStart != null) {
               currentPeriodStart = gapStart;
             }
@@ -136,52 +102,19 @@ class AgendaModel extends Equatable {
             // draggable as a unit (the event row anchors them to a
             // time), but they still carry [parentBlockId] so the
             // renderer recognizes the block boundaries that flank them.
-            // Draggability is gated by [thread == null] in the header
-            // predicate, which excludes event headers.
-            //
-            // Outside-priority events keep their thread rows hidden
-            // regardless of context — only the priority-tinted header
-            // marks the event in the day. Inside-priority events
-            // collapse along the same context-match rule as the other
-            // block types.
-            final isExpanded = !b.isOutside && isBlockExpanded(b);
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.event.at,
                 thread: b.event,
                 now: b.isCurrent,
                 blockPriority: b.priority,
+                block: b,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
                 sourcePeriodStart: currentPeriodStart,
-                parentBlockVisibleCount:
-                    isExpanded ? 1 + b.associated.length : 0,
               ),
             );
-            out.add(
-              AgendaThreadItem(
-                b.event,
-                now: b.isCurrent,
-                isOutsidePriority: b.isOutside,
-                parentBlockId: b.id,
-                hidden: !isExpanded,
-              ),
-            );
-            final parentKey =
-                '${b.event.id}'
-                '${b.event.occurrence != null ? '_${b.event.occurrence}' : ''}';
-            for (final child in b.associated) {
-              out.add(
-                AgendaThreadItem(
-                  child,
-                  isAssociated: true,
-                  associationParentId: parentKey,
-                  parentBlockId: b.id,
-                  hidden: !isExpanded,
-                ),
-              );
-            }
         }
       }
     }
@@ -257,6 +190,16 @@ sealed class AgendaBlock extends Equatable {
 
   @override
   List<Object?> get props => [id, priority, threads, isOutside];
+
+  /// Joined `displayTitle` of threads in this block with non-empty
+  /// titles, separated by ` · `. Empty when no titled threads exist.
+  String get summaryLine => threads
+      .map((t) => t.displayTitle)
+      .where((s) => s.isNotEmpty)
+      .join(' · ');
+
+  /// True if any thread in this block is unread.
+  bool get hasUnread => threads.any((t) => t.unread);
 }
 
 /// Threads belonging to a single [Priority], rendered under a priority
@@ -380,6 +323,7 @@ class AgendaHeaderItem extends AgendaItem {
     this.scheduleAt,
     this.isOutsidePriority = false,
     this.blockPriority,
+    this.block,
     this.parentBlockId,
     this.sourceDate,
     this.sourcePeriodStart,
@@ -404,6 +348,12 @@ class AgendaHeaderItem extends AgendaItem {
   /// header. The renderer draws an accent + veryMuted border pair when
   /// this is set.
   final Priority? blockPriority;
+
+  /// The full [AgendaBlock] this header introduces. Set whenever
+  /// [blockPriority] is set, so the renderer can derive the joined
+  /// summary line, unread state, and other block-level metadata
+  /// without re-reading the agenda model.
+  final AgendaBlock? block;
 
   /// The id of the [AgendaBlock] this header introduces. Set for every
   /// block header ([PriorityBlock], [GapBlock], [EventBlock]) so the
@@ -440,6 +390,7 @@ class AgendaHeaderItem extends AgendaItem {
     scheduleAt,
     isOutsidePriority,
     blockPriority,
+    block,
     parentBlockId,
     sourceDate,
     sourcePeriodStart,

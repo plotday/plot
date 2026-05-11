@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/router.dart';
@@ -33,7 +32,7 @@ class ThreadPage implements AutoRouteWrapper {
       // instead of crashing in the parser.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        context.router.replaceAll([EmptyShellRoute("Now")()]);
+        context.router.replaceAll([const RootRoute()]);
       });
       return const SizedBox.shrink();
     }

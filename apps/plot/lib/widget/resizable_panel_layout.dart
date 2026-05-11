@@ -4,21 +4,41 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';
-import 'package:plot/style/theme.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'header.dart';
 
+/// Outer inset around the squircle panel cards in multi-panel mode (window
+/// edges and bottom). The header has no inset above the squircles so they
+/// sit flush against the bottom of the unified header.
+const double _outerInset = 14.0;
+
+/// Half of the gap between adjacent squircles that don't share one shape
+/// (e.g. left sidebar squircle vs. main-panel squircle). Split evenly across
+/// the FResizable region boundary so the boundary—and its drag handle—lands
+/// at the visual center of the gap.
+const double _halfGap = 7.0;
+
+/// Corner radius for the squircle panel cards.
+const double _panelRadius = 14.0;
+
 class ResizablePanelLayout extends StatefulWidget {
   const ResizablePanelLayout({
     required this.left,
+    this.leftTop,
     required this.middle,
     required this.child,
     super.key,
   });
 
-  /// Left panel
+  /// Left panel (bottom of the vertical split when [leftTop] is provided).
   final Widget left;
+
+  /// Optional top section of the left panel. When provided, the left panel
+  /// is split vertically with [leftTop] on top and [left] on the bottom,
+  /// separated by a draggable horizontal divider whose position is
+  /// persisted across sessions.
+  final Widget? leftTop;
 
   /// Middle panel when all three are shown.
   /// When only two are shown, child is in the middle
@@ -106,6 +126,164 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     return (totalWidth - leftWidth - middleWidth).clamp(0.0, double.infinity);
   }
 
+  /// Builds a single squircle "card": a subtle drop shadow under a hairline
+  /// border, with [context.colour.background] filling the rounded shape.
+  /// Modeled on Zen browser's content cards — visible but quiet edge and
+  /// just enough shadow to lift the card off the tinted frame.
+  Widget _squircleCard(
+    BuildContext context,
+    Widget child, {
+    required BorderRadiusGeometry borderRadius,
+  }) {
+    final isDark = context.colour.brightness == Brightness.dark;
+    // Drop shadow is stronger in dark mode (the card is darker than the
+    // frame, so a softer/longer shadow gives depth without halo); in light
+    // mode a quieter shadow keeps the card from feeling heavy against the
+    // bright surround.
+    final shadow = isDark
+        ? BoxShadow(
+            color: const Color(0xFF000000).withValues(alpha: 0.32),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+            spreadRadius: -2,
+          )
+        : BoxShadow(
+            color: const Color(0xFF000000).withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+            spreadRadius: -1,
+          );
+    // Border is the theme border tone pulled to ~60% opacity so it reads as
+    // a refined hairline rather than a hard outline.
+    final borderColor = context.theme.colors.border.withValues(
+      alpha: (context.theme.colors.border.a) * 0.6,
+    );
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
+        shadows: [shadow],
+      ),
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            side: BorderSide(color: borderColor, width: 1),
+            borderRadius: borderRadius,
+          ),
+        ),
+        child: ClipRSuperellipse(
+          borderRadius: borderRadius,
+          clipBehavior: Clip.antiAliasWithSaveLayer,
+          child: ColoredBox(color: context.colour.background, child: child),
+        ),
+      ),
+    );
+  }
+
+  /// Builds the full left panel content: agenda on top (inside a squircle
+  /// card in multi-panel mode), priorities on the bottom on the tinted frame.
+  Widget _buildLeftPanel(BuildContext context, bool isMulti) {
+    if (!isMulti) {
+      // Single-panel mode never shows a multi-panel left panel; preserve
+      // the previous chrome (panel-darkest bottom, optional border) for
+      // any legacy single-panel use.
+      final bottom = DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colour.panelDarkestBackground,
+          border: widget.leftTop == null
+              ? null
+              : Border(
+                  top: BorderSide(
+                    color: context.theme.colors.border,
+                    width: 1,
+                  ),
+                ),
+        ),
+        child: widget.left,
+      );
+      if (widget.leftTop == null) return bottom;
+      return _LeftPanelVerticalSplit(top: widget.leftTop!, bottom: bottom);
+    }
+
+    // Multi-panel: priorities (bottom) sits transparently on the tinted
+    // frame background. The agenda (top) is a squircle card matching the
+    // priority page colors (no darken). Outer edges use [_outerInset], the
+    // right edge uses [_halfGap] so the FResizable boundary lands at the
+    // center of the inter-squircle gap. Top inset is 0 so the squircle
+    // hugs the unified header.
+    final bottom = widget.left;
+    if (widget.leftTop == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          _outerInset,
+          0,
+          _halfGap,
+          _outerInset,
+        ),
+        child: bottom,
+      );
+    }
+
+    const agendaRadius = BorderRadius.all(Radius.circular(_panelRadius));
+    final top = Padding(
+      padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
+      child: _squircleCard(
+        context,
+        widget.leftTop!,
+        borderRadius: agendaRadius,
+      ),
+    );
+    final priorities = Padding(
+      padding: const EdgeInsets.fromLTRB(
+        _outerInset,
+        _outerInset / 2,
+        _halfGap,
+        _outerInset,
+      ),
+      child: bottom,
+    );
+    return _LeftPanelVerticalSplit(top: top, bottom: priorities);
+  }
+
+  /// Wraps a main panel (middle or right) in a squircle card.
+  ///
+  /// [sharesSquircleLeft] / [sharesSquircleRight] indicate whether this
+  /// region shares one squircle shape with a main-panel neighbor on that
+  /// side (middle/right share when both visible). The shared edge gets flat
+  /// corners and no padding so the two regions read as one card with an
+  /// internal seam.
+  ///
+  /// [hasLeftSidebar] reports whether the left sidebar zone (agenda/
+  /// priorities) precedes this region. When true, the inter-squircle gap is
+  /// split evenly across the FResizable boundary using [_halfGap]; when
+  /// false the outer window inset applies on this side.
+  Widget _wrapMainPanel(
+    BuildContext context,
+    Widget child, {
+    required bool isMulti,
+    required bool hasLeftSidebar,
+    required bool sharesSquircleLeft,
+    required bool sharesSquircleRight,
+  }) {
+    if (!isMulti) return child;
+
+    final radius = const Radius.circular(_panelRadius);
+    final borderRadius = BorderRadius.only(
+      topLeft: sharesSquircleLeft ? Radius.zero : radius,
+      bottomLeft: sharesSquircleLeft ? Radius.zero : radius,
+      topRight: sharesSquircleRight ? Radius.zero : radius,
+      bottomRight: sharesSquircleRight ? Radius.zero : radius,
+    );
+    final leftPad = sharesSquircleLeft
+        ? 0.0
+        : (hasLeftSidebar ? _halfGap : _outerInset);
+    final rightPad = sharesSquircleRight ? 0.0 : _outerInset;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(leftPad, 0, rightPad, _outerInset),
+      child: _squircleCard(context, child, borderRadius: borderRadius),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
@@ -144,8 +322,14 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   return idealMin;
                 }
 
+                final isMulti = layoutState.multiPanel;
+                final leftVisible =
+                    layoutState.leftPanelVisible && leftWidth > 0;
+                final middleVisible =
+                    layoutState.middlePanelVisible && middleWidth > 0;
+
                 List<FResizableRegion> regions = [
-                  if (layoutState.leftPanelVisible && leftWidth > 0)
+                  if (leftVisible)
                     FResizableRegion(
                       key: const ValueKey('LeftPanel'),
                       initialExtent: leftWidth,
@@ -153,21 +337,15 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         leftWidth,
                         LayoutState.leftPanelMinWidth,
                       ),
-                      builder: (context, data, _) => PanelPositionProvider(
-                        key: ValueKey('LeftPanelPositionProvider'),
-                        position: HeaderPosition.left,
-                        child: FTheme(
-                          data: darkenTheme(
-                            context,
-                            context.theme,
-                            context.colour,
-                            steps: 2,
-                          ),
-                          child: widget.left,
-                        ),
-                      ),
+                      builder: (context, data, _) {
+                        return PanelPositionProvider(
+                          key: const ValueKey('LeftPanelPositionProvider'),
+                          position: HeaderPosition.left,
+                          child: _buildLeftPanel(context, isMulti),
+                        );
+                      },
                     ),
-                  if (layoutState.middlePanelVisible && middleWidth > 0)
+                  if (middleVisible)
                     FResizableRegion(
                       key: const ValueKey('MiddlePanel'),
                       initialExtent: middleWidth,
@@ -176,9 +354,21 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                         LayoutState.middlePanelMinWidth,
                       ),
                       builder: (context, data, _) => PanelPositionProvider(
-                        key: ValueKey('MiddlePanelPositionProvider'),
+                        key: const ValueKey('MiddlePanelPositionProvider'),
                         position: HeaderPosition.middle,
-                        child: widget.middle,
+                        child: _wrapMainPanel(
+                          context,
+                          widget.middle,
+                          isMulti: isMulti,
+                          hasLeftSidebar: leftVisible,
+                          // Middle never shares a squircle on its left
+                          // (the left sidebar is on the tinted frame, not
+                          // inside the main-panel squircle).
+                          sharesSquircleLeft: false,
+                          // Right is always present, so middle shares its
+                          // right edge with it.
+                          sharesSquircleRight: true,
+                        ),
                       ),
                     ),
                   FResizableRegion(
@@ -189,11 +379,18 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                       LayoutState.rightPanelMinWidth,
                     ),
                     builder: (context, data, _) => PanelPositionProvider(
-                      key: ValueKey('RightPanelPositionProvider'),
-                      position: layoutState.multiPanel
-                          ? HeaderPosition.right
-                          : null,
-                      child: widget.child,
+                      key: const ValueKey('RightPanelPositionProvider'),
+                      position: isMulti ? HeaderPosition.right : null,
+                      child: _wrapMainPanel(
+                        context,
+                        widget.child,
+                        isMulti: isMulti,
+                        hasLeftSidebar: leftVisible,
+                        // Right shares its left edge with middle when
+                        // middle is visible; otherwise it stands alone.
+                        sharesSquircleLeft: middleVisible,
+                        sharesSquircleRight: false,
+                      ),
                     ),
                   ),
                 ];
@@ -329,7 +526,9 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   }
 
   void _onDragStart(int dividerIndex) {
-    _draggingDividerIndex = dividerIndex;
+    setState(() {
+      _draggingDividerIndex = dividerIndex;
+    });
     _cumulativeDelta = 0.0;
     _dragStartOffset = _dividerOffsets[dividerIndex];
   }
@@ -356,7 +555,10 @@ class _HoverableResizableState extends State<_HoverableResizable> {
 
   void _onDragEnd(int dividerIndex) {
     _controller.end(dividerIndex, dividerIndex + 1);
-    _draggingDividerIndex = null;
+    setState(() {
+      _draggingDividerIndex = null;
+      _hoveredDividerIndex = null;
+    });
     _cumulativeDelta = 0.0;
     _dragStartOffset = 0.0;
   }
@@ -371,6 +573,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colour;
+    final isMulti = widget.layoutState.multiPanel;
 
     return ListenableBuilder(
       listenable: _controller,
@@ -378,6 +581,27 @@ class _HoverableResizableState extends State<_HoverableResizable> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final overlayHeight = constraints.maxHeight;
+
+            // Squircle vertical extent: from top (flush against header)
+            // to overlayHeight - _outerInset (bottom inset). Dividers in
+            // multi-panel mode visually match this height so hover lines
+            // never extend past the squircle bounds.
+            final squircleHeight = isMulti
+                ? (overlayHeight - _outerInset).clamp(0.0, overlayHeight)
+                : overlayHeight;
+
+            // The divider between two main-panel regions (middle ↔ right)
+            // sits INSIDE a single shared squircle and gets a visible 1px
+            // line at rest. Any other divider (left sidebar ↔ main panel)
+            // sits in the tinted gap between two squircles and stays
+            // transparent at rest.
+            bool isInsideSquircle(int dividerIndex) {
+              if (!isMulti) return false;
+              if (!widget.layoutState.middlePanelVisible) return false;
+              // When middle is visible, the middle↔right divider is the
+              // last entry in the divider list.
+              return dividerIndex == _dividerOffsets.length - 1;
+            }
 
             return Stack(
               children: [
@@ -405,6 +629,7 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                         onHorizontalDragUpdate: (details) =>
                             _onDragUpdate(i, details.delta.dx),
                         onHorizontalDragEnd: (_) => _onDragEnd(i),
+                        onHorizontalDragCancel: () => _onDragEnd(i),
                         child: MouseRegion(
                           cursor: SystemMouseCursors.resizeLeftRight,
                           onEnter: (_) =>
@@ -414,7 +639,8 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                           child: SizedBox(
                             width: _hitRegionExtent,
                             height: overlayHeight,
-                            child: Center(
+                            child: Align(
+                              alignment: Alignment.topCenter,
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 curve: Curves.easeInOut,
@@ -423,11 +649,26 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                                         _draggingDividerIndex == i)
                                     ? 2.0
                                     : 1,
-                                height: overlayHeight,
+                                height: squircleHeight,
                                 color:
                                     (_hoveredDividerIndex == i ||
                                         _draggingDividerIndex == i)
                                     ? colorScheme.accent
+                                    : isInsideSquircle(i)
+                                    // Internal seam between middle and
+                                    // right within a shared squircle —
+                                    // keep it quiet so it reads as a
+                                    // subtle separator, not an outline.
+                                    ? context.theme.colors.border.withValues(
+                                        alpha:
+                                            context.theme.colors.border.a *
+                                            0.35,
+                                      )
+                                    : isMulti
+                                    // Multi-panel inter-squircle gap
+                                    // provides the visual separation; no
+                                    // line needed at rest.
+                                    ? const Color(0x00000000)
                                     : context.theme.colors.border,
                               ),
                             ),
@@ -438,6 +679,34 @@ class _HoverableResizableState extends State<_HoverableResizable> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+}
+
+/// Vertically stacks the left panel: agenda on top fills available space,
+/// priorities on the bottom sizes to its content with a 50% height cap and
+/// scrolls when it would exceed that cap.
+class _LeftPanelVerticalSplit extends StatelessWidget {
+  const _LeftPanelVerticalSplit({required this.top, required this.bottom});
+
+  final Widget top;
+  final Widget bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxBottomHeight = constraints.maxHeight * 0.5;
+        return Column(
+          children: [
+            Expanded(child: top),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxBottomHeight),
+              child: bottom,
+            ),
+          ],
         );
       },
     );

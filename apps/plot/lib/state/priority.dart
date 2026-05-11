@@ -470,7 +470,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         thread: thread,
         agenda: agenda,
-        agendaItems: agenda.flatItems(contextPriorityId: state.context.id),
+        agendaItems: agenda.flatItems(),
         activityFeedItems: activityFeedItems,
       ),
     );
@@ -487,12 +487,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
       if (thread != null && thread.id == id) return thread;
     }
-    for (final item in state.agendaItems) {
-      final thread = item.when(
-        header: (_) => null,
-        activity: (a) => a.thread,
-      );
-      if (thread != null && thread.id == id) return thread;
+    for (final section in state.agenda.sections) {
+      for (final block in section.blocks) {
+        for (final thread in block.threads) {
+          if (thread.id == id) return thread;
+        }
+      }
     }
     return null;
   }
@@ -663,7 +663,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
-    final flat = agenda.flatItems(contextPriorityId: state.context.id);
+    final flat = agenda.flatItems();
     emit(
       state.copyWith(
         agenda: agenda,
@@ -1483,7 +1483,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.copyWith(
         context: newPriority,
         agenda: newAgenda,
-        agendaItems: newAgenda.flatItems(contextPriorityId: newPriority.id),
+        agendaItems: newAgenda.flatItems(),
         activityFeedItems: const [],
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
@@ -1793,15 +1793,29 @@ class PriorityBloc extends Cubit<PriorityState> {
         currentIndex = 0;
       }
     } else {
-      // Thread selected: find its index
-      for (int i = 0; i < state.agendaItems.length; i++) {
-        final thread = state.agendaItems[i].when<Thread?>(
-          header: (header) => null,
-          activity: (agendaItem) => agendaItem.thread,
-        );
-        if (thread?.id == state.thread!.id) {
-          currentIndex = i;
-          break;
+      // Thread selected: post-Task-3 agendaItems contains only header
+      // items (one per block), so locate which block contains the
+      // thread and use that block's header index. The header carries
+      // the block id via [parentBlockId]; fall back to the
+      // event-block case where the header itself references the
+      // event thread directly.
+      String? blockId;
+      for (final section in state.agenda.sections) {
+        for (final block in section.blocks) {
+          if (block.threads.any((t) => t.id == state.thread!.id)) {
+            blockId = block.id;
+            break;
+          }
+        }
+        if (blockId != null) break;
+      }
+      if (blockId != null) {
+        for (int i = 0; i < state.agendaItems.length; i++) {
+          final item = state.agendaItems[i];
+          if (item is AgendaHeaderItem && item.parentBlockId == blockId) {
+            currentIndex = i;
+            break;
+          }
         }
       }
       if (currentIndex == -1) {
@@ -1817,13 +1831,20 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    // Helper to check if an item matches the filter criteria
+    // Helper to check if an item matches the filter criteria.
+    // Post-Task-3, agendaItems contains only header items: per-block
+    // headers (date == null) and date/text section headers
+    // (date != null or pure text). [includeThread] is retained for
+    // backwards compatibility but, since there are no AgendaThreadItem
+    // rows on the agenda, it now controls whether per-block headers
+    // (which represent the threads) participate in navigation.
     bool matchesFilter(AgendaItem item) {
       return item.when<bool>(
         activity: (agendaItem) => includeThread,
         header: (header) =>
             (header.date != null && includeDate) ||
-            (header.date == null && includePriority),
+            (header.date == null &&
+                (includePriority || (includeThread && header.text == null))),
       );
     }
 
@@ -1923,12 +1944,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (threadListSource != null) return threadListSource!;
     // Check if current thread is in the agenda
     if (state.thread != null) {
-      final inAgenda = state.agendaItems.any(
-        (item) => item.when(
-          header: (_) => false,
-          activity: (a) => a.thread.id == state.thread!.id,
-        ),
-      );
+      final inAgenda = state.agenda.sections
+          .expand((s) => s.blocks)
+          .expand((b) => b.threads)
+          .any((t) => t.id == state.thread!.id);
       if (inAgenda) return ThreadListSource.agenda;
     }
     return ThreadListSource.activityFeed;
@@ -2032,8 +2051,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     if (reloadAgenda) {
-      _agendaLimit = 50;
-      _agendaHorizonDays = 90;
+      // Initial window is intentionally smaller than the viewport-equivalent
+      // 50-row default: a cold cache pays for every joined row in
+      // [Thread.watch], every Thread inflation in [_mapResultsToThreads],
+      // and every per-thread pass in [AgendaBuilder.build]. 25 rows + a
+      // 30-day horizon is enough to fill typical viewports (and the
+      // 14-day buffer past last-content date keeps the fill spinner from
+      // being immediate). [fetchMoreAgendaItems] already grows both bounds
+      // when the user scrolls near the end.
+      _agendaLimit = 25;
+      _agendaHorizonDays = 30;
       _agendaFillDays = 0;
       _agendaSyncNoMore = false;
       _loadAgenda(profile: profile);
@@ -2176,7 +2203,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       includeUnscheduled: false,
       range: dateRange,
     );
-    final associatedStream = Thread.watchAssociatedThreads();
+    // Seed the associations stream with an empty list so [combineLatest2]
+    // can fire on the FIRST emission of [agendaStream] alone. Without
+    // this, cold-start agenda render is gated on the 6-join associations
+    // SQL completing — which on a fresh app open is often empty anyway.
+    // When the real associations emission arrives moments later it will
+    // re-fire combineLatest2 and the throttleTime/distinct downstream
+    // collapses the burst.
+    final associatedStream = Thread.watchAssociatedThreads()
+        .startWith(const <Thread>[]);
 
     _agendaSubscription =
         Rx.combineLatest2<
@@ -2420,9 +2455,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               emit(
                 state.copyWith(
                   agenda: agenda,
-                  agendaItems: agenda.flatItems(
-                    contextPriorityId: state.context.id,
-                  ),
+                  agendaItems: agenda.flatItems(),
                   agendaDoneEnd: false,
                   agendaLoaded: true,
                   reorderViewItems: const Value(null),
@@ -2760,11 +2793,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     //   3. Scheduled (one section per future day)
     //   4. Done (inactive)
     //
-    // Today, New, and Done headers are always emitted — even when empty —
-    // so they remain valid drag-and-drop targets. Scheduled headers stay
-    // dynamic (one per future day with threads); to schedule for a day
-    // not yet represented, drag onto an existing day or use the per-
-    // thread schedule picker.
+    // Today and Done headers are always emitted — even when empty — so
+    // they remain valid drag-and-drop targets. The New header is omitted
+    // when there are no unread threads (it has no equivalent drag action).
+    // Scheduled headers stay dynamic (one per future day with threads);
+    // to schedule for a day not yet represented, drag onto an existing
+    // day or use the per-thread schedule picker.
 
     items.add(
       AgendaHeaderItem(
@@ -2775,13 +2809,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       items.add(AgendaThreadItem(t));
     }
 
-    items.add(
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.newSection),
-      ),
-    );
-    for (final t in unread) {
-      items.add(AgendaThreadItem(t));
+    if (unread.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.newSection),
+        ),
+      );
+      for (final t in unread) {
+        items.add(AgendaThreadItem(t));
+      }
     }
 
     for (final d in scheduledDates) {
@@ -2952,8 +2988,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// coalescing every shared write reruns the entire sectioning pipeline
   /// twice in a row.
   bool _activityFeedRebuildScheduled = false;
-  int _agendaLimit = 50;
-  int _agendaHorizonDays = 90;
+  // Initial cold-start window kept small for fast first paint; see the
+  // matching reset in [_loadPriority] for the rationale. Grows via
+  // [fetchMoreAgendaItems] as the user scrolls.
+  int _agendaLimit = 25;
+  int _agendaHorizonDays = 30;
   // Minimum days from today to populate with empty headers. Starts at 0
   // so [makeAgendaItems]'s 14-day buffer past the last-content date
   // dominates on the initial render. Grows in [fetchMoreAgendaItems] as
@@ -3007,6 +3046,7 @@ class PriorityBlocProvider extends StatefulWidget {
     this.priorityId,
     this.threadId,
     this.priority,
+    this.setContext = true,
     required this.child,
     super.key,
   });
@@ -3014,6 +3054,14 @@ class PriorityBlocProvider extends StatefulWidget {
   final PriorityId? priorityId;
   final ThreadId? threadId;
   final Priority? priority;
+
+  /// When true (default), the loaded priority is published to [NowBloc] as
+  /// the user's current context. Universal views like the agenda — which
+  /// are keyed to the default priority but are not "the user navigated
+  /// here" — should pass `false` so they don't clobber the context the
+  /// user actually chose.
+  final bool setContext;
+
   final Widget child;
 
   @override
@@ -3076,11 +3124,13 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
             ));
 
       // Success - update theme and create bloc
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          context.read<NowBloc>().setContext(priority);
-        }
-      });
+      if (widget.setContext) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<NowBloc>().setContext(priority);
+          }
+        });
+      }
 
       return _LoadResult.success(PriorityBloc(priority: priority));
     } catch (e, stackTrace) {
@@ -3103,11 +3153,13 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         final defaultPriority = await Priority.getDefault();
 
         // Update theme with fallback priority
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            context.read<NowBloc>().setContext(defaultPriority);
-          }
-        });
+        if (widget.setContext) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              context.read<NowBloc>().setContext(defaultPriority);
+            }
+          });
+        }
 
         return _LoadResult.success(
           PriorityBloc(priority: defaultPriority),

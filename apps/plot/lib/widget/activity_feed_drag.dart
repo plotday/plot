@@ -1,11 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:forui/forui.dart';
 
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 
@@ -355,13 +353,6 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
     );
     final feedbackWidth =
         _renderedWidth ?? MediaQuery.sizeOf(context).width;
-    // Solid-bg + flanking 1px dividers so the dragged row reads as
-    // opaque content (not text-on-overlay) and matches the divider-
-    // flanked silhouette of a row at rest in the list.
-    final dividerColor = Color.alphaBlend(
-      context.theme.colors.border,
-      context.colour.background,
-    );
     // Draggable.feedback is mounted in the root Overlay, which sits
     // above the page-scoped [PriorityBloc] provider. The row subtree
     // (`_ActivityFeedItem`) reads the bloc in `initState`, so without
@@ -371,16 +362,7 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
     final priorityBloc = context.read<PriorityBloc>();
     final feedback = BlocProvider<PriorityBloc>.value(
       value: priorityBloc,
-      child: SizedBox(
-        width: feedbackWidth,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: context.colour.background,
-            border: Border.all(color: dividerColor, width: 1),
-          ),
-          child: widget.child,
-        ),
-      ),
+      child: DraggedRowFrame(width: feedbackWidth, child: widget.child),
     );
     if (hasPhysicalKeyboard()) {
       return Draggable<BlockDragPayload>(

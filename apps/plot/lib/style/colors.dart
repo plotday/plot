@@ -239,10 +239,92 @@ class ColourSchemeData extends Equatable {
     );
   }
 
-  /// Background color darkened by 2 steps, matching the unified header background.
+  /// Step factor used by all the panel-darkness levels. Multiplies the
+  /// background lightness divisor — larger means darker.
+  double get _darkenFactor => brightness == Brightness.light ? 1.015 : 1.05;
+
+  /// Build a scheme at an *absolute* darken depth (i.e. ignoring whatever
+  /// darken multiplier is already on this scheme). This is what lets the
+  /// agenda section-header shade render at the same depth whether the
+  /// agenda is in the left panel (whose theme is itself darkened) or in
+  /// single-panel mode.
+  ColourSchemeData _atAbsoluteDepth(int steps) {
+    return ColourSchemeData(
+      themeColor: themeColor,
+      brightness: brightness,
+      darken: pow(_darkenFactor, steps).toDouble(),
+      saturate: saturate,
+    );
+  }
+
+  /// L3 — section-header background. Used by agenda date headers, agenda
+  /// gap headers, and PriorityPage activity-feed section headers
+  /// ("Today"/"New"/...).
+  ///
+  /// Relative to the current scheme's [darken]: in the un-darkened middle
+  /// panel this renders at depth 3 from baseline; inside the agenda subtree
+  /// whose [ColourSchemeData] is already darkened (via the agenda's nested
+  /// provider), this compounds — so the band is always darker than its
+  /// surrounding surface.
+  ///
+  /// In light mode this is a whisper-darker neutral band — close enough to
+  /// the squircle interior (L=0.98) to read as a subtle stripe rather than
+  /// a coloured panel, and fully desaturated so the priority-tinted frame
+  /// outside the squircle doesn't compete with it for attention.
   Color get headerBackground {
-    final factor = brightness == Brightness.light ? 1.015 : 1.05;
-    return copyWith(darken: pow(factor, 2).toDouble()).background;
+    final relDarken = pow(_darkenFactor, 3).toDouble();
+    if (brightness == Brightness.light) {
+      final l = (1.0 / darken / relDarken).clamp(0.0, 1.0);
+      return RayOklch.fromComponents(l, 0.0, 95).toColor();
+    }
+    return copyWith(darken: relDarken).background;
+  }
+
+  /// L4 — darkest panel background. Used by the universal header and the
+  /// left-panel priorities section so they read as a continuous dark
+  /// frame around the lighter middle/right content. Rendered at depth 7
+  /// so it pops clearly against L2 (agenda body) and L3 (section headers)
+  /// — at depth 4 the gap to L3 was too small to feel like a frame.
+  Color get panelDarkestBackground => _atAbsoluteDepth(7).background;
+
+  /// L2 — agenda body background inside the left panel. Lighter than
+  /// section headers (L3) and darker than the baseline middle/right
+  /// panel background.
+  Color get agendaPanelBackground => _atAbsoluteDepth(2).background;
+
+  /// Multi-panel outer frame background. The window's outermost surface,
+  /// sitting behind the unified header and panels and showing through around
+  /// the squircle-clipped panel cards. Tinted with the current priority hue
+  /// so the framed panels read as content cards on a brand-colored field
+  /// (Zen-browser style).
+  ///
+  /// In dark mode the frame is *lighter* than the squircle card background
+  /// (L=0.26); in light mode it is *darker* than the near-white card
+  /// background (L=0.98). The inverted contrast keeps the cards reading as
+  /// embedded content against a recognisable tinted surround.
+  ///
+  /// Returned as a top-left → bottom-right [LinearGradient] with two anchor
+  /// tones (lighter / less-chromatic at the top-left, deeper / slightly more
+  /// chromatic at the bottom-right) so the frame breathes diagonally without
+  /// reading as a flat coloured panel.
+  LinearGradient get frameBackgroundGradient {
+    final isDark = brightness == Brightness.dark;
+    final hue = themeColor.toHue();
+    final c = themeColor.toChroma(isDark: isDark);
+    final Color start;
+    final Color end;
+    if (isDark) {
+      start = RayOklch.fromComponents(0.38, c * 0.12, hue).toColor();
+      end = RayOklch.fromComponents(0.28, c * 0.22, hue).toColor();
+    } else {
+      start = RayOklch.fromComponents(0.89, c * 0.18, hue).toColor();
+      end = RayOklch.fromComponents(0.81, c * 0.38, hue).toColor();
+    }
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [start, end],
+    );
   }
 
   Color get barrier => _colours.barrier.toColor();

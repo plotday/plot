@@ -1,3 +1,4 @@
+export 'agenda.dart';
 export 'thread.dart';
 export 'thread_lookup.dart';
 export 'email_sign_in.dart';
@@ -7,4 +8,5 @@ export 'new_thread.dart';
 export 'password_setup.dart';
 export 'priorities.dart';
 export 'priority.dart';
+export 'root.dart';
 export 'sign_in.dart';

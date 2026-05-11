@@ -332,6 +332,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return _enrichWithStatus(priorities);
   }
 
+  /// Lightweight priority lookup that skips the `pullArchived` network sync
+  /// and `_enrichWithStatus` (two extra SQL queries that compute
+  /// active/unread flags). Use this on hot read paths that only need
+  /// priority identity / path / display fields, not the unread/active dot
+  /// state. Callers that render the priority list itself should keep using
+  /// [get].
+  static Future<List<Priority>> getRaw({bool? archived = false}) {
+    return _get(archived: archived).get();
+  }
+
   static Stream<List<Priority>> watch({
     PriorityId? id,
     Path? path,
