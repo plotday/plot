@@ -175,7 +175,17 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<ThreadBloc, ThreadState>(
+    // Force forui defaults with an explicit `decoration: TextDecoration.none`
+    // so Text widgets in this subtree never inherit MaterialApp's internal
+    // `_errorTextStyle` (yellow double-underline) when their nearest
+    // DefaultTextStyle comes from a Material-injected ancestor instead of
+    // the app.dart route-level wrap. See app.dart for the broader story.
+    return DefaultTextStyle(
+      style: context.theme.typography.md.copyWith(
+        color: context.theme.colors.foreground,
+        decoration: TextDecoration.none,
+      ),
+      child: BlocListener<ThreadBloc, ThreadState>(
       listener: (context, state) {
         // Update header notifier when tags/filter change
         _headerNotifier?.updateTags(state.tags, state.filter);
@@ -205,6 +215,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
             },
           ),
         ),
+      ),
       ),
     );
   }

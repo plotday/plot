@@ -79,6 +79,7 @@ class AppState extends State<App> {
                       builder: (context) => DefaultTextStyle(
                         style: context.theme.typography.md.copyWith(
                           color: context.theme.colors.foreground,
+                          decoration: TextDecoration.none,
                         ),
                         child: material.Material(
                           type: material.MaterialType.transparency,
@@ -127,6 +128,8 @@ class AppState extends State<App> {
                                                       .theme
                                                       .colors
                                                       .foreground,
+                                                  decoration:
+                                                      TextDecoration.none,
                                                 ),
                                             child:
                                                 child ??

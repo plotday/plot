@@ -101,7 +101,23 @@ class PriorityWrapper implements AutoRouteWrapper {
                     child: body,
                   );
                 }
-                return body;
+                // PriorityPage doesn't use the Plot Scaffold (it owns its
+                // own Column/UnifiedHeader/ResizablePanelLayout), so the
+                // route-level DefaultTextStyle override in app.dart is
+                // the only thing standing between this content and
+                // MaterialApp's `_errorTextStyle` (yellow double-underline).
+                // On mobile, descendants here can end up resolving to a
+                // Material-injected DefaultTextStyle whose decoration
+                // leaks through. Force forui defaults with an explicit
+                // `decoration: TextDecoration.none` so headers and any
+                // other Text in this subtree paint cleanly.
+                return DefaultTextStyle(
+                  style: context.theme.typography.md.copyWith(
+                    color: context.theme.colors.foreground,
+                    decoration: TextDecoration.none,
+                  ),
+                  child: body,
+                );
               },
             ),
           ),

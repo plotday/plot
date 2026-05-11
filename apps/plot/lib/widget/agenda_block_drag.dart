@@ -1456,14 +1456,25 @@ class DraggedRowFrame extends StatelessWidget {
       alpha: (borderColor.a * 2).clamp(0.0, 1.0),
     );
     final dividerColor = Color.alphaBlend(bright, context.colour.background);
-    return SizedBox(
-      width: width,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: context.colour.background,
-          border: Border.all(color: dividerColor, width: 1),
+    // Drag feedback mounts inside an Overlay, where inherited text style
+    // may resolve to MaterialApp's internal `_errorTextStyle` (red text
+    // with a yellow double-underline decoration) — the app.dart
+    // route-level DefaultTextStyle override doesn't always reach the
+    // Overlay's render subtree. Force the forui default here so any
+    // Text inside the lifted row paints cleanly.
+    return DefaultTextStyle(
+      style: context.theme.typography.md.copyWith(
+        color: context.theme.colors.foreground,
+      ),
+      child: SizedBox(
+        width: width,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.colour.background,
+            border: Border.all(color: dividerColor, width: 1),
+          ),
+          child: child,
         ),
-        child: child,
       ),
     );
   }

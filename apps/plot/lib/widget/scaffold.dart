@@ -90,6 +90,23 @@ class Scaffold extends StatelessWidget {
       wrappedBody = ModalProvider(child: wrappedBody);
     }
 
+    // Force forui default text style on the scaffold's content. The
+    // MaterialApp.router-level DefaultTextStyle override (see app.dart)
+    // resolves correctly for most descendants, but some entry points
+    // (e.g. mobile headers, Material-wrapped subtrees) end up
+    // inheriting MaterialApp's internal `_errorTextStyle` (yellow
+    // double-underline) when their nearest DefaultTextStyle is supplied
+    // by a Material widget rather than our app-level wrap. Repeating
+    // the wrap here, with an explicit `decoration: TextDecoration.none`,
+    // guarantees every scaffold-hosted page draws clean text.
+    wrappedBody = DefaultTextStyle(
+      style: context.theme.typography.md.copyWith(
+        color: context.theme.colors.foreground,
+        decoration: TextDecoration.none,
+      ),
+      child: wrappedBody,
+    );
+
     final footer = _buildFooter(context);
 
     // On Windows in single-panel mode, when no header is provided, add a minimal

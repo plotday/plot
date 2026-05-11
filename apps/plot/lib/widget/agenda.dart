@@ -1008,18 +1008,20 @@ class _BlockHeaderState extends State<_BlockHeader> {
           final rowWidth = constraints.maxWidth.isFinite
               ? constraints.maxWidth
               : MediaQuery.of(context).size.width;
+          final source = KeyedSubtree(
+            key: _sourceKey,
+            child: _buildRow(context),
+          );
+          final feedback = _buildFeedback(context, rowWidth: rowWidth);
+          final childWhenDragging = buildDraggingChild();
           // Desktop (mouse): the whole header row is a Draggable — any
           // click-and-drag starts a block reorder. Pointer hover is
           // unambiguous so we don't need a dedicated handle.
           if (hasPhysicalKeyboard()) {
-            final source = KeyedSubtree(
-              key: _sourceKey,
-              child: _buildRow(context),
-            );
             return Draggable<BlockDragPayload>(
               data: payload,
-              feedback: _buildFeedback(context, rowWidth: rowWidth),
-              childWhenDragging: buildDraggingChild(),
+              feedback: feedback,
+              childWhenDragging: childWhenDragging,
               onDragStarted: () => _onDragStarted(payload),
               onDragUpdate: _onDragUpdate,
               onDragEnd: _onDragEndedWith,
@@ -1027,73 +1029,29 @@ class _BlockHeaderState extends State<_BlockHeader> {
               child: source,
             );
           }
-          // Touch: distinguishing a drag from a vertical scroll is
-          // impossible if the whole row is the drag source, so we mirror
-          // the [PriorityWidget] / [ThreadWidget] reorder UX — the row
-          // itself stays scrollable / tappable, and only a trailing
-          // [DragHandle] starts the block drag. Anchored at the source
-          // row's original top-left so the floating feedback overlays
-          // where the row was, then follows the finger from there.
-          final handle = Draggable<BlockDragPayload>(
+          // Touch: the whole row is a [LongPressDraggable] — the delayed
+          // recognizer disambiguates drag from scroll/tap (scroll wins
+          // immediate movement, tap wins a quick release, hold past
+          // [kLongPressTimeout] starts the drag). Mirrors the activity-
+          // feed mobile drag pattern. A plain [Draggable] here would
+          // claim the gesture on any small movement, which conflicts
+          // with vertical scroll and — in practice on touch — fails to
+          // deliver subsequent `onDragUpdate` callbacks to the
+          // controller, leaving the agenda without drop placeholders and
+          // dropping back to origin on release.
+          return LongPressDraggable<BlockDragPayload>(
             data: payload,
-            feedback: _buildFeedback(context, rowWidth: rowWidth),
-            dragAnchorStrategy: _sourceTopLeftAnchor,
-            childWhenDragging: const DragHandle(),
+            feedback: feedback,
+            childWhenDragging: childWhenDragging,
             onDragStarted: () => _onDragStarted(payload),
             onDragUpdate: _onDragUpdate,
             onDragEnd: _onDragEndedWith,
             onDraggableCanceled: (_, _) => _onDragEnded(),
-            child: const DragHandle(),
-          );
-          // Row body responds to drag state directly: at rest it shows
-          // the row + handle inline; while THIS block is being dragged
-          // it dims/collapses the same way the desktop `childWhenDragging`
-          // does. Wrapped in `_sourceKey` so the controller can still
-          // read the source's natural bounds at drag start.
-          return KeyedSubtree(
-            key: _sourceKey,
-            child: ListenableBuilder(
-              listenable: _dragController ?? _NullListenable(),
-              builder: (context, _) {
-                final ctrl = _dragController;
-                final isThis =
-                    ctrl != null &&
-                    ctrl.draggingBlockId == widget.parentBlockId;
-                if (!isThis) {
-                  return _buildRow(context, trailingHandle: handle);
-                }
-                final visible = ctrl.isSourceVisible;
-                return AnimatedSize(
-                  duration: kBlockBoundaryAnimDuration,
-                  curve: Curves.easeOut,
-                  alignment: Alignment.topCenter,
-                  child: visible
-                      ? Opacity(opacity: 0.4, child: _buildRow(context))
-                      : const SizedBox.shrink(),
-                );
-              },
-            ),
+            child: source,
           );
         },
       ),
     );
-  }
-
-  /// Anchors the floating drag feedback at the source row's original
-  /// top-left, so the lifted row appears in the same position it
-  /// occupied at rest (mirroring `ReorderableListView`'s lift effect)
-  /// rather than jumping under the small handle that initiated the drag.
-  Offset _sourceTopLeftAnchor(
-    Draggable<Object> _,
-    BuildContext context,
-    Offset position,
-  ) {
-    final sourceCtx = _sourceKey.currentContext;
-    final box = sourceCtx?.findRenderObject() as RenderBox?;
-    if (box == null) {
-      return Offset.zero;
-    }
-    return position - box.localToGlobal(Offset.zero);
   }
 }
 
