@@ -1405,7 +1405,7 @@ class RescheduleAllInBlock extends Command {
       bloc = context.read<PriorityBloc>();
     } catch (_) {}
 
-    final actionReturn = await Modal(
+    final picked = await Modal(
       constraints: const BoxConstraints(maxWidth: 380, maxHeight: 640),
       builder: (modalContext) => SingleChildScrollView(
         child: Column(
@@ -1451,45 +1451,31 @@ class RescheduleAllInBlock extends Command {
                 decoration: DecorationDelta.value(const BoxDecoration()),
                 padding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
               ),
-              onPress: (date) async {
-                final result = await _rescheduleAll(
-                  context,
-                  date.toDate(),
-                  bloc,
-                );
-                if (!context.mounted) return;
-                Modal.pop(context, Value(result));
-              },
+              onPress: (date) =>
+                  Modal.pop(modalContext, Value(date.toDate())),
             ),
             const SizedBox(height: 12),
             FButton(
               variant: FButtonVariant.secondary,
-              onPress: () async {
-                final result = await _rescheduleAll(
-                  context,
-                  Thread.todoNowDate,
-                  bloc,
-                );
-                if (!context.mounted) return;
-                Modal.pop(context, Value(result));
-              },
+              onPress: () =>
+                  Modal.pop(modalContext, Value(Thread.todoNowDate)),
               child: const Text('Today'),
             ),
           ],
         ),
       ),
-    ).show<CommandReturn>(context);
-    return actionReturn.present ? actionReturn.value : const CommandSkipped();
-  }
+    ).show<Date>(context);
 
-  Future<CommandReturn> _rescheduleAll(
-    BuildContext context,
-    Date when,
-    PriorityBloc? bloc,
-  ) async {
+    if (!picked.present) return const CommandSkipped();
+    if (!context.mounted) return const CommandSkipped();
+
     for (final thread in threads) {
       if (!context.mounted) return const CommandSkipped();
-      await ScheduleThread(thread, when: when, priorityBloc: bloc).run(context);
+      await ScheduleThread(
+        thread,
+        when: picked.value,
+        priorityBloc: bloc,
+      ).run(context);
     }
     return const CommandDone();
   }

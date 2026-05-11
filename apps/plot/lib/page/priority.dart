@@ -27,10 +27,9 @@ import 'loading.dart';
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
-  PriorityWrapper({
-    @PathParam("priorityId") required String priorityIdString,
-  }) : priorityId = PriorityId.tryFromShortString(priorityIdString),
-       _routerKey = GlobalKey(debugLabel: 'PriorityWrapper_$priorityIdString');
+  PriorityWrapper({@PathParam("priorityId") required String priorityIdString})
+    : priorityId = PriorityId.tryFromShortString(priorityIdString),
+      _routerKey = GlobalKey(debugLabel: 'PriorityWrapper_$priorityIdString');
 
   final PriorityId? priorityId;
   final GlobalKey _routerKey;
@@ -617,8 +616,7 @@ class _PriorityPageState extends State<PriorityPage>
             return p?.id != n?.id || p?.occurrence != n?.occurrence;
           },
           listener: (context, nowState) {
-            final event =
-                nowState is NowLoaded ? nowState.currentEvent : null;
+            final event = nowState is NowLoaded ? nowState.currentEvent : null;
             context.read<PriorityBloc>().setCurrentEventForFeed(event);
           },
         ),
@@ -667,8 +665,7 @@ class _PriorityPageState extends State<PriorityPage>
                 HardwareKeyboard.instance.isShiftPressed ||
                 HardwareKeyboard.instance.isAltPressed;
             final isPlainUp =
-                event.logicalKey == LogicalKeyboardKey.arrowUp &&
-                !hasModifiers;
+                event.logicalKey == LogicalKeyboardKey.arrowUp && !hasModifiers;
             final isPlainDown =
                 event.logicalKey == LogicalKeyboardKey.arrowDown &&
                 !hasModifiers;
@@ -697,9 +694,7 @@ class _PriorityPageState extends State<PriorityPage>
               );
             },
             builder: (context, listController) {
-              final provider = _PriorityListControllerProvider.maybeOf(
-                context,
-              );
+              final provider = _PriorityListControllerProvider.maybeOf(context);
               provider?.registerController(listController);
 
               return Shortcuts(
@@ -718,11 +713,7 @@ class _PriorityPageState extends State<PriorityPage>
                     ),
                     MoveFocusDownIntent: CallbackAction<MoveFocusDownIntent>(
                       onInvoke: (intent) {
-                        provider?._moveFocusOrStart(
-                          listController,
-                          1,
-                          context,
-                        );
+                        provider?._moveFocusOrStart(listController, 1, context);
                         return null;
                       },
                     ),
@@ -743,23 +734,23 @@ class _PriorityPageState extends State<PriorityPage>
                                 OpenFocusedItemActions(listController, (
                                   index,
                                 ) async {
-                                  final item = index >= 0 && index < items.length
+                                  final item =
+                                      index >= 0 && index < items.length
                                       ? items[index]
                                       : null;
                                   if (item == null) {
                                     return <StaticCommandGroup>[];
                                   }
-                                  return await item.when<
-                                    Future<List<StaticCommandGroup>>
-                                  >(
-                                    activity: (agendaActivity) =>
-                                        threadCommandGroups(
-                                          agendaActivity.thread,
-                                          priorityBloc: capturedBloc,
-                                        ),
-                                    header: (_) async =>
-                                        <StaticCommandGroup>[],
-                                  );
+                                  return await item
+                                      .when<Future<List<StaticCommandGroup>>>(
+                                        activity: (agendaActivity) =>
+                                            threadCommandGroups(
+                                              agendaActivity.thread,
+                                              priorityBloc: capturedBloc,
+                                            ),
+                                        header: (_) async =>
+                                            <StaticCommandGroup>[],
+                                      );
                                 }),
                               );
                             }
@@ -838,8 +829,9 @@ class _PriorityPageState extends State<PriorityPage>
       index: index,
       selectedAccent: (item) {
         if (item is AgendaThreadItem && item.thread.id == selectedId) {
-          return context.colour.colours
-              .fromTheme(item.thread.priority.displayColor);
+          return context.colour.colours.fromTheme(
+            item.thread.priority.displayColor,
+          );
         }
         return null;
       },
@@ -1002,17 +994,45 @@ class _PriorityPageState extends State<PriorityPage>
                 // and they'd stand out from their siblings — drop it
                 // here when a section marker is present.
                 final tileDate = marker != null ? null : header.date;
-                return [
-                  AgendaTile(
-                    dateTimeRange: header.dateTimeRange,
-                    date: tileDate,
-                    now: header.now,
-                    thread: header.thread,
-                    focusNode: focusNode,
-                    text: displayText,
-                    scheduleAt: header.scheduleAt,
-                  ),
-                ];
+                final tile = AgendaTile(
+                  dateTimeRange: header.dateTimeRange,
+                  date: tileDate,
+                  now: header.now,
+                  thread: header.thread,
+                  focusNode: focusNode,
+                  text: displayText,
+                  scheduleAt: header.scheduleAt,
+                );
+
+                // "Reschedule all" affordance for the Today block and
+                // every future Scheduled-day block. Collect the threads
+                // that follow this header until the next section header
+                // and skip rendering the button when the block is empty.
+                final canRescheduleAll =
+                    marker != null &&
+                    (marker.section == ActivitySection.today ||
+                        marker.section == ActivitySection.scheduled);
+                if (canRescheduleAll) {
+                  final sectionThreads = <Thread>[];
+                  for (var j = index + 1; j < displayItems.length; j++) {
+                    final next = displayItems[j];
+                    if (next is AgendaHeaderItem) break;
+                    if (next is AgendaThreadItem) {
+                      sectionThreads.add(next.thread);
+                    }
+                  }
+                  if (sectionThreads.isNotEmpty) {
+                    return [
+                      _SectionHeaderWithRescheduleAll(
+                        tile: tile,
+                        threads: sectionThreads,
+                        sectionLabel: marker.label,
+                      ),
+                    ];
+                  }
+                }
+
+                return [tile];
               },
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
@@ -1025,8 +1045,7 @@ class _PriorityPageState extends State<PriorityPage>
                   key: rowKey,
                   baseThread: baseThread,
                   selected:
-                      state.thread != null &&
-                      baseThread.id == state.thread!.id,
+                      state.thread != null && baseThread.id == state.thread!.id,
                   now: agendaActivity.now,
                   focusNode: focusNode,
                   priorityContext: state.context,
@@ -1059,10 +1078,7 @@ class _PriorityPageState extends State<PriorityPage>
 
     return BlockDragScope(
       controller: _activityFeedDragController,
-      child: ScrollEdgeFade(
-        background: context.colour.background,
-        child: list,
-      ),
+      child: ScrollEdgeFade(background: context.colour.background, child: list),
     );
   }
 }
@@ -1199,6 +1215,44 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
           isAssociated: widget.isAssociated,
         );
       },
+    );
+  }
+}
+
+/// Section header (Today or a future Scheduled day) overlaid with a small
+/// "Reschedule all" affordance on the trailing edge. The underlying
+/// [AgendaTile] keeps its centered text and dark band; the button floats
+/// above it via a [Stack] so the section label stays visually centered.
+class _SectionHeaderWithRescheduleAll extends StatelessWidget {
+  const _SectionHeaderWithRescheduleAll({
+    required this.tile,
+    required this.threads,
+    required this.sectionLabel,
+  });
+
+  final Widget tile;
+  final List<Thread> threads;
+  final String sectionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        tile,
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.theme.spacing.sm,
+              ),
+              child: Button.icon(
+                RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
