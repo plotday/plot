@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/router.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/state/onboarding.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
@@ -72,13 +73,16 @@ class OnboardingOverlay extends StatelessWidget {
           });
         }
 
-        // If the step targets the agenda panel, route to the dedicated
-        // /agenda page so the panel underneath the highlight cutout
-        // actually shows the agenda. Defer with a post-frame callback
-        // because we're inside a build and navigation rebuilds the tree.
+        // If the step targets the agenda panel in single-panel mode, route
+        // to the dedicated /agenda page so the screen behind the overlay
+        // actually shows the agenda. In multi-panel mode the agenda is
+        // already rendered in the top half of the left panel — pushing
+        // /agenda would just bounce back via [AgendaPage].
         if (step is HighlightStep && step.target is PanelTarget) {
           final target = step.target as PanelTarget;
-          if (target == PanelTarget.agenda) {
+          final layoutBloc = context.read<LayoutBloc?>();
+          final multiPanel = layoutBloc?.state.multiPanel ?? false;
+          if (target == PanelTarget.agenda && !multiPanel) {
             final ctx = navigatorKey?.currentContext;
             if (ctx != null &&
                 ctx.mounted &&

@@ -93,12 +93,34 @@ class _DesktopHighlight extends StatelessWidget {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final cutout = _computeCutoutRect(size, layoutState, step.target);
 
-        // Determine content placement — opposite side of cutout
+        // Content always goes on the side of the cutout that has space — the
+        // opposite side from the cutout itself. [nearCutout] keeps it on the
+        // same side but pushes it toward the cutout so the text reads as
+        // attached to the highlighted panel instead of crowding the
+        // viewport edge.
         final contentOnRight = cutout.left < size.width / 2;
-        final contentLeft = contentOnRight ? cutout.right + 40 : 40.0;
-        final contentWidth = contentOnRight
+        final isNear = step.multiPanelAlignment ==
+            MultiPanelContentAlignment.nearCutout;
+
+        final areaLeft = contentOnRight ? cutout.right + 40 : 40.0;
+        final areaWidth = contentOnRight
             ? size.width - cutout.right - 80
             : cutout.left - 80;
+        final contentWidth = areaWidth.clamp(200.0, 400.0);
+        // When pulling toward the cutout, right-align the box in the
+        // available area if the cutout is to its right, otherwise it's
+        // already flush left against the cutout.
+        final contentLeft = isNear && !contentOnRight
+            ? areaLeft + (areaWidth - contentWidth)
+            : areaLeft;
+
+        final mainAxis = switch (step.multiPanelAlignment) {
+          MultiPanelContentAlignment.top => MainAxisAlignment.start,
+          MultiPanelContentAlignment.bottom => MainAxisAlignment.end,
+          MultiPanelContentAlignment.center ||
+          MultiPanelContentAlignment.nearCutout =>
+            MainAxisAlignment.center,
+        };
 
         // See FullScreenStep backdrop: same mid-tone lightness keeps the
         // highlight tint vibrant once it's blended over the blurred panel.
@@ -127,14 +149,16 @@ class _DesktopHighlight extends StatelessWidget {
                     _DismissButton(hovered: hovered),
               ),
             ),
-            // Content on the overlay
+            // Content on the overlay. Top/bottom variants leave breathing
+            // room from the screen edge so the text doesn't crash into the
+            // dismiss button or the bottom of the viewport.
             Positioned(
               left: contentLeft,
-              top: 0,
-              bottom: 0,
-              width: contentWidth.clamp(200, 400),
+              top: 64,
+              bottom: 32,
+              width: contentWidth,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: mainAxis,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -219,9 +243,13 @@ Rect _computeCutoutRect(
   final isRightPanel = target is ThreadTarget ||
       target is NamedThreadTarget ||
       panelTarget == PanelTarget.newThread;
-  final isMiddlePanel =
-      panelTarget == PanelTarget.agenda || panelTarget == PanelTarget.feed;
-  final isLeftPanel = panelTarget == PanelTarget.priorities;
+  // Agenda now lives in the left panel above priorities in multi-panel mode
+  // (see `PriorityPage`'s `ResizablePanelLayout(leftTop: …)`), so we cut out
+  // the whole left panel for both agenda and priorities steps and rely on
+  // the step's content alignment to anchor next to the relevant section.
+  final isLeftPanel = panelTarget == PanelTarget.priorities ||
+      panelTarget == PanelTarget.agenda;
+  final isMiddlePanel = panelTarget == PanelTarget.feed;
 
   if (isLeftPanel && effectiveLeft > 0) {
     return Rect.fromLTWH(0, 0, effectiveLeft, height);
