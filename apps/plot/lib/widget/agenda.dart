@@ -6,7 +6,9 @@ import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
@@ -217,7 +219,7 @@ class AgendaTile extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text.rich(
               TextSpan(
-                style: TextStyle(fontSize: smSize, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: smSize),
                 children: [
                   TextSpan(
                     text: dateMonth!.trimLeft(),
@@ -226,7 +228,10 @@ class AgendaTile extends StatelessWidget {
                   const TextSpan(text: ' '),
                   TextSpan(
                     text: dateCenterRight!,
-                    style: TextStyle(color: context.theme.colors.foreground),
+                    style: TextStyle(
+                      color: context.theme.colors.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -928,7 +933,31 @@ class _BlockHeaderState extends State<_BlockHeader> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => context.run(ChangeCurrentPriority(widget.priority)),
+        onTap: () {
+          final eventThread = widget.thread;
+          if (eventThread == null) {
+            context.run(ChangeCurrentPriority(widget.priority));
+            return;
+          }
+          // Event-headers in the universal agenda live under the
+          // default-priority PriorityBloc, so [ChangeCurrentThread]'s
+          // "stay on currentPriority" navigation would yank the user
+          // onto the default priority instead of the event's. Drive
+          // navigation explicitly to the event's priority, set the
+          // event as current, and let [ThreadPage] wire `setThread`
+          // into the destination [PriorityBloc] on mount.
+          context.read<NowBloc>().setCurrentEvent(eventThread);
+          context.router.navigate(
+            PriorityRoute(
+              priorityIdString: eventThread.priority.id.toShortString(),
+              children: [
+                ThreadRoute(
+                  threadIdString: eventThread.id.toShortString(),
+                ),
+              ],
+            ),
+          );
+        },
         child: child,
       ),
     );

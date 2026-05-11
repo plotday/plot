@@ -592,20 +592,48 @@ class _PriorityPageState extends State<PriorityPage>
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<PriorityBloc, PriorityState>(
-      listener: (context, state) {
-        final nowBloc = context.read<NowBloc>();
-        nowBloc.setFocus(state.context);
-        nowBloc.setContext(state.context);
-        // Reset scroll to top on priority switch
-        final scrollController = ScrollControllerContext.of(context);
-        if (scrollController != null && scrollController.hasClients) {
-          scrollController.jumpTo(0);
-        }
-      },
-      listenWhen: (previous, current) =>
-          previous.context.id != current.context.id,
-      builder: (context, state) {
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<PriorityBloc, PriorityState>(
+          listenWhen: (previous, current) =>
+              previous.context.id != current.context.id,
+          listener: (context, state) {
+            final nowBloc = context.read<NowBloc>();
+            nowBloc.setFocus(state.context);
+            nowBloc.setContext(state.context);
+            // Reset scroll to top on priority switch
+            final scrollController = ScrollControllerContext.of(context);
+            if (scrollController != null && scrollController.hasClients) {
+              scrollController.jumpTo(0);
+            }
+          },
+        ),
+        // Mirror NowBloc.currentEvent into PriorityBloc so the activity
+        // feed can render the "Event Agenda" section.
+        BlocListener<NowBloc, NowState>(
+          listenWhen: (previous, current) {
+            final p = previous is NowLoaded ? previous.currentEvent : null;
+            final n = current is NowLoaded ? current.currentEvent : null;
+            return p?.id != n?.id || p?.occurrence != n?.occurrence;
+          },
+          listener: (context, nowState) {
+            final event =
+                nowState is NowLoaded ? nowState.currentEvent : null;
+            context.read<PriorityBloc>().setCurrentEventForFeed(event);
+          },
+        ),
+      ],
+      child: BlocBuilder<PriorityBloc, PriorityState>(
+        builder: (context, state) {
+          return _buildBody(context, state);
+        },
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, PriorityState state) {
+    return Builder(
+      builder: (context) {
         final items = state.activityFeedItems;
 
         // Build shortcuts map for plain Up/Down navigation
@@ -964,10 +992,20 @@ class _PriorityPageState extends State<PriorityPage>
                     ? null
                     : ActivitySectionMarker.tryDecode(displayText);
                 if (marker != null) displayText = marker.label;
+                // Activity-feed section headers (Today / New / Scheduled
+                // day buckets / Done) are all just text labels and must
+                // render through AgendaTile's text-only heading path so
+                // they share color and vertical padding. Scheduled-day
+                // headers carry a `date` for drag/keyboard targeting,
+                // but passing that into AgendaTile would route them
+                // through the date-header path (veryMuted + spacing.md)
+                // and they'd stand out from their siblings — drop it
+                // here when a section marker is present.
+                final tileDate = marker != null ? null : header.date;
                 return [
                   AgendaTile(
                     dateTimeRange: header.dateTimeRange,
-                    date: header.date,
+                    date: tileDate,
                     now: header.now,
                     thread: header.thread,
                     focusNode: focusNode,
@@ -978,20 +1016,32 @@ class _PriorityPageState extends State<PriorityPage>
               },
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
+                final rowKey = agendaActivity.isAssociated
+                    ? ValueKey(
+                        'feed_activitywidget_${baseThread.id}_assoc_${agendaActivity.associationParentId ?? ''}',
+                      )
+                    : ValueKey('feed_activitywidget_${baseThread.id}');
+                final item = _ActivityFeedItem(
+                  key: rowKey,
+                  baseThread: baseThread,
+                  selected:
+                      state.thread != null &&
+                      baseThread.id == state.thread!.id,
+                  now: agendaActivity.now,
+                  focusNode: focusNode,
+                  priorityContext: state.context,
+                  isAssociated: agendaActivity.isAssociated,
+                );
+                if (agendaActivity.pinned) {
+                  // Pinned event row: not draggable, not a drop target —
+                  // it always leads the Event Agenda section.
+                  return [item];
+                }
                 return [
                   ActivityFeedDraggableRow(
                     threadId: baseThread.id,
                     priorityContext: state.context,
-                    child: _ActivityFeedItem(
-                      key: ValueKey('feed_activitywidget_${baseThread.id}'),
-                      baseThread: baseThread,
-                      selected:
-                          state.thread != null &&
-                          baseThread.id == state.thread!.id,
-                      now: agendaActivity.now,
-                      focusNode: focusNode,
-                      priorityContext: state.context,
-                    ),
+                    child: item,
                   ),
                 ];
               },
@@ -1080,6 +1130,7 @@ class _ActivityFeedItem extends StatefulWidget {
     required this.now,
     required this.focusNode,
     required this.priorityContext,
+    this.isAssociated = false,
   });
 
   final Thread baseThread;
@@ -1087,6 +1138,7 @@ class _ActivityFeedItem extends StatefulWidget {
   final bool now;
   final FocusNode focusNode;
   final Priority priorityContext;
+  final bool isAssociated;
 
   @override
   State<_ActivityFeedItem> createState() => _ActivityFeedItemState();
@@ -1122,7 +1174,14 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
       future: _representative,
       builder: (context, snapshot) {
         final rep = snapshot.data;
-        final display = rep ?? widget.baseThread;
+        // Compose the live baseThread with the cached representative's
+        // picked schedule + flags so the row reflects up-to-date sync
+        // state (unread, title, tags, …) instead of the snapshot taken
+        // when the representative was resolved. See
+        // PriorityBloc._representativeCache for why we cache.
+        final display = rep != null
+            ? widget.baseThread.withRepresentativeFrom(rep)
+            : widget.baseThread;
         // Key intentionally excludes the resolved scheduleId — including
         // it would change identity once the Future resolves and force
         // every ThreadWidget to remount, dropping focus and re-running
@@ -1137,6 +1196,7 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
           showSubPriority: true,
           bump: false,
           showEventTiming: rep != null,
+          isAssociated: widget.isAssociated,
         );
       },
     );

@@ -4349,6 +4349,30 @@ class Thread extends Equatable implements Comparable<Thread> {
     return earliestUpcoming ?? latestPast;
   }
 
+  /// Returns a copy of this thread combined with the representative
+  /// schedule resolved by [loadRepresentativeForFeed]. Activity-feed rows
+  /// for calendar events cache the resolved representative (to avoid
+  /// reissuing the schedule lookup on every rebuild), but the cached
+  /// result freezes the rest of the thread's state (unread, title, tags,
+  /// …) at the time of the lookup. Composing the live `this` with the
+  /// representative's picked occurrence + flags keeps the display fresh
+  /// while preserving the cached schedule selection.
+  Thread withRepresentativeFrom(Thread representative) {
+    return Thread._fromStore(
+      activity: _thread,
+      priority: priority,
+      schedule: representative._schedule,
+      userSchedule: _userSchedule,
+      tags: _tags,
+      notes: _notes,
+      active: _active,
+      unreadComputed: _unreadComputed,
+      isLinkScheduleInstance: true,
+      rsvpInheritedFromSeries: representative.rsvpInheritedFromSeries,
+      linkSourceCreatedAt: _linkSourceCreatedAt,
+    );
+  }
+
   /// Resolves a Thread to its representative occurrence for the activity
   /// feed. For non-recurring calendar events returns a Thread with the
   /// same single schedule wrapped as a link schedule instance. For

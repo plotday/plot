@@ -57,6 +57,11 @@ class ChangeCurrentPriority extends PriorityCommand {
     // new PriorityBloc to finish loading drafts and emit its new context.
     final nowBloc = context.read<NowBloc>();
     if (nowBloc.state is NowLoaded) {
+      // Selecting a priority is an explicit "show me this priority"
+      // action, so clear any sticky event selection — even when the
+      // chosen priority is the same as the event's priority (setContext
+      // would otherwise preserve it).
+      nowBloc.setCurrentEvent(null);
       nowBloc.setContext(priority);
     }
     return CommandRoute(
@@ -127,10 +132,7 @@ class PickCurrentPriority extends ShowCommands {
     : super(
         title: 'Switch priorities',
         icon: PlotIcon.priority,
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.keyP,
-          alt: kIsWeb,
-        ),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyP, alt: kIsWeb),
         commands: ChangeCurrentPriorityCommands(),
       );
 }
@@ -242,11 +244,7 @@ Future<FormData> _buildNewPriorityForm(
     groups: [
       StaticFormGroup(
         items: [
-          FormTextInput(
-            key: 'title',
-            label: 'Priority Name',
-            required: true,
-          ),
+          FormTextInput(key: 'title', label: 'Priority Name', required: true),
           parentSelect,
           FormSelect<ThemeColor?>(
             key: 'color',
@@ -280,7 +278,8 @@ Future<FormData> _buildNewPriorityForm(
               final selectedParent = values['parent'] as Priority;
               final color = values['color'] as ThemeColor?;
               final shared =
-                  (values['shared'] as SharedSelection?) ?? const SharedSelection();
+                  (values['shared'] as SharedSelection?) ??
+                  const SharedSelection();
               return submitBuilder(
                 Future.value(
                   Priority(
@@ -354,10 +353,8 @@ Future<Priority?> createPriorityInline(
     form: (context) => _buildNewPriorityForm(
       context,
       parent: parent,
-      submitBuilder: (priorityFuture) => _SaveAndReturnPriority(
-        priorityFuture,
-        onSaved: (p) => result = p,
-      ),
+      submitBuilder: (priorityFuture) =>
+          _SaveAndReturnPriority(priorityFuture, onSaved: (p) => result = p),
     ),
   );
 
@@ -387,8 +384,10 @@ class EditPriorityCommand extends ShowForm {
             enabled: !isRoot,
             placeholder: 'None',
             items: (search) async {
-              final priorities =
-                  await Priority.get(order: PriorityOrder.nested, search: search);
+              final priorities = await Priority.get(
+                order: PriorityOrder.nested,
+                search: search,
+              );
               return priorities.where((candidate) {
                 if (candidate.id == p.id) return false;
                 if (p.path.isParent(candidate.path)) return false;
@@ -447,8 +446,9 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: SharedSelection(
                       contacts: List<Uuid>.from(p.defaultSharedContacts),
                       groups: List<Uuid>.from(p.defaultSharedGroups),
-                      inviteEmails:
-                          List<String>.from(p.defaultSharedInviteEmails),
+                      inviteEmails: List<String>.from(
+                        p.defaultSharedInviteEmails,
+                      ),
                     ),
                   ),
                   FormButton(
@@ -458,7 +458,8 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
-                      final shared = (values['shared'] as SharedSelection?) ??
+                      final shared =
+                          (values['shared'] as SharedSelection?) ??
                           const SharedSelection();
                       return EditPriority(
                         Future.value(
@@ -502,11 +503,9 @@ class ShowPriorityCommands extends ShowCommands {
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
-  if (!priority.root)
-    SetTopPriority(priority, priority.topOrder == null),
+  if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer) NewPriority(parent: priority),
-  if (!priority.root && !priority.isViewer &&
-      !priority.isPlot)
+  if (!priority.root && !priority.isViewer && !priority.isPlot)
     TogglePriorityArchived(priority),
 ];
 

@@ -896,11 +896,28 @@ class BlockDragController extends ChangeNotifier {
     final sourceHeaderHeight = sourceRO.size.height;
     _sourceAtRestTopY = sourceTopY;
 
+    // Find the K_after_source slot. When a thread appears in multiple
+    // places (e.g. the activity feed's "Event Agenda" section shows an
+    // associated copy of a thread that also lives in Today), several
+    // slots share `prevBlockId == draggingId`. Pick the one positioned
+    // just below the dragged source — the smallest positive
+    // (slotY - sourceTopY). Without this nearest-match filter the
+    // first-registered slot wins and `afterSourceY` ends up far past
+    // the source, blowing the computed height up to the full distance
+    // between the two copies.
     double? afterSourceY;
+    double bestDelta = double.infinity;
     for (final entry in _slots.entries) {
-      if (entry.value.target.prevBlockId == draggingId) {
-        afterSourceY = _readSlotY(entry.key);
-        if (afterSourceY != null) break;
+      if (entry.value.target.prevBlockId != draggingId) continue;
+      final y = _readSlotY(entry.key);
+      if (y == null) continue;
+      final delta = y - sourceTopY;
+      // Only slots at or below the source are candidates; ignore any
+      // sitting above (those belong to a different copy).
+      if (delta < 0) continue;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        afterSourceY = y;
       }
     }
 

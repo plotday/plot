@@ -332,7 +332,7 @@ class ColourSchemeData extends Equatable {
       // Drop lightness off pure white (0.99 → 0.95 / 0.86) — at L≈1 there's
       // no headroom for the chroma to read against a white frost.
       start = RayOklch.fromComponents(1, c * 0.2, hue, 0.4).toColor();
-      end = RayOklch.fromComponents(0.97, c * 0.4, hue, 0.5).toColor();
+      end = RayOklch.fromComponents(0.97, c * 0.4, hue, 0.3).toColor();
     }
     return LinearGradient(
       begin: Alignment.topLeft,

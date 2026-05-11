@@ -19,6 +19,7 @@ final class NowLoaded extends NowState {
     this.priorityBlocksByPriority = const {},
     this.session,
     this.context,
+    this.currentEvent,
   }) : now = Time.now(),
        _day = day;
 
@@ -27,6 +28,13 @@ final class NowLoaded extends NowState {
   final ScheduledDay _day;
   final Priority defaultPriority;
   final Priority? context;
+
+  /// The event thread the user has tapped in the agenda. Sticky for the
+  /// lifetime of the current priority view: cleared when [context]
+  /// changes to a priority that doesn't own the event. Drives the
+  /// PriorityPage "Event Agenda" section, the unified-header title, and
+  /// the right-side agenda filter.
+  final Thread? currentEvent;
 
   /// Every non-archived priority. Used to rank "current priority" by
   /// [effectivePriorityOrderAt] when neither an active session nor a
@@ -119,6 +127,8 @@ final class NowLoaded extends NowState {
     // `priorityBlocksByPriority`: only rebuild when the picked current
     // priority actually changes, not on every block-row tweak.
     priority.id,
+    currentEvent?.id,
+    currentEvent?.occurrence,
   ];
 
   /// The "current priority" — what the user should be working on right
@@ -222,6 +232,7 @@ final class NowLoaded extends NowState {
     Priority? context,
     List<Priority>? priorities,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
+    Object? currentEvent = _sentinel,
   }) {
     return NowLoaded(
       session: session ?? this.session,
@@ -231,6 +242,11 @@ final class NowLoaded extends NowState {
       priorities: priorities ?? this.priorities,
       priorityBlocksByPriority:
           priorityBlocksByPriority ?? this.priorityBlocksByPriority,
+      currentEvent: identical(currentEvent, _sentinel)
+          ? this.currentEvent
+          : currentEvent as Thread?,
     );
   }
 }
+
+const Object _sentinel = Object();

@@ -39,6 +39,8 @@ class NowBloc extends Cubit<NowState> {
               priorities: priorities,
               priorityBlocksByPriority: blocksByPriority,
               context: state is NowLoaded ? (state as NowLoaded).context : null,
+              currentEvent:
+                  state is NowLoaded ? (state as NowLoaded).currentEvent : null,
             );
           },
         ).listen(
@@ -67,8 +69,33 @@ class NowBloc extends Cubit<NowState> {
   /// be more general than the focus.
   void setContext(Priority? priority) async {
     if (loadedState.context?.id == priority?.id) return;
-    final newState = loadedState.copyWith(context: priority);
+    // Sticky-until-navigated-away: clear currentEvent whenever the
+    // displayed priority changes to one that doesn't own the event.
+    final currentEvent = loadedState.currentEvent;
+    final keepEvent =
+        currentEvent != null && currentEvent.priority.id == priority?.id;
+    final newState = loadedState.copyWith(
+      context: priority,
+      currentEvent: keepEvent ? currentEvent : null,
+    );
     emit(newState);
+  }
+
+  /// Set the agenda's currently-selected event. Pass null to clear.
+  /// Also pulls the context to the event's priority so PriorityPage
+  /// displays the correct workspace.
+  void setCurrentEvent(Thread? event) {
+    if (loadedState.currentEvent?.id == event?.id &&
+        loadedState.currentEvent?.occurrence == event?.occurrence) {
+      return;
+    }
+    if (event != null && loadedState.context?.id != event.priority.id) {
+      emit(
+        loadedState.copyWith(context: event.priority, currentEvent: event),
+      );
+      return;
+    }
+    emit(loadedState.copyWith(currentEvent: event));
   }
 
   /// Focus is the priority of the current activity, which may

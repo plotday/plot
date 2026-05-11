@@ -546,6 +546,24 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<Map<Uuid, List<ThreadAssociationRow>>>?
   _associationsSubscription;
 
+  /// Mirrors [NowBloc]'s `currentEvent` for the PriorityPage activity
+  /// feed. Set via [setCurrentEventForFeed]; null when no event is
+  /// selected. Drives the "Event Agenda" section in
+  /// [_rebuildActivityFeedSections].
+  Thread? _currentEventForFeed;
+
+  /// Replace the event that drives the "Event Agenda" section and
+  /// rebuild the activity feed. Called by PriorityPage when the
+  /// NowBloc.currentEvent changes.
+  void setCurrentEventForFeed(Thread? event) {
+    final prev = _currentEventForFeed;
+    if (prev?.id == event?.id && prev?.occurrence == event?.occurrence) {
+      return;
+    }
+    _currentEventForFeed = event;
+    _scheduleActivityFeedRebuild();
+  }
+
   /// Per-priority order timeline (`priority_block` rows). Populated by
   /// [_priorityBlocksSubscription] and fed to [AgendaBuilder.build] so
   /// that block ordering reflects user-driven reorders. Empty until the
@@ -932,6 +950,32 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     if (dragged == null) return;
 
+    // Dropping into the Event Agenda section creates an association
+    // without changing the thread's own section membership — the user
+    // wants the thread to appear in both places (duplicate).
+    if (targetSection == ActivitySection.eventAgenda) {
+      final parent = _currentEventForFeed;
+      if (parent == null) return;
+      // Resolve neighbouring association orders (if any) to compute a
+      // fractional order between them.
+      final assocs = _associations?[parent.id] ?? const [];
+      Order? above;
+      Order? below;
+      for (final a in assocs) {
+        if (a.childThreadId == prevId) above = a.order;
+        if (a.childThreadId == nextId) below = a.order;
+      }
+      final assocOrder = Order.between(above, below);
+      await dragged.associateWith(
+        parentThreadId: parent.id,
+        order: assocOrder,
+      );
+      // No state change to `dragged` itself — the source row stays in
+      // whichever section it was in. The activity feed rebuild fires
+      // from the associations stream.
+      return;
+    }
+
     Order? newOrder;
     if (targetSection == ActivitySection.today ||
         targetSection == ActivitySection.scheduled) {
@@ -958,6 +1002,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     Thread updated;
     switch (targetSection) {
+      case ActivitySection.eventAgenda:
+        return; // handled above
       case ActivitySection.today:
         updated = dragged.asActiveToday(order: newOrder);
         break;
@@ -1198,20 +1244,21 @@ class PriorityBloc extends Cubit<PriorityState> {
         })
         .toList();
 
-    // Activity feed isn't backed by _lastAgendaThreads — splice the
-    // finishedTodo flag through directly so the icon updates instantly.
-    final updatedFeedItems = finishTodo
-        ? state.activityFeedItems.map((item) {
-            return item.when(
-              header: (_) => item,
-              activity: (a) => a.thread.id == id
-                  ? AgendaThreadItem(a.thread.copyWith(todo: false), now: a.now)
-                  : item,
-            );
-          }).toList()
-        : null;
+    // Patch the activity-feed source lists so `_buildActivityFeedItems`
+    // re-sections the feed in the same frame. `finishTodo` flips the
+    // thread to todo=false (moves Today → Done); a bare remove (e.g.
+    // disassociate) drops it entirely until the stream agrees.
+    if (existing != null) {
+      if (finishTodo) {
+        _patchActivityFeedSourcesForOptimisticUpdate(
+          existing.copyWith(todo: false),
+        );
+      } else {
+        _patchActivityFeedSourcesForOptimisticUpdate(existing, drop: true);
+      }
+    }
 
-    _rebuildAgendaModel(activityFeedItems: updatedFeedItems);
+    _rebuildAgendaModel(activityFeedItems: _buildActivityFeedItems());
   }
 
   /// Optimistically remove an archived thread from the agenda and the
@@ -1234,29 +1281,19 @@ class PriorityBloc extends Cubit<PriorityState> {
     // rebuilt model omits it.
     _lastAgendaThreads = _lastAgendaThreads.where((t) => t.id != id).toList();
 
-    final updatedFeed = state.showArchived
-        ? state.activityFeedItems.map((item) {
-            return item.when(
-              header: (_) => item,
-              activity: (a) => a.thread.id == id
-                  ? AgendaThreadItem(archivedThread)
-                  : item,
-            );
-          }).toList()
-        : state.activityFeedItems
-            .where(
-              (item) => item.when(
-                header: (_) => true,
-                activity: (a) => a.thread.id != id,
-              ),
-            )
-            .toList();
+    // Patch activity-feed source lists so the section rebuild reflects
+    // the archive instantly. When viewing the archive, the thread stays
+    // with `archivedAt` set; otherwise it disappears from both lists.
+    _patchActivityFeedSourcesForOptimisticUpdate(
+      archivedThread,
+      drop: !state.showArchived,
+    );
 
     _rebuildAgendaModel(
       thread: state.thread?.id == id
           ? Value(archivedThread)
           : const Value.absent(),
-      activityFeedItems: updatedFeed,
+      activityFeedItems: _buildActivityFeedItems(),
     );
   }
 
@@ -1396,20 +1433,18 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _lastAgendaThreads = rebuilt;
 
-    final updatedFeedItems = state.activityFeedItems.map((item) {
-      return item.when(
-        header: (_) => item,
-        activity: (a) => a.thread.id == updatedThread.id
-            ? AgendaThreadItem(updatedThread)
-            : item,
-      );
-    }).toList();
+    // Patch the activity-feed source lists so `_buildActivityFeedItems`
+    // places the thread in the correct section in the same frame as the
+    // click. A naive in-place map of `state.activityFeedItems` would
+    // leave the thread in its previous section (e.g. Done stayed Done
+    // when the user clicked Do today) until the DB stream landed.
+    _patchActivityFeedSourcesForOptimisticUpdate(updatedThread);
 
     _rebuildAgendaModel(
       thread: state.thread?.id == updatedThread.id
           ? Value(updatedThread)
           : const Value.absent(),
-      activityFeedItems: updatedFeedItems,
+      activityFeedItems: _buildActivityFeedItems(),
     );
   }
 
@@ -1984,6 +2019,14 @@ class PriorityBloc extends Cubit<PriorityState> {
       associations,
     ) {
       _associations = associations;
+      // Refresh the activity feed so the "Event Agenda" section picks
+      // up newly created / archived associations. Without this, a drop
+      // that calls `associateWith` would write to the DB and update the
+      // stream but the feed wouldn't re-render — the source row would
+      // be hidden by the drag system while the association never
+      // surfaced in the section, so the thread visibly disappears
+      // until a manual reload.
+      _scheduleActivityFeedRebuild();
     });
 
     // Watch the per-priority order timeline. Updates reflect immediately
@@ -2727,6 +2770,24 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Section headers carry an `ActivitySectionMarker`-encoded text so the
   /// drag dispatcher can recover the section identity.
   void _rebuildActivityFeedSections() {
+    final items = _buildActivityFeedItems();
+    emit(
+      state.copyWith(
+        activityFeedItems: items,
+        activityFeedDoneEnd: _activityFeedDoneEnd,
+        activityFeedLoaded: true,
+      ),
+    );
+  }
+
+  /// Compose the activity-feed item list from `_todoThreads` and
+  /// `_activityFeedRawThreads`. Pure with respect to bloc state — callers
+  /// that need an emit should use [_rebuildActivityFeedSections] or pass
+  /// the returned list to [_rebuildAgendaModel]. Optimistic update paths
+  /// use this to re-section the feed after patching the source lists, so
+  /// a thread that transitioned (e.g. todo flipped) lands in the correct
+  /// section in the same frame as the click.
+  List<AgendaItem> _buildActivityFeedItems() {
     final todoIds = _todoThreads.map((t) => t.id).toSet();
     final feedNonTodo = _activityFeedRawThreads
         .where((t) => !todoIds.contains(t.id))
@@ -2787,6 +2848,51 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final items = <AgendaItem>[];
 
+    // Event Agenda section (only when an event is currently selected).
+    // Composition: header → pinned event thread → associated threads.
+    // Pinned event row cannot be dragged or reordered. Associated rows
+    // wear `isAssociated: true` so [ThreadWidget] shows the hover-X to
+    // remove the association.
+    final currentEvent = _currentEventForFeed;
+    if (currentEvent != null) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.eventAgenda),
+        ),
+      );
+      items.add(AgendaThreadItem(currentEvent, pinned: true));
+
+      final eventAssocs = _associations?[currentEvent.id] ?? const [];
+      if (eventAssocs.isNotEmpty) {
+        final lookup = <ThreadId, Thread>{};
+        for (final t in _activityFeedRawThreads) {
+          lookup.putIfAbsent(t.id, () => t);
+        }
+        for (final t in _todoThreads) {
+          lookup.putIfAbsent(t.id, () => t);
+        }
+        for (final t in _lastAgendaThreads) {
+          lookup.putIfAbsent(t.id, () => t);
+        }
+        final ordered = List<ThreadAssociationRow>.from(eventAssocs)
+          ..sort((a, b) => a.order.compareTo(b.order));
+        final parentKey =
+            '${currentEvent.id}${currentEvent.occurrence != null ? '_${currentEvent.occurrence}' : ''}';
+        for (final assoc in ordered) {
+          final child = lookup[assoc.childThreadId];
+          if (child == null) continue;
+          items.add(
+            AgendaThreadItem(
+              child,
+              isAssociated: true,
+              associationParentId: parentKey,
+              associationOrder: assoc.order,
+            ),
+          );
+        }
+      }
+    }
+
     // Section order, per the Activity-tab spec:
     //   1. Today (active)
     //   2. New (unread)
@@ -2844,13 +2950,40 @@ class PriorityBloc extends Cubit<PriorityState> {
       items.add(AgendaThreadItem(t));
     }
 
-    emit(
-      state.copyWith(
-        activityFeedItems: items,
-        activityFeedDoneEnd: _activityFeedDoneEnd,
-        activityFeedLoaded: true,
-      ),
-    );
+    return items;
+  }
+
+  /// Patch the activity-feed source lists (`_todoThreads`,
+  /// `_activityFeedRawThreads`) to reflect an optimistic update on
+  /// [updated], so that [_buildActivityFeedItems] places the thread in
+  /// the correct section in the same frame as the click. The next stream
+  /// emission will overwrite these lists with stream data run through
+  /// [_applyOptimisticOverrides] — which preserves the optimistic state
+  /// until the DB row matches `expected` on every watched field — so
+  /// this patch only needs to bridge the synchronous gap.
+  ///
+  /// When [drop] is true, the thread is removed from both source lists
+  /// (used when the optimistic update expects the thread to disappear,
+  /// e.g. archive or full disassociate).
+  void _patchActivityFeedSourcesForOptimisticUpdate(
+    Thread updated, {
+    bool drop = false,
+  }) {
+    _todoThreads = _todoThreads.where((t) => t.id != updated.id).toList();
+    if (!drop && updated.todo) _todoThreads.add(updated);
+
+    var found = false;
+    _activityFeedRawThreads = _activityFeedRawThreads
+        .map((t) {
+          if (t.id != updated.id) return t;
+          found = true;
+          return updated;
+        })
+        .where((t) => !drop || t.id != updated.id)
+        .toList();
+    if (!drop && !found) {
+      _activityFeedRawThreads = [..._activityFeedRawThreads, updated];
+    }
   }
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {

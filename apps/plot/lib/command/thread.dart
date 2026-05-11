@@ -71,6 +71,16 @@ class ChangeCurrentThread extends ThreadCommand {
     final nowBloc = context.read<NowBloc>();
     final layoutBloc = context.read<LayoutBloc>();
 
+    // Opening an event thread also selects it as the current event.
+    // Done BEFORE the no-op short-circuit so re-selecting the same
+    // event from the agenda (after returning from another priority
+    // that cleared currentEvent) reliably re-arms the selection.
+    final isEvent = thread != null &&
+        (thread!.at?.start != null || thread!.isLinkScheduleInstance);
+    if (isEvent) {
+      nowBloc.setCurrentEvent(thread);
+    }
+
     // No-op if the thread is already selected
     if (thread != null && priorityBloc.state.thread?.id == thread!.id) {
       return const CommandDone();

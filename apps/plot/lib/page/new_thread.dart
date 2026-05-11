@@ -309,7 +309,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     // If the user already typed a custom title or the metadata didn't
     // upgrade either field, don't overwrite.
     final shouldUpdateTitle = meta.title != null && existing.title == url;
-    final shouldUpdateFavicon = meta.favicon != null && existing.favicon == null;
+    final shouldUpdateFavicon =
+        meta.favicon != null && existing.favicon == null;
     if (!shouldUpdateTitle && !shouldUpdateFavicon) return;
     final replacement = ExternalUserAction(
       title: shouldUpdateTitle ? meta.title! : existing.title,
@@ -317,7 +318,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       favicon: shouldUpdateFavicon ? meta.favicon : existing.favicon,
     );
     final next = [...actions]..[idx] = replacement;
-    await bloc.updateDraft(bloc.state.draft, note: note.copyWith(actions: next));
+    await bloc.updateDraft(
+      bloc.state.draft,
+      note: note.copyWith(actions: next),
+    );
   }
 
   @override
@@ -436,15 +440,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Center(
-          child: Text(
-            'Start a thread in',
-            style: context.theme.typography.sm.copyWith(
-              color: context.theme.plotColors.veryMuted,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         _buildPriorityChipRow(context, state),
         const SizedBox(height: 8),
         _buildWithLabel(context, state),
@@ -1016,15 +1011,15 @@ class NewThreadPageState extends State<NewThreadPage> {
                 for (final suggestion in _pinnedSuggestions)
                   switch (suggestion) {
                     ActorShareCandidate(:final actor) => _buildContactChip(
-                        context,
-                        actor,
-                        selected: selectedIds.contains(actor.id.toUuid()),
-                      ),
+                      context,
+                      actor,
+                      selected: selectedIds.contains(actor.id.toUuid()),
+                    ),
                     GroupShareCandidate(:final group) => _buildGroupChip(
-                        context,
-                        group,
-                        selected: groupIds.contains(group.id),
-                      ),
+                      context,
+                      group,
+                      selected: groupIds.contains(group.id),
+                    ),
                   },
                 _buildAddContactChip(context, state, hasMore: hasMore),
               ],
@@ -1261,7 +1256,7 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   String get _editorHint {
     if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
-    return 'Add a note';
+    return 'Start a thread';
   }
 
   List<ActorId>? get _twistMentions =>

@@ -389,16 +389,34 @@ class _ButtonState extends State<Button> {
       return style;
     }
 
-    // Simple icon-only: just change border radius and absorb horizontal
-    // padding into the icon SizedBox (see build method).
+    // In light mode, fade the inactive icon well toward the background so
+    // hover (foreground) is a dramatic brightness jump. Dark mode already
+    // has enough contrast between foreground and primary, so we leave it.
+    final isLight = context.colour.brightness == Brightness.light;
+    final iconStyle = sizeStyles.md.iconContentStyle.iconStyle;
+    final restingColor = Color.lerp(
+      context.colour.foreground,
+      context.colour.background,
+      0.6,
+    );
+
     return FButtonStyleDelta.delta(
       decoration: FVariantsDelta.delta([
         FVariantOperation.all(
           DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
         ),
       ]),
+      // ignore: unused_result
       iconContentStyle: FButtonIconContentStyleDelta.delta(
         padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
+        iconStyle: isLight
+            ? _iconVariants(
+                base: iconStyle.resolve({}).copyWith(color: restingColor),
+                hovered: iconStyle
+                    .resolve({FTappableVariant.hovered})
+                    .copyWith(color: context.colour.foreground),
+              )
+            : null,
       ),
     );
   }

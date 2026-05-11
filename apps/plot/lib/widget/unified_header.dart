@@ -12,6 +12,7 @@ import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
@@ -211,142 +212,247 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final priorityPageHidden =
         !layoutState.multiPanel || !layoutState.middlePanelVisible;
 
-    // --- Build title children ---
-    final titleChildren = <Widget>[
+    final leadingWidgets = _buildLeadingWidgets(
+      context,
+      layoutState,
+      hasActivity,
+      resolvedToolbarPadding,
+    );
+    final rightWidgets = _buildRightWidgets(
+      context,
+      layoutState,
+      state,
+      notifier,
+      resolvedToolbarPadding,
+    );
+
+    final titleSection = _searchExpanded
+        ? _buildSearchField(context, layoutState, state, notifier)
+        : _buildTitle(
+            context,
+            layoutState,
+            state,
+            hasActivity,
+            priorityPageHidden,
+          );
+
+    // In multi-panel mode the title is centered. Mirror each side with an
+    // invisible (but space-occupying) copy of the opposite side's buttons so
+    // both halves of the [Expanded] title slot have equal width — the title
+    // text then truly centers on the window midpoint regardless of how many
+    // buttons live on either side. The mirrors stay in the layout but skip
+    // paint, hit-testing, and semantics.
+    final List<Widget> titleRowChildren;
+    final List<Widget> headerSuffixes;
+    if (layoutState.multiPanel) {
+      Widget mirror(List<Widget> children) => Visibility(
+        visible: false,
+        maintainSize: true,
+        maintainAnimation: true,
+        maintainState: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 8,
+          children: children,
+        ),
+      );
+      Widget group(List<Widget> children) => Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: children,
+      );
+
+      titleRowChildren = <Widget>[
+        if (leadingWidgets.isNotEmpty) group(leadingWidgets),
+        if (rightWidgets.isNotEmpty) mirror(rightWidgets),
+        titleSection,
+        if (leadingWidgets.isNotEmpty) mirror(leadingWidgets),
+        if (rightWidgets.isNotEmpty) group(rightWidgets),
+      ];
+      headerSuffixes = const <Widget>[];
+    } else {
+      titleRowChildren = <Widget>[...leadingWidgets, titleSection];
+      headerSuffixes = rightWidgets;
+    }
+
+    // In multi-panel mode, the header sits transparently on the priority-
+    // tinted frame background painted at the page level. In single-panel
+    // mode, paint the darkest panel background directly (a wrapping
+    // darkenTheme would dim foreground/muted lightness too and reduce icon
+    // contrast against the darkened surface).
+    final BoxDecoration decoration = layoutState.multiPanel
+        ? const BoxDecoration()
+        : BoxDecoration(
+            color: context.colour.panelDarkestBackground,
+            border: Border(
+              bottom: BorderSide(
+                color: context.theme.colors.border,
+                width: 1,
+              ),
+            ),
+          );
+    Widget header = ClipRect(
+      key: _headerKey,
+      child: DecoratedBox(
+        decoration: decoration,
+        child: FHeader(
+          style: FHeaderStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
+          ),
+          title: Row(spacing: 8, children: titleRowChildren),
+          suffixes: headerSuffixes,
+        ),
+      ),
+    );
+
+    // Wrap with DragToMoveArea on Windows
+    if (Platform.instance.isWindows) {
+      header = DragToMoveArea(child: header);
+    }
+
+    return header;
+  }
+
+  /// Leading widgets shown before the title (window padding + panel
+  /// navigation buttons). Returned as a flat list so [_buildHeader] can mirror
+  /// the group on both sides of the title for centering in multi-panel mode.
+  List<Widget> _buildLeadingWidgets(
+    BuildContext context,
+    LayoutState layoutState,
+    bool hasActivity,
+    EdgeInsets resolvedToolbarPadding,
+  ) {
+    final muted = context.theme.plotColors.muted;
+    // All header icon buttons share the footer ListTile's coloring:
+    // [plotColors.muted] at rest and [theme.colors.foreground] on hover
+    // (the latter is Button.icon's default hoverColor when a [color] is set).
+    final Widget navigation;
+    // Single-panel with thread: back button clears the thread.
+    if (hasActivity && !layoutState.multiPanel) {
+      navigation = Button.icon(
+        CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
+        color: muted,
+      );
+    }
+    // Single-panel without thread: back to Priorities tab
+    else if (!layoutState.multiPanel) {
+      navigation = Button.icon(BackToPrioritiesTabCommand(), color: muted);
+    }
+    // Multi-panel right-only with a thread visible: back + open priorities
+    // + open threads. Back clears the thread but keeps the middle panel
+    // closed, so the user can return to the priority page without the
+    // thread shrinking.
+    else if (layoutState.multiPanel &&
+        !layoutState.leftPanelVisible &&
+        !layoutState.middlePanelVisible &&
+        hasActivity) {
+      navigation = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Button.icon(ToggleLeftSidebarCommand(isVisible: false), color: muted),
+          Button.icon(
+            ToggleMiddleSidebarCommand(isVisible: false),
+            color: muted,
+          ),
+          Button.icon(
+            CommandWrapper(
+              ChangeCurrentThread(null),
+              icon: Value(PlotIcon.back),
+            ),
+            color: muted,
+          ),
+        ],
+      );
+    }
+    // 2-panel left+right with activity: the priority page (threads list)
+    // is hidden, so add a back button alongside the cycle button to let
+    // the user return to it.
+    else if (layoutState.isTwoPanel &&
+        layoutState.leftPanelVisible &&
+        !layoutState.middlePanelVisible &&
+        hasActivity &&
+        context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth) {
+      navigation = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Button.icon(
+            CyclePanelsCommand(layoutState: layoutState),
+            color: muted,
+          ),
+          Button.icon(
+            CommandWrapper(
+              ChangeCurrentThread(null),
+              icon: Value(PlotIcon.back),
+            ),
+            color: muted,
+          ),
+        ],
+      );
+    }
+    // 2-panel browsing (960–1309px): cycle
+    else if (layoutState.isTwoPanel &&
+        context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth) {
+      navigation = Button.icon(
+        CyclePanelsCommand(layoutState: layoutState),
+        color: muted,
+      );
+    }
+    // ≥ 1310px right-only: priorities icon + open threads
+    else if (layoutState.multiPanel &&
+        !layoutState.leftPanelVisible &&
+        !layoutState.middlePanelVisible) {
+      navigation = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Button.icon(ToggleLeftSidebarCommand(isVisible: false), color: muted),
+          Button.icon(
+            ToggleMiddleSidebarCommand(isVisible: false),
+            color: muted,
+          ),
+        ],
+      );
+    }
+    // ≥ 1310px with sidebar(s): explicit toggle buttons
+    else {
+      navigation = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Button.icon(
+            ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
+            color: muted,
+          ),
+          if (!(layoutState.leftPanelVisible &&
+              layoutState.middlePanelVisible))
+            Button.icon(
+              ToggleMiddleSidebarCommand(
+                isVisible: layoutState.middlePanelVisible,
+              ),
+              color: muted,
+            ),
+        ],
+      );
+    }
+
+    return <Widget>[
       // macOS traffic light padding
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
-
-      // All header icon buttons share the footer ListTile's coloring:
-      // [plotColors.muted] at rest and [theme.colors.foreground] on hover
-      // (the latter is Button.icon's default hoverColor when a [color] is
-      // set).
-      // Single-panel with thread: back button clears the thread.
-      if (hasActivity && !layoutState.multiPanel)
-        Button.icon(
-          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
-          color: context.theme.plotColors.muted,
-        )
-      // Single-panel without thread: back to Priorities tab
-      else if (!layoutState.multiPanel)
-        Button.icon(
-          BackToPrioritiesTabCommand(),
-          color: context.theme.plotColors.muted,
-        )
-      // Multi-panel right-only with a thread visible: back + open priorities
-      // + open threads. Back clears the thread but keeps the middle panel
-      // closed, so the user can return to the priority page without the
-      // thread shrinking.
-      else if (layoutState.multiPanel &&
-          !layoutState.leftPanelVisible &&
-          !layoutState.middlePanelVisible &&
-          hasActivity)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Button.icon(
-              ToggleLeftSidebarCommand(isVisible: false),
-              color: context.theme.plotColors.muted,
-            ),
-            Button.icon(
-              ToggleMiddleSidebarCommand(isVisible: false),
-              color: context.theme.plotColors.muted,
-            ),
-            Button.icon(
-              CommandWrapper(
-                ChangeCurrentThread(null),
-                icon: Value(PlotIcon.back),
-              ),
-              color: context.theme.plotColors.muted,
-            ),
-          ],
-        )
-      // 2-panel left+right with activity: the priority page (threads list)
-      // is hidden, so add a back button alongside the cycle button to let
-      // the user return to it.
-      else if (layoutState.isTwoPanel &&
-          layoutState.leftPanelVisible &&
-          !layoutState.middlePanelVisible &&
-          hasActivity &&
-          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Button.icon(
-              CyclePanelsCommand(layoutState: layoutState),
-              color: context.theme.plotColors.muted,
-            ),
-            Button.icon(
-              CommandWrapper(
-                ChangeCurrentThread(null),
-                icon: Value(PlotIcon.back),
-              ),
-              color: context.theme.plotColors.muted,
-            ),
-          ],
-        )
-      // 2-panel browsing (960–1309px): cycle
-      else if (layoutState.isTwoPanel &&
-          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
-        Button.icon(
-          CyclePanelsCommand(layoutState: layoutState),
-          color: context.theme.plotColors.muted,
-        )
-      // ≥ 1310px right-only: priorities icon + open threads
-      else if (layoutState.multiPanel &&
-          !layoutState.leftPanelVisible &&
-          !layoutState.middlePanelVisible)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Button.icon(
-              ToggleLeftSidebarCommand(isVisible: false),
-              color: context.theme.plotColors.muted,
-            ),
-            Button.icon(
-              ToggleMiddleSidebarCommand(isVisible: false),
-              color: context.theme.plotColors.muted,
-            ),
-          ],
-        )
-      // ≥ 1310px with sidebar(s): explicit toggle buttons
-      else if (layoutState.multiPanel)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Button.icon(
-              ToggleLeftSidebarCommand(
-                isVisible: layoutState.leftPanelVisible,
-              ),
-              color: context.theme.plotColors.muted,
-            ),
-            if (!(layoutState.leftPanelVisible &&
-                layoutState.middlePanelVisible))
-              Button.icon(
-                ToggleMiddleSidebarCommand(
-                  isVisible: layoutState.middlePanelVisible,
-                ),
-                color: context.theme.plotColors.muted,
-              ),
-          ],
-        ),
-
-      // Search field or title
-      if (_searchExpanded)
-        _buildSearchField(context, layoutState, state, notifier)
-      else
-        _buildTitle(
-          context,
-          layoutState,
-          state,
-          hasActivity,
-          priorityPageHidden,
-        ),
+      navigation,
     ];
+  }
 
-    // --- Build suffixes ---
+  /// Right-side widgets shown after the title (thread actions, new-thread,
+  /// search, menu, window padding). Used either as FHeader suffixes
+  /// (single-panel) or mirrored into the title row (multi-panel).
+  List<Widget> _buildRightWidgets(
+    BuildContext context,
+    LayoutState layoutState,
+    PriorityState state,
+    ThreadHeaderNotifier? notifier,
+    EdgeInsets resolvedToolbarPadding,
+  ) {
     final thread = state.thread;
-    final suffixes = <Widget>[
+    return <Widget>[
       // Active tag toggles (when thread is visible)
       if (thread != null) ..._buildActiveTagToggles(context, thread),
 
@@ -378,48 +484,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Windows window control padding
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
-
-      // Keep suffixes non-empty so forui's _FRootHeader does not insert its
-      // 44 px empty-case placeholder — let the title row drive header height.
-      const SizedBox.shrink(),
     ];
-
-    // In multi-panel mode, the header sits transparently on the priority-
-    // tinted frame background painted at the page level. In single-panel
-    // mode, paint the darkest panel background directly (a wrapping
-    // darkenTheme would dim foreground/muted lightness too and reduce icon
-    // contrast against the darkened surface).
-    final BoxDecoration decoration = layoutState.multiPanel
-        ? const BoxDecoration()
-        : BoxDecoration(
-            color: context.colour.panelDarkestBackground,
-            border: Border(
-              bottom: BorderSide(
-                color: context.theme.colors.border,
-                width: 1,
-              ),
-            ),
-          );
-    Widget header = ClipRect(
-      key: _headerKey,
-      child: DecoratedBox(
-        decoration: decoration,
-        child: FHeader(
-          style: FHeaderStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-          ),
-          title: Row(spacing: 8, children: titleChildren),
-          suffixes: suffixes,
-        ),
-      ),
-    );
-
-    // Wrap with DragToMoveArea on Windows
-    if (Platform.instance.isWindows) {
-      header = DragToMoveArea(child: header);
-    }
-
-    return header;
   }
 
   Widget _searchButton() {
@@ -467,23 +532,40 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
-    // Single panel: show the priority label.
-    if (!layoutState.multiPanel) {
-      return Expanded(
-        child: Align(
-          alignment: alignment,
-          child: PriorityLabel(priority: state.context, boldLeaf: true),
-        ),
-      );
-    }
-
-    // Multi-panel: show PrioritySelector with dropdown, centered.
+    // Wrap the priority-driven title so the header swaps to the
+    // selected event's title (and back) without manual invalidation.
     return Expanded(
       child: Align(
         alignment: alignment,
-        child: PrioritySelector(
-          selected: state.context,
-          onSelect: (p) => context.run(ChangeCurrentPriority(p)),
+        child: BlocBuilder<NowBloc, NowState>(
+          buildWhen: (prev, next) {
+            final p = prev is NowLoaded ? prev.currentEvent : null;
+            final n = next is NowLoaded ? next.currentEvent : null;
+            return p?.id != n?.id ||
+                p?.displayTitle != n?.displayTitle;
+          },
+          builder: (context, nowState) {
+            final currentEvent =
+                nowState is NowLoaded ? nowState.currentEvent : null;
+            if (currentEvent != null) {
+              return Text(
+                currentEvent.displayTitle,
+                overflow: TextOverflow.ellipsis,
+                textHeightBehavior: const TextHeightBehavior(),
+                style: context.theme.typography.sm.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: context.theme.colors.foreground,
+                ),
+              );
+            }
+            if (!layoutState.multiPanel) {
+              return PriorityLabel(priority: state.context, boldLeaf: true);
+            }
+            return PrioritySelector(
+              selected: state.context,
+              onSelect: (p) => context.run(ChangeCurrentPriority(p)),
+            );
+          },
         ),
       ),
     );

@@ -79,12 +79,11 @@ class _AgendaBody extends StatelessWidget {
         if (!state.agendaLoaded) {
           return const LoadingPage();
         }
-        final items = state.agendaViewItems;
         return Scaffold(
           scrollable: false,
           translucent: true,
           childPad: false,
-          body: AgendaList(items: items),
+          body: AgendaList(items: state.agendaViewItems),
         );
       },
     );
@@ -223,6 +222,11 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final currentPriorityId = nowState is NowLoaded
         ? nowState.priority.id
         : context.read<PriorityBloc>().state.context.id;
+    // When an event is currently selected, restrict the "selected"
+    // priority-tint to that one event so sibling events of the same
+    // priority don't all light up.
+    final currentEventId =
+        nowState is NowLoaded ? nowState.currentEvent?.id : null;
 
     final ({
       Map<int, BlockDropTarget> before,
@@ -265,13 +269,14 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         dragController: _dragController,
         index: index,
         selectedAccent: (item) {
-          if (item is AgendaHeaderItem &&
-              item.blockPriority?.id == currentPriorityId) {
-            return context.colour.colours.fromTheme(
-              item.blockPriority!.displayColor,
-            );
+          if (item is! AgendaHeaderItem) return null;
+          if (item.blockPriority?.id != currentPriorityId) return null;
+          if (currentEventId != null && item.thread?.id != currentEventId) {
+            return null;
           }
-          return null;
+          return context.colour.colours.fromTheme(
+            item.blockPriority!.displayColor,
+          );
         },
         // Block headers carry their own hover affordance (the drag grip
         // revealed on hover); divider hover/focus brightening would
@@ -309,7 +314,8 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
             current.parentBlockId != null &&
             current.sourcePeriodStart != null;
 
-        final selected = current.blockPriority?.id == currentPriorityId;
+        final selected = current.blockPriority?.id == currentPriorityId &&
+            (currentEventId == null || current.thread?.id == currentEventId);
 
         return Column(
           mainAxisSize: MainAxisSize.min,

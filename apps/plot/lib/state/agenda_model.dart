@@ -413,12 +413,18 @@ class AgendaThreadItem extends AgendaItem {
     this.associationOrder,
     this.parentBlockId,
     this.hidden = false,
+    this.pinned = false,
   });
 
   final Thread thread;
   final bool now;
   final bool isNext;
   final bool isAssociated;
+
+  /// True when this row is pinned in place and cannot be reordered or
+  /// dragged out of its section. Used for the event-thread row that
+  /// leads the "Event Agenda" section.
+  final bool pinned;
 
   /// Whether this thread is outside the current priority context.
   /// Outside-priority link-scheduled events are dimmed in the UI.
@@ -454,9 +460,10 @@ class AgendaThreadItem extends AgendaItem {
     associationParentId,
     parentBlockId,
     hidden,
+    pinned,
   ];
 
   @override
   String toString() =>
-      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority, parentBlockId: $parentBlockId, hidden: $hidden)';
+      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority, parentBlockId: $parentBlockId, hidden: $hidden, pinned: $pinned)';
 }

@@ -58,7 +58,7 @@ class PriorityNotification extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               Opacity(
-                opacity: isDark ? 0.55 : 0.2,
+                opacity: isDark ? 0.55 : 0.45,
                 child: Icon(PlotIcon.todoFilled, size: iconSize, color: accent),
               ),
               Icon(PlotIcon.todo, size: iconSize, color: accent),

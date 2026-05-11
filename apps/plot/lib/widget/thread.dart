@@ -249,7 +249,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final isHovered = _isBlockDragging ? false : rawHovered;
         final leadingHovered = _isBlockDragging ? false : _leadingHovered;
         final bool isTodo = activity.todo;
-        final bool isScheduled = isTodo && activity.isFuture;
 
         // Leading button: to-do state icon (shows calendar icon when scheduled)
         final longPress = activity.priority.isViewer
@@ -281,11 +280,20 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         }
 
-        final leadingW = agendaLeadingWidth(buildContext);
+        // Leading column hugs a centred icon with horizontal padding that
+        // matches the trailing edge of the row: roomy on desktop, tight on
+        // mobile. The threads-in-agenda layout that needed an agenda-time-
+        // width gutter is no longer used here.
+        final iconBaseSize = buildContext.theme.iconSizes.base;
+        final leadingPad = buildContext.isMultiPanel
+            ? buildContext.theme.spacing.lg
+            : buildContext.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                  .resolve(TextDirection.ltr)
+                  .right;
+        final leadingW = iconBaseSize + leadingPad * 2;
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final hasPending = activity.outstandingTasks;
         final String leadingTitle = !isTodo ? 'Do today' : 'Finish';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
@@ -308,27 +316,16 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             onLongPress: longPress,
           );
         } else {
-          final outlineIcon = isScheduled
-              ? PlotIcon.schedule
-              : hasPending
-              ? FontAwesomeIcons.circle
-              : PlotIcon.todo;
-          final filledIcon = isScheduled
-              ? FontAwesomeIcons.solidCalendar
-              : hasPending
-              ? FontAwesomeIcons.solidCircle
-              : PlotIcon.todoFilled;
-          final hoverActionIcon = hasPending
-              ? FontAwesomeIcons.circleCheck
-              : PlotIcon.finish;
+          // Active and scheduled threads both use the circle; hover swaps to
+          // a circle-with-check finish affordance.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
-              outlineIcon: outlineIcon,
-              filledIcon: filledIcon,
+              outlineIcon: FontAwesomeIcons.circle,
+              filledIcon: FontAwesomeIcons.solidCircle,
               showFill: activity.unread,
               iconHoverColor: iconHoverColor,
-              hoverIcon: Value(hoverActionIcon),
+              hoverIcon: Value(FontAwesomeIcons.circleCheck),
               title: leadingTitle,
             ),
             selected: true,

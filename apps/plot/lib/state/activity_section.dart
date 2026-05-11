@@ -1,15 +1,17 @@
 import 'package:plot/store/store.dart';
 
-/// The four sections of the Activity tab. Each thread belongs to exactly
-/// one section, computed from `Thread.isActiveThread` /
+/// The sections of the Activity tab. Each thread belongs to exactly
+/// one ordinary section, computed from `Thread.isActiveThread` /
 /// `isScheduledThread` / `isUnreadOnly` / `isInactiveThread`.
 ///
-/// - [today]    — Active threads (todo with `todoNowDate` sentinel or
-///                schedule date today/past).
-/// - [scheduled] — Todo with a future schedule date (per-day sections).
+/// - [eventAgenda] — Pinned event thread + associated threads. Only
+///                   present when an event is currently selected.
+/// - [today]      — Active threads (todo with `todoNowDate` sentinel or
+///                  schedule date today/past).
+/// - [scheduled]  — Todo with a future schedule date (per-day sections).
 /// - [newSection] — Unread, not active or scheduled.
-/// - [done]     — Inactive (everything else).
-enum ActivitySection { today, scheduled, newSection, done }
+/// - [done]       — Inactive (everything else).
+enum ActivitySection { eventAgenda, today, scheduled, newSection, done }
 
 /// Classify a thread into its Activity-tab section. Mirrors the four
 /// boolean getters on Thread; centralized here so callers can switch on
@@ -54,6 +56,8 @@ class ActivitySectionMarker {
 
   static String defaultLabel(ActivitySection section) {
     switch (section) {
+      case ActivitySection.eventAgenda:
+        return 'Event Agenda';
       case ActivitySection.today:
         return 'Today';
       case ActivitySection.scheduled:

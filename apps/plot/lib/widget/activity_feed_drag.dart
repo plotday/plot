@@ -18,9 +18,12 @@ import 'package:plot/widget/agenda_block_drag.dart';
 final DateTime _todaySectionMarker = DateTime.utc(1, 1, 1, 0, 0, 1);
 final DateTime _newSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 2);
 final DateTime _doneSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 3);
+final DateTime _eventAgendaSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 4);
 
 DateTime? _sectionToMarker(ActivitySection section) {
   switch (section) {
+    case ActivitySection.eventAgenda:
+      return _eventAgendaSectionMarker;
     case ActivitySection.today:
       return _todaySectionMarker;
     case ActivitySection.scheduled:
@@ -35,6 +38,7 @@ DateTime? _sectionToMarker(ActivitySection section) {
 ActivitySection? _sectionFromTarget(BlockDropTarget target) {
   if (target.targetDate != null) return ActivitySection.scheduled;
   final marker = target.targetPeriodStart;
+  if (marker == _eventAgendaSectionMarker) return ActivitySection.eventAgenda;
   if (marker == _todaySectionMarker) return ActivitySection.today;
   if (marker == _newSectionMarker) return ActivitySection.newSection;
   if (marker == _doneSectionMarker) return ActivitySection.done;
@@ -172,19 +176,26 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
         continue;
       }
       final threadIdStr = item.thread.id.toString();
-      before[i] = (
-        target: BlockDropTarget(
-          targetDate: currentSection == ActivitySection.scheduled
-              ? currentScheduledDate
-              : null,
-          targetPeriodStart: _sectionToMarker(currentSection),
-          prevBlockId: prevThreadId,
-          prevPriorityId: null,
-          nextBlockId: threadIdStr,
-          nextPriorityId: null,
-        ),
-        silent: false,
-      );
+      // Pinned rows (the event row at the top of "Event Agenda") are
+      // anchored in place — emit no "before" drop slot for them so
+      // the user can't drop above the event. The "prev" tracking still
+      // advances so the slot above the first association still gets a
+      // sensible neighbour for the dispatcher.
+      if (!item.pinned) {
+        before[i] = (
+          target: BlockDropTarget(
+            targetDate: currentSection == ActivitySection.scheduled
+                ? currentScheduledDate
+                : null,
+            targetPeriodStart: _sectionToMarker(currentSection),
+            prevBlockId: prevThreadId,
+            prevPriorityId: null,
+            nextBlockId: threadIdStr,
+            nextPriorityId: null,
+          ),
+          silent: false,
+        );
+      }
       prevThreadId = threadIdStr;
     }
   }
