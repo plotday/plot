@@ -72,59 +72,107 @@ class AppState extends State<App> {
           child: ColourScheme(
             child: Builder(
               builder: (context) => Window(
-              child: CommandProvider(
-                child: FTheme(
-                  data: buildTheme(context, context.colour),
-                  child: FToaster(
-                    child: RootProvider(
-                      builder: (routerConfig) => PlatformBuilder(
-                        builder: (context) => material.MaterialApp.router(
-                          title: 'Plot',
-                          scrollBehavior: const PlotScrollBehavior(),
-                          localizationsDelegates:
-                              FLocalizations.localizationsDelegates,
-                          supportedLocales: FLocalizations.supportedLocales,
-                          theme: material.ThemeData(
-                            colorScheme: material.ColorScheme.fromSeed(
-                              seedColor: const Color(0x002BDD66),
-                              brightness:
-                                  context.colour.brightness == Brightness.light
-                                  ? material.Brightness.light
-                                  : material.Brightness.dark,
-                            ),
-                          ),
-                          routerConfig: routerConfig,
+                child: CommandProvider(
+                  child: FTheme(
+                    data: buildTheme(context, context.colour),
+                    child: Builder(
+                      builder: (context) => DefaultTextStyle(
+                        style: context.theme.typography.md.copyWith(
+                          color: context.theme.colors.foreground,
                         ),
-                        // Provide a Material `Theme` above MacosApp so any
-                        // `Theme.of(context).scaffoldBackgroundColor` lookup
-                        // inside the app (e.g. auto_route's Navigator and
-                        // AutoTabsRouter empty-stack fallbacks) resolves to
-                        // our dark/light surface color instead of the
-                        // default light Material theme — which would
-                        // otherwise produce a white flash on macOS during
-                        // initial route resolution.
-                        macOSBuilder: (context) => material.Theme(
-                          data: material.ThemeData(
-                            brightness:
-                                context.colour.brightness == Brightness.light
-                                ? material.Brightness.light
-                                : material.Brightness.dark,
-                            scaffoldBackgroundColor: context.colour.background,
-                          ),
-                          child: macos.MacosApp.router(
-                            title: 'Plot',
-                            localizationsDelegates:
-                                FLocalizations.localizationsDelegates,
-                            supportedLocales: FLocalizations.supportedLocales,
-                            theme:
-                                (context.colour.brightness == Brightness.light
-                                        ? macos.MacosThemeData.light()
-                                        : macos.MacosThemeData.dark())
-                                    .copyWith(
-                                      primaryColor: context.colour.accent,
+                        child: material.Material(
+                          type: material.MaterialType.transparency,
+                          child: FToaster(
+                            child: RootProvider(
+                              builder: (routerConfig) => PlatformBuilder(
+                                builder: (context) =>
+                                    material.MaterialApp.router(
+                                      title: 'Plot',
+                                      scrollBehavior:
+                                          const PlotScrollBehavior(),
+                                      localizationsDelegates:
+                                          FLocalizations.localizationsDelegates,
+                                      supportedLocales:
+                                          FLocalizations.supportedLocales,
+                                      theme: material.ThemeData(
+                                        colorScheme:
+                                            material.ColorScheme.fromSeed(
+                                              seedColor: const Color(
+                                                0x002BDD66,
+                                              ),
+                                              brightness:
+                                                  context.colour.brightness ==
+                                                      Brightness.light
+                                                  ? material.Brightness.light
+                                                  : material.Brightness.dark,
+                                            ),
+                                      ),
+                                      // MaterialApp installs an internal
+                                      // DefaultTextStyle of `_errorTextStyle`
+                                      // (red text with yellow double-underline
+                                      // decoration) as a "wrap your content in
+                                      // Material" warning. Our routes use
+                                      // forui-based shells (no Material at the
+                                      // page root), so per-widget styles
+                                      // override the red color but inherit the
+                                      // yellow underline. Replace it here
+                                      // (above the Navigator, inside the
+                                      // MaterialApp) so all routes see the
+                                      // forui default text style instead.
+                                      builder: (context, child) =>
+                                          DefaultTextStyle(
+                                            style: context.theme.typography.md
+                                                .copyWith(
+                                                  color: context
+                                                      .theme
+                                                      .colors
+                                                      .foreground,
+                                                ),
+                                            child:
+                                                child ??
+                                                const SizedBox.shrink(),
+                                          ),
+                                      routerConfig: routerConfig,
                                     ),
-                            debugShowCheckedModeBanner: false,
-                            routerConfig: routerConfig,
+                                // Provide a Material `Theme` above MacosApp so any
+                                // `Theme.of(context).scaffoldBackgroundColor` lookup
+                                // inside the app (e.g. auto_route's Navigator and
+                                // AutoTabsRouter empty-stack fallbacks) resolves to
+                                // our dark/light surface color instead of the
+                                // default light Material theme — which would
+                                // otherwise produce a white flash on macOS during
+                                // initial route resolution.
+                                macOSBuilder: (context) => material.Theme(
+                                  data: material.ThemeData(
+                                    brightness:
+                                        context.colour.brightness ==
+                                            Brightness.light
+                                        ? material.Brightness.light
+                                        : material.Brightness.dark,
+                                    scaffoldBackgroundColor:
+                                        context.colour.background,
+                                  ),
+                                  child: macos.MacosApp.router(
+                                    title: 'Plot',
+                                    localizationsDelegates:
+                                        FLocalizations.localizationsDelegates,
+                                    supportedLocales:
+                                        FLocalizations.supportedLocales,
+                                    theme:
+                                        (context.colour.brightness ==
+                                                    Brightness.light
+                                                ? macos.MacosThemeData.light()
+                                                : macos.MacosThemeData.dark())
+                                            .copyWith(
+                                              primaryColor:
+                                                  context.colour.accent,
+                                            ),
+                                    debugShowCheckedModeBanner: false,
+                                    routerConfig: routerConfig,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -135,7 +183,6 @@ class AppState extends State<App> {
             ),
           ),
         ),
-      ),
       ),
     );
   }

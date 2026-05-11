@@ -320,19 +320,57 @@ class ColourSchemeData extends Equatable {
     // noticeably while still letting the wallpaper blur through. Alpha is
     // kept identical across modes so light/dark feel like the same effect
     // at different luminance.
+    //
+    // On non-macOS platforms there is no vibrancy material under the
+    // Flutter surface, so a translucent gradient composites against black
+    // (web/Linux) or the OS window color and reads as washed-out black.
+    // Pre-composite against a neutral base that approximates
+    // underWindowBackground (L≈0.18 dark, L≈0.95 light) and return fully
+    // opaque stops so the frame has the same colorspace.
+    final bool isMac = Platform.instance.isMacOS;
     final Color start;
     final Color end;
     if (isDark) {
       const alpha = 0.32;
       // Lift lightness a touch (0.30 / 0.40 vs squircle interior 0.26) and
       // crank chroma so the hue still reads through the dark vibrancy.
-      start = RayOklch.fromComponents(0.25, c * 0.10, hue, alpha).toColor();
-      end = RayOklch.fromComponents(0.15, c * 0.40, hue, alpha).toColor();
+      if (isMac) {
+        start = RayOklch.fromComponents(0.25, c * 0.10, hue, alpha).toColor();
+        end = RayOklch.fromComponents(0.15, c * 0.40, hue, alpha).toColor();
+      } else {
+        const baseL = 0.18;
+        start = RayOklch.fromComponents(
+          alpha * 0.25 + (1 - alpha) * baseL,
+          alpha * c * 0.10,
+          hue,
+        ).toColor();
+        end = RayOklch.fromComponents(
+          alpha * 0.15 + (1 - alpha) * baseL,
+          alpha * c * 0.40,
+          hue,
+        ).toColor();
+      }
     } else {
       // Drop lightness off pure white (0.99 → 0.95 / 0.86) — at L≈1 there's
       // no headroom for the chroma to read against a white frost.
-      start = RayOklch.fromComponents(1, c * 0.2, hue, 0.4).toColor();
-      end = RayOklch.fromComponents(0.97, c * 0.4, hue, 0.3).toColor();
+      if (isMac) {
+        start = RayOklch.fromComponents(1, c * 0.2, hue, 0.4).toColor();
+        end = RayOklch.fromComponents(0.97, c * 0.4, hue, 0.3).toColor();
+      } else {
+        const baseL = 0.95;
+        const alphaStart = 0.4;
+        const alphaEnd = 0.3;
+        start = RayOklch.fromComponents(
+          alphaStart * 1.0 + (1 - alphaStart) * baseL,
+          alphaStart * c * 0.2,
+          hue,
+        ).toColor();
+        end = RayOklch.fromComponents(
+          alphaEnd * 0.97 + (1 - alphaEnd) * baseL,
+          alphaEnd * c * 0.4,
+          hue,
+        ).toColor();
+      }
     }
     return LinearGradient(
       begin: Alignment.topLeft,

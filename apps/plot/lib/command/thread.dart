@@ -1379,6 +1379,121 @@ class PickScheduleThread extends Command {
   }
 }
 
+/// Bulk reschedule of every thread in an activity-feed section (Today or a
+/// future Scheduled day). Shows the same calendar date picker as
+/// [PickScheduleThread], then runs [ScheduleThread] for each thread.
+class RescheduleAllInBlock extends Command {
+  RescheduleAllInBlock(this.threads, {required this.sectionLabel})
+    : super(
+        title: 'Reschedule all',
+        icon: PlotIcon.reschedule,
+        eventObject: EventObject.modal,
+        eventAction: EventAction.opened,
+      );
+
+  final List<Thread> threads;
+  final String sectionLabel;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (threads.isEmpty) return const CommandSkipped();
+
+    // Capture PriorityBloc before showing modal — modal context won't have it
+    PriorityBloc? bloc;
+    try {
+      bloc = context.read<PriorityBloc>();
+    } catch (_) {}
+
+    final actionReturn = await Modal(
+      constraints: const BoxConstraints(maxWidth: 380, maxHeight: 640),
+      builder: (modalContext) => SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Reschedule all',
+                style: modalContext.theme.typography.xl2.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                threads.length == 1
+                    ? '1 thread in $sectionLabel'
+                    : '${threads.length} threads in $sectionLabel',
+                style: TextStyle(
+                  color: modalContext.theme.plotColors.veryMuted,
+                  fontSize: modalContext.theme.typography.sm.fontSize,
+                ),
+              ),
+            ),
+            FCalendar(
+              control: .managedDate(
+                controller: FCalendarController.date(
+                  selectable: (date) {
+                    final today = DateTime.now();
+                    final todayStart = DateTime(
+                      today.year,
+                      today.month,
+                      today.day,
+                    );
+                    final dateStart = DateTime(date.year, date.month, date.day);
+                    return !dateStart.isBefore(todayStart);
+                  },
+                ),
+              ),
+              style: FCalendarStyleDelta.delta(
+                decoration: DecorationDelta.value(const BoxDecoration()),
+                padding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
+              ),
+              onPress: (date) async {
+                final result = await _rescheduleAll(
+                  context,
+                  date.toDate(),
+                  bloc,
+                );
+                if (!context.mounted) return;
+                Modal.pop(context, Value(result));
+              },
+            ),
+            const SizedBox(height: 12),
+            FButton(
+              variant: FButtonVariant.secondary,
+              onPress: () async {
+                final result = await _rescheduleAll(
+                  context,
+                  Thread.todoNowDate,
+                  bloc,
+                );
+                if (!context.mounted) return;
+                Modal.pop(context, Value(result));
+              },
+              child: const Text('Today'),
+            ),
+          ],
+        ),
+      ),
+    ).show<CommandReturn>(context);
+    return actionReturn.present ? actionReturn.value : const CommandSkipped();
+  }
+
+  Future<CommandReturn> _rescheduleAll(
+    BuildContext context,
+    Date when,
+    PriorityBloc? bloc,
+  ) async {
+    for (final thread in threads) {
+      if (!context.mounted) return const CommandSkipped();
+      await ScheduleThread(thread, when: when, priorityBloc: bloc).run(context);
+    }
+    return const CommandDone();
+  }
+}
+
 class ToggleThreadTag extends _UpdateThreadCommand {
   ToggleThreadTag(super.thread, this.tag, {super.onUpdate})
     : super(

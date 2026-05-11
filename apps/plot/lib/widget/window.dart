@@ -324,13 +324,23 @@ class WindowState extends State<Window> with WindowListener {
           child: widget.child,
         ),
       ),
-      windowsBuilder: (_) => Stack(
-        children: [
-          widget.child,
-          const Positioned(top: 0, right: 0, child: _WindowControls()),
-        ],
+      windowsBuilder: (_) => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: context.colour.frameBackgroundGradient,
+        ),
+        child: Stack(
+          children: [
+            widget.child,
+            const Positioned(top: 0, right: 0, child: _WindowControls()),
+          ],
+        ),
       ),
-      builder: (_) => widget.child,
+      builder: (_) => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: context.colour.frameBackgroundGradient,
+        ),
+        child: widget.child,
+      ),
     );
   }
 }
