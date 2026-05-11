@@ -16,6 +16,7 @@ import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'logging.dart';
 
 /// Holds data for creating a new Thread with its first Note
