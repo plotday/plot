@@ -642,6 +642,47 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
+  /// Targeted fetch of specific thread rows by id, used by the notification
+  /// tap flow to make the destination page render without waiting on a full
+  /// cursor pull. Deliberately bypasses `sync_states`: the next regular
+  /// cursor pull still covers these ids (insertOrReplace is idempotent), so
+  /// we don't risk advancing a horizon past unfetched rows.
+  ///
+  /// Returns the ids that were successfully written to the local store
+  /// (excludes ids the server filtered out — e.g. lost visibility).
+  static Future<Set<ThreadId>> prefetchByIds(List<ThreadId> ids) async {
+    if (ids.isEmpty || !Store.isAvailable) return const {};
+    final idsParam = ids.map((id) => id.toString()).join(',');
+    final List<dynamic> response = await api.get<List<dynamic>>(
+      '/sync/threads/by-ids?ids=$idsParam',
+    );
+    final base = ThreadsBase();
+    final rawRows = response.cast<Map<String, dynamic>>();
+    final returnedIds = <ThreadId>{};
+    final parsed = rawRows.expand<Insertable<ThreadRow>>((r) {
+      try {
+        final row = base.fromBase(r);
+        final idStr = r['id'] as String?;
+        if (idStr != null) returnedIds.add(Uuid.fromString(idStr));
+        return [row];
+      } catch (e, stackTrace) {
+        log.warning("Error parsing thread row in prefetchByIds", e, stackTrace);
+        return [];
+      }
+    }).toList();
+    if (parsed.isEmpty) return const {};
+    final processed =
+        await base.processPulledRows(Store.get, parsed);
+    await Store.get.batch((batch) {
+      batch.insertAll(
+        Store.get.threads,
+        processed,
+        mode: InsertMode.insertOrReplace,
+      );
+    });
+    return returnedIds;
+  }
+
   /// Pull one page of activity feed (backward from now).
   /// Uses SyncState entity "activity-feed:{priorityPath}" to track position.
   static Future<void> pullActivityFeed(

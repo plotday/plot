@@ -11,7 +11,6 @@ import 'package:plot/command/page_link.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
-import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/onboarding.dart';
@@ -333,6 +332,8 @@ class RootProviderState extends State<RootProvider> {
   void _navigateToNotificationTarget(NotificationTapTarget target) {
     // Single new thread → open it directly so the user lands in the
     // thread instead of having to find it in the activity feed.
+    // ThreadLookupPage handles "row not local yet" by prefetching the
+    // thread by id before resolving, showing a LoadingPage while it does.
     if (target.threadIds.length == 1) {
       try {
         final threadShort = Uuid.fromString(target.threadIds.first)
@@ -346,13 +347,23 @@ class RootProviderState extends State<RootProvider> {
       }
     }
 
-    // Multiple new threads → open the LCA priority and signal the activity
-    // feed to scroll to the "New" section so the unread threads are
-    // immediately visible.
-    if (target.threadIds.length > 1) {
-      PendingNotificationScroll.section = ActivitySection.newSection;
-    }
     final shortId = Uuid.fromString(target.priorityId).toShortString();
+
+    // Multiple new threads → go through NotificationLandingPage so missing
+    // thread rows are prefetched (showing a LoadingPage) before the user
+    // lands on the activity feed.
+    if (target.threadIds.length > 1) {
+      router.replaceAll([
+        NotificationLandingRoute(
+          priorityIdString: shortId,
+          threadIdsString: target.threadIds.join(','),
+        ),
+      ]);
+      return;
+    }
+
+    // No thread ids on the payload (very old format / fallback) — open the
+    // target priority directly.
     router.replaceAll([PriorityRoute(priorityIdString: shortId)]);
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logging/logging.dart';
 
@@ -74,37 +73,18 @@ String? _activeThreadId(List<RouteMatch<dynamic>> segments) {
 class AppRouter extends RootStackRouter {
   AppRouter();
 
+  // Default to zero-duration on every platform. Shell routes
+  // (AppShell, PrioritiesShellRoute, AgendaShell, ActivityShell, the
+  // priorities/agenda/sign-in pages) inherit this and mount instantly,
+  // which keeps the bottom nav and chrome from sliding in on cold
+  // start. Routes that *should* slide (ThreadRoute, NewThreadRoute on
+  // iOS) opt in explicitly via `type:` below.
   @override
-  RouteType get defaultRouteType => PlatformResolver.current(
-    // Mobile platforms: native transitions
-    iOSResolver: () => RouteType.cupertino(),
-    androidResolver: () => RouteType.material(),
-    // Desktop platforms: immediate transitions (no animation)
-    macOSResolver: () => RouteType.custom(
-      duration: Duration.zero,
-      reverseDuration: Duration.zero,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-          child,
-    ),
-    windowsResolver: () => RouteType.custom(
-      duration: Duration.zero,
-      reverseDuration: Duration.zero,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-          child,
-    ),
-    linuxResolver: () => RouteType.custom(
-      duration: Duration.zero,
-      reverseDuration: Duration.zero,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-          child,
-    ),
-    // Web fallback: immediate transitions
-    defaultResolver: () => RouteType.custom(
-      duration: Duration.zero,
-      reverseDuration: Duration.zero,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-          child,
-    ),
+  RouteType get defaultRouteType => RouteType.custom(
+    duration: Duration.zero,
+    reverseDuration: Duration.zero,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        child,
   );
 
   @override
@@ -142,15 +122,28 @@ class AppRouter extends RootStackRouter {
           guards: [AuthGuard()],
           path: '',
           children: [
+            // Tab 0: Priorities list
+            AutoRoute(page: PrioritiesRoute.page, path: 'priorities'),
+            // Tab 1: Agenda — its own stack so tab switches preserve state
+            // independently from the Activity tab.
             AutoRoute(
-              page: EmptyShellRoute("PriorityShell"),
-              path: '',
+              page: EmptyShellRoute("AgendaShell"),
+              path: 'agenda',
               children: [
                 AutoRoute(
                   page: AgendaRoute.page,
-                  path: 'agenda',
+                  path: '',
                   guards: [AuthGuard()],
                 ),
+              ],
+            ),
+            // Tab 2: Activity (per-priority feeds, threads, new-thread,
+            // and standalone thread links). Default catch-all so deep
+            // links to /p/:id and /t/:id resolve here.
+            AutoRoute(
+              page: EmptyShellRoute("ActivityShell"),
+              path: '',
+              children: [
                 // Canonical priority URL: /p/:priorityId
                 AutoRoute(
                   page: PriorityRoute.page,
@@ -159,6 +152,11 @@ class AppRouter extends RootStackRouter {
                     // This route redirects to NewThreadRoute when the middle panel is
                     // already showing PriorityPage.
                     AutoRoute(page: PriorityOnlyRoute.page, path: ''),
+                    // ThreadRoute and NewThreadRoute opt in to a
+                    // cupertino slide (push from priority page → thread,
+                    // and pop back) on every platform. Pinned here
+                    // rather than relying on `defaultRouteType` so shell
+                    // routes (which inherit the default) don't slide.
                     AutoRoute(
                       page: NewThreadRoute.page,
                       guards: [
@@ -170,8 +168,13 @@ class AppRouter extends RootStackRouter {
                         }),
                       ],
                       path: 'new',
+                      type: const RouteType.cupertino(),
                     ),
-                    AutoRoute(page: ThreadRoute.page, path: ':threadId'),
+                    AutoRoute(
+                      page: ThreadRoute.page,
+                      path: ':threadId',
+                      type: const RouteType.cupertino(),
+                    ),
                   ],
                 ),
                 // Canonical standalone thread URL: /t/:threadId — resolves
@@ -181,9 +184,16 @@ class AppRouter extends RootStackRouter {
                   page: ThreadLookupRoute.page,
                   path: 't/:threadId',
                 ),
+                // Internal landing for multi-thread notification taps.
+                // Prefetches missing thread rows then forwards to the LCA
+                // priority's activity feed. Not part of the public URL
+                // surface — only reached via the notification flow.
+                AutoRoute(
+                  page: NotificationLandingRoute.page,
+                  path: 'n/:priorityId/:threadIds',
+                ),
               ],
             ),
-            AutoRoute(page: PrioritiesRoute.page, path: 'priorities'),
           ],
         ),
       ],

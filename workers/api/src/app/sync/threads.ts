@@ -156,6 +156,52 @@ threads.get("/sync/threads", async (c) => {
   return c.json(outRows as any);
 });
 
+// GET /sync/threads/by-ids?ids=uuid1,uuid2,...
+//
+// Out-of-band fetch of a small set of threads by id. Returns the same row
+// shape as GET /sync/threads but skips the seq-cursor envelope (callers
+// hydrate via insertOrReplace without touching their sync cursor). Capped
+// at 50 ids; intended for the notification-tap fast path where we know
+// exactly which threads we need ahead of normal cursor pulls.
+threads.get("/sync/threads/by-ids", async (c) => {
+  const userId = c.var.user.id;
+  const idsRaw = c.req.query("ids") ?? "";
+  const ids = idsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  // Validate as UUIDs (case-insensitive) and cap the batch size so a
+  // crafted url can't pull arbitrary amounts of data.
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validIds = ids.filter((id) => uuidRe.test(id)).slice(0, 50);
+  if (validIds.length === 0) {
+    return c.json([]);
+  }
+
+  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+    return await trx
+      .selectFrom("user.thread")
+      .selectAll()
+      .where("user_id", "=", userId)
+      .where("id", "in", validIds)
+      .execute();
+  });
+
+  await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
+
+  const apiVersion = c.var.apiVersion ?? 0;
+  const transform = (row: any) => {
+    if (apiVersion < 3) {
+      const { groups, topic: _topic, ...rest } = row;
+      return { ...rest, topics: groups ?? [] };
+    }
+    return row;
+  };
+  return c.json(rows.map(transform) as any);
+});
+
 // GET /sync/threads/search - Full-text style search across threads, notes, and links.
 // Returns rows from user.thread (same shape as GET /sync/threads) so the client
 // can hydrate into the local store and render results. When count_only=true,

@@ -5,6 +5,7 @@ export 'email_sign_in.dart';
 export 'invite.dart';
 export 'loading.dart';
 export 'new_thread.dart';
+export 'notification_landing.dart';
 export 'password_setup.dart';
 export 'priorities.dart';
 export 'priority.dart';
