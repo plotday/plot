@@ -173,13 +173,22 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
     // Always lands on the Activity tab — NewThreadRoute lives there.
     //
-    // If a PriorityRoute is already mounted (we're on it now, or it's
-    // alive on the Activity tab's stack while another tab is active),
-    // push NewThreadRoute onto its inner stack so the back gesture
-    // returns to that priority. `root.navigate(PriorityRoute(children:[New]))`
-    // only activates the existing PriorityRoute and leaves its inner
-    // stack on the default PriorityOnlyRoute — producing the "opens
-    // Activity, not New" bug when triggered from Agenda or Priorities.
+    // The inner stack must end up as [PriorityOnlyRoute, NewThreadRoute]
+    // so that back from /new pops to the priority page (not an empty
+    // navigator). Two paths get us there:
+    //
+    // 1. PriorityRoute is already mounted (we're on it now, or it's
+    //    alive on the Activity stack while another tab is active) →
+    //    push NewThreadRoute on the existing inner router.
+    // 2. PriorityRoute isn't mounted yet (first cold-start activation
+    //    from Agenda/Priorities) → navigate to PriorityRoute (which
+    //    seeds the inner stack with the empty-path PriorityOnlyRoute)
+    //    and push NewThreadRoute on top once the inner router appears.
+    //
+    // Avoid `navigate(PriorityRoute(children:[New]))` (drops the inner
+    // child if PriorityRoute is already on the Activity stack) and
+    // `navigatePath('/p/:pid/new')` (sets the inner stack to
+    // [NewThreadRoute] only, with nothing to pop back to).
     final innerRouter = _findPriorityInnerRouter(context.router.root);
     if (innerRouter != null) {
       if (tabsRouter.activeIndex != _kTabActivity) {
@@ -191,16 +200,36 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
       return;
     }
 
-    // PriorityWrapper isn't mounted yet (first activation of Activity
-    // tab on a cold start from Agenda/Priorities). Use path-based
-    // navigation: `navigatePath` resolves the full path match including
-    // the `/new` segment, which seeds the inner stack correctly once
-    // PriorityWrapper's async loading (priority DB read) settles. The
-    // `children: [NewThreadRoute()]` form of `navigate()` drops the
-    // inner child in this case.
     final priorityIdString = _activityPriorityIdString(context);
     if (priorityIdString == null) return;
-    context.router.root.navigatePath('/p/$priorityIdString/new');
+    context.router.navigate(
+      PriorityRoute(priorityIdString: priorityIdString),
+    );
+    _pushNewThreadWhenInnerReady(context, attempt: 0);
+  }
+
+  /// PriorityWrapper hosts the inner AutoRouter, but doesn't build it
+  /// until PriorityBlocProvider's priority-load future resolves (a DB
+  /// read that takes 200ms+ on cold start). Poll across frames until
+  /// the inner router becomes discoverable, then push NewThreadRoute.
+  /// The 120-frame budget (~2s at 60Hz) covers slow disks while still
+  /// bailing out if something goes wrong.
+  void _pushNewThreadWhenInnerReady(
+    BuildContext context, {
+    required int attempt,
+  }) {
+    if (!context.mounted) return;
+    final innerRouter = _findPriorityInnerRouter(context.router.root);
+    if (innerRouter != null) {
+      if (innerRouter.current.name != NewThreadRoute.name) {
+        innerRouter.push(NewThreadRoute());
+      }
+      return;
+    }
+    if (attempt >= 120) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pushNewThreadWhenInnerReady(context, attempt: attempt + 1);
+    });
   }
 
   /// Walks the controller tree to find the [StackRouter] hosted by the
