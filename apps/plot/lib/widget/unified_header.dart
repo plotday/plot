@@ -491,11 +491,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   }
 
   Widget _searchButton() {
+    // Keep the header-side button as the search icon even while search is
+    // expanded — the close affordance lives inside the input as an X. The
+    // command still toggles; _toggleSearch reads _searchExpanded to decide.
     return Button.icon(
-      ToggleSearchCommand(
-        searchExpanded: _searchExpanded,
-        onToggle: _toggleSearch,
-      ),
+      ToggleSearchCommand(searchExpanded: false, onToggle: _toggleSearch),
       color: context.theme.plotColors.muted,
     );
   }
@@ -635,15 +635,25 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   ),
                 ),
                 suffixBuilder: (context, style, states) {
-                  if (buildFilters(context).isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  return Button.icon(
-                    PickFilterCommand(
-                      filterCommandsBuilder: buildFilters,
-                    ),
-                    selected: hasActiveFilters,
-                    color: context.theme.plotColors.muted,
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (buildFilters(context).isNotEmpty)
+                        Button.icon(
+                          PickFilterCommand(
+                            filterCommandsBuilder: buildFilters,
+                          ),
+                          selected: hasActiveFilters,
+                          color: context.theme.plotColors.muted,
+                        ),
+                      Button.icon(
+                        ToggleSearchCommand(
+                          searchExpanded: true,
+                          onToggle: _closeSearch,
+                        ),
+                        color: context.theme.plotColors.muted,
+                      ),
+                    ],
                   );
                 },
               ),
