@@ -79,11 +79,36 @@ class _AgendaBody extends StatelessWidget {
         if (!state.agendaLoaded) {
           return const LoadingPage();
         }
+        // The agenda has no header on single-panel mobile, so the list
+        // would slide under the status bar / dynamic island without an
+        // explicit top SafeArea. The bottom nav (rendered at the shell
+        // level) handles the bottom inset, so leave it off here.
+        //
+        // The first date row has no separator above it (separators sit
+        // *between* items). On desktop the panel squircle paints that
+        // top edge for us; on mobile we add it explicitly so the date
+        // row doesn't bleed into the status-bar background.
         return Scaffold(
           scrollable: false,
           translucent: true,
           childPad: false,
-          body: AgendaList(items: state.agendaViewItems),
+          body: SafeArea(
+            top: true,
+            bottom: false,
+            left: false,
+            right: false,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: context.theme.colors.border,
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: AgendaList(items: state.agendaViewItems),
+            ),
+          ),
         );
       },
     );

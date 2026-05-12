@@ -12,6 +12,7 @@ import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
 import 'package:plot/notifications/notification_service.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -144,6 +145,8 @@ class ShowSettings extends ShowCommands {
           final email = userState is UserReady
               ? userState.user.primaryEmail
               : null;
+          final showAllPriorities =
+              context.read<LocalPreferencesBloc>().state.showAllPriorities;
 
           // Fetch orgs and subscription in parallel
           List<Map<String, dynamic>> adminOrgs = [];
@@ -167,6 +170,18 @@ class ShowSettings extends ShowCommands {
           }
 
           final groups = [
+            // The single command that used to live in the Priorities-tab
+            // header kebab. Surfaced here so single-panel mobile users
+            // can still toggle archived priorities after the header was
+            // removed.
+            StaticCommandGroup(
+              title: 'View',
+              commands: [
+                ToggleArchivedPrioritiesFilter(
+                  showAllPriorities: showAllPriorities,
+                ),
+              ],
+            ),
             ...settingsCommandsFromState(
               prioritiesState,
               email: email,

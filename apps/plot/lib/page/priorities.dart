@@ -16,7 +16,6 @@ import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/connection_status_tile.dart';
-import 'package:plot/widget/unified_header.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -27,14 +26,23 @@ class PrioritiesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // In single-panel mode the Priorities tab stands alone, so it renders
-    // its own UnifiedHeader (multi-panel mode hoists UnifiedHeader to the
-    // priority page above the layout).
+    // No per-page header on either layout. Single-panel (mobile) drops
+    // the empty-title bar entirely — its only menu item (toggle archived)
+    // now lives in the bottom-nav More menu. Multi-panel layouts hoist
+    // UnifiedHeader to the priority page above this one.
     return Scaffold(
-      header: context.isMultiPanel ? null : const UnifiedHeader(),
+      header: null,
       childPad: false,
       scrollable: false,
-      body: const PrioritiesPanelContent(),
+      body: context.isMultiPanel
+          ? const PrioritiesPanelContent()
+          : const SafeArea(
+              top: true,
+              bottom: false,
+              left: false,
+              right: false,
+              child: PrioritiesPanelContent(),
+            ),
     );
   }
 }

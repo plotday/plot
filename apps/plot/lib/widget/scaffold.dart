@@ -4,7 +4,6 @@ import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'bottom_navigation_provider.dart';
 import 'modal.dart';
 import 'window.dart';
 import 'package:plot/state/layout.dart';
@@ -52,34 +51,6 @@ class Scaffold extends StatelessWidget {
     return SafeArea(child: SingleChildScrollView(child: body));
   }
 
-  Widget? _buildFooter(BuildContext context) {
-    final config = BottomNavigationProvider.of(context);
-    if (config == null) {
-      return null;
-    }
-
-    return FTheme(
-      data: darkenTheme(context, context.theme, context.colour, steps: 2),
-      child: Builder(
-        builder: (context) => DecoratedBox(
-          decoration: BoxDecoration(
-            color: context.theme.colors.background,
-          ),
-          child: SafeArea(
-            top: false,
-            left: false,
-            right: false,
-            child: FBottomNavigationBar(
-              index: config.currentIndex,
-              onChange: config.onChange,
-              children: config.items,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     var wrappedBody = _buildBody(context);
@@ -107,8 +78,6 @@ class Scaffold extends StatelessWidget {
       child: wrappedBody,
     );
 
-    final footer = _buildFooter(context);
-
     // On Windows in single-panel mode, when no header is provided, add a minimal
     // drag bar with app name. In multi-panel mode, UnifiedHeader handles dragging.
     final effectiveHeader =
@@ -119,7 +88,6 @@ class Scaffold extends StatelessWidget {
     final scaffold = FScaffold(
       header: effectiveHeader,
       sidebar: sidebar,
-      footer: footer,
       childPad: childPad,
       child: wrappedBody,
     );

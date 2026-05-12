@@ -448,9 +448,11 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                               left: context.isMultiPanel ? 20.0 : 0,
                               right: context.isMultiPanel ? 20.0 : 0,
                               top: 8,
-                              bottom: context.isMultiPanel
-                                  ? 20.0
-                                  : MediaQuery.paddingOf(context).bottom,
+                              // NoteEditor's `flushToBottom` already absorbs
+                              // the bottom safe-area inset. Adding it here
+                              // too produced a doubled gap below the action
+                              // buttons on iOS.
+                              bottom: context.isMultiPanel ? 20.0 : 0,
                             ),
                             child: NoteEditor(
                               key: _noteEditorKey,

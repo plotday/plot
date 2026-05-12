@@ -120,6 +120,21 @@ class ChangeCurrentThread extends ThreadCommand {
       // Update NowBloc to match the current priority being viewed
       nowBloc.setFocus(currentPriority);
 
+      // Pop both ThreadRoute and NewThreadRoute off the inner stack so
+      // the cupertino slide-back actually animates. `maybePop` would
+      // defer to the page's canPop:false PopScope and silently loop —
+      // forced `pop()` bypasses it. The fallback `root.navigate(...)`
+      // replaces the inner stack instead of popping, skipping the
+      // transition entirely.
+      final innerRouter = _innerRouter(context);
+      final topName = innerRouter?.current.name;
+      if (innerRouter != null &&
+          (topName == ThreadRoute.name ||
+              topName == NewThreadRoute.name)) {
+        innerRouter.pop();
+        return const CommandDone();
+      }
+
       // Navigate to just the PriorityRoute without ThreadRoute
       return CommandRoute(
         PriorityRoute(priorityIdString: currentPriority.id.toShortString()),
@@ -129,6 +144,30 @@ class ChangeCurrentThread extends ThreadCommand {
     // Update NowBloc to the thread's priority (what user is working on)
     nowBloc.setFocus(thread!.priority);
 
+    // Push directly onto the inner stack so the cupertino slide fires.
+    // `root.navigate(PriorityRoute > ThreadRoute)` (the fallback) swaps
+    // PriorityOnlyRoute for ThreadRoute as siblings inside PriorityRoute
+    // instead of pushing one on top of the other, so it never animates.
+    //
+    // The URL uses `currentPriority` (the priority page the user is
+    // viewing) — the thread itself may belong to a descendant priority,
+    // but routing keeps the parent context so back returns to the right
+    // priority page.
+    final innerRouter = _innerRouter(context);
+    if (innerRouter != null) {
+      final threadRoute = ThreadRoute(
+        threadIdString: thread!.id.toShortString(),
+      );
+      if (innerRouter.current.name == ThreadRoute.name) {
+        // Already on a thread (Next/Previous) — replace in place so
+        // the back stack stays one ThreadRoute deep.
+        await innerRouter.replace(threadRoute);
+      } else {
+        await innerRouter.push(threadRoute);
+      }
+      return const CommandDone();
+    }
+
     // Navigate using the CURRENT priority (not thread's priority)
     // This keeps PriorityPage showing the parent priority
     final route = PriorityRoute(
@@ -137,6 +176,28 @@ class ChangeCurrentThread extends ThreadCommand {
     );
 
     return CommandRoute(route);
+  }
+
+  /// Returns the inner [StackRouter] hosted by the active [PriorityRoute],
+  /// or null when no PriorityRoute is currently mounted (e.g. when called
+  /// from the Agenda or Priorities tabs).
+  ///
+  /// auto_route's [innerRouterOf] only checks immediate child controllers,
+  /// so a deeply-nested route like PriorityRoute (root → AppShell → tabs →
+  /// ActivityShell → PriorityRoute) is never found in one shot. This
+  /// walks the controller tree manually.
+  StackRouter? _innerRouter(BuildContext context) {
+    return _findInnerRouter(context.router.root, PriorityRoute.name);
+  }
+
+  StackRouter? _findInnerRouter(RoutingController root, String routeName) {
+    final direct = root.innerRouterOf<StackRouter>(routeName);
+    if (direct != null) return direct;
+    for (final child in root.childControllers) {
+      final hit = _findInnerRouter(child, routeName);
+      if (hit != null) return hit;
+    }
+    return null;
   }
 }
 

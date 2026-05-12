@@ -30,8 +30,17 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
 
   void _updateFromMetrics(ScrollMetrics metrics) {
     if (metrics.axis != Axis.vertical) return;
-    final atTop = metrics.pixels <= metrics.minScrollExtent + 0.5;
-    final atBottom = metrics.pixels >= metrics.maxScrollExtent - 0.5;
+    final atMin = metrics.pixels <= metrics.minScrollExtent + 0.5;
+    final atMax = metrics.pixels >= metrics.maxScrollExtent - 0.5;
+    // For a reversed list (e.g. a chat scrolled to the latest message),
+    // axisDirection is up, so the visual top corresponds to the scroll
+    // maximum and the visual bottom corresponds to the scroll minimum.
+    // Flipping here keeps the bottom fade off when the user is sitting
+    // at the latest item — without it, the fade obscures the line that
+    // sparked the scroll.
+    final reversed = metrics.axisDirection == AxisDirection.up;
+    final atTop = reversed ? atMax : atMin;
+    final atBottom = reversed ? atMin : atMax;
     if (atTop != _atTop || atBottom != _atBottom) {
       setState(() {
         _atTop = atTop;

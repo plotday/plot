@@ -378,7 +378,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
 /// bounds were changing under it. Using a Stack keeps the body's bounds
 /// constant; the nav slides in/out via translation without affecting the
 /// content area.
-class _MobileShellChrome extends StatelessWidget {
+class _MobileShellChrome extends StatefulWidget {
   const _MobileShellChrome({
     required this.child,
     required this.showNav,
@@ -394,25 +394,50 @@ class _MobileShellChrome extends StatelessWidget {
   final List<FBottomNavigationBarItem> items;
 
   @override
+  State<_MobileShellChrome> createState() => _MobileShellChromeState();
+}
+
+class _MobileShellChromeState extends State<_MobileShellChrome> {
+  // Suppress the slide animation on the very first paint so the nav
+  // doesn't visibly slide up when the app cold-starts. Without this,
+  // the chrome briefly mounts with showNav transitioning false → true
+  // (initial route resolution) and AnimatedSlide animates from
+  // off-screen into place even though there's no real navigation.
+  bool _firstBuild = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_firstBuild) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _firstBuild = false);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: child),
+        Positioned.fill(child: widget.child),
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
           child: AnimatedSlide(
-            offset: showNav ? Offset.zero : const Offset(0, 1),
-            duration: const Duration(milliseconds: 220),
+            offset: widget.showNav ? Offset.zero : const Offset(0, 1),
+            duration: _firstBuild
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
             curve: Curves.easeOut,
             child: IgnorePointer(
-              ignoring: !showNav,
+              ignoring: !widget.showNav,
               child: _PersistentBottomNav(
-                currentIndex: currentIndex < 0 ? 0 : currentIndex,
-                onChange: onChange,
-                items: items,
-                highlight: currentIndex >= 0,
+                currentIndex:
+                    widget.currentIndex < 0 ? 0 : widget.currentIndex,
+                onChange: widget.onChange,
+                items: widget.items,
+                highlight: widget.currentIndex >= 0,
               ),
             ),
           ),

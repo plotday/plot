@@ -334,9 +334,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         color: muted,
       );
     }
-    // Single-panel without thread: back to Priorities tab
+    // Single-panel without thread: no leading button. Priorities is its
+    // own bottom-nav tab now, so the previous "back to Priorities" arrow
+    // would just duplicate the tab bar and look like history navigation.
     else if (!layoutState.multiPanel) {
-      navigation = Button.icon(BackToPrioritiesTabCommand(), color: muted);
+      navigation = const SizedBox.shrink();
     }
     // Multi-panel right-only with a thread visible: back + open priorities
     // + open threads. Back clears the thread but keeps the middle panel
