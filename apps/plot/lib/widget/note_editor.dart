@@ -101,6 +101,10 @@ class NoteEditorState extends State<NoteEditor> {
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
+  // Tracks the most recent in-flight _saveDraft. Submit handlers await this
+  // before publishing so the publish can't race with a keystroke-triggered
+  // save that already passed the _finalized check.
+  Future<void>? _pendingDraftSave;
 
   /// Twist IDs toggled OFF by the user for the current note.
   final Set<TwistInstanceId> _disabledTwists = {};
@@ -364,15 +368,21 @@ class NoteEditorState extends State<NoteEditor> {
 
     final updatedNote = widget.draft.copyWith(content: content);
 
+    final Future<void> task;
     if (widget.isNewThreadMode) {
-      await widget.onDraftChanged!(widget.thread!, note: updatedNote);
+      task = widget.onDraftChanged!(widget.thread!, note: updatedNote);
     } else {
-      // Note mode: save via ThreadBloc
       final activityBloc = context.read<ThreadBloc>();
       log.info('Saving draft note with content: $content');
-      await activityBloc.updateDraft(updatedNote);
+      task = activityBloc.updateDraft(updatedNote);
     }
-    _lastSavedContent = content;
+    _pendingDraftSave = task;
+    try {
+      await task;
+      _lastSavedContent = content;
+    } finally {
+      if (identical(_pendingDraftSave, task)) _pendingDraftSave = null;
+    }
   }
 
   @override
@@ -1459,6 +1469,12 @@ class NoteEditorState extends State<NoteEditor> {
   // -- Submit handlers --
 
   Future<void> _onNoteSubmitted(String body, {bool alt = false}) async {
+    // Block subsequent _saveDraft calls and wait out any already in flight,
+    // so the publish writes can't be reordered with a draft write.
+    _finalized = true;
+    await _pendingDraftSave;
+    if (!mounted) return;
+
     final activityBloc = context.read<ThreadBloc>();
     final editingNote = activityBloc.state.editingNote;
 
@@ -1499,6 +1515,12 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<void> _onNewThreadSubmitted(String body, {bool alt = false}) async {
+    // Block subsequent _saveDraft calls and wait out any already in flight,
+    // so the publish writes can't be reordered with a draft write.
+    _finalized = true;
+    await _pendingDraftSave;
+    if (!mounted) return;
+
     // Empty body + a link → create a thread *about* the link: title and
     // favicon come from the link, no Note is saved, the link is stored as a
     // thread-level LinkRow (matches how thread.dart renders link rows).

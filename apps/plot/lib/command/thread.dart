@@ -362,35 +362,25 @@ class AddThreadWithNote extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
 
-    // Kick off persistence without awaiting so navigation can happen
-    // optimistically in parallel. priorityBloc.add runs synchronously up to
-    // its first DB await, so the thread row insert is queued on Drift's
-    // FIFO executor before the new ThreadBloc's watch streams subscribe —
-    // by the time the watch query runs, the row is already there.
-    final persistFuture = priorityBloc.add(_data.thread, note: _data.note);
+    // Persist the thread + first note before navigating. Running these in
+    // parallel with the route flip let a late `_saveDraft` from the
+    // disposing NewThreadPage NoteEditor flip the just-published note row
+    // back to draft=true, which the sync push filter excludes — the note
+    // would then never reach the server.
+    final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
 
     if (!navigate) {
-      await persistFuture;
       return const CommandDone();
     }
 
-    // Mirrors the savedThread priorityBloc.add computes internally — both
-    // are just thread.copyWith(draft: false). Pre-cache it on PriorityBloc
-    // before navigation so ThreadBlocProvider builds synchronously from
-    // cache instead of refetching via Thread.getOne.
-    final savedThread = _data.thread.copyWith(draft: false);
-
     if (context.mounted) {
+      // Prime the cache so ThreadBlocProvider builds synchronously, skipping
+      // a redundant Thread.getOne and the LoadingPage flash.
       priorityBloc.setThread(savedThread);
       await context.router.replace(
         ThreadRoute(threadIdString: savedThread.id.toShortString()),
       );
     }
-
-    // Surface persistence errors after the route flips. The saving overlay
-    // lived on the now-disposed NewThreadPage NoteEditor; ThreadPage has
-    // its own NoteEditor that is unaffected.
-    await persistFuture;
 
     return const CommandDone();
   }
@@ -439,42 +429,34 @@ class AddThreadWithLink extends Command {
     final hasPersistedActions = (draftNote.actions?.isNotEmpty ?? false);
     final hasPersistedContent = (draftNote.content?.isNotEmpty ?? false);
 
-    // Kick off all persistence on Drift's FIFO executor without awaiting,
-    // then navigate optimistically. By the time the new ThreadPage's watch
-    // streams query, the thread + link rows have already been queued ahead
-    // of them.
-    final persistFuture = () async {
-      if (hasPersistedActions || hasPersistedContent) {
-        await draftNote
-            .copyWith(draft: false, archivedAt: Value(DateTime.now()))
-            .save(pushToRemote: false);
-      }
-      await priorityBloc.add(thread);
-      final now = DateTime.now();
-      final linkRow = LinkRow(
-        id: Uuid.generate(),
-        createdAt: now,
-        updatedAt: now,
-        threadId: savedThread.id,
-        sourceCreatedAt: now,
-        sourceUrl: linkUrl,
-        title: linkTitle,
-        logo: linkFavicon,
-      );
-      await Store.get.save(Store.get.links, linkRow, LinksBase());
-    }();
+    // Persist everything before navigating to avoid the same race that
+    // dropped notes from AddThreadWithNote — late `_saveDraft` writes from
+    // the disposing NewThreadPage NoteEditor must not interleave with these.
+    if (hasPersistedActions || hasPersistedContent) {
+      await draftNote
+          .copyWith(draft: false, archivedAt: Value(DateTime.now()))
+          .save(pushToRemote: false);
+    }
+    await priorityBloc.add(thread);
+    final now = DateTime.now();
+    final linkRow = LinkRow(
+      id: Uuid.generate(),
+      createdAt: now,
+      updatedAt: now,
+      threadId: savedThread.id,
+      sourceCreatedAt: now,
+      sourceUrl: linkUrl,
+      title: linkTitle,
+      logo: linkFavicon,
+    );
+    await Store.get.save(Store.get.links, linkRow, LinksBase());
 
-    // Navigate to the new thread. Set the thread on PriorityBloc first so
-    // ThreadBlocProvider builds synchronously from cache instead of
-    // refetching via Thread.getOne.
     if (context.mounted) {
       priorityBloc.setThread(savedThread);
       await context.router.replace(
         ThreadRoute(threadIdString: savedThread.id.toShortString()),
       );
     }
-
-    await persistFuture;
 
     return const CommandDone();
   }

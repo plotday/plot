@@ -607,14 +607,12 @@ class Note extends Equatable implements Comparable<Note> {
           ));
     }
 
-    // Push to remote. Deferred to idle so it doesn't compete for CPU with
-    // navigation transitions running concurrently (e.g. the new-thread
-    // submit → ThreadPage flip).
+    // Push to remote eagerly. We previously deferred this to Priority.idle
+    // to yield CPU to in-flight nav transitions, but under load the idle
+    // slot could be starved with no retry, leaving notes stuck at
+    // pending=2 until the app restarted.
     if (pushToRemote) {
-      _deferIdle(
-        () => SyncOrchestrator.instance.push(SyncOrchestrator.note),
-        debugLabel: 'note sync push',
-      );
+      unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
     }
   }
 
