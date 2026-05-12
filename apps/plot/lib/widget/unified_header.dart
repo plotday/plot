@@ -474,7 +474,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (layoutState.multiPanel && !state.context.isTwistDev)
         Button.icon(NewThread(), color: context.theme.plotColors.muted),
 
-      _searchButton(),
+      // Hide search in single-panel mode when viewing a thread — the header
+      // is dedicated to thread actions, and search would target the
+      // priority's thread list which isn't visible.
+      if (layoutState.multiPanel || thread == null) _searchButton(),
 
       Button.icon(
         _buildMenuCommand(state, layoutState, notifier),
