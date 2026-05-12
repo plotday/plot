@@ -75,26 +75,30 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   /// Desktop: timer to retry notification display when quiet hours end.
   Timer? _quietHoursRetryTimer;
 
-  /// Callback for navigating to a priority when a notification is tapped.
-  /// Setting this replays any buffered payload from a cold-start notification.
-  void Function(String priorityId)? _onNavigateToPriority;
+  /// Callback for navigating to a notification target when tapped. The
+  /// target carries the priority id plus the thread ids covered by the
+  /// notification, so the router can open a single thread directly when
+  /// only one is new. Setting this replays any buffered cold-start payload.
+  void Function(NotificationTapTarget target)? _onNavigate;
 
   /// Pending payload from a notification tap that arrived before the router
-  /// was ready (cold start). Replayed when [onNavigateToPriority] is set.
-  String? _pendingNavigationPayload;
+  /// was ready (cold start). Replayed when [onNavigate] is set.
+  NotificationTapTarget? _pendingNavigationTarget;
 
-  set onNavigateToPriority(void Function(String priorityId)? callback) {
-    _onNavigateToPriority = callback;
-    if (callback != null && _pendingNavigationPayload != null) {
-      final payload = _pendingNavigationPayload!;
-      _pendingNavigationPayload = null;
-      log.info('Replaying buffered notification payload: $payload');
-      callback(payload);
+  set onNavigate(void Function(NotificationTapTarget target)? callback) {
+    _onNavigate = callback;
+    if (callback != null && _pendingNavigationTarget != null) {
+      final target = _pendingNavigationTarget!;
+      _pendingNavigationTarget = null;
+      log.info(
+        'Replaying buffered notification target: '
+        'priority=${target.priorityId} threads=${target.threadIds.length}',
+      );
+      callback(target);
     }
   }
 
-  void Function(String priorityId)? get onNavigateToPriority =>
-      _onNavigateToPriority;
+  void Function(NotificationTapTarget target)? get onNavigate => _onNavigate;
 
   /// Whether push notifications are supported on this platform.
   static bool get isSupported =>
@@ -938,7 +942,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
       final displayId = batch.targetPriorityId ?? batch.firstLevelPriorityId;
       final notifId = _stableNotificationId(displayId);
-      final newThreadIds = batch.threads.map((t) => t.id).toSet();
+      final orderedThreadIds = batch.threads.map((t) => t.id).toList();
+      final newThreadIds = orderedThreadIds.toSet();
 
       // Skip if thread set is unchanged
       final previous = _shownNotifications[displayId];
@@ -950,7 +955,10 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
         id: notifId,
         title: title,
         body: body,
-        targetPriorityId: displayId,
+        targetPriorityId: NotificationTapTarget(
+          priorityId: displayId,
+          threadIds: orderedThreadIds,
+        ).encode(),
         urgency: batch.highestUrgency,
       );
       _shownNotifications[displayId] = (id: notifId, threadIds: newThreadIds);
@@ -1019,9 +1027,14 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
   void _handleNotificationTap(RemoteMessage message) {
     final targetPriorityId = message.data['target_priority_id'] as String?;
-    if (targetPriorityId != null) {
-      _handlePayloadTap(targetPriorityId);
-    }
+    if (targetPriorityId == null || targetPriorityId.isEmpty) return;
+    final threadIdsRaw = message.data['thread_ids'];
+    final threadIds = threadIdsRaw is String && threadIdsRaw.isNotEmpty
+        ? threadIdsRaw.split(',').where((s) => s.isNotEmpty).toList()
+        : const <String>[];
+    _dispatchTap(
+      NotificationTapTarget(priorityId: targetPriorityId, threadIds: threadIds),
+    );
   }
 
   void _handlePayloadTap(String? payload) {
@@ -1030,14 +1043,21 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       windowManager.show();
       windowManager.focus();
     }
-    if (payload != null && payload.isNotEmpty) {
-      if (_onNavigateToPriority != null) {
-        _onNavigateToPriority!(payload);
-      } else {
-        // Router not ready yet (cold start) — buffer for replay
-        log.info('Buffering notification payload for replay: $payload');
-        _pendingNavigationPayload = payload;
-      }
+    final target = NotificationTapTarget.decode(payload);
+    if (target == null) return;
+    _dispatchTap(target);
+  }
+
+  void _dispatchTap(NotificationTapTarget target) {
+    if (_onNavigate != null) {
+      _onNavigate!(target);
+    } else {
+      // Router not ready yet (cold start) — buffer for replay
+      log.info(
+        'Buffering notification target: priority=${target.priorityId} '
+        'threads=${target.threadIds.length}',
+      );
+      _pendingNavigationTarget = target;
     }
   }
 }
@@ -1148,8 +1168,9 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
     final urgency = summary['urgency'] as String?;
-    final threadIdsList = (summary['thread_ids'] as List?)?.cast<String>();
-    final threadIds = threadIdsList?.toSet() ?? <String>{};
+    final orderedThreadIds =
+        (summary['thread_ids'] as List?)?.cast<String>() ?? const <String>[];
+    final threadIds = orderedThreadIds.toSet();
     final notifId = targetPriorityId.hashCode.abs() % 100000;
 
     // Skip if thread set is unchanged
@@ -1166,7 +1187,10 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
       id: notifId,
       title: title,
       body: body,
-      targetPriorityId: targetPriorityId,
+      targetPriorityId: NotificationTapTarget(
+        priorityId: targetPriorityId,
+        threadIds: orderedThreadIds,
+      ).encode(),
       urgency: urgency ?? 'inform-updates',
     );
     if (targetPriorityId.isNotEmpty) {
@@ -1174,4 +1198,34 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
     }
   }
   return shown;
+}
+
+/// Decoded target carried by a notification payload (and `data.thread_ids`
+/// on direct FCM taps). Encodes as `priorityId|threadId,threadId,...` so
+/// the priority-only legacy format (`priorityId`) decodes seamlessly.
+class NotificationTapTarget {
+  NotificationTapTarget({required this.priorityId, this.threadIds = const []});
+
+  final String priorityId;
+  final List<String> threadIds;
+
+  String encode() {
+    if (threadIds.isEmpty) return priorityId;
+    return '$priorityId|${threadIds.join(',')}';
+  }
+
+  static NotificationTapTarget? decode(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    final pipe = payload.indexOf('|');
+    if (pipe < 0) {
+      return NotificationTapTarget(priorityId: payload);
+    }
+    final priorityId = payload.substring(0, pipe);
+    if (priorityId.isEmpty) return null;
+    final rest = payload.substring(pipe + 1);
+    final threads = rest.isEmpty
+        ? const <String>[]
+        : rest.split(',').where((s) => s.isNotEmpty).toList();
+    return NotificationTapTarget(priorityId: priorityId, threadIds: threads);
+  }
 }

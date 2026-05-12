@@ -1,5 +1,16 @@
 import 'package:plot/store/store.dart';
 
+/// Cross-component signal: when a notification tap opens a priority for a
+/// multi-thread batch, the next-built activity feed reads this and scrolls
+/// to the matching section header (typically [ActivitySection.newSection])
+/// so the unread threads land at the top of the viewport.
+///
+/// Written by the notification tap handler; consumed and cleared by
+/// `_PriorityPageState` once the activity feed has items.
+class PendingNotificationScroll {
+  static ActivitySection? section;
+}
+
 /// The sections of the Activity tab. Each thread belongs to exactly
 /// one ordinary section, computed from `Thread.isActiveThread` /
 /// `isScheduledThread` / `isUnreadOnly` / `isInactiveThread`.

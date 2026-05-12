@@ -52,6 +52,7 @@ notificationSummary.post("/notification-summary", async (c) => {
           title: batch.priority_title ?? "Updates",
           body,
           target_priority_id: batch.target_priority_id,
+          thread_ids: batch.threads.map((t) => t.id),
         };
       })
     );

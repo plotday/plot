@@ -11,6 +11,7 @@ import 'package:plot/command/page_link.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/share_intent.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/onboarding.dart';
@@ -52,7 +53,7 @@ class RootProviderState extends State<RootProvider> {
   StreamSubscription<void>? _reAuthSubscription;
   bool _hasNavigatedToCliUrl = false;
   bool _routerInitialized = false;
-  String? _pendingNotificationPriorityId;
+  NotificationTapTarget? _pendingNotificationTarget;
 
   @override
   void initState() {
@@ -160,13 +161,13 @@ class RootProviderState extends State<RootProvider> {
                 _setupNowBlocListener(themeBloc);
                 unawaited(onboardingBloc.start());
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
-                NotificationService.instance.onNavigateToPriority = (priorityId) {
+                NotificationService.instance.onNavigate = (target) {
                   if (!_routerInitialized) {
                     // Buffer for replay once router is ready (cold start)
-                    _pendingNotificationPriorityId = priorityId;
+                    _pendingNotificationTarget = target;
                     return;
                   }
-                  _navigateToNotificationPriority(priorityId);
+                  _navigateToNotificationTarget(target);
                 };
                 if (context.mounted) _setupReAuthListener(context);
 
@@ -262,10 +263,10 @@ class RootProviderState extends State<RootProvider> {
                     _routerInitialized = true;
                     // Replay buffered cold-start actions after this build frame
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_pendingNotificationPriorityId != null) {
-                        final id = _pendingNotificationPriorityId!;
-                        _pendingNotificationPriorityId = null;
-                        _navigateToNotificationPriority(id);
+                      if (_pendingNotificationTarget != null) {
+                        final target = _pendingNotificationTarget!;
+                        _pendingNotificationTarget = null;
+                        _navigateToNotificationTarget(target);
                       }
 
                       // Handle pending share intent (may arrive before or after
@@ -329,10 +330,29 @@ class RootProviderState extends State<RootProvider> {
     );
   }
 
-  void _navigateToNotificationPriority(String priorityId) {
-    final shortId = Uuid.fromString(priorityId).toShortString();
-    // PriorityPage now renders only the activity feed, so notifications
-    // just open the priority directly — no tab parameter needed.
+  void _navigateToNotificationTarget(NotificationTapTarget target) {
+    // Single new thread → open it directly so the user lands in the
+    // thread instead of having to find it in the activity feed.
+    if (target.threadIds.length == 1) {
+      try {
+        final threadShort = Uuid.fromString(target.threadIds.first)
+            .toShortString();
+        router.replaceAll([ThreadLookupRoute(threadIdString: threadShort)]);
+        return;
+      } catch (e) {
+        // Bad thread id from a stale/malformed payload — fall through to
+        // priority navigation so the tap still does something useful.
+        log.warning('Bad thread id in notification target: ${target.threadIds.first}', e);
+      }
+    }
+
+    // Multiple new threads → open the LCA priority and signal the activity
+    // feed to scroll to the "New" section so the unread threads are
+    // immediately visible.
+    if (target.threadIds.length > 1) {
+      PendingNotificationScroll.section = ActivitySection.newSection;
+    }
+    final shortId = Uuid.fromString(target.priorityId).toShortString();
     router.replaceAll([PriorityRoute(priorityIdString: shortId)]);
   }
 }

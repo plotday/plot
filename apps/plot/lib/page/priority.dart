@@ -456,7 +456,11 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                     if (_isSearchExpanded) {
                       tryCloseSearch();
                     } else {
-                      AutoTabsRouter.of(context).setActiveIndex(0);
+                      // Back gesture at the priority root sends the user
+                      // home to the Agenda tab. Agenda is the default
+                      // landing tab, so this matches what the user sees
+                      // on cold start.
+                      AutoTabsRouter.of(context).setActiveIndex(1);
                     }
                   }
                 },
@@ -621,6 +625,48 @@ class _PriorityPageState extends State<PriorityPage>
             if (scrollController != null && scrollController.hasClients) {
               scrollController.jumpTo(0);
             }
+          },
+        ),
+        // When a multi-thread notification opened this priority, scroll
+        // the activity feed so the "New" header lands at the top once
+        // items load. Honors PendingNotificationScroll.section, which is
+        // set by RootProvider's notification-tap handler.
+        BlocListener<PriorityBloc, PriorityState>(
+          listenWhen: (previous, current) =>
+              PendingNotificationScroll.section != null &&
+              previous.activityFeedItems != current.activityFeedItems,
+          listener: (context, state) {
+            final section = PendingNotificationScroll.section;
+            if (section == null) return;
+            final items = state.activityFeedItems;
+            int? targetIndex;
+            for (var i = 0; i < items.length; i++) {
+              final item = items[i];
+              if (item is AgendaHeaderItem && item.text != null) {
+                final marker = ActivitySectionMarker.tryDecode(item.text!);
+                if (marker?.section == section) {
+                  targetIndex = i;
+                  break;
+                }
+              }
+            }
+            if (targetIndex == null) return;
+            PendingNotificationScroll.section = null;
+            final scrollController = ScrollControllerContext.of(context);
+            if (scrollController == null) return;
+            final index = targetIndex;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!scrollController.hasClients) return;
+              // Items have variable heights; the InfiniteList's
+              // estimatedItemExtent default (75) is the same heuristic
+              // used elsewhere in the codebase for index-based jumps.
+              const estimatedItemExtent = 75.0;
+              final estimated = (index * estimatedItemExtent).clamp(
+                0.0,
+                scrollController.position.maxScrollExtent,
+              );
+              scrollController.jumpTo(estimated);
+            });
           },
         ),
         // Mirror NowBloc.currentEvent into PriorityBloc so the activity
@@ -1252,23 +1298,41 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        tile,
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.theme.spacing.sm,
-              ),
-              child: Button.icon(
-                RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
-              ),
-            ),
+    // Lay out as a Row with an invisible mirror of the button on the
+    // left. The visible button sits on the right; the mirror reserves
+    // matching space on the left so the centered title text stays at
+    // the row's true horizontal midpoint. Using a Row instead of a
+    // Stack overlay makes vertical alignment deterministic
+    // (CrossAxisAlignment.center, applied by a single layout primitive)
+    // and avoids the Stack-with-different-sized-children ambiguity that
+    // rendered the icon below the label on iOS while looking centered
+    // on macOS.
+    final button = Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.theme.spacing.sm,
+      ),
+      child: Button.icon(
+        RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+      ),
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colour.headerBackground,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Visibility(
+            visible: false,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: button,
           ),
-        ),
-      ],
+          Expanded(child: tile),
+          button,
+        ],
+      ),
     );
   }
 }
