@@ -10,9 +10,16 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/widget/bottom_navigation_provider.dart';
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/theme.dart';
 import 'package:plot/widget/icon.dart';
+
+/// Visual indices used by the bottom nav.
+const int _kTabPriorities = 0;
+const int _kTabAgenda = 1;
+const int _kTabActivity = 2;
+const int _kBtnNew = 3;
+const int _kBtnMore = 4;
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget {
@@ -22,8 +29,12 @@ class PrioritiesShell extends StatefulWidget {
   State<PrioritiesShell> createState() => _PrioritiesShellState();
 }
 
-class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
-  AutoRouteObserver? _observer;
+class _PrioritiesShellState extends State<PrioritiesShell> {
+  Listenable? _navHistory;
+
+  void _onRouteChanged() {
+    if (mounted) setState(() {});
+  }
 
   /// Returns the short-string priority id to use when the user invokes
   /// Activity or New from a non-priority route (e.g. `/agenda`). Prefers
@@ -59,314 +70,372 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Subscribe to route changes to rebuild bottom nav when navigating to/from NewThreadPage
-    _observer = RouterScope.of(
-      context,
-    ).firstObserverOfType<AutoRouteObserver>();
-    _observer?.subscribe(this, context.router.current);
+    // Rebuild whenever the URL changes so the bottom nav highlight and
+    // visibility track the active route — including inner-stack pushes
+    // like /p/:id → /p/:id/:threadId that don't change the active tab.
+    final history = context.router.navigationHistory;
+    if (_navHistory != history) {
+      _navHistory?.removeListener(_onRouteChanged);
+      _navHistory = history;
+      history.addListener(_onRouteChanged);
+    }
   }
 
   @override
   void dispose() {
-    _observer?.unsubscribe(this);
+    _navHistory?.removeListener(_onRouteChanged);
     super.dispose();
   }
 
-  @override
-  void didPush() {
-    // Rebuild when route is pushed
-    setState(() {});
+  /// True when the active route is a thread or new-thread page where the
+  /// bottom nav should disappear.
+  bool _isFullScreenRoute(BuildContext context) {
+    final currentPath = context.router.currentPath;
+    if (currentPath.endsWith('/new')) return true;
+    final pathSegments =
+        currentPath.split('/').where((s) => s.isNotEmpty).toList();
+    return pathSegments.length >= 3 ||
+        (pathSegments.isNotEmpty && pathSegments.first == 't');
   }
 
-  @override
-  void didPop() {
-    // Rebuild when route is popped
-    setState(() {});
+  /// Maps the active tab + URL to the visual nav index. The Priorities,
+  /// Agenda, and Activity tabs each map directly to their bottom-nav
+  /// indices; "New" lights up while the user is on `…/new`; thread pages
+  /// hide the nav so they have no highlighted index.
+  int _currentNavIndex(BuildContext context, TabsRouter tabsRouter) {
+    final currentPath = context.router.currentPath;
+    if (currentPath.endsWith('/new')) return _kBtnNew;
+    final pathSegments =
+        currentPath.split('/').where((s) => s.isNotEmpty).toList();
+    if (pathSegments.length >= 3 ||
+        (pathSegments.isNotEmpty && pathSegments.first == 't')) {
+      return -1;
+    }
+    return tabsRouter.activeIndex;
+  }
+
+  void _handleNavTap(
+    BuildContext context,
+    TabsRouter tabsRouter,
+    int index,
+  ) {
+    switch (index) {
+      case _kTabPriorities:
+        tabsRouter.setActiveIndex(_kTabPriorities);
+        return;
+      case _kTabAgenda:
+        tabsRouter.setActiveIndex(_kTabAgenda);
+        return;
+      case _kTabActivity:
+        _activateActivityTab(context, tabsRouter);
+        return;
+      case _kBtnNew:
+        _openNewThread(context, tabsRouter);
+        return;
+      case _kBtnMore:
+        ShowSettings().run(context);
+        return;
+    }
+  }
+
+  /// Switch to the Activity tab. If the tab has no route on its stack
+  /// yet (first activation), push the user's current/default priority.
+  /// If we're already on the Activity tab inside a thread, pop back to
+  /// the priority root instead of staying on the thread.
+  void _activateActivityTab(BuildContext context, TabsRouter tabsRouter) {
+    final activityRouter = tabsRouter.stackRouterOfIndex(_kTabActivity);
+    final alreadyOnTab = tabsRouter.activeIndex == _kTabActivity;
+
+    if (alreadyOnTab && activityRouter != null) {
+      // On the Activity tab — drop back to the priority root if we drilled
+      // deeper (e.g. into a thread or new-thread page). Repeated taps on
+      // the Activity tab while at the root are no-ops.
+      while (activityRouter.canPop()) {
+        activityRouter.maybePop();
+      }
+      return;
+    }
+
+    // First activation of the tab (or switching back to it from another
+    // tab). If the tab already holds a stack, just activate it; else
+    // push the user's current/default priority.
+    if (activityRouter != null && activityRouter.stack.isNotEmpty) {
+      tabsRouter.setActiveIndex(_kTabActivity);
+      return;
+    }
+    final priorityIdString = _activityPriorityIdString(context);
+    if (priorityIdString == null) return;
+    context.router.navigate(
+      PriorityRoute(priorityIdString: priorityIdString),
+    );
+  }
+
+  void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
+    // Always lands on the Activity tab — NewThreadRoute lives there.
+    //
+    // If a PriorityRoute is already mounted (we're on it now, or it's
+    // alive on the Activity tab's stack while another tab is active),
+    // push NewThreadRoute onto its inner stack so the back gesture
+    // returns to that priority. `root.navigate(PriorityRoute(children:[New]))`
+    // only activates the existing PriorityRoute and leaves its inner
+    // stack on the default PriorityOnlyRoute — producing the "opens
+    // Activity, not New" bug when triggered from Agenda or Priorities.
+    final innerRouter = _findPriorityInnerRouter(context.router.root);
+    if (innerRouter != null) {
+      if (tabsRouter.activeIndex != _kTabActivity) {
+        tabsRouter.setActiveIndex(_kTabActivity);
+      }
+      if (innerRouter.current.name != NewThreadRoute.name) {
+        innerRouter.push(NewThreadRoute());
+      }
+      return;
+    }
+
+    // PriorityWrapper isn't mounted yet (first activation of Activity
+    // tab on a cold start from Agenda/Priorities). Use path-based
+    // navigation: `navigatePath` resolves the full path match including
+    // the `/new` segment, which seeds the inner stack correctly once
+    // PriorityWrapper's async loading (priority DB read) settles. The
+    // `children: [NewThreadRoute()]` form of `navigate()` drops the
+    // inner child in this case.
+    final priorityIdString = _activityPriorityIdString(context);
+    if (priorityIdString == null) return;
+    context.router.root.navigatePath('/p/$priorityIdString/new');
+  }
+
+  /// Walks the controller tree to find the [StackRouter] hosted by the
+  /// active [PriorityRoute]. [innerRouterOf] is non-recursive, so a deeply
+  /// nested route like PriorityRoute (root → AppShell → tabs → ActivityShell
+  /// → PriorityRoute) needs an explicit walk.
+  StackRouter? _findPriorityInnerRouter(RoutingController root) {
+    final direct =
+        root.innerRouterOf<StackRouter>(PriorityRoute.name);
+    if (direct != null) return direct;
+    for (final child in root.childControllers) {
+      final hit = _findPriorityInnerRouter(child);
+      if (hit != null) return hit;
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     return AutoTabsRouter(
-        homeIndex: 1,
-        routes: [PrioritiesRoute(), EmptyShellRoute("PriorityShell")()],
-        transitionBuilder: (context, child, animation) => child,
-        builder: (context, child) {
-          final tabsRouter = AutoTabsRouter.of(context);
-          return BlocConsumer<LayoutBloc, LayoutState>(
-            listenWhen: (previous, current) =>
-                previous.multiPanel != current.multiPanel,
-            listener: (context, layoutState) {
-              if (layoutState.multiPanel) {
-                tabsRouter.setActiveIndex(1);
+      homeIndex: _kTabAgenda,
+      routes: [
+        PrioritiesRoute(),
+        EmptyShellRoute("AgendaShell")(),
+        EmptyShellRoute("ActivityShell")(),
+      ],
+      transitionBuilder: (context, child, animation) => child,
+      builder: (context, child) {
+        final tabsRouter = AutoTabsRouter.of(context);
+        return BlocBuilder<LayoutBloc, LayoutState>(
+          buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
+          builder: (context, layoutState) {
+            // Multi-panel (desktop / wide layouts) doesn't show the
+            // bottom nav at all and uses tab 2 (the Activity stack) as
+            // the working area. Keep the existing behavior of forcing
+            // the active tab to Activity in multi-panel mode.
+            if (layoutState.multiPanel) {
+              if (tabsRouter.activeIndex != _kTabActivity) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!context.mounted) return;
+                  tabsRouter.setActiveIndex(_kTabActivity);
+                });
               }
-            },
-            buildWhen: (previous, current) =>
-                previous.multiPanel != current.multiPanel,
-            builder: (context, layoutState) {
-              // Determine the correct tab index based on current route
-              int getCurrentIndex() {
-                final currentPath = context.router.currentPath;
-                // If on the dedicated Agenda page, highlight Agenda (1)
-                if (currentPath == '/agenda' ||
-                    currentPath.startsWith('/agenda/')) {
-                  return 1;
-                }
-                // If on NewThreadPage (/p/:priorityId/new), highlight New tab (index 3)
-                if (currentPath.endsWith('/new')) {
-                  return 3;
-                }
-                // If on ThreadPage (/p/:priorityId/threadId), no tab highlighted
-                final pathSegments = currentPath
-                    .split('/')
-                    .where((s) => s.isNotEmpty)
-                    .toList();
-                if (pathSegments.length >= 3 ||
-                    (pathSegments.isNotEmpty && pathSegments.first == 't')) {
-                  return -1;
-                }
-                // On the Threads tab, highlight Activity (2)
-                if (tabsRouter.activeIndex == 1) {
-                  return 2;
-                }
-                // Otherwise use the tab router's active index
-                return tabsRouter.activeIndex;
-              }
+              return child;
+            }
 
-              // Hide bottom nav on full-screen routes (thread detail, new thread)
-              bool isFullScreenRoute() {
-                final currentPath = context.router.currentPath;
-                if (currentPath.endsWith('/new')) return true;
-                final pathSegments = currentPath
-                    .split('/')
-                    .where((s) => s.isNotEmpty)
-                    .toList();
-                return pathSegments.length >= 3 ||
-                    (pathSegments.isNotEmpty && pathSegments.first == 't');
-              }
-
-              return BottomNavigationScope(
-                config: layoutState.multiPanel || isFullScreenRoute()
-                    ? null
-                    : BottomNavigationConfig(
-                        currentIndex: getCurrentIndex(),
-                        onChange: (index) {
-                          final currentPath = context.router.currentPath;
-
-                          if (index == 1) {
-                            // Agenda — navigate to the dedicated /agenda page.
-                            if (currentPath == '/agenda' ||
-                                currentPath.startsWith('/agenda/')) {
-                              return;
-                            }
-                            context.router.push(const AgendaRoute());
-                          } else if (index == 2) {
-                            // Activity — switch to the priority shell (which
-                            // renders the activity feed).
-                            if (currentPath.endsWith('/new')) {
-                              // On NewThreadPage - pop back
-                              context.router.back();
-                            } else {
-                              final pathSegments = currentPath
-                                  .split('/')
-                                  .where((s) => s.isNotEmpty)
-                                  .toList();
-                              if ((pathSegments.length >= 3 ||
-                                      (pathSegments.isNotEmpty &&
-                                          pathSegments.first == 't')) &&
-                                  tabsRouter.activeIndex == 1) {
-                                // On ThreadPage - pop back to PriorityPage
-                                context.router.back();
-                              } else if (pathSegments.isNotEmpty &&
-                                  pathSegments.first == 'agenda') {
-                                // On Agenda — push the activity feed for
-                                // the user's current context priority
-                                // (or default priority if none yet).
-                                final priorityIdString =
-                                    _activityPriorityIdString(context);
-                                if (priorityIdString != null) {
-                                  context.router.push(
-                                    PriorityRoute(
-                                      priorityIdString: priorityIdString,
-                                    ),
-                                  );
-                                }
-                              } else {
-                                tabsRouter.setActiveIndex(1);
-                              }
-                            }
-                            setState(() {});
-                          } else if (index == 3) {
-                              // Navigate to New Thread for current priority
-                              final pathSegments = currentPath
-                                  .split('/')
-                                  .where((s) => s.isNotEmpty)
-                                  .toList();
-
-                              // Check if we're on the Priorities tab
-                              if (pathSegments.isNotEmpty &&
-                                  pathSegments.first == 'priorities') {
-                                // On Priorities tab - navigate to the Activities tab's current priority
-                                final activitiesRouter = tabsRouter
-                                    .stackRouterOfIndex(1);
-
-                                // Switch tabs and navigate in a single frame to avoid flash
-                                tabsRouter.setActiveIndex(1);
-                                final innerRouter = activitiesRouter
-                                    ?.innerRouterOf<StackRouter>(
-                                      PriorityRoute.name,
-                                    );
-
-                                if (innerRouter != null) {
-                                  // Navigate immediately without waiting for frame
-                                  innerRouter.push(NewThreadRoute());
-                                } else {
-                                  // Fallback: wait one frame if inner router not ready
-                                  WidgetsBinding.instance.addPostFrameCallback((
-                                    _,
-                                  ) {
-                                    final innerRouter2 = tabsRouter
-                                        .stackRouterOfIndex(1)
-                                        ?.innerRouterOf<StackRouter>(
-                                          PriorityRoute.name,
-                                        );
-                                    if (innerRouter2 != null) {
-                                      innerRouter2.push(NewThreadRoute());
-                                    }
-                                  });
-                                }
-                              } else if (pathSegments.isNotEmpty &&
-                                  pathSegments.first == 'p') {
-                                // Already on a priority route - push NewThreadRoute directly
-                                final innerRouter = context.router
-                                    .innerRouterOf<StackRouter>(
-                                      PriorityRoute.name,
-                                    );
-                                if (innerRouter != null) {
-                                  innerRouter.push(NewThreadRoute());
-                                } else {
-                                  // Fallback: navigate with full route
-                                  final priorityIdString = pathSegments[1];
-                                  context.router.push(
-                                    PriorityRoute(
-                                      priorityIdString: priorityIdString,
-                                      children: [NewThreadRoute()],
-                                    ),
-                                  );
-                                }
-                              } else if (pathSegments.isNotEmpty &&
-                                  pathSegments.first == 'agenda') {
-                                // On Agenda — push New for the user's
-                                // current context priority (or default
-                                // priority if none yet).
-                                final priorityIdString =
-                                    _activityPriorityIdString(context);
-                                if (priorityIdString != null) {
-                                  context.router.push(
-                                    PriorityRoute(
-                                      priorityIdString: priorityIdString,
-                                      children: [NewThreadRoute()],
-                                    ),
-                                  );
-                                }
-                              }
-                            } else if (index == 4) {
-                              // Open settings modal
-                              ShowSettings().run(context);
-                            } else {
-                              // Index 0: Priorities tab
-                              if (currentPath.endsWith('/new')) {
-                                // On NewThreadPage - pop first then switch tabs
-                                context.router.back();
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  tabsRouter.setActiveIndex(index);
-                                });
-                              } else {
-                                // Normal tab switching
-                                tabsRouter.setActiveIndex(index);
-                              }
-                            }
-                          },
-                          items: [
-                            FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.priorities),
-                              label: _buildNavLabel('Priorities'),
-                            ),
-                            FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.agenda),
-                              label: _buildNavLabel('Agenda'),
-                            ),
-                            FBottomNavigationBarItem(
-                              icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-                                builder: (context, state) {
-                                  final pathSegments = context.router.currentPath
-                                      .split('/')
-                                      .where((s) => s.isNotEmpty)
-                                      .toList();
-                                  final priorityIdString =
-                                      pathSegments.isNotEmpty ? pathSegments[0] : null;
-                                  final priority = priorityIdString != null
-                                      ? state.priorities.firstWhereOrNull(
-                                          (p) => p.id.toShortString() == priorityIdString,
-                                        )
-                                      : null;
-                                  final hasUnread = priority != null &&
-                                      (priority.unread ||
-                                          priority.descendants().any((p) => p.unread));
-
-                                  return Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Icon(PlotIcon.activity),
-                                      if (hasUnread)
-                                        Positioned(
-                                          top: -2,
-                                          right: -4,
-                                          child: Container(
-                                            width: 6.0,
-                                            height: 6.0,
-                                            decoration: BoxDecoration(
-                                              color: context.colour.accent.withValues(alpha: 0.7),
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                              label: _buildNavLabel('Activity'),
-                            ),
-                            FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.addNote),
-                              label: _buildNavLabel('New'),
-                            ),
-                            FBottomNavigationBarItem(
-                              icon: StreamBuilder<List<TwistConnectionRow>>(
-                                stream: TwistConnection.watchAll(),
-                                initialData: const [],
-                                builder: (context, snap) {
-                                  final needsReauth = (snap.data ?? const [])
-                                      .any((c) => c.needsReauth);
-                                  if (needsReauth) {
-                                    return Icon(
-                                      PlotIcon.plugCircleExclamation,
-                                      color: context.theme.colors.destructive,
-                                    );
-                                  }
-                                  return Icon(PlotIcon.menu);
-                                },
-                              ),
-                              label: _buildNavLabel('More'),
-                            ),
-                          ],
-                        ),
-                  child: child,
-                );
-              },
+            final hideNav = _isFullScreenRoute(context);
+            final navIndex = _currentNavIndex(context, tabsRouter);
+            return _MobileShellChrome(
+              showNav: !hideNav,
+              currentIndex: navIndex,
+              onChange: (i) => _handleNavTap(context, tabsRouter, i),
+              items: _buildNavItems(context),
+              child: child,
             );
           },
         );
+      },
+    );
+  }
+
+  List<FBottomNavigationBarItem> _buildNavItems(BuildContext context) {
+    return [
+      FBottomNavigationBarItem(
+        icon: Icon(PlotIcon.priorities),
+        label: _buildNavLabel('Priorities'),
+      ),
+      FBottomNavigationBarItem(
+        icon: Icon(PlotIcon.agenda),
+        label: _buildNavLabel('Agenda'),
+      ),
+      FBottomNavigationBarItem(
+        icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+          builder: (context, state) {
+            final pathSegments = context.router.currentPath
+                .split('/')
+                .where((s) => s.isNotEmpty)
+                .toList();
+            final priorityIdString =
+                pathSegments.isNotEmpty ? pathSegments[0] : null;
+            final priority = priorityIdString != null
+                ? state.priorities.firstWhereOrNull(
+                    (p) => p.id.toShortString() == priorityIdString,
+                  )
+                : null;
+            final hasUnread = priority != null &&
+                (priority.unread ||
+                    priority.descendants().any((p) => p.unread));
+
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(PlotIcon.activity),
+                if (hasUnread)
+                  Positioned(
+                    top: -2,
+                    right: -4,
+                    child: Container(
+                      width: 6.0,
+                      height: 6.0,
+                      decoration: BoxDecoration(
+                        color: context.colour.accent.withValues(alpha: 0.7),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        label: _buildNavLabel('Activity'),
+      ),
+      FBottomNavigationBarItem(
+        icon: Icon(PlotIcon.addNote),
+        label: _buildNavLabel('New'),
+      ),
+      FBottomNavigationBarItem(
+        icon: StreamBuilder<List<TwistConnectionRow>>(
+          stream: TwistConnection.watchAll(),
+          initialData: const [],
+          builder: (context, snap) {
+            final needsReauth =
+                (snap.data ?? const []).any((c) => c.needsReauth);
+            if (needsReauth) {
+              return Icon(
+                PlotIcon.plugCircleExclamation,
+                color: context.theme.colors.destructive,
+              );
+            }
+            return Icon(PlotIcon.menu);
+          },
+        ),
+        label: _buildNavLabel('More'),
+      ),
+    ];
+  }
+}
+
+/// Renders the active tab content with a persistent bottom nav overlaid
+/// on top via a [Stack].
+///
+/// Earlier iterations used `Column(Expanded(child), AnimatedSize(nav))`,
+/// but resizing the body whenever the nav showed or hid disrupted any
+/// in-flight page transition inside the body's [AutoRouter] — pushes and
+/// pops swapped content instantly because the transitioning Navigator's
+/// bounds were changing under it. Using a Stack keeps the body's bounds
+/// constant; the nav slides in/out via translation without affecting the
+/// content area.
+class _MobileShellChrome extends StatelessWidget {
+  const _MobileShellChrome({
+    required this.child,
+    required this.showNav,
+    required this.currentIndex,
+    required this.onChange,
+    required this.items,
+  });
+
+  final Widget child;
+  final bool showNav;
+  final int currentIndex;
+  final ValueChanged<int> onChange;
+  final List<FBottomNavigationBarItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(child: child),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: AnimatedSlide(
+            offset: showNav ? Offset.zero : const Offset(0, 1),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            child: IgnorePointer(
+              ignoring: !showNav,
+              child: _PersistentBottomNav(
+                currentIndex: currentIndex < 0 ? 0 : currentIndex,
+                onChange: onChange,
+                items: items,
+                highlight: currentIndex >= 0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PersistentBottomNav extends StatelessWidget {
+  const _PersistentBottomNav({
+    required this.currentIndex,
+    required this.onChange,
+    required this.items,
+    required this.highlight,
+  });
+
+  final int currentIndex;
+  final ValueChanged<int> onChange;
+  final List<FBottomNavigationBarItem> items;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    return FTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.theme.colors.background,
+          ),
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            // When the current route doesn't correspond to any tab (e.g.
+            // a thread) we render the nav with no highlighted item by
+            // hiding the selection ring via opacity tricks. In practice
+            // we only render when [highlight] is true since
+            // [_MobileShellChrome] hides the nav on those routes; the
+            // flag is kept for completeness.
+            child: Opacity(
+              opacity: highlight ? 1.0 : 0.0,
+              child: FBottomNavigationBar(
+                index: currentIndex,
+                onChange: onChange,
+                children: items,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
