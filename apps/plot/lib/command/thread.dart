@@ -907,28 +907,6 @@ class MarkReadThread extends _UpdateThreadCommand {
   }
 }
 
-class MarkUnreadThread extends _UpdateThreadCommand {
-  MarkUnreadThread(super.thread, {super.onUpdate})
-    : super(
-        title: 'Mark unread',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: FontAwesomeIcons.eyeSlash,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    if (thread.unread) return const CommandDone();
-    // Clear `readAt` so the unread state isn't suppressed by the
-    // local-override the activity feed query checks alongside `unread = true`.
-    await saveOptimistically(
-      context,
-      thread.copyWith(unread: true, readAt: const Value(null)),
-    );
-    return const CommandDone();
-  }
-}
-
 class FinishThread extends _UpdateThreadCommand {
   FinishThread(
     super.thread, {
@@ -3229,7 +3207,7 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
-      thread.unread ? MarkReadThread(thread) : MarkUnreadThread(thread),
+      if (thread.unread) MarkReadThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
       if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
@@ -3256,7 +3234,7 @@ List<Command> threadCommands(
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
-    thread.unread ? MarkReadThread(thread) : MarkUnreadThread(thread),
+    if (thread.unread) MarkReadThread(thread),
     if (!skipInfrequent) EditThread(thread),
     if (!skipInfrequent) MoveThreadToPriority(thread),
     PickThreadShared(thread),
