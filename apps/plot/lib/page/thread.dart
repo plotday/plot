@@ -412,7 +412,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     scrollable: false,
                     translucent: true,
                     childPad: false,
-                    body: Column(
+                    body: LayoutBuilder(
+                      builder: (context, panelConstraints) {
+                        return Column(
                       children: [
                         if (state.threadNoteId != null)
                           _ThreadFilterBar(threadNoteId: state.threadNoteId!),
@@ -438,7 +440,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                           ),
                         ),
                         ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 300),
+                          constraints: BoxConstraints(
+                            maxHeight: panelConstraints.maxHeight * 0.4,
+                          ),
                           child: Padding(
                             padding: EdgeInsets.only(
                               left: context.isMultiPanel ? 20.0 : 0,
@@ -457,6 +461,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                           ),
                         ),
                       ],
+                    );
+                      },
                     ),
                   ),
                 ),
