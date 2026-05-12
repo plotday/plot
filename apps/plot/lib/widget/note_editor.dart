@@ -511,7 +511,11 @@ class NoteEditorState extends State<NoteEditor> {
                               left: 6,
                               right: 6,
                             ),
-                            child: editor,
+                            child: ScrollEdgeFade(
+                              background:
+                                  context.theme.plotColors.editableBackground,
+                              child: editor,
+                            ),
                           ),
                         ),
                         if (_isEmpty)
