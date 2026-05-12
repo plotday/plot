@@ -392,7 +392,11 @@ class _ButtonState extends State<Button> {
     // In light mode, fade the inactive icon well toward the background so
     // hover (foreground) is a dramatic brightness jump. Dark mode already
     // has enough contrast between foreground and primary, so we leave it.
+    // Primary buttons opt out: the theme already paints the icon in the
+    // accent color over a pale tinted background, and fading toward the
+    // page background makes the button read as disabled.
     final isLight = context.colour.brightness == Brightness.light;
+    final isPrimary = widget.style == ButtonStyle.primary;
     final iconStyle = sizeStyles.md.iconContentStyle.iconStyle;
     final restingColor = Color.lerp(
       context.colour.foreground,
@@ -409,7 +413,7 @@ class _ButtonState extends State<Button> {
       // ignore: unused_result
       iconContentStyle: FButtonIconContentStyleDelta.delta(
         padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
-        iconStyle: isLight
+        iconStyle: isLight && !isPrimary
             ? _iconVariants(
                 base: iconStyle.resolve({}).copyWith(color: restingColor),
                 hovered: iconStyle
