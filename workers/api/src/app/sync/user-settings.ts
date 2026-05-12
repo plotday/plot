@@ -58,6 +58,11 @@ userSettings.post("/sync/user-settings", async (c) => {
       user_id: userId,
       p_enter_behavior: body.enter_behavior || null,
       p_onboarding_completed: body.onboarding_completed ?? null,
+      // tracking_paused_at uses a sentinel epoch for explicit clear so an
+      // omitted field stays "no change" rather than auto-resuming. The
+      // function's CASE handles the sentinel; here we just forward null
+      // when the client didn't send the field.
+      p_tracking_paused_at: body.tracking_paused_at ?? null,
     });
   });
 

@@ -1,7 +1,10 @@
+import 'package:rxdart/rxdart.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/time_tracking_modal.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
@@ -134,19 +137,29 @@ class _PriorityWidgetState extends State<PriorityWidget> {
           padding: EdgeInsets.only(right: leadingH),
           child: SizedBox(
             height: buttonSlotHeight,
-            child: hovered
-                ? Row(
-                    children: [
-                      Button.icon(
-                        SetTopPriority(
-                          priority,
-                          priority.topOrder == null,
-                        ),
-                      ),
-                      Button.icon(ShowPriorityCommands(priority)),
-                    ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Resting: weekly total chip → tap opens the time-tracking
+                // modal. Hover: replaced by the Time log icon button so the
+                // hover row stays a clean stack of icon controls.
+                if (!hovered)
+                  _PriorityWeeklyTotal(
+                    priority: priority,
+                    selected: widget.selected,
                   )
-                : null,
+                else ...[
+                  Button.icon(ShowTimeLog(priority)),
+                  Button.icon(
+                    SetTopPriority(
+                      priority,
+                      priority.topOrder == null,
+                    ),
+                  ),
+                  Button.icon(ShowPriorityCommands(priority)),
+                ],
+              ],
+            ),
           ),
         );
       },
@@ -421,4 +434,112 @@ class PriorityLabel extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Weekly time-tracking total displayed on the right of a [PriorityWidget]
+/// tile. Always visible (unlike the hover-only action buttons that sit
+/// next to it). Reads local Session rows for this week — no server call,
+/// so the value is correct offline up to the latest sync.
+///
+/// Tapping opens [TimeTrackingModal] showing per-day totals with the
+/// ±15m manual-adjustment controls.
+class _PriorityWeeklyTotal extends StatefulWidget {
+  const _PriorityWeeklyTotal({required this.priority, this.selected = false});
+
+  final Priority priority;
+  final bool selected;
+
+  @override
+  State<_PriorityWeeklyTotal> createState() => _PriorityWeeklyTotalState();
+}
+
+class _PriorityWeeklyTotalState extends State<_PriorityWeeklyTotal> {
+  // Cache the combined stream so its identity stays stable across rebuilds.
+  // Rebuilding it on every build() — which happens whenever an enclosing
+  // bloc (NowBloc, PrioritiesBloc, …) emits — causes StreamBuilder to drop
+  // its snapshot and re-subscribe, leaving the chip blank for a frame until
+  // both inputs re-emit. That blank frame is the visible flicker.
+  late Stream<Duration> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _buildStream();
+  }
+
+  @override
+  void didUpdateWidget(_PriorityWeeklyTotal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Recreate only when the inputs that drive the query change. The
+    // descendants stream keys off `priority.path.value`; the totals stream
+    // keys off `priority` (via the ids set). Other priority fields (title,
+    // color, unread, …) don't affect the duration so they shouldn't force
+    // a resubscribe.
+    if (oldWidget.priority.id != widget.priority.id ||
+        oldWidget.priority.path != widget.priority.path) {
+      _stream = _buildStream();
+    }
+  }
+
+  Stream<Duration> _buildStream() {
+    // Per-minute tick so the displayed total advances during an active
+    // session even when no DB row updates — `Session.resume` only fires
+    // when the priority has a pending target, so a plain DB stream
+    // wouldn't tick for sessions tracked without one.
+    return Rx.combineLatest3<Set<PriorityId>, List<Session>, void, Duration>(
+      Session.watchSelfAndDescendantIds(widget.priority),
+      Session.watch(range: Week.current()),
+      Stream<void>.periodic(const Duration(minutes: 1), (_) {}).startWith(null),
+      (ids, sessions, _) =>
+          Session.sumDuration(sessions, ids, until: Time.now()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Aggregate over this priority AND its descendants by path — a parent's
+    // row surfaces the rolled-up time spent anywhere in its subtree. Path
+    // lookup is the source of truth (in-memory `children` aren't fully
+    // hydrated on every priority instance — the priorities list only
+    // links direct children, while the header has the full tree).
+    return StreamBuilder<Duration>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        final total = snapshot.data ?? Duration.zero;
+        // Hide the chip when there's nothing to show — never display 0m.
+        if (total.inMinutes < 1) return const SizedBox.shrink();
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () =>
+              TimeTrackingModal(priority: widget.priority).show<void>(context),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(
+              formatTrackedDuration(total),
+              style: TextStyle(
+                fontSize: context.theme.typography.sm.fontSize,
+                color: widget.selected
+                    ? context.theme.colors.mutedForeground
+                    : context.theme.plotColors.veryMuted,
+                height: 1,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Compact "Xh Ym" formatter used by every time-tracking surface (tile
+/// chip, header indicator, modal totals). Hours-only or minutes-only
+/// elide the zero component. Caller is responsible for not showing the
+/// result at all when the duration is zero (per the "never display 0m"
+/// rule).
+String formatTrackedDuration(Duration d) {
+  final h = d.inHours;
+  final m = d.inMinutes - h * 60;
+  if (h == 0) return '${m}m';
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
 }

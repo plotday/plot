@@ -1,7 +1,10 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
+import 'package:flutter/material.dart' show MaterialPageRoute;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:logging/logging.dart';
 
 import 'auto_sign_in.dart';
@@ -69,9 +72,22 @@ String? _activeThreadId(List<RouteMatch<dynamic>> segments) {
   return current.params.getString('threadId');
 }
 
+/// Flips to `true` after the first frame of the app has rendered. The
+/// thread-route customRouteBuilder consults this to suppress the iOS
+/// slide on cold-start navigations (e.g. iPad multi-panel auto-forward
+/// from PriorityOnlyRoute → NewThreadRoute, deep-linked /t/:id) where
+/// there's no real source page to slide from.
+bool _appFirstFrameRendered = false;
+
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
-  AppRouter();
+  AppRouter() {
+    if (!_appFirstFrameRendered) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _appFirstFrameRendered = true;
+      });
+    }
+  }
 
   // Default to zero-duration on every platform. Shell routes
   // (AppShell, PrioritiesShellRoute, AgendaShell, ActivityShell, the
@@ -85,6 +101,46 @@ class AppRouter extends RootStackRouter {
     reverseDuration: Duration.zero,
     transitionsBuilder: (context, animation, secondaryAnimation, child) =>
         child,
+  );
+
+  /// Route type for ThreadRoute / NewThreadRoute. Picks the
+  /// platform-native push transition for mobile and skips animation
+  /// everywhere else:
+  ///   - iOS    → CupertinoPageRoute (slide + swipe-to-pop)
+  ///   - Android → MaterialPageRoute (Material zoom/fade)
+  ///   - macOS, Windows, Linux, web → no animation
+  /// Cold-start navigations (`_appFirstFrameRendered == false`) always
+  /// skip the transition — there's no source page to animate from when
+  /// the route is mounted as part of initial route resolution (e.g.
+  /// iPad multi-panel auto-forward, deep-linked /t/:id).
+  final RouteType _threadRouteType = RouteType.custom(
+    customRouteBuilder: <T>(context, child, page) {
+      if (!kIsWeb && _appFirstFrameRendered) {
+        switch (defaultTargetPlatform) {
+          case TargetPlatform.iOS:
+            return CupertinoPageRoute<T>(
+              settings: page,
+              builder: (_) => child,
+            );
+          case TargetPlatform.android:
+            return MaterialPageRoute<T>(
+              settings: page,
+              builder: (_) => child,
+            );
+          case TargetPlatform.macOS:
+          case TargetPlatform.windows:
+          case TargetPlatform.linux:
+          case TargetPlatform.fuchsia:
+            break;
+        }
+      }
+      return PageRouteBuilder<T>(
+        settings: page,
+        pageBuilder: (_, _, _) => child,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      );
+    },
   );
 
   @override
@@ -152,11 +208,11 @@ class AppRouter extends RootStackRouter {
                     // This route redirects to NewThreadRoute when the middle panel is
                     // already showing PriorityPage.
                     AutoRoute(page: PriorityOnlyRoute.page, path: ''),
-                    // ThreadRoute and NewThreadRoute opt in to a
-                    // cupertino slide (push from priority page → thread,
-                    // and pop back) on every platform. Pinned here
-                    // rather than relying on `defaultRouteType` so shell
-                    // routes (which inherit the default) don't slide.
+                    // ThreadRoute and NewThreadRoute opt in to native
+                    // push transitions on mobile (cupertino on iOS,
+                    // material on Android). Desktop and web mount
+                    // instantly with no animation, as do iOS/Android
+                    // cold-start navigations. See [_threadRouteType].
                     AutoRoute(
                       page: NewThreadRoute.page,
                       guards: [
@@ -168,12 +224,12 @@ class AppRouter extends RootStackRouter {
                         }),
                       ],
                       path: 'new',
-                      type: const RouteType.cupertino(),
+                      type: _threadRouteType,
                     ),
                     AutoRoute(
                       page: ThreadRoute.page,
                       path: ':threadId',
-                      type: const RouteType.cupertino(),
+                      type: _threadRouteType,
                     ),
                   ],
                 ),

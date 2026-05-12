@@ -862,7 +862,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       orderValue: newOrder,
       effectiveAt: effectiveAt,
     );
-    unawaited(block.save(archiveSameEffectiveAt: true));
+    unawaited(block.save());
   }
 
   /// Drop a thread inside another priority's block — reparents and
@@ -1126,6 +1126,19 @@ class PriorityBloc extends Cubit<PriorityState> {
   double _findPriorityFallback(PriorityId id) {
     final priority = _findPriorityById(id);
     return priority?.order.value ?? 0.0;
+  }
+
+  /// Effective pending duration for [id] at [moment] (defaults to now),
+  /// resolved against the same `priority_block` cache the agenda
+  /// renderer uses. Returns null when the priority has no row with
+  /// `duration` set (= the priority does not currently participate in
+  /// the gap cascade).
+  Duration? pendingDurationFor(PriorityId id, {DateTime? moment}) {
+    final blocks = _priorityBlocksByPriority[id] ?? const <PriorityBlockRow>[];
+    return effectivePriorityDurationAt(
+      moment: moment ?? DateTime.now(),
+      blocksForPriority: blocks,
+    );
   }
 
   Priority? _findPriorityById(PriorityId id) {
@@ -3035,6 +3048,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (hasEnoughItems && syncedPastLastItem) break;
     }
 
+    if (isClosed) return;
     if (_activityFeedSyncNoMore &&
         _activityFeedLastRawRowCount < _activityFeedLimit) {
       emit(state.copyWith(activityFeedDoneEnd: true));

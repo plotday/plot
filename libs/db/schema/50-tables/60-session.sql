@@ -20,6 +20,23 @@ CREATE TABLE "public"."session" (
     "precedence" smallint NOT NULL DEFAULT 0,
     "pomodoro" smallint CHECK (pomodoro IS NULL OR pomodoro > 0),
     "pomodoro_at" timestamp with time zone,
+    -- Provenance of the time recorded by this session row:
+    --   'active' (default) — the client's foreground tracker via
+    --       Session.resume; the user was focused on this priority.
+    --   'event'  — server-finalized chunk for a scheduled event the user
+    --       attended (or didn't decline). Tied to (schedule_id, occurrence_at)
+    --       for idempotency.
+    --   'manual' — manual ±15m adjustment from the time-tracking modal.
+    "source" text NOT NULL DEFAULT 'active' CHECK ("source" IN ('active', 'event', 'manual')),
+    -- For 'event' rows: the scheduled event this session was finalized
+    -- from. NULL for 'active'/'manual' rows. ON DELETE SET NULL so that
+    -- deleting a calendar event keeps the recorded time but breaks the
+    -- idempotency link (no re-creation possible).
+    "schedule_id" uuid REFERENCES public."schedule" (id) ON DELETE SET NULL,
+    -- For 'event' rows on a recurring schedule: the occurrence start.
+    -- Combined with schedule_id, makes the finalizer cron idempotent
+    -- (see idx_session_schedule_occurrence below).
+    "occurrence_at" timestamp with time zone,
     "updated_by" integer NOT NULL DEFAULT 0,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
@@ -32,6 +49,15 @@ CREATE INDEX session_at_idx ON "session" USING spgist (at);
 CREATE INDEX idx_session_user_id ON "public"."session" (user_id)
 WHERE
     archived_at IS NULL;
+
+-- Idempotency key for the event-finalizer cron: at most one non-archived
+-- 'event' session per (user, schedule, occurrence). Partial so it does
+-- not constrain 'active'/'manual' rows which have schedule_id IS NULL.
+CREATE UNIQUE INDEX idx_session_schedule_occurrence
+    ON "public"."session" ("user_id", "schedule_id", "occurrence_at")
+    WHERE
+        "schedule_id" IS NOT NULL
+        AND "archived_at" IS NULL;
 
 CREATE TRIGGER set_session_updated_at
     BEFORE INSERT OR UPDATE ON "public"."session"

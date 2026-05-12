@@ -552,7 +552,10 @@ CREATE OR REPLACE FUNCTION "user".upsert_session (
     p_pomodoro smallint,
     p_pomodoro_at timestamptz,
     p_archived_at timestamptz,
-    p_updated_by integer
+    p_updated_by integer,
+    p_source text DEFAULT 'active',
+    p_schedule_id uuid DEFAULT NULL,
+    p_occurrence_at timestamptz DEFAULT NULL
 )
     RETURNS session
     LANGUAGE plpgsql
@@ -576,8 +579,21 @@ BEGIN
         RAISE EXCEPTION 'Cannot modify another user''s session';
     END IF;
 
-    INSERT INTO session (id, user_id, priority_id, at, precedence, pomodoro, pomodoro_at, archived_at, updated_by)
-        VALUES (COALESCE(p_id, uuidv7()), user_id, p_priority_id, p_at, COALESCE(p_precedence, 0), p_pomodoro, p_pomodoro_at, p_archived_at, COALESCE(p_updated_by, 0))
+    INSERT INTO session (id, user_id, priority_id, at, precedence, pomodoro, pomodoro_at, archived_at, updated_by, source, schedule_id, occurrence_at)
+        VALUES (
+            COALESCE(p_id, uuidv7()),
+            user_id,
+            p_priority_id,
+            p_at,
+            COALESCE(p_precedence, 0),
+            p_pomodoro,
+            p_pomodoro_at,
+            p_archived_at,
+            COALESCE(p_updated_by, 0),
+            COALESCE(p_source, 'active'),
+            p_schedule_id,
+            p_occurrence_at
+        )
     ON CONFLICT (id)
         DO UPDATE SET
             priority_id = EXCLUDED.priority_id,
@@ -587,6 +603,11 @@ BEGIN
             pomodoro_at = EXCLUDED.pomodoro_at,
             archived_at = EXCLUDED.archived_at,
             updated_by = EXCLUDED.updated_by,
+            -- Source/schedule_id/occurrence_at are immutable per session row;
+            -- COALESCE so a partial update from the client doesn't clobber them.
+            source = COALESCE(EXCLUDED.source, session.source),
+            schedule_id = COALESCE(EXCLUDED.schedule_id, session.schedule_id),
+            occurrence_at = COALESCE(EXCLUDED.occurrence_at, session.occurrence_at),
             updated_at = now()
     RETURNING * INTO v_row;
 
@@ -598,7 +619,11 @@ CREATE OR REPLACE FUNCTION "user".upsert_user_settings (
     user_id uuid,
     p_enter_behavior enter_behavior,
     p_ai_enabled boolean DEFAULT NULL,
-    p_onboarding_completed boolean DEFAULT NULL
+    p_onboarding_completed boolean DEFAULT NULL,
+    -- Pass `'1970-01-01T00:00:00Z'::timestamptz` to clear (resume tracking).
+    -- NULL leaves the value unchanged so an offline-only field update doesn't
+    -- clobber a paused state set on another device.
+    p_tracking_paused_at timestamptz DEFAULT NULL
 )
     RETURNS user_settings
     LANGUAGE plpgsql
@@ -608,8 +633,17 @@ CREATE OR REPLACE FUNCTION "user".upsert_user_settings (
 DECLARE
     v_row user_settings;
 BEGIN
-    INSERT INTO user_settings (user_id, enter_behavior, ai_enabled, onboarding_completed)
-        VALUES (upsert_user_settings.user_id, p_enter_behavior, p_ai_enabled, p_onboarding_completed)
+    INSERT INTO user_settings (user_id, enter_behavior, ai_enabled, onboarding_completed, tracking_paused_at)
+        VALUES (
+            upsert_user_settings.user_id,
+            p_enter_behavior,
+            p_ai_enabled,
+            p_onboarding_completed,
+            CASE
+                WHEN p_tracking_paused_at = '1970-01-01T00:00:00Z'::timestamptz THEN NULL
+                ELSE p_tracking_paused_at
+            END
+        )
     ON CONFLICT (user_id)
         DO UPDATE SET
             enter_behavior = EXCLUDED.enter_behavior,
@@ -617,8 +651,28 @@ BEGIN
             -- Once true, stay true: don't let a NULL from a device that hasn't
             -- pulled yet clobber completion set by another device.
             onboarding_completed = COALESCE(EXCLUDED.onboarding_completed, user_settings.onboarding_completed),
+            tracking_paused_at = CASE
+                -- Sentinel epoch means "explicit clear" (resume).
+                WHEN p_tracking_paused_at = '1970-01-01T00:00:00Z'::timestamptz THEN NULL
+                -- NULL from the client means "no change", preserve existing.
+                WHEN p_tracking_paused_at IS NULL THEN user_settings.tracking_paused_at
+                ELSE p_tracking_paused_at
+            END,
             updated_at = now()
     RETURNING * INTO v_row;
+
+    -- Retroactive pause reconciliation: when pause was just set (or moved
+    -- earlier), archive any non-archived 'event' session rows for this user
+    -- whose recorded interval starts at or after the paused instant. Sessions
+    -- of source='active' or 'manual' are user-authored and not touched.
+    IF v_row.tracking_paused_at IS NOT NULL THEN
+        UPDATE public.session
+        SET archived_at = now()
+        WHERE user_id = upsert_user_settings.user_id
+            AND source = 'event'
+            AND archived_at IS NULL
+            AND lower(at) >= v_row.tracking_paused_at;
+    END IF;
 
     RETURN v_row;
 END;
@@ -849,10 +903,12 @@ BEGIN
     END IF;
 END; $function$;
 
--- Upsert a priority_block row. The block records that a priority's
--- order_value applies from `effective_at` forward. Multiple rows form a
--- per-priority timeline; the client decides whether to archive earlier
--- rows by pushing them with archived_at set.
+-- Upsert a priority_block row, keyed on (priority_id, effective_at).
+-- Clients use `effective_at = 'epoch'` for the canonical "current" row
+-- (one per priority) and a future timestamp for planned changes. The
+-- unique index on (priority_id, effective_at) enforces at-most-one row
+-- per slot, so successive adjustments to current pending overwrite in
+-- place rather than appending to a timeline.
 CREATE OR REPLACE FUNCTION "user".upsert_priority_block (
     user_id uuid,
     p_block jsonb
@@ -871,13 +927,14 @@ BEGIN
 
     PERFORM "user".assert_priority_access(upsert_priority_block.user_id, _input.priority_id);
 
-    INSERT INTO priority_block (id, priority_id, user_id, order_value, effective_at, archived_at, created_by, updated_by)
+    INSERT INTO priority_block (id, priority_id, user_id, order_value, effective_at, duration, archived_at, created_by, updated_by)
         VALUES (
             COALESCE(_input.id, uuidv7()),
             _input.priority_id,
             upsert_priority_block.user_id,
             _input.order_value,
             _input.effective_at,
+            _input.duration,
             _input.archived_at,
             _input.created_by,
             COALESCE(_input.updated_by, 0)
@@ -885,6 +942,7 @@ BEGIN
     ON CONFLICT (priority_id, effective_at)
         DO UPDATE SET
             order_value = EXCLUDED.order_value,
+            duration = EXCLUDED.duration,
             archived_at = EXCLUDED.archived_at,
             updated_by = EXCLUDED.updated_by
         RETURNING id INTO _new_id;

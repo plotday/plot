@@ -4,10 +4,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:logging/logging.dart';
 
 import 'package:plot/router.dart';
+import 'package:plot/state/agenda_model.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/store/store.dart';
+// Hide store.dart's `PriorityBlock` (the order-timeline class) to avoid
+// shadowing agenda_model.dart's UI block re-exported via priority.dart.
+// We still need to call its static `setPendingDuration` helper, which
+// lives on the store-side class, so bring it in under an alias.
+import 'package:plot/store/store.dart' hide PriorityBlock;
+import 'package:plot/store/store.dart' as store show PriorityBlock;
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/widget.dart';
@@ -462,21 +468,42 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       'threadIds=${sourceThreadIds.length}',
     );
 
-    if (!sameDate || !samePeriod) {
-      // Cross-period move — rewrite contained-thread schedules to the
-      // target gap anchor. When the target sits above any gap on its
-      // date, fall back to a sensible anchor so the block lands at the
-      // top of that date instead of snapping back on release.
-      DateTime? anchor = target.targetPeriodStart;
-      if (anchor == null) {
-        final td = target.targetDate;
-        if (td != null && td.isAfter(Date.today())) {
-          anchor = td.toDateTime();
-        } else if (td != null) {
-          anchor = DateTime.now();
-        }
+    // Compute a sensible anchor for the target period — falls back to
+    // the target date when the target sits above any gap, so a drop
+    // lands at the top of that date instead of snapping back. Used by
+    // both the cross-period move (thread-bearing sources) and the
+    // reorder path's `periodReferenceTime` for cross-period cascade
+    // drops below.
+    DateTime? targetAnchor = target.targetPeriodStart;
+    if (targetAnchor == null) {
+      final td = target.targetDate;
+      if (td != null && td.isAfter(Date.today())) {
+        targetAnchor = td.toDateTime();
+      } else if (td != null) {
+        targetAnchor = DateTime.now();
       }
-      if (anchor == null) {
+    }
+
+    // If the drop lands inside a gap and the source priority has no
+    // pending duration set, default it to `min(30m, gap.duration)` so
+    // the priority occupies a sensible slice of the gap in the cascade.
+    // Honors the existing pending when set ("use the block's duration"
+    // path). Only fires for cross-period drops — a same-period reorder
+    // doesn't change which gap the block lives in, so it can't be
+    // interpreted as "dropping into" a new gap.
+    if ((!sameDate || !samePeriod) && target.targetPeriodStart != null) {
+      _ensurePendingForGapDrop(
+        bloc,
+        sourcePriority.id,
+        target.targetPeriodStart!,
+        target.targetDate,
+      );
+    }
+
+    if ((!sameDate || !samePeriod) && sourceThreadIds.isNotEmpty) {
+      // Cross-period move of a thread-bearing block — rewrite
+      // contained-thread schedules to the target gap anchor.
+      if (targetAnchor == null) {
         _log.info(
           '[agenda block-drop] cross-period drop with no anchor and no '
           'date — skipping (priority=${sourcePriority.id})',
@@ -485,17 +512,25 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       }
       _log.info(
         '[agenda block-drop] cross-period move: priority=${sourcePriority.id} '
-        'sourceGap=$sourcePeriodStart -> targetGap=$anchor '
+        'sourceGap=$sourcePeriodStart -> targetGap=$targetAnchor '
         '(targetPeriodStart=${target.targetPeriodStart}, '
         'targetDate=${target.targetDate})',
       );
       bloc.moveBlock(
         blockId: payload.blockId,
         threadIds: sourceThreadIds,
-        targetGapAnchorAt: anchor,
+        targetGapAnchorAt: targetAnchor,
       );
       return;
     }
+    // Empty-thread sources (cascade slices representing a priority's
+    // pending duration laid into a gap) fall through to the reorder
+    // path. moveBlock can't act on them — it rewrites thread schedules
+    // and a cascade slice has no threads — so routing here would no-op
+    // and the drop would snap back. The reorder path uses target-side
+    // bracketing only, so it handles both same-period and cross-period
+    // cascade drops once `periodReferenceTime` is set to the target's
+    // anchor below.
 
     // Same-period reorder — find bracketing priority-bearing blocks
     // within the target's period only. Standalone priority blocks
@@ -554,7 +589,8 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       return;
     }
 
-    final periodReferenceTime = target.targetPeriodStart ?? DateTime.now();
+    final periodReferenceTime =
+        targetAnchor ?? target.targetPeriodStart ?? DateTime.now();
     _log.info(
       '[agenda block-drop] same-period reorder: priority=${sourcePriority.id} '
       'above=${above ?? "-"} below=${below ?? "-"} '
@@ -566,6 +602,86 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       above: above,
       below: below,
     );
+  }
+
+  /// When a block lands in a gap and its priority has no pending
+  /// duration, set it to `min(30m, remaining-gap-duration)`. The
+  /// "remaining" gap is the residual band the cascade emitted after
+  /// existing priorities filled part of the gap (if any), otherwise
+  /// the full original gap. This makes the default react to what's
+  /// already booked: dropping into a half-filled 1h gap defaults to
+  /// the remaining 30 minutes rather than overflowing into the next
+  /// period.
+  void _ensurePendingForGapDrop(
+    PriorityBloc bloc,
+    PriorityId priorityId,
+    DateTime targetPeriodStart,
+    Date? targetDate,
+  ) {
+    final current = bloc.pendingDurationFor(priorityId);
+    if (current != null && current > Duration.zero) return;
+
+    final available = _availableInGap(
+      bloc.state.agenda,
+      targetPeriodStart,
+      targetDate,
+    );
+    if (available == null || available <= Duration.zero) {
+      _log.info(
+        '[agenda block-drop] skip pending default: no gap room at '
+        'periodStart=$targetPeriodStart date=$targetDate',
+      );
+      return;
+    }
+    const defaultBlock = Duration(minutes: 30);
+    final newPending = available < defaultBlock ? available : defaultBlock;
+    _log.info(
+      '[agenda block-drop] defaulting pending duration: priority=$priorityId '
+      'period=$targetPeriodStart available=$available -> $newPending',
+    );
+    // Fire-and-forget — the next agenda rebuild picks up the new row
+    // and the priority's cascade slice lands in the target gap.
+    unawaited(
+      store.PriorityBlock.setPendingDuration(priorityId, newPending),
+    );
+  }
+
+  /// Returns the available room in the gap anchored at [periodStart].
+  /// Prefers the residual band (the leftover the cascade emitted after
+  /// existing priorities consumed part of the gap) so the caller
+  /// reasons over what's actually free; falls back to the full gap
+  /// from `max(now, gap.start)` when no residual exists.
+  Duration? _availableInGap(
+    AgendaModel agenda,
+    DateTime periodStart,
+    Date? targetDate,
+  ) {
+    GapBlock? original;
+    GapBlock? residual;
+    for (final section in agenda.sections) {
+      if (targetDate != null &&
+          section is DateSection &&
+          section.date != targetDate) {
+        continue;
+      }
+      for (final block in section.blocks) {
+        if (block is! GapBlock) continue;
+        if (block.periodAnchor == periodStart) {
+          residual ??= block;
+        } else if (block.range.start == periodStart) {
+          original ??= block;
+        }
+      }
+    }
+    final gap = residual ?? original;
+    if (gap == null) return null;
+    final start = gap.range.start;
+    final end = gap.range.end;
+    if (start == null || end == null) return null;
+    final nowTs = DateTime.now();
+    final effectiveStart = nowTs.isAfter(start) ? nowTs : start;
+    if (!effectiveStart.isBefore(end)) return null;
+    return end.difference(effectiveStart);
   }
 
   /// Resolve the listItems index where a [BlockDropTarget] sits.

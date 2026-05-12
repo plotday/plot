@@ -1,9 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:plot/analytics/tracker.dart' show EventObject, EventAction;
 import 'package:plot/command/command.dart';
 import 'package:plot/state/agenda_model.dart';
-import 'package:plot/store/store.dart';
+// The store also exports a `PriorityBlock` (the Drift store wrapper for
+// priority_block rows). In this file we only need the agenda's UI block,
+// so hide the store name to disambiguate `block is PriorityBlock`.
+import 'package:plot/store/store.dart' hide PriorityBlock;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/router.dart';
@@ -12,23 +16,34 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
-import 'package:plot/widget/duration_control.dart';
 import 'package:plot/widget/widget.dart';
 
-/// Width of the leading column: widest possible time string + horizontal padding.
-/// Used by both [AgendaTile] gap rows and [ThreadWidget] leading areas.
+/// Width of the leading column: max of the widest time string and the
+/// widest duration string (both at sm font), plus horizontal padding.
+/// The gutter holds time on row 1 and duration on row 2 — sizing it to
+/// the longest of either keeps the rest of the agenda aligned.
 double agendaLeadingWidth(BuildContext context) {
   final isWide = context.isMultiPanel;
   final maxTimeText = isWide ? '12:55 pm' : '12:55p';
-  final fontSize = context.theme.typography.sm.fontSize;
-  final textWidth = (TextPainter(
+  final smSize = context.theme.typography.sm.fontSize;
+  final timeWidth = (TextPainter(
     text: TextSpan(
       text: maxTimeText,
-      style: TextStyle(fontSize: fontSize),
+      style: TextStyle(fontSize: smSize),
     ),
     maxLines: 1,
     textDirection: TextDirection.ltr,
   )..layout()).width;
+  const maxDurationText = '23h 59m';
+  final durationWidth = (TextPainter(
+    text: TextSpan(
+      text: maxDurationText,
+      style: TextStyle(fontSize: smSize),
+    ),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+  )..layout()).width;
+  final textWidth = timeWidth > durationWidth ? timeWidth : durationWidth;
   final pad = context.theme.spacing.sm;
   return textWidth + pad * 2;
 }
@@ -223,7 +238,7 @@ class AgendaTile extends StatelessWidget {
                 children: [
                   TextSpan(
                     text: dateMonth!.trimLeft(),
-                    style: TextStyle(color: veryMuted),
+                    style: TextStyle(color: context.theme.plotColors.muted),
                   ),
                   const TextSpan(text: ' '),
                   TextSpan(
@@ -503,10 +518,19 @@ class _BlockHeaderState extends State<_BlockHeader> {
   BlockDragController? _dragController;
   bool _isHovered = false;
 
-  // TODO(agenda-menu): once time-management commands exist for agenda
-  // blocks, wrap the row returned from build() in a Swipeable on touch
-  // with `endLongCommand: ShowBlockCommands(...)` so the long-left swipe
-  // opens the block menu (matches ThreadWidget + PriorityWidget).
+  /// Live pending-duration for [PriorityBlock] headers. Subscribed in
+  /// [initState]/[didUpdateWidget] so the gutter label and the hover
+  /// +/- bump buttons read the same value without each instantiating
+  /// their own [StreamSubscription].
+  StreamSubscription<Duration?>? _pendingSub;
+  Duration? _priorityPending;
+
+  // Touch: short swipes on the block header bump the editable duration
+  // by ±15m (right = +, left = −) — the hover ± buttons are mouse-only.
+  // See [_wrapSwipe]. Long-swipe slots are still free for a future
+  // block-menu command (TODO(agenda-menu)).
+
+  static const _swipeBumpStep = Duration(minutes: 15);
 
   /// True when this block header is itself a drag source (a non-event
   /// block with a known parent block id). Outside-priority gating is
@@ -519,6 +543,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   void initState() {
     super.initState();
     _scheduleTick();
+    _subscribePending();
   }
 
   @override
@@ -539,13 +564,28 @@ class _BlockHeaderState extends State<_BlockHeader> {
       _tick?.cancel();
       _scheduleTick();
     }
+    if (oldWidget.priority.id != widget.priority.id ||
+        (oldWidget.block is PriorityBlock) != (widget.block is PriorityBlock)) {
+      _pendingSub?.cancel();
+      _priorityPending = null;
+      _subscribePending();
+    }
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    _pendingSub?.cancel();
     _dragController?.removeListener(_onDragChanged);
     super.dispose();
+  }
+
+  void _subscribePending() {
+    if (widget.block is! PriorityBlock) return;
+    _pendingSub = NowBloc.watchPendingDuration(widget.priority.id).listen((d) {
+      if (!mounted) return;
+      setState(() => _priorityPending = d);
+    });
   }
 
   void _onDragChanged() {
@@ -671,220 +711,257 @@ class _BlockHeaderState extends State<_BlockHeader> {
       );
     }
 
-    // Row 1 trailing widget: static duration (with hover stepper) or
-    // active-timing display ("↑Xm / Ym") while the event is in progress.
-    Widget? row1Trailing;
-    if (widget.now && thread?.at?.start != null) {
-      final currentTime = Time.now();
-      final start = thread!.at!.start!;
-      final end = thread.at!.end;
-      final elapsed = currentTime.difference(start).inMinutes;
-      final parts = <Widget>[];
-      if (elapsed >= 1) {
-        parts.add(
-          Text(
-            '↑${Duration(minutes: elapsed).format()}',
-            style: TextStyle(color: fg, fontSize: secondarySize, height: 1),
-          ),
-        );
-      }
-      if (end != null && end.isAfter(currentTime)) {
-        final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
-        if (parts.isNotEmpty) parts.add(SizedBox(width: spacing.xs));
-        parts.add(
-          Text(
-            '/ ${Duration(minutes: remaining).format()}',
-            style: TextStyle(
-              color: mutedFg,
-              fontSize: secondarySize,
-              height: 1,
-            ),
-          ),
-        );
-      }
-      if (parts.isNotEmpty) {
-        // 6px right padding mirrors [DurationControl]'s intrinsic right
-        // padding so the active-timing text right-aligns at the same x
-        // as a static duration would.
-        row1Trailing = Padding(
-          padding: const EdgeInsets.only(right: 6),
-          child: Row(mainAxisSize: MainAxisSize.min, children: parts),
-        );
-      }
-    } else {
-      // Only render the duration affordance when there's a duration to
-      // show or an event thread the user can edit. For non-event blocks
-      // (no thread, no time) an empty [DurationControl] would otherwise
-      // eat ~30px of the priority label's width and force premature
-      // truncation of the breadcrumb.
-      final dur = dateTimeRange?.duration;
-      final hasDuration = dur != null && dur.inSeconds > 0;
-      if (hasDuration || thread != null) {
-        row1Trailing = DurationControl(
-          value: dur,
-          onChanged: thread == null
-              ? null
-              : (newDur) => SetThreadDuration(thread, newDur).run(context),
-          foreground: context.theme.colors.mutedForeground,
-        );
-      }
-    }
-
-    // Row 2 trailing widget: RSVP summary, padded 6px on the right so
-    // its visible right edge lands at the same x as the duration above
-    // (which sits 6px inset within [DurationControl]).
+    // Row 2 trailing widget: RSVP summary, right-padded so its visible
+    // edge lands at the same x as the right edge of the content area.
     Widget? row2Trailing;
     if (thread != null && thread.hasOtherAttendees) {
-      row2Trailing = Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: RsvpSummary(activity: thread, fontSize: secondarySize),
-      );
+      row2Trailing = RsvpSummary(activity: thread, fontSize: secondarySize);
     }
 
     final timeColWidth = agendaLeadingWidth(context);
 
-    // Right padding mirrors gap rows so trailing items terminate at the
-    // same x as gap durations. We subtract 6 to absorb [DurationControl]'s
-    // intrinsic right-side text padding — every trailing widget then
-    // ensures its visible right edge lands at (containerFullWidth -
-    // rightPad), matching gap row duration alignment.
+    // Right padding lands trailing items at the agenda's outer edge.
     final isWide = context.isMultiPanel;
-    final rightPad = isWide
-        ? spacing.lg
-        : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
-              .resolve(TextDirection.ltr)
-              .right;
+    final iconPad = context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+        .resolve(TextDirection.ltr);
+    final rightPad = isWide ? spacing.lg : iconPad.right;
 
     // Unread dot color: priority accent at reduced alpha to mirror
     // [PriorityNotification]'s _DotPainter treatment.
     final unreadColor = fg.withValues(alpha: 0.7);
 
-    final hasSecondRow = summary.isNotEmpty || row2Trailing != null;
+    // Active in-progress event timing ("↑Xm / Ym") moves to the gutter
+    // row 2 in place of the static duration label when a now-event is
+    // showing. The two parts use foreground / muted-foreground so the
+    // elapsed/remaining contrast is preserved.
+    Widget? gutterRow2;
+    if (widget.now && thread?.at?.start != null) {
+      final currentTime = Time.now();
+      final start = thread!.at!.start!;
+      final end = thread.at!.end;
+      final elapsed = currentTime.difference(start).inMinutes;
+      final parts = <InlineSpan>[];
+      if (elapsed >= 1) {
+        parts.add(
+          TextSpan(
+            text: '↑${Duration(minutes: elapsed).format()}',
+            style: TextStyle(color: fg),
+          ),
+        );
+      }
+      if (end != null && end.isAfter(currentTime)) {
+        final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
+        if (parts.isNotEmpty) parts.add(const TextSpan(text: ' '));
+        parts.add(
+          TextSpan(
+            text: '/ ${Duration(minutes: remaining).format()}',
+            style: TextStyle(color: mutedFg),
+          ),
+        );
+      }
+      if (parts.isNotEmpty) {
+        gutterRow2 = Text.rich(
+          TextSpan(
+            style: TextStyle(fontSize: secondarySize, height: 1),
+            children: parts,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+      }
+    } else if (block is PriorityBlock) {
+      // PriorityBlock cascade: prefer the live-decremented value from
+      // [NowBloc.watchPendingDuration] so the gutter ticks down while an
+      // active session is consuming the priority's pending. Falls back
+      // to the static cascade slice on the first frame before the stream
+      // emits, and when the block isn't subscribed.
+      final slice = block.cascadeDuration;
+      final displayed = _priorityPending ?? slice;
+      if (displayed != null) {
+        gutterRow2 = Text(
+          _formatDuration(displayed),
+          style: TextStyle(
+            fontSize: secondarySize,
+            color: mutedColor,
+            height: 1,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+      }
+    } else {
+      final dur = dateTimeRange?.duration;
+      if (dur != null && dur.inSeconds > 0) {
+        gutterRow2 = Text(
+          dur.format(),
+          style: TextStyle(
+            fontSize: secondarySize,
+            color: mutedColor,
+            height: 1,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+      }
+    }
 
-    final inner = Stack(
-      alignment: Alignment.center,
+    // Row 2 renders whenever ANY column has content for it: the gutter
+    // duration label, the summary text, or a row-2 trailing widget. The
+    // empty side (e.g. summary text on a duration-only [GapBlock]) just
+    // renders a placeholder so both columns stay vertically aligned.
+    final hasSecondRow =
+        gutterRow2 != null || summary.isNotEmpty || row2Trailing != null;
+
+    // Hover bump callback: events update the thread's duration; priority
+    // blocks update the priority's total pending (slice-aware — see
+    // [_applyPriorityBump]). Null when no editable duration is exposed
+    // (e.g. GapBlock headers without a thread). Shared with [_wrapSwipe]
+    // so the touch swipe gestures and the desktop hover ± buttons
+    // operate on the same underlying value/callback.
+    final (currentDuration, onBumpDuration) = _computeBumpInfo(context);
+
+    final innerRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Gutter: time (row 1) + unread dot (row 2). The unread
-            // dot lives in the gutter rather than the main content so
-            // it doesn't push the summary text and so multiple
-            // priority blocks with unread state read as a vertical
-            // column of indicators.
-            SizedBox(
-              width: timeColWidth,
-              child: Padding(
-                padding: EdgeInsets.only(right: spacing.sm),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+        // Gutter: time (row 1) + duration / active timing (row 2).
+        // Both right-aligned within the gutter so the values stack
+        // cleanly. Duration uses xs font; since durations never have
+        // descenders, the row 2 box can hug the glyph height.
+        SizedBox(
+          width: timeColWidth,
+          child: Padding(
+            padding: EdgeInsets.only(right: spacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SizedBox(
+                  height: primarySize,
+                  child: timeText != null
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            timeText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.theme.colors.foreground,
+                              fontSize: secondarySize,
+                              height: 1,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                if (hasSecondRow) ...[
+                  SizedBox(height: spacing.sm),
+                  SizedBox(
+                    height: secondarySize * 1.25,
+                    child: gutterRow2 != null
+                        ? Align(
+                            alignment: Alignment.centerRight,
+                            child: gutterRow2,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: primarySize,
+                child: Row(
                   children: [
-                    SizedBox(
-                      height: primarySize,
-                      child: timeText != null
-                          ? Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                timeText,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: context.theme.colors.mutedForeground,
-                                  fontSize: secondarySize,
-                                  height: 1,
-                                ),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                    Expanded(
+                      child: PriorityLabel(
+                        priority: priority,
+                        color: fg,
+                        mutedAncestorColor: mutedFg,
+                        fontSize: secondarySize,
+                        height: 1,
+                      ),
                     ),
-                    if (hasSecondRow) ...[
-                      SizedBox(height: spacing.sm),
-                      SizedBox(
-                        height: secondarySize * 1.25,
-                        child: hasUnread
-                            ? Align(
-                                alignment: Alignment.centerRight,
-                                child: Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: BoxDecoration(
-                                    color: unreadColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
+                    if (hasUnread) ...[
+                      SizedBox(width: spacing.md),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: unreadColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ],
                   ],
                 ),
               ),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: primarySize,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: PriorityLabel(
-                            priority: priority,
-                            color: fg,
-                            mutedAncestorColor: mutedFg,
+              if (hasSecondRow) ...[
+                SizedBox(height: spacing.sm),
+                SizedBox(
+                  height: secondarySize * 1.25,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text.rich(
+                          summarySpan,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
                             fontSize: secondarySize,
                             height: 1,
                           ),
                         ),
-                        if (row1Trailing != null) ...[
-                          SizedBox(width: spacing.md),
-                          row1Trailing,
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (hasSecondRow) ...[
-                    SizedBox(height: spacing.sm),
-                    SizedBox(
-                      height: secondarySize * 1.25,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Expanded(
-                            child: Text.rich(
-                              summarySpan,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: secondarySize,
-                                height: 1.25,
-                              ),
-                            ),
-                          ),
-                          if (row2Trailing != null) ...[
-                            SizedBox(width: spacing.sm),
-                            row2Trailing,
-                          ],
-                        ],
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
+                      if (row2Trailing != null) ...[
+                        SizedBox(width: spacing.sm),
+                        row2Trailing,
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );
+
+    // Float the hover +/− buttons centred vertically over the whole
+    // block (both rows). Matches the original [_PendingDurationControl]
+    // float behaviour while keeping the new [ThreadWidget]-style icon
+    // buttons and edge-fade gradient.
+    final Widget inner = onBumpDuration == null
+        ? innerRow
+        : Stack(
+            alignment: Alignment.centerRight,
+            clipBehavior: Clip.none,
+            children: [
+              innerRow,
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: _BlockHoverDurationButtons(
+                  current: currentDuration,
+                  onChanged: onBumpDuration,
+                  background: bg,
+                  visible: _isHovered,
+                ),
+              ),
+            ],
+          );
 
     return Container(
       color: bg,
       padding: EdgeInsets.only(
         top: spacing.md,
         bottom: spacing.md,
-        right: trailingHandle != null ? 0 : rightPad - 6,
+        right: trailingHandle != null ? 0 : rightPad,
       ),
       child: trailingHandle == null
           ? inner
@@ -896,6 +973,98 @@ class _BlockHeaderState extends State<_BlockHeader> {
               ],
             ),
     );
+  }
+
+  /// Returns the editable duration value and the bump callback for this
+  /// block: events update the thread's duration; priority blocks update
+  /// the priority's total pending (slice-aware — see [_applyPriorityBump]).
+  /// Both elements are `null` when no editable duration is exposed
+  /// (e.g. GapBlock headers without a thread).
+  (Duration?, ValueChanged<Duration?>?) _computeBumpInfo(BuildContext context) {
+    final block = widget.block;
+    final thread = widget.thread;
+    if (thread != null) {
+      return (
+        widget.dateTimeRange?.duration,
+        (newDur) => SetThreadDuration(thread, newDur).run(context),
+      );
+    }
+    if (block is PriorityBlock) {
+      final slice = block.cascadeDuration;
+      final current = _priorityPending ?? slice;
+      return (
+        current,
+        (newDur) => _applyPriorityBump(
+          context: context,
+          priority: block.priority,
+          newDisplayed: newDur,
+          currentDisplayed: current,
+          totalPending: slice,
+        ),
+      );
+    }
+    return (null, null);
+  }
+
+  Duration? _bumpedDuration(Duration? current, Duration delta) {
+    final next = (current ?? Duration.zero) + delta;
+    if (next <= Duration.zero) return null;
+    return next;
+  }
+
+  /// On touch, wrap [child] in a [Swipeable] whose short right/left
+  /// gestures add/subtract 15 minutes from the block's editable duration.
+  /// Mirrors the hover ± buttons used on desktop. No-op on devices with
+  /// a physical keyboard (the hover row is sufficient) or when this
+  /// block has no editable duration (e.g. empty gap headers).
+  Widget _wrapSwipe(BuildContext context, Widget child) {
+    if (hasPhysicalKeyboard()) return child;
+    final (current, onBump) = _computeBumpInfo(context);
+    if (onBump == null) return child;
+    final hasValue = current != null && current.inSeconds > 0;
+    final addCmd = _BumpDurationCommand(
+      title: hasValue ? 'Add 15 minutes' : 'Add planned time',
+      icon: PlotIcon.add,
+      onApply: () => onBump(_bumpedDuration(current, _swipeBumpStep)),
+    );
+    final removeCmd = hasValue
+        ? _BumpDurationCommand(
+            title: 'Subtract 15 minutes',
+            icon: PlotIcon.remove,
+            onApply: () => onBump(_bumpedDuration(current, -_swipeBumpStep)),
+          )
+        : null;
+    return Swipeable(
+      startCommand: addCmd,
+      endCommand: removeCmd,
+      child: child,
+    );
+  }
+
+  /// Apply a +/− bump to a [PriorityBlock]'s displayed value. The
+  /// displayed value may be the live-decremented remaining (during an
+  /// active session) or the static slice; either way, the bump's intent
+  /// is to add `(newDisplayed − currentDisplayed)` to the priority's
+  /// total pending so the in-DB pending shifts by the same delta the
+  /// user sees.
+  void _applyPriorityBump({
+    required BuildContext context,
+    required Priority priority,
+    required Duration? newDisplayed,
+    required Duration? currentDisplayed,
+    required Duration? totalPending,
+  }) {
+    if (totalPending == null) {
+      SetPriorityPendingDuration(priority, newDisplayed).run(context);
+      return;
+    }
+    final delta =
+        (newDisplayed ?? Duration.zero) - (currentDisplayed ?? Duration.zero);
+    final newTotal = totalPending + delta;
+    SetPriorityPendingDuration(
+      priority,
+      newTotal <= Duration.zero ? null : newTotal,
+    ).run(context);
   }
 
   /// Builds the floating-feedback widget shown under the pointer during
@@ -926,8 +1095,8 @@ class _BlockHeaderState extends State<_BlockHeader> {
   /// plain [Text] — [RenderParagraph] without hit-testable spans does
   /// not add itself to hit tests, so a default `deferToChild` detector
   /// would silently miss taps on most of the header. The inner
-  /// [DurationControl] uses its own opaque gesture detectors so taps
-  /// on the duration strip do not bubble up here.
+  /// [_BlockHoverDurationButtons] uses [Button.icon]'s own opaque hit
+  /// targets so +/− taps don't bubble up to the row tap-to-open.
   Widget _wrapTapToOpen(Widget child) {
     return MouseRegion(
       onEnter: (_) {
@@ -971,7 +1140,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   @override
   Widget build(BuildContext context) {
     if (!_isDraggable) {
-      return _wrapTapToOpen(_buildRow(context));
+      return _wrapTapToOpen(_wrapSwipe(context, _buildRow(context)));
     }
 
     final payload = BlockDragPayload(
@@ -1013,9 +1182,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
           final rowWidth = constraints.maxWidth.isFinite
               ? constraints.maxWidth
               : MediaQuery.of(context).size.width;
+          // [Swipeable] nests inside the [LongPressDraggable] so the
+          // horizontal drag claims the gesture arena at hit-slop while
+          // the long-press still wins the drag — same pattern the
+          // activity feed uses. See [_SwipeHorizontalDragRecognizer].
           final source = KeyedSubtree(
             key: _sourceKey,
-            child: _buildRow(context),
+            child: _wrapSwipe(context, _buildRow(context)),
           );
           final feedback = _buildFeedback(context, rowWidth: rowWidth);
           final childWhenDragging = buildDraggingChild();
@@ -1068,4 +1241,132 @@ class _NullListenable extends Listenable {
   void addListener(VoidCallback listener) {}
   @override
   void removeListener(VoidCallback listener) {}
+}
+
+/// Format a duration for the gutter label. Differs from
+/// [DurationExtension.format] only in that it returns an empty string for
+/// zero rather than the en dash sentinel used elsewhere — the gutter
+/// already hides the row when no value is present.
+String _formatDuration(Duration d) {
+  final h = d.inHours;
+  final m = d.inMinutes - h * 60;
+  if (h == 0 && m == 0) return '';
+  if (h == 0) return '${m}m';
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
+}
+
+/// Inline hover +/− stepper for the agenda block header. Mirrors the
+/// [ThreadCommands] hover pattern: an [AnimatedOpacity]-wrapped [Row]
+/// with a 24-px gradient that fades the row's background up to a solid
+/// [ColoredBox] holding the icon buttons, so the controls overlap the
+/// priority label without revealing the text underneath.
+///
+/// [current] is the value the user sees; [onChanged] receives the new
+/// duration (null clears it). Both buttons hide when [visible] is false;
+/// the − is also hidden when there is nothing to subtract.
+class _BlockHoverDurationButtons extends StatelessWidget {
+  const _BlockHoverDurationButtons({
+    required this.current,
+    required this.onChanged,
+    required this.background,
+    required this.visible,
+  });
+
+  final Duration? current;
+  final ValueChanged<Duration?> onChanged;
+  final Color background;
+  final bool visible;
+
+  static const _step = Duration(minutes: 15);
+
+  Duration? _bumped(Duration delta) {
+    final next = (current ?? Duration.zero) + delta;
+    if (next <= Duration.zero) return null;
+    return next;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValue = current != null && current!.inSeconds > 0;
+    // Stretch the gradient and the solid background to the parent's
+    // full height so the buttons cover any underlying row that would
+    // otherwise bleed through, and so the gradient is a real rectangle
+    // (a zero-height Container would never paint).
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 120),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Gradient fade from transparent to the row's background so
+            // the priority label tail dissolves into the buttons.
+            Container(
+              width: 24,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    background.withValues(alpha: 0),
+                    background,
+                  ],
+                ),
+              ),
+            ),
+            ColoredBox(
+              color: background,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (hasValue)
+                    Button.icon(
+                      _BumpDurationCommand(
+                        title: 'Subtract 15 minutes',
+                        icon: PlotIcon.remove,
+                        onApply: () => onChanged(_bumped(-_step)),
+                      ),
+                    ),
+                  Button.icon(
+                    _BumpDurationCommand(
+                      title:
+                          hasValue ? 'Add 15 minutes' : 'Add planned time',
+                      icon: PlotIcon.add,
+                      onApply: () => onChanged(_bumped(_step)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Lightweight closure-backed [Command] used by [_BlockHoverDurationButtons]
+/// to route +/− taps through [Button.icon] into the parent block header's
+/// callback. The callback owns the actual delta math and persistence;
+/// this class just forwards `run()` and supplies the icon/title that
+/// drive [Button.icon]'s tooltip and glyph.
+class _BumpDurationCommand extends Command {
+  _BumpDurationCommand({
+    required super.title,
+    required IconData super.icon,
+    required this.onApply,
+  }) : super(
+         eventObject: EventObject.priority,
+         eventAction: EventAction.updated,
+       );
+
+  final VoidCallback onApply;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    onApply();
+    return const CommandDone();
+  }
 }

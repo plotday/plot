@@ -11,6 +11,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';
+import 'package:plot/widget/time_tracking_modal.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
@@ -638,6 +639,115 @@ class ToggleArchivedPrioritiesFilter extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     context.read<LocalPreferencesBloc>().toggleShowAllPriorities();
+    return const CommandDone();
+  }
+}
+
+/// Open the [TimeTrackingModal] for a priority — surfaced as a hover
+/// action on each priority row so users can review and adjust recorded
+/// time without leaving the priorities list.
+class ShowTimeLog extends Command {
+  ShowTimeLog(this.priority)
+    : super(
+        title: 'Time log',
+        icon: PlotIcon.stopwatch,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.viewed,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await TimeTrackingModal(priority: priority).show<void>(context);
+    return const CommandDone();
+  }
+}
+
+/// Set a priority's pending planned duration (the agenda cascade's input
+/// for that priority). Writes one priority_block row at effective_at = now
+/// via [PriorityBlock.setPendingDuration]; the value carries forward until
+/// consumed by sessions.
+class SetPriorityPendingDuration extends Command {
+  SetPriorityPendingDuration(this.priority, this.newDuration)
+    : super(
+        title: 'Set planned time',
+        eventObject: EventObject.priority,
+        eventAction: EventAction.updated,
+      );
+
+  final Priority priority;
+  final Duration? newDuration;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await PriorityBlock.setPendingDuration(priority.id, newDuration);
+    return const CommandDone();
+  }
+}
+
+/// Writes the global tracking-pause flag on user_settings. When paused,
+/// the [NowBloc] driver does not extend [Session.resume] and the server's
+/// event finalizer skips occurrences whose end falls inside the paused
+/// window. [paused] = true pauses; false clears the timestamp.
+Future<void> _setTrackingPaused({required bool paused}) async {
+  final existing = await UserSettingsEntity.get();
+  final companion = UserSettingsCompanion(
+    // Sentinel epoch tells the server "explicit clear"; locally the
+    // [LocalDateTimeConverter] just stores it. On the next push we
+    // pass tracking_paused_at as is and the server's CASE handles it.
+    trackingPausedAt: Value(
+      paused
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    ),
+    // Preserve other fields if a row already exists.
+    enterBehavior: existing?.enterBehavior == null
+        ? const Value.absent()
+        : Value(existing!.enterBehavior),
+    aiEnabled: existing?.aiEnabled == null
+        ? const Value.absent()
+        : Value(existing!.aiEnabled),
+    onboardingCompleted: existing?.onboardingCompleted == null
+        ? const Value.absent()
+        : Value(existing!.onboardingCompleted),
+  );
+  await UserSettingsEntity.save(companion);
+}
+
+/// Pause time tracking globally. Surfaced from the priority header pill
+/// when a session is active.
+class PauseTracking extends Command {
+  PauseTracking()
+    : super(
+        title: 'Pause',
+        icon: FontAwesomeIcons.pause,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.updated,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await _setTrackingPaused(paused: true);
+    return const CommandDone();
+  }
+}
+
+/// Resume time tracking globally. Surfaced from the priority header pill
+/// when tracking is paused — phrased "Log time" to express the user-facing
+/// effect of starting to accumulate time again.
+class ResumeTracking extends Command {
+  ResumeTracking()
+    : super(
+        title: 'Log time',
+        icon: FontAwesomeIcons.play,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.updated,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await _setTrackingPaused(paused: false);
     return const CommandDone();
   }
 }

@@ -12,6 +12,7 @@ class ReorderableListView<T> extends StatefulWidget {
     required this.list,
     required this.itemBuilder,
     required this.onReorder,
+    this.keyExtractor,
     this.shrinkWrap = false,
     super.key,
   });
@@ -20,6 +21,17 @@ class ReorderableListView<T> extends StatefulWidget {
   final ListItemWidgetBuilder<T> itemBuilder;
   final ReorderCallback onReorder;
   final bool shrinkWrap;
+
+  /// Override how a stable Key is derived from a list element. Defaults
+  /// to `ValueKey(item)`. Override this for element types whose `==`
+  /// folds in mutable state (e.g. `Priority`'s unread/active flags) —
+  /// otherwise the key changes whenever that state mutates, which
+  /// remounts the row and drops the State of every descendant
+  /// (StreamBuilders, animation state, …). The drift child's
+  /// `ReorderableDragStartListener` uses this key, so a stable
+  /// `ValueKey(item.id)` here keeps the row's element identity stable
+  /// across rebuilds.
+  final Key Function(T item)? keyExtractor;
 
   @override
   ReorderableListViewState<T> createState() => ReorderableListViewState<T>();
@@ -55,13 +67,15 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
           ? (Widget child, int index, Animation<double> animation) => child
           : null,
       itemBuilder: (context, index) {
+        final item = list[index];
+        final key = widget.keyExtractor?.call(item) ?? ValueKey(item);
         if (hasPhysicalKeyboard()) {
           // Desktop: full item is drag target, starts immediately on
           // pointer-down.
           return ReorderableDragStartListener(
             index: index,
-            key: ValueKey(list[index]),
-            child: widget.itemBuilder(context, list[index], null),
+            key: key,
+            child: widget.itemBuilder(context, item, null),
           );
         }
         // Mobile: full item is drag target, but a long-press is required
@@ -70,8 +84,8 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
         // `null` for [reorderableIndex] and skip any handle rendering.
         return material.ReorderableDelayedDragStartListener(
           index: index,
-          key: ValueKey(list[index]),
-          child: widget.itemBuilder(context, list[index], null),
+          key: key,
+          child: widget.itemBuilder(context, item, null),
         );
       },
       onReorder: (int oldIndex, int newIndex) {

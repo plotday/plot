@@ -1041,6 +1041,7 @@ export type Database = {
           archived_at: string | null
           created_at: string
           created_by: string
+          duration: string | null
           effective_at: string
           id: string
           order_value: number
@@ -1054,6 +1055,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           created_by: string
+          duration?: string | null
           effective_at: string
           id?: string
           order_value: number
@@ -1067,6 +1069,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           created_by?: string
+          duration?: string | null
           effective_at?: string
           id?: string
           order_value?: number
@@ -1487,11 +1490,14 @@ export type Database = {
           at: unknown
           created_at: string
           id: string
+          occurrence_at: string | null
           pomodoro: number | null
           pomodoro_at: string | null
           precedence: number
           priority_id: string | null
+          schedule_id: string | null
           seq: unknown
+          source: string
           updated_at: string
           updated_by: number
           user_id: string
@@ -1501,11 +1507,14 @@ export type Database = {
           at: unknown
           created_at?: string
           id?: string
+          occurrence_at?: string | null
           pomodoro?: number | null
           pomodoro_at?: string | null
           precedence?: number
           priority_id?: string | null
+          schedule_id?: string | null
           seq?: unknown
+          source?: string
           updated_at?: string
           updated_by?: number
           user_id: string
@@ -1515,11 +1524,14 @@ export type Database = {
           at?: unknown
           created_at?: string
           id?: string
+          occurrence_at?: string | null
           pomodoro?: number | null
           pomodoro_at?: string | null
           precedence?: number
           priority_id?: string | null
+          schedule_id?: string | null
           seq?: unknown
+          source?: string
           updated_at?: string
           updated_by?: number
           user_id?: string
@@ -1542,6 +1554,18 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "session_schedule_id_fkey"
+            columns: ["schedule_id"]
+            referencedRelation: "schedule"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_schedule_id_fkey"
+            columns: ["schedule_id"]
+            referencedRelation: "twist_instance_thread_schedule"
+            referencedColumns: ["schedule_id"]
           },
           {
             foreignKeyName: "session_user_id_fkey"
@@ -2619,8 +2643,10 @@ export type Database = {
           email_frequency: Database["public"]["Enums"]["email_frequency"] | null
           email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          event_sessions_finalized_through: string | null
           onboarding_completed: boolean | null
           seq: unknown
+          tracking_paused_at: string | null
           updated_at: string
           user_id: string
         }
@@ -2631,8 +2657,10 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          event_sessions_finalized_through?: string | null
           onboarding_completed?: boolean | null
           seq?: unknown
+          tracking_paused_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -2643,8 +2671,10 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          event_sessions_finalized_through?: string | null
           onboarding_completed?: boolean | null
           seq?: unknown
+          tracking_paused_at?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -4402,6 +4432,7 @@ export type Database = {
           archived_at: string | null
           created_at: string | null
           created_by: string | null
+          duration: string | null
           effective_at: string | null
           id: string | null
           order_value: number | null
@@ -4415,6 +4446,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string | null
           created_by?: string | null
+          duration?: string | null
           effective_at?: string | null
           id?: string | null
           order_value?: number | null
@@ -4428,6 +4460,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string | null
           created_by?: string | null
+          duration?: string | null
           effective_at?: string | null
           id?: string | null
           order_value?: number | null
@@ -4994,6 +5027,7 @@ export type Database = {
           archived_at: string | null
           created_at: string | null
           created_by: string | null
+          duration: string | null
           effective_at: string | null
           id: string | null
           order_value: number | null
@@ -5029,10 +5063,13 @@ export type Database = {
           p_archived_at: string
           p_at: unknown
           p_id: string
+          p_occurrence_at?: string
           p_pomodoro: number
           p_pomodoro_at: string
           p_precedence: number
           p_priority_id: string
+          p_schedule_id?: string
+          p_source?: string
           p_updated_by: number
           user_id: string
         }
@@ -5140,6 +5177,7 @@ export type Database = {
           p_ai_enabled?: boolean
           p_enter_behavior: Database["public"]["Enums"]["enter_behavior"]
           p_onboarding_completed?: boolean
+          p_tracking_paused_at?: string
           user_id: string
         }
         Returns: Database["public"]["Tables"]["user_settings"]["Row"]

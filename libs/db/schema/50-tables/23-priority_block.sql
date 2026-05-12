@@ -1,15 +1,16 @@
--- priority_block — temporal overrides for the order value of a priority.
+-- priority_block — current and future-planned settings for a priority.
 --
--- A row says "from `effective_at` onwards, this priority sorts at
--- `order_value`". Used to render priority blocks in the agenda. Multiple
--- rows per priority form a timeline; the latest row whose
--- `effective_at` <= moment determines the order at that moment.
+-- A row says "from `effective_at` onwards, this priority's order is
+-- `order_value` and its pending duration is `duration`". The latest row
+-- whose `effective_at` <= moment determines current values.
 --
--- When the user reorders a block in the do-now slot, all rows for the
--- priority with effective_at < now are deleted and a fresh row is
--- inserted at effective_at = now. When the user reorders a block in a
--- future gap, a row is upserted at effective_at = gap.start so the new
--- order takes effect from that moment forward.
+-- Two conventions for `effective_at`:
+--   * `'epoch'` (1970-01-01 UTC) — the canonical "current" row. Adjusting
+--     a priority's order or pending duration upserts onto this single
+--     sentinel row keyed by `(priority_id, effective_at)`. There is no
+--     timeline of past adjustments — the latest write is the truth.
+--   * Future timestamp — a planned change that becomes current when its
+--     `effective_at` arrives (the resolver naturally picks it up).
 --
 -- Falls back to priority.created_at-based ordering when no rows exist.
 CREATE TABLE "public"."priority_block" (
@@ -23,10 +24,18 @@ CREATE TABLE "public"."priority_block" (
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public."priority" ON DELETE CASCADE,
     "order_value" double precision NOT NULL,
-    -- Inclusive lower bound from which order_value applies for the
-    -- priority. Unique per priority (a priority cannot have two
-    -- competing orders at the same instant).
+    -- Inclusive lower bound from which this row's values apply for the
+    -- priority. Use `'epoch'` (1970-01-01 UTC) for the canonical
+    -- "current" row, or a future timestamp for a planned change. Unique
+    -- per priority via idx_priority_block_priority_effective below.
     "effective_at" timestamp with time zone NOT NULL,
+    -- Pending planned time for the priority as of `effective_at`. NULL
+    -- means "no pending duration" (priority drops out of the agenda
+    -- cascade). Updated by:
+    --   * user +/- on a block (upserts the epoch row),
+    --   * the event finalizer cron after recording an event session,
+    --   * the client on active-session close (writing back consumed time).
+    "duration" interval,
     "archived_at" timestamp with time zone,
     "updated_by" integer NOT NULL DEFAULT 0,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()

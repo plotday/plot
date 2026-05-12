@@ -2165,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 327;
+  int get schemaVersion => 328;
 
   @override
   MigrationStrategy get migration {
@@ -3165,6 +3165,16 @@ class Store extends _$Store {
     }
     if (from < 327) {
       await _safeAddColumn(m, userSettings, userSettings.onboardingCompleted);
+    }
+    if (from < 328) {
+      // Time-tracking feature: per-priority pending duration on priority_blocks,
+      // event/manual source provenance + idempotency key on sessions,
+      // global pause-tracking flag on user_settings.
+      await _safeAddColumn(m, priorityBlocks, priorityBlocks.duration);
+      await _safeAddColumn(m, sessions, sessions.source);
+      await _safeAddColumn(m, sessions, sessions.scheduleId);
+      await _safeAddColumn(m, sessions, sessions.occurrenceAt);
+      await _safeAddColumn(m, userSettings, userSettings.trackingPausedAt);
     }
   }
 

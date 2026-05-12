@@ -1093,17 +1093,25 @@ class RsvpSummary extends StatelessWidget {
         if (counts.attend > 0)
           Text(
             '${counts.attend}✓',
-            style: TextStyle(color: attendColor, fontSize: fontSize),
+            style: TextStyle(
+              color: attendColor,
+              fontSize: fontSize,
+              height: 1,
+            ),
           ),
         if (counts.skip > 0)
           Text(
             '${counts.skip}✗',
-            style: TextStyle(color: skipColor, fontSize: fontSize),
+            style: TextStyle(color: skipColor, fontSize: fontSize, height: 1),
           ),
         if (counts.undecided > 0)
           Text(
             '${counts.undecided}?',
-            style: TextStyle(color: undecidedColor, fontSize: fontSize),
+            style: TextStyle(
+              color: undecidedColor,
+              fontSize: fontSize,
+              height: 1,
+            ),
           ),
       ],
     );

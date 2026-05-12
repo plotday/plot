@@ -4,6 +4,46 @@ sealed class NowState extends Equatable {
   const NowState();
 }
 
+/// Active state of the pomodoro timer for the current `context` priority.
+/// Derived from the active session's [Session.pomodoro] and
+/// [Session.pomodoroAt] fields plus wall-clock time — no separate storage.
+enum PomodoroState {
+  /// No active session for the context priority. Pill shows planned
+  /// duration with a play prefix; nothing is being recorded.
+  inactive,
+  /// Session is running and within its planned pomodoro window.
+  active,
+  /// Pomodoro window elapsed, but the session keeps recording for an
+  /// additional 5-minute grace period. Pill pulses "0m" during this time.
+  grace,
+}
+
+/// How long the user has after pomodoro expiry before the session
+/// auto-stops. Shared between the NowBloc tick driver and the pill's
+/// pulse state so both agree on when grace ends.
+const Duration kPomodoroGrace = Duration(minutes: 5);
+
+/// Default pomodoro duration when the focused priority has no
+/// `priority_block.duration` set. Long enough to be useful, short
+/// enough that the user notices when it's wrong.
+const Duration kDefaultPomodoro = Duration(minutes: 15);
+
+/// Default pomodoro duration when the user switches to a different
+/// priority while a session is already active — short on purpose so
+/// distractions either get explicitly extended or get a quick reminder.
+const Duration kDistractionPomodoro = Duration(minutes: 5);
+
+/// Snap granularity used by [AddTime] — pressing `+` jumps the remaining
+/// time UP to the next multiple of this.
+const Duration kPomodoroStep = Duration(minutes: 15);
+
+/// Step size used by [RemoveTime] — pressing `−` subtracts this much,
+/// clamped at [kMinPomodoro].
+const Duration kRemoveStep = Duration(minutes: 5);
+
+/// Minimum allowed pomodoro duration after a `−` press.
+const Duration kMinPomodoro = Duration(minutes: 5);
+
 final class NowLoading extends NowState {
   const NowLoading();
 
@@ -20,6 +60,8 @@ final class NowLoaded extends NowState {
     this.session,
     this.context,
     this.currentEvent,
+    this.trackingPausedAt,
+    this.previewPomodoro,
   }) : now = Time.now(),
        _day = day;
 
@@ -28,6 +70,22 @@ final class NowLoaded extends NowState {
   final ScheduledDay _day;
   final Priority defaultPriority;
   final Priority? context;
+
+  /// User's global tracking-pause state from `user_settings`. When
+  /// non-null and not the epoch sentinel, the [NowBloc] driver leaves the
+  /// active session alone and the UI's pause toggle reads as "paused"
+  /// with this timestamp. Use [trackingPaused] for the boolean answer —
+  /// resume writes [DateTime.fromMillisecondsSinceEpoch(0)] as an
+  /// explicit-clear marker for the server, which the local DB stores
+  /// verbatim until the next pull replaces it with null.
+  final DateTime? trackingPausedAt;
+
+  /// True when global time tracking is paused, ignoring the epoch
+  /// sentinel that `ResumeTracking` writes as an explicit-clear marker
+  /// (see [trackingPausedAt]).
+  bool get trackingPaused =>
+      trackingPausedAt != null &&
+      trackingPausedAt!.millisecondsSinceEpoch != 0;
 
   /// The event thread the user has tapped in the agenda. Sticky for the
   /// lifetime of the current priority view: cleared when [context]
@@ -45,6 +103,13 @@ final class NowLoaded extends NowState {
   /// agenda's [AgendaBuilder] consumes — keeps `NowLoaded.priority` in
   /// sync with what the agenda renders as its lead block.
   final Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority;
+
+  /// The duration the inactive-state pill should display for the
+  /// [context] priority after the user nudged `+`/`-`. Cleared whenever
+  /// [context] changes (`NowBloc.setContext` is responsible). Not
+  /// persisted — purely a UI staging value before [StartTimer] writes
+  /// `pomodoro`/`pomodoroAt` to the session row.
+  final Duration? previewPomodoro;
 
   List<Thread> get scheduled =>
       _day.scheduled.where((event) => event.at!.includes(now)).toList();
@@ -129,6 +194,11 @@ final class NowLoaded extends NowState {
     priority.id,
     currentEvent?.id,
     currentEvent?.occurrence,
+    // Reduced to a boolean so the epoch sentinel `ResumeTracking` writes
+    // locally doesn't show up as a distinct paused state — only a real
+    // flip of [trackingPaused] should re-emit.
+    trackingPaused,
+    previewPomodoro,
   ];
 
   /// The "current priority" — what the user should be working on right
@@ -186,6 +256,65 @@ final class NowLoaded extends NowState {
     );
   }
 
+  /// True iff [session] is an active, non-archived `source='active'`
+  /// session for the [context] priority. `source='event'` rows from the
+  /// scheduled-event finalizer are deliberately excluded — they show in
+  /// the agenda, not the pill.
+  bool get _hasActiveContextSession {
+    final s = session;
+    final ctx = context;
+    if (s == null || ctx == null) return false;
+    if (s.archivedAt != null) return false;
+    if (s.source != 'active') return false;
+    if (s.priority?.id != ctx.id) return false;
+    if (!s.at.isNow()) return false;
+    return s.pomodoroAt != null && s.pomodoro != null;
+  }
+
+  /// Pill state machine. See [PomodoroState] for the three positions.
+  PomodoroState get pomodoroState {
+    if (!_hasActiveContextSession) return PomodoroState.inactive;
+    final end = session!.pomodoroAt!.add(session!.pomodoro!);
+    if (now.isBefore(end)) return PomodoroState.active;
+    if (now.isBefore(end.add(kPomodoroGrace))) return PomodoroState.grace;
+    return PomodoroState.inactive;
+  }
+
+  /// Time remaining in the current pomodoro window. Negative-clamped to
+  /// zero; null when no active context session exists.
+  Duration? get pomodoroRemaining {
+    if (!_hasActiveContextSession) return null;
+    final end = session!.pomodoroAt!.add(session!.pomodoro!);
+    final remaining = end.difference(now);
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  /// Fraction of the planned pomodoro that has elapsed (0..1, clamped).
+  /// 0 when no active context session.
+  double get pomodoroProgress {
+    if (!_hasActiveContextSession) return 0;
+    final total = session!.pomodoro!.inMilliseconds;
+    if (total <= 0) return 1;
+    final elapsed = now.difference(session!.pomodoroAt!).inMilliseconds;
+    final ratio = elapsed / total;
+    if (ratio <= 0) return 0;
+    if (ratio >= 1) return 1;
+    return ratio;
+  }
+
+  /// Pending duration for [p] resolved against the priority_block
+  /// timeline at [now]. Returns null when the priority has no row
+  /// contributing a duration. Pure read of state — the bloc reads the
+  /// same value through `_pendingFor`, this getter just exposes it for
+  /// the pill's inactive-state display.
+  Duration? pendingFor(Priority p) {
+    final rows = priorityBlocksByPriority[p.id] ?? const [];
+    return effectivePriorityDurationAt(
+      moment: now,
+      blocksForPriority: rows,
+    );
+  }
+
   DateTimeRange? get at {
     final startTime =
         pomodoro?.start ??
@@ -233,6 +362,8 @@ final class NowLoaded extends NowState {
     List<Priority>? priorities,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
     Object? currentEvent = _sentinel,
+    Object? trackingPausedAt = _sentinel,
+    Object? previewPomodoro = _sentinel,
   }) {
     return NowLoaded(
       session: session ?? this.session,
@@ -245,6 +376,12 @@ final class NowLoaded extends NowState {
       currentEvent: identical(currentEvent, _sentinel)
           ? this.currentEvent
           : currentEvent as Thread?,
+      trackingPausedAt: identical(trackingPausedAt, _sentinel)
+          ? this.trackingPausedAt
+          : trackingPausedAt as DateTime?,
+      previewPomodoro: identical(previewPomodoro, _sentinel)
+          ? this.previewPomodoro
+          : previewPomodoro as Duration?,
     );
   }
 }

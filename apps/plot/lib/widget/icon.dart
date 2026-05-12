@@ -81,6 +81,7 @@ class PlotIcon {
   static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;
   static const alarmClock = FontAwesomeIcons.alarmClock;
+  static const stopwatch = FontAwesomeIcons.stopwatch;
   static const done = FontAwesomeIcons.check;
   static const other = FontAwesomeIcons.circleUser;
   static const otherDone = FontAwesomeIcons.check;

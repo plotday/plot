@@ -54,6 +54,7 @@ import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
+import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -333,6 +334,15 @@ async function scheduled(
     } catch (error) {
       logger.error("Error in recovery sweep", error as Error);
     }
+  }
+
+  // Every tick (~5 min): finalize ended event occurrences into
+  // `source='event'` Session rows so weekly priority totals reflect time
+  // spent on events even when the user's app was closed. Idempotent.
+  try {
+    await finalizeEventSessions(env, _ctx);
+  } catch (error) {
+    logger.error("Error in event session finalizer", error as Error);
   }
 
   // Daily sweep: re-discover external channels for every active connection so

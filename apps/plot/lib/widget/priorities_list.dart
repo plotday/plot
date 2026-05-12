@@ -342,6 +342,13 @@ class _PrioritiesListState extends State<PrioritiesList>
             ReorderableListView<Priority>(
               list: priorities,
               shrinkWrap: true,
+              // Key on `id` (not on the Priority instance) so the row's
+              // element identity survives unread/active state mutations.
+              // Priority.== folds in `unread`/`active`, which flip when
+              // the user switches priorities, and a key change would
+              // remount the row and reset `_PriorityWeeklyTotal`'s
+              // cached StreamBuilder (causing the duration to flicker).
+              keyExtractor: (p) => ValueKey(p.id),
               itemBuilder: (context, priority, reorderableIndex) {
                 final priorityExpanded = shouldExpand(priority);
                 final parentId = priority.id.toString();
@@ -450,6 +457,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                 ReorderableListView<Priority>(
                   list: widget.topPriorities,
                   shrinkWrap: true,
+                  // See note above — key on id so unread/active churn
+                  // doesn't remount the top-section rows.
+                  keyExtractor: (p) => ValueKey('top-${p.id}'),
                   itemBuilder: (context, priority, reorderableIndex) => Column(
                     key: ValueKey('top-${priority.id}'),
                     crossAxisAlignment: CrossAxisAlignment.stretch,

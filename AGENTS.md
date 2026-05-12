@@ -533,6 +533,7 @@ When adding or updating connector logos in `apps/site/app/data/connections.ts`:
 
 ## Hints
 
+- **Flutter app uses a desktop-style cursor.** Do not apply the web pointer cursor (`SystemMouseCursors.click`, `MouseRegion(cursor: ...)`, `MouseCursor.defer` overrides) to regular buttons, list rows, or other tap targets — they should keep the default arrow. Reserve the pointer cursor for true links (URLs that navigate to external content).
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
 - Only work locally. Never deploy. This includes workers, which only run locally.
 - When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityTwistId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.

@@ -88,6 +88,9 @@ sessions.post("/sync/sessions", async (c) => {
       p_pomodoro_at: body.pomodoro_at || null,
       p_archived_at: body.archived_at || null,
       p_updated_by: body.updated_by || 0,
+      p_source: body.source || "active",
+      p_schedule_id: body.schedule_id || null,
+      p_occurrence_at: body.occurrence_at || null,
     });
   });
 

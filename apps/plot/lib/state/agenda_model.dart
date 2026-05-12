@@ -80,9 +80,10 @@ class AgendaModel extends Equatable {
             // draggability is gated by [blockPriority != null] separately.
             // The gap defines a new period: this block — and any
             // blocks that follow it within the section — live in this
-            // period.
+            // period. A residual gap (cascade leftover) inherits its
+            // parent gap's anchor via [periodAnchor].
             final hasThreads = b.threads.isNotEmpty;
-            final gapStart = b.range.start;
+            final gapAnchor = b.periodAnchor ?? b.range.start;
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
@@ -91,11 +92,11 @@ class AgendaModel extends Equatable {
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
-                sourcePeriodStart: gapStart,
+                sourcePeriodStart: gapAnchor,
               ),
             );
-            if (gapStart != null) {
-              currentPeriodStart = gapStart;
+            if (gapAnchor != null) {
+              currentPeriodStart = gapAnchor;
             }
           case EventBlock b:
             // Combined event + priority header. Event blocks are not
@@ -210,6 +211,7 @@ class PriorityBlock extends AgendaBlock {
     required this.priority,
     required this.threads,
     this.isOutside = false,
+    this.cascadeDuration,
   });
 
   @override
@@ -220,6 +222,14 @@ class PriorityBlock extends AgendaBlock {
   final List<Thread> threads;
   @override
   final bool isOutside;
+
+  /// The priority's total pending duration folded into this block by the
+  /// cascade pass. Null for blocks outside today's section, or for
+  /// priorities with no pending duration.
+  final Duration? cascadeDuration;
+
+  @override
+  List<Object?> get props => [id, priority, threads, isOutside, cascadeDuration];
 }
 
 /// A scheduled event thread together with any associated child threads,
@@ -262,6 +272,7 @@ class GapBlock extends AgendaBlock {
     required this.range,
     required this.threads,
     this.isOutside = false,
+    this.periodAnchor,
   });
 
   @override
@@ -274,8 +285,19 @@ class GapBlock extends AgendaBlock {
   @override
   final bool isOutside;
 
+  /// Overrides the period start used for drop-target attribution and
+  /// the post-block `currentPeriodStart` walker state. Set on a residual
+  /// gap (the leftover band emitted after cascade slices fill part of a
+  /// gap) so it inherits the ORIGINAL gap's period anchor — drops into
+  /// the residual then write priority_block rows at the gap's true
+  /// start, where the cascade walker resolves them, instead of at the
+  /// residual's own start (which the cascade never evaluates).
+  /// Null for "normal" gaps where `range.start` is the canonical anchor.
+  final DateTime? periodAnchor;
+
   @override
-  List<Object?> get props => [id, priority, range, threads, isOutside];
+  List<Object?> get props =>
+      [id, priority, range, threads, isOutside, periodAnchor];
 }
 
 /// Atom type used by the legacy flat-list rendering and reorder paths.

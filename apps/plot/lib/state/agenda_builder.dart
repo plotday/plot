@@ -49,10 +49,151 @@ class AgendaBuilder {
     // `!date.isBefore(today)` cutoff). Surface them on today's section
     // so the universal /agenda view never silently hides an unread
     // thread.
-    return _mergeUnreadIntoToday(
+    final withUnread = _mergeUnreadIntoToday(
       consolidated,
       inputThreads: threads,
       now: effectiveNow,
+    );
+    // Cascade pending priority durations into today's gap region (and
+    // overflow to the after-last-event zone). Pure post-process; no
+    // mutation of priority_block rows.
+    return _cascadePendingDurations(
+      withUnread,
+      now: effectiveNow,
+      priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
+    );
+  }
+
+  /// Fold each priority's pending duration into today's section.
+  ///
+  /// For every priority with pending duration > 0:
+  ///   * if a thread-bearing [PriorityBlock] for that priority exists in
+  ///     today's section, rewrite it with [PriorityBlock.cascadeDuration]
+  ///     set to the priority's total pending — no extra block is added,
+  ///   * otherwise append a synthetic empty cascade [PriorityBlock] at
+  ///     the section tail so the pending time is still visible.
+  ///
+  /// Pure layout pass — no `priority_block` rows are written.
+  static AgendaModel _cascadePendingDurations(
+    AgendaModel model, {
+    required DateTime now,
+    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
+  }) {
+    if (priorityBlocksByPriority.isEmpty) return model;
+
+    final pendingByPriority = <PriorityId, Duration>{};
+    for (final entry in priorityBlocksByPriority.entries) {
+      final pending = effectivePriorityDurationAt(
+        moment: now,
+        blocksForPriority: entry.value,
+      );
+      if (pending != null && pending > Duration.zero) {
+        pendingByPriority[entry.key] = pending;
+      }
+    }
+    if (pendingByPriority.isEmpty) return model;
+
+    final priorityById = <Uuid, Priority>{};
+    for (final block in model.allBlocks) {
+      priorityById.putIfAbsent(block.priority.id, () => block.priority);
+    }
+
+    final newSections = <AgendaSection>[];
+    for (final section in model.sections) {
+      if (section is! DateSection || !section.isNow) {
+        newSections.add(section);
+        continue;
+      }
+      newSections.add(_foldCascadeIntoTodaySection(
+        section,
+        now: now,
+        pendingByPriority: pendingByPriority,
+        priorityById: priorityById,
+        priorityBlocksByPriority: priorityBlocksByPriority,
+      ));
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
+  }
+
+  /// Take pending duration off the head of [queue] and emit one
+  /// [PriorityBlock] per priority that fits in [available]. Returns the
+  /// emitted cascade slices plus the total duration consumed (so callers
+  /// can render a residual gap with the leftover time). Mutates [queue]
+  /// (drops priorities once `remaining == 0`) and stops when [available]
+  /// Fold each priority's total pending duration into [section]. For
+  /// every priority in [pendingByPriority]:
+  ///   * if an existing thread-bearing [PriorityBlock] for that priority
+  ///     is present, rewrite it with `cascadeDuration` set,
+  ///   * otherwise append a synthetic empty cascade block at the
+  ///     section tail (in priority order).
+  static DateSection _foldCascadeIntoTodaySection(
+    DateSection section, {
+    required DateTime now,
+    required Map<PriorityId, Duration> pendingByPriority,
+    required Map<Uuid, Priority> priorityById,
+    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
+  }) {
+    final remaining = Map<PriorityId, Duration>.from(pendingByPriority);
+
+    final newBlocks = <AgendaBlock>[];
+    for (final block in section.blocks) {
+      if (block is PriorityBlock) {
+        final pending = remaining.remove(block.priority.id);
+        if (pending != null) {
+          newBlocks.add(PriorityBlock(
+            id: block.id,
+            priority: block.priority,
+            threads: block.threads,
+            isOutside: block.isOutside,
+            cascadeDuration: pending,
+          ));
+          continue;
+        }
+      }
+      newBlocks.add(block);
+    }
+
+    if (remaining.isEmpty) {
+      return DateSection(
+        date: section.date,
+        blocks: List.unmodifiable(newBlocks),
+        isNow: section.isNow,
+        scheduleAt: section.scheduleAt,
+      );
+    }
+
+    final tail = remaining.entries
+        .where((e) => priorityById.containsKey(e.key))
+        .toList()
+      ..sort((a, b) {
+        final aOrd = effectivePriorityOrderAt(
+          moment: now,
+          blocksForPriority: priorityBlocksByPriority[a.key] ?? const [],
+          fallback: priorityById[a.key]!.order.value,
+        );
+        final bOrd = effectivePriorityOrderAt(
+          moment: now,
+          blocksForPriority: priorityBlocksByPriority[b.key] ?? const [],
+          fallback: priorityById[b.key]!.order.value,
+        );
+        return aOrd.compareTo(bOrd);
+      });
+    for (final entry in tail) {
+      final p = priorityById[entry.key]!;
+      newBlocks.add(PriorityBlock(
+        id: 'p_${section.id}_${p.path.value}_cascade',
+        priority: p,
+        threads: const [],
+        isOutside: false,
+        cascadeDuration: entry.value,
+      ));
+    }
+
+    return DateSection(
+      date: section.date,
+      blocks: List.unmodifiable(newBlocks),
+      isNow: section.isNow,
+      scheduleAt: section.scheduleAt,
     );
   }
 

@@ -68,6 +68,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Date navigation (next/previous)
 - Range filtering
 - Completion tracking
+- Automatic time accrual from calendar events — events you accepted, or did not decline, contribute their non-overlapping duration to the priority's running total without requiring you to start a session
 
 ## Collaboration
 

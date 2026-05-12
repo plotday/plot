@@ -12,6 +12,7 @@ SELECT
     pb.priority_id,
     pb.order_value,
     pb.effective_at,
+    pb.duration,
     pb.archived_at,
     pb.created_at,
     pb.updated_at,

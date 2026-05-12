@@ -8,6 +8,12 @@ class UserSettings extends Table with SyncableTable {
   BoolColumn get aiEnabled => boolean().nullable()();
   BoolColumn get onboardingCompleted => boolean().nullable()();
 
+  /// When non-null, the user has paused time tracking since this instant.
+  /// Drives the client tracker (skip [Session.resume] while paused) and
+  /// the server event finalizer (skip occurrences inside the paused window).
+  DateTimeColumn get trackingPausedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+
   @override
   Set<Column> get primaryKey => {userId};
 }

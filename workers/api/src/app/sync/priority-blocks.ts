@@ -75,11 +75,10 @@ priorityBlocks.get("/sync/priority-blocks", async (c) => {
 
 // POST /sync/priority-blocks - Upsert a priority_block row.
 //
-// Body shape mirrors the user.priority_block view's columns. Pass
-// `_archive_past: true` (alongside the row) to soft-archive every existing
-// row for the same priority whose effective_at is earlier than the new
-// row's effective_at — this is what the client does when reordering in
-// the do-now slot.
+// Body shape mirrors the user.priority_block view's columns. The SQL
+// helper upserts on (priority_id, effective_at); clients send
+// `effective_at = 1970-01-01T00:00:00Z` for the canonical "current" row
+// (one per priority) and a future timestamp for planned changes.
 priorityBlocks.post("/sync/priority-blocks", async (c) => {
   const userId = c.var.user.id;
   const body = await c.req.json();
