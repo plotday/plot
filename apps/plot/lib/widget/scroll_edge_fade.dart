@@ -3,8 +3,11 @@ import 'package:flutter/widgets.dart';
 /// Fades the top and bottom edges of a scrollable child to communicate that
 /// the region scrolls independently of its surroundings. The top fade is
 /// hidden when the child is scrolled to its start; the bottom fade is hidden
-/// when scrolled to its end. Both default to visible until the first scroll
-/// notification (assume scrollable until proven otherwise).
+/// when scrolled to its end. Both default to *hidden* until the first scroll
+/// metric arrives: the most common case is content that fits the viewport
+/// (editors, short lists), where the correct answer is no fade at all, and
+/// flashing a fade in for one frame on mount is more jarring than flashing
+/// it in once when truly-scrollable content has overflowed.
 ///
 /// The fade is painted as overlay gradients in a [Stack] on top of the child.
 /// This requires a known [background] color to fade *to* — without one we'd
@@ -26,7 +29,7 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
   static const double _fadeExtent = 16.0;
 
   bool _atTop = true;
-  bool _atBottom = false;
+  bool _atBottom = true;
 
   void _updateFromMetrics(ScrollMetrics metrics) {
     if (metrics.axis != Axis.vertical) return;
@@ -50,6 +53,7 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
   }
 
   bool _onScroll(ScrollNotification n) {
+    if (!_isFromOwnRenderSubtree(n.context)) return false;
     _updateFromMetrics(n.metrics);
     return false;
   }
@@ -59,7 +63,29 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
   // the child fits in the viewport no [ScrollNotification] ever arrives and
   // the bottom fade — assumed visible by default — would stay forever.
   bool _onMetrics(ScrollMetricsNotification n) {
+    if (!_isFromOwnRenderSubtree(n.context)) return false;
     _updateFromMetrics(n.metrics);
+    return false;
+  }
+
+  // Filters out notifications that bubble up via [OverlayPortal] (or any
+  // similar logical-but-not-visual descendant). The mention popover, for
+  // example, is built into the global [Overlay] but is still an element-tree
+  // descendant of the editor — its scrollable list emits metrics that would
+  // otherwise corrupt our `_atBottom` state and leave the bottom fade stuck
+  // on after the popover closes. Element-tree ancestry can't distinguish
+  // those, but render-object ancestry can: overlay children mount their
+  // render objects under the [Overlay], not under us.
+  bool _isFromOwnRenderSubtree(BuildContext? notificationContext) {
+    if (notificationContext == null) return true;
+    final myObject = context.findRenderObject();
+    final notifObject = notificationContext.findRenderObject();
+    if (myObject == null || notifObject == null) return true;
+    RenderObject? cursor = notifObject;
+    while (cursor != null) {
+      if (identical(cursor, myObject)) return true;
+      cursor = cursor.parent;
+    }
     return false;
   }
 
