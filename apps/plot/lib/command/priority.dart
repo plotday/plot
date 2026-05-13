@@ -49,8 +49,17 @@ abstract class PriorityCommand extends Command {
 }
 
 class ChangeCurrentPriority extends PriorityCommand {
-  ChangeCurrentPriority(Priority super.priority, {super.ancestry = true})
-    : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
+  ChangeCurrentPriority(
+    Priority super.priority, {
+    super.ancestry = true,
+    this.fromAgenda = false,
+  }) : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
+
+  /// When true, mark the next [PriorityBloc] construction / [setPriority]
+  /// call so the destination page opens with descendants hidden — agenda
+  /// navigation already surfaces sub-priority content under each block's
+  /// header, so the feed defaults to direct threads only.
+  final bool fromAgenda;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -64,6 +73,9 @@ class ChangeCurrentPriority extends PriorityCommand {
       // would otherwise preserve it).
       nowBloc.setCurrentEvent(null);
       nowBloc.setContext(priority);
+    }
+    if (fromAgenda) {
+      PriorityBloc.markNextPriorityFromAgenda();
     }
     return CommandRoute(
       PriorityRoute(priorityIdString: priority!.id.toShortString()),
@@ -615,6 +627,49 @@ class ToggleArchivedVisibility extends Command {
       // No thread open — nothing to toggle.
     }
 
+    return const CommandDone();
+  }
+}
+
+/// Toggle whether the activity feed and todo list on the priority page
+/// roll up threads from descendant priorities, or show only threads filed
+/// directly under the current priority.
+///
+/// Selected (on) state = "hide sub-priorities" = the long-standing rollup
+/// behaviour (descendant threads are visible inline). Off = only direct
+/// threads, so sub-priorities surface as their own pages instead.
+class ToggleHideSubPriorities extends Command {
+  ToggleHideSubPriorities._({required this.hidingSubPriorities})
+    : super(
+        title: hidingSubPriorities
+            ? 'Hide sub-priorities'
+            : 'Show sub-priorities',
+        subtitle: hidingSubPriorities
+            ? 'Rolling up threads from sub-priorities into this view'
+            : 'Showing only threads filed directly on this priority',
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+        // Mirror the PrioritiesList caret semantics: chevronDown when the
+        // sub-priority *content* is visible inline (the long-standing
+        // rollup behaviour where descendant threads expand into this
+        // feed), chevronRight when that content is collapsed away
+        // (direct-only feed; sub-priorities are reached as their own
+        // pages instead).
+        icon: hidingSubPriorities
+            ? FontAwesomeIcons.chevronDown
+            : FontAwesomeIcons.chevronRight,
+      );
+
+  factory ToggleHideSubPriorities({required BuildContext context}) {
+    final hiding = context.read<PriorityBloc>().state.hideSubPriorities;
+    return ToggleHideSubPriorities._(hidingSubPriorities: hiding);
+  }
+
+  final bool hidingSubPriorities;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.read<PriorityBloc>().toggleHideSubPriorities();
     return const CommandDone();
   }
 }

@@ -737,40 +737,20 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // [PriorityNotification]'s _DotPainter treatment.
     final unreadColor = fg.withValues(alpha: 0.7);
 
-    // Active in-progress event timing ("↑Xm / Ym") moves to the gutter
-    // row 2 in place of the static duration label when a now-event is
-    // showing. The two parts use foreground / muted-foreground so the
-    // elapsed/remaining contrast is preserved.
+    // For an in-progress event, replace the static duration label in
+    // gutter row 2 with the remaining time so it counts down toward 0.
     Widget? gutterRow2;
-    if (widget.now && thread?.at?.start != null) {
+    if (widget.now && thread?.at?.end != null) {
       final currentTime = Time.now();
-      final start = thread!.at!.start!;
-      final end = thread.at!.end;
-      final elapsed = currentTime.difference(start).inMinutes;
-      final parts = <InlineSpan>[];
-      if (elapsed >= 1) {
-        parts.add(
-          TextSpan(
-            text: '↑${Duration(minutes: elapsed).format()}',
-            style: TextStyle(color: fg),
-          ),
-        );
-      }
-      if (end != null && end.isAfter(currentTime)) {
+      final end = thread!.at!.end!;
+      if (end.isAfter(currentTime)) {
         final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
-        if (parts.isNotEmpty) parts.add(const TextSpan(text: ' '));
-        parts.add(
-          TextSpan(
-            text: '/ ${Duration(minutes: remaining).format()}',
-            style: TextStyle(color: mutedFg),
-          ),
-        );
-      }
-      if (parts.isNotEmpty) {
-        gutterRow2 = Text.rich(
-          TextSpan(
-            style: TextStyle(fontSize: secondarySize, height: 1),
-            children: parts,
+        gutterRow2 = Text(
+          Duration(minutes: remaining).format(),
+          style: TextStyle(
+            fontSize: secondarySize,
+            color: mutedColor,
+            height: 1,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -1117,7 +1097,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
         onTap: () {
           final eventThread = widget.thread;
           if (eventThread == null) {
-            context.run(ChangeCurrentPriority(widget.priority));
+            context.run(ChangeCurrentPriority(widget.priority, fromAgenda: true));
             return;
           }
           // Event-headers in the universal agenda live under the
@@ -1128,6 +1108,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // event as current, and let [ThreadPage] wire `setThread`
           // into the destination [PriorityBloc] on mount.
           context.read<NowBloc>().setCurrentEvent(eventThread);
+          // Match the gap-header path: the destination page should open
+          // with descendants hidden, since the agenda already rolls them
+          // up under each block.
+          PriorityBloc.markNextPriorityFromAgenda();
           context.router.navigate(
             PriorityRoute(
               priorityIdString: eventThread.priority.id.toShortString(),

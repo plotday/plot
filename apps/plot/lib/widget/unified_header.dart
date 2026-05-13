@@ -516,7 +516,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // Pair a title widget with the time-tracking pill so the two read as
     // one unit. The pill sits to the right of the title with a small gap
     // and stays out of the row entirely on twist-dev priorities (which
-    // don't track time).
+    // don't track time). The sub-priorities scope toggle, when present,
+    // lives inline with the priority leaf inside [PriorityLabel] — see
+    // the priority-label branches below.
     Widget withTrackingPill(Widget title) {
       if (state.context.isTwistDev) return title;
       return Row(
@@ -528,6 +530,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ],
       );
     }
+
+    // Caret + toggle wiring shared by the single- and multi-panel priority
+    // titles. Mirrors the priorities-list expand caret: chevronDown while
+    // sub-priority content is rolled up into this feed (the default),
+    // chevronRight while it's collapsed away (direct-only feed).
+    final IconData scopeCaret = state.hideSubPriorities
+        ? FontAwesomeIcons.chevronDown
+        : FontAwesomeIcons.chevronRight;
+    void toggleScope() => context.run(
+      ToggleHideSubPriorities(context: context),
+    );
 
     // Thread open while the PriorityPage panel is hidden: show thread title
     // (or hide the title when the thread is a new draft without a title).
@@ -585,13 +598,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             }
             if (!layoutState.multiPanel) {
               return withTrackingPill(
-                PriorityLabel(priority: state.context, boldLeaf: true),
+                PriorityLabel(
+                  priority: state.context,
+                  boldLeaf: true,
+                  leafTrailingIcon: scopeCaret,
+                  onLeafTap: toggleScope,
+                ),
               );
             }
             return withTrackingPill(
               PrioritySelector(
                 selected: state.context,
                 onSelect: (p) => context.run(ChangeCurrentPriority(p)),
+                leafTrailingIcon: scopeCaret,
+                onLeafTap: toggleScope,
               ),
             );
           },

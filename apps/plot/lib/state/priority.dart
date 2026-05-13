@@ -144,6 +144,25 @@ class _PriorityLoadProfile {
 }
 
 class PriorityBloc extends Cubit<PriorityState> {
+  /// One-shot flag set by [ChangeCurrentPriority] (with `fromAgenda: true`)
+  /// just before navigation. Consumed by the next [PriorityBloc] construction
+  /// or [setPriority] call so the destination page opens with
+  /// [PriorityState.hideSubPriorities] = false. Agenda items already
+  /// surface descendant content under the current priority's block, so
+  /// landing on the priority page should default to "direct threads only"
+  /// to avoid duplicating that rollup in the feed.
+  static bool _nextPriorityFromAgenda = false;
+
+  static void markNextPriorityFromAgenda() {
+    _nextPriorityFromAgenda = true;
+  }
+
+  static bool _consumeFromAgendaFlag() {
+    final v = _nextPriorityFromAgenda;
+    _nextPriorityFromAgenda = false;
+    return v;
+  }
+
   /// Tracks threads that should stay in the unread section while being viewed,
   /// along with their original sort values to prevent position jumps when
   /// urgency is cleared by sync after marking as read.
@@ -195,7 +214,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       _agendaSubscription = null,
       _tagsSubscription = null,
       _draftModified = false,
-      super(PriorityState(context: priority, thread: thread)) {
+      super(PriorityState(
+        context: priority,
+        thread: thread,
+        hideSubPriorities: !_consumeFromAgendaFlag(),
+      )) {
     _loadPriority();
 
     // Register callback to reload agenda when time changes (e.g., via TimeTravel)
@@ -210,6 +233,17 @@ class PriorityBloc extends Cubit<PriorityState> {
       log.fine('Full resync completed, reloading priority');
       _loadPriority();
     });
+  }
+
+  /// Toggle whether the activity feed and todo list roll up threads from
+  /// descendant priorities. Reloads those streams so the change takes effect
+  /// immediately. The agenda is unaffected — it's a global stream that
+  /// surfaces threads by date regardless of which priority page is active.
+  void toggleHideSubPriorities() {
+    final next = !state.hideSubPriorities;
+    log.info('Toggling hideSubPriorities to $next');
+    emit(state.copyWith(hideSubPriorities: next));
+    _loadActivityFeed();
   }
 
   void toggleShowArchived() {
@@ -557,13 +591,28 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Replace the event that drives the "Event Agenda" section and
   /// rebuild the activity feed. Called by PriorityPage when the
   /// NowBloc.currentEvent changes.
+  ///
+  /// When an event is selected we also force the feed scope to include
+  /// descendant priorities (even if the user has the toggle off), so the
+  /// associated threads under the event are reachable from the same
+  /// page. We detect a transition between "no event" and "event selected"
+  /// and re-run the priority-scoped streams so the SQL filter switches
+  /// between `priority_id = X` and `path LIKE 'X.%'`.
   void setCurrentEventForFeed(Thread? event) {
     final prev = _currentEventForFeed;
     if (prev?.id == event?.id && prev?.occurrence == event?.occurrence) {
       return;
     }
+    final scopeChanged = (prev == null) != (event == null);
     _currentEventForFeed = event;
-    _scheduleActivityFeedRebuild();
+    if (scopeChanged && !state.hideSubPriorities && state.search.isEmpty) {
+      // Only reload when the effective scope actually flips. When the
+      // user already has descendants visible (hideSubPriorities=true) or
+      // is searching (already global), nothing changes.
+      _loadActivityFeed();
+    } else {
+      _scheduleActivityFeedRebuild();
+    }
   }
 
   /// Per-priority order timeline (`priority_block` rows). Populated by
@@ -1547,6 +1596,10 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
+    // Reset hideSubPriorities to its default unless this navigation came
+    // from the agenda (in which case the destination defaults to direct-only
+    // threads). See [_consumeFromAgendaFlag] for the rationale.
+    final fromAgenda = _consumeFromAgendaFlag();
     emit(
       state.copyWith(
         context: newPriority,
@@ -1555,6 +1608,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedItems: const [],
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
+        hideSubPriorities: !fromAgenda,
       ),
     );
     profile.mark('emitted context-switched state');
@@ -2614,12 +2668,23 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Reset distinct tracker so the first emission from this new
     // subscription is always processed.
     _lastActivityFeedSig = null;
+    // When [hideSubPriorities] is false the user has opted to see only
+    // threads filed directly on this priority — pass `priorityId` instead
+    // of `priorityPath` so the SQL filter switches from
+    // `path = X OR path LIKE 'X.%'` (this priority + descendants) to
+    // `priority_id = X` (this priority only). A selected event overrides
+    // the user's choice and forces descendants back into the feed so the
+    // event's nested threads can surface on the same page.
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
     _activityFeedSubscription =
         Thread.watch(
           order: ThreadOrder.reverse,
           // Header search is global for now — drop the priority scope
           // so results from every priority surface in the feed.
-          priorityPath: isSearching ? null : priorityToLoad.path,
+          priorityPath: scopeByPath ? (isSearching ? null : priorityToLoad.path) : null,
+          priorityId: scopeByPath ? null : priorityToLoad.id,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
@@ -2718,12 +2783,19 @@ class PriorityBloc extends Cubit<PriorityState> {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
     _todoThreadsSubscription?.cancel();
+    // Mirror [_loadActivityFeed]'s direct-only scope so the todo list and
+    // feed stay consistent when sub-priorities are hidden — and likewise
+    // honor the event-selected override that re-includes descendants.
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
     _todoThreadsSubscription =
         Thread.watch(
           order: ThreadOrder.sorted,
           // Header search is global for now — drop the priority scope
           // so results from every priority surface in the todo list.
-          priorityPath: isSearching ? null : priorityToLoad.path,
+          priorityPath: scopeByPath ? (isSearching ? null : priorityToLoad.path) : null,
+          priorityId: scopeByPath ? null : priorityToLoad.id,
           archived: state.showArchived,
           // SQL-side todo filter: returns only threads whose user_schedule
           // is the canonical `Thread.todo` shape. Replaces the previous

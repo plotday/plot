@@ -33,6 +33,7 @@ class PriorityState extends Equatable {
     bool remoteSearchInProgress = false,
     bool remoteSearchOffline = false,
     bool hasArchivedMatches = false,
+    bool hideSubPriorities = true,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -79,6 +80,7 @@ class PriorityState extends Equatable {
       remoteSearchInProgress: remoteSearchInProgress,
       remoteSearchOffline: remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches,
+      hideSubPriorities: hideSubPriorities,
     );
   }
 
@@ -109,6 +111,7 @@ class PriorityState extends Equatable {
     this.remoteSearchInProgress = false,
     this.remoteSearchOffline = false,
     this.hasArchivedMatches = false,
+    this.hideSubPriorities = true,
   });
 
   final Priority context;
@@ -166,6 +169,12 @@ class PriorityState extends Equatable {
   /// additional matches. Drives the "View archived items matching this
   /// search" ghost button. Only meaningful when [showArchived] is false.
   final bool hasArchivedMatches;
+
+  /// When true (default), the activity feed and todo list include threads
+  /// filed under descendant priorities as well as the current priority —
+  /// matching the long-standing "roll up sub-priorities" behavior. When
+  /// false, only threads filed directly on [context] are shown.
+  final bool hideSubPriorities;
 
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
@@ -1130,6 +1139,7 @@ class PriorityState extends Equatable {
     bool? remoteSearchInProgress,
     bool? remoteSearchOffline,
     bool? hasArchivedMatches,
+    bool? hideSubPriorities,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1183,6 +1193,7 @@ class PriorityState extends Equatable {
           remoteSearchInProgress ?? this.remoteSearchInProgress,
       remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
+      hideSubPriorities: hideSubPriorities ?? this.hideSubPriorities,
     );
   }
 
@@ -1214,6 +1225,7 @@ class PriorityState extends Equatable {
     remoteSearchInProgress,
     remoteSearchOffline,
     hasArchivedMatches,
+    hideSubPriorities,
   ];
 
   @override

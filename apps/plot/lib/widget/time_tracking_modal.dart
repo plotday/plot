@@ -106,15 +106,16 @@ class _TimeTrackingBodyState extends State<_TimeTrackingBody> {
     // priority instance — see the docstring on
     // [Session.watchSelfAndDescendantIds].
     return StreamBuilder<(Set<PriorityId>, List<Session>)>(
-      stream: Rx.combineLatest2<
-        Set<PriorityId>,
-        List<Session>,
-        (Set<PriorityId>, List<Session>)
-      >(
-        Session.watchSelfAndDescendantIds(widget.priority),
-        Session.watch(range: range),
-        (ids, sessions) => (ids, sessions),
-      ),
+      stream:
+          Rx.combineLatest2<
+            Set<PriorityId>,
+            List<Session>,
+            (Set<PriorityId>, List<Session>)
+          >(
+            Session.watchSelfAndDescendantIds(widget.priority),
+            Session.watch(range: range),
+            (ids, sessions) => (ids, sessions),
+          ),
       builder: (context, snapshot) {
         final data = snapshot.data;
         if (data == null) {
@@ -122,8 +123,7 @@ class _TimeTrackingBodyState extends State<_TimeTrackingBody> {
         }
         final allIds = data.$1;
         final hasDescendants = allIds.length > 1;
-        final sessions =
-            data.$2.where((s) => s.archivedAt == null).toList();
+        final sessions = data.$2.where((s) => s.archivedAt == null).toList();
 
         final weeks = <Week>[];
         for (var i = 0; i < _weeksLoaded; i++) {
@@ -142,8 +142,7 @@ class _TimeTrackingBodyState extends State<_TimeTrackingBody> {
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
                     if (n is ScrollEndNotification &&
-                        n.metrics.pixels >=
-                            n.metrics.maxScrollExtent - 80) {
+                        n.metrics.pixels >= n.metrics.maxScrollExtent - 80) {
                       _loadMore();
                     }
                     return false;
@@ -157,8 +156,7 @@ class _TimeTrackingBodyState extends State<_TimeTrackingBody> {
                     itemBuilder: (context, idx) {
                       if (idx == weeks.length) {
                         return Padding(
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           child: FButton(
                             variant: FButtonVariant.ghost,
                             onPress: _loadMore,
@@ -219,11 +217,7 @@ class _ColumnHeaders extends StatelessWidget {
           if (hasDescendants)
             SizedBox(
               width: _totalColumnWidth,
-              child: Text(
-                'Total',
-                textAlign: TextAlign.right,
-                style: style,
-              ),
+              child: Text('Total', textAlign: TextAlign.right, style: style),
             ),
         ],
       ),

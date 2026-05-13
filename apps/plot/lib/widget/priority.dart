@@ -342,6 +342,8 @@ class PriorityLabel extends StatelessWidget {
     this.color,
     this.mutedAncestorColor,
     this.boldLeaf = false,
+    this.leafTrailingIcon,
+    this.onLeafTap,
     super.key,
   }) : ancestors = (() {
          final computed =
@@ -368,6 +370,18 @@ class PriorityLabel extends StatelessWidget {
   /// (this priority) at semibold so the leaf reads as the primary label.
   final bool boldLeaf;
 
+  /// Optional icon (typically a small caret) rendered immediately after
+  /// the leaf title. When [onLeafTap] is also provided, the leaf and the
+  /// trailing icon share a single tap target — the caller can use this
+  /// to attach a scope toggle / expand affordance to the priority name
+  /// without a separate button. The caret renders in the same color as
+  /// the leaf text.
+  final IconData? leafTrailingIcon;
+
+  /// Tap handler for the combined leaf + [leafTrailingIcon] hit area.
+  /// Only honored when [leafTrailingIcon] is set.
+  final VoidCallback? onLeafTap;
+
   @override
   Widget build(BuildContext context) {
     // Compute display colors for each ancestor (with inheritance)
@@ -387,8 +401,10 @@ class PriorityLabel extends StatelessWidget {
     // a single Text.rich so ellipsis truncation happens at the end of the
     // line without leaving leftover space between the content and the
     // trailing slot (a multi-Flexible Row layout leaves a visible gap when
-    // one Flexible underuses its allocation).
-    if (onSelect == null) {
+    // one Flexible underuses its allocation). The trailing-caret variant
+    // needs the Row path so the leaf and its icon can share a tap target,
+    // so it falls through to the Row branch below.
+    if (onSelect == null && leafTrailingIcon == null) {
       final resolvedFontSize =
           fontSize ?? context.theme.typography.md.fontSize;
       final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
@@ -456,28 +472,47 @@ class PriorityLabel extends StatelessWidget {
               mutedAncestorColor ??
               color ??
               context.colour.colours.fromTheme(displayColors[i], muted: true);
-          final ancestorText = Text(
-            ancestor.title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          );
+          TextStyle ancestorTextStyle(Color c) =>
+              DefaultTextStyle.of(context).style.copyWith(
+                color: c,
+                fontSize: fontSize ?? context.theme.typography.md.fontSize,
+                height: height,
+                fontWeight: ancestorWeight,
+              );
+          final Widget ancestorCell;
+          if (onSelect != null) {
+            // Clickable segments resolve to the foreground colour on
+            // hover so the user can see the priority name lift out of
+            // the muted crumb tone before clicking.
+            ancestorCell = _HoverColored(
+              restColor: ancestorColor,
+              hoverColor: context.colour.foreground,
+              builder: (context, c) => DefaultTextStyle(
+                style: ancestorTextStyle(c),
+                child: Tapable(
+                  onTap: () => onSelect!.call(ancestor.id),
+                  child: Text(
+                    ancestor.title,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+            );
+          } else {
+            ancestorCell = DefaultTextStyle(
+              style: ancestorTextStyle(ancestorColor),
+              child: Text(
+                ancestor.title,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            );
+          }
           return [
             Flexible(
               key: ValueKey('ancestor_${ancestor.id}'),
-              child: DefaultTextStyle(
-                style: DefaultTextStyle.of(context).style.copyWith(
-                  color: ancestorColor,
-                  fontSize: fontSize ?? context.theme.typography.md.fontSize,
-                  height: height,
-                  fontWeight: ancestorWeight,
-                ),
-                child: onSelect != null
-                    ? Tapable(
-                        onTap: () => onSelect!.call(ancestor.id),
-                        child: ancestorText,
-                      )
-                    : ancestorText,
-              ),
+              child: ancestorCell,
             ),
             if (!isLast || priority != null)
               DefaultTextStyle(
@@ -497,26 +532,116 @@ class PriorityLabel extends StatelessWidget {
         }),
         if (priority != null)
           Flexible(
-            child: DefaultTextStyle(
-              style: DefaultTextStyle.of(context).style.copyWith(
-                color:
-                    color ??
-                    context.colour.colours.fromTheme(
-                      currentColor,
-                      muted: muted,
-                    ),
-                fontSize: fontSize ?? context.theme.typography.md.fontSize,
-                height: height,
-                fontWeight: leafWeight,
-              ),
-              child: Text(
-                priority!.title,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+            child: _buildLeafCell(
+              context: context,
+              currentColor: currentColor,
+              leafWeight: leafWeight,
             ),
           ),
       ],
+    );
+  }
+
+  /// Renders the leaf priority's title cell. When [leafTrailingIcon] is
+  /// set, the leaf and trailing icon share a single GestureDetector so a
+  /// tap anywhere on the combined area fires [onLeafTap] (e.g. the
+  /// sub-priorities scope toggle in the unified header). When the cell
+  /// is clickable ([onLeafTap] non-null), the leaf text and trailing
+  /// icon both shift to the foreground colour on hover — matching the
+  /// ancestor crumbs' hover affordance.
+  Widget _buildLeafCell({
+    required BuildContext context,
+    required ThemeColor currentColor,
+    required FontWeight? leafWeight,
+  }) {
+    final restLeafColor = color ??
+        context.colour.colours.fromTheme(currentColor, muted: muted);
+    final resolvedFontSize =
+        fontSize ?? context.theme.typography.md.fontSize;
+
+    Widget leafTextWith(Color c) => DefaultTextStyle(
+      style: DefaultTextStyle.of(context).style.copyWith(
+        color: c,
+        fontSize: resolvedFontSize,
+        height: height,
+        fontWeight: leafWeight,
+      ),
+      child: Text(
+        priority!.title,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      ),
+    );
+
+    if (leafTrailingIcon == null) {
+      return leafTextWith(restLeafColor);
+    }
+
+    // Combined leaf + caret hit area. The Flexible above already bounds
+    // the cell, so an inner Row with mainAxisSize.min sits flush to the
+    // trailing icon without an extra gap. Caret matches [_ExpandCaretButton]'s
+    // size so the affordance reads the same as the priorities-list carets.
+    Widget body(Color c) => Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(child: leafTextWith(c)),
+        const SizedBox(width: 4),
+        Icon(leafTrailingIcon, size: 10, color: c),
+      ],
+    );
+
+    if (onLeafTap == null) {
+      return body(restLeafColor);
+    }
+
+    return _HoverColored(
+      restColor: restLeafColor,
+      hoverColor: context.colour.foreground,
+      builder: (context, c) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onLeafTap,
+        child: body(c),
+      ),
+    );
+  }
+}
+
+/// Tracks pointer hover and rebuilds with the resolved colour. Lets
+/// clickable [PriorityLabel] segments shift their text + icon to the
+/// foreground tone on hover without each segment owning its own
+/// stateful boilerplate. The hit area is whatever [builder] produces —
+/// callers wrap the eventual `GestureDetector` / `Tapable` inside the
+/// returned widget so the hover region matches the click region.
+class _HoverColored extends StatefulWidget {
+  const _HoverColored({
+    required this.restColor,
+    required this.hoverColor,
+    required this.builder,
+  });
+
+  final Color restColor;
+  final Color hoverColor;
+  final Widget Function(BuildContext context, Color color) builder;
+
+  @override
+  State<_HoverColored> createState() => _HoverColoredState();
+}
+
+class _HoverColoredState extends State<_HoverColored> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _hovered ? widget.hoverColor : widget.restColor;
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: widget.builder(context, c),
     );
   }
 }
