@@ -76,8 +76,15 @@ class ChangeCurrentThread extends ThreadCommand {
     // Done BEFORE the no-op short-circuit so re-selecting the same
     // event from the agenda (after returning from another priority
     // that cleared currentEvent) reliably re-arms the selection.
-    final isEvent = thread != null &&
-        (thread!.at?.start != null || thread!.isLinkScheduleInstance);
+    // Match the canonical event predicate in priority_state.dart:617 —
+    // a user-scheduled todo with a date (e.g. the onboarding threads
+    // seeded into "Using Plot") also has `at.start != null`, so without
+    // `!todo` clicking one wrongly arms it as the current event and the
+    // header/feed switch into event-agenda mode.
+    final isEvent =
+        thread != null &&
+        ((thread!.at?.start != null && !thread!.todo) ||
+            thread!.isLinkScheduleInstance);
     if (isEvent) {
       nowBloc.setCurrentEvent(thread);
     }
@@ -129,8 +136,7 @@ class ChangeCurrentThread extends ThreadCommand {
       final innerRouter = _innerRouter(context);
       final topName = innerRouter?.current.name;
       if (innerRouter != null &&
-          (topName == ThreadRoute.name ||
-              topName == NewThreadRoute.name)) {
+          (topName == ThreadRoute.name || topName == NewThreadRoute.name)) {
         innerRouter.pop();
         return const CommandDone();
       }
@@ -158,12 +164,20 @@ class ChangeCurrentThread extends ThreadCommand {
       final threadRoute = ThreadRoute(
         threadIdString: thread!.id.toShortString(),
       );
+      // Fire and forget: auto_route's push/replace return Futures that resolve
+      // on POP, not on push. Awaiting blocks indefinitely.
       if (innerRouter.current.name == ThreadRoute.name) {
-        // Already on a thread (Next/Previous) — replace in place so
-        // the back stack stays one ThreadRoute deep.
-        await innerRouter.replace(threadRoute);
+        // Already on a thread (Next/Previous) — replace in place so the back
+        // stack stays one ThreadRoute deep. Note: ThreadRoute must declare
+        // `usesPathAsKey: true` in the router for replace to actually swap the
+        // page widget; otherwise Flutter's Navigator updates the existing
+        // route in place via canUpdate=true and the right panel keeps showing
+        // the previous thread.
+        // ignore: unawaited_futures
+        innerRouter.replace(threadRoute);
       } else {
-        await innerRouter.push(threadRoute);
+        // ignore: unawaited_futures
+        innerRouter.push(threadRoute);
       }
       return const CommandDone();
     }
@@ -1472,14 +1486,12 @@ class RescheduleAllInBlock extends Command {
                 decoration: DecorationDelta.value(const BoxDecoration()),
                 padding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
               ),
-              onPress: (date) =>
-                  Modal.pop(modalContext, Value(date.toDate())),
+              onPress: (date) => Modal.pop(modalContext, Value(date.toDate())),
             ),
             const SizedBox(height: 12),
             FButton(
               variant: FButtonVariant.secondary,
-              onPress: () =>
-                  Modal.pop(modalContext, Value(Thread.todoNowDate)),
+              onPress: () => Modal.pop(modalContext, Value(Thread.todoNowDate)),
               child: const Text('Today'),
             ),
           ],

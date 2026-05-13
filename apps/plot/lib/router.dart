@@ -230,6 +230,14 @@ class AppRouter extends RootStackRouter {
                       page: ThreadRoute.page,
                       path: ':threadId',
                       type: _threadRouteType,
+                      // Make the page key path-based so ThreadRoute(A) and
+                      // ThreadRoute(B) get distinct ValueKeys. Without this,
+                      // both share `ValueKey("ThreadRoute")`, so when
+                      // innerRouter.replace swaps A→B Flutter's Navigator
+                      // sees `canUpdate=true` and updates the existing route
+                      // in place — the ThreadBlocProvider's threadId stays
+                      // bound to A and the right panel never changes.
+                      usesPathAsKey: true,
                     ),
                   ],
                 ),

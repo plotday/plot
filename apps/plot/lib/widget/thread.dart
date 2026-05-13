@@ -231,6 +231,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
     final listTile = ListTile(
       command: CommandWrapper(ChangeCurrentThread(activity), icon: Value(null)),
+      // Bypass ListTile's run() spinner tracking. The command returns
+      // CommandDone immediately (navigation is fire-and-forget), but routing
+      // it through context.run directly keeps the spinner machinery out of
+      // the hot tap path entirely.
+      onTap: () {
+        buildContext.run(ChangeCurrentThread(activity));
+      },
       // Menu opens via long-left swipe on touch (see Swipeable wrapper
       // below) and via right-click on desktop (see ContextMenu wrapper
       // below). Long-press is reserved for starting a reorder drag.
