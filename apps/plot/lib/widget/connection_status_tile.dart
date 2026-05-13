@@ -7,7 +7,6 @@ import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
-import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/pulsing_icon.dart';
@@ -146,9 +145,9 @@ class ConnectionStatusTile extends StatelessWidget {
     );
   }
 
-  /// Builds a leading-slot icon that aligns the icon and label with the
-  /// surrounding priority tiles (same left inset, same icon-to-label gap).
-  /// The icon color flips muted → foreground on hover, matching `muted: true`.
+  /// Builds a leading-slot icon that matches the default ListTile spacing
+  /// (20px left inset, 12px gap to the label). The icon color flips
+  /// muted → foreground on hover, matching `muted: true`.
   Widget? Function(bool, bool) _leadingIcon(
     BuildContext context,
     IconData icon,
@@ -186,11 +185,10 @@ class ConnectionStatusTile extends StatelessWidget {
     final shifted = isWidePlug
         ? Transform.translate(offset: Offset(-base * 0.125, 0), child: child)
         : child;
+    // Match the default ListTile leading: 20px left inset + 16px icon slot
+    // + 12px gap to the label.
     return (isHovered, hasFocus) => Padding(
-      padding: EdgeInsets.only(
-        left: context.theme.spacing.lg,
-        right: context.theme.spacing.sm,
-      ),
+      padding: const EdgeInsets.only(left: 20, right: 12),
       child: SizedBox.square(
         dimension: base,
         child: Center(child: shifted),

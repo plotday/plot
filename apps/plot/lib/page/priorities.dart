@@ -16,8 +16,6 @@ import 'package:plot/widget/scroll_edge_fade.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/connection_status_tile.dart';
-import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 
 @RoutePage(name: 'PrioritiesRoute')
@@ -166,42 +164,7 @@ class PrioritiesPanelContent extends StatelessWidget {
                                                   .copyWith(
                                                     fontWeight: FontWeight.w500,
                                                   ),
-                                              leadingBuilder: (h, f) => Padding(
-                                                padding: EdgeInsets.only(
-                                                  left: context
-                                                      .theme
-                                                      .spacing
-                                                      .lg,
-                                                  right: context
-                                                      .theme
-                                                      .spacing
-                                                      .sm,
-                                                ),
-                                                child: SizedBox.square(
-                                                  dimension: context
-                                                      .theme
-                                                      .iconSizes
-                                                      .base,
-                                                  child: Center(
-                                                    child: Icon(
-                                                      PlotIcon.account,
-                                                      size: context
-                                                          .theme
-                                                          .iconSizes
-                                                          .base,
-                                                      color: (h || f)
-                                                          ? context
-                                                                .theme
-                                                                .colors
-                                                                .foreground
-                                                          : context
-                                                                .theme
-                                                                .plotColors
-                                                                .muted,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
+                                              icon: PlotIcon.account,
                                               muted: true,
                                               highlightColor:
                                                   const Color(0x00000000),

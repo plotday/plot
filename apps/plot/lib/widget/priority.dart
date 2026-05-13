@@ -4,7 +4,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/time_tracking_modal.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/state/layout.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -101,9 +100,11 @@ class _PriorityWidgetState extends State<PriorityWidget> {
   Widget build(BuildContext buildContext) {
     final priority = widget.priority;
     bool isContext = priority == widget.context;
-    final leadingH = buildContext.isMultiPanel
-        ? buildContext.theme.spacing.lg
-        : buildContext.theme.spacing.sm;
+    // The notification box (PriorityNotification) is a 16×16 square that
+    // centers a 6px dot — its own internal padding already gives the dot
+    // visual breathing room. Sit the box close to the panel edge so labels
+    // don't feel floating-right when no priorities are unread.
+    final leadingH = buildContext.theme.spacing.sm;
 
     final isActive = widget.selected || _isHovered;
     final priorityAccentBg = widget.monochrome

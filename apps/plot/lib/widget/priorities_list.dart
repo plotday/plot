@@ -424,7 +424,6 @@ class _PrioritiesListState extends State<PrioritiesList>
         final everythingTile = _EverythingTile(
           root: widget.root,
           isSelected: widget.selected?.id == widget.root.id,
-          isMultiPanel: isMultiPanel,
           borderRadius: itemBorderRadius,
           textStyle: itemStyle,
           monochrome: monochrome,
@@ -633,7 +632,6 @@ class _PrioritiesListState extends State<PrioritiesList>
 class _EverythingTile extends StatefulWidget {
   final Priority root;
   final bool isSelected;
-  final bool isMultiPanel;
   final BorderRadius? borderRadius;
   final TextStyle textStyle;
   final bool monochrome;
@@ -642,7 +640,6 @@ class _EverythingTile extends StatefulWidget {
   const _EverythingTile({
     required this.root,
     required this.isSelected,
-    required this.isMultiPanel,
     required this.borderRadius,
     required this.textStyle,
     required this.monochrome,
@@ -691,9 +688,7 @@ class _EverythingTileState extends State<_EverythingTile> {
       },
       leadingBuilder: (isHovered, hasFocus) => Padding(
         padding: EdgeInsets.only(
-          left: widget.isMultiPanel
-              ? context.theme.spacing.lg
-              : context.theme.spacing.sm,
+          left: context.theme.spacing.sm,
           right: context.theme.spacing.sm,
           bottom: 2,
         ),
@@ -707,9 +702,7 @@ class _EverythingTileState extends State<_EverythingTile> {
       trailingBuilder: (isHovered, hasFocus) {
         final button = Padding(
           padding: EdgeInsets.only(
-            right: widget.isMultiPanel
-                ? context.theme.spacing.lg
-                : context.theme.spacing.sm,
+            right: context.theme.spacing.sm,
           ),
           child: Button.icon(ShowPriorityCommands(widget.root)),
         );
@@ -797,14 +790,9 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
           ),
           child: Row(
             children: [
-              // Match PriorityWidget leading: leadingH + 16px notification + spacing.sm
+              // Match PriorityWidget leading: spacing.sm + 16px notification + spacing.sm
               SizedBox(
-                width:
-                    (context.isMultiPanel
-                        ? context.theme.spacing.lg
-                        : context.theme.spacing.sm) +
-                    16 +
-                    context.theme.spacing.sm,
+                width: context.theme.spacing.sm + 16 + context.theme.spacing.sm,
               ),
               Expanded(
                 child: Padding(
