@@ -2316,17 +2316,22 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     var firstEmissionLogged = false;
 
-    // Two streams are combined:
-    // 1. Main agenda: threads across all priorities (no path filter), so
-    //    every priority block is visible regardless of which priority
-    //    page is active. The page [context] only determines which block
-    //    is expanded by default, not which threads load.
-    // 2. Associated threads: children of active thread associations.
+    // Three streams are combined:
+    // 1. Events: paginated, hard-scheduled rows (shared or link schedule)
+    //    within the date window. LIMIT governs the event horizon, grown
+    //    as the user scrolls via [fetchMoreAgendaItems].
+    // 2. Todos: all active user-only todos. NO LIMIT — constraint 1
+    //    from the agenda spec ("we only care about the existence of at
+    //    least one active thread per priority") means a flood of overdue
+    //    or sentinel-dated todos must not crowd events out of the events
+    //    stream. Keeping todos in their own stream sidesteps the LIMIT.
+    // 3. Associated threads: children of active thread associations,
+    //    surfaced under their parent event in the agenda block.
     final dateRange = CustomBoundedDateRange(
       Date.today(),
       Date.today().addDays(_agendaHorizonDays),
     );
-    final agendaStream = Thread.watch(
+    final eventsStream = Thread.watch(
       archived: state.showArchived,
       filter: state.filter.isNotEmpty ? state.filter : null,
       iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
@@ -2340,37 +2345,75 @@ class PriorityBloc extends Cubit<PriorityState> {
       // instances anyway, so fetching them only wastes a row of the
       // pagination budget that should be carrying real events.
       eventsActiveAt: DateTime.now(),
+      // Drop the user-schedule branches; the todosStream below is the
+      // sole source for those rows.
+      eventsOnly: true,
     );
-    // Seed the associations stream with an empty list so [combineLatest2]
-    // can fire on the FIRST emission of [agendaStream] alone. Without
+    // Todos query: every active user-only todo, no LIMIT and no date
+    // range. Surfacing one row per todo is intentional — `makeAgendaItems`
+    // collapses past-dated todos to today via `agendaAt`, and future-dated
+    // todos to their actual date, so the stream's full output naturally
+    // covers the "current day + future days with at least one todo"
+    // contract the agenda needs. If todo volume ever becomes a perf
+    // concern we can switch to a GROUP BY priority + date-bucket
+    // existence query, but at present even calendar-heavy users land
+    // in the low-hundreds range.
+    final todosStream = Thread.watch(
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: state.search.isNotEmpty ? state.search : null,
+      order: ThreadOrder.sorted,
+      todoOnly: true,
+    ).startWith(const (threads: <Thread>[], rawRowCount: 0));
+    // Seed the associations stream with an empty list so [combineLatest]
+    // can fire on the FIRST emission of [eventsStream] alone. Without
     // this, cold-start agenda render is gated on the 6-join associations
     // SQL completing — which on a fresh app open is often empty anyway.
     // When the real associations emission arrives moments later it will
-    // re-fire combineLatest2 and the throttleTime/distinct downstream
+    // re-fire combineLatest and the throttleTime/distinct downstream
     // collapses the burst.
     final associatedStream = Thread.watchAssociatedThreads()
         .startWith(const <Thread>[]);
 
     _agendaSubscription =
-        Rx.combineLatest2<
+        Rx.combineLatest3<
+              ThreadWatchResult,
               ThreadWatchResult,
               List<Thread>,
               ThreadWatchResult
-            >(agendaStream, associatedStream, (
-              agendaResult,
+            >(eventsStream, todosStream, associatedStream, (
+              eventsResult,
+              todosResult,
               associatedThreads,
             ) {
-              final agendaIds = agendaResult.threads.map((t) => t.id).toSet();
+              // Merge events + todos, deduplicating by (id, occurrence,
+              // isLinkScheduleInstance) since a thread with both a
+              // user-only todo and a calendar event surfaces in both
+              // streams and `_mapResultsToThreads` may emit multiple
+              // Thread instances per id (one per occurrence).
+              final seen = <String>{};
+              final merged = <Thread>[];
+              String key(Thread t) =>
+                  '${t.id}:${t.occurrence ?? ''}:${t.isLinkScheduleInstance ? 1 : 0}';
+              for (final t in eventsResult.threads) {
+                if (seen.add(key(t))) merged.add(t);
+              }
+              for (final t in todosResult.threads) {
+                if (seen.add(key(t))) merged.add(t);
+              }
+
+              final mergedIds = merged.map((t) => t.id).toSet();
 
               // Merge associated threads that aren't already in the agenda.
               // Include any associated child whose parent event is visible
               // in the (now global) agenda.
-              final visibleEventIds = agendaResult.threads
+              final visibleEventIds = merged
                   .where((t) => t.isLinkScheduleInstance || t.hasLinkSchedule)
                   .map((t) => t.id)
                   .toSet();
               final extra = associatedThreads.where((t) {
-                if (agendaIds.contains(t.id)) return false;
+                if (mergedIds.contains(t.id)) return false;
                 if (_associations != null) {
                   for (final entry in _associations!.entries) {
                     if (visibleEventIds.contains(entry.key) &&
@@ -2382,9 +2425,12 @@ class PriorityBloc extends Cubit<PriorityState> {
                 return false;
               }).toList();
 
+              // `rawRowCount` still drives the pagination grow logic in
+              // [fetchMoreAgendaItems]; it should reflect the events
+              // stream alone since that's where LIMIT lives.
               return (
-                threads: [...agendaResult.threads, ...extra],
-                rawRowCount: agendaResult.rawRowCount,
+                threads: [...merged, ...extra],
+                rawRowCount: eventsResult.rawRowCount,
               );
             })
             .map((result) {
@@ -2631,7 +2677,9 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       if (_agendaSyncNoMore) break;
 
-      // Check local agenda to decide if we need more pages.
+      // Check local agenda to decide if we need more pages. Mirrors
+      // the events stream above — todos aren't paginated, so they
+      // don't factor into the "have we reached the horizon" decision.
       final localThreads = await Thread.get(
         priorityPath: priorityToLoad.path,
         archived: archived,
@@ -2643,6 +2691,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           Date.today().addDays(_agendaHorizonDays),
         ),
         eventsActiveAt: DateTime.now(),
+        eventsOnly: true,
       );
 
       final hasEnoughItems = localThreads.length >= _agendaLimit;

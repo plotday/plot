@@ -927,6 +927,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<String>? iconFilter,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
+    bool eventsOnly = false,
     int? limit,
   }) async {
     return await _get(
@@ -944,6 +945,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
       includeUnscheduled: includeUnscheduled,
+      eventsOnly: eventsOnly,
       limit: limit,
     );
   }
@@ -966,6 +968,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeUnscheduled = true,
     bool linkScheduledOnly = false,
     bool todoOnly = false,
+    bool eventsOnly = false,
     int? limit,
     int? offset,
   }) {
@@ -993,6 +996,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
         linkScheduledOnly: linkScheduledOnly,
         todoOnly: todoOnly,
+        eventsOnly: eventsOnly,
         limit: limit,
         offset: offset,
       ).watch().asyncMap((results) async {
@@ -1329,6 +1333,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? draft = false,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
+    bool eventsOnly = false,
     String? search,
     List<Tag>? filter,
     List<String>? iconFilter,
@@ -1356,6 +1361,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       draft: draft,
       includeAllFutureEvents: includeAllFutureEvents,
       includeUnscheduled: includeUnscheduled,
+      eventsOnly: eventsOnly,
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
@@ -1403,6 +1409,15 @@ class Thread extends Equatable implements Comparable<Thread> {
     /// by a Dart-side `.where((t) => t.todo)` discard. Mirrors the
     /// `activeTodo` sub-expression below at lines ~1582-1586.
     bool todoOnly = false,
+    /// Drops every WHERE branch that admits a thread on the strength of
+    /// its **per-user schedule** alone — `activeTodo`, the date-range
+    /// user-schedule branches, and the `unscheduled` branch. The query
+    /// then only returns threads with a shared or link schedule (the
+    /// kinds of rows agendas render with a time label). Pairs with a
+    /// sibling `todoOnly: true` watch when the caller wants events and
+    /// todos in separate streams so the LIMIT on events doesn't fight
+    /// with overdue / sentinel-dated todos for the same row budget.
+    bool eventsOnly = false,
     String? search,
     /// Per-search-word lists of actor UUID strings whose name has a word
     /// starting with that search word (resolved via [Actor.idsMatchingWordPrefix]).
@@ -1647,7 +1662,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Must check both shared and per-user schedules have no dates.
       // Excluded for agenda queries where unscheduled non-todo items would
       // consume the LIMIT and then be filtered out as past dates.
-      if (includeUnscheduled) {
+      if (includeUnscheduled && !eventsOnly) {
         Expression<bool> unscheduled =
             sched.startOn.isNull() &
             sched.startAt.isNull() &
@@ -1659,7 +1674,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Active todo: always include threads with an active user schedule (has dates).
       // Skip for linkScheduledOnly — we only want threads by their link schedule,
       // not by their user schedule (those belong to the priority-filtered query).
-      if (!linkScheduledOnly) {
+      // Skip for eventsOnly — caller is running a separate todoOnly watch.
+      if (!linkScheduledOnly && !eventsOnly) {
         Expression<bool> activeTodo =
             userSched.id.isNotNull() &
             userSched.archivedAt.isNull() &
@@ -1690,28 +1706,33 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
         condition = condition | dateScheduled;
 
-        // Per-user schedule date-based
-        Expression<bool> userDateScheduled = userSched.startOn.isNotNull();
-        if (range.start != null) {
-          if (strictRange) {
-            userDateScheduled =
-                userDateScheduled &
-                userSched.startOn.isBiggerOrEqualValue(range.start!.toString());
-          } else {
-            userDateScheduled =
-                userDateScheduled &
-                (userSched.endOn.isNull() |
-                    userSched.endOn.isBiggerOrEqualValue(
-                      range.start!.toString(),
-                    ));
+        // Per-user schedule date-based. Skipped for eventsOnly so the
+        // caller's sibling todoOnly watch is the sole source for these.
+        if (!eventsOnly) {
+          Expression<bool> userDateScheduled = userSched.startOn.isNotNull();
+          if (range.start != null) {
+            if (strictRange) {
+              userDateScheduled =
+                  userDateScheduled &
+                  userSched.startOn.isBiggerOrEqualValue(
+                    range.start!.toString(),
+                  );
+            } else {
+              userDateScheduled =
+                  userDateScheduled &
+                  (userSched.endOn.isNull() |
+                      userSched.endOn.isBiggerOrEqualValue(
+                        range.start!.toString(),
+                      ));
+            }
           }
+          if (range.end != null) {
+            userDateScheduled =
+                userDateScheduled &
+                userSched.startOn.isSmallerThanValue(range.end!.toString());
+          }
+          condition = condition | userDateScheduled;
         }
-        if (range.end != null) {
-          userDateScheduled =
-              userDateScheduled &
-              userSched.startOn.isSmallerThanValue(range.end!.toString());
-        }
-        condition = condition | userDateScheduled;
       }
 
       // Activity is scheduled within the range (DateTime-based)
@@ -1736,26 +1757,29 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
       condition = condition | dateTimeScheduled;
 
-      // Per-user schedule datetime-based
-      Expression<bool> userDateTimeScheduled = userSched.startAt.isNotNull();
-      if (rangeStart != null) {
-        if (strictRange) {
-          userDateTimeScheduled =
-              userDateTimeScheduled &
-              userSched.startAt.isBiggerOrEqualValue(rangeStart);
-        } else {
-          userDateTimeScheduled =
-              userDateTimeScheduled &
-              (userSched.endAt.isNull() |
-                  userSched.endAt.isBiggerOrEqualValue(rangeStart));
+      // Per-user schedule datetime-based. Skipped for eventsOnly (see
+      // userDateScheduled).
+      if (!eventsOnly) {
+        Expression<bool> userDateTimeScheduled = userSched.startAt.isNotNull();
+        if (rangeStart != null) {
+          if (strictRange) {
+            userDateTimeScheduled =
+                userDateTimeScheduled &
+                userSched.startAt.isBiggerOrEqualValue(rangeStart);
+          } else {
+            userDateTimeScheduled =
+                userDateTimeScheduled &
+                (userSched.endAt.isNull() |
+                    userSched.endAt.isBiggerOrEqualValue(rangeStart));
+          }
         }
+        if (rangeEnd != null) {
+          userDateTimeScheduled =
+              userDateTimeScheduled &
+              userSched.startAt.isSmallerThanValue(rangeEnd);
+        }
+        condition = condition | userDateTimeScheduled;
       }
-      if (rangeEnd != null) {
-        userDateTimeScheduled =
-            userDateTimeScheduled &
-            userSched.startAt.isSmallerThanValue(rangeEnd);
-      }
-      condition = condition | userDateTimeScheduled;
 
       // Link schedule date-based
       if (range.start != null || range.end != null) {
