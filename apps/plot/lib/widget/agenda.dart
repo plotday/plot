@@ -545,6 +545,18 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
   static const _swipeBumpStep = Duration(minutes: 15);
 
+  /// First-add default for a priority block's pending duration. A bump
+  /// from `null` lands here directly instead of going through one
+  /// [_swipeBumpStep] — matches the same 30m default the agenda's
+  /// drop-into-gap path applies, so "Add planned time" produces the
+  /// same starting size regardless of how the user invoked it.
+  static const _firstAddDuration = Duration(minutes: 30);
+
+  /// Minimum non-zero duration. A subtract that would land below this
+  /// clears the pending value entirely (returns null) rather than
+  /// leaving a sub-step remainder.
+  static const _minimumDuration = Duration(minutes: 15);
+
   /// True when this block header is itself a drag source (a non-event
   /// block with a known parent block id). Outside-priority gating is
   /// no longer relevant in the universal agenda — every priority's
@@ -578,11 +590,26 @@ class _BlockHeaderState extends State<_BlockHeader> {
       _scheduleTick();
     }
     if (oldWidget.priority.id != widget.priority.id ||
-        (oldWidget.block is PriorityBlock) != (widget.block is PriorityBlock)) {
+        _blockHasEditablePending(oldWidget.block) !=
+            _blockHasEditablePending(widget.block)) {
       _pendingSub?.cancel();
       _pendingDisplay = null;
       _subscribePending();
     }
+  }
+
+  /// True for blocks whose lead priority owns an editable pending
+  /// duration in the gutter — both standalone [PriorityBlock]s and
+  /// [GapBlock]s that have promoted a priority into their header
+  /// (either via threads or a cascade-merged slice).
+  /// Empty / no-priority gaps stay read-only.
+  static bool _blockHasEditablePending(AgendaBlock block) {
+    if (block is PriorityBlock) return true;
+    if (block is GapBlock &&
+        (block.threads.isNotEmpty || block.cascadeDuration != null)) {
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -594,7 +621,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   }
 
   void _subscribePending() {
-    if (widget.block is! PriorityBlock) return;
+    if (!_blockHasEditablePending(widget.block)) return;
     _pendingSub = NowBloc.watchPendingDisplay(widget.priority.id).listen((d) {
       if (!mounted) return;
       setState(() => _pendingDisplay = d);
@@ -757,17 +784,28 @@ class _BlockHeaderState extends State<_BlockHeader> {
           overflow: TextOverflow.ellipsis,
         );
       }
-    } else if (block is PriorityBlock) {
-      // PriorityBlock cascade: prefer the live-decremented value from
-      // [NowBloc.watchPendingDisplay] so the gutter ticks down while an
-      // active session is consuming the priority's pending. Once the
-      // subscription has emitted, trust its value (including an explicit
-      // null after a ± clear) — falling back to the agenda model's stale
-      // [PriorityBlock.cascadeDuration] would leave the gutter showing
-      // the pre-clear number even though the underlying row is gone.
-      final slice = block.cascadeDuration;
-      final displayed =
+    } else if (_blockHasEditablePending(block)) {
+      // Priority blocks and gap blocks that have promoted a priority
+      // into their header both surface the priority's pending in the
+      // gutter. Prefer the live value from [NowBloc.watchPendingDisplay]
+      // so an active session's countdown shows; once the subscription
+      // has emitted, trust its value (including an explicit null after a
+      // ± clear) — falling back to the agenda model's stale
+      // `cascadeDuration` would leave the gutter showing the pre-clear
+      // number even though the underlying row is gone. When the
+      // priority has no pending and the block is a [GapBlock], the
+      // gap's own range duration takes over (preserves the legacy gap
+      // time-marker behaviour).
+      final slice = block is PriorityBlock
+          ? block.cascadeDuration
+          : (block as GapBlock).cascadeDuration;
+      final pending =
           _pendingDisplay != null ? _pendingDisplay!.duration : slice;
+      Duration? displayed = pending;
+      if (displayed == null && block is GapBlock) {
+        final dur = dateTimeRange?.duration;
+        if (dur != null && dur.inSeconds > 0) displayed = dur;
+      }
       if (displayed != null) {
         gutterRow2 = Text(
           _formatDuration(displayed),
@@ -967,7 +1005,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
         (newDur) => SetThreadDuration(thread, newDur).run(context),
       );
     }
-    if (block is PriorityBlock) {
+    if (_blockHasEditablePending(block)) {
       // First frame before the stream emits has no display snapshot —
       // fall back to the agenda model's cascade slice so the gutter still
       // shows something. After the first emission [_pendingDisplay]
@@ -975,9 +1013,11 @@ class _BlockHeaderState extends State<_BlockHeader> {
       // means the bottom of the cascade (no row contributing) and must
       // win over the stale slice, otherwise a fresh clear instantly
       // restages the old value through the bump math.
-      final current = _pendingDisplay != null
-          ? _pendingDisplay!.duration
-          : block.cascadeDuration;
+      final slice = block is PriorityBlock
+          ? block.cascadeDuration
+          : (block as GapBlock).cascadeDuration;
+      final current =
+          _pendingDisplay != null ? _pendingDisplay!.duration : slice;
       return (
         current,
         (newDur) => _applyPriorityBump(
@@ -990,17 +1030,27 @@ class _BlockHeaderState extends State<_BlockHeader> {
     return (null, null);
   }
 
-  /// Returns the next value after a swipe-bump. A subtract on a value at
-  /// or below [_swipeBumpStep] clears (returns null) so the gutter empties
-  /// when there's nothing meaningful left to keep around — sub-step
-  /// remainders aren't useful and would otherwise leave fractions like
-  /// `37s` lingering after a tap that visually said "15m → 0".
+  /// Returns the next value after a swipe-bump.
+  ///
+  /// * Adding to a null pending lands at [_firstAddDuration] (30m) — the
+  ///   single-tap default for "Add planned time" — rather than one
+  ///   [_swipeBumpStep] (15m). Subsequent adds proceed in [_swipeBumpStep]
+  ///   increments.
+  /// * Subtracting from a value at or below [_minimumDuration] clears
+  ///   (returns null) so the gutter empties when nothing meaningful is
+  ///   left — sub-step remainders aren't useful and would otherwise
+  ///   leave fractions lingering after a tap that visually said "15m → 0".
+  ///   Above the minimum, subtracting decrements by [_swipeBumpStep].
   Duration? _bumpedDuration(Duration? current, Duration delta) {
-    if (delta.isNegative && (current ?? Duration.zero) <= _swipeBumpStep) {
+    if (!delta.isNegative && (current == null || current <= Duration.zero)) {
+      return _firstAddDuration;
+    }
+    if (delta.isNegative && (current ?? Duration.zero) <= _minimumDuration) {
       return null;
     }
     final next = (current ?? Duration.zero) + delta;
     if (next <= Duration.zero) return null;
+    if (next < _minimumDuration) return _minimumDuration;
     return next;
   }
 

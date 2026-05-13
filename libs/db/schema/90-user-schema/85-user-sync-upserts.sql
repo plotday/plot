@@ -837,23 +837,35 @@ BEGIN
     -- creates the thread_unread row. If no row exists, INSERT a preemptive read
     -- marker so that when analysis later calls upsert_thread_unread, the
     -- race guard (read_at >= note_created_at) preserves it.
-    -- If a row exists, only clear it if the client has seen all current content
-    -- (p_read_at >= thread's content timestamp).
+    -- If a row exists, the read_at clear is gated on the client having seen
+    -- all current content (p_read_at >= thread's content timestamp). The
+    -- bumped_at write is independent: bumping is a user action (Finish) and
+    -- must always apply, even when read_at is already set.
     -- Truncate DB timestamp to ms precision (see PRECISION BOUNDARY comment above)
     INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
         VALUES (clear_thread_unread.user_id, p_thread_id, 'inform-updates', 50, p_read_at, p_bumped_at)
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
-            read_at = p_read_at,
-            updated_at = now(),
-            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END
+            read_at = CASE
+                WHEN thread_unread.read_at IS NULL
+                    AND p_read_at >= date_trunc('milliseconds', (
+                        SELECT COALESCE(t.last_note_source_created_at, t.created_at)
+                        FROM thread t
+                        WHERE t.id = p_thread_id
+                    ))
+                THEN p_read_at
+                ELSE thread_unread.read_at
+            END,
+            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
+            updated_at = now()
         WHERE
-            thread_unread.read_at IS NULL
-            AND p_read_at >= date_trunc('milliseconds', (
-                SELECT COALESCE(t.last_note_source_created_at, t.created_at)
-                FROM thread t
-                WHERE t.id = p_thread_id
-            ));
+            p_bumped_at IS NOT NULL
+            OR (thread_unread.read_at IS NULL
+                AND p_read_at >= date_trunc('milliseconds', (
+                    SELECT COALESCE(t.last_note_source_created_at, t.created_at)
+                    FROM thread t
+                    WHERE t.id = p_thread_id
+                )));
 END;
 $function$;
 

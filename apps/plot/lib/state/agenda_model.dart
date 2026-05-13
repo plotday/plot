@@ -73,22 +73,25 @@ class AgendaModel extends Equatable {
             );
           case GapBlock b:
             // Empty gaps are pure visual time markers — no priority,
-            // neutral background. Gaps with threads carry the
-            // priority of their first thread (combined gap+priority
-            // header). Both carry [parentBlockId] so the renderer
-            // recognizes the block transition for drop-zone insertion;
-            // draggability is gated by [blockPriority != null] separately.
-            // The gap defines a new period: this block — and any
-            // blocks that follow it within the section — live in this
-            // period. A residual gap (cascade leftover) inherits its
-            // parent gap's anchor via [periodAnchor].
-            final hasThreads = b.threads.isNotEmpty;
+            // neutral background. Gaps that have either threads or a
+            // [cascadeDuration] (a cascade slice that was merged into
+            // the gap's anchor) carry their priority as a lead and
+            // render as a combined gap+priority header. Both carry
+            // [parentBlockId] so the renderer recognizes the block
+            // transition for drop-zone insertion; draggability is gated
+            // by [blockPriority != null] separately. The gap defines a
+            // new period: this block — and any blocks that follow it
+            // within the section — live in this period. A residual gap
+            // (cascade leftover) inherits its parent gap's anchor via
+            // [periodAnchor].
+            final hasPriorityLead =
+                b.threads.isNotEmpty || b.cascadeDuration != null;
             final gapAnchor = b.periodAnchor ?? b.range.start;
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
-                blockPriority: hasThreads ? b.priority : null,
-                block: hasThreads ? b : null,
+                blockPriority: hasPriorityLead ? b.priority : null,
+                block: hasPriorityLead ? b : null,
                 isOutsidePriority: b.isOutside,
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
@@ -270,6 +273,7 @@ class GapBlock extends AgendaBlock {
     required this.threads,
     this.isOutside = false,
     this.periodAnchor,
+    this.cascadeDuration,
   });
 
   @override
@@ -292,9 +296,16 @@ class GapBlock extends AgendaBlock {
   /// Null for "normal" gaps where `range.start` is the canonical anchor.
   final DateTime? periodAnchor;
 
+  /// The lead priority's pending duration folded into this gap by the
+  /// cascade pass. Mirrors [PriorityBlock.cascadeDuration] so a gap that
+  /// promotes a priority into its header still surfaces the priority's
+  /// editable pending value. Null on gap blocks with no priority lead
+  /// or no pending duration.
+  final Duration? cascadeDuration;
+
   @override
   List<Object?> get props =>
-      [id, priority, range, threads, isOutside, periodAnchor];
+      [id, priority, range, threads, isOutside, periodAnchor, cascadeDuration];
 }
 
 /// Atom type used by the legacy flat-list rendering and reorder paths.

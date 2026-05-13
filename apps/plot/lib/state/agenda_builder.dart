@@ -149,6 +149,25 @@ class AgendaBuilder {
           ));
           continue;
         }
+      } else if (block is GapBlock && block.threads.isNotEmpty) {
+        // GapBlocks that promote a priority into their header (gap with
+        // threads) participate in the cascade just like PriorityBlocks —
+        // otherwise the lead priority's pending duration would never get
+        // attached and the gutter would show the gap's full range
+        // duration instead of the priority's editable pending value.
+        final pending = remaining.remove(block.priority.id);
+        if (pending != null) {
+          newBlocks.add(GapBlock(
+            id: block.id,
+            priority: block.priority,
+            range: block.range,
+            threads: block.threads,
+            isOutside: block.isOutside,
+            periodAnchor: block.periodAnchor,
+            cascadeDuration: pending,
+          ));
+          continue;
+        }
       }
       newBlocks.add(block);
     }
@@ -156,7 +175,7 @@ class AgendaBuilder {
     if (remaining.isEmpty) {
       return DateSection(
         date: section.date,
-        blocks: List.unmodifiable(newBlocks),
+        blocks: List.unmodifiable(_emitResidualGaps(newBlocks)),
         isNow: section.isNow,
         scheduleAt: section.scheduleAt,
       );
@@ -191,10 +210,104 @@ class AgendaBuilder {
 
     return DateSection(
       date: section.date,
-      blocks: List.unmodifiable(newBlocks),
+      blocks: List.unmodifiable(_emitResidualGaps(newBlocks)),
       isNow: section.isNow,
       scheduleAt: section.scheduleAt,
     );
+  }
+
+  /// Walk a section's blocks and emit a residual [GapBlock] at the end
+  /// of each gap region whose blocks don't consume the full gap. The
+  /// residual carries the leftover duration so the user sees both the
+  /// dropped block's slice and what time is still free in that period.
+  ///
+  /// A "gap region" is a [GapBlock] header followed by any number of
+  /// [PriorityBlock]s within the same section. The cascade attaches
+  /// `cascadeDuration` to each block in the region; if the total
+  /// consumed is less than the gap's range duration, a residual gap is
+  /// emitted with the remaining time, anchored after the consumed slice.
+  ///
+  /// **Empty-gap + cascade-slice merge.** When an empty [GapBlock]
+  /// (no threads, no priority lead) is immediately followed by an
+  /// empty [PriorityBlock] with `cascadeDuration` (the synthetic tail
+  /// slice the cascade emits for a priority with no thread-bearing
+  /// block in this section), the two would otherwise render as
+  /// stacked markers — a bare time marker for the gap and a priority
+  /// breadcrumb with a duration label for the slice. They share the
+  /// same anchor in the agenda, so merging them into one
+  /// priority-lead gap block produces the user-meaningful "10pm
+  /// Movement Building 30m" header instead of two disjoint rows.
+  static List<AgendaBlock> _emitResidualGaps(List<AgendaBlock> blocks) {
+    final out = <AgendaBlock>[];
+    var i = 0;
+    while (i < blocks.length) {
+      final b = blocks[i];
+      if (b is! GapBlock) {
+        out.add(b);
+        i++;
+        continue;
+      }
+
+      // Detect the empty-gap + cascade-slice merge before emitting.
+      // The merge applies only when the gap is otherwise inert (no
+      // threads, no cascadeDuration of its own) and the very next
+      // block is a cascade slice (empty PriorityBlock with a
+      // cascadeDuration). The merged block keeps the gap's range and
+      // periodAnchor so existing drop targeting still anchors there.
+      GapBlock gap = b;
+      final hasPriorityLead =
+          gap.threads.isNotEmpty || gap.cascadeDuration != null;
+      var consumeIdx = i + 1;
+      if (!hasPriorityLead &&
+          consumeIdx < blocks.length &&
+          blocks[consumeIdx] is PriorityBlock) {
+        final pb = blocks[consumeIdx] as PriorityBlock;
+        if (pb.threads.isEmpty && pb.cascadeDuration != null) {
+          gap = GapBlock(
+            id: pb.id,
+            priority: pb.priority,
+            range: gap.range,
+            threads: const [],
+            isOutside: gap.isOutside,
+            periodAnchor: gap.periodAnchor,
+            cascadeDuration: pb.cascadeDuration,
+          );
+          consumeIdx++;
+        }
+      }
+
+      // Emit the (possibly merged) gap, then walk its trailing
+      // PriorityBlocks accumulating consumed durations.
+      out.add(gap);
+      var consumed = gap.cascadeDuration ?? Duration.zero;
+      var j = consumeIdx;
+      while (j < blocks.length && blocks[j] is PriorityBlock) {
+        final pb = blocks[j] as PriorityBlock;
+        out.add(pb);
+        consumed += pb.cascadeDuration ?? Duration.zero;
+        j++;
+      }
+      final gapStart = gap.range.start;
+      final gapEnd = gap.range.end;
+      final gapDuration = gap.range.duration;
+      if (consumed > Duration.zero &&
+          gapStart != null &&
+          gapEnd != null &&
+          gapDuration != null &&
+          consumed < gapDuration) {
+        final residualStart = gapStart.add(consumed);
+        out.add(GapBlock(
+          id: '${gap.id}_residual',
+          priority: gap.priority,
+          range: DateTimeRange(residualStart, gapEnd),
+          threads: const [],
+          isOutside: gap.isOutside,
+          periodAnchor: gap.periodAnchor ?? gapStart,
+        ));
+      }
+      i = j;
+    }
+    return out;
   }
 
   /// Append every input thread with [Thread.unread] true that is not

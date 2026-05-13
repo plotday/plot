@@ -1286,10 +1286,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     // and the user-schedule write (derived todo=true while the schedule
     // isn't yet archived) don't flip the icon back on.
     final existing = _findThreadInState(id);
+    // When finishing, mirror FinishThread's save: flip todo and bump
+    // activity_at to now so the optimistic state already has the thread at
+    // the top of Done before the Drift write / stream emission arrive.
+    final finished = (finishTodo && existing != null)
+        ? existing.copyWith(todo: false, bump: true)
+        : null;
     if (existing != null) {
       if (finishTodo) {
         _optimisticOverrides[id] = _OptimisticOverride.expect(
-          expected: existing.copyWith(todo: false),
+          expected: finished!,
           fields: const {_OverrideField.todo},
         );
       } else {
@@ -1314,7 +1320,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         )
         .map((t) {
           if (!finishTodo || t.id != id) return t;
-          return t.copyWith(todo: false);
+          return finished ?? t.copyWith(todo: false);
         })
         .toList();
 
@@ -1324,9 +1330,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // disassociate) drops it entirely until the stream agrees.
     if (existing != null) {
       if (finishTodo) {
-        _patchActivityFeedSourcesForOptimisticUpdate(
-          existing.copyWith(todo: false),
-        );
+        _patchActivityFeedSourcesForOptimisticUpdate(finished!);
       } else {
         _patchActivityFeedSourcesForOptimisticUpdate(existing, drop: true);
       }
@@ -3045,6 +3049,12 @@ class PriorityBloc extends Cubit<PriorityState> {
         done.add(t);
       }
     }
+    // Sort Done by activityAt DESC. Matches the SQL feed-sort
+    // (MAX(lastNoteSourceCreatedAt, bumpedAt, schedEnd) DESC) so the
+    // optimistic patch — which substitutes a bumped thread in place
+    // inside `_activityFeedRawThreads` — still renders at the top
+    // before the next Drift emission re-orders the underlying list.
+    done.sort((a, b) => b.activityAt.compareTo(a.activityAt));
     unread.sort((a, b) {
       final aSticky = _stickyUnreadIds[a.id];
       final bSticky = _stickyUnreadIds[b.id];
