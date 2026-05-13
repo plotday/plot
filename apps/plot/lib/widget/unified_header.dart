@@ -981,45 +981,73 @@ class _PriorityHeaderTrackingControlState
         final isContext = nowState.context?.id == widget.priority.id;
         if (!isContext) return const SizedBox.shrink();
 
-        final live = _LivePomodoro.compute(nowState);
-        final isInactive = live.state == PomodoroState.inactive;
-
-        // When the pill collapses to the play button, the MouseRegions
-        // inside _buildPill are unmounted without firing onExit, so
-        // _hovered / _centerHovered would otherwise stay `true` from the
-        // pause click. Next time the pill remounts, _PillLabel would
-        // render the pause icon (centerHovered) instead of the duration.
-        // Reset both flags so the MouseRegions re-fire onEnter cleanly
-        // when the pill comes back.
-        if (isInactive && (_hovered || _centerHovered)) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            if (!_hovered && !_centerHovered) return;
-            setState(() {
-              _hovered = false;
-              _centerHovered = false;
-            });
-          });
+        // Auto-display the event timer when an in-progress event for
+        // the context priority exists. The skip stream lets us hide
+        // the pill the moment the user pauses/stops the event timer.
+        final event = nowState.inProgressEventForContext;
+        if (event == null || event.scheduleId == null) {
+          return _buildWithLive(context, nowState, null, null);
         }
-
-        // Inactive: render a plain header-style "Start timer" icon
-        // button. Active/grace: render the countdown pill. AnimatedSize
-        // animates the trailing-widget width so the title slides
-        // smoothly across the swap.
-        final Widget child = isInactive
-            ? Button.icon(
-                StartTimer(),
-                color: context.theme.plotColors.muted,
-              )
-            : _buildPill(context, nowState, live);
-
-        return AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeInOutCubic,
-          alignment: Alignment.centerLeft,
-          child: child,
+        return StreamBuilder<Session?>(
+          stream: Session.watchSkipFor(
+            event.scheduleId!,
+            occurrenceAt: event.at?.start,
+          ),
+          builder: (context, snapshot) {
+            return _buildWithLive(context, nowState, event, snapshot.data);
+          },
         );
       },
+    );
+  }
+
+  Widget _buildWithLive(
+    BuildContext context,
+    NowLoaded nowState,
+    Thread? inProgressEvent,
+    Session? eventSkip,
+  ) {
+    final live = _LivePomodoro.compute(
+      nowState,
+      inProgressEvent: inProgressEvent,
+      eventSkip: eventSkip,
+    );
+    final isInactive = live.state == PomodoroState.inactive;
+
+    // When the pill collapses to the play button, the MouseRegions
+    // inside _buildPill are unmounted without firing onExit, so
+    // _hovered / _centerHovered would otherwise stay `true` from the
+    // pause click. Next time the pill remounts, _PillLabel would
+    // render the pause icon (centerHovered) instead of the duration.
+    // Reset both flags so the MouseRegions re-fire onEnter cleanly
+    // when the pill comes back.
+    if (isInactive && (_hovered || _centerHovered)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_hovered && !_centerHovered) return;
+        setState(() {
+          _hovered = false;
+          _centerHovered = false;
+        });
+      });
+    }
+
+    // Inactive: render a plain header-style "Start timer" icon
+    // button. Active/grace: render the countdown pill. AnimatedSize
+    // animates the trailing-widget width so the title slides
+    // smoothly across the swap.
+    final Widget child = isInactive
+        ? Button.icon(
+            StartTimer(),
+            color: context.theme.plotColors.muted,
+          )
+        : _buildPill(context, nowState, live);
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.centerLeft,
+      child: child,
     );
   }
 
@@ -1039,6 +1067,18 @@ class _PriorityHeaderTrackingControlState
     final backgroundColor = _hovered
         ? accent.withValues(alpha: 0.08)
         : const Color(0x00000000);
+
+    // For the event-derived pill, Pause and Stop collapse to a single
+    // action: write a 'skip' marker covering the rest of the event so
+    // the server finalizer credits only the engaged time. The +/−
+    // buttons mutate the event's scheduled duration directly (extends
+    // or shrinks the calendar event itself, not a separate pomodoro).
+    final VoidCallback stopHandler = live.fromEvent
+        ? () => _stopEventEarly(live.event!)
+        : () => context.run(StopTimer());
+    final String centerTooltip = live.fromEvent
+        ? 'End event'
+        : (isGrace ? 'Stop timer' : 'Pause timer');
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -1071,7 +1111,7 @@ class _PriorityHeaderTrackingControlState
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.run(StopTimer()),
+                onTap: stopHandler,
               ),
             ),
             // Center band — sized exactly between the +/− hit zones so
@@ -1090,10 +1130,10 @@ class _PriorityHeaderTrackingControlState
                 onExit: (_) => setState(() => _centerHovered = false),
                 child: FTooltip(
                   tipBuilder: (context, controller) =>
-                      Text(isGrace ? 'Stop timer' : 'Pause timer'),
+                      Text(centerTooltip),
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => context.run(StopTimer()),
+                    onTap: stopHandler,
                     child: _PillLabel(
                       live: live,
                       accent: accent,
@@ -1110,7 +1150,7 @@ class _PriorityHeaderTrackingControlState
               top: 0,
               bottom: 0,
               width: _buttonWidth,
-              child: live.remaining <= kMinPomodoro
+              child: live.remaining <= kMinPomodoro && !live.fromEvent
                   // Below the 5-minute floor there's nothing left to
                   // shave — the minus button becomes a Stop affordance
                   // so the position still has a useful action instead
@@ -1129,11 +1169,17 @@ class _PriorityHeaderTrackingControlState
                       icon: FontAwesomeIcons.minus,
                       color: muted,
                       hoverColor: foreground,
-                      tooltip: live.remaining > kPomodoroStep
-                          ? 'Remove 15 minutes'
-                          : 'Set to 5 minutes',
-                      onTap: () => context.run(RemoveTime()),
-                      enabled: RemoveTime().enabled(context),
+                      tooltip: live.fromEvent
+                          ? 'Shorten event'
+                          : (live.remaining > kPomodoroStep
+                              ? 'Remove 15 minutes'
+                              : 'Set to 5 minutes'),
+                      onTap: live.fromEvent
+                          ? () => _shrinkEvent(live.event!)
+                          : () => context.run(RemoveTime()),
+                      enabled: live.fromEvent
+                          ? _canShrinkEvent(live.event!)
+                          : RemoveTime().enabled(context),
                     ),
             ),
             Positioned(
@@ -1146,15 +1192,78 @@ class _PriorityHeaderTrackingControlState
                 icon: FontAwesomeIcons.plus,
                 color: muted,
                 hoverColor: foreground,
-                tooltip: 'Add time',
-                onTap: () => context.run(AddTime()),
-                enabled: AddTime().enabled(context),
+                tooltip: live.fromEvent ? 'Extend event' : 'Add time',
+                onTap: live.fromEvent
+                    ? () => _extendEvent(live.event!)
+                    : () => context.run(AddTime()),
+                enabled: live.fromEvent ? true : AddTime().enabled(context),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Pause/Stop on the auto-displayed event timer: write a 'skip'
+  /// session covering [now, event.end] so the server event finalizer
+  /// clamps the eventual `source='event'` row to the engaged time and
+  /// the pill hides immediately on the local client.
+  Future<void> _stopEventEarly(Thread event) async {
+    final scheduleId = event.scheduleId;
+    final end = event.at?.end;
+    if (scheduleId == null || end == null) return;
+    final now = Time.now();
+    if (!end.isAfter(now)) return;
+    await Session.writeSkip(
+      priority: event.priority,
+      scheduleId: scheduleId,
+      occurrenceAt: event.at?.start,
+      from: now,
+      to: end,
+    );
+  }
+
+  Future<void> _extendEvent(Thread event) async {
+    final start = event.at?.start;
+    final end = event.at?.end;
+    if (start == null || end == null) return;
+    // Snap UP to the next 15-minute boundary of duration so repeated
+    // presses produce predictable steps, matching how AddTime advances
+    // the pomodoro window.
+    final currentSeconds = end.difference(start).inSeconds;
+    final stepSeconds = kPomodoroStep.inSeconds;
+    final ceiledMinutes = (currentSeconds + 59) ~/ 60;
+    final ceiledSeconds = ceiledMinutes * 60;
+    final nextSeconds =
+        ((ceiledSeconds ~/ stepSeconds) + 1) * stepSeconds;
+    await SetThreadDuration(event, Duration(seconds: nextSeconds))
+        .run(context);
+  }
+
+  bool _canShrinkEvent(Thread event) {
+    final start = event.at?.start;
+    final end = event.at?.end;
+    if (start == null || end == null) return false;
+    final now = Time.now();
+    // Allow shrinking only down to "ends now" — never to a point in the
+    // past, since the event is currently in progress.
+    final minDuration = now.difference(start);
+    return end.difference(start) > minDuration;
+  }
+
+  Future<void> _shrinkEvent(Thread event) async {
+    final start = event.at?.start;
+    final end = event.at?.end;
+    if (start == null || end == null) return;
+    final now = Time.now();
+    final minDuration = now.difference(start);
+    final current = end.difference(start);
+    final candidate = current - kPomodoroStep;
+    final newDuration = candidate < minDuration ? minDuration : candidate;
+    if (newDuration <= Duration.zero) return;
+    if (newDuration == current) return;
+    await SetThreadDuration(event, newDuration).run(context);
   }
 }
 
@@ -1171,57 +1280,114 @@ class _LivePomodoro {
     required this.state,
     required this.remaining,
     required this.progress,
+    this.fromEvent = false,
+    this.event,
   });
 
   final PomodoroState state;
   final Duration remaining;
   final double progress;
 
-  static _LivePomodoro compute(NowLoaded loaded) {
+  /// True when this snapshot was synthesized from an in-progress
+  /// scheduled event rather than an explicit `source='active'` session.
+  /// Drives the pill's pause/stop and ±15m handlers to operate on the
+  /// event (writing a 'skip' marker / mutating the schedule duration)
+  /// instead of the session.
+  final bool fromEvent;
+
+  /// The in-progress event this snapshot was derived from, if any. Only
+  /// set when [fromEvent] is true.
+  final Thread? event;
+
+  /// Computes the live snapshot from [loaded].
+  ///
+  /// Resolution:
+  ///   1. An active `source='active'` session for the context priority
+  ///      drives the regular pomodoro state machine (active/grace/inactive).
+  ///   2. Otherwise, if there's an in-progress scheduled event for the
+  ///      context priority and the user hasn't already opted out via a
+  ///      'skip' marker, synthesize an active state from the event
+  ///      window. `pomodoroAt = event.start`, `pomodoro = event.duration`.
+  ///   3. Otherwise inactive.
+  static _LivePomodoro compute(
+    NowLoaded loaded, {
+    Thread? inProgressEvent,
+    Session? eventSkip,
+  }) {
     final session = loaded.session;
     final ctx = loaded.context;
-    if (session == null
-        || ctx == null
-        || session.archivedAt != null
-        || session.source != 'active'
-        || session.priority?.id != ctx.id
-        || !session.at.isNow()
-        || session.pomodoroAt == null
-        || session.pomodoro == null) {
-      return const _LivePomodoro(
-        state: PomodoroState.inactive,
-        remaining: Duration.zero,
-        progress: 0,
-      );
-    }
-    final now = Time.now();
-    final pomodoroAt = session.pomodoroAt!;
-    final pomodoro = session.pomodoro!;
-    final end = pomodoroAt.add(pomodoro);
-    final graceEnd = end.add(kPomodoroGrace);
+    final hasActiveSession =
+        session != null
+        && ctx != null
+        && session.archivedAt == null
+        && session.source == 'active'
+        && session.priority?.id == ctx.id
+        && session.at.isNow()
+        && session.pomodoroAt != null
+        && session.pomodoro != null;
+    if (hasActiveSession) {
+      final now = Time.now();
+      final pomodoroAt = session.pomodoroAt!;
+      final pomodoro = session.pomodoro!;
+      final end = pomodoroAt.add(pomodoro);
+      final graceEnd = end.add(kPomodoroGrace);
 
-    if (!now.isBefore(graceEnd)) {
-      return const _LivePomodoro(
-        state: PomodoroState.inactive,
-        remaining: Duration.zero,
-        progress: 0,
+      if (!now.isBefore(graceEnd)) {
+        return const _LivePomodoro(
+          state: PomodoroState.inactive,
+          remaining: Duration.zero,
+          progress: 0,
+        );
+      }
+      if (!now.isBefore(end)) {
+        return const _LivePomodoro(
+          state: PomodoroState.grace,
+          remaining: Duration.zero,
+          progress: 1,
+        );
+      }
+      final remaining = end.difference(now);
+      final totalMs = pomodoro.inMilliseconds;
+      final elapsedMs = now.difference(pomodoroAt).inMilliseconds;
+      final ratio =
+          totalMs <= 0 ? 1.0 : (elapsedMs / totalMs).clamp(0.0, 1.0);
+      return _LivePomodoro(
+        state: PomodoroState.active,
+        remaining: remaining.isNegative ? Duration.zero : remaining,
+        progress: ratio,
       );
     }
-    if (!now.isBefore(end)) {
-      return const _LivePomodoro(
-        state: PomodoroState.grace,
-        remaining: Duration.zero,
-        progress: 1,
-      );
+
+    // Auto-displayed event timer: synthesize from the in-progress event
+    // when present and not opted out via a 'skip' marker.
+    if (inProgressEvent != null
+        && eventSkip == null
+        && inProgressEvent.at?.start != null
+        && inProgressEvent.at?.end != null) {
+      final now = Time.now();
+      final start = inProgressEvent.at!.start!;
+      final end = inProgressEvent.at!.end!;
+      if (now.isBefore(end) && !now.isBefore(start)) {
+        final total = end.difference(start);
+        final remaining = end.difference(now);
+        final elapsed = now.difference(start);
+        final ratio = total.inMilliseconds <= 0
+            ? 1.0
+            : (elapsed.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+        return _LivePomodoro(
+          state: PomodoroState.active,
+          remaining: remaining,
+          progress: ratio,
+          fromEvent: true,
+          event: inProgressEvent,
+        );
+      }
     }
-    final remaining = end.difference(now);
-    final totalMs = pomodoro.inMilliseconds;
-    final elapsedMs = now.difference(pomodoroAt).inMilliseconds;
-    final ratio = totalMs <= 0 ? 1.0 : (elapsedMs / totalMs).clamp(0.0, 1.0);
-    return _LivePomodoro(
-      state: PomodoroState.active,
-      remaining: remaining.isNegative ? Duration.zero : remaining,
-      progress: ratio,
+
+    return const _LivePomodoro(
+      state: PomodoroState.inactive,
+      remaining: Duration.zero,
+      progress: 0,
     );
   }
 }

@@ -357,9 +357,25 @@ class NowBloc extends Cubit<NowState> {
       }
     }
 
+    // While a scheduled event for this priority is in progress, default
+    // the new pomodoro to the time remaining in the event. This is the
+    // restart path after a Pause/Stop on the auto-displayed event timer
+    // (which writes a 'skip' marker) — the user pressing Start should
+    // resume tracking the event rather than spinning up an unrelated
+    // window. Caller [override] and the staged inactive preview still
+    // win when set.
+    Duration? eventRemaining;
+    final event = s.inProgressEventForContext;
+    if (event != null && event.priority.id == ctx.id) {
+      final end = event.at?.end;
+      if (end != null && end.isAfter(now)) {
+        eventRemaining = end.difference(now);
+      }
+    }
     final base =
         override ??
         s.previewPomodoro ??
+        eventRemaining ??
         s.pendingFor(ctx) ??
         kDefaultPomodoro;
     final pomodoro = _capToEnd(ctx, base);

@@ -124,6 +124,10 @@ class Session extends SessionRow {
     var total = Duration.zero;
     for (final s in sessions) {
       if (s.archivedAt != null) continue;
+      // 'skip' rows mark time the user opted out of crediting for a
+      // scheduled event; they exist solely as blockers for the
+      // server-side event finalizer and must not contribute to totals.
+      if (s.source == 'skip') continue;
       final pid = s.priorityId;
       if (pid == null || !priorityIds.contains(pid)) continue;
       final end = until != null && s.end.isAfter(until) ? until : s.end;
@@ -131,6 +135,84 @@ class Session extends SessionRow {
       if (span > Duration.zero) total += span;
     }
     return total;
+  }
+
+  /// Write a 'skip' session covering `[from, to]` against the given
+  /// (schedule, occurrence). Used when the user stops the auto-displayed
+  /// in-progress event timer: the row acts as a blocker for the server
+  /// event finalizer so the resulting 'event' row is clamped to the
+  /// time before the stop. Idempotent on `(scheduleId, occurrenceAt)`
+  /// — a re-press replaces the existing skip range.
+  static Future<void> writeSkip({
+    required Priority priority,
+    required Uuid scheduleId,
+    DateTime? occurrenceAt,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    if (!Store.isAvailable) return;
+    if (!to.isAfter(from)) return;
+    final existing = await (Store.get.select(table)
+          ..where(
+            (t) =>
+                t.scheduleId.equals(scheduleId.toBytes()) &
+                (occurrenceAt == null
+                    ? t.occurrenceAt.isNull()
+                    : t.occurrenceAt.equals(occurrenceAt)) &
+                t.source.equals('skip') &
+                t.archivedAt.isNull(),
+          )
+          ..limit(1))
+        .getSingleOrNull();
+    final Session row;
+    if (existing != null) {
+      row = Session.fromStore(
+        existing.copyWith(start: from, end: to),
+        priority: priority,
+      );
+    } else {
+      final base = Session(
+        priority: priority,
+        end: to,
+        source: 'skip',
+        scheduleId: scheduleId,
+        occurrenceAt: occurrenceAt,
+        explicit: false,
+      );
+      row = Session.fromStore(
+        base.copyWith(start: from),
+        priority: priority,
+      );
+    }
+    await row.save();
+  }
+
+  /// Stream the most-recent non-archived 'skip' session for the given
+  /// (schedule, occurrence). Drives the auto-event timer's hide-after-stop
+  /// behavior so a Pause/Stop press takes effect immediately and persists
+  /// across reloads. Emits null when no marker exists.
+  static Stream<Session?> watchSkipFor(
+    Uuid scheduleId, {
+    DateTime? occurrenceAt,
+  }) {
+    if (!Store.isAvailable) return Stream.value(null);
+    final query = Store.get.select(table)
+      ..where(
+        (t) =>
+            t.scheduleId.equals(scheduleId.toBytes()) &
+            (occurrenceAt == null
+                ? t.occurrenceAt.isNull()
+                : t.occurrenceAt.equals(occurrenceAt)) &
+            t.source.equals('skip') &
+            t.archivedAt.isNull(),
+      )
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+      ])
+      ..limit(1);
+    return query.watch().map(
+      (rows) => rows.isEmpty ? null : Session.fromStore(rows.first),
+    );
   }
 
   /// Stream the set of priority ids covered by [priority] and every one

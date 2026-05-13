@@ -544,7 +544,7 @@ async function upsertResolved(
           i.schedule_id, i.occurrence_at, 0, 0
         FROM input i
         ON CONFLICT (user_id, schedule_id, occurrence_at)
-          WHERE schedule_id IS NOT NULL AND archived_at IS NULL
+          WHERE schedule_id IS NOT NULL AND archived_at IS NULL AND source = 'event'
         DO UPDATE SET
           at = EXCLUDED.at,
           priority_id = EXCLUDED.priority_id,

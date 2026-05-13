@@ -112,6 +112,20 @@ final class NowLoaded extends NowState {
   List<Thread> get scheduled =>
       _day.scheduled.where((event) => event.at!.includes(now)).toList();
 
+  /// The first in-progress scheduled event whose priority matches the
+  /// current [context]. Drives the auto-displayed event timer in the
+  /// priority header — null when no event is in progress for the
+  /// context, when context is null, or when the in-progress event
+  /// belongs to a different priority.
+  Thread? get inProgressEventForContext {
+    final ctx = context;
+    if (ctx == null) return null;
+    for (final e in scheduled) {
+      if (e.priority.id == ctx.id && e.scheduleId != null) return e;
+    }
+    return null;
+  }
+
   List<Thread> get next {
     final events = _day.scheduled;
     int first = -1;

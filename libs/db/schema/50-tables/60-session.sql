@@ -27,7 +27,13 @@ CREATE TABLE "public"."session" (
     --       attended (or didn't decline). Tied to (schedule_id, occurrence_at)
     --       for idempotency.
     --   'manual' — manual ±15m adjustment from the time-tracking modal.
-    "source" text NOT NULL DEFAULT 'active' CHECK ("source" IN ('active', 'event', 'manual')),
+    --   'skip'   — client-written marker covering the part of a scheduled
+    --       event the user opted out of crediting (e.g. they stopped the
+    --       in-progress event timer early). Carries (schedule_id,
+    --       occurrence_at) so the event-finalizer cron picks it up as a
+    --       blocker, naturally clamping the resulting 'event' row to the
+    --       time before the stop. Not summed into priority time totals.
+    "source" text NOT NULL DEFAULT 'active' CHECK ("source" IN ('active', 'event', 'manual', 'skip')),
     -- For 'event' rows: the scheduled event this session was finalized
     -- from. NULL for 'active'/'manual' rows. ON DELETE SET NULL so that
     -- deleting a calendar event keeps the recorded time but breaks the
@@ -59,12 +65,16 @@ WHERE
 
 -- Idempotency key for the event-finalizer cron: at most one non-archived
 -- 'event' session per (user, schedule, occurrence). Partial so it does
--- not constrain 'active'/'manual' rows which have schedule_id IS NULL.
+-- not constrain 'active'/'manual' rows which have schedule_id IS NULL,
+-- and so 'skip' markers (which intentionally share (schedule_id,
+-- occurrence_at) with a finalized 'event' row) coexist with the cron's
+-- own writes without colliding.
 CREATE UNIQUE INDEX idx_session_schedule_occurrence
     ON "public"."session" ("user_id", "schedule_id", "occurrence_at")
     WHERE
         "schedule_id" IS NOT NULL
-        AND "archived_at" IS NULL;
+        AND "archived_at" IS NULL
+        AND "source" = 'event';
 
 CREATE TRIGGER set_session_updated_at
     BEFORE INSERT OR UPDATE ON "public"."session"
