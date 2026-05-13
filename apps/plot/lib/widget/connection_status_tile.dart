@@ -88,6 +88,7 @@ class ConnectionStatusTile extends StatelessWidget {
         highlightColor: _transparentHighlight,
         leadingBuilder: _leadingWidget(
           context,
+          PlotIcon.plugCircleExclamation,
           Icon(
             PlotIcon.plugCircleExclamation,
             size: context.theme.iconSizes.base,
@@ -112,15 +113,14 @@ class ConnectionStatusTile extends StatelessWidget {
         highlightColor: _transparentHighlight,
         leadingBuilder: _leadingWidget(
           context,
+          PlotIcon.plugCircleBolt,
           PulsingIcon(
             icon: PlotIcon.plugCircleBolt,
             size: context.theme.iconSizes.base,
             primaryColor: context.theme.colors.primary,
           ),
         ),
-        command: _OpenManageConnections(
-          title: 'Syncing ${syncing.join(', ')}',
-        ),
+        command: _OpenManageConnections(title: 'Syncing ${syncing.join(', ')}'),
       );
       if (syncing.length > 1) {
         return FTooltip(
@@ -156,6 +156,7 @@ class ConnectionStatusTile extends StatelessWidget {
     final highlighted = isHovered || hasFocus;
     return _leadingWidget(
       context,
+      icon,
       Icon(
         icon,
         size: context.theme.iconSizes.base,
@@ -168,16 +169,31 @@ class ConnectionStatusTile extends StatelessWidget {
 
   Widget? Function(bool, bool) _leadingWidget(
     BuildContext context,
+    IconData icon,
     Widget child,
   ) {
+    // FontAwesome plug-circle-* glyphs are 640×512 — they paint wider than
+    // the 16px square the Icon widget reserves and overflow to the right,
+    // crowding the label. Shift the icon left by half the overflow so its
+    // visual centre matches a standard square icon, keeping the label aligned
+    // with neighbouring priority tiles.
+    final isWidePlug =
+        icon == PlotIcon.plugCirclePlus ||
+        icon == PlotIcon.plugCircleXmark ||
+        icon == PlotIcon.plugCircleExclamation ||
+        icon == PlotIcon.plugCircleBolt;
+    final base = context.theme.iconSizes.base;
+    final shifted = isWidePlug
+        ? Transform.translate(offset: Offset(-base * 0.125, 0), child: child)
+        : child;
     return (isHovered, hasFocus) => Padding(
       padding: EdgeInsets.only(
         left: context.theme.spacing.lg,
         right: context.theme.spacing.sm,
       ),
       child: SizedBox.square(
-        dimension: context.theme.iconSizes.base,
-        child: Center(child: child),
+        dimension: base,
+        child: Center(child: shifted),
       ),
     );
   }

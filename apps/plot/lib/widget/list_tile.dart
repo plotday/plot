@@ -409,10 +409,35 @@ class _ListTileState extends State<ListTile> {
                           behavior: HitTestBehavior.opaque,
                           onTap: widget.onTap ??
                               (widget.command != null ? () => run() : null),
-                          child: widget.leadingBuilder!(
-                            _isHovered,
-                            _focusNode.hasFocus,
-                          ),
+                          // While a command is running, overlay a Spinner
+                          // centered on the leading widget. The original
+                          // widget is kept at 0 opacity so the slot width
+                          // (and therefore the title column position) is
+                          // preserved across the swap.
+                          child: _showSpinner
+                              ? Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Opacity(
+                                      opacity: 0,
+                                      child: widget.leadingBuilder!(
+                                        _isHovered,
+                                        _focusNode.hasFocus,
+                                      ),
+                                    ),
+                                    Spinner(
+                                      size: widget.style ==
+                                              ListTileStyle.header
+                                          ? context.theme.iconSizes.sm
+                                          : context.theme.iconSizes.base,
+                                      color: context.theme.plotColors.muted,
+                                    ),
+                                  ],
+                                )
+                              : widget.leadingBuilder!(
+                                  _isHovered,
+                                  _focusNode.hasFocus,
+                                ),
                         ),
                     ].whereType<Widget>(),
                     Expanded(
