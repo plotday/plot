@@ -760,7 +760,17 @@ class PriorityBloc extends Cubit<PriorityState> {
         .map((t) => movedById[t.id] ?? t)
         .toList();
 
+    // Patch the activity-feed source list so the moved threads land in
+    // the new date's section synchronously. Without this, dropping a
+    // block onto a day where the same priority already has a block
+    // leaves the activity feed showing the threads on their old day
+    // until a stream refresh rebuilds it from scratch.
+    _todoThreads = _todoThreads
+        .map((t) => movedById[t.id] ?? t)
+        .toList();
+
     _rebuildAgendaModel();
+    _rebuildActivityFeedSections();
 
     for (final t in updated) {
       // Fire-and-forget; the optimistic override survives until the
