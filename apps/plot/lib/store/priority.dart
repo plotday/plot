@@ -465,12 +465,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (await _default().getSingleOrNull()) != null;
   }
 
-  /// True when the user has any non-archived priority beyond the auto-created
-  /// root (Inbox). Used as a second-device signal that the user has already
-  /// used Plot, so onboarding can be skipped.
+  /// True when the user has any non-archived priority beyond what
+  /// `activate_invited_user` auto-seeds at signup (the root and the
+  /// `@plot.app` "Using Plot" priority). Used as a second-device signal
+  /// that the user has already used Plot, so onboarding can be skipped.
   static Future<bool> hasNonRoot() async {
     final query = Store.get.select(table)
-      ..where((t) => t.archivedAt.isNull() & t.root.equals(false))
+      ..where(
+        (t) =>
+            t.archivedAt.isNull() &
+            t.root.equals(false) &
+            (t.key.isNull() | t.key.equals('@plot.app').not()),
+      )
       ..limit(1);
     return (await query.getSingleOrNull()) != null;
   }
