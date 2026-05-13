@@ -62,6 +62,34 @@ class StopTimer extends Command {
   }
 }
 
+/// Fully end the active pomodoro session. Unlike [StopTimer] (which
+/// pauses with the remaining time preserved for resume), pressing this
+/// truncates the planned window to what actually ran — the next
+/// [StartTimer] opens a fresh pomodoro instead of picking up where this
+/// one left off.
+class EndTimer extends Command {
+  EndTimer()
+    : super(
+        title: 'Stop',
+        icon: FontAwesomeIcons.stop,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.finished,
+      );
+
+  @override
+  bool enabled(BuildContext context) {
+    final state = context.read<NowBloc>().state;
+    if (state is! NowLoaded) return false;
+    return state.pomodoroState != PomodoroState.inactive;
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await context.read<NowBloc>().endSession();
+    return const CommandDone();
+  }
+}
+
 /// Bump the pomodoro UP to the next 15-minute boundary of remaining
 /// time. Works in any state — when inactive, it advances the preview
 /// duration the pill shows; when active (or in grace), it lengthens

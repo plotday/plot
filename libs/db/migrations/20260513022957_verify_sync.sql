@@ -1,10 +1,5 @@
--- Automatic scheduling for global onboarding threads.
--- Fires when a user is linked to one of the global onboarding threads
--- (usually via joining the "Everyone" group).
-CREATE OR REPLACE FUNCTION public.file_onboarding_schedules ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    AS $$
+-- Modify "file_onboarding_schedules" function
+CREATE OR REPLACE FUNCTION "public"."file_onboarding_schedules" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_thread_key text;
     v_date_offset integer;
@@ -45,8 +40,3 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-
-CREATE TRIGGER file_onboarding_schedules
-    AFTER INSERT ON public.thread_priority
-    FOR EACH ROW
-    EXECUTE FUNCTION public.file_onboarding_schedules ();

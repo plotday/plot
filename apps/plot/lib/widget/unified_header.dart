@@ -1077,17 +1077,31 @@ class _PriorityHeaderTrackingControlState
               top: 0,
               bottom: 0,
               width: _buttonWidth,
-              child: _HoverButton(
-                visible: _hovered,
-                icon: FontAwesomeIcons.minus,
-                color: muted,
-                hoverColor: foreground,
-                tooltip: live.remaining > kPomodoroStep
-                    ? 'Remove 15 minutes'
-                    : 'Set to 5 minutes',
-                onTap: () => context.run(RemoveTime()),
-                enabled: RemoveTime().enabled(context),
-              ),
+              child: live.remaining <= kMinPomodoro
+                  // Below the 5-minute floor there's nothing left to
+                  // shave — the minus button becomes a Stop affordance
+                  // so the position still has a useful action instead
+                  // of going inert.
+                  ? _HoverButton(
+                      visible: _hovered,
+                      icon: FontAwesomeIcons.stop,
+                      color: muted,
+                      hoverColor: foreground,
+                      tooltip: 'Stop',
+                      onTap: () => context.run(EndTimer()),
+                      enabled: true,
+                    )
+                  : _HoverButton(
+                      visible: _hovered,
+                      icon: FontAwesomeIcons.minus,
+                      color: muted,
+                      hoverColor: foreground,
+                      tooltip: live.remaining > kPomodoroStep
+                          ? 'Remove 15 minutes'
+                          : 'Set to 5 minutes',
+                      onTap: () => context.run(RemoveTime()),
+                      enabled: RemoveTime().enabled(context),
+                    ),
             ),
             Positioned(
               right: 0,

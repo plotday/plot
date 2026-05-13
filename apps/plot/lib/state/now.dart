@@ -377,7 +377,10 @@ class NowBloc extends Cubit<NowState> {
     }
   }
 
-  /// Stop the active session (if any) and write back consumed time.
+  /// Pause the active session: close it without altering its planned
+  /// pomodoro window, so a future Start on the same priority can resume
+  /// from the remaining time. See [endSession] for the variant that
+  /// completely ends the session instead.
   Future<void> stopSession() async {
     if (state is! NowLoaded) return;
     final s = loadedState;
@@ -385,6 +388,36 @@ class NowBloc extends Cubit<NowState> {
     if (session == null || !session.at.isNow()) return;
     if (session.source != 'active') return;
     await _closeActiveSession(session);
+  }
+
+  /// Fully end the active session — the next Start on the same priority
+  /// will open a fresh pomodoro rather than resuming this one. We
+  /// achieve "not paused" by truncating `pomodoro` so the planned window
+  /// matches the actual run time (`pomodoroAt + pomodoro == now`),
+  /// which fails [Session.latestPausedFor]'s "end strictly before
+  /// natural end" gate.
+  Future<void> endSession() async {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    final session = s.session;
+    if (session == null || !session.at.isNow()) return;
+    if (session.source != 'active') return;
+
+    final now = Time.now();
+    Duration? truncatedPomodoro;
+    if (session.pomodoroAt != null) {
+      final elapsed = now.difference(session.pomodoroAt!);
+      truncatedPomodoro = elapsed > Duration.zero ? elapsed : Duration.zero;
+    }
+    final closed = Session.fromStore(
+      session.copyWith(
+        end: now,
+        pomodoro: truncatedPomodoro == null
+            ? const Value.absent()
+            : Value(truncatedPomodoro),
+      ),
+    );
+    await closed.save();
   }
 
   /// Adjust the pomodoro by [delta] (positive or negative). When a

@@ -2165,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 329;
+  int get schemaVersion => 330;
 
   @override
   MigrationStrategy get migration {
@@ -3182,6 +3182,22 @@ class Store extends _$Store {
       // true so any pre-upgrade in-flight session is treated as explicit
       // (the safer choice — the user can Stop it).
       await _safeAddColumn(m, sessions, sessions.explicit);
+    }
+    if (from < 330) {
+      // One-time cleanup for `priority_block.duration` residue left by
+      // the old session-close write-back path. That path stored each
+      // closed session's remaining time on the priority's "current"
+      // block, which then masqueraded as the user-configured base
+      // duration on the next Start press (typically sub-5-minute
+      // distraction remainders). Clear values with non-zero seconds
+      // (users pick whole minutes) and any value ≤ 5 minutes (the
+      // distraction default and Add/Remove time floor).
+      await m.database.customStatement(
+        "UPDATE priority_blocks "
+        "SET duration = NULL, updated_at = datetime('now') "
+        "WHERE duration IS NOT NULL "
+        "  AND (duration % 60 <> 0 OR duration <= 300)",
+      );
     }
   }
 
