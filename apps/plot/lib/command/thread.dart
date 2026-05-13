@@ -1334,15 +1334,19 @@ class PickScheduleThread extends Command {
                 decoration: DecorationDelta.value(const BoxDecoration()),
                 padding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
               ),
-              onPress: (date) async {
-                final actionReturn = await ScheduleThread(
+              onPress: (date) {
+                // The optimistic UI update inside saveOptimistically runs
+                // synchronously before the first await, so we can pop the
+                // modal immediately and let the SQLite writes finish in the
+                // background. The agenda underneath has already painted the
+                // thread on the new date.
+                unawaited(ScheduleThread(
                   _thread,
                   when: date.toDate(),
                   onUpdate: _onUpdate,
                   priorityBloc: bloc,
-                ).run(context);
-                if (!context.mounted) return;
-                Modal.pop(context, Value(actionReturn));
+                ).run(context));
+                Modal.pop(context, Value<CommandReturn>(const CommandDone()));
               },
             ),
             const SizedBox(height: 12),
@@ -1351,15 +1355,17 @@ class PickScheduleThread extends Command {
                 Expanded(
                   child: FButton(
                     variant: FButtonVariant.secondary,
-                    onPress: () async {
-                      final actionReturn = await ScheduleThread(
+                    onPress: () {
+                      unawaited(ScheduleThread(
                         _thread,
                         when: Thread.todoNowDate,
                         onUpdate: _onUpdate,
                         priorityBloc: bloc,
-                      ).run(context);
-                      if (!context.mounted) return;
-                      Modal.pop(context, Value(actionReturn));
+                      ).run(context));
+                      Modal.pop(
+                        context,
+                        Value<CommandReturn>(const CommandDone()),
+                      );
                     },
                     child: const Text('Today'),
                   ),
