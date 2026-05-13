@@ -679,6 +679,34 @@ class Store extends _$Store {
     return false;
   }
 
+  /// Renders a row id (stored as blob/bytes or string) for log messages.
+  static String _rowIdString(dynamic id) {
+    if (id == null) return '<null>';
+    if (id is String) return id;
+    if (id is List<int>) {
+      final hex = id
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+      if (hex.length == 32) {
+        return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+            '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+            '${hex.substring(20)}';
+      }
+      return hex;
+    }
+    return id.toString();
+  }
+
+  /// One-line summary of an error for log messages — includes status code and
+  /// response body for ApiException so we can see what the server actually said.
+  static String _describeError(dynamic e) {
+    if (e is ApiException) {
+      final pg = e.pgCode != null ? ' pgCode=${e.pgCode}' : '';
+      return 'status=${e.statusCode}$pg ${e.description}';
+    }
+    return e.toString();
+  }
+
   /// Attempts to revert a local row to its server-side version. Never deletes
   /// the local row — if the server doesn't have this id, returns
   /// [_RevertOutcome.absentOnServer] and leaves the local copy alone so the
@@ -955,7 +983,12 @@ class Store extends _$Store {
       if (pendingRows.isEmpty) {
         success = true;
       } else {
-        log.info("Pushing ${pendingRows.length} ${baseTable.name} rows");
+        final pendingIds = pendingRows
+            .map((r) => _rowIdString(r.data['id']))
+            .toList();
+        log.info(
+          "Pushing ${pendingRows.length} ${baseTable.name} rows: $pendingIds",
+        );
 
         try {
           // Try batch push first
@@ -973,18 +1006,27 @@ class Store extends _$Store {
             'UPDATE ${table.actualTableName} SET pending = NULL WHERE (pending & 1) = 1',
             updates: {table},
           );
+          log.info(
+            "Batch push succeeded for ${pendingRows.length} ${baseTable.name} rows",
+          );
         } catch (e, trace) {
           log.warning(
-            "Batch push failed, falling back to individual pushes",
+            "Batch push failed for ${baseTable.name} "
+            "(${e.runtimeType}: ${_describeError(e)}), "
+            "falling back to individual pushes",
             e,
             trace,
           );
 
           // Step 3b: On batch failure, try individual rows
           for (final row in pendingRows) {
+            final rowId = _rowIdString(row.data['id']);
             try {
               final data = await table.map(row.data);
               try {
+                log.info(
+                  "Pushing individual ${baseTable.name} row $rowId",
+                );
                 await baseTable.put([baseTable.toBase(data)]);
                 success = true;
                 // set pending = NULL for this row
@@ -993,8 +1035,15 @@ class Store extends _$Store {
                   variables: [Variable(row.data['id'])],
                   updates: {table},
                 );
+                log.info(
+                  "Individual push succeeded for ${baseTable.name} row $rowId",
+                );
               } catch (e, stackTrace) {
                 if (Store._isAuthError(e)) {
+                  log.warning(
+                    "Auth error pushing ${baseTable.name} row $rowId — "
+                    "triggering sign-out",
+                  );
                   await Store._handleAuthError();
                   rethrow;
                 } else if (Store._isPermanentError(e)) {
@@ -1006,11 +1055,9 @@ class Store extends _$Store {
                   // when a transient symptom (e.g. parent not pushed yet, or a
                   // brief 5xx that surfaces as a "permanent" 4xx like 403)
                   // would otherwise have stranded the row.
-                  final errorMsg = e is ApiException
-                      ? e.description
-                      : 'Invalid local change';
                   log.warning(
-                    "Permanent error during sync (${baseTable.table}): $errorMsg",
+                    "Permanent error pushing ${baseTable.name} row $rowId: "
+                    "${_describeError(e)} — attempting revert to remote",
                     e,
                     stackTrace,
                   );
@@ -1021,11 +1068,31 @@ class Store extends _$Store {
                     baseTable.toBase(data),
                   );
 
+                  log.warning(
+                    "Revert outcome for ${baseTable.name} row $rowId: "
+                    "${outcome.name}",
+                  );
+
                   if (outcome == _RevertOutcome.reverted) {
                     await customUpdate(
                       'UPDATE ${table.actualTableName} SET pending = NULL WHERE id = ?',
                       variables: [Variable(row.data['id'])],
                       updates: {table},
+                    );
+                  } else {
+                    // absentOnServer / fetchFailed: the row stays pending and
+                    // will be retried on every push. If the server keeps
+                    // rejecting it with a permanent error, that's a bug — the
+                    // local row will loop forever silently. Report so we can
+                    // see it in error tracking instead of relying on user
+                    // logs.
+                    Tracker.captureException(
+                      StateError(
+                        'Permanent sync error with no remote version '
+                        '(${baseTable.syncEndpoint} row $rowId, '
+                        'outcome=${outcome.name}): ${_describeError(e)}',
+                      ),
+                      stackTrace,
                     );
                   }
                   // For absentOnServer / fetchFailed: leave `pending` set —
@@ -1034,7 +1101,9 @@ class Store extends _$Store {
                 } else {
                   // Transient error - log and continue
                   log.warning(
-                    "Error pushing ${baseTable.toBase(data)} to ${baseTable.syncEndpoint}",
+                    "Transient error pushing ${baseTable.name} row $rowId "
+                    "to ${baseTable.syncEndpoint}: "
+                    "${e.runtimeType}: ${_describeError(e)}",
                     e,
                     stackTrace,
                   );
@@ -1042,7 +1111,8 @@ class Store extends _$Store {
               }
             } catch (e, stackTrace) {
               log.warning(
-                "Error parsing row ${jsonEncode(row.data)} from ${baseTable.table}",
+                "Error parsing ${baseTable.name} row $rowId "
+                "(${jsonEncode(row.data)})",
                 e,
                 stackTrace,
               );

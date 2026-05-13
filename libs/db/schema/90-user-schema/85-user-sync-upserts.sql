@@ -199,7 +199,6 @@ DECLARE
     v_priority_id uuid;
     v_created_by uuid;
     v_author_id uuid;
-    v_thread_created_by uuid;
     v_row note;
 BEGIN
     SELECT
@@ -213,17 +212,13 @@ BEGIN
         RAISE EXCEPTION 'Thread not found';
     END IF;
 
-    -- Check thread access via contacts intersection
-    SELECT created_by INTO v_thread_created_by FROM thread WHERE id = p_thread_id;
-    IF v_thread_created_by != upsert_note.user_id
-       AND NOT EXISTS (
-           SELECT 1 FROM thread
-           WHERE id = p_thread_id
-             AND contacts && "user".user_contact_ids(upsert_note.user_id)
-       )
-    THEN
-        RAISE EXCEPTION 'Access denied to thread';
-    END IF;
+    -- Visibility is established by the thread_priority lookup above. The
+    -- read-only viewer gate below uses user_has_thread_write_access(), which
+    -- accepts write access via contacts OR non-announce group membership OR
+    -- admin of an announce group, and forces announce-only viewers down the
+    -- access_contacts path. Don't add a stricter contacts-only check here —
+    -- it silently strands notes from users whose write access comes via
+    -- group membership rather than direct contact in thread.contacts.
 
     v_created_by := COALESCE(p_created_by, user_id);
     -- When the user creates directly (not via twist), force author to their contact ID.

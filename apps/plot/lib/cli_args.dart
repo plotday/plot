@@ -11,6 +11,9 @@ import 'package:logging/logging.dart';
 /// - --light-mode: Force light theme
 /// - --frozen-time=ISO8601: Freeze time for testing
 /// - --profile=NAME: Run in isolated profile with separate database and preferences
+/// - --no-profile: Force the unsuffixed (release) database in a debug build,
+///   overriding the default `dev` profile assignment. Use to attach a debug
+///   build to the same data the released app uses.
 class CliArgs {
   CliArgs._();
 
@@ -24,6 +27,7 @@ class CliArgs {
   static bool _lightMode = false;
   static DateTime? _frozenTime;
   static String? _profile;
+  static bool _noProfile = false;
 
   /// Initializes the CLI argument parser.
   ///
@@ -74,6 +78,9 @@ class CliArgs {
         } else {
           _log.info('Profile: $_profile');
         }
+      } else if (arg == '--no-profile') {
+        _noProfile = true;
+        _log.info('--no-profile: using unsuffixed (release) database');
       }
     }
 
@@ -89,8 +96,9 @@ class CliArgs {
       _log.warning('--password specified without --user. Password will be ignored.');
     }
 
-    // Automatically use "dev" profile for debug builds if no profile specified
-    if (_profile == null && kDebugMode) {
+    // Automatically use "dev" profile for debug builds if no profile specified.
+    // --no-profile opts out so a debug build can attach to the release DB.
+    if (_profile == null && kDebugMode && !_noProfile) {
       _profile = 'dev';
       _log.info('Debug build detected: Using default profile "dev"');
     }
