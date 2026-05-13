@@ -33,15 +33,13 @@ const Duration kDefaultPomodoro = Duration(minutes: 15);
 /// distractions either get explicitly extended or get a quick reminder.
 const Duration kDistractionPomodoro = Duration(minutes: 5);
 
-/// Snap granularity used by [AddTime] — pressing `+` jumps the remaining
-/// time UP to the next multiple of this.
+/// Snap granularity used by [AddTime] / [RemoveTime]. `+` jumps the
+/// remaining time UP to the next multiple; `−` shaves exactly this much
+/// off (with a floor at [kMinPomodoro]).
 const Duration kPomodoroStep = Duration(minutes: 15);
 
-/// Step size used by [RemoveTime] — pressing `−` subtracts this much,
-/// clamped at [kMinPomodoro].
-const Duration kRemoveStep = Duration(minutes: 5);
-
-/// Minimum allowed pomodoro duration after a `−` press.
+/// Minimum remaining time the `−` button leaves on the timer when the
+/// caller has less than [kPomodoroStep] left to remove.
 const Duration kMinPomodoro = Duration(minutes: 5);
 
 final class NowLoading extends NowState {
@@ -336,6 +334,20 @@ final class NowLoaded extends NowState {
   DateTime? endFor(Priority? priority) {
     if (priority == this.priority && at?.end != null) {
       return at!.end;
+    }
+    return next.firstOrNull?.at?.start;
+  }
+
+  /// Upper bound for *extending* the active pomodoro. Mirrors [endFor]
+  /// but never returns the in-flight pomodoro's own end — using that as
+  /// a cap creates a feedback loop where each `+` press clamps the new
+  /// duration back down to the existing remaining time.
+  DateTime? pomodoroEndCap(Priority? priority) {
+    if (priority == this.priority) {
+      final scheduledEnd = scheduled.firstOrNull?.priority == priority
+          ? scheduled.firstOrNull?.at?.end
+          : null;
+      if (scheduledEnd != null) return scheduledEnd;
     }
     return next.firstOrNull?.at?.start;
   }

@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/store/store.dart';
 
 import 'base.dart';
 
@@ -87,13 +88,14 @@ class AddTime extends Command {
   }
 }
 
-/// Shrink the pomodoro by exactly 5 minutes, clamped so it never falls
-/// below [kMinPomodoro] (if less than 5m of headroom exists, only that
-/// headroom is removed). Mirrors [AddTime] in any state.
+/// Shrink the pomodoro by 15 minutes. When less than 15m of remaining
+/// time is left, the timer instead snaps to [kMinPomodoro] (5m) so the
+/// `−` press still produces a meaningful result without overshooting
+/// the floor.
 class RemoveTime extends Command {
   RemoveTime()
     : super(
-        title: 'Remove 5 minutes',
+        title: 'Remove 15 minutes',
         icon: FontAwesomeIcons.minus,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
@@ -105,24 +107,28 @@ class RemoveTime extends Command {
     if (state is! NowLoaded) return false;
     final ctx = state.context;
     if (ctx == null) return false;
-    // Floor at 5m: disable when the relevant duration is already there.
     final session = state.session;
     final isActiveForCtx = session != null
         && session.at.isNow()
         && session.source == 'active'
         && session.priority?.id == ctx.id
+        && session.pomodoroAt != null
         && session.pomodoro != null;
-    final current = isActiveForCtx
-        ? session.pomodoro!
-        : (state.previewPomodoro
-            ?? state.pendingFor(ctx)
-            ?? kDefaultPomodoro);
-    return current > kMinPomodoro;
+    if (isActiveForCtx) {
+      final remaining = session.pomodoroAt!
+          .add(session.pomodoro!)
+          .difference(Time.now());
+      return remaining > kMinPomodoro;
+    }
+    final base = state.previewPomodoro
+        ?? state.pendingFor(ctx)
+        ?? kDefaultPomodoro;
+    return base > kMinPomodoro;
   }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await context.read<NowBloc>().adjustPomodoro(-kRemoveStep);
+    await context.read<NowBloc>().decreasePomodoro();
     return const CommandDone();
   }
 }

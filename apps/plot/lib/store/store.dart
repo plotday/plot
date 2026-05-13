@@ -2165,7 +2165,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 328;
+  int get schemaVersion => 329;
 
   @override
   MigrationStrategy get migration {
@@ -3175,6 +3175,13 @@ class Store extends _$Store {
       await _safeAddColumn(m, sessions, sessions.scheduleId);
       await _safeAddColumn(m, sessions, sessions.occurrenceAt);
       await _safeAddColumn(m, userSettings, userSettings.trackingPausedAt);
+    }
+    if (from < 329) {
+      // Explicit vs auto-start distinction: paused explicit sessions are
+      // revivable, 5-minute distraction handoffs are not. Defaults to
+      // true so any pre-upgrade in-flight session is treated as explicit
+      // (the safer choice — the user can Stop it).
+      await _safeAddColumn(m, sessions, sessions.explicit);
     }
   }
 

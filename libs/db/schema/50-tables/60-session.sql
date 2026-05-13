@@ -37,6 +37,13 @@ CREATE TABLE "public"."session" (
     -- Combined with schedule_id, makes the finalizer cron idempotent
     -- (see idx_session_schedule_occurrence below).
     "occurrence_at" timestamp with time zone,
+    -- True when the user started this pomodoro themselves (pressed
+    -- Start, or adjusted a running auto-start via Add time). False when
+    -- the client started it implicitly as a 5-minute distraction handoff
+    -- after the user switched priorities mid-session. The resume path
+    -- only revives sessions with `explicit = true`; auto-starts are
+    -- one-shot reminders.
+    "explicit" boolean NOT NULL DEFAULT true,
     "updated_by" integer NOT NULL DEFAULT 0,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );

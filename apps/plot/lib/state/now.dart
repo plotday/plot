@@ -63,7 +63,10 @@ class NowBloc extends Cubit<NowState> {
     // Maintenance tick: refresh the active session's `end` so
     // `at.isNow()` stays true, and auto-stop when the 5-minute grace
     // expires. No auto-start — sessions begin only via [startSession].
-    _trackTick = Timer.periodic(const Duration(minutes: 1), (_) => _onTrackTick());
+    _trackTick = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _onTrackTick(),
+    );
     scheduleMicrotask(_onTrackTick);
     return completer.future;
   }
@@ -86,7 +89,7 @@ class NowBloc extends Cubit<NowState> {
   ///      `at.isNow()` check would fail and the pill would drop back to
   ///      inactive).
   ///   2. Once the grace period elapses, auto-close the session via
-  ///      [_closeActiveSessionAndWriteBack] (which also writes the
+  ///      [_closeActiveSession] (which also writes the
   ///      consumed time back to `priority_block`).
   Future<void> _onTrackTick() async {
     if (state is! NowLoaded) return;
@@ -101,7 +104,7 @@ class NowBloc extends Cubit<NowState> {
         .add(session.pomodoro!)
         .add(kPomodoroGrace);
     if (!now.isBefore(graceEnd)) {
-      await _closeActiveSessionAndWriteBack(session);
+      await _closeActiveSession(session);
       return;
     }
     if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
@@ -114,116 +117,86 @@ class NowBloc extends Cubit<NowState> {
     }
   }
 
-  Future<void> _closeActiveSessionAndWriteBack(Session existing) async {
+  /// Close out the currently-active foreground session by pinning its
+  /// `end` to `now`. The remaining time in the planned pomodoro window
+  /// stays encoded on the session row itself (`pomodoroAt + pomodoro -
+  /// end`); the resume path reads it directly, and
+  /// `watchPendingDuration` derives the agenda's live display from the
+  /// same row across devices. `priority_block.duration` is intentionally
+  /// not touched — it's the user-configured base duration for the
+  /// priority, not a resume cache.
+  Future<void> _closeActiveSession(Session existing) async {
     final now = Time.now();
-    final priority = existing.priority;
-
-    // Preserve the time remaining in the planned pomodoro window so the
-    // user can pause and resume without losing the countdown. When the
-    // session has no pomodoro planned (e.g. an 'event' source row),
-    // fall back to the wall-clock write-back against priority_blocks.
-    Duration? newPending;
-    if (existing.pomodoroAt != null && existing.pomodoro != null) {
-      final end = existing.pomodoroAt!.add(existing.pomodoro!);
-      final remaining = end.difference(now);
-      newPending = remaining > Duration.zero ? remaining : null;
-    } else if (priority != null) {
-      final rows =
-          loadedState.priorityBlocksByPriority[priority.id] ?? const [];
-      final startPending = effectivePriorityDurationAt(
-        moment: existing.at.start,
-        blocksForPriority: rows,
-      );
-      if (startPending != null) {
-        final consumed = now.difference(existing.at.start);
-        final remaining = startPending - consumed;
-        newPending = remaining > Duration.zero ? remaining : null;
-      }
-    }
-
-    // Write the priority_block update FIRST so `pendingFor` already
-    // returns the preserved remaining by the time the session-save
-    // emits and the pill switches to its inactive state. Reversing
-    // the order causes a one-frame flash of the old pending value.
-    if (priority != null) {
-      await PriorityBlock.setPendingDuration(priority.id, newPending);
-    }
-
-    // Pin the session's `end` to now so the row no longer satisfies
-    // `at.isNow()` — that lets `Session.watchCurrent` clear and prevents
-    // the next tick from accidentally extending it.
     final closed = Session.fromStore(existing.copyWith(end: now));
     await closed.save();
   }
 
-  /// Live remaining-duration stream for the agenda block header. Combines
-  /// the priority_block resolver with a 60-second wall-clock tick so the
-  /// displayed value decrements smoothly while an active session is open.
-  /// Emits null when the priority has no pending or has reached zero.
+  /// Live remaining-duration stream for the agenda block header. The
+  /// resolution order is:
+  ///
+  ///   1. Active session for this priority → `pomodoroAt + pomodoro − now`.
+  ///   2. Paused **explicit** session for this priority → the remaining
+  ///      time frozen at pause (`pomodoroAt + pomodoro − end`), so a
+  ///      paused 23-minute timer keeps showing 23 minutes until the user
+  ///      resumes or stops.
+  ///   3. Otherwise → the user-configured `priority_block.duration` at
+  ///      [Time.now].
+  ///
+  /// All three branches sync cleanly across devices: the session row is
+  /// the source of truth for in-flight/paused state, and `priority_block`
+  /// is the source of truth for the configured base. Emits null when no
+  /// row contributes a duration.
   static Stream<Duration?> watchPendingDuration(PriorityId priorityId) {
-    // Rebuild on every priority-blocks change AND every minute boundary.
-    return Rx.combineLatest3(
+    return Rx.combineLatest4(
       streamPriorityBlocksGroupedByPriority(),
       Session.watchCurrent(),
+      Session.watchLatestPausedFor(priorityId),
       Stream<void>.periodic(const Duration(minutes: 1), (_) {}).startWith(null),
-      (blocksByPriority, currentSession, _) {
-        final rows = blocksByPriority[priorityId] ?? const [];
+      (blocksByPriority, currentSession, pausedExplicit, _) {
         final now = Time.now();
-        final base = effectivePriorityDurationAt(
+        final isActiveForThisPriority =
+            currentSession != null &&
+            currentSession.priority?.id == priorityId &&
+            currentSession.at.isNow() &&
+            currentSession.pomodoroAt != null &&
+            currentSession.pomodoro != null;
+        if (isActiveForThisPriority) {
+          final end =
+              currentSession.pomodoroAt!.add(currentSession.pomodoro!);
+          final remaining = end.difference(now);
+          return remaining > Duration.zero ? remaining : null;
+        }
+        if (pausedExplicit != null) {
+          final originalEnd =
+              pausedExplicit.pomodoroAt!.add(pausedExplicit.pomodoro!);
+          final remaining = originalEnd.difference(pausedExplicit.end);
+          return remaining > Duration.zero ? remaining : null;
+        }
+        final rows = blocksByPriority[priorityId] ?? const [];
+        return effectivePriorityDurationAt(
           moment: now,
           blocksForPriority: rows,
         );
-        if (base == null) return null;
-        final isActiveForThisPriority = currentSession != null
-            && currentSession.priority?.id == priorityId
-            && currentSession.at.isNow();
-        if (!isActiveForThisPriority) return base;
-        // Deduct elapsed time since the LATER of (session start) and
-        // (most recent priority_block's effective_at). If the user
-        // manually re-set pending mid-session, the new block's
-        // effective_at is after session.start; deducting from session.start
-        // would double-count time the user just reset away.
-        final effectiveFrom =
-            _latestEffectiveAt(rows, asOf: now) ?? currentSession.at.start;
-        final deductFrom = effectiveFrom.isAfter(currentSession.at.start)
-            ? effectiveFrom
-            : currentSession.at.start;
-        final elapsed = now.difference(deductFrom);
-        if (elapsed <= Duration.zero) return base;
-        final remaining = base - elapsed;
-        return remaining > Duration.zero ? remaining : null;
       },
     );
-  }
-
-  /// Most-recent non-archived priority_block effective_at <= [asOf], or
-  /// null if no row qualifies. Mirrors the search inside
-  /// [effectivePriorityDurationAt] but returns the moment rather than the
-  /// duration.
-  static DateTime? _latestEffectiveAt(
-    Iterable<PriorityBlockRow> rows, {
-    required DateTime asOf,
-  }) {
-    DateTime? best;
-    for (final r in rows) {
-      if (r.archivedAt != null) continue;
-      if (r.effectiveAt.isAfter(asOf)) continue;
-      if (best == null || r.effectiveAt.isAfter(best)) {
-        best = r.effectiveAt;
-      }
-    }
-    return best;
   }
 
   /// Context is the priority being displayed, which may
   /// be more general than the focus.
   ///
-  /// When a session is already running on the previously-displayed
-  /// priority, this method closes it and immediately starts a new
-  /// pomodoro on the new context (distraction-handoff per the spec:
-  /// "stopping counting time on the previous priority and start counting
-  /// time against the new priority"). When no session is running, this
-  /// is a pure view change — nothing auto-starts.
+  /// Distraction handoff: when the user navigates *away from* a priority
+  /// that owned the active session, close it and start a fresh one on
+  /// the new context (fallback duration [kDistractionPomodoro]).
+  ///
+  /// Why the handoff is gated on `prior.context == session.priority`:
+  /// the session is shared state across clients. A second client may be
+  /// sitting on Priority B while a session runs on Priority A. Without
+  /// this gate, the user navigating B → D on the second client would
+  /// silently hijack the A-side session — they were never viewing A.
+  /// With the gate, navigation only moves the session when the user was
+  /// actually looking at the priority that owned it. Navigating *to* the
+  /// session's priority is always a pure view change (the pill becomes
+  /// active because session.priority now matches ctx).
   void setContext(Priority? priority) async {
     final prior = loadedState;
     if (prior.context?.id == priority?.id) return;
@@ -232,25 +205,65 @@ class NowBloc extends Cubit<NowState> {
     final currentEvent = prior.currentEvent;
     final keepEvent =
         currentEvent != null && currentEvent.priority.id == priority?.id;
-    emit(prior.copyWith(
-      context: priority,
-      currentEvent: keepEvent ? currentEvent : null,
-      // Staged duration is per-priority — drop it whenever the user
-      // navigates to a different priority.
-      previewPomodoro: null,
-    ));
+    emit(
+      prior.copyWith(
+        context: priority,
+        currentEvent: keepEvent ? currentEvent : null,
+        // Staged duration is per-priority — drop it whenever the user
+        // navigates to a different priority.
+        previewPomodoro: null,
+      ),
+    );
 
-    // If a session was running on the prior context, chain start →
-    // stop on it and a fresh start on the new context. `startSession`
-    // closes the previously-active session, applies the resume-within-
-    // time-block rule, and falls back to `kDistractionPomodoro` since
-    // there's still an active session at the moment it's called.
-    final wasActive = prior.session != null
-        && prior.session!.at.isNow()
-        && prior.session!.source == 'active'
-        && prior.session!.pomodoroAt != null;
+    final wasActive =
+        prior.session != null &&
+        prior.session!.at.isNow() &&
+        prior.session!.source == 'active' &&
+        prior.session!.pomodoroAt != null &&
+        prior.session!.priority?.id == prior.context?.id;
     if (wasActive && priority != null) {
-      await startSession();
+      await _startDistraction();
+    }
+  }
+
+  /// Distraction handoff: the user navigated away from a priority that
+  /// owned the active session, so close that session and open a fresh
+  /// 5-minute one on [context]. Marked `explicit=false` so a future
+  /// resume on this priority falls through to the configured base
+  /// duration instead of reviving a stale 5-minute reminder.
+  ///
+  /// Always 5 minutes per the spec — `priority_block.duration` is
+  /// intentionally ignored for auto-starts. The user can promote the
+  /// session to explicit (and a real duration) by pressing Add time,
+  /// which flips the row's `explicit` flag and bumps the pomodoro.
+  Future<void> _startDistraction() async {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    final ctx = s.context;
+    if (ctx == null) return;
+
+    final priorActive =
+        s.session != null &&
+        s.session!.at.isNow() &&
+        s.session!.source == 'active' &&
+        s.session!.priority?.id != ctx.id;
+    if (priorActive) {
+      await _closeActiveSession(s.session!);
+    }
+
+    final now = Time.now();
+    final pomodoro = _capToEnd(ctx, kDistractionPomodoro);
+    if (pomodoro <= Duration.zero) return;
+
+    await Session.resume(
+      ctx,
+      end: now.add(const Duration(minutes: 3)),
+      pomodoro: pomodoro,
+      pomodoroAt: now,
+      explicit: false,
+    );
+    if (s.previewPomodoro != null) {
+      emit(s.copyWith(previewPomodoro: null));
     }
   }
 
@@ -263,9 +276,7 @@ class NowBloc extends Cubit<NowState> {
       return;
     }
     if (event != null && loadedState.context?.id != event.priority.id) {
-      emit(
-        loadedState.copyWith(context: event.priority, currentEvent: event),
-      );
+      emit(loadedState.copyWith(context: event.priority, currentEvent: event));
       return;
     }
     emit(loadedState.copyWith(currentEvent: event));
@@ -280,19 +291,25 @@ class NowBloc extends Cubit<NowState> {
     setContext(priority);
   }
 
-  /// Start a pomodoro session for the [context] priority.
+  /// Start an **explicit** pomodoro session for the [context] priority
+  /// (the user pressed Start, or a caller is opening a fresh timer on
+  /// the user's behalf). The distraction-handoff path goes through
+  /// [_startDistraction] instead — this method always marks the new
+  /// session `explicit = true`.
   ///
   /// Resolution order for the planned duration:
-  ///   1. [override] (the inactive-state preview the user staged with +/-).
-  ///   2. The priority's effective `priority_block.duration` — which is
-  ///      where pause writes the preserved remaining time, so resume
-  ///      picks up exactly where the user left off.
-  ///   3. [kDistractionPomodoro] (5m) when supplanting an already-active
-  ///      session on a different priority — a quick reminder that the
-  ///      user is mid-distraction.
-  ///   4. [kDefaultPomodoro] (15m).
-  /// All branches are capped at `endFor(priority) − now` so a pomodoro
-  /// can never run past the next scheduled event.
+  ///   1. [override] — caller-supplied; bypasses every other branch.
+  ///   2. Resume from the most recent paused **explicit** session for
+  ///      this priority (`Session.latestPausedFor`), shifting its
+  ///      `pomodoroAt` so the progress ring continues from where the
+  ///      user left off rather than snapping back to zero.
+  ///   3. The inactive-state preview the user staged via Add/Remove time.
+  ///   4. `priority_block.duration` for the matching priority (capped to
+  ///      the time until the next scheduled event by [_capToEnd]).
+  ///   5. [kDefaultPomodoro] (15 m).
+  ///
+  /// All branches are capped at `pomodoroEndCap(priority) − now` so a
+  /// pomodoro can never run past the next scheduled event.
   Future<void> startSession({Duration? override}) async {
     if (state is! NowLoaded) return;
     final s = loadedState;
@@ -300,36 +317,37 @@ class NowBloc extends Cubit<NowState> {
     if (ctx == null) return;
 
     final now = Time.now();
-    final hadOtherActive = s.session != null
-        && s.session!.at.isNow()
-        && s.session!.source == 'active'
-        && s.session!.priority?.id != ctx.id;
+    final hadOtherActive =
+        s.session != null &&
+        s.session!.at.isNow() &&
+        s.session!.source == 'active' &&
+        s.session!.priority?.id != ctx.id;
 
     // Close out any session on a different priority first.
     if (hadOtherActive) {
-      await _closeActiveSessionAndWriteBack(s.session!);
+      await _closeActiveSession(s.session!);
     }
 
-    // Resume-after-pause: if the most recent session for this priority
-    // was paused, and its preserved remaining still matches the
-    // priority's current pending (i.e. the user didn't manually edit
-    // duration in between), restart the same pomodoro with a shifted
+    // Resume-after-pause: if the most recent explicit session for this
+    // priority was paused, restart the same pomodoro with a shifted
     // `pomodoroAt` so the progress ring continues from where it left
-    // off rather than snapping back to zero.
+    // off. The paused-session row is now the source of truth — no
+    // longer gated on `priority_block.duration` matching the preserved
+    // remaining.
     if (override == null) {
       final paused = await Session.latestPausedFor(ctx.id);
       if (paused != null) {
         final originalPomodoro = paused.pomodoro!;
         final elapsedAtPause = paused.end.difference(paused.pomodoroAt!);
         final remainingAtPause = originalPomodoro - elapsedAtPause;
-        if (remainingAtPause > Duration.zero
-            && s.pendingFor(ctx) == remainingAtPause) {
+        if (remainingAtPause > Duration.zero) {
           final shiftedPomodoroAt = now.subtract(elapsedAtPause);
           await Session.resume(
             ctx,
             end: now.add(const Duration(minutes: 3)),
             pomodoro: originalPomodoro,
             pomodoroAt: shiftedPomodoroAt,
+            explicit: true,
           );
           if (s.previewPomodoro != null) {
             emit(s.copyWith(previewPomodoro: null));
@@ -339,10 +357,11 @@ class NowBloc extends Cubit<NowState> {
       }
     }
 
-    final base = override
-        ?? s.previewPomodoro
-        ?? s.pendingFor(ctx)
-        ?? (hadOtherActive ? kDistractionPomodoro : kDefaultPomodoro);
+    final base =
+        override ??
+        s.previewPomodoro ??
+        s.pendingFor(ctx) ??
+        kDefaultPomodoro;
     final pomodoro = _capToEnd(ctx, base);
     if (pomodoro <= Duration.zero) return;
 
@@ -351,6 +370,7 @@ class NowBloc extends Cubit<NowState> {
       end: now.add(const Duration(minutes: 3)),
       pomodoro: pomodoro,
       pomodoroAt: now,
+      explicit: true,
     );
     if (s.previewPomodoro != null) {
       emit(s.copyWith(previewPomodoro: null));
@@ -364,7 +384,7 @@ class NowBloc extends Cubit<NowState> {
     final session = s.session;
     if (session == null || !session.at.isNow()) return;
     if (session.source != 'active') return;
-    await _closeActiveSessionAndWriteBack(session);
+    await _closeActiveSession(session);
   }
 
   /// Adjust the pomodoro by [delta] (positive or negative). When a
@@ -373,7 +393,7 @@ class NowBloc extends Cubit<NowState> {
   /// session is for a different priority), the change lands in
   /// [NowLoaded.previewPomodoro] which the pill renders.
   ///
-  /// Both branches floor at [kMinPomodoro] and cap at `endFor − now`.
+  /// Both branches floor at [kMinPomodoro] and cap at `pomodoroEndCap − now`.
   Future<void> adjustPomodoro(Duration delta) async {
     if (state is! NowLoaded) return;
     final s = loadedState;
@@ -381,12 +401,13 @@ class NowBloc extends Cubit<NowState> {
     if (ctx == null) return;
 
     final session = s.session;
-    final isActiveForCtx = session != null
-        && session.at.isNow()
-        && session.source == 'active'
-        && session.priority?.id == ctx.id
-        && session.pomodoroAt != null
-        && session.pomodoro != null;
+    final isActiveForCtx =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
 
     if (isActiveForCtx) {
       final current = session.pomodoro!;
@@ -399,11 +420,53 @@ class NowBloc extends Cubit<NowState> {
       return;
     }
 
-    final base = s.previewPomodoro
-        ?? s.pendingFor(ctx)
-        ?? kDefaultPomodoro;
+    final base = s.previewPomodoro ?? s.pendingFor(ctx) ?? kDefaultPomodoro;
     final proposed = base + delta;
     final clamped = _clampPomodoro(ctx, proposed);
+    emit(s.copyWith(previewPomodoro: clamped));
+  }
+
+  /// Shrink the displayed remaining time by [kPomodoroStep] (15m). If
+  /// less than 15m of remaining time is left, snap remaining to
+  /// [kMinPomodoro] (5m) instead so the user always has a meaningful
+  /// floor to land on. For an active context session this rewrites
+  /// `pomodoro` so `pomodoroAt + pomodoro = now + newRemaining`; for
+  /// inactive (or non-context active) state, [NowLoaded.previewPomodoro]
+  /// is updated instead.
+  Future<void> decreasePomodoro() async {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    final ctx = s.context;
+    if (ctx == null) return;
+
+    final session = s.session;
+    final isActiveForCtx =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
+
+    if (isActiveForCtx) {
+      final now = Time.now();
+      final elapsed = now.difference(session.pomodoroAt!);
+      final remaining = session.pomodoro! - elapsed;
+      final newRemaining = remaining > kPomodoroStep
+          ? remaining - kPomodoroStep
+          : kMinPomodoro;
+      final clamped = _clampPomodoro(ctx, elapsed + newRemaining);
+      if (clamped == session.pomodoro) return;
+      await Session.fromStore(
+        session.copyWith(pomodoro: Value(clamped)),
+      ).save();
+      return;
+    }
+
+    final base = s.previewPomodoro ?? s.pendingFor(ctx) ?? kDefaultPomodoro;
+    final newBase = base > kPomodoroStep ? base - kPomodoroStep : kMinPomodoro;
+    final clamped = _clampPomodoro(ctx, newBase);
+    if (clamped == s.previewPomodoro) return;
     emit(s.copyWith(previewPomodoro: clamped));
   }
 
@@ -419,12 +482,13 @@ class NowBloc extends Cubit<NowState> {
     if (ctx == null) return;
 
     final session = s.session;
-    final isActiveForCtx = session != null
-        && session.at.isNow()
-        && session.source == 'active'
-        && session.priority?.id == ctx.id
-        && session.pomodoroAt != null
-        && session.pomodoro != null;
+    final isActiveForCtx =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
 
     if (isActiveForCtx) {
       final now = Time.now();
@@ -433,16 +497,22 @@ class NowBloc extends Cubit<NowState> {
       final next = _nextStepBoundary(remaining);
       final newPomodoro = now.difference(session.pomodoroAt!) + next;
       final clamped = _clampPomodoro(ctx, newPomodoro);
-      if (clamped == session.pomodoro) return;
+      // Promote auto-started 5m distractions to explicit when the user
+      // extends them — a clear signal that they want this priority's
+      // session to outlive the next handoff. Already-explicit sessions
+      // keep `explicit = true` (no-op).
+      final promoteExplicit = !session.explicit;
+      if (clamped == session.pomodoro && !promoteExplicit) return;
       await Session.fromStore(
-        session.copyWith(pomodoro: Value(clamped)),
+        session.copyWith(
+          pomodoro: Value(clamped),
+          explicit: promoteExplicit ? true : null,
+        ),
       ).save();
       return;
     }
 
-    final base = s.previewPomodoro
-        ?? s.pendingFor(ctx)
-        ?? Duration.zero;
+    final base = s.previewPomodoro ?? s.pendingFor(ctx) ?? Duration.zero;
     final next = _nextStepBoundary(base);
     final clamped = _clampPomodoro(ctx, next);
     if (clamped == s.previewPomodoro) return;
@@ -454,13 +524,12 @@ class NowBloc extends Cubit<NowState> {
   static Duration _nextStepBoundary(Duration current) {
     final stepSeconds = kPomodoroStep.inSeconds;
     final currentSeconds = current.inSeconds <= 0 ? 0 : current.inSeconds;
-    final nextSeconds =
-        ((currentSeconds ~/ stepSeconds) + 1) * stepSeconds;
+    final nextSeconds = ((currentSeconds ~/ stepSeconds) + 1) * stepSeconds;
     return Duration(seconds: nextSeconds);
   }
 
   Duration _capToEnd(Priority priority, Duration desired) {
-    final end = loadedState.endFor(priority);
+    final end = loadedState.pomodoroEndCap(priority);
     if (end == null) return desired;
     final headroom = end.difference(Time.now());
     if (headroom <= Duration.zero) return Duration.zero;

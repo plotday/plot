@@ -1489,6 +1489,7 @@ export type Database = {
           archived_at: string | null
           at: unknown
           created_at: string
+          explicit: boolean
           id: string
           occurrence_at: string | null
           pomodoro: number | null
@@ -1506,6 +1507,7 @@ export type Database = {
           archived_at?: string | null
           at: unknown
           created_at?: string
+          explicit?: boolean
           id?: string
           occurrence_at?: string | null
           pomodoro?: number | null
@@ -1523,6 +1525,7 @@ export type Database = {
           archived_at?: string | null
           at?: unknown
           created_at?: string
+          explicit?: boolean
           id?: string
           occurrence_at?: string | null
           pomodoro?: number | null
@@ -5062,6 +5065,7 @@ export type Database = {
         Args: {
           p_archived_at: string
           p_at: unknown
+          p_explicit?: boolean
           p_id: string
           p_occurrence_at?: string
           p_pomodoro: number

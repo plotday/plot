@@ -91,6 +91,7 @@ sessions.post("/sync/sessions", async (c) => {
       p_source: body.source || "active",
       p_schedule_id: body.schedule_id || null,
       p_occurrence_at: body.occurrence_at || null,
+      p_explicit: typeof body.explicit === "boolean" ? body.explicit : null,
     });
   });
 

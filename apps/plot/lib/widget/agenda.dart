@@ -238,7 +238,10 @@ class AgendaTile extends StatelessWidget {
                 children: [
                   TextSpan(
                     text: dateMonth!.trimLeft(),
-                    style: TextStyle(color: context.theme.plotColors.muted),
+                    style: TextStyle(
+                      color: veryMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   const TextSpan(text: ' '),
                   TextSpan(
@@ -264,7 +267,11 @@ class AgendaTile extends StatelessWidget {
                 dateCenterLeft,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: veryMuted, fontSize: smSize),
+                style: TextStyle(
+                  color: veryMuted,
+                  fontSize: smSize,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],

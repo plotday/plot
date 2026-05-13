@@ -517,7 +517,8 @@ class _PriorityWeeklyTotalState extends State<_PriorityWeeklyTotal> {
             child: Text(
               formatTrackedDuration(total),
               style: TextStyle(
-                fontSize: context.theme.typography.sm.fontSize,
+                fontSize: context.theme.typography.xs.fontSize,
+                fontWeight: FontWeight.w500,
                 color: widget.selected
                     ? context.theme.colors.mutedForeground
                     : context.theme.plotColors.veryMuted,

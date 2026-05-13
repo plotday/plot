@@ -555,7 +555,8 @@ CREATE OR REPLACE FUNCTION "user".upsert_session (
     p_updated_by integer,
     p_source text DEFAULT 'active',
     p_schedule_id uuid DEFAULT NULL,
-    p_occurrence_at timestamptz DEFAULT NULL
+    p_occurrence_at timestamptz DEFAULT NULL,
+    p_explicit boolean DEFAULT NULL
 )
     RETURNS session
     LANGUAGE plpgsql
@@ -579,7 +580,7 @@ BEGIN
         RAISE EXCEPTION 'Cannot modify another user''s session';
     END IF;
 
-    INSERT INTO session (id, user_id, priority_id, at, precedence, pomodoro, pomodoro_at, archived_at, updated_by, source, schedule_id, occurrence_at)
+    INSERT INTO session (id, user_id, priority_id, at, precedence, pomodoro, pomodoro_at, archived_at, updated_by, source, schedule_id, occurrence_at, explicit)
         VALUES (
             COALESCE(p_id, uuidv7()),
             user_id,
@@ -592,7 +593,8 @@ BEGIN
             COALESCE(p_updated_by, 0),
             COALESCE(p_source, 'active'),
             p_schedule_id,
-            p_occurrence_at
+            p_occurrence_at,
+            COALESCE(p_explicit, true)
         )
     ON CONFLICT (id)
         DO UPDATE SET
@@ -608,6 +610,10 @@ BEGIN
             source = COALESCE(EXCLUDED.source, session.source),
             schedule_id = COALESCE(EXCLUDED.schedule_id, session.schedule_id),
             occurrence_at = COALESCE(EXCLUDED.occurrence_at, session.occurrence_at),
+            -- Explicit can flip from false -> true (AddTime promotes an
+            -- auto-start) but otherwise honors the client value when
+            -- provided; NULL means "no change", preserving existing.
+            explicit = COALESCE(EXCLUDED.explicit, session.explicit),
             updated_at = now()
     RETURNING * INTO v_row;
 

@@ -888,7 +888,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 ///   elapsed/planned, label showing rounded-up remaining minutes. Tap
 ///   to pause (the remaining time is preserved so a later Start picks
 ///   up exactly where it left off). `+` snaps remaining UP to the next
-///   [kPomodoroStep] boundary; `−` shaves off [kRemoveStep].
+///   [kPomodoroStep] boundary; `−` shaves the same step off, or snaps
+///   remaining to [kMinPomodoro] when less than a step is left.
 /// * **Grace** — pomodoro expired, session still recording for an
 ///   additional [kPomodoroGrace]. Label pulses "0m" against the muted
 ///   color. Tap to pause; + extends, − also lands through
@@ -910,6 +911,7 @@ class _PriorityHeaderTrackingControlState
     extends State<_PriorityHeaderTrackingControl>
     with TickerProviderStateMixin {
   bool _hovered = false;
+  bool _centerHovered = false;
   late final Ticker _ticker;
   // Drives a periodic rebuild so the countdown text and progress ring
   // stay in sync with wall-clock time without depending on NowBloc to
@@ -918,12 +920,14 @@ class _PriorityHeaderTrackingControlState
   Duration _lastTick = Duration.zero;
   late final AnimationController _pulseController;
 
-  // Wider than the legacy 72px to give the +/− ghost buttons their own
-  // hit areas on either side of the countdown text.
-  static const double _pillWidth = 116;
+  // Narrow stadium pill that now only shows the countdown text. The
+  // play affordance lives outside the pill as a separate header icon
+  // button, freed up width that previously held the play glyph.
+  static const double _pillWidth = 88;
   static const double _pillHeight = 22;
-  // Ghost button hit areas. Wider than the visible glyph so the user
-  // can hit them without aiming.
+  // Ghost +/− button hit areas. Sized to abut the centered countdown
+  // text on each side so every horizontal pixel of the pill is one of
+  // three clear targets: −, duration/pause, +.
   static const double _buttonWidth = 22;
 
   @override
@@ -955,44 +959,55 @@ class _PriorityHeaderTrackingControlState
   Widget build(BuildContext context) {
     return BlocBuilder<NowBloc, NowState>(
       builder: (context, nowState) {
-        if (nowState is! NowLoaded) {
-          return const SizedBox(width: _pillWidth, height: _pillHeight);
-        }
+        if (nowState is! NowLoaded) return const SizedBox.shrink();
         // Show the pill against whichever priority is currently in
         // context — the BlocBuilder rebuilds on context changes, but
         // pomodoro state is per the context priority.
         final isContext = nowState.context?.id == widget.priority.id;
-        if (!isContext) {
-          return const SizedBox(width: _pillWidth, height: _pillHeight);
-        }
-        return _buildPill(context, nowState);
+        if (!isContext) return const SizedBox.shrink();
+
+        final live = _LivePomodoro.compute(nowState);
+        final isInactive = live.state == PomodoroState.inactive;
+
+        // Inactive: render a plain header-style "Start timer" icon
+        // button. Active/grace: render the countdown pill. AnimatedSize
+        // animates the trailing-widget width so the title slides
+        // smoothly across the swap.
+        final Widget child = isInactive
+            ? Button.icon(
+                StartTimer(),
+                color: context.theme.plotColors.muted,
+              )
+            : _buildPill(context, nowState, live);
+
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOutCubic,
+          alignment: Alignment.centerLeft,
+          child: child,
+        );
       },
     );
   }
 
-  Widget _buildPill(BuildContext context, NowLoaded state) {
+  /// Active/grace pill. Inactive state never reaches this method —
+  /// [build] swaps in a header-style start button instead.
+  Widget _buildPill(BuildContext context, NowLoaded state, _LivePomodoro live) {
     final accent = context.colour.colours.fromTheme(
       widget.priority.displayColor,
     );
-    final muted = context.theme.colors.mutedForeground;
-    // Recompute state-derived values from `Time.now()` on every frame
-    // tick (our 250ms ticker triggers setState). The NowLoaded getters
-    // snapshot `now` at emit time, so they'd otherwise stay frozen
-    // between bloc emissions — leaving the ring static for up to 60s.
-    final live = _LivePomodoro.compute(state);
-    final isInactive = live.state == PomodoroState.inactive;
+    final muted = context.theme.plotColors.muted;
+    final foreground = context.theme.colors.foreground;
     final isGrace = live.state == PomodoroState.grace;
-    final progress = isInactive ? 0.0 : live.progress;
+    final progress = isGrace ? 1.0 : live.progress;
 
-    final ringBackground = isInactive
-        ? accent.withValues(alpha: _hovered ? 0.45 : 0.25)
-        : accent.withValues(alpha: 0.20);
+    final ringBackground = accent.withValues(alpha: 0.20);
     final ringForeground = accent.withValues(alpha: _hovered ? 1.0 : 0.85);
     final backgroundColor = _hovered
         ? accent.withValues(alpha: 0.08)
         : const Color(0x00000000);
 
-    final body = MouseRegion(
+    return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: SizedBox(
@@ -1011,31 +1026,48 @@ class _PriorityHeaderTrackingControlState
             CustomPaint(
               size: const Size(_pillWidth, _pillHeight),
               painter: PomodoroRingPainter(
-                progress: isGrace ? 1.0 : progress,
+                progress: progress,
                 backgroundColor: ringBackground,
                 foregroundColor: ringForeground,
               ),
             ),
-            // Center tap target — body taps start (inactive) or stop
-            // (active/grace). The +/− buttons sit on top and consume
-            // their own taps via opaque hit testing.
+            // Fallback tap layer covering the full pill — for touch
+            // users, where +/− are invisible (IgnorePointer-ignored)
+            // and the center band doesn't span the whole pill. Lets a
+            // tap anywhere on the pill still pause the timer.
             Positioned.fill(
-              child: FTooltip(
-                tipBuilder: (context, controller) => Text(
-                  isInactive ? 'Start timer' : 'Pause timer',
-                ),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => context.run(
-                    isInactive ? StartTimer() : StopTimer(),
-                  ),
-                  child: _PillLabel(
-                    state: state,
-                    live: live,
-                    priority: widget.priority,
-                    accent: accent,
-                    muted: muted,
-                    pulseController: _pulseController,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.run(StopTimer()),
+              ),
+            ),
+            // Center band — sized exactly between the +/− hit zones so
+            // hovering on +/− doesn't trigger the center swap. Owns the
+            // duration text and the on-hover swap (pause icon while
+            // active; stop icon + "Stop" label during grace, since the
+            // pomodoro has expired and the click ends the session
+            // rather than preserving remaining time).
+            Positioned(
+              left: _buttonWidth,
+              right: _buttonWidth,
+              top: 0,
+              bottom: 0,
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _centerHovered = true),
+                onExit: (_) => setState(() => _centerHovered = false),
+                child: FTooltip(
+                  tipBuilder: (context, controller) =>
+                      Text(isGrace ? 'Stop timer' : 'Pause timer'),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => context.run(StopTimer()),
+                    child: _PillLabel(
+                      live: live,
+                      accent: accent,
+                      foreground: foreground,
+                      pulseController: _pulseController,
+                      centerHovered: _centerHovered,
+                    ),
                   ),
                 ),
               ),
@@ -1048,8 +1080,11 @@ class _PriorityHeaderTrackingControlState
               child: _HoverButton(
                 visible: _hovered,
                 icon: FontAwesomeIcons.minus,
-                color: accent,
-                tooltip: 'Remove 5 minutes',
+                color: muted,
+                hoverColor: foreground,
+                tooltip: live.remaining > kPomodoroStep
+                    ? 'Remove 15 minutes'
+                    : 'Set to 5 minutes',
                 onTap: () => context.run(RemoveTime()),
                 enabled: RemoveTime().enabled(context),
               ),
@@ -1062,7 +1097,8 @@ class _PriorityHeaderTrackingControlState
               child: _HoverButton(
                 visible: _hovered,
                 icon: FontAwesomeIcons.plus,
-                color: accent,
+                color: muted,
+                hoverColor: foreground,
                 tooltip: 'Add time',
                 onTap: () => context.run(AddTime()),
                 enabled: AddTime().enabled(context),
@@ -1072,8 +1108,6 @@ class _PriorityHeaderTrackingControlState
         ),
       ),
     );
-
-    return body;
   }
 }
 
@@ -1145,59 +1179,58 @@ class _LivePomodoro {
   }
 }
 
-/// Centered label for the pill. Picks one of three rendering branches:
-///   * Inactive  → `▶ Nm`
-///   * Active    → `Nm` (remaining, rounded up)
-///   * Grace     → pulsing `0m`
+/// Centered label for the pill. Picks one of these rendering branches:
+///   * Hover (grace)  → stop glyph + "Stop" label (foreground). The
+///     click ends the expired session rather than preserving remaining
+///     time, so the affordance differs from the active-state pause.
+///   * Hover (active) → pause glyph (foreground)
+///   * Grace          → pulsing `0m`
+///   * Active         → `Nm` (remaining, rounded up)
 class _PillLabel extends StatelessWidget {
   const _PillLabel({
-    required this.state,
     required this.live,
-    required this.priority,
     required this.accent,
-    required this.muted,
+    required this.foreground,
     required this.pulseController,
+    required this.centerHovered,
   });
 
-  final NowLoaded state;
   final _LivePomodoro live;
-  final Priority priority;
   final Color accent;
-  final Color muted;
+  final Color foreground;
   final AnimationController pulseController;
+  final bool centerHovered;
 
   @override
   Widget build(BuildContext context) {
     final pomoState = live.state;
     final fontSize = context.theme.typography.sm.fontSize;
 
-    if (pomoState == PomodoroState.inactive) {
-      final preview = state.previewPomodoro
-          ?? state.pendingFor(priority)
-          ?? kDefaultPomodoro;
-      return Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(
-              FontAwesomeIcons.play,
-              size: 9,
-              color: accent.withValues(alpha: 0.80),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              _formatMinutes(preview),
-              style: TextStyle(
-                fontSize: fontSize,
-                fontWeight: FontWeight.w400,
-                color: accent.withValues(alpha: 0.80),
-                height: 1,
+    if (centerHovered) {
+      if (pomoState == PomodoroState.grace) {
+        return Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(FontAwesomeIcons.stop, size: 9, color: foreground),
+              const SizedBox(width: 5),
+              Text(
+                'Stop',
+                style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w500,
+                  color: foreground,
+                  height: 1,
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        );
+      }
+      return Center(
+        child: Icon(FontAwesomeIcons.pause, size: 10, color: foreground),
       );
     }
 
@@ -1256,11 +1289,17 @@ class _PillLabel extends StatelessWidget {
 
 /// Ghost +/- button. Fades in only while the pill is hovered. Sized to
 /// fill its parent's height; the glyph is centered inside it.
-class _HoverButton extends StatelessWidget {
+///
+/// Tracks its own hover and swaps from [color] (rest) to [hoverColor]
+/// when the cursor is directly over it — matches the header-icon
+/// pattern so the three pill regions (−, duration, +) read as distinct
+/// clickable targets.
+class _HoverButton extends StatefulWidget {
   const _HoverButton({
     required this.visible,
     required this.icon,
     required this.color,
+    required this.hoverColor,
     required this.tooltip,
     required this.onTap,
     required this.enabled,
@@ -1269,28 +1308,41 @@ class _HoverButton extends StatelessWidget {
   final bool visible;
   final IconData icon;
   final Color color;
+  final Color hoverColor;
   final String tooltip;
   final VoidCallback onTap;
   final bool enabled;
 
   @override
+  State<_HoverButton> createState() => _HoverButtonState();
+}
+
+class _HoverButtonState extends State<_HoverButton> {
+  bool _selfHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final muted = context.theme.colors.mutedForeground;
+    final Color resolved;
+    if (!widget.enabled) {
+      resolved = widget.color.withValues(alpha: 0.5);
+    } else {
+      resolved = _selfHovered ? widget.hoverColor : widget.color;
+    }
     return IgnorePointer(
-      ignoring: !visible,
+      ignoring: !widget.visible,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 150),
-        opacity: visible ? 1.0 : 0.0,
-        child: FTooltip(
-          tipBuilder: (context, controller) => Text(tooltip),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: enabled ? onTap : null,
-            child: Center(
-              child: Icon(
-                icon,
-                size: 9,
-                color: (enabled ? color : muted).withValues(alpha: 0.85),
+        opacity: widget.visible ? 1.0 : 0.0,
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _selfHovered = true),
+          onExit: (_) => setState(() => _selfHovered = false),
+          child: FTooltip(
+            tipBuilder: (context, controller) => Text(widget.tooltip),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.enabled ? widget.onTap : null,
+              child: Center(
+                child: Icon(widget.icon, size: 9, color: resolved),
               ),
             ),
           ),

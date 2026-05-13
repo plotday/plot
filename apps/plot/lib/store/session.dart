@@ -46,6 +46,14 @@ class Sessions extends Table
   /// event finalizer cron uses; the client treats it as opaque.
   DateTimeColumn get occurrenceAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+
+  /// True when the user started this pomodoro themselves (pressed
+  /// Start, or adjusted a running auto-start via Add time). False when
+  /// the client started it implicitly as a 5-minute distraction handoff
+  /// after the user switched priorities mid-session. Only `explicit`
+  /// paused sessions are revived by the resume path — auto-starts are
+  /// one-shot reminders.
+  BoolColumn get explicit => boolean().withDefault(const Constant(true))();
 }
 
 class SessionsBase extends BaseTable {
@@ -169,11 +177,18 @@ class Session extends SessionRow {
   /// When an existing in-progress session for the same priority is being
   /// extended, the pomodoro fields are intentionally NOT overwritten —
   /// the running pomodoro keeps its original start and target.
+  ///
+  /// [explicit] controls the new row's `explicit` flag. Defaults to true
+  /// (user pressed Start, or the caller is reviving a paused explicit
+  /// session); pass false from the distraction-handoff path so the
+  /// 5-minute auto-start is not later resumed as if the user had asked
+  /// for it.
   static Future<Session> resume(
     Priority? priority, {
     required DateTime end,
     Duration? pomodoro,
     DateTime? pomodoroAt,
+    bool explicit = true,
   }) async {
     return await _resumeLock.synchronized(() async {
       var session = await _latest();
@@ -207,6 +222,7 @@ class Session extends SessionRow {
             end: end,
             pomodoro: pomodoro,
             pomodoroAt: pomodoroAt,
+            explicit: explicit,
           );
         }
       }
@@ -215,9 +231,10 @@ class Session extends SessionRow {
     });
   }
 
-  /// Most recent paused pomodoro session for [priorityId], or null if
-  /// none qualifies. A session is "paused" when:
+  /// Most recent paused explicit pomodoro session for [priorityId], or
+  /// null if none qualifies. A session is "paused" when:
   ///   - `source` is `'active'` and the row is not archived,
+  ///   - `explicit` is true (auto-started 5m distractions never resume),
   ///   - `pomodoroAt` and `pomodoro` are both set,
   ///   - its `end` is strictly before `pomodoroAt + pomodoro` — i.e. it
   ///     was closed before the planned window naturally elapsed.
@@ -231,6 +248,7 @@ class Session extends SessionRow {
                 t.priorityId.equals(priorityId.toBytes()) &
                 t.archivedAt.isNull() &
                 t.source.equals('active') &
+                t.explicit.equals(true) &
                 t.pomodoroAt.isNotNull() &
                 t.pomodoro.isNotNull(),
           )
@@ -245,6 +263,37 @@ class Session extends SessionRow {
     final originalEnd = session.pomodoroAt!.add(session.pomodoro!);
     if (!session.end.isBefore(originalEnd)) return null; // Ran to natural end.
     return session;
+  }
+
+  /// Like [latestPausedFor] but returns a reactive stream. Used by
+  /// `watchPendingDuration` so the agenda's per-priority display flips to
+  /// "remaining at pause" the moment the user pauses, and back to the
+  /// configured priority_block duration after Stop/Resume cycles.
+  static Stream<Session?> watchLatestPausedFor(PriorityId priorityId) {
+    if (!Store.isAvailable) return Stream.value(null);
+    final query = (Store.get.select(table)
+          ..where(
+            (t) =>
+                t.priorityId.equals(priorityId.toBytes()) &
+                t.archivedAt.isNull() &
+                t.source.equals('active') &
+                t.explicit.equals(true) &
+                t.pomodoroAt.isNotNull() &
+                t.pomodoro.isNotNull(),
+          )
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+          ])
+          ..limit(1));
+    return query.watch().map((rows) {
+      final row = rows.firstOrNull;
+      if (row == null) return null;
+      final session = Session.fromStore(row);
+      if (session.at.isNow()) return null;
+      final originalEnd = session.pomodoroAt!.add(session.pomodoro!);
+      if (!session.end.isBefore(originalEnd)) return null;
+      return session;
+    });
   }
 
   static Future<Session?> _latest({Priority? context}) async {
@@ -428,6 +477,7 @@ class Session extends SessionRow {
     super.occurrenceAt,
     super.pomodoro,
     super.pomodoroAt,
+    super.explicit = true,
   }) : super(
          id: Uuid.generate(),
          createdAt: DateTime.now(),
@@ -452,6 +502,7 @@ class Session extends SessionRow {
         source: row.source,
         scheduleId: row.scheduleId,
         occurrenceAt: row.occurrenceAt,
+        explicit: row.explicit,
       );
 
   @override
@@ -470,6 +521,7 @@ class Session extends SessionRow {
     String? source,
     Value<Uuid?> scheduleId = const Value.absent(),
     Value<DateTime?> occurrenceAt = const Value.absent(),
+    bool? explicit,
   }) => Session.fromStore(
     super.copyWith(
       id: id,
@@ -486,6 +538,7 @@ class Session extends SessionRow {
       source: source,
       scheduleId: scheduleId,
       occurrenceAt: occurrenceAt,
+      explicit: explicit,
     ),
   );
 

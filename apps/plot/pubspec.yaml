@@ -218,7 +218,7 @@ scripts:
     web: flutter pub run build_runner build && flutter build web --release --source-maps --base-href=/
   dev:
     macos: flutter run -d macOS
-    web: flutter run -d chrome --web-port 8788
+    web: flutter run -d chrome --web-port 8788 --wasm
     android: flutter run -d emulator-5554
     android-emulator:
       - flutter emulators -d android_medium | grep android_medium || flutter emulators --launch Medium_Phone_API_34 --name android_medium
