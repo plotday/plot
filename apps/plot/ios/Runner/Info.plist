@@ -65,13 +65,13 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs access to the camera to take photos for note attachments.</string>
+	<string>Take photos to attach to your notes and threads.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to your photo library to attach photos to notes.</string>
+	<string>Choose photos from your library to attach to notes and threads.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>This app needs access to the microphone to enable voice dictation in notes and activities.</string>
+	<string>Dictate notes and thread content with your voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>This app needs access to speech recognition to enable voice dictation in notes and activities.</string>
+	<string>Convert your dictation into text for notes and threads.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

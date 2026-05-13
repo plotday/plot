@@ -59,9 +59,9 @@
       </dict>
     </array>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>This app needs access to speech recognition to enable voice dictation in notes and activities.</string>
+    <string>Convert your dictation into text for notes and threads.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs access to the microphone to enable voice dictation in notes and activities.</string>
+    <string>Dictate notes and thread content with your voice.</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.productivity</string>
   </dict>
