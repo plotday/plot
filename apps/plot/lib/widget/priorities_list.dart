@@ -145,9 +145,10 @@ class _PrioritiesListState extends State<PrioritiesList>
   }
 
   bool _shouldExpand(Priority priority, bool isMultiPanel) {
-    if (!isMultiPanel) {
-      return _manualExpansion[priority.id.toString()] ?? false;
-    }
+    // Manual caret toggles override automatic expansion in both layouts.
+    final manual = _manualExpansion[priority.id.toString()];
+    if (manual != null) return manual;
+    if (!isMultiPanel) return false;
     if (widget.selected == null) return true;
 
     // Collapse all when root ("Everything") is selected
@@ -232,15 +233,12 @@ class _PrioritiesListState extends State<PrioritiesList>
                   : (!priorityExpanded && _hasDescendantUnread(priority)
                         ? true
                         : null),
-              active: topSection
-                  ? _hasDescendantActive(priority)
-                  : (!priorityExpanded && _hasDescendantActive(priority)
-                        ? true
-                        : null),
-              reorderableIndex: reorderableIndex,
-              onTap: !isMultiPanel
-                  ? () => _onSinglePanelTap(context, priority)
+              expandable: priority.children.isNotEmpty,
+              expanded: priorityExpanded,
+              onToggleExpand: priority.children.isNotEmpty
+                  ? () => _toggleManualExpansion(priority)
                   : null,
+              reorderableIndex: reorderableIndex,
             ),
             if (priority.children.isNotEmpty)
               _AnimatedPriorityChildren(
@@ -298,9 +296,6 @@ class _PrioritiesListState extends State<PrioritiesList>
                           priority.displayColor,
                           muted: !monochrome &&
                               !(priorityExpanded
-                                  ? priority.active
-                                  : _hasDescendantActive(priority)) &&
-                              !(priorityExpanded
                                   ? priority.unread
                                   : _hasDescendantUnread(priority)),
                         ),
@@ -308,11 +303,10 @@ class _PrioritiesListState extends State<PrioritiesList>
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
                     ? true
                     : null,
-                active: !priorityExpanded && _hasDescendantActive(priority)
-                    ? true
-                    : null,
-                onTap: !isMultiPanel
-                    ? () => _onSinglePanelTap(context, priority)
+                expandable: priority.children.isNotEmpty,
+                expanded: priorityExpanded,
+                onToggleExpand: priority.children.isNotEmpty
+                    ? () => _toggleManualExpansion(priority)
                     : null,
               ),
               if (priority.children.isNotEmpty)
@@ -376,9 +370,6 @@ class _PrioritiesListState extends State<PrioritiesList>
                                 priority.displayColor,
                                 muted: !monochrome &&
                                     !(priorityExpanded
-                                        ? priority.active
-                                        : _hasDescendantActive(priority)) &&
-                                    !(priorityExpanded
                                         ? priority.unread
                                         : _hasDescendantUnread(priority)),
                               ),
@@ -387,14 +378,12 @@ class _PrioritiesListState extends State<PrioritiesList>
                           !priorityExpanded && _hasDescendantUnread(priority)
                           ? true
                           : null,
-                      active:
-                          !priorityExpanded && _hasDescendantActive(priority)
-                          ? true
+                      expandable: priority.children.isNotEmpty,
+                      expanded: priorityExpanded,
+                      onToggleExpand: priority.children.isNotEmpty
+                          ? () => _toggleManualExpansion(priority)
                           : null,
                       reorderableIndex: reorderableIndex,
-                      onTap: !isMultiPanel
-                          ? () => _onSinglePanelTap(context, priority)
-                          : null,
                     ),
                     if (priority.children.isNotEmpty)
                       _AnimatedPriorityChildren(
@@ -440,7 +429,6 @@ class _PrioritiesListState extends State<PrioritiesList>
           textStyle: itemStyle,
           monochrome: monochrome,
           hasUnread: _hasDescendantUnread(widget.root),
-          hasActive: _hasDescendantActive(widget.root),
         );
 
         final hasTopPriorities = widget.topPriorities.isNotEmpty;
@@ -562,19 +550,16 @@ class _PrioritiesListState extends State<PrioritiesList>
     );
   }
 
-  /// Handles single-panel tap: expand first, navigate on second tap.
-  void _onSinglePanelTap(BuildContext context, Priority priority) {
+  /// Toggles the manual expansion state of a priority. Used by the caret
+  /// affordance on priorities with children — taps on the rest of the row
+  /// always navigate.
+  void _toggleManualExpansion(Priority priority) {
     final id = priority.id.toString();
-    if (priority.children.isNotEmpty && !(_manualExpansion[id] ?? false)) {
-      // First tap: expand
-      setState(() {
-        _manualExpansion[id] = true;
-      });
-      _updateExpansionState();
-    } else {
-      // Second tap (or no children): navigate
-      context.run(ChangeCurrentPriority(priority));
-    }
+    final isExpanded = _expansionState[id] ?? false;
+    setState(() {
+      _manualExpansion[id] = !isExpanded;
+    });
+    _updateExpansionState();
   }
 
   /// Returns true if the priority or any of its descendants has unread activities
@@ -583,24 +568,14 @@ class _PrioritiesListState extends State<PrioritiesList>
     return priority.descendants().any((p) => p.unread);
   }
 
-  /// Returns true if the priority or any of its descendants is active
-  bool _hasDescendantActive(Priority priority) {
-    if (priority.active) return true;
-    return priority.descendants().any((p) => p.active);
-  }
-
   /// Returns the visible subset of children when truncating, or null if no truncation needed.
   List<Priority>? _truncatedChildren(String parentId, List<Priority> children) {
     if (children.length <= 5) return null;
     if (_showAllChildren.contains(parentId)) return null;
 
-    final activeChildren = children
-        .where((c) => _hasDescendantActive(c))
+    final importantChildren = children
+        .where((c) => _hasDescendantUnread(c))
         .toList();
-    final unreadOnlyChildren = children
-        .where((c) => !_hasDescendantActive(c) && _hasDescendantUnread(c))
-        .toList();
-    final importantChildren = [...activeChildren, ...unreadOnlyChildren];
 
     // Case 1: All children are important — show top 4 by order
     if (importantChildren.length == children.length) {
@@ -663,7 +638,6 @@ class _EverythingTile extends StatefulWidget {
   final TextStyle textStyle;
   final bool monochrome;
   final bool hasUnread;
-  final bool hasActive;
 
   const _EverythingTile({
     required this.root,
@@ -673,7 +647,6 @@ class _EverythingTile extends StatefulWidget {
     required this.textStyle,
     required this.monochrome,
     required this.hasUnread,
-    required this.hasActive,
   });
 
   @override
@@ -688,9 +661,7 @@ class _EverythingTileState extends State<_EverythingTile> {
     final isActive = widget.isSelected || _isHovered;
     final rootAccent = context.colour.colours.fromTheme(
       widget.root.displayColor,
-      muted: !widget.monochrome &&
-          !widget.hasActive &&
-          !widget.hasUnread,
+      muted: !widget.monochrome && !widget.hasUnread,
     );
     final rootAccentBg = widget.monochrome
         ? context.colour.colours.backgroundFromTheme(widget.root.displayColor)
@@ -728,7 +699,6 @@ class _EverythingTileState extends State<_EverythingTile> {
         ),
         child: PriorityNotification(
           unread: widget.hasUnread,
-          active: widget.hasActive,
           color: widget.root.displayColor,
           colorOverride: widget.monochrome ? indicatorColor : null,
         ),

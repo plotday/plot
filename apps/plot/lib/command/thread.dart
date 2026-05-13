@@ -873,8 +873,6 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
          eventAction: EventAction.started,
          icon: stateIcon
              ? PlotIcon.note
-             : thread.todo
-             ? PlotIcon.todo
              : PlotIcon.addTodo,
        );
 
@@ -891,8 +889,8 @@ class StartThread extends _UpdateThreadCommand {
         title: 'Do today',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
-        icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
-        hoverIcon: stateIcon ? PlotIcon.todo : null,
+        icon: stateIcon ? PlotIcon.note : PlotIcon.addTodo,
+        hoverIcon: stateIcon ? PlotIcon.addTodo : null,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
       );
 
@@ -943,23 +941,6 @@ class DisassociateThread extends Command {
       await thread.disassociate(order: order);
       await thread.withScheduleRestored(order: order).save();
     }
-    return const CommandDone();
-  }
-}
-
-class MarkReadThread extends _UpdateThreadCommand {
-  MarkReadThread(super.thread, {super.onUpdate})
-    : super(
-        title: 'Mark read',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: FontAwesomeIcons.eye,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    if (!thread.unread) return const CommandDone();
-    await saveOptimistically(context, thread.copyWith(unread: false));
     return const CommandDone();
   }
 }
@@ -3262,7 +3243,6 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
-      if (thread.unread) MarkReadThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
       if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
@@ -3289,7 +3269,6 @@ List<Command> threadCommands(
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
-    if (thread.unread) MarkReadThread(thread),
     if (!skipInfrequent) EditThread(thread),
     if (!skipInfrequent) MoveThreadToPriority(thread),
     PickThreadShared(thread),

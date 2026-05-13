@@ -13,7 +13,6 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/theme.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
@@ -154,8 +153,8 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     );
   }
 
-  // Long left: Menu. Universal across all list views. Mark read and the
-  // other less-frequent actions are accessible from here.
+  // Long left: Menu. Universal across all list views. Less-frequent actions
+  // are accessible from here.
   Command? _getSwipeLeftLongCommand() {
     if (widget.isOutsidePriority) return null;
     return ShowThreadCommands(activity);
@@ -314,14 +313,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
-              outlineIcon: PlotIcon.todo,
-              filledIcon: PlotIcon.todoFilled,
+              outlineIcon: PlotIcon.addTodo,
               showEmpty: !activity.unread,
               dotColor: activity.unread
                   ? buildContext.colour.accent.withValues(alpha: 0.7)
                   : null,
               iconHoverColor: iconHoverColor,
-              hoverIcon: Value(PlotIcon.todo),
+              hoverIcon: Value(PlotIcon.addTodo),
               title: leadingTitle,
             ),
             forceHover: isHovered,
@@ -329,13 +327,16 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         } else {
           // Active and scheduled threads both use the circle; hover swaps to
-          // a circle-with-check finish affordance.
+          // a circle-with-check finish affordance. When unread, a centered
+          // dot overlays the circle instead of a shaded fill.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
               outlineIcon: FontAwesomeIcons.circle,
-              filledIcon: FontAwesomeIcons.solidCircle,
-              showFill: activity.unread,
+              dotColor: activity.unread
+                  ? buildContext.colour.accent.withValues(alpha: 0.7)
+                  : null,
+              dotOverOutline: true,
               iconHoverColor: iconHoverColor,
               hoverIcon: Value(FontAwesomeIcons.circleCheck),
               title: leadingTitle,
@@ -1167,19 +1168,17 @@ class _ThreadLogo extends StatelessWidget {
 
 class _ThreadLeadingCommand extends CommandWrapper {
   final IconData outlineIcon;
-  final IconData filledIcon;
-  final bool showFill;
   final bool showEmpty;
   final Color? dotColor;
+  final bool dotOverOutline;
   final Color? iconHoverColor;
 
   _ThreadLeadingCommand(
     super.command, {
     required this.outlineIcon,
-    required this.filledIcon,
-    this.showFill = false,
     this.showEmpty = false,
     this.dotColor,
+    this.dotOverOutline = false,
     this.iconHoverColor,
     super.hoverIcon,
     super.title,
@@ -1200,33 +1199,23 @@ class _ThreadLeadingCommand extends CommandWrapper {
       }
       return null;
     }
-    if (showFill) {
-      final isDark = context.read<ThemeBloc>().isDarkMode(context);
-      return SizedBox(
-        width: baseSize,
-        height: baseSize,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Opacity(
-              opacity: isDark ? 0.55 : 0.2,
-              child: Icon(filledIcon, size: baseSize),
-            ),
-            Icon(outlineIcon, size: baseSize),
-          ],
-        ),
-      );
-    }
     if (dotColor != null) {
+      final dot = CustomPaint(
+        size: const Size.square(6),
+        painter: _DotPainter(color: dotColor!),
+      );
       return SizedBox(
         width: baseSize,
         height: baseSize,
-        child: Center(
-          child: CustomPaint(
-            size: const Size.square(6),
-            painter: _DotPainter(color: dotColor!),
-          ),
-        ),
+        child: dotOverOutline
+            ? Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(outlineIcon, size: baseSize),
+                  dot,
+                ],
+              )
+            : Center(child: dot),
       );
     }
     if (showEmpty) {

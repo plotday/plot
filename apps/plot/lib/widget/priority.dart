@@ -1,3 +1,4 @@
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -21,12 +22,14 @@ class PriorityWidget extends StatefulWidget {
     this.textStyle,
     this.showAncestry = false,
     this.unread,
-    this.active,
     this.reorderableIndex,
     this.onTap,
     this.borderRadius,
     this.monochrome = false,
     this.boldLeaf = false,
+    this.expandable = false,
+    this.expanded = false,
+    this.onToggleExpand,
     super.key,
   });
 
@@ -55,9 +58,6 @@ class PriorityWidget extends StatefulWidget {
   /// Custom unread value (if null, uses priority.unread)
   final bool? unread;
 
-  /// Custom active value (if null, uses priority.active)
-  final bool? active;
-
   /// Index for reorderable list. If provided on mobile, shows trailing drag handle.
   final int? reorderableIndex;
 
@@ -77,6 +77,18 @@ class PriorityWidget extends StatefulWidget {
   /// When true and the priority label is displayed with ancestry, render the
   /// leaf (this priority) in a heavier weight than its ancestor crumbs.
   final bool boldLeaf;
+
+  /// When true, render an expand/collapse caret directly after the title.
+  /// Tapping the caret runs [onToggleExpand] without changing the active
+  /// priority.
+  final bool expandable;
+
+  /// Current expansion state. Drives the direction of the caret (down when
+  /// expanded, right when collapsed).
+  final bool expanded;
+
+  /// Callback fired when the user taps the caret.
+  final VoidCallback? onToggleExpand;
 
   @override
   State<PriorityWidget> createState() => _PriorityWidgetState();
@@ -163,19 +175,8 @@ class _PriorityWidgetState extends State<PriorityWidget> {
           ),
         );
       },
-      title: widget.showAncestry ? null : priority.title,
-      body: widget.showAncestry
-          ? PriorityLabel(
-              priority: priority,
-              fontSize: widget.textStyle?.fontSize,
-              height: 1,
-              color: widget.monochrome && !isActive ? restingColor : null,
-              mutedAncestorColor: widget.monochrome && !isActive
-                  ? restingColor
-                  : null,
-              boldLeaf: widget.boldLeaf,
-            )
-          : null,
+      title: null,
+      body: _buildLabel(buildContext, isActive, restingColor),
       selected: widget.selected,
       selectedBorder: widget.selectedBorder,
       selectedColor: priorityAccentBg,
@@ -198,7 +199,6 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         ),
         child: PriorityNotification(
           unread: widget.unread ?? priority.unread,
-          active: widget.active ?? priority.active,
           color: priority.displayColor,
           colorOverride: widget.monochrome ? indicatorColor : null,
         ),
@@ -228,6 +228,91 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       key: ValueKey(priority.id),
       endLongCommand: ShowPriorityCommands(priority),
       child: listTile,
+    );
+  }
+
+  Widget _buildLabel(
+    BuildContext buildContext,
+    bool isActive,
+    Color restingColor,
+  ) {
+    final priority = widget.priority;
+    final Widget label = widget.showAncestry
+        ? PriorityLabel(
+            priority: priority,
+            fontSize: widget.textStyle?.fontSize,
+            height: 1,
+            color: widget.monochrome && !isActive ? restingColor : null,
+            mutedAncestorColor: widget.monochrome && !isActive
+                ? restingColor
+                : null,
+            boldLeaf: widget.boldLeaf,
+          )
+        : Text(
+            priority.title,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: widget.textStyle,
+          );
+
+    if (!widget.expandable) return label;
+
+    final caretColor = widget.monochrome && !isActive
+        ? restingColor
+        : (widget.textStyle?.color ?? buildContext.colour.muted);
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Flexible(child: label),
+        _ExpandCaretButton(
+          expanded: widget.expanded,
+          color: caretColor,
+          onTap: widget.onToggleExpand,
+        ),
+      ],
+    );
+  }
+}
+
+class _ExpandCaretButton extends StatefulWidget {
+  const _ExpandCaretButton({
+    required this.expanded,
+    required this.color,
+    required this.onTap,
+  });
+
+  final bool expanded;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  State<_ExpandCaretButton> createState() => _ExpandCaretButtonState();
+}
+
+class _ExpandCaretButtonState extends State<_ExpandCaretButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = context.colour.foreground;
+    final color = _hovered ? foreground : widget.color;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Icon(
+            widget.expanded
+                ? FontAwesomeIcons.chevronDown
+                : FontAwesomeIcons.chevronRight,
+            size: 10,
+            color: color,
+          ),
+        ),
+      ),
     );
   }
 }
