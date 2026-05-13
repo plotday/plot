@@ -969,6 +969,24 @@ class _PriorityHeaderTrackingControlState
         final live = _LivePomodoro.compute(nowState);
         final isInactive = live.state == PomodoroState.inactive;
 
+        // When the pill collapses to the play button, the MouseRegions
+        // inside _buildPill are unmounted without firing onExit, so
+        // _hovered / _centerHovered would otherwise stay `true` from the
+        // pause click. Next time the pill remounts, _PillLabel would
+        // render the pause icon (centerHovered) instead of the duration.
+        // Reset both flags so the MouseRegions re-fire onEnter cleanly
+        // when the pill comes back.
+        if (isInactive && (_hovered || _centerHovered)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (!_hovered && !_centerHovered) return;
+            setState(() {
+              _hovered = false;
+              _centerHovered = false;
+            });
+          });
+        }
+
         // Inactive: render a plain header-style "Start timer" icon
         // button. Active/grace: render the countdown pill. AnimatedSize
         // animates the trailing-widget width so the title slides

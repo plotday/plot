@@ -44,7 +44,14 @@ extension type Order._(double value) {
   }
 
   const Order(this.value);
-  Order.first() : this(_first());
+
+  /// Creates an order value that places the new item at the visual TOP
+  /// of its list (smallest value, sorted ASC). The list is conventionally
+  /// rendered top-to-bottom in ascending order, so a negative-timestamp
+  /// value sorts before any existing positive-timestamp value, and newer
+  /// `first()` calls produce ever-smaller values (more negative
+  /// `millisecondsSinceEpoch`).
+  Order.first() : this(_last());
   Order.between(Order? after, Order? before) : this(_between(after, before));
   Order.fromNumber(dynamic number)
     : this(

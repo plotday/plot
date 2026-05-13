@@ -136,21 +136,21 @@ class RemoveTime extends Command {
     final ctx = state.context;
     if (ctx == null) return false;
     final session = state.session;
-    final isActiveForCtx = session != null
-        && session.at.isNow()
-        && session.source == 'active'
-        && session.priority?.id == ctx.id
-        && session.pomodoroAt != null
-        && session.pomodoro != null;
+    final isActiveForCtx =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
     if (isActiveForCtx) {
       final remaining = session.pomodoroAt!
           .add(session.pomodoro!)
           .difference(Time.now());
       return remaining > kMinPomodoro;
     }
-    final base = state.previewPomodoro
-        ?? state.pendingFor(ctx)
-        ?? kDefaultPomodoro;
+    final base =
+        state.previewPomodoro ?? state.pendingFor(ctx) ?? kDefaultPomodoro;
     return base > kMinPomodoro;
   }
 

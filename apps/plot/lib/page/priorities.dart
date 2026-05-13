@@ -214,7 +214,6 @@ class PrioritiesPanelContent extends StatelessWidget {
                                           return const SizedBox.shrink();
                                         },
                                       ),
-                                      SizedBox(height: 12),
                                     ],
                                   ),
                                 ),

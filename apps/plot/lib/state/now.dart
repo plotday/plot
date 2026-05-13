@@ -445,7 +445,7 @@ class NowBloc extends Cubit<NowState> {
     if (isActiveForCtx) {
       final current = session.pomodoro!;
       final proposed = current + delta;
-      final clamped = _clampPomodoro(ctx, proposed);
+      final clamped = _clampPomodoro(ctx, proposed, anchor: session.pomodoroAt);
       if (clamped == current) return;
       await Session.fromStore(
         session.copyWith(pomodoro: Value(clamped)),
@@ -488,7 +488,11 @@ class NowBloc extends Cubit<NowState> {
       final newRemaining = remaining > kPomodoroStep
           ? remaining - kPomodoroStep
           : kMinPomodoro;
-      final clamped = _clampPomodoro(ctx, elapsed + newRemaining);
+      final clamped = _clampPomodoro(
+        ctx,
+        elapsed + newRemaining,
+        anchor: session.pomodoroAt,
+      );
       if (clamped == session.pomodoro) return;
       await Session.fromStore(
         session.copyWith(pomodoro: Value(clamped)),
@@ -529,7 +533,11 @@ class NowBloc extends Cubit<NowState> {
       final remaining = end.difference(now);
       final next = _nextStepBoundary(remaining);
       final newPomodoro = now.difference(session.pomodoroAt!) + next;
-      final clamped = _clampPomodoro(ctx, newPomodoro);
+      final clamped = _clampPomodoro(
+        ctx,
+        newPomodoro,
+        anchor: session.pomodoroAt,
+      );
       // Promote auto-started 5m distractions to explicit when the user
       // extends them — a clear signal that they want this priority's
       // session to outlive the next handoff. Already-explicit sessions
@@ -552,26 +560,49 @@ class NowBloc extends Cubit<NowState> {
     emit(s.copyWith(previewPomodoro: clamped));
   }
 
-  /// Strictly greater multiple of [kPomodoroStep]. Sub-minute remainders
-  /// round up first so `14m59s` snaps to `30m`, not `15m`.
+  /// Strictly greater multiple of [kPomodoroStep] than what the pill is
+  /// currently showing. The pill rounds remaining UP to the nearest
+  /// minute (`_formatMinutes` ceil), so the user sees `15m` for any
+  /// remaining in `(14m, 15m]`. Without ceiling here first, pressing `+`
+  /// at displayed-`15m` (actual `14m58s`) would target `15m` again — the
+  /// displayed value would not budge. Ceiling to whole minutes first
+  /// keeps "press `+` advances the visible label" true: `14m58s` →
+  /// ceiled `15m` → next boundary `30m`.
   static Duration _nextStepBoundary(Duration current) {
     final stepSeconds = kPomodoroStep.inSeconds;
-    final currentSeconds = current.inSeconds <= 0 ? 0 : current.inSeconds;
-    final nextSeconds = ((currentSeconds ~/ stepSeconds) + 1) * stepSeconds;
+    if (current.inSeconds <= 0) return kPomodoroStep;
+    final ceiledMinutes = (current.inSeconds + 59) ~/ 60;
+    final ceiledSeconds = ceiledMinutes * 60;
+    final nextSeconds = ((ceiledSeconds ~/ stepSeconds) + 1) * stepSeconds;
     return Duration(seconds: nextSeconds);
   }
 
-  Duration _capToEnd(Priority priority, Duration desired) {
+  /// Cap a pomodoro length so its endpoint doesn't cross [pomodoroEndCap].
+  ///
+  /// [desired] is interpreted as a length measured from [anchor] (defaults
+  /// to [Time.now]). For an active session, callers pass `pomodoroAt` so
+  /// the maximum allowable length is `capEnd − pomodoroAt`. For preview
+  /// (inactive) state, the timer will start at `now`, so the default
+  /// `now` anchor gives `capEnd − now`. Mixing these up makes each press
+  /// of `+` clamp the new duration back down to the existing remaining
+  /// time (or, when they coincide, no-op via the equality guard in the
+  /// callers).
+  Duration _capToEnd(Priority priority, Duration desired, {DateTime? anchor}) {
     final end = loadedState.pomodoroEndCap(priority);
     if (end == null) return desired;
-    final headroom = end.difference(Time.now());
-    if (headroom <= Duration.zero) return Duration.zero;
-    return desired < headroom ? desired : headroom;
+    final from = anchor ?? Time.now();
+    final maxAllowed = end.difference(from);
+    if (maxAllowed <= Duration.zero) return Duration.zero;
+    return desired < maxAllowed ? desired : maxAllowed;
   }
 
-  Duration _clampPomodoro(Priority priority, Duration desired) {
+  Duration _clampPomodoro(
+    Priority priority,
+    Duration desired, {
+    DateTime? anchor,
+  }) {
     var d = desired;
     if (d < kMinPomodoro) d = kMinPomodoro;
-    return _capToEnd(priority, d);
+    return _capToEnd(priority, d, anchor: anchor);
   }
 }

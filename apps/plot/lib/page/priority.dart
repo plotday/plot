@@ -1067,27 +1067,28 @@ class _PriorityPageState extends State<PriorityPage>
                 );
 
                 // "Reschedule all" affordance for the Today block and
-                // every future Scheduled-day block. Collect the threads
-                // that follow this header until the next section header
-                // and skip rendering the button when the block is empty.
+                // every future Scheduled-day block. Source the thread
+                // list from the bloc's native-by-date map so threads
+                // that were pushed forward by the per-priority per-day
+                // cap travel with their original day rather than the
+                // day they happen to be rendering on.
                 final canRescheduleAll =
                     marker != null &&
                     (marker.section == ActivitySection.today ||
                         marker.section == ActivitySection.scheduled);
                 if (canRescheduleAll) {
-                  final sectionThreads = <Thread>[];
-                  for (var j = index + 1; j < displayItems.length; j++) {
-                    final next = displayItems[j];
-                    if (next is AgendaHeaderItem) break;
-                    if (next is AgendaThreadItem) {
-                      sectionThreads.add(next.thread);
-                    }
-                  }
-                  if (sectionThreads.isNotEmpty) {
+                  final sectionDate = marker.section == ActivitySection.today
+                      ? Date.today()
+                      : header.date;
+                  final natives = sectionDate == null
+                      ? const <Thread>[]
+                      : state.activityFeedNativesByDate[sectionDate] ??
+                          const <Thread>[];
+                  if (natives.isNotEmpty) {
                     return [
                       _SectionHeaderWithRescheduleAll(
                         tile: tile,
-                        threads: sectionThreads,
+                        threads: natives,
                         sectionLabel: marker.label,
                       ),
                     ];

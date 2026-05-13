@@ -23,6 +23,7 @@ class PriorityState extends Equatable {
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     List<AgendaItem> activityFeedItems = const [],
+    Map<Date, List<Thread>> activityFeedNativesByDate = const {},
     bool activityFeedDoneEnd = false,
     bool activityFeedLoaded = false,
     List<AgendaItem>? reorderViewItems,
@@ -58,6 +59,9 @@ class PriorityState extends Equatable {
       activityFeedItems: activityFeedItems.isNotEmpty
           ? List.unmodifiable(activityFeedItems)
           : activityFeedItems,
+      activityFeedNativesByDate: activityFeedNativesByDate.isNotEmpty
+          ? Map.unmodifiable(activityFeedNativesByDate)
+          : activityFeedNativesByDate,
       activityFeedDoneEnd: activityFeedDoneEnd,
       activityFeedLoaded: activityFeedLoaded,
       reorderViewItems: reorderViewItems != null
@@ -95,6 +99,7 @@ class PriorityState extends Equatable {
     this.tags = const [],
     this.tagSuggestions = const [],
     this.activityFeedItems = const [],
+    this.activityFeedNativesByDate = const {},
     this.activityFeedDoneEnd = false,
     this.activityFeedLoaded = false,
     this.reorderViewItems,
@@ -126,6 +131,15 @@ class PriorityState extends Equatable {
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final List<AgendaItem> activityFeedItems;
+
+  /// For each date represented in the activity feed (today + each scheduled
+  /// day), the full set of threads that **natively** belong to that date —
+  /// before the per-priority per-day cap pushes overflow forward. Reschedule
+  /// All uses this so a day's full native set moves together, including
+  /// threads currently rendering on a later day because today's cap was
+  /// exceeded.
+  final Map<Date, List<Thread>> activityFeedNativesByDate;
+
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 
@@ -1106,6 +1120,7 @@ class PriorityState extends Equatable {
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
     List<AgendaItem>? activityFeedItems,
+    Map<Date, List<Thread>>? activityFeedNativesByDate,
     bool? activityFeedDoneEnd,
     bool? activityFeedLoaded,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
@@ -1150,6 +1165,11 @@ class PriorityState extends Equatable {
                 ? List.unmodifiable(activityFeedItems)
                 : activityFeedItems)
           : this.activityFeedItems,
+      activityFeedNativesByDate: activityFeedNativesByDate != null
+          ? (activityFeedNativesByDate.isNotEmpty
+                ? Map.unmodifiable(activityFeedNativesByDate)
+                : activityFeedNativesByDate)
+          : this.activityFeedNativesByDate,
       activityFeedDoneEnd: activityFeedDoneEnd ?? this.activityFeedDoneEnd,
       activityFeedLoaded: activityFeedLoaded ?? this.activityFeedLoaded,
       iconFilter: iconFilter != null
@@ -1184,6 +1204,7 @@ class PriorityState extends Equatable {
     tags,
     tagSuggestions,
     activityFeedItems,
+    activityFeedNativesByDate,
     activityFeedDoneEnd,
     activityFeedLoaded,
     reorderViewItems,

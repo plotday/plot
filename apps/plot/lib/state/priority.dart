@@ -9,6 +9,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
+import 'package:plot/state/agenda_limits.dart';
 import 'package:plot/state/agenda_model.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so it
 // doesn't shadow the agenda_model.dart `PriorityBlock` UI type already
@@ -457,6 +458,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _rebuildAgendaModel({
     Value<Thread?> thread = const Value.absent(),
     List<AgendaItem>? activityFeedItems,
+    Map<Date, List<Thread>>? activityFeedNativesByDate,
   }) {
     final agenda = AgendaBuilder.build(
       threads: _lastAgendaThreads,
@@ -472,6 +474,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         agenda: agenda,
         agendaItems: agenda.flatItems(),
         activityFeedItems: activityFeedItems,
+        activityFeedNativesByDate: activityFeedNativesByDate,
       ),
     );
   }
@@ -1271,7 +1274,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    _rebuildAgendaModel(activityFeedItems: _buildActivityFeedItems());
+    final feed = _buildActivityFeedItems();
+    _rebuildAgendaModel(
+      activityFeedItems: feed.items,
+      activityFeedNativesByDate: feed.nativesByDate,
+    );
   }
 
   /// Optimistically remove an archived thread from the agenda and the
@@ -1302,11 +1309,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       drop: !state.showArchived,
     );
 
+    final feed = _buildActivityFeedItems();
     _rebuildAgendaModel(
       thread: state.thread?.id == id
           ? Value(archivedThread)
           : const Value.absent(),
-      activityFeedItems: _buildActivityFeedItems(),
+      activityFeedItems: feed.items,
+      activityFeedNativesByDate: feed.nativesByDate,
     );
   }
 
@@ -1453,11 +1462,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     // when the user clicked Do today) until the DB stream landed.
     _patchActivityFeedSourcesForOptimisticUpdate(updatedThread);
 
+    final feed = _buildActivityFeedItems();
     _rebuildAgendaModel(
       thread: state.thread?.id == updatedThread.id
           ? Value(updatedThread)
           : const Value.absent(),
-      activityFeedItems: _buildActivityFeedItems(),
+      activityFeedItems: feed.items,
+      activityFeedNativesByDate: feed.nativesByDate,
     );
   }
 
@@ -2783,10 +2794,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Section headers carry an `ActivitySectionMarker`-encoded text so the
   /// drag dispatcher can recover the section identity.
   void _rebuildActivityFeedSections() {
-    final items = _buildActivityFeedItems();
+    final (:items, :nativesByDate) = _buildActivityFeedItems();
     emit(
       state.copyWith(
         activityFeedItems: items,
+        activityFeedNativesByDate: nativesByDate,
         activityFeedDoneEnd: _activityFeedDoneEnd,
         activityFeedLoaded: true,
       ),
@@ -2800,7 +2812,16 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// use this to re-section the feed after patching the source lists, so
   /// a thread that transitioned (e.g. todo flipped) lands in the correct
   /// section in the same frame as the click.
-  List<AgendaItem> _buildActivityFeedItems() {
+  ///
+  /// Returns the rendered [AgendaItem] list together with a
+  /// `nativesByDate` map describing, for each date represented in the
+  /// activity feed, the full set of threads that natively belong to that
+  /// date — before the per-priority per-day cap pushes overflow forward.
+  /// Reschedule All reads from this map so a day's full native set
+  /// moves together even when some of its threads are currently
+  /// rendering on a later day because the cap was exceeded.
+  ({List<AgendaItem> items, Map<Date, List<Thread>> nativesByDate})
+      _buildActivityFeedItems() {
     final todoIds = _todoThreads.map((t) => t.id).toSet();
     final feedNonTodo = _activityFeedRawThreads
         .where((t) => !todoIds.contains(t.id))
@@ -2831,6 +2852,42 @@ class PriorityBloc extends Cubit<PriorityState> {
       // `todoSortDate`, so `todoCompareTo` collapses to the same key as
       // `activityCompareTo`. Use the activity comparator for parity with
       // Today and to make the intent explicit.
+      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
+    }
+
+    // Snapshot the native-by-date assignment *before* the cap pushes
+    // overflow forward, so Reschedule All can move a date's full
+    // membership together (visible-here + spilled-to-later-day).
+    final today = Date.today();
+    final nativesByDate = <Date, List<Thread>>{
+      today: List<Thread>.from(active),
+      for (final d in scheduledDates)
+        d: List<Thread>.from(scheduledByDate[d]!),
+    };
+
+    // Apply the per-priority per-day cap. Each priority's threads are
+    // capped independently on each day; overflow cascades onto the
+    // following day under the same priority, sorted into that day's
+    // existing block by order. New trailing scheduled-day sections are
+    // synthesized when the cascade reaches past every native bucket.
+    final cascaded = cascadeActivityFeedByPriority(
+      today: today,
+      active: active,
+      scheduledByDate: scheduledByDate,
+    );
+    active
+      ..clear()
+      ..addAll(cascaded.active);
+    scheduledByDate
+      ..clear()
+      ..addAll(cascaded.scheduledByDate);
+    // Re-sort each bucket so cascaded-in threads merge with natives by
+    // activityCompareTo (Order ASC). With the post-flip Order semantics,
+    // newer-on-top arises naturally and cascaded-in (older) threads
+    // settle to the bottom.
+    active.sort((a, b) => a.activityCompareTo(b));
+    final cascadedDates = scheduledByDate.keys.toList()..sort();
+    for (final d in cascadedDates) {
       scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
     }
 
@@ -2939,7 +2996,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    for (final d in scheduledDates) {
+    for (final d in cascadedDates) {
+      final dayThreads = scheduledByDate[d];
+      if (dayThreads == null || dayThreads.isEmpty) continue;
       items.add(
         AgendaHeaderItem(
           date: d,
@@ -2949,7 +3008,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           ),
         ),
       );
-      for (final t in scheduledByDate[d]!) {
+      for (final t in dayThreads) {
         items.add(AgendaThreadItem(t));
       }
     }
@@ -2963,8 +3022,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       items.add(AgendaThreadItem(t));
     }
 
-    return items;
+    return (items: items, nativesByDate: nativesByDate);
   }
+
 
   /// Patch the activity-feed source lists (`_todoThreads`,
   /// `_activityFeedRawThreads`) to reflect an optimistic update on
