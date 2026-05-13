@@ -719,28 +719,6 @@ class ShowTimeLog extends Command {
   }
 }
 
-/// Set a priority's pending planned duration (the agenda cascade's input
-/// for that priority). Writes one priority_block row at effective_at = now
-/// via [PriorityBlock.setPendingDuration]; the value carries forward until
-/// consumed by sessions.
-class SetPriorityPendingDuration extends Command {
-  SetPriorityPendingDuration(this.priority, this.newDuration)
-    : super(
-        title: 'Set planned time',
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-      );
-
-  final Priority priority;
-  final Duration? newDuration;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await PriorityBlock.setPendingDuration(priority.id, newDuration);
-    return const CommandDone();
-  }
-}
-
 /// Writes the global tracking-pause flag on user_settings. When paused,
 /// the [NowBloc] driver does not extend [Session.resume] and the server's
 /// event finalizer skips occurrences whose end falls inside the paused

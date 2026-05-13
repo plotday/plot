@@ -313,6 +313,33 @@ class Session extends SessionRow {
     });
   }
 
+  /// Most recent active pomodoro session for [priorityId], or null if
+  /// none qualifies. Mirrors the active-branch gate in
+  /// `NowBloc.watchPendingDisplay`: most recent row whose `at.isNow()`
+  /// is true with both `pomodoroAt` and `pomodoro` set. Used by
+  /// `NowBloc.applyPendingBump` to look up the live row at write time
+  /// — stream snapshots can drift between successive ± clicks.
+  static Future<Session?> activeFor(PriorityId priorityId) async {
+    if (!Store.isAvailable) return null;
+    final row = await (Store.get.select(table)
+          ..where(
+            (t) =>
+                t.priorityId.equals(priorityId.toBytes()) &
+                t.archivedAt.isNull() &
+                t.source.equals('active') &
+                t.pomodoroAt.isNotNull() &
+                t.pomodoro.isNotNull(),
+          )
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    if (row == null) return null;
+    final session = Session.fromStore(row);
+    return session.at.isNow() ? session : null;
+  }
+
   /// Most recent paused explicit pomodoro session for [priorityId], or
   /// null if none qualifies. A session is "paused" when:
   ///   - `source` is `'active'` and the row is not archived,
@@ -348,7 +375,7 @@ class Session extends SessionRow {
   }
 
   /// Like [latestPausedFor] but returns a reactive stream. Used by
-  /// `watchPendingDuration` so the agenda's per-priority display flips to
+  /// `watchPendingDisplay` so the agenda's per-priority display flips to
   /// "remaining at pause" the moment the user pauses, and back to the
   /// configured priority_block duration after Stop/Resume cycles.
   static Stream<Session?> watchLatestPausedFor(PriorityId priorityId) {

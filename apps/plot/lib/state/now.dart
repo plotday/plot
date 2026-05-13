@@ -121,7 +121,7 @@ class NowBloc extends Cubit<NowState> {
   /// `end` to `now`. The remaining time in the planned pomodoro window
   /// stays encoded on the session row itself (`pomodoroAt + pomodoro -
   /// end`); the resume path reads it directly, and
-  /// `watchPendingDuration` derives the agenda's live display from the
+  /// `watchPendingDisplay` derives the agenda's live display from the
   /// same row across devices. `priority_block.duration` is intentionally
   /// not touched — it's the user-configured base duration for the
   /// priority, not a resume cache.
@@ -144,9 +144,15 @@ class NowBloc extends Cubit<NowState> {
   ///
   /// All three branches sync cleanly across devices: the session row is
   /// the source of truth for in-flight/paused state, and `priority_block`
-  /// is the source of truth for the configured base. Emits null when no
-  /// row contributes a duration.
-  static Stream<Duration?> watchPendingDuration(PriorityId priorityId) {
+  /// is the source of truth for the configured base. The emitted value
+  /// is wrapped in [PriorityPendingDisplay] so callers can distinguish
+  /// "subscription hasn't emitted yet" (still null) from "subscription
+  /// emitted null because no row contributes" — important for the
+  /// agenda gutter, which falls back to the stale agenda-model cascade
+  /// slice only during the pre-emission gap and never afterward.
+  static Stream<PriorityPendingDisplay> watchPendingDisplay(
+    PriorityId priorityId,
+  ) {
     return Rx.combineLatest4(
       streamPriorityBlocksGroupedByPriority(),
       Session.watchCurrent(),
@@ -164,22 +170,101 @@ class NowBloc extends Cubit<NowState> {
           final end =
               currentSession.pomodoroAt!.add(currentSession.pomodoro!);
           final remaining = end.difference(now);
-          return remaining > Duration.zero ? remaining : null;
+          return PriorityPendingDisplay(
+            duration: remaining > Duration.zero ? remaining : null,
+          );
         }
         if (pausedExplicit != null) {
           final originalEnd =
               pausedExplicit.pomodoroAt!.add(pausedExplicit.pomodoro!);
           final remaining = originalEnd.difference(pausedExplicit.end);
-          return remaining > Duration.zero ? remaining : null;
+          return PriorityPendingDisplay(
+            duration: remaining > Duration.zero ? remaining : null,
+          );
         }
         final rows = blocksByPriority[priorityId] ?? const [];
-        return effectivePriorityDurationAt(
-          moment: now,
-          blocksForPriority: rows,
+        return PriorityPendingDisplay(
+          duration: effectivePriorityDurationAt(
+            moment: now,
+            blocksForPriority: rows,
+          ),
         );
       },
     );
   }
+
+  /// Apply a ±15m bump to the priority's displayed pending duration,
+  /// writing to whichever row is the current display source so the
+  /// edited value is what the user sees.
+  ///
+  ///   * [newDisplayed] is null (user pressed − on a value ≤ 15m, asking
+  ///     to clear) → collapse any session contributing to the display
+  ///     **and** archive `priority_block.duration`. Without clearing
+  ///     both, ending a session that was masking a non-null
+  ///     `priority_block.duration` would re-reveal the masked value and
+  ///     the gutter would still show time.
+  ///   * Active or paused-explicit session present and remaining stays
+  ///     positive → rewrite that session's `pomodoro` so the visible
+  ///     remaining shifts by the delta.
+  ///   * Otherwise → call [PriorityBlock.setPendingDuration] with the new
+  ///     value.
+  ///
+  /// The session(s) acted on are looked up live from the DB at apply
+  /// time rather than read from [display] — the snapshot the buttons
+  /// were rendering against can drift between successive clicks (the
+  /// active session row's `end` is bumped each minute, distraction
+  /// handoffs can swap rows out from under us), and applying a delta to
+  /// a stale row would write to the wrong session id and surface as
+  /// "the buttons don't do anything" or "the value toggles back".
+  ///
+  /// [currentDisplayed] and [newDisplayed] are the value the user saw
+  /// and the value they intend after the bump.
+  static Future<void> applyPendingBump({
+    required PriorityId priorityId,
+    required Duration? currentDisplayed,
+    required Duration? newDisplayed,
+  }) async {
+    final delta =
+        (newDisplayed ?? Duration.zero) - (currentDisplayed ?? Duration.zero);
+    if (delta == Duration.zero) return;
+
+    // Live lookups — see method-level doc for why we don't trust a
+    // [PriorityPendingDisplay] snapshot here.
+    final liveActive = await Session.activeFor(priorityId);
+    final livePaused = liveActive == null
+        ? await Session.latestPausedFor(priorityId)
+        : null;
+    final liveSource = liveActive ?? livePaused;
+
+    final clearing = newDisplayed == null;
+    if (clearing) {
+      if (liveSource != null && liveSource.pomodoroAt != null) {
+        final anchorOffset = liveSource.at.isNow()
+            ? Time.now().difference(liveSource.pomodoroAt!)
+            : liveSource.end.difference(liveSource.pomodoroAt!);
+        final collapsed = liveSource.at.isNow()
+            ? liveSource.copyWith(
+                end: Time.now(), pomodoro: Value(anchorOffset))
+            : liveSource.copyWith(pomodoro: Value(anchorOffset));
+        await Session.fromStore(collapsed).save();
+      }
+      await PriorityBlock.setPendingDuration(priorityId, null);
+      return;
+    }
+
+    if (liveSource != null &&
+        liveSource.pomodoro != null &&
+        liveSource.pomodoroAt != null) {
+      final newPomodoro = liveSource.pomodoro! + delta;
+      await Session.fromStore(
+        liveSource.copyWith(pomodoro: Value(newPomodoro)),
+      ).save();
+      return;
+    }
+
+    await PriorityBlock.setPendingDuration(priorityId, newDisplayed);
+  }
+
 
   /// Context is the priority being displayed, which may
   /// be more general than the focus.
@@ -621,4 +706,21 @@ class NowBloc extends Cubit<NowState> {
     if (d < kMinPomodoro) d = kMinPomodoro;
     return _capToEnd(priority, d, anchor: anchor);
   }
+}
+
+/// Snapshot of a priority's displayed pending duration. Wrapped in a
+/// non-nullable class so callers can distinguish "subscription hasn't
+/// emitted yet" (still holding `null`) from "subscription emitted null
+/// because no row contributes." See [NowBloc.watchPendingDisplay] for
+/// the resolution order across active/paused-explicit sessions and
+/// `priority_block.duration`.
+class PriorityPendingDisplay extends Equatable {
+  const PriorityPendingDisplay({this.duration});
+
+  /// The duration the user sees in the gutter. Null when no row
+  /// contributes a value.
+  final Duration? duration;
+
+  @override
+  List<Object?> get props => [duration];
 }

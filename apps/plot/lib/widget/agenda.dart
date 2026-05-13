@@ -525,12 +525,18 @@ class _BlockHeaderState extends State<_BlockHeader> {
   BlockDragController? _dragController;
   bool _isHovered = false;
 
-  /// Live pending-duration for [PriorityBlock] headers. Subscribed in
-  /// [initState]/[didUpdateWidget] so the gutter label and the hover
-  /// +/- bump buttons read the same value without each instantiating
-  /// their own [StreamSubscription].
-  StreamSubscription<Duration?>? _pendingSub;
-  Duration? _priorityPending;
+  /// Live pending-duration snapshot for [PriorityBlock] headers.
+  /// Subscribed in [initState]/[didUpdateWidget] so the gutter label and
+  /// the hover ± bump buttons read the same value without each
+  /// instantiating their own [StreamSubscription]. Wrapped in
+  /// [PriorityPendingDisplay] (rather than a bare `Duration?`) so a
+  /// post-emission `null` — the user just cleared the value — is
+  /// distinguishable from "subscription hasn't emitted yet". Without
+  /// that distinction the gutter would fall back to the agenda model's
+  /// stale [PriorityBlock.cascadeDuration] after a clear and the user
+  /// would see the just-removed value reappear.
+  StreamSubscription<PriorityPendingDisplay>? _pendingSub;
+  PriorityPendingDisplay? _pendingDisplay;
 
   // Touch: short swipes on the block header bump the editable duration
   // by ±15m (right = +, left = −) — the hover ± buttons are mouse-only.
@@ -574,7 +580,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     if (oldWidget.priority.id != widget.priority.id ||
         (oldWidget.block is PriorityBlock) != (widget.block is PriorityBlock)) {
       _pendingSub?.cancel();
-      _priorityPending = null;
+      _pendingDisplay = null;
       _subscribePending();
     }
   }
@@ -589,9 +595,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
   void _subscribePending() {
     if (widget.block is! PriorityBlock) return;
-    _pendingSub = NowBloc.watchPendingDuration(widget.priority.id).listen((d) {
+    _pendingSub = NowBloc.watchPendingDisplay(widget.priority.id).listen((d) {
       if (!mounted) return;
-      setState(() => _priorityPending = d);
+      setState(() => _pendingDisplay = d);
     });
   }
 
@@ -753,12 +759,15 @@ class _BlockHeaderState extends State<_BlockHeader> {
       }
     } else if (block is PriorityBlock) {
       // PriorityBlock cascade: prefer the live-decremented value from
-      // [NowBloc.watchPendingDuration] so the gutter ticks down while an
-      // active session is consuming the priority's pending. Falls back
-      // to the static cascade slice on the first frame before the stream
-      // emits, and when the block isn't subscribed.
+      // [NowBloc.watchPendingDisplay] so the gutter ticks down while an
+      // active session is consuming the priority's pending. Once the
+      // subscription has emitted, trust its value (including an explicit
+      // null after a ± clear) — falling back to the agenda model's stale
+      // [PriorityBlock.cascadeDuration] would leave the gutter showing
+      // the pre-clear number even though the underlying row is gone.
       final slice = block.cascadeDuration;
-      final displayed = _priorityPending ?? slice;
+      final displayed =
+          _pendingDisplay != null ? _pendingDisplay!.duration : slice;
       if (displayed != null) {
         gutterRow2 = Text(
           _formatDuration(displayed),
@@ -856,12 +865,15 @@ class _BlockHeaderState extends State<_BlockHeader> {
             children: [
               SizedBox(
                 height: primarySize,
-                child: PriorityLabel(
-                  priority: priority,
-                  color: fg,
-                  mutedAncestorColor: mutedFg,
-                  fontSize: secondarySize,
-                  height: 1,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: PriorityLabel(
+                    priority: priority,
+                    color: fg,
+                    mutedAncestorColor: mutedFg,
+                    fontSize: secondarySize,
+                    height: 1,
+                  ),
                 ),
               ),
               if (hasSecondRow) ...[
@@ -942,9 +954,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
   /// Returns the editable duration value and the bump callback for this
   /// block: events update the thread's duration; priority blocks update
-  /// the priority's total pending (slice-aware — see [_applyPriorityBump]).
-  /// Both elements are `null` when no editable duration is exposed
-  /// (e.g. GapBlock headers without a thread).
+  /// whichever row is currently producing the displayed value
+  /// (see [_applyPriorityBump]). Both elements are `null` when no
+  /// editable duration is exposed (e.g. GapBlock headers without a
+  /// thread).
   (Duration?, ValueChanged<Duration?>?) _computeBumpInfo(BuildContext context) {
     final block = widget.block;
     final thread = widget.thread;
@@ -955,23 +968,37 @@ class _BlockHeaderState extends State<_BlockHeader> {
       );
     }
     if (block is PriorityBlock) {
-      final slice = block.cascadeDuration;
-      final current = _priorityPending ?? slice;
+      // First frame before the stream emits has no display snapshot —
+      // fall back to the agenda model's cascade slice so the gutter still
+      // shows something. After the first emission [_pendingDisplay]
+      // tracks the live value (and its source); the snapshot's `null`
+      // means the bottom of the cascade (no row contributing) and must
+      // win over the stale slice, otherwise a fresh clear instantly
+      // restages the old value through the bump math.
+      final current = _pendingDisplay != null
+          ? _pendingDisplay!.duration
+          : block.cascadeDuration;
       return (
         current,
         (newDur) => _applyPriorityBump(
-          context: context,
           priority: block.priority,
           newDisplayed: newDur,
           currentDisplayed: current,
-          totalPending: slice,
         ),
       );
     }
     return (null, null);
   }
 
+  /// Returns the next value after a swipe-bump. A subtract on a value at
+  /// or below [_swipeBumpStep] clears (returns null) so the gutter empties
+  /// when there's nothing meaningful left to keep around — sub-step
+  /// remainders aren't useful and would otherwise leave fractions like
+  /// `37s` lingering after a tap that visually said "15m → 0".
   Duration? _bumpedDuration(Duration? current, Duration delta) {
+    if (delta.isNegative && (current ?? Duration.zero) <= _swipeBumpStep) {
+      return null;
+    }
     final next = (current ?? Duration.zero) + delta;
     if (next <= Duration.zero) return null;
     return next;
@@ -1006,30 +1033,22 @@ class _BlockHeaderState extends State<_BlockHeader> {
     );
   }
 
-  /// Apply a +/− bump to a [PriorityBlock]'s displayed value. The
-  /// displayed value may be the live-decremented remaining (during an
-  /// active session) or the static slice; either way, the bump's intent
-  /// is to add `(newDisplayed − currentDisplayed)` to the priority's
-  /// total pending so the in-DB pending shifts by the same delta the
-  /// user sees.
+  /// Apply a ±15m bump to a [PriorityBlock]'s displayed value. Routes
+  /// through [NowBloc.applyPendingBump] so the write lands on the same
+  /// row the gutter label is reading (active or paused-explicit session
+  /// when one is in play, otherwise `priority_block.duration`). Without
+  /// this routing a bump on a session-derived display would write to
+  /// `priority_block.duration` and the user would see nothing change.
   void _applyPriorityBump({
-    required BuildContext context,
     required Priority priority,
     required Duration? newDisplayed,
     required Duration? currentDisplayed,
-    required Duration? totalPending,
   }) {
-    if (totalPending == null) {
-      SetPriorityPendingDuration(priority, newDisplayed).run(context);
-      return;
-    }
-    final delta =
-        (newDisplayed ?? Duration.zero) - (currentDisplayed ?? Duration.zero);
-    final newTotal = totalPending + delta;
-    SetPriorityPendingDuration(
-      priority,
-      newTotal <= Duration.zero ? null : newTotal,
-    ).run(context);
+    NowBloc.applyPendingBump(
+      priorityId: priority.id,
+      currentDisplayed: currentDisplayed,
+      newDisplayed: newDisplayed,
+    );
   }
 
   /// Builds the floating-feedback widget shown under the pointer during
@@ -1249,7 +1268,12 @@ class _BlockHoverDurationButtons extends StatelessWidget {
 
   static const _step = Duration(minutes: 15);
 
+  /// Returns the next value after a +/− press. A subtract on a value at
+  /// or below [_step] clears (returns null) — the user pressed − on a
+  /// gutter showing 15m or less, which signals "remove this duration"
+  /// rather than "shave another 15m off a sub-step remainder".
   Duration? _bumped(Duration delta) {
+    if (delta.isNegative && (current ?? Duration.zero) <= _step) return null;
     final next = (current ?? Duration.zero) + delta;
     if (next <= Duration.zero) return null;
     return next;
