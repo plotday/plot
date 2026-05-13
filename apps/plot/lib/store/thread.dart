@@ -914,6 +914,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   static Future<List<Thread>> get({
     DateRange? range,
+    DateTime? eventsActiveAt,
     ThreadId? id,
     PriorityId? priorityId,
     Path? priorityPath,
@@ -930,6 +931,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   }) async {
     return await _get(
       range: range,
+      eventsActiveAt: eventsActiveAt,
       id: id,
       priorityId: priorityId,
       priorityPath: priorityPath,
@@ -948,6 +950,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   static Stream<ThreadWatchResult> watch({
     DateRange? range,
+    DateTime? eventsActiveAt,
     DateRange? occurrenceRange,
     ThreadId? id,
     PriorityId? priorityId,
@@ -974,6 +977,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     ) {
       return _getQuery(
         range: range,
+        eventsActiveAt: eventsActiveAt,
         id: id,
         priorityId: priorityId,
         priorityPath: priorityPath,
@@ -1311,6 +1315,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   static Future<List<Thread>> _get({
     DateRange? range,
+    DateTime? eventsActiveAt,
     bool strictRange = false,
 
     /* Selectors */
@@ -1341,6 +1346,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final query = _getQuery(
       range: range,
+      eventsActiveAt: eventsActiveAt,
       strictRange: strictRange,
       id: id,
       priorityId: priorityId,
@@ -1368,6 +1374,15 @@ class Thread extends Equatable implements Comparable<Thread> {
     DateRange? range,
     // Only include activities that start within the range
     bool strictRange = false,
+    /// When set, overrides the lower bound used for the datetime-based
+    /// **event** range branches (shared schedule, link schedule) so the
+    /// query returns events still in progress at this moment plus
+    /// everything after, instead of also surfacing events that ended
+    /// earlier in the day. Per-user / todo branches keep using
+    /// `range.start` so overdue and "anytime today" todos stay visible.
+    /// Used by the agenda to keep its pagination window aligned with
+    /// what's actually rendered.
+    DateTime? eventsActiveAt,
 
     /* Selectors */
     ThreadId? id,
@@ -1701,17 +1716,18 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       // Activity is scheduled within the range (DateTime-based)
       // Shared schedule
+      final eventRangeStart = eventsActiveAt ?? rangeStart;
       Expression<bool> dateTimeScheduled = sched.startAt.isNotNull();
-      if (rangeStart != null) {
+      if (eventRangeStart != null) {
         if (strictRange) {
           dateTimeScheduled =
               dateTimeScheduled &
-              sched.startAt.isBiggerOrEqualValue(rangeStart);
+              sched.startAt.isBiggerOrEqualValue(eventRangeStart);
         } else {
           dateTimeScheduled =
               dateTimeScheduled &
               (sched.endAt.isNull() |
-                  sched.endAt.isBiggerOrEqualValue(rangeStart));
+                  sched.endAt.isBiggerOrEqualValue(eventRangeStart));
         }
       }
       if (rangeEnd != null) {
@@ -1768,16 +1784,16 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       // Link schedule datetime-based
       Expression<bool> linkDateTimeScheduled = linkSched.startAt.isNotNull();
-      if (rangeStart != null) {
+      if (eventRangeStart != null) {
         if (strictRange) {
           linkDateTimeScheduled =
               linkDateTimeScheduled &
-              linkSched.startAt.isBiggerOrEqualValue(rangeStart);
+              linkSched.startAt.isBiggerOrEqualValue(eventRangeStart);
         } else {
           linkDateTimeScheduled =
               linkDateTimeScheduled &
               (linkSched.endAt.isNull() |
-                  linkSched.endAt.isBiggerOrEqualValue(rangeStart));
+                  linkSched.endAt.isBiggerOrEqualValue(eventRangeStart));
         }
       }
       if (rangeEnd != null) {
@@ -1805,6 +1821,22 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     switch (order) {
       case ThreadOrder.sorted:
+        // Pagination rank: hard-scheduled rows (shared/link schedule with a
+        // date) come before user-only todos so a flood of overdue or
+        // sentinel-dated todos can't push real events past `limit`. Visual
+        // ordering in the agenda is driven by `agendaAt` in
+        // [PriorityState.makeAgendaItems], not this clause — the discriminator
+        // only governs which rows survive pagination when the result set is
+        // larger than the limit.
+        final hasHardSchedule = CaseWhenExpression<int>(
+          cases: [
+            CaseWhen(sched.startAt.isNotNull(), then: Constant(0)),
+            CaseWhen(sched.startOn.isNotNull(), then: Constant(0)),
+            CaseWhen(linkSched.startAt.isNotNull(), then: Constant(0)),
+            CaseWhen(linkSched.startOn.isNotNull(), then: Constant(0)),
+          ],
+          orElse: Constant(1),
+        );
         // Todo list: schedule-based sorting (check shared then per-user then link)
         final todoSort = CaseWhenExpression(
           cases: [
@@ -1818,6 +1850,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           orElse: Constant(DateTime.utc(0)),
         );
         query.orderBy([
+          OrderingTerm.asc(hasHardSchedule),
           OrderingTerm.asc(todoSort),
           OrderingTerm.asc(userSched.order),
         ]);

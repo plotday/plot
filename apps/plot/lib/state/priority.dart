@@ -2335,6 +2335,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       limit: _agendaLimit,
       includeUnscheduled: false,
       range: dateRange,
+      // Restrict the datetime-based event branches to "in progress at
+      // now and forward" — `makeAgendaItems` drops past link schedule
+      // instances anyway, so fetching them only wastes a row of the
+      // pagination budget that should be carrying real events.
+      eventsActiveAt: DateTime.now(),
     );
     // Seed the associations stream with an empty list so [combineLatest2]
     // can fire on the FIRST emission of [agendaStream] alone. Without
@@ -2637,6 +2642,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           Date.today(),
           Date.today().addDays(_agendaHorizonDays),
         ),
+        eventsActiveAt: DateTime.now(),
       );
 
       final hasEnoughItems = localThreads.length >= _agendaLimit;
