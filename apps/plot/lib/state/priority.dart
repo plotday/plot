@@ -336,7 +336,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final showArchived = state.showArchived;
 
-    final scopePriorityId = state.context.id;
+    // Header search is global for now — no priority scoping. We may
+    // reintroduce a priority-specific search affordance later.
 
     // 1) Main search: hydrate matching threads into the local store and stash
     //    the ones that weren't already visible as "extras".
@@ -345,7 +346,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         final threads = await Thread.searchRemote(
           search,
           archived: showArchived,
-          priorityId: scopePriorityId,
         );
         if (gen != _searchGeneration || isClosed) return;
 
@@ -384,7 +384,6 @@ class PriorityBloc extends Cubit<PriorityState> {
           final count = await Thread.searchRemoteCount(
             search,
             archived: true,
-            priorityId: scopePriorityId,
           );
           if (gen != _searchGeneration || isClosed) return;
           emit(state.copyWith(hasArchivedMatches: count > 0));
@@ -2607,6 +2606,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void _loadActivityFeed({bool triggerSync = true}) {
     final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
     _activityFeedSubscription?.cancel();
     // Reset distinct tracker so the first emission from this new
     // subscription is always processed.
@@ -2614,11 +2614,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activityFeedSubscription =
         Thread.watch(
           order: ThreadOrder.reverse,
-          priorityPath: priorityToLoad.path,
+          // Header search is global for now — drop the priority scope
+          // so results from every priority surface in the feed.
+          priorityPath: isSearching ? null : priorityToLoad.path,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: state.search.isNotEmpty ? state.search : null,
+          search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
         ).listen((result) {
           // Always signal that a stream emission has been observed, even
@@ -2711,11 +2713,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// matching subset while a search/filter is active.
   void _loadTodoThreads() {
     final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
     _todoThreadsSubscription?.cancel();
     _todoThreadsSubscription =
         Thread.watch(
           order: ThreadOrder.sorted,
-          priorityPath: priorityToLoad.path,
+          // Header search is global for now — drop the priority scope
+          // so results from every priority surface in the todo list.
+          priorityPath: isSearching ? null : priorityToLoad.path,
           archived: state.showArchived,
           // SQL-side todo filter: returns only threads whose user_schedule
           // is the canonical `Thread.todo` shape. Replaces the previous
