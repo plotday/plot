@@ -678,7 +678,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
         : null;
 
     final summary = block.summaryLine;
-    final hasUnread = block.hasUnread;
 
     // For event blocks the summary's first title is the event itself —
     // render it in the priority's foreground color so it reads as the
@@ -732,10 +731,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
     final iconPad = context.theme.buttonStyles.ghost.md.iconContentStyle.padding
         .resolve(TextDirection.ltr);
     final rightPad = isWide ? spacing.lg : iconPad.right;
-
-    // Unread dot color: priority accent at reduced alpha to mirror
-    // [PriorityNotification]'s _DotPainter treatment.
-    final unreadColor = fg.withValues(alpha: 0.7);
 
     // For an in-progress event, replace the static duration label in
     // gutter row 2 with the remaining time so it counts down toward 0.
@@ -861,29 +856,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
             children: [
               SizedBox(
                 height: primarySize,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: PriorityLabel(
-                        priority: priority,
-                        color: fg,
-                        mutedAncestorColor: mutedFg,
-                        fontSize: secondarySize,
-                        height: 1,
-                      ),
-                    ),
-                    if (hasUnread) ...[
-                      SizedBox(width: spacing.md),
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: unreadColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
-                  ],
+                child: PriorityLabel(
+                  priority: priority,
+                  color: fg,
+                  mutedAncestorColor: mutedFg,
+                  fontSize: secondarySize,
+                  height: 1,
                 ),
               ),
               if (hasSecondRow) ...[

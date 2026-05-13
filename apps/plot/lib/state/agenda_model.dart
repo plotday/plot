@@ -198,9 +198,6 @@ sealed class AgendaBlock extends Equatable {
       .map((t) => t.displayTitle)
       .where((s) => s.isNotEmpty)
       .join(' · ');
-
-  /// True if any thread in this block is unread.
-  bool get hasUnread => threads.any((t) => t.unread);
 }
 
 /// Threads belonging to a single [Priority], rendered under a priority
