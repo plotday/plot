@@ -88,14 +88,18 @@ std::string WidgetSharedStorage::ReadState() {
 bool WidgetSharedStorage::TrayEnabled() {
   auto path = EnableFlagFilePath();
   if (!path) return false;
+  // Default-on: the menu/tray ships real content now, so a missing
+  // flag file means "show it". A user-set explicit `false`/`0`/`{}`
+  // still suppresses the surface.
   std::string body = ReadFileUtf8(*path);
-  if (body.empty()) return false;
+  if (body.empty()) return true;
   // Trim whitespace.
   while (!body.empty() && std::isspace(static_cast<unsigned char>(body.back()))) body.pop_back();
   size_t start = 0;
   while (start < body.size() && std::isspace(static_cast<unsigned char>(body[start]))) ++start;
   body.erase(0, start);
-  if (body.empty() || body == "false" || body == "0" || body == "{}") return false;
+  if (body.empty()) return true;
+  if (body == "false" || body == "0" || body == "{}") return false;
   return true;
 }
 

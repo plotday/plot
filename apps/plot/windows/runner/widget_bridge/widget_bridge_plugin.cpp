@@ -6,7 +6,6 @@
 #include <flutter/standard_method_codec.h>
 
 #include "system_tray/tray_icon.h"
-#include "widget_bridge/widget_shared_storage.h"
 
 namespace plot::widget_bridge {
 
@@ -54,7 +53,10 @@ void WidgetBridgePlugin::HandleMethodCall(
       result->Error("bad-args", "json must be a string");
       return;
     }
-    WidgetSharedStorage::WriteState(*json);
+    // State flows in-process directly to the tray icon. We don't
+    // persist to disk — the tray runs in this same Flutter host, so
+    // an in-memory snapshot is the canonical source.
+    if (tray_icon_) tray_icon_->ApplyState(*json);
     result->Success();
     return;
   }

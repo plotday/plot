@@ -1,12 +1,19 @@
 import Cocoa
 import FlutterMacOS
-import WidgetKit
 
-/// Bridges the Flutter `MethodChannel('day.plot/widgets')` to native
-/// widget hosts. Today it persists JSON state to the shared App Group
-/// and triggers `WidgetCenter.reloadAllTimelines()`. The status-item
-/// controller registers a callback so it can refresh when state
-/// changes.
+/// Bridges the Flutter `MethodChannel('day.plot/widgets')` to the
+/// menu-bar surface. State flows in-process: Flutter calls
+/// `writeState`, the plugin stashes the JSON, and `MenuBarController`
+/// reads from it directly. We deliberately do NOT write through the
+/// shared App Group container — accessing it would trigger the macOS
+/// App Management TCC prompt ("Plot would like to access data from
+/// other apps") at launch, and the menu bar runs inside the host app
+/// process so it doesn't need shared storage anyway.
+///
+/// When a future macOS WidgetKit surface needs real data, that path
+/// can opt in to the App Group write under its own user-facing
+/// "Enable widget" affordance — keeping this prompt scoped to the
+/// surface that actually requires it.
 final class WidgetBridgePlugin: NSObject {
   static let channelName = "day.plot/widgets"
 
@@ -20,12 +27,11 @@ final class WidgetBridgePlugin: NSObject {
     self.channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
+    statusItemController?.actionDispatcher = { [weak self] name in
+      self?.sendAction(name)
+    }
   }
 
-  /// Invoked from native code (e.g. status-item action handlers in the
-  /// future) to send an action back into Flutter. Today nothing calls
-  /// this; it's plumbed through so the eventual quick-create-note
-  /// integration just needs to call this method.
   func sendAction(_ name: String, args: [String: Any] = [:]) {
     channel.invokeMethod("onWidgetAction", arguments: ["name": name, "args": args])
   }
@@ -40,24 +46,9 @@ final class WidgetBridgePlugin: NSObject {
         result(FlutterError(code: "bad-args", message: "writeState requires {json}", details: nil))
         return
       }
-      // Skip the App Group write when no widget surface is enabled —
-      // otherwise the first call (which Flutter fires immediately on
-      // launch) trips the macOS App Management TCC prompt for state
-      // nothing currently reads.
-      guard PlotWidgetSharedStorage.widgetSurfaceEnabled() else {
-        result(nil)
-        return
-      }
-      PlotWidgetSharedStorage.sharedDefaults()?.set(json, forKey: PlotWidgetSharedStorage.widgetStateKey)
+      statusItemController?.applyState(json)
       result(nil)
     case "reloadAll":
-      guard PlotWidgetSharedStorage.widgetSurfaceEnabled() else {
-        result(nil)
-        return
-      }
-      if #available(macOS 11.0, *) {
-        WidgetCenter.shared.reloadAllTimelines()
-      }
       statusItemController?.refresh()
       result(nil)
     default:

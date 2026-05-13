@@ -4,13 +4,15 @@ import 'package:flutter/foundation.dart';
 
 import 'package:plot/state/now.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/store/store.dart';
+import 'package:plot/util/time.dart';
 
 import 'widget_bridge_channel.dart';
 import 'widget_data.dart';
 
 /// Side-effect listener that watches the user/now blocs and pushes
 /// a fresh [WidgetState] to the native widget host whenever the
-/// signed-in user or context priority changes.
+/// signed-in user, context priority, or active timer changes.
 ///
 /// The bridge intentionally does not own any UI — it only translates
 /// app state into the data widgets read on their own refresh
@@ -36,6 +38,7 @@ class WidgetBridge {
     if (_started || !WidgetBridgeChannel.isSupportedPlatform) return;
     _started = true;
     WidgetBridgeChannel.instance.attach();
+    WidgetBridgeChannel.instance.setHandler(_handleAction);
 
     _userSub = _userBloc.stream.listen((_) => _scheduleSync());
     _nowSub = _nowBloc.stream.listen((_) => _scheduleSync());
@@ -51,6 +54,7 @@ class WidgetBridge {
     await _nowSub?.cancel();
     _userSub = null;
     _nowSub = null;
+    WidgetBridgeChannel.instance.setHandler(null);
   }
 
   void _scheduleSync({bool immediate = false}) {
@@ -71,7 +75,8 @@ class WidgetBridge {
     debugPrint(
       '[widget-bridge] state '
       'signedIn=${next.isSignedIn} '
-      'priority=${next.currentPriorityId ?? '-'}',
+      'priority=${next.currentPriorityId ?? '-'} '
+      'timer=${next.timerState}${next.timerSource != null ? '/${next.timerSource}' : ''}',
     );
     await WidgetBridgeChannel.instance.writeState(next);
     await WidgetBridgeChannel.instance.reloadAll();
@@ -84,18 +89,111 @@ class WidgetBridge {
     }
     final user = userState.user;
     final nowState = _nowBloc.state;
-    String? priorityId;
-    String? priorityTitle;
-    if (nowState is NowLoaded) {
-      final priority = nowState.priority;
-      priorityId = priority.id.toString();
-      priorityTitle = priority.title;
+    if (nowState is! NowLoaded) {
+      return WidgetState(isSignedIn: true, userId: user.id);
     }
+    final priority = nowState.priority;
+    final ctx = nowState.context;
+    final hasContext = ctx != null;
+
+    String? timerEndsAtIso;
+    String timerState = 'inactive';
+    String? timerSource;
+
+    final session = nowState.session;
+    final isActiveSession =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx?.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
+    if (isActiveSession) {
+      timerSource = 'session';
+      timerState = 'running';
+      timerEndsAtIso =
+          session.pomodoroAt!.add(session.pomodoro!).toIso8601String();
+    } else {
+      final event = nowState.inProgressEventForContext;
+      if (event != null && event.at?.end != null) {
+        timerSource = 'event';
+        timerState = 'running';
+        timerEndsAtIso = event.at!.end!.toIso8601String();
+      }
+    }
+
+    final isSessionRunning = timerSource == 'session';
+    final canStart =
+        hasContext && nowState.pomodoroState == PomodoroState.inactive;
+    final canPause = isSessionRunning;
+    final canStop = isSessionRunning;
+
+    final canAddTime = hasContext && timerSource != 'event';
+    final canRemoveTime = hasContext && _canRemoveTime(nowState);
+
     return WidgetState(
       isSignedIn: true,
       userId: user.id,
-      currentPriorityId: priorityId,
-      currentPriorityTitle: priorityTitle,
+      currentPriorityId: priority.id.toString(),
+      currentPriorityTitle: priority.title,
+      currentEventTitle: nowState.currentEvent?.displayTitle,
+      timerState: timerState,
+      timerSource: timerSource,
+      timerEndsAtIso: timerEndsAtIso,
+      canStart: canStart,
+      canPause: canPause,
+      canStop: canStop,
+      canAddTime: canAddTime,
+      canRemoveTime: canRemoveTime,
     );
+  }
+
+  /// Mirrors `RemoveTime.enabled` in `lib/command/timer.dart` — we
+  /// want the menu's grey-out logic to match the in-app `−` button
+  /// exactly so users get the same affordance everywhere.
+  bool _canRemoveTime(NowLoaded state) {
+    final ctx = state.context;
+    if (ctx == null) return false;
+    final session = state.session;
+    final isActiveForCtx =
+        session != null &&
+        session.at.isNow() &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
+    if (isActiveForCtx) {
+      final remaining = session.pomodoroAt!
+          .add(session.pomodoro!)
+          .difference(Time.now());
+      return remaining > kMinPomodoro;
+    }
+    final base =
+        state.previewPomodoro ?? state.pendingFor(ctx) ?? kDefaultPomodoro;
+    return base > kMinPomodoro;
+  }
+
+  Future<Object?> _handleAction(
+    String name,
+    Map<String, Object?> args,
+  ) async {
+    switch (name) {
+      case widgetActionStartTimer:
+        await _nowBloc.startSession();
+        return null;
+      case widgetActionPauseTimer:
+        await _nowBloc.stopSession();
+        return null;
+      case widgetActionStopTimer:
+        await _nowBloc.endSession();
+        return null;
+      case widgetActionAddTime:
+        await _nowBloc.bumpPomodoroToNext15();
+        return null;
+      case widgetActionRemoveTime:
+        await _nowBloc.decreasePomodoro();
+        return null;
+    }
+    return null;
   }
 }

@@ -21,6 +21,16 @@ const String widgetActionCreateNote = 'createNote';
 /// logs.
 const String widgetActionOpenPriority = 'openPriority';
 
+/// Timer controls sent from the menubar / tray surface. Each maps to
+/// a single `NowBloc` method in `WidgetBridge._handleAction`; the
+/// behaviour is intentionally identical to the in-app commands in
+/// `lib/command/timer.dart` so the two surfaces stay in lockstep.
+const String widgetActionStartTimer = 'startTimer';
+const String widgetActionPauseTimer = 'pauseTimer';
+const String widgetActionStopTimer = 'stopTimer';
+const String widgetActionAddTime = 'addTime';
+const String widgetActionRemoveTime = 'removeTime';
+
 /// Signature for handlers attached via [WidgetBridgeChannel.onAction].
 typedef WidgetActionHandler =
     Future<Object?> Function(String name, Map<String, Object?> args);

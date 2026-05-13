@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -31,6 +32,12 @@ bool FlutterWindow::OnCreate() {
       std::make_unique<plot::system_tray::TrayIcon>(GetHandle());
   widget_bridge_ = std::make_unique<plot::widget_bridge::WidgetBridgePlugin>(
       flutter_controller_->engine(), tray_icon_.get());
+  // Route menu-item picks back into Flutter via the existing
+  // `onWidgetAction` method-channel call.
+  tray_icon_->SetActionDispatcher(
+      [bridge = widget_bridge_.get()](const std::string& name) {
+        bridge->SendAction(name);
+      });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -67,6 +74,16 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                                                       lparam);
     if (result) {
       return *result;
+    }
+  }
+
+  if (tray_icon_) {
+    if (message == plot::system_tray::kTrayCallbackMessage) {
+      tray_icon_->HandleTrayMessage(wparam, lparam);
+    } else if (message == WM_COMMAND) {
+      tray_icon_->HandleCommand(LOWORD(wparam));
+    } else if (message == WM_TIMER) {
+      tray_icon_->HandleTimer(static_cast<UINT_PTR>(wparam));
     }
   }
 

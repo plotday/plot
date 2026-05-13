@@ -21,11 +21,12 @@ enum PlotWidgetSharedStorage {
   /// never triggers the macOS App Management TCC prompt
   /// ("Plot would like to access data from other apps").
   ///
-  /// While this is `false`, every caller in Runner skips
-  /// `sharedDefaults()` entirely. Flip it to `true` only when the user
-  /// enables a widget surface (status item, home-screen widget, etc.).
-  /// Today no UI flips it — the surfaces don't exist yet — so no
-  /// launch ever touches the App Group.
+  /// Default is `false` — launch never touches the App Group, so the
+  /// TCC prompt never fires unprompted. Flip to `true` only via the
+  /// in-app modal that fires when the user first presses the play
+  /// button (see `lib/widget/menu_bar_prompt.dart`). The flip itself
+  /// is the moment the prompt appears, which is the only point in the
+  /// session where the user has just opted into the menu bar.
   static let widgetSurfaceEnabledKey = "widgetSurfaceEnabled"
 
   static func widgetSurfaceEnabled() -> Bool {
