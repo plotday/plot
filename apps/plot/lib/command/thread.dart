@@ -1569,23 +1569,26 @@ class MoveToPriority extends PriorityCommand {
     final updated = thread.copyWith(priority: priority!);
     priorityBloc?.optimisticallyUpdateThread(updated);
     await updated.save();
-    // Record the explicit move so the server can learn from it and
-    // retroactively re-file similar threads. The thread_priority.priority_id
-    // is already in sync via the save() call above; this endpoint sets
-    // user_moved = TRUE and triggers reclassify_user_threads. Best-effort:
-    // a failure here leaves the thread move intact.
-    try {
-      await api.post<dynamic>(
-        '/sync/priority-moves',
-        body: {
-          'thread_id': thread.id.toString(),
-          'priority_id': priority!.id.toString(),
-        },
-      );
-    } catch (_) {
-      // Offline / transient — the move itself is already synced via
-      // thread save; the learning signal will be re-sent next time.
-    }
+    // Best-effort learning signal — fire and forget so the move modal closes
+    // immediately instead of waiting on the network round trip. The
+    // thread_priority.priority_id is already in sync via the save() above;
+    // this endpoint sets user_moved = TRUE and triggers
+    // reclassify_user_threads. A failure here leaves the move intact.
+    unawaited(
+      api
+          .post<dynamic>(
+            '/sync/priority-moves',
+            body: {
+              'thread_id': thread.id.toString(),
+              'priority_id': priority!.id.toString(),
+            },
+          )
+          .catchError((Object _) {
+            // Offline / transient — the move itself is already synced via
+            // thread save; the learning signal will be re-sent next time.
+            return null;
+          }),
+    );
     return const CommandDone();
   }
 }
