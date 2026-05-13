@@ -111,14 +111,16 @@ class WidgetBridge {
     if (isActiveSession) {
       timerSource = 'session';
       timerState = 'running';
-      timerEndsAtIso =
-          session.pomodoroAt!.add(session.pomodoro!).toIso8601String();
+      timerEndsAtIso = session.pomodoroAt!
+          .add(session.pomodoro!)
+          .toUtc()
+          .toIso8601String();
     } else {
       final event = nowState.inProgressEventForContext;
       if (event != null && event.at?.end != null) {
         timerSource = 'event';
         timerState = 'running';
-        timerEndsAtIso = event.at!.end!.toIso8601String();
+        timerEndsAtIso = event.at!.end!.toUtc().toIso8601String();
       }
     }
 

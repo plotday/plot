@@ -184,6 +184,26 @@ long long UnixNowMs() {
       .count();
 }
 
+// Reads HKCU\...\Personalize\SystemUsesLightTheme. Defaults to dark
+// (the Windows 10/11 default) when the key is missing so the text icon
+// stays legible on the dark default taskbar.
+bool IsLightTaskbarTheme() {
+  DWORD value = 0;
+  DWORD size = sizeof(value);
+  HKEY key = nullptr;
+  LONG status = RegOpenKeyExW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      0, KEY_READ, &key);
+  if (status != ERROR_SUCCESS) return false;
+  DWORD type = 0;
+  status = RegQueryValueExW(key, L"SystemUsesLightTheme", nullptr, &type,
+                            reinterpret_cast<LPBYTE>(&value), &size);
+  RegCloseKey(key);
+  if (status != ERROR_SUCCESS || type != REG_DWORD) return false;
+  return value != 0;
+}
+
 }  // namespace
 
 TrayIcon::TrayIcon(HWND host_window) : host_window_(host_window) {
@@ -204,6 +224,7 @@ TrayIcon::~TrayIcon() {
 void TrayIcon::ApplyState(const std::string& json) {
   current_state_ = ParseSnapshot(json);
   UpdateTooltip();
+  UpdateTrayIcon();
   if (current_state_.timer_state == L"running") {
     StartTickTimer();
   } else {
@@ -213,6 +234,7 @@ void TrayIcon::ApplyState(const std::string& json) {
 
 void TrayIcon::Refresh() {
   UpdateTooltip();
+  UpdateTrayIcon();
   if (current_state_.timer_state == L"running") {
     StartTickTimer();
   } else {
@@ -251,6 +273,7 @@ void TrayIcon::HandleCommand(WORD command_id) {
 void TrayIcon::HandleTimer(UINT_PTR timer_id) {
   if (timer_id != kTrayTickTimerId) return;
   UpdateTooltip();
+  UpdateTrayIcon();
 }
 
 void TrayIcon::EnsureIcon() {
@@ -262,15 +285,16 @@ void TrayIcon::EnsureIcon() {
   // blurry tray icon.
   int cx = GetSystemMetrics(SM_CXSMICON);
   int cy = GetSystemMetrics(SM_CYSMICON);
-  data_.hIcon = static_cast<HICON>(LoadImageW(
+  logo_icon_ = static_cast<HICON>(LoadImageW(
       instance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, cx, cy,
       LR_DEFAULTCOLOR));
-  if (!data_.hIcon) {
-    data_.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
+  if (!logo_icon_) {
+    logo_icon_ = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
   }
-  if (!data_.hIcon) {
-    data_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+  if (!logo_icon_) {
+    logo_icon_ = LoadIconW(nullptr, IDI_APPLICATION);
   }
+  data_.hIcon = logo_icon_;
   if (!Shell_NotifyIconW(NIM_ADD, &data_)) {
     OutputDebugStringW(L"[tray] Shell_NotifyIcon NIM_ADD failed\n");
     return;
@@ -282,6 +306,16 @@ void TrayIcon::TearDownIcon() {
   if (!icon_added_) return;
   Shell_NotifyIconW(NIM_DELETE, &data_);
   icon_added_ = false;
+  data_.hIcon = nullptr;
+  if (countdown_icon_) {
+    DestroyIcon(countdown_icon_);
+    countdown_icon_ = nullptr;
+  }
+  if (logo_icon_) {
+    DestroyIcon(logo_icon_);
+    logo_icon_ = nullptr;
+  }
+  displayed_text_.clear();
 }
 
 void TrayIcon::StartTickTimer() {
@@ -294,6 +328,184 @@ void TrayIcon::StopTickTimer() {
   if (!tick_active_) return;
   KillTimer(host_window_, kTrayTickTimerId);
   tick_active_ = false;
+}
+
+void TrayIcon::UpdateTrayIcon() {
+  if (!icon_added_) return;
+
+  std::wstring desired_text;
+  if (current_state_.is_signed_in &&
+      current_state_.timer_state == L"running" &&
+      current_state_.timer_ends_at_unix_ms > 0) {
+    long long remaining_ms =
+        current_state_.timer_ends_at_unix_ms - UnixNowMs();
+    desired_text = FormatRemaining(remaining_ms / 1000);
+  }
+
+  if (desired_text == displayed_text_ && data_.hIcon) {
+    // Ceil-to-minutes means the tick at 1Hz is a no-op most seconds —
+    // we only re-render when the visible label actually changes.
+    return;
+  }
+
+  HICON next_icon = nullptr;
+  if (desired_text.empty()) {
+    next_icon = logo_icon_;
+  } else {
+    HICON fresh = CreateCountdownIcon(desired_text);
+    if (!fresh) {
+      // Rendering failed; fall back to the logo so the tray still has
+      // something visible.
+      next_icon = logo_icon_;
+      desired_text.clear();
+    } else {
+      if (countdown_icon_) DestroyIcon(countdown_icon_);
+      countdown_icon_ = fresh;
+      next_icon = countdown_icon_;
+    }
+  }
+
+  if (!next_icon) return;
+  data_.hIcon = next_icon;
+  data_.uFlags |= NIF_ICON;
+  Shell_NotifyIconW(NIM_MODIFY, &data_);
+  displayed_text_ = desired_text;
+}
+
+HICON TrayIcon::CreateCountdownIcon(const std::wstring& text) {
+  int size = GetSystemMetrics(SM_CXSMICON);
+  if (size <= 0) size = 16;
+
+  HDC screen_dc = GetDC(nullptr);
+  if (!screen_dc) return nullptr;
+  HDC mem_dc = CreateCompatibleDC(screen_dc);
+  if (!mem_dc) {
+    ReleaseDC(nullptr, screen_dc);
+    return nullptr;
+  }
+
+  // 32bpp top-down DIB so we can pull the bits back out, post-process
+  // the GDI render (which doesn't set alpha) and feed
+  // CreateIconIndirect a properly premultiplied bitmap.
+  BITMAPINFO bi = {};
+  bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bi.bmiHeader.biWidth = size;
+  bi.bmiHeader.biHeight = -size;
+  bi.bmiHeader.biPlanes = 1;
+  bi.bmiHeader.biBitCount = 32;
+  bi.bmiHeader.biCompression = BI_RGB;
+
+  void* bits = nullptr;
+  HBITMAP color_bmp = CreateDIBSection(mem_dc, &bi, DIB_RGB_COLORS, &bits,
+                                       nullptr, 0);
+  if (!color_bmp || !bits) {
+    if (color_bmp) DeleteObject(color_bmp);
+    DeleteDC(mem_dc);
+    ReleaseDC(nullptr, screen_dc);
+    return nullptr;
+  }
+  std::memset(bits, 0, static_cast<size_t>(size) * size * 4);
+
+  HGDIOBJ old_bmp = SelectObject(mem_dc, color_bmp);
+  SetBkMode(mem_dc, TRANSPARENT);
+  // Render the glyphs in pure white. Coverage is recovered from the
+  // pixel value below and re-tinted to the theme-appropriate colour.
+  SetTextColor(mem_dc, RGB(255, 255, 255));
+
+  // Start near the icon height and shrink if the text overflows. The
+  // common labels ("5m", "59m", "1h") fit at ~75% of the icon height;
+  // the worst case ("1h59m") needs to shrink further.
+  auto make_font = [](int height) -> HFONT {
+    return CreateFontW(height, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                       CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                       DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+  };
+  int font_height = -static_cast<int>(size * 0.75);
+  HFONT font = make_font(font_height);
+  if (!font) font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+  HGDIOBJ old_font = SelectObject(mem_dc, font);
+
+  auto measure_width = [&]() {
+    RECT r = {0, 0, size, size};
+    DrawTextW(mem_dc, text.c_str(), -1, &r,
+              DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+    return r.right - r.left;
+  };
+  int text_w = measure_width();
+  int attempts = 0;
+  while (text_w > size && attempts < 5) {
+    SelectObject(mem_dc, old_font);
+    if (font && font != GetStockObject(DEFAULT_GUI_FONT)) DeleteObject(font);
+    font_height = static_cast<int>(font_height * 0.82);
+    if (font_height > -5) font_height = -5;
+    font = make_font(font_height);
+    if (!font) font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    old_font = SelectObject(mem_dc, font);
+    text_w = measure_width();
+    ++attempts;
+  }
+
+  RECT rect = {0, 0, size, size};
+  DrawTextW(mem_dc, text.c_str(), -1, &rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP);
+  GdiFlush();
+
+  COLORREF text_color = IsLightTaskbarTheme() ? RGB(0, 0, 0)
+                                              : RGB(255, 255, 255);
+  int target_r = GetRValue(text_color);
+  int target_g = GetGValue(text_color);
+  int target_b = GetBValue(text_color);
+
+  std::uint32_t* pixels = static_cast<std::uint32_t*>(bits);
+  for (int i = 0; i < size * size; ++i) {
+    std::uint32_t px = pixels[i];
+    // DIB layout is 0xAARRGGBB in memory little-endian; alpha is the
+    // top byte. GDI left it at 0 — recover coverage from the max of the
+    // RGB channels (ANTIALIASED_QUALITY emits grayscale, so R==G==B).
+    int b = px & 0xFF;
+    int g = (px >> 8) & 0xFF;
+    int r = (px >> 16) & 0xFF;
+    int coverage = std::max(r, std::max(g, b));
+    if (coverage == 0) {
+      pixels[i] = 0;
+      continue;
+    }
+    int pr = (target_r * coverage) / 255;
+    int pg = (target_g * coverage) / 255;
+    int pb = (target_b * coverage) / 255;
+    pixels[i] = (static_cast<std::uint32_t>(coverage) << 24) |
+                (static_cast<std::uint32_t>(pr) << 16) |
+                (static_cast<std::uint32_t>(pg) << 8) |
+                static_cast<std::uint32_t>(pb);
+  }
+
+  SelectObject(mem_dc, old_font);
+  if (font && font != GetStockObject(DEFAULT_GUI_FONT)) DeleteObject(font);
+  SelectObject(mem_dc, old_bmp);
+
+  // CreateIconIndirect requires a mask bitmap even when the colour
+  // bitmap has a real alpha channel; a 1bpp all-zero mask makes Windows
+  // honour the alpha in hbmColor.
+  HBITMAP mask_bmp = CreateBitmap(size, size, 1, 1, nullptr);
+  if (!mask_bmp) {
+    DeleteObject(color_bmp);
+    DeleteDC(mem_dc);
+    ReleaseDC(nullptr, screen_dc);
+    return nullptr;
+  }
+
+  ICONINFO ii = {};
+  ii.fIcon = TRUE;
+  ii.hbmColor = color_bmp;
+  ii.hbmMask = mask_bmp;
+  HICON icon = CreateIconIndirect(&ii);
+
+  DeleteObject(color_bmp);
+  DeleteObject(mask_bmp);
+  DeleteDC(mem_dc);
+  ReleaseDC(nullptr, screen_dc);
+  return icon;
 }
 
 void TrayIcon::UpdateTooltip() {

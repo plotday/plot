@@ -109,11 +109,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
   private func parsedEndsAt() -> Date? {
     guard let iso = currentState["timerEndsAtIso"] as? String else { return nil }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = formatter.date(from: iso) { return date }
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter.date(from: iso)
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = isoFormatter.date(from: iso) { return date }
+    isoFormatter.formatOptions = [.withInternetDateTime]
+    if let date = isoFormatter.date(from: iso) { return date }
+    // Fallback: `DateTime.toIso8601String()` on a non-UTC Dart DateTime
+    // produces `2026-05-13T15:30:00.000` with no timezone designator,
+    // which `ISO8601DateFormatter` refuses. Treat as local time so the
+    // countdown still renders if Flutter ever emits a non-UTC ISO.
+    let fallback = DateFormatter()
+    fallback.locale = Locale(identifier: "en_US_POSIX")
+    fallback.timeZone = TimeZone.current
+    for format in [
+      "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+      "yyyy-MM-dd'T'HH:mm:ss.SSS",
+      "yyyy-MM-dd'T'HH:mm:ss",
+    ] {
+      fallback.dateFormat = format
+      if let date = fallback.date(from: iso) { return date }
+    }
+    return nil
   }
 
   /// Ceil-to-minutes, formatted as `Nm` / `Hh` / `Hh Mm`. Mirrors
