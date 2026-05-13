@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
@@ -218,7 +221,14 @@ class _NoteWidgetState extends State<NoteWidget> {
                           style: mutedXs,
                         ),
                       );
-                      if (!widget.showAuthor) return timeAgo;
+                      Widget withPending(Widget child) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _PendingSyncIndicator(note: widget.note),
+                          child,
+                        ],
+                      );
+                      if (!widget.showAuthor) return withPending(timeAgo);
                       return FutureBuilder<Actor?>(
                         future: widget.note.getAuthor(),
                         builder: (context, snapshot) {
@@ -229,7 +239,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                                     ? 'You'
                                     : actor.nameOrEmail);
                           if (authorName == null || authorName.isEmpty) {
-                            return timeAgo;
+                            return withPending(timeAgo);
                           }
                           Widget authorText = Text(authorName, style: mutedXs);
                           if (actor?.email != null &&
@@ -243,6 +253,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              _PendingSyncIndicator(note: widget.note),
                               if (actor != null) ...[
                                 Avatar(actor: actor, tooltip: false),
                                 const SizedBox(width: 4),
@@ -340,6 +351,83 @@ class _NoteWidgetState extends State<NoteWidget> {
         if (_hovered) setState(() => _hovered = false);
       },
       child: result,
+    );
+  }
+}
+
+/// Subtle indicator shown when a note has unsynced local changes. Suppressed
+/// for a short window after the change so a freshly-typed note doesn't flash
+/// an icon during the normal sync round-trip; appears only if the change is
+/// still pending after that.
+class _PendingSyncIndicator extends StatefulWidget {
+  const _PendingSyncIndicator({required this.note});
+
+  final Note note;
+
+  @override
+  State<_PendingSyncIndicator> createState() => _PendingSyncIndicatorState();
+}
+
+class _PendingSyncIndicatorState extends State<_PendingSyncIndicator> {
+  static const Duration _suppressionWindow = Duration(seconds: 5);
+
+  Timer? _timer;
+  bool _pastWindow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _evaluate();
+  }
+
+  @override
+  void didUpdateWidget(_PendingSyncIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.note.updatedAt != oldWidget.note.updatedAt ||
+        widget.note.pending != oldWidget.note.pending) {
+      _evaluate();
+    }
+  }
+
+  void _evaluate() {
+    _timer?.cancel();
+    _timer = null;
+    if (widget.note.pending == null) {
+      _pastWindow = false;
+      return;
+    }
+    final elapsed = DateTime.now().difference(widget.note.updatedAt);
+    if (elapsed >= _suppressionWindow) {
+      _pastWindow = true;
+      return;
+    }
+    _pastWindow = false;
+    _timer = Timer(_suppressionWindow - elapsed, () {
+      if (mounted) setState(() => _pastWindow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.note.pending == null || !_pastWindow) {
+      return const SizedBox.shrink();
+    }
+    return FTooltip(
+      tipBuilder: (context, _) => const Text('Waiting for sync'),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Icon(
+          FontAwesomeIcons.cloudArrowUp,
+          size: 10,
+          color: context.colour.muted.withValues(alpha: 0.6),
+        ),
+      ),
     );
   }
 }

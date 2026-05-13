@@ -111,6 +111,7 @@ class Note extends Equatable implements Comparable<Note> {
     required DateTime updatedAt,
     DateTime? archivedAt,
     ThreadId? mergedFromThreadId,
+    int? pending,
   }) {
     // Auto-extract mentions from content if content is provided but mentions are not
     final effectiveMentions =
@@ -132,6 +133,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt: updatedAt,
       archivedAt: archivedAt,
       mergedFromThreadId: mergedFromThreadId,
+      pending: pending,
       tags: null,
     );
   }
@@ -150,6 +152,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt = DateTime.now(),
       archivedAt = null,
       mergedFromThreadId = null,
+      pending = null,
       _tags = null;
 
   const Note._internal({
@@ -167,6 +170,7 @@ class Note extends Equatable implements Comparable<Note> {
     required this.updatedAt,
     this.archivedAt,
     this.mergedFromThreadId,
+    this.pending,
     NoteTagsRow? tags,
   }) : _tags = tags;
 
@@ -193,6 +197,7 @@ class Note extends Equatable implements Comparable<Note> {
       updatedAt: noteRow.updatedAt,
       archivedAt: noteRow.archivedAt,
       mergedFromThreadId: noteRow.mergedFromThreadId,
+      pending: noteRow.pending,
       tags: tags,
     );
   }
@@ -225,6 +230,7 @@ class Note extends Equatable implements Comparable<Note> {
   final DateTime updatedAt;
   final DateTime? archivedAt;
   final ThreadId? mergedFromThreadId;
+  final int? pending;
   final NoteTagsRow? _tags;
 
   /// Pull all notes and tags for a specific activity (lazy-loaded on first view).
@@ -1140,6 +1146,7 @@ class Note extends Equatable implements Comparable<Note> {
     updatedAt,
     archivedAt,
     mergedFromThreadId,
+    pending,
     _tags,
   ];
 
