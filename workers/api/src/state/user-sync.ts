@@ -196,17 +196,8 @@ export class UserSync extends DurableObject<Bindings> {
         return;
       }
 
-      // Check if there are connected clients
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
-      const tHasClients = Date.now();
-      currentStep = "hasConnectedClients";
-      const broadcastResponse = await broadcast.fetch(
-        new Request("http://do/hasConnectedClients")
-      );
-      const broadcastData: any = await broadcastResponse.json();
-      const hasClients = broadcastData.hasConnectedClients;
-      markStep("hasConnectedClientsMs", tHasClients);
 
       // Always invoke PushNotify, regardless of whether any client is
       // currently connected. PushNotify owns the deferral logic — it
@@ -244,12 +235,12 @@ export class UserSync extends DurableObject<Bindings> {
           })
       );
 
-      if (!hasClients) {
-        // Nothing to broadcast — PushNotify will handle the user wake-up.
-        this.state.lastSyncTime = now;
-        this.state.batchStartTime = 0;
-        return;
-      }
+      // Don't gate broadcast on `hasConnectedClients`. `inactiveClients` (set
+      // by clients sending `{active: false}`) exists to ensure other devices
+      // still get FCM when a desktop app is backgrounded — it must NOT
+      // suppress WebSocket delivery to those backgrounded clients, which still
+      // hold open sockets. `broadcast.send` is a no-op when no sockets are
+      // open; otherwise it correctly fans out to every connected client.
 
       const userId = this.userId;
       currentStep = "withDb";
