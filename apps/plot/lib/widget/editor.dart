@@ -2735,7 +2735,7 @@ ExecutionInstruction _handlePunctuationAfterMention({
 
   // Check if this is a punctuation character
   final character = keyEvent.character;
-  if (character == null || !['.', ',', ';'].contains(character)) {
+  if (character == null || !['.', ',', ';', '!', '?'].contains(character)) {
     return ExecutionInstruction.continueExecution;
   }
 
