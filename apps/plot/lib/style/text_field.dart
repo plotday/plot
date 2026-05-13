@@ -47,5 +47,10 @@ FTextFieldStyleDelta buildTextFieldStyleDelta(
         ),
       ),
     ]),
+    hintTextStyle: FVariantsDelta.delta([
+      FVariantOperation.all(
+        TextStyleDelta.delta(fontSize: typography.md.fontSize),
+      ),
+    ]),
   );
 }
