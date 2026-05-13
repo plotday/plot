@@ -254,13 +254,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         maintainState: true,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          spacing: 8,
           children: children,
         ),
       );
       Widget group(List<Widget> children) => Row(
         mainAxisSize: MainAxisSize.min,
-        spacing: 8,
         children: children,
       );
 
@@ -721,14 +719,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         color: context.theme.plotColors.muted,
       );
     } else {
-      final hasPending = thread.outstandingTasks;
       todoIcon = Button.icon(
         CommandWrapper(
           FinishThread(thread),
-          icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
-          hoverIcon: hasPending
-              ? Value(FontAwesomeIcons.circleCheck)
-              : const Value<IconData?>.absent(),
+          icon: Value(FontAwesomeIcons.circle),
+          hoverIcon: Value(FontAwesomeIcons.circleCheck),
           title: 'Finish',
         ),
         selected: true,
