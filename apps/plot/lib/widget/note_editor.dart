@@ -1483,6 +1483,16 @@ class NoteEditorState extends State<NoteEditor> {
     await _pendingDraftSave;
     if (!mounted) return;
 
+    // Note mode has no onChange auto-save (onChange is wired only in
+    // new-thread mode), so _lastSavedContent reflects only what was
+    // persisted to the draft — usually '' — not what the user actually
+    // typed. didUpdateWidget's reset-skip optimization treats
+    // _lastSavedContent as a proxy for the editor's current content;
+    // without bumping it here, the empty post-add() draft and the stale
+    // empty _lastSavedContent compare equal, the SuperEditor reset is
+    // skipped, and the just-submitted text stays on screen.
+    _lastSavedContent = body;
+
     final activityBloc = context.read<ThreadBloc>();
     final editingNote = activityBloc.state.editingNote;
 
@@ -1500,6 +1510,9 @@ class NoteEditorState extends State<NoteEditor> {
         if (mounted) {
           setState(() {
             _saving = false;
+            // Re-enable _saveDraft for the standalone draft now that the
+            // edited note has been published.
+            _finalized = false;
           });
         }
       }
@@ -1516,6 +1529,11 @@ class NoteEditorState extends State<NoteEditor> {
         if (mounted) {
           setState(() {
             _saving = false;
+            // Re-enable _saveDraft for the fresh draft that ThreadBloc.add()
+            // emitted in place of the just-published one. Without this,
+            // future blur/deactivate writes are silently dropped and the
+            // new draft never persists.
+            _finalized = false;
           });
         }
       }
