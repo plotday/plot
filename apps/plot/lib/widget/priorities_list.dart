@@ -663,10 +663,11 @@ class _EverythingTileState extends State<_EverythingTile> {
     final rootAccentBg = widget.monochrome
         ? context.colour.colours.backgroundFromTheme(widget.root.displayColor)
         : null;
+    // Match PriorityWidget: at rest, the body text keeps the priority's own
+    // colour. Only the leading dot dims to the resting tone in monochrome
+    // mode, so the root tile reads in line with its siblings.
     final restingColor = context.colour.muted;
-    final textColor = widget.monochrome && !isActive
-        ? restingColor
-        : rootAccent;
+    final textColor = rootAccent;
     final indicatorColor = widget.monochrome && !isActive
         ? restingColor
         : context.colour.colours.fromTheme(widget.root.displayColor);
