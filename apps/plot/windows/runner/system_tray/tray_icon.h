@@ -62,6 +62,11 @@ class TrayIcon {
     std::wstring timer_state = L"inactive";
     std::wstring timer_source;
     long long timer_ends_at_unix_ms = 0;  // 0 when no timer
+    // Next scheduled event on today's agenda (any priority). The tray
+    // surfaces a `Nm → EVENT NAME` banner once `next_event_start_unix_ms`
+    // is within 10 minutes of now.
+    std::wstring next_event_title;
+    long long next_event_start_unix_ms = 0;
     bool can_start = false;
     bool can_pause = false;
     bool can_stop = false;
@@ -73,6 +78,10 @@ class TrayIcon {
   void TearDownIcon();
   void ShowContextMenu();
   void UpdateTooltip();
+  // True when the surface should refresh once per second — either a
+  // timer is running, or the next scheduled event is close enough that
+  // the "Nm → EVENT NAME" banner needs to tick down.
+  bool NeedsTicking() const;
   // Swap between the Plot logo icon and a dynamically-rendered "time
   // remaining" icon. Windows tray icons can't show text beside them
   // (Explorer forces a single 16×16-ish glyph), so when a timer is

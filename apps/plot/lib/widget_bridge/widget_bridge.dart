@@ -133,6 +133,23 @@ class WidgetBridge {
     final canAddTime = hasContext && timerSource != 'event';
     final canRemoveTime = hasContext && _canRemoveTime(nowState);
 
+    // The first event in `nowState.next` is the earliest future event
+    // across all priorities — the natural "what's coming up" anchor for
+    // the menu bar / tray banner. Native code decides when to surface
+    // it (currently: countdown ≤ 10m) so the banner ticks down without
+    // needing another state push.
+    String? nextEventTitle;
+    String? nextEventStartIso;
+    final upcoming = nowState.next;
+    if (upcoming.isNotEmpty) {
+      final event = upcoming.first;
+      final start = event.at?.start;
+      if (start != null) {
+        nextEventTitle = event.displayTitle;
+        nextEventStartIso = start.toUtc().toIso8601String();
+      }
+    }
+
     return WidgetState(
       isSignedIn: true,
       userId: user.id,
@@ -142,6 +159,8 @@ class WidgetBridge {
       timerState: timerState,
       timerSource: timerSource,
       timerEndsAtIso: timerEndsAtIso,
+      nextEventTitle: nextEventTitle,
+      nextEventStartIso: nextEventStartIso,
       canStart: canStart,
       canPause: canPause,
       canStop: canStop,

@@ -18,6 +18,8 @@ class WidgetState extends Equatable {
     this.timerState = 'inactive',
     this.timerSource,
     this.timerEndsAtIso,
+    this.nextEventTitle,
+    this.nextEventStartIso,
     this.canStart = false,
     this.canPause = false,
     this.canStop = false,
@@ -50,6 +52,16 @@ class WidgetState extends Equatable {
   /// MM:SS countdown from this without further IPC.
   final String? timerEndsAtIso;
 
+  /// Title of the next scheduled event (across all priorities) whose
+  /// start is in the future. Always paired with [nextEventStartIso] —
+  /// native code applies the "≤ 10m until start" threshold so the
+  /// approaching-event banner ticks down without needing another push.
+  final String? nextEventTitle;
+
+  /// UTC ISO 8601 start of [nextEventTitle]. Null when no future event
+  /// is on today's agenda.
+  final String? nextEventStartIso;
+
   final bool canStart;
   final bool canPause;
   final bool canStop;
@@ -65,6 +77,8 @@ class WidgetState extends Equatable {
     'timerState': timerState,
     'timerSource': timerSource,
     'timerEndsAtIso': timerEndsAtIso,
+    'nextEventTitle': nextEventTitle,
+    'nextEventStartIso': nextEventStartIso,
     'canStart': canStart,
     'canPause': canPause,
     'canStop': canStop,
@@ -82,6 +96,8 @@ class WidgetState extends Equatable {
     timerState,
     timerSource,
     timerEndsAtIso,
+    nextEventTitle,
+    nextEventStartIso,
     canStart,
     canPause,
     canStop,

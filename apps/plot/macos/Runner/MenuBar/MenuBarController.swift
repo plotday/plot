@@ -79,10 +79,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
   // MARK: - Title (live countdown)
 
+  /// Window within which an upcoming scheduled event takes over the
+  /// menu-bar label as `Nm → EVENT NAME`. Matches the value documented
+  /// on `WidgetState.nextEventStartIso` in `widget_data.dart`.
+  private static let approachingEventWindow: TimeInterval = 10 * 60
+
   private func restartTickTimer() {
     tickTimer?.invalidate()
     tickTimer = nil
-    guard isTimerRunning() else { return }
+    guard needsTicking() else { return }
     // Tick at 1Hz so the minute boundary flips promptly. The label
     // itself is ceil-to-minutes, so most ticks are no-ops — but the
     // overhead is negligible and the implementation stays simple.
@@ -97,9 +102,38 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     (currentState["timerState"] as? String) == "running"
   }
 
+  /// True when either a timer is running *or* the next scheduled event
+  /// is close enough that the approaching-event banner will appear
+  /// within the next tick — both cases need the 1Hz refresh so the
+  /// minute label flips promptly.
+  private func needsTicking() -> Bool {
+    if isTimerRunning() { return true }
+    if let secondsUntil = secondsUntilNextEvent(),
+       secondsUntil > 0,
+       secondsUntil <= Self.approachingEventWindow + 60
+    {
+      // Add a one-minute pad so we start ticking just before the
+      // banner is supposed to appear, instead of waiting for the next
+      // `applyState` push from Flutter.
+      return true
+    }
+    return false
+  }
+
   private func updateTitle() {
     guard let button = statusItem?.button else { return }
-    if isTimerRunning(), let endsAt = parsedEndsAt() {
+    // Approaching-event banner takes precedence: "10m → EVENT NAME".
+    if let secondsUntil = secondsUntilNextEvent(),
+       secondsUntil > 0,
+       secondsUntil <= Self.approachingEventWindow,
+       let title = currentState["nextEventTitle"] as? String,
+       !title.isEmpty
+    {
+      button.title =
+        " " + Self.formatRemaining(secondsUntil) + " → " + title
+      return
+    }
+    if isTimerRunning(), let endsAt = parsedDate(forKey: "timerEndsAtIso") {
       let remaining = endsAt.timeIntervalSinceNow
       button.title = " " + Self.formatRemaining(remaining)
     } else {
@@ -107,17 +141,28 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
   }
 
-  private func parsedEndsAt() -> Date? {
-    guard let iso = currentState["timerEndsAtIso"] as? String else { return nil }
+  /// Seconds until the next scheduled event's start, or nil when no
+  /// future event is on the agenda. Negative when the event has
+  /// already started (caller filters with `> 0`).
+  private func secondsUntilNextEvent() -> TimeInterval? {
+    guard let start = parsedDate(forKey: "nextEventStartIso") else {
+      return nil
+    }
+    return start.timeIntervalSinceNow
+  }
+
+  /// Parses an ISO 8601 timestamp stored at `currentState[key]`. Falls
+  /// back to a local-time parser if the value is missing a timezone
+  /// designator (`DateTime.toIso8601String()` on a non-UTC Dart
+  /// DateTime emits `2026-05-13T15:30:00.000` which
+  /// `ISO8601DateFormatter` refuses).
+  private func parsedDate(forKey key: String) -> Date? {
+    guard let iso = currentState[key] as? String else { return nil }
     let isoFormatter = ISO8601DateFormatter()
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     if let date = isoFormatter.date(from: iso) { return date }
     isoFormatter.formatOptions = [.withInternetDateTime]
     if let date = isoFormatter.date(from: iso) { return date }
-    // Fallback: `DateTime.toIso8601String()` on a non-UTC Dart DateTime
-    // produces `2026-05-13T15:30:00.000` with no timezone designator,
-    // which `ISO8601DateFormatter` refuses. Treat as local time so the
-    // countdown still renders if Flutter ever emits a non-UTC ISO.
     let fallback = DateFormatter()
     fallback.locale = Locale(identifier: "en_US_POSIX")
     fallback.timeZone = TimeZone.current
@@ -238,7 +283,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
       return "No timer"
     }
     let prefix = (currentState["timerSource"] as? String) == "event" ? "Event" : "Running"
-    if let endsAt = parsedEndsAt() {
+    if let endsAt = parsedDate(forKey: "timerEndsAtIso") {
       let remaining = endsAt.timeIntervalSinceNow
       return "\(prefix) · \(Self.formatRemaining(remaining))"
     }

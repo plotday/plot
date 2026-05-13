@@ -225,7 +225,7 @@ void TrayIcon::ApplyState(const std::string& json) {
   current_state_ = ParseSnapshot(json);
   UpdateTooltip();
   UpdateTrayIcon();
-  if (current_state_.timer_state == L"running") {
+  if (NeedsTicking()) {
     StartTickTimer();
   } else {
     StopTickTimer();
@@ -235,11 +235,22 @@ void TrayIcon::ApplyState(const std::string& json) {
 void TrayIcon::Refresh() {
   UpdateTooltip();
   UpdateTrayIcon();
-  if (current_state_.timer_state == L"running") {
+  if (NeedsTicking()) {
     StartTickTimer();
   } else {
     StopTickTimer();
   }
+}
+
+bool TrayIcon::NeedsTicking() const {
+  if (current_state_.timer_state == L"running") return true;
+  if (current_state_.next_event_start_unix_ms <= 0) return false;
+  long long secs_until =
+      (current_state_.next_event_start_unix_ms - UnixNowMs()) / 1000;
+  // 10-minute banner window + 1-minute pad so the tick starts just
+  // before the banner is supposed to appear, without waiting for the
+  // next `ApplyState` push.
+  return secs_until > 0 && secs_until <= 11 * 60;
 }
 
 void TrayIcon::SetActionDispatcher(ActionDispatcher dispatcher) {
@@ -334,12 +345,26 @@ void TrayIcon::UpdateTrayIcon() {
   if (!icon_added_) return;
 
   std::wstring desired_text;
-  if (current_state_.is_signed_in &&
-      current_state_.timer_state == L"running" &&
-      current_state_.timer_ends_at_unix_ms > 0) {
-    long long remaining_ms =
-        current_state_.timer_ends_at_unix_ms - UnixNowMs();
-    desired_text = FormatRemaining(remaining_ms / 1000);
+  if (current_state_.is_signed_in) {
+    // Approaching-event banner wins over the running-timer countdown:
+    // a scheduled event ≤ 10 minutes away is the more time-sensitive
+    // thing for the user to notice, so the tray icon shows its
+    // countdown.
+    if (current_state_.next_event_start_unix_ms > 0 &&
+        !current_state_.next_event_title.empty()) {
+      long long secs_until =
+          (current_state_.next_event_start_unix_ms - UnixNowMs()) / 1000;
+      if (secs_until > 0 && secs_until <= 10 * 60) {
+        desired_text = FormatRemaining(secs_until);
+      }
+    }
+    if (desired_text.empty() &&
+        current_state_.timer_state == L"running" &&
+        current_state_.timer_ends_at_unix_ms > 0) {
+      long long remaining_ms =
+          current_state_.timer_ends_at_unix_ms - UnixNowMs();
+      desired_text = FormatRemaining(remaining_ms / 1000);
+    }
   }
 
   if (desired_text == displayed_text_ && data_.hIcon) {
@@ -513,20 +538,31 @@ void TrayIcon::UpdateTooltip() {
   std::wstring tip;
   if (!current_state_.is_signed_in) {
     tip = L"Plot";
-  } else if (current_state_.timer_state == L"running" &&
-             current_state_.timer_ends_at_unix_ms > 0) {
-    long long remaining_ms =
-        current_state_.timer_ends_at_unix_ms - UnixNowMs();
-    std::wstring remaining = FormatRemaining(remaining_ms / 1000);
-    if (!current_state_.priority_title.empty()) {
-      tip = current_state_.priority_title + L" · " + remaining;
-    } else {
-      tip = L"Plot · " + remaining;
+  } else if (current_state_.next_event_start_unix_ms > 0 &&
+             !current_state_.next_event_title.empty()) {
+    long long secs_until =
+        (current_state_.next_event_start_unix_ms - UnixNowMs()) / 1000;
+    if (secs_until > 0 && secs_until <= 10 * 60) {
+      tip = FormatRemaining(secs_until) + L" → " +
+            current_state_.next_event_title;
     }
-  } else {
-    tip = current_state_.priority_title.empty()
-              ? L"Plot"
-              : current_state_.priority_title;
+  }
+  if (tip.empty()) {
+    if (current_state_.timer_state == L"running" &&
+        current_state_.timer_ends_at_unix_ms > 0) {
+      long long remaining_ms =
+          current_state_.timer_ends_at_unix_ms - UnixNowMs();
+      std::wstring remaining = FormatRemaining(remaining_ms / 1000);
+      if (!current_state_.priority_title.empty()) {
+        tip = current_state_.priority_title + L" · " + remaining;
+      } else {
+        tip = L"Plot · " + remaining;
+      }
+    } else {
+      tip = current_state_.priority_title.empty()
+                ? L"Plot"
+                : current_state_.priority_title;
+    }
   }
   // szTip is 128 wchar_t — truncate gracefully.
   StringCchCopyW(data_.szTip, ARRAYSIZE(data_.szTip), tip.c_str());
@@ -602,6 +638,9 @@ TrayIcon::Snapshot TrayIcon::ParseSnapshot(const std::string& json) {
   s.timer_source = Utf8ToWide(ExtractString(json, "timerSource"));
   s.timer_ends_at_unix_ms =
       ParseIsoToUnixMs(ExtractString(json, "timerEndsAtIso"));
+  s.next_event_title = Utf8ToWide(ExtractString(json, "nextEventTitle"));
+  s.next_event_start_unix_ms =
+      ParseIsoToUnixMs(ExtractString(json, "nextEventStartIso"));
   s.can_start = ExtractBool(json, "canStart");
   s.can_pause = ExtractBool(json, "canPause");
   s.can_stop = ExtractBool(json, "canStop");
