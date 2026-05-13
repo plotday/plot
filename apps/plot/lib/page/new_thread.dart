@@ -1335,6 +1335,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
+      // Only the multiPanel flag affects this page's layout. Skipping panel
+      // visibility / width changes avoids redundant rebuilds of the editor
+      // tree as the LayoutBloc emits during load.
+      buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
       builder: (context, layoutState) {
         return BlocListener<PriorityBloc, PriorityState>(
           // Re-apply the default auto-file flag when the draft id changes
@@ -1351,6 +1355,17 @@ class NewThreadPageState extends State<NewThreadPage> {
             _applyDefaultAutoFile();
           },
           child: BlocBuilder<PriorityBloc, PriorityState>(
+            // During initial load PriorityBloc emits 6-10 times (agenda,
+            // activity feed, tags, icon counts, twists, actors). Only the
+            // fields below actually affect this page — rebuilding for the
+            // rest forces a fresh NoteEditor widget each emit and is the
+            // primary cause of the on-open editor flicker.
+            buildWhen: (prev, curr) =>
+                prev.draft != curr.draft ||
+                prev.draftNote != curr.draftNote ||
+                prev.twists != curr.twists ||
+                prev.actors != curr.actors ||
+                prev.context != curr.context,
             builder: (context, state) {
               final isViewerMode = state.draft.priority.isViewer;
 

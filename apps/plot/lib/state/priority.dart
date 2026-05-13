@@ -1679,10 +1679,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       // NOT clobber a note the user has already started typing — the
       // editor controller writes through to state.draftNote, so any
       // non-empty current note represents user input we should preserve.
+      // Also keep an existing empty in-memory note when its threadId already
+      // matches the new draft. Constructing a fresh Note.draft generates a
+      // new note id which forces the NoteEditor to reset its SuperEditor —
+      // visible as a flicker even when the content is unchanged.
       final draftNote =
           loadedNote ??
-          (state.draftNote.threadId == newDraft.id &&
-                  (state.draftNote.content?.isNotEmpty ?? false)
+          (state.draftNote.threadId == newDraft.id
               ? state.draftNote
               : Note.draft(threadId: newDraft.id));
       profile.mark('draft note loaded (background)');

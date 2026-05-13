@@ -158,19 +158,27 @@ class NoteEditorState extends State<NoteEditor> {
     final newDraftNoteId = widget.draft.id;
     final newContent = widget.draft.content ?? '';
 
-    // Reset editor and twist toggles if draft note ID changed
+    // Reset editor when draft note ID changes — but skip the SuperEditor
+    // reset if the new content matches what's already in the editor. During
+    // initial load the PriorityBloc rebuilds the draft note several times
+    // (chain draft lookup, background note load) and each emit produces a
+    // fresh Note id even when the underlying content is unchanged. A reset()
+    // call triggers a setState inside the SuperEditor that briefly clears
+    // and re-renders the document — visible as a flicker.
     if (newDraftNoteId != _lastDraftNoteId) {
-      if (widget.isNewThreadMode &&
-          _lastDraftNoteId != null &&
-          newDraftNoteId == null) {
-        // Defer reset until after current frame to avoid modifying overlay during layout
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _editorKey.currentState?.reset(newContent);
-          }
-        });
-      } else {
-        _editorKey.currentState?.reset(newContent);
+      if (newContent != _lastSavedContent) {
+        if (widget.isNewThreadMode &&
+            _lastDraftNoteId != null &&
+            newDraftNoteId == null) {
+          // Defer reset until after current frame to avoid modifying overlay during layout
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _editorKey.currentState?.reset(newContent);
+            }
+          });
+        } else {
+          _editorKey.currentState?.reset(newContent);
+        }
       }
       _lastDraftNoteId = newDraftNoteId;
       _lastSavedContent = newContent;
