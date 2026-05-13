@@ -323,7 +323,6 @@ class _PrioritiesListState extends State<PrioritiesList>
                       _ShowMoreItem(
                         indentLevel: indentLevel + 1,
                         textStyle: textStyle,
-                        borderRadius: itemBorderRadius,
                         onTap: () =>
                             setState(() => _showAllChildren.add(parentId)),
                       ),
@@ -399,7 +398,6 @@ class _PrioritiesListState extends State<PrioritiesList>
                             _ShowMoreItem(
                               indentLevel: indentLevel + 1,
                               textStyle: textStyle,
-                              borderRadius: itemBorderRadius,
                               onTap: () => setState(
                                 () => _showAllChildren.add(parentId),
                               ),
@@ -757,13 +755,11 @@ class _ShowMoreItem extends StatefulWidget {
   final int indentLevel;
   final VoidCallback onTap;
   final TextStyle? textStyle;
-  final BorderRadius? borderRadius;
 
   const _ShowMoreItem({
     required this.indentLevel,
     required this.onTap,
     this.textStyle,
-    this.borderRadius,
   });
 
   @override
@@ -781,11 +777,7 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          decoration: BoxDecoration(
-            color: _isHovered ? context.theme.plotColors.highlight : null,
-            borderRadius: widget.borderRadius,
-          ),
+        child: Padding(
           padding: EdgeInsets.only(
             left: widget.indentLevel * (16 + context.theme.spacing.sm),
           ),
@@ -804,7 +796,11 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
                   child: Text(
                     'More\u2026',
                     style: (widget.textStyle ?? context.theme.typography.sm)
-                        .copyWith(color: context.theme.colors.mutedForeground),
+                        .copyWith(
+                          color: _isHovered
+                              ? context.theme.colors.foreground
+                              : context.theme.colors.mutedForeground,
+                        ),
                   ),
                 ),
               ),
