@@ -14,6 +14,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/main.dart' show instanceLock;
+import 'package:plot/widget/modal.dart';
 import 'logging.dart';
 
 class Window extends StatefulWidget {
@@ -321,25 +322,59 @@ class WindowState extends State<Window> with WindowListener {
           decoration: BoxDecoration(
             gradient: context.colour.frameBackgroundGradient,
           ),
-          child: widget.child,
+          child: _ModalBackdropScrim(child: widget.child),
         ),
       ),
       windowsBuilder: (_) => DecoratedBox(
         decoration: BoxDecoration(
           gradient: context.colour.frameBackgroundGradient,
         ),
-        child: Stack(
-          children: [
-            widget.child,
-            const Positioned(top: 0, right: 0, child: _WindowControls()),
-          ],
+        child: _ModalBackdropScrim(
+          child: Stack(
+            children: [
+              widget.child,
+              const Positioned(top: 0, right: 0, child: _WindowControls()),
+            ],
+          ),
         ),
       ),
       builder: (_) => DecoratedBox(
         decoration: BoxDecoration(
           gradient: context.colour.frameBackgroundGradient,
         ),
-        child: widget.child,
+        child: _ModalBackdropScrim(child: widget.child),
+      ),
+    );
+  }
+}
+
+/// Paints a full-window opaque underlay beneath [child] (but above the
+/// window's gradient / NSVisualEffectView vibrancy) while any modal is
+/// open. The modal route's `BackdropFilter` barrier samples Flutter's
+/// rendered scene; without this, the translucent frame regions let OS
+/// vibrancy bleed through and read as crisper / more legible than the
+/// opaque squircle regions behind the same barrier. The scrim gives the
+/// barrier a uniform opaque base so the blur+tint looks consistent across
+/// the whole window.
+class _ModalBackdropScrim extends StatelessWidget {
+  const _ModalBackdropScrim({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: ModalProvider.hasOpenModalsListenable,
+      child: child,
+      builder: (context, hasOpenModals, child) => Stack(
+        fit: StackFit.expand,
+        children: [
+          if (hasOpenModals)
+            Positioned.fill(
+              child: ColoredBox(color: context.colour.background),
+            ),
+          child!,
+        ],
       ),
     );
   }

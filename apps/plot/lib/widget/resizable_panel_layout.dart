@@ -173,7 +173,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   }) {
     final clipped = ClipRSuperellipse(
       borderRadius: borderRadius,
-      clipBehavior: Clip.antiAliasWithSaveLayer,
+      clipBehavior: Clip.antiAlias,
       child: ColoredBox(color: context.colour.background, child: child),
     );
     if (!paintChrome) return clipped;

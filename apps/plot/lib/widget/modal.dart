@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:forui/forui.dart';
@@ -177,6 +178,11 @@ class ModalProvider extends StatefulWidget {
   /// Whether any ModalProvider currently has open modals.
   static bool get hasOpenModals => _ModalProviderState.hasOpenModals;
 
+  /// Reactive view of [hasOpenModals]. Lets widgets outside the provider
+  /// tree (e.g. the [Window] frame) react when any modal opens or closes.
+  static ValueListenable<bool> get hasOpenModalsListenable =>
+      _ModalProviderState._hasOpenModalsNotifier;
+
   /// Dismisses the top modal of the first provider with open modals.
   /// Returns true if a modal was dismissed.
   static bool tryDismissTopModal(BuildContext context) =>
@@ -199,6 +205,13 @@ class ModalProvider extends StatefulWidget {
 
 class _ModalProviderState extends State<ModalProvider> {
   static final Set<_ModalProviderState> _activeProviders = {};
+
+  /// Cross-provider notifier for [ModalProvider.hasOpenModalsListenable].
+  /// Updated by [_notifyStackChanged] whenever any provider's stack toggles
+  /// between empty and non-empty.
+  static final ValueNotifier<bool> _hasOpenModalsNotifier = ValueNotifier(
+    false,
+  );
 
   /// Whether any ModalProvider currently has open modals.
   static bool get hasOpenModals =>
@@ -463,6 +476,7 @@ class _ModalProviderState extends State<ModalProvider> {
   void _notifyStackChanged() {
     if (!mounted) return;
     _modalStackNotifier.value = _modalStack.length;
+    _hasOpenModalsNotifier.value = hasOpenModals;
   }
 
   @override
