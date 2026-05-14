@@ -166,10 +166,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     _markReadTimer = Timer(const Duration(milliseconds: 750), () {
       final thread = context.read<ThreadBloc>().state.thread;
       if (thread.unread) {
-        thread.copyWith(
-          unread: false,
-          readAt: Value(thread.contentTimestamp),
-        ).save();
+        thread
+            .copyWith(unread: false, readAt: Value(thread.contentTimestamp))
+            .save();
       }
     });
   }
@@ -187,36 +186,36 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         decoration: TextDecoration.none,
       ),
       child: BlocListener<ThreadBloc, ThreadState>(
-      listener: (context, state) {
-        // Update header notifier when tags/filter change
-        _headerNotifier?.updateTags(state.tags, state.filter);
-      },
-      listenWhen: (previous, current) =>
-          previous.tags != current.tags || previous.filter != current.filter,
-      child: BlocListener<ThreadBloc, ThreadState>(
         listener: (context, state) {
-          // Reschedule mark as read when new notes are synced
-          _scheduleMarkAsRead();
+          // Update header notifier when tags/filter change
+          _headerNotifier?.updateTags(state.tags, state.filter);
         },
         listenWhen: (previous, current) =>
-            previous.notes != current.notes && current.thread.unread,
+            previous.tags != current.tags || previous.filter != current.filter,
         child: BlocListener<ThreadBloc, ThreadState>(
           listener: (context, state) {
-            // Focus NoteEditor when thread changes
-            // (InfiniteListSelector is keyed by thread.id, so it creates a fresh controller)
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _noteEditorKey.currentState?.focus();
-            });
+            // Reschedule mark as read when new notes are synced
+            _scheduleMarkAsRead();
           },
           listenWhen: (previous, current) =>
-              previous.thread.id != current.thread.id,
-          child: BlocBuilder<ThreadBloc, ThreadState>(
-            builder: (context, state) {
-              return _buildContent(context, state);
+              previous.notes != current.notes && current.thread.unread,
+          child: BlocListener<ThreadBloc, ThreadState>(
+            listener: (context, state) {
+              // Focus NoteEditor when thread changes
+              // (InfiniteListSelector is keyed by thread.id, so it creates a fresh controller)
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _noteEditorKey.currentState?.focus();
+              });
             },
+            listenWhen: (previous, current) =>
+                previous.thread.id != current.thread.id,
+            child: BlocBuilder<ThreadBloc, ThreadState>(
+              builder: (context, state) {
+                return _buildContent(context, state);
+              },
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -416,61 +415,66 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     body: LayoutBuilder(
                       builder: (context, panelConstraints) {
                         return Column(
-                      children: [
-                        // In multi-panel mode the unified header has no
-                        // thread-specific buttons. Surface them here at
-                        // the top of the thread squircle so they stay
-                        // pinned while the notes list scrolls below.
-                        if (layoutStateForPanels.multiPanel)
-                          _ThreadActionsRow(thread: state.thread),
-                        if (state.threadNoteId != null)
-                          _ThreadFilterBar(threadNoteId: state.threadNoteId!),
-                        ...state.links.map(
-                          (link) =>
-                              _ThreadLinkRow(link: link, thread: state.thread),
-                        ),
-                        Flexible(
-                          flex: 1,
-                          fit: FlexFit.tight,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: context.isMultiPanel ? 20.0 : 0,
-                            ),
-                            child: ScrollEdgeFade(
-                              background: context.colour.background,
-                              child: _buildThreadList(
-                                state,
-                                listController,
-                                context,
+                          children: [
+                            // In multi-panel mode the unified header has no
+                            // thread-specific buttons. Surface them here at
+                            // the top of the thread squircle so they stay
+                            // pinned while the notes list scrolls below.
+                            if (layoutStateForPanels.multiPanel)
+                              _ThreadActionsRow(thread: state.thread),
+                            if (state.threadNoteId != null)
+                              _ThreadFilterBar(
+                                threadNoteId: state.threadNoteId!,
+                              ),
+                            ...state.links.map(
+                              (link) => _ThreadLinkRow(
+                                link: link,
+                                thread: state.thread,
                               ),
                             ),
-                          ),
-                        ),
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: panelConstraints.maxHeight * 0.4,
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              left: context.isMultiPanel ? 20.0 : 0,
-                              right: context.isMultiPanel ? 20.0 : 0,
-                              top: 8,
-                              // NoteEditor's `flushToBottom` already absorbs
-                              // the bottom safe-area inset. Adding it here
-                              // too produced a doubled gap below the action
-                              // buttons on iOS.
-                              bottom: context.isMultiPanel ? 20.0 : 0,
+                            Flexible(
+                              flex: 1,
+                              fit: FlexFit.tight,
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: context.isMultiPanel ? 20.0 : 0,
+                                ),
+                                child: ScrollEdgeFade(
+                                  background: context.colour.background,
+                                  child: _buildThreadList(
+                                    state,
+                                    listController,
+                                    context,
+                                  ),
+                                ),
+                              ),
                             ),
-                            child: NoteEditor(
-                              key: _noteEditorKey,
-                              draft: state.draft,
-                              flushToBottom: !layoutStateForPanels.multiPanel,
-                              viewerMode: state.thread.isReadOnly,
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxHeight: panelConstraints.maxHeight * 0.4,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: context.isMultiPanel ? 20.0 : 0,
+                                  right: context.isMultiPanel ? 20.0 : 0,
+                                  top: 8,
+                                  // NoteEditor's `flushToBottom` already absorbs
+                                  // the bottom safe-area inset. Adding it here
+                                  // too produced a doubled gap below the action
+                                  // buttons on iOS.
+                                  bottom: context.isMultiPanel ? 20.0 : 0,
+                                ),
+                                child: NoteEditor(
+                                  key: _noteEditorKey,
+                                  draft: state.draft,
+                                  flushToBottom:
+                                      !layoutStateForPanels.multiPanel,
+                                  viewerMode: state.thread.isReadOnly,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
-                    );
+                          ],
+                        );
                       },
                     ),
                   ),
@@ -658,9 +662,7 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) {
-          final linkLogo = link.logoForBrightness(
-            context.colour.brightness,
-          );
+          final linkLogo = link.logoForBrightness(context.colour.brightness);
           return GestureDetector(
             onTap: connected
                 ? (sourceUrl != null
@@ -1261,17 +1263,19 @@ class _ThreadActionsRow extends StatelessWidget {
       Button.icon(_buildThreadMenuCommand(thread)),
     ];
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.theme.spacing.xs,
-        vertical: context.theme.spacing.xs,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colour.headerBackground,
+        border: Border(
+          bottom: BorderSide(color: context.theme.colors.border, width: 1),
+        ),
       ),
-      child: Row(
-        children: [
-          ...startGroup,
-          const Spacer(),
-          ...endGroup,
-        ],
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.xs,
+          vertical: context.theme.spacing.xs,
+        ),
+        child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
       ),
     );
   }
