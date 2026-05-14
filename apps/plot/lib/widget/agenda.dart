@@ -239,7 +239,7 @@ class AgendaTile extends StatelessWidget {
                   TextSpan(
                     text: dateMonth!.trimLeft(),
                     style: TextStyle(
-                      color: veryMuted,
+                      color: context.theme.colors.foreground,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -268,7 +268,7 @@ class AgendaTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: veryMuted,
+                  color: context.theme.colors.mutedForeground,
                   fontSize: smSize,
                   fontWeight: FontWeight.w500,
                 ),
@@ -288,7 +288,7 @@ class AgendaTile extends StatelessWidget {
 
       return Container(
         color: headerBg,
-        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.md),
+        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.lg),
         child: child,
       );
     }
@@ -297,9 +297,7 @@ class AgendaTile extends StatelessWidget {
     // to match date header centering
     if (isGapHeader || (!now && date == null && centerText != null)) {
       final veryMuted = context.theme.plotColors.veryMuted;
-      final contentColor = isGapHeader
-          ? context.theme.colors.mutedForeground
-          : textColor;
+      final contentColor = isGapHeader ? veryMuted : textColor;
       final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
 
       // Match the ThreadWidget time position: the time right edge
@@ -352,7 +350,7 @@ class AgendaTile extends StatelessWidget {
                 if (durationText != null)
                   Expanded(
                     child: Align(
-                      alignment: Alignment.centerRight,
+                      alignment: Alignment.centerLeft,
                       child: Text(
                         durationText,
                         style: TextStyle(color: veryMuted, fontSize: fontSize),
@@ -395,7 +393,7 @@ class AgendaTile extends StatelessWidget {
           color: isGapHeader ? context.colour.headerBackground : null,
           padding: EdgeInsets.symmetric(
             vertical: isGapHeader
-                ? context.theme.spacing.md
+                ? context.theme.spacing.xs
                 : context.theme.spacing.sm,
           ),
           child: child,
@@ -799,8 +797,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
       final slice = block is PriorityBlock
           ? block.cascadeDuration
           : (block as GapBlock).cascadeDuration;
-      final pending =
-          _pendingDisplay != null ? _pendingDisplay!.duration : slice;
+      final pending = _pendingDisplay != null
+          ? _pendingDisplay!.duration
+          : slice;
       Duration? displayed = pending;
       if (displayed == null && block is GapBlock) {
         final dur = dateTimeRange?.duration;
@@ -926,10 +925,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                           summarySpan,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: secondarySize,
-                            height: 1,
-                          ),
+                          style: TextStyle(fontSize: secondarySize, height: 1),
                         ),
                       ),
                       if (row2Trailing != null) ...[
@@ -1016,8 +1012,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
       final slice = block is PriorityBlock
           ? block.cascadeDuration
           : (block as GapBlock).cascadeDuration;
-      final current =
-          _pendingDisplay != null ? _pendingDisplay!.duration : slice;
+      final current = _pendingDisplay != null
+          ? _pendingDisplay!.duration
+          : slice;
       return (
         current,
         (newDur) => _applyPriorityBump(
@@ -1076,11 +1073,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
             onApply: () => onBump(_bumpedDuration(current, -_swipeBumpStep)),
           )
         : null;
-    return Swipeable(
-      startCommand: addCmd,
-      endCommand: removeCmd,
-      child: child,
-    );
+    return Swipeable(startCommand: addCmd, endCommand: removeCmd, child: child);
   }
 
   /// Apply a ±15m bump to a [PriorityBlock]'s displayed value. Routes
@@ -1144,7 +1137,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
         onTap: () {
           final eventThread = widget.thread;
           if (eventThread == null) {
-            context.run(ChangeCurrentPriority(widget.priority, fromAgenda: true));
+            context.run(
+              ChangeCurrentPriority(widget.priority, fromAgenda: true),
+            );
             return;
           }
           // Event-headers in the universal agenda live under the
@@ -1163,9 +1158,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
             PriorityRoute(
               priorityIdString: eventThread.priority.id.toShortString(),
               children: [
-                ThreadRoute(
-                  threadIdString: eventThread.id.toShortString(),
-                ),
+                ThreadRoute(threadIdString: eventThread.id.toShortString()),
               ],
             ),
           );
@@ -1351,10 +1344,7 @@ class _BlockHoverDurationButtons extends StatelessWidget {
               width: 24,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    background.withValues(alpha: 0),
-                    background,
-                  ],
+                  colors: [background.withValues(alpha: 0), background],
                 ),
               ),
             ),
@@ -1374,8 +1364,7 @@ class _BlockHoverDurationButtons extends StatelessWidget {
                     ),
                   Button.icon(
                     _BumpDurationCommand(
-                      title:
-                          hasValue ? 'Add 15 minutes' : 'Add planned time',
+                      title: hasValue ? 'Add 15 minutes' : 'Add planned time',
                       icon: PlotIcon.add,
                       onApply: () => onChanged(_bumped(_step)),
                     ),
