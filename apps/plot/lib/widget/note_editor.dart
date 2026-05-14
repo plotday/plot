@@ -529,71 +529,81 @@ class NoteEditorState extends State<NoteEditor> {
 
         return CallbackShortcuts(
           bindings: _buildNoteShortcuts(context),
-          child: Padding(
-          padding: EdgeInsets.only(
-            left: 12,
-            right: 12,
-            top: 4,
-            bottom:
-                12 +
-                (widget.flushToBottom
-                    ? MediaQuery.paddingOf(context).bottom
-                    : 0),
-          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 4,
             children: [
-              // Reply, editing, and twist indicators (note mode only)
+              // Reply / editing indicators sit flush against the editor border,
+              // separated from the content below by their own bottom border.
               if (!widget.isNewThreadMode) _buildNoteIndicators(context),
-              // Attachment and link rows (both modes)
-              _buildAttachmentRows(),
               Flexible(
-                child: IgnorePointer(
-                  ignoring: _saving,
-                  child: Opacity(
-                    opacity: _saving ? 0.6 : 1.0,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              top: 8,
-                              bottom: 4,
-                              left: 6,
-                              right: 6,
-                            ),
-                            child: ScrollEdgeFade(
-                              background:
-                                  context.theme.plotColors.editableBackground,
-                              child: editor,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 12,
+                    right: 12,
+                    top: 4,
+                    bottom:
+                        12 +
+                        (widget.flushToBottom
+                            ? MediaQuery.paddingOf(context).bottom
+                            : 0),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 4,
+                    children: [
+                      _buildAttachmentRows(),
+                      Flexible(
+                        child: IgnorePointer(
+                          ignoring: _saving,
+                          child: Opacity(
+                            opacity: _saving ? 0.6 : 1.0,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 8,
+                                      bottom: 4,
+                                      left: 6,
+                                      right: 6,
+                                    ),
+                                    child: ScrollEdgeFade(
+                                      background: context
+                                          .theme
+                                          .plotColors
+                                          .editableBackground,
+                                      child: editor,
+                                    ),
+                                  ),
+                                ),
+                                if (_isEmpty)
+                                  SpeechDictationButton(
+                                    onResult: (text) {
+                                      _editorKey.currentState
+                                          ?.insertTextAtCursor(text);
+                                    },
+                                    onError: (error) {
+                                      Alert.show(context, error);
+                                    },
+                                  ),
+                              ],
                             ),
                           ),
                         ),
-                        if (_isEmpty)
-                          SpeechDictationButton(
-                            onResult: (text) {
-                              _editorKey.currentState?.insertTextAtCursor(text);
-                            },
-                            onError: (error) {
-                              Alert.show(context, error);
-                            },
-                          ),
-                      ],
-                    ),
+                      ),
+                      if (widget.isNewThreadMode)
+                        _buildNewThreadBottomBar()
+                      else
+                        _buildNoteBottomBar(context),
+                    ],
                   ),
                 ),
               ),
-              // Bottom bar
-              if (widget.isNewThreadMode)
-                _buildNewThreadBottomBar()
-              else
-                _buildNoteBottomBar(context),
             ],
           ),
-        ),
         );
       },
     );
@@ -619,27 +629,41 @@ class NoteEditorState extends State<NoteEditor> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 4,
           children: indicators,
         );
       },
     );
   }
 
-  Widget _buildReplyIndicatorContent(BuildContext context, Note replyTo) {
-    final raw = replyTo.content ?? '';
-    final preview = raw.split('\n').first;
-    return Padding(
-      padding: const EdgeInsets.only(left: 6, right: 6),
-      child: Container(
-        padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: context.colour.muted, width: 2),
-          ),
+  Widget _buildIndicatorBar(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String preview,
+    required Widget cancelButton,
+  }) {
+    final accent = context.colour.accent;
+    return Container(
+      padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        border: Border(
+          bottom: BorderSide(color: accent.withValues(alpha: 0.35)),
         ),
-        child: Row(
-          children: [
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: accent),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: context.theme.typography.xs.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (preview.isNotEmpty) ...[
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 preview,
@@ -650,20 +674,35 @@ class NoteEditorState extends State<NoteEditor> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            GestureDetector(
-              onTap: () {
-                context.read<ThreadBloc>().setReplyTo(null);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(
-                  FontAwesomeIcons.xmark,
-                  size: 12,
-                  color: context.colour.muted,
-                ),
-              ),
-            ),
-          ],
+          ] else
+            const Spacer(),
+          cancelButton,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyIndicatorContent(BuildContext context, Note replyTo) {
+    final raw = replyTo.content ?? '';
+    final firstLine = raw.split('\n').first;
+    final preview = firstLine.length > 60
+        ? '${firstLine.substring(0, 60)}...'
+        : firstLine;
+    final threadBloc = context.read<ThreadBloc>();
+    return _buildIndicatorBar(
+      context,
+      icon: FontAwesomeIcons.reply,
+      label: 'Replying',
+      preview: preview,
+      cancelButton: GestureDetector(
+        onTap: () => threadBloc.setReplyTo(null),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Icon(
+            FontAwesomeIcons.xmark,
+            size: 12,
+            color: context.colour.muted,
+          ),
         ),
       ),
     );
@@ -676,57 +715,20 @@ class NoteEditorState extends State<NoteEditor> {
         ? '${firstLine.substring(0, 60)}...'
         : firstLine;
     final activityBloc = context.read<ThreadBloc>();
-    final accent = context.colour.accent;
-    return Padding(
-      padding: const EdgeInsets.only(left: 6, right: 6),
-      child: Container(
-        padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6, right: 2),
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: accent.withValues(alpha: 0.35)),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              FontAwesomeIcons.penToSquare,
-              size: 12,
-              color: accent,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Editing note',
-              style: context.theme.typography.xs.copyWith(
-                color: accent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (preview.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  preview,
-                  style: context.theme.typography.xs.copyWith(
-                    color: context.colour.muted,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ] else
-              const Spacer(),
-            Button.icon(
-              CommandWrapper(
-                EditNote(editingNote, activityBloc: activityBloc),
-                title: 'Cancel editing',
-                icon: Value(FontAwesomeIcons.xmark),
-                run: (action, ctx) async {
-                  activityBloc.setEditingNote(null);
-                  return const CommandDone();
-                },
-              ),
-            ),
-          ],
+    return _buildIndicatorBar(
+      context,
+      icon: FontAwesomeIcons.penToSquare,
+      label: 'Editing',
+      preview: preview,
+      cancelButton: Button.icon(
+        CommandWrapper(
+          EditNote(editingNote, activityBloc: activityBloc),
+          title: 'Cancel editing',
+          icon: Value(FontAwesomeIcons.xmark),
+          run: (action, ctx) async {
+            activityBloc.setEditingNote(null);
+            return const CommandDone();
+          },
         ),
       ),
     );
