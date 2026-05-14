@@ -27,9 +27,12 @@ class OnboardingProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
         // Back chevron — subtle, only visible when there's somewhere to go
         // back to. Reserves the same width when hidden so the dots stay
         // centered as the user advances.
@@ -116,7 +119,8 @@ class OnboardingProgress extends StatelessWidget {
             ),
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 }
