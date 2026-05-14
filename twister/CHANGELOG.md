@@ -1,5 +1,23 @@
 # @plotday/twister
 
+## 0.50.0
+
+### Added
+
+- `Integrations.markNeedsReauth(channelId)` for connectors to flag a channel's connection as needing re-authentication when an API call returns a permanent auth-style error (e.g. Slack `invalid_auth`, `token_revoked`). The runtime continues to flag reauth automatically on permanent token-refresh failures and on stored-token-missing reads; this method covers cases the runtime can't observe. ([`ac917ea`](https://github.com/plotday/plot/commit/ac917ea4ec9aea5b02ebe6e7abe0953e0982f868))
+- `Store.acquireLock(key, ttlMs)` and `Store.releaseLock(key)` for TTL-aware locks. Replaces the boolean "in progress" flag pattern that connectors had to hand-roll, with self-expiring leases that survive crashed sync attempts. Lock keys live in a reserved namespace and never appear in `get` / `list` results. ([`8f9cbda`](https://github.com/plotday/plot/commit/8f9cbda1cdea5a1e26cbeb5f4804ad36e116b717))
+- `RUNTIME.md` documents the per-twist-instance rate limits (200 invocations / 5 min burst, 500 / 24 h, cost limits) that the platform enforces, the auto-suspension behavior when they are exceeded, and the rule that suspensions are lifted automatically on the next deploy of the twist. Includes guidance on avoiding the most common cause of auto-suspension: unbounded `runTask` self-chains. ([`25d2b29`](https://github.com/plotday/plot/commit/25d2b2998dc6d8d13cf92f898fd517e28bc15faa))
+
+### Changed
+
+- NewScheduleOccurrence.archived renamed to cancelled. Per-instance cancellations now have an explicit semantic distinct from archiving an override row. Connectors should emit `cancelled: true` for skipped occurrences; the runtime translates these into additions on the parent schedule's `recurrenceExdates`. ([#130](https://github.com/plotday/plot/pull/130) [`a4ee2a8`](https://github.com/plotday/plot/commit/a4ee2a877e549dcce2d49f2f5e21cc527f02a11d))
+- connector re-auth recovery is now automatic. When a user re-authorizes a previously-broken connection (one with `needs_reauth_at` set), the framework dispatches `onChannelEnabled` for every channel that was already enabled, with a new `SyncContext.recovering = true` flag. Connectors should treat the same dispatch as initial-enable (overwrite stored state) but additionally drop persisted incremental cursors / sync tokens so the next pass re-walks history and picks up changes that occurred during the auth gap.
+- clarified that `Note.key` is scoped to a `(thread, link)` pair, not just a thread. Two links on the same thread can now each carry a note with the same key (e.g. `"description"`) without colliding. No API change — the runtime infers the link from the surrounding `saveLink` call. ([#135](https://github.com/plotday/plot/pull/135) [`8203019`](https://github.com/plotday/plot/commit/82030192a2d0ed736211a48b1fd69597ad97bc71))
+
+### Removed
+
+- `Plot.getDefaultPriorityId()`. Connectors and twists no longer have access to a fallback "root" priority. All thread routing happens server-side via classification (which is team-aware as of this release). Twists that need an explicit priority should pull it from their @-mention context (e.g. `note.thread.priority.id`). ([#136](https://github.com/plotday/plot/pull/136) [`6ea5392`](https://github.com/plotday/plot/commit/6ea5392a1c3d8482366fe3de56da1d2a13f7abce))
+
 ## 0.49.0
 
 ### Added
