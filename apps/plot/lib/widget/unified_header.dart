@@ -19,6 +19,8 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority.dart';
@@ -1005,6 +1007,9 @@ class _PriorityHeaderTrackingControlState
     final String centerTooltip = live.fromEvent
         ? 'End event'
         : (isGrace ? 'Stop timer' : 'Pause timer');
+    final ShortcutActivator? centerTooltipShortcut = live.fromEvent
+        ? null
+        : (isGrace ? timerEndShortcut : timerToggleShortcut);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -1055,8 +1060,10 @@ class _PriorityHeaderTrackingControlState
                 onEnter: (_) => setState(() => _centerHovered = true),
                 onExit: (_) => setState(() => _centerHovered = false),
                 child: FTooltip(
-                  tipBuilder: (context, controller) =>
-                      Text(centerTooltip),
+                  tipBuilder: (context, controller) => _TooltipText(
+                    label: centerTooltip,
+                    shortcut: centerTooltipShortcut,
+                  ),
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: stopHandler,
@@ -1087,6 +1094,7 @@ class _PriorityHeaderTrackingControlState
                       color: muted,
                       hoverColor: foreground,
                       tooltip: 'Stop',
+                      shortcut: live.fromEvent ? null : timerEndShortcut,
                       onTap: () => context.run(EndTimer()),
                       enabled: true,
                     )
@@ -1100,6 +1108,7 @@ class _PriorityHeaderTrackingControlState
                           : (live.remaining > kPomodoroStep
                               ? 'Remove 15 minutes'
                               : 'Set to 5 minutes'),
+                      shortcut: live.fromEvent ? null : timerRemoveShortcut,
                       onTap: live.fromEvent
                           ? () => _shrinkEvent(live.event!)
                           : () => context.run(RemoveTime()),
@@ -1119,6 +1128,7 @@ class _PriorityHeaderTrackingControlState
                 color: muted,
                 hoverColor: foreground,
                 tooltip: live.fromEvent ? 'Extend event' : 'Add time',
+                shortcut: live.fromEvent ? null : timerAddShortcut,
                 onTap: live.fromEvent
                     ? () => _extendEvent(live.event!)
                     : () => context.run(AddTime()),
@@ -1458,6 +1468,7 @@ class _HoverButton extends StatefulWidget {
     required this.tooltip,
     required this.onTap,
     required this.enabled,
+    this.shortcut,
   });
 
   final bool visible;
@@ -1467,6 +1478,7 @@ class _HoverButton extends StatefulWidget {
   final String tooltip;
   final VoidCallback onTap;
   final bool enabled;
+  final ShortcutActivator? shortcut;
 
   @override
   State<_HoverButton> createState() => _HoverButtonState();
@@ -1492,7 +1504,10 @@ class _HoverButtonState extends State<_HoverButton> {
           onEnter: (_) => setState(() => _selfHovered = true),
           onExit: (_) => setState(() => _selfHovered = false),
           child: FTooltip(
-            tipBuilder: (context, controller) => Text(widget.tooltip),
+            tipBuilder: (context, controller) => _TooltipText(
+              label: widget.tooltip,
+              shortcut: widget.shortcut,
+            ),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.enabled ? widget.onTap : null,
@@ -1503,6 +1518,37 @@ class _HoverButtonState extends State<_HoverButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Tooltip body with an optional shortcut hint below the label. Mirrors
+/// the [Button] tooltip layout so keyboard discovery is consistent
+/// across the header pill's hover affordances and command-driven
+/// icon buttons. The shortcut row is suppressed on touch-only devices
+/// where the chord is unreachable.
+class _TooltipText extends StatelessWidget {
+  const _TooltipText({required this.label, this.shortcut});
+
+  final String label;
+  final ShortcutActivator? shortcut;
+
+  @override
+  Widget build(BuildContext context) {
+    final showShortcut = shortcut != null && hasPhysicalKeyboard();
+    if (!showShortcut) return Text(label);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        Text(
+          formatShortcut(shortcut),
+          style: context.theme.typography.xs.copyWith(
+            color: context.theme.colors.mutedForeground,
+          ),
+        ),
+      ],
     );
   }
 }

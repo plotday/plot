@@ -142,10 +142,18 @@ class _PriorityCommandScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bloc = context.watch<PriorityBloc>();
+    // Watch NowBloc so the Cmd+Shift+Space binding swaps between
+    // StartTimer/StopTimer as the pomodoro state transitions — both
+    // share the same shortcut, so the scope must register only the
+    // currently-enabled one.
+    final nowState = context.watch<NowBloc>().state;
     return CommandScope(
-      commands: currentPriorityCommandGroups(
-        bloc.state.thread?.priority ?? bloc.state.context,
-      ),
+      commands: [
+        ...currentPriorityCommandGroups(
+          bloc.state.thread?.priority ?? bloc.state.context,
+        ),
+        ...timerCommandGroups(nowState),
+      ],
       child: child,
     );
   }

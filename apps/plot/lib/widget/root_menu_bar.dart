@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/util/developer_mode.dart';
 import 'package:plot/util/platform.dart';
@@ -178,6 +179,46 @@ class RootMenuBar extends StatelessWidget {
     ];
   }
 
+  List<PlatformMenuItem> _buildTimerMenu(NowState nowState) {
+    final loaded = nowState is NowLoaded ? nowState : null;
+    final hasContext = loaded?.context != null;
+    final inactive =
+        loaded?.pomodoroState == PomodoroState.inactive || loaded == null;
+    return <PlatformMenuItem>[
+      PlatformMenuItemGroup(
+        members: <PlatformMenuItem>[
+          PlatformMenuItem(
+            onSelected: hasContext
+                ? () => _runCommand(inactive ? StartTimer() : StopTimer())
+                : null,
+            shortcut: timerToggleShortcut,
+            label: inactive ? 'Start timer' : 'Pause timer',
+          ),
+          if (!inactive)
+            PlatformMenuItem(
+              onSelected: () => _runCommand(EndTimer()),
+              shortcut: timerEndShortcut,
+              label: 'Stop timer',
+            ),
+        ],
+      ),
+      PlatformMenuItemGroup(
+        members: <PlatformMenuItem>[
+          PlatformMenuItem(
+            onSelected: hasContext ? () => _runCommand(AddTime()) : null,
+            shortcut: timerAddShortcut,
+            label: 'Add time',
+          ),
+          PlatformMenuItem(
+            onSelected: hasContext ? () => _runCommand(RemoveTime()) : null,
+            shortcut: timerRemoveShortcut,
+            label: 'Remove 15 minutes',
+          ),
+        ],
+      ),
+    ];
+  }
+
   List<PlatformMenuItem> _buildDebugMenu() {
     final group = buildDebugCommands();
     if (group == null) return const <PlatformMenuItem>[];
@@ -220,20 +261,27 @@ class RootMenuBar extends StatelessWidget {
           listenable: DeveloperMode.notifier,
           builder: (context, _) {
             final showDebug = kDebugMode || DeveloperMode.isEnabled;
-            return PlatformMenuBar(
-              menus: <PlatformMenuItem>[
-                PlatformMenu(
-                  label: 'Plot',
-                  menus: _buildAppMenu(showUserMenus),
-                ),
-                PlatformMenu(label: 'Edit', menus: _buildEditMenu()),
-                if (showUserMenus)
-                  PlatformMenu(label: 'View', menus: _buildViewMenu()),
-                PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
-                if (showDebug)
-                  PlatformMenu(label: 'Debug', menus: _buildDebugMenu()),
-              ],
-              child: child,
+            return BlocBuilder<NowBloc, NowState>(
+              builder: (context, nowState) => PlatformMenuBar(
+                menus: <PlatformMenuItem>[
+                  PlatformMenu(
+                    label: 'Plot',
+                    menus: _buildAppMenu(showUserMenus),
+                  ),
+                  PlatformMenu(label: 'Edit', menus: _buildEditMenu()),
+                  if (showUserMenus)
+                    PlatformMenu(label: 'View', menus: _buildViewMenu()),
+                  if (showUserMenus)
+                    PlatformMenu(
+                      label: 'Timer',
+                      menus: _buildTimerMenu(nowState),
+                    ),
+                  PlatformMenu(label: 'Window', menus: _buildWindowMenu()),
+                  if (showDebug)
+                    PlatformMenu(label: 'Debug', menus: _buildDebugMenu()),
+                ],
+                child: child,
+              ),
             );
           },
         );

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -5,8 +6,49 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/util/shortcut.dart';
 
 import 'base.dart';
+
+/// Shared keyboard shortcuts for the timer family. Surfaced in button
+/// tooltips, the Timer menu, and the priority command scope so users can
+/// discover them without memorizing.
+///
+/// Start and Pause share [timerToggleShortcut] (Cmd/Ctrl+Shift+Space) —
+/// the priority command scope binds whichever is currently enabled, and
+/// both commands carry the shortcut for display purposes so the tooltip
+/// is consistent across the inactive/active swap on the header pill.
+final SingleActivator timerToggleShortcut =
+    platformSingleActivator(LogicalKeyboardKey.space, shift: true);
+final SingleActivator timerEndShortcut =
+    platformSingleActivator(LogicalKeyboardKey.period, shift: true);
+final SingleActivator timerAddShortcut =
+    platformSingleActivator(LogicalKeyboardKey.equal, shift: true);
+final SingleActivator timerRemoveShortcut =
+    platformSingleActivator(LogicalKeyboardKey.minus, shift: true);
+
+/// Command groups exposing keyboard shortcuts for the timer family.
+/// Returns the start/pause toggle (whichever is currently runnable) plus
+/// end and add/remove time when an active session exists. The priority
+/// page mounts these in its [CommandScope] so the shortcuts work
+/// anywhere on the page, not just when the header pill has focus.
+List<StaticCommandGroup> timerCommandGroups(NowState state) {
+  if (state is! NowLoaded) return const [];
+  if (state.context == null) return const [];
+  final pomodoro = state.pomodoroState;
+  final inactive = pomodoro == PomodoroState.inactive;
+  return [
+    StaticCommandGroup(
+      title: 'Timer',
+      commands: [
+        if (inactive) StartTimer() else StopTimer(),
+        if (!inactive) EndTimer(),
+        AddTime(),
+        RemoveTime(),
+      ],
+    ),
+  ];
+}
 
 /// Start a pomodoro session on the currently-focused priority. The
 /// planned duration honors any inactive-state preview the user staged
@@ -20,6 +62,7 @@ class StartTimer extends Command {
         icon: FontAwesomeIcons.play,
         eventObject: EventObject.priority,
         eventAction: EventAction.started,
+        shortcut: timerToggleShortcut,
       );
 
   @override
@@ -46,6 +89,7 @@ class StopTimer extends Command {
         icon: FontAwesomeIcons.pause,
         eventObject: EventObject.priority,
         eventAction: EventAction.finished,
+        shortcut: timerToggleShortcut,
       );
 
   @override
@@ -74,6 +118,7 @@ class EndTimer extends Command {
         icon: FontAwesomeIcons.stop,
         eventObject: EventObject.priority,
         eventAction: EventAction.finished,
+        shortcut: timerEndShortcut,
       );
 
   @override
@@ -101,6 +146,7 @@ class AddTime extends Command {
         icon: FontAwesomeIcons.plus,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
+        shortcut: timerAddShortcut,
       );
 
   @override
@@ -127,6 +173,7 @@ class RemoveTime extends Command {
         icon: FontAwesomeIcons.minus,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
+        shortcut: timerRemoveShortcut,
       );
 
   @override
