@@ -50,8 +50,8 @@ class NotificationDisplay {
     if (_timezoneInitialized) return;
     tz.initializeTimeZones();
     try {
-      final timezoneName = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(timezoneName));
+      final timezoneInfo = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
     } catch (_) {
       // Fallback: use UTC if device timezone can't be determined
     }

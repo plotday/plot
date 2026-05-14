@@ -108,7 +108,7 @@ class AttachFile extends Command {
   }
 
   Future<CommandReturn> _pickAndUpload(List<UserAction> links) async {
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    final result = await FilePicker.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty) {
       return const CommandSkipped();
     }
@@ -201,7 +201,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
   }
 
   Future<void> _addFile() async {
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    final result = await FilePicker.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty) return;
 
     final validFiles = <PlatformFile>[];

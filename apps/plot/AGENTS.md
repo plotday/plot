@@ -54,7 +54,7 @@ MUST use incremental migrations to preserve user data.
    }
    ```
 3. Bump `Store.schemaVersion` (e.g. 243 → 244)
-4. Run `flutter pub run build_runner build --delete-conflicting-outputs`
+4. Run `flutter pub run build_runner build`
 5. Run `flutter analyze` to verify
 
 ## Common migration operations

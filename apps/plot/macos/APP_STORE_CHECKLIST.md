@@ -71,7 +71,7 @@
 
 ### Build Preparation
 
-- [ ] Run `flutter pub run build_runner build --delete-conflicting-outputs`
+- [ ] Run `flutter pub run build_runner build`
 - [ ] Run `flutter analyze` and fix all issues
 - [ ] Run `flutter test` and ensure all tests pass
 - [ ] Build release version: `flutter build macos --release`

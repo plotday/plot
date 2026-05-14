@@ -8,8 +8,7 @@
       "args": [
         "run",
         "build_runner",
-        "build",
-        "--delete-conflicting-outputs"
+        "build"
       ],
       "options": {
         "cwd": "apps/plot"
@@ -29,8 +28,7 @@
       "args": [
         "run",
         "build_runner",
-        "watch",
-        "--delete-conflicting-outputs"
+        "watch"
       ],
       "options": {
         "cwd": "apps/plot"

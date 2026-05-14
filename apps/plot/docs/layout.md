@@ -459,7 +459,7 @@ When making changes to layout/routing, verify:
 
 1. Define route in `router.dart`
 2. Add to appropriate children array under `PriorityRoute`
-3. Run `flutter pub run build_runner build --delete-conflicting-outputs`
+3. Run `flutter pub run build_runner build`
 4. Test navigation in both single and multi-panel modes
 
 ### Changing navigation behavior

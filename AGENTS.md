@@ -393,7 +393,7 @@ This starts an isolated PostgreSQL on a unique port with migrations applied.
 **Flutter app development:**
 
 ```bash
-cd apps/plot && flutter pub run build_runner build --delete-conflicting-outputs
+cd apps/plot && flutter pub run build_runner build
 ```
 
 ### Manual env copy (outside worktree hooks)

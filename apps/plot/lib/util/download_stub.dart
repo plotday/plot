@@ -39,7 +39,7 @@ Future<DownloadResult> downloadFile({
   String? mimeType,
 }) async {
   if (Platform.isIOS || Platform.isAndroid) {
-    final path = await FilePicker.platform.saveFile(
+    final path = await FilePicker.saveFile(
       fileName: fileName,
       bytes: bytes,
     );
@@ -51,7 +51,7 @@ Future<DownloadResult> downloadFile({
   final dir = await getDownloadsDirectory();
   if (dir == null) {
     // Fall back to a save dialog if the platform doesn't expose Downloads.
-    final path = await FilePicker.platform.saveFile(fileName: fileName);
+    final path = await FilePicker.saveFile(fileName: fileName);
     if (path == null) return DownloadResult.cancelled;
     await File(path).writeAsBytes(bytes);
     return DownloadResult(success: true, savedPath: path);
