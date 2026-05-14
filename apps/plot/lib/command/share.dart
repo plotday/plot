@@ -36,26 +36,75 @@ class OpenSharedLink extends Command {
 
       final priorityId = nowState.priority.id.toShortString();
       log.info(
-        'OpenSharedLink: pushing PriorityRoute($priorityId) > NewThreadRoute(sharedUrl)',
+        'OpenSharedLink: navigating to PriorityRoute($priorityId), then '
+        'pushing NewThreadRoute(sharedUrl) on the inner Activity router',
       );
 
-      // Use push (not navigate/CommandRoute) because on cold start the
-      // router's own initial navigation is resolving to the same default
-      // PriorityRoute at the same moment — navigate() then merges/dedupes
-      // and drops our `children: [NewThreadRoute]`, leaving the default
-      // empty child (PriorityOnlyRoute) visible instead.
-      await context.router.root.push(
-        PriorityRoute(
-          priorityIdString: priorityId,
-          children: [NewThreadRoute(sharedUrl: url)],
-        ),
-      );
+      // Cold-start lands on AgendaRoute (single-panel) or PriorityRoute
+      // (multi-panel). AgendaRoute lives in the Agenda tab of
+      // PrioritiesShell; PriorityRoute lives in the Activity tab. Pushing
+      // PriorityRoute on the root navigator does NOT switch the active
+      // tab, so a root push from AgendaRoute leaves the user looking at
+      // the agenda while NewThreadRoute sits invisible under the wrong
+      // shell. `navigate(PriorityRoute(...))` resolves through auto_route's
+      // route hierarchy and activates the Activity tab; we then poll for
+      // the inner Activity router to mount (PriorityWrapper waits on a
+      // ~200ms DB read before building it) and push NewThreadRoute on it
+      // so the back stack is [PriorityOnlyRoute, NewThreadRoute]. Mirrors
+      // the pattern in PrioritiesShell._openNewThread for the "New" button.
+      context.router.navigate(PriorityRoute(priorityIdString: priorityId));
+      _pushNewThreadWhenInnerReady(context, url, attempt: 0);
       return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to open shared link: $url', e, t);
       return CommandMessage('Failed to open shared link', isError: true);
     }
   }
+}
+
+/// Polls across frames until the inner Activity router (PriorityRoute's
+/// nested AutoRouter) is mounted, then pushes [NewThreadRoute] with the
+/// shared URL. Mirrors PrioritiesShell._pushNewThreadWhenInnerReady. 120
+/// frames (~2s at 60Hz) covers the cold-start DB read PriorityWrapper waits
+/// on before building the inner router.
+void _pushNewThreadWhenInnerReady(
+  BuildContext context,
+  String url, {
+  required int attempt,
+}) {
+  if (!context.mounted) return;
+  final innerRouter = _findPriorityInnerRouter(context.router.root);
+  if (innerRouter != null) {
+    if (innerRouter.current.name != NewThreadRoute.name) {
+      innerRouter.push(NewThreadRoute(sharedUrl: url));
+    }
+    return;
+  }
+  if (attempt >= 120) {
+    log.warning(
+      'OpenSharedLink: inner Activity router never appeared after $attempt '
+      'frames — NewThreadRoute not pushed for url=$url',
+    );
+    return;
+  }
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _pushNewThreadWhenInnerReady(context, url, attempt: attempt + 1);
+  });
+}
+
+/// Walks the controller tree to find the [StackRouter] hosted by the
+/// active [PriorityRoute]. Non-recursive `innerRouterOf` misses it because
+/// PriorityRoute is deeply nested (root → AppShell → PrioritiesShell tabs
+/// → ActivityShell → PriorityRoute). Mirrors
+/// PrioritiesShell._findPriorityInnerRouter.
+StackRouter? _findPriorityInnerRouter(RoutingController root) {
+  final direct = root.innerRouterOf<StackRouter>(PriorityRoute.name);
+  if (direct != null) return direct;
+  for (final child in root.childControllers) {
+    final hit = _findPriorityInnerRouter(child);
+    if (hit != null) return hit;
+  }
+  return null;
 }
 
 /// Generic, thread-independent snapshot of a "share with" selection.
