@@ -183,20 +183,7 @@ class AgendaBuilder {
 
     final tail = remaining.entries
         .where((e) => priorityById.containsKey(e.key))
-        .toList()
-      ..sort((a, b) {
-        final aOrd = effectivePriorityOrderAt(
-          moment: now,
-          blocksForPriority: priorityBlocksByPriority[a.key] ?? const [],
-          fallback: priorityById[a.key]!.order.value,
-        );
-        final bOrd = effectivePriorityOrderAt(
-          moment: now,
-          blocksForPriority: priorityBlocksByPriority[b.key] ?? const [],
-          fallback: priorityById[b.key]!.order.value,
-        );
-        return aOrd.compareTo(bOrd);
-      });
+        .toList();
     for (final entry in tail) {
       final p = priorityById[entry.key]!;
       newBlocks.add(PriorityBlock(
@@ -206,6 +193,43 @@ class AgendaBuilder {
         isOutside: false,
         cascadeDuration: entry.value,
       ));
+    }
+
+    // Re-sort the trailing standalone PriorityBlock run by priority order.
+    // The cascade tail appends synthetic [PriorityBlock]s for priorities that
+    // had no thread-bearing block in the section, but appending alone leaves
+    // them after every real block — so when the user reorders a cascade-only
+    // priority above a real one, the new `priority_block` row is written but
+    // the rendered layout never reflects it. Sorting the trailing run here
+    // makes both real and synthetic blocks honor `effectivePriorityOrderAt`.
+    //
+    // Stops at the first non-[PriorityBlock] from the end so we don't reach
+    // back across an [EventBlock] or [GapBlock] header — those anchor their
+    // following priorities to a specific time period and must not be reshuffled.
+    var runStart = newBlocks.length;
+    while (runStart > 0 && newBlocks[runStart - 1] is PriorityBlock) {
+      runStart--;
+    }
+    if (runStart < newBlocks.length - 1) {
+      final run = newBlocks.sublist(runStart).cast<PriorityBlock>().toList()
+        ..sort((a, b) {
+          final aOrd = effectivePriorityOrderAt(
+            moment: now,
+            blocksForPriority:
+                priorityBlocksByPriority[a.priority.id] ?? const [],
+            fallback: a.priority.order.value,
+          );
+          final bOrd = effectivePriorityOrderAt(
+            moment: now,
+            blocksForPriority:
+                priorityBlocksByPriority[b.priority.id] ?? const [],
+            fallback: b.priority.order.value,
+          );
+          return aOrd.compareTo(bOrd);
+        });
+      newBlocks
+        ..removeRange(runStart, newBlocks.length)
+        ..addAll(run);
     }
 
     return DateSection(

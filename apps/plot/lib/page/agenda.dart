@@ -335,15 +335,26 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
             boundaries.after[index] ??
             (index == items.length - 1 ? boundaries.afterList : null);
 
-        // Gap headers render their before-boundary BELOW the row instead
-        // of above. Blocks can only land inside a gap, so the drop
-        // preview should appear inside the gap rather than between the
-        // preceding block and the gap header.
-        final isGapHeader =
+        // Empty gap headers (no priority lead) render their
+        // before-boundary BELOW the row instead of above. Blocks can only
+        // land inside such a gap, so the drop preview should appear inside
+        // the gap rather than between the preceding block and the gap
+        // header.
+        //
+        // Gap headers that promoted a priority into their lead (threads or
+        // cascade slice) behave like ordinary priority blocks — they sit in
+        // the gap's period and the user can swap them with adjacent
+        // priority blocks. Keep their drop slot ABOVE the tile so the
+        // bracketing-pair activation logic has a slot at the block's top
+        // edge; otherwise dragging up onto the priority-led gap's body
+        // grabs the slot above the preceding block (wrong period) and the
+        // reorder dispatch early-returns with "no bracketing blocks."
+        final isEmptyGapHeader =
             current.dateTimeRange != null &&
             current.thread == null &&
             current.parentBlockId != null &&
-            current.sourcePeriodStart != null;
+            current.sourcePeriodStart != null &&
+            current.blockPriority == null;
 
         final selected = current.blockPriority?.id == currentPriorityId &&
             (currentEventId == null || current.thread?.id == currentEventId);
@@ -352,7 +363,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           key: ValueKey('agenda_${current.stableKey}'),
           children: [
-            if (beforeBoundary != null && !isGapHeader)
+            if (beforeBoundary != null && !isEmptyGapHeader)
               BlockDropZone(
                 key: ValueKey('agenda_drop_before_${current.stableKey}'),
                 slotKey: 'agenda_drop_before_${current.stableKey}',
@@ -380,7 +391,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
               parentBlockVisibleCount: current.parentBlockVisibleCount,
               selected: selected,
             ),
-            if (beforeBoundary != null && isGapHeader)
+            if (beforeBoundary != null && isEmptyGapHeader)
               BlockDropZone(
                 key: ValueKey('agenda_drop_in_gap_${current.stableKey}'),
                 slotKey: 'agenda_drop_in_gap_${current.stableKey}',
