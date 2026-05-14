@@ -17,7 +17,6 @@ DO $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id   CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
-    c_kris_seed_user_id  CONSTANT uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
 
     v_kris_user_id   uuid;
     v_publisher_id   bigint;
@@ -36,8 +35,12 @@ BEGIN
     SELECT id INTO v_kris_user_id FROM "user" WHERE email = 'kris@plot.day';
 
     IF v_kris_user_id IS NULL THEN
-        INSERT INTO "user" (id, email, name)
-        VALUES (c_kris_seed_user_id, 'kris@plot.day', 'Kris Braun')
+        -- Let the column default (uuidv7()) assign the id so each fresh
+        -- dev reset gets a new user.id. The Flutter client keys its local
+        -- SQLite filename on user.id; a pinned seed uuid would let stale
+        -- local data persist invisibly across resets.
+        INSERT INTO "user" (email, name)
+        VALUES ('kris@plot.day', 'Kris Braun')
         RETURNING id INTO v_kris_user_id;
 
         -- Seed a primary contact so Base.actorId is resolvable on first

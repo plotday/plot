@@ -8,14 +8,20 @@
 DO $$
 DECLARE
     v_publisher_id bigint;
-    v_kris_id uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
+    v_kris_id uuid;
 BEGIN
     -- 1. Kris Braun — must exist before publisher INSERT so that
     --    auto_maintain_publisher_group trigger can seed the publisher group
-    --    with a valid created_by.
-    INSERT INTO "public"."user" (id, email, name)
-    VALUES (v_kris_id, 'kris@plot.day', 'Kris Braun')
+    --    with a valid created_by. Let postgres assign the uuid so every
+    --    fresh dev reset produces a new user.id — the Flutter client uses
+    --    user.id as its local SQLite filename, so a stable uuid across
+    --    resets would leave stale local data masquerading as fresh.
+    INSERT INTO "public"."user" (email, name)
+    VALUES ('kris@plot.day', 'Kris Braun')
     ON CONFLICT (email) DO NOTHING;
+
+    SELECT id INTO v_kris_id
+    FROM "public"."user" WHERE email = 'kris@plot.day' LIMIT 1;
 
     -- 2. Plot publisher (keyed by lowercased name)
     INSERT INTO "public"."publisher" (name, url, created_by)

@@ -31,6 +31,74 @@ const account = new Hono<{ Bindings: Bindings }>();
 account.post("/activate", async (c) => {
   let user: AuthUser | undefined = c.var.user;
 
+  // Fast path: existing user already fully activated and no pending external
+  // state to reconcile. /activate is called on every app startup now, so this
+  // collapses ~8 sequential queries (priority/contact/subscription/twist/
+  // invitations/domain) into one before returning identity.
+  if (user) {
+    const claimsPicture = c.var.clerkClaims?.picture ?? null;
+    const status = await sql<{
+      contact_id: string | null;
+      has_root: boolean;
+      has_sub: boolean;
+      has_plot_twist: boolean;
+      has_invites: boolean;
+      has_auto_join_domain: boolean;
+      needs_avatar_backfill: boolean;
+    }>`
+      SELECT
+        (SELECT id FROM contact
+           WHERE user_id = ${user.id}::uuid AND "primary" = TRUE
+           LIMIT 1) AS contact_id,
+        EXISTS(SELECT 1 FROM priority
+           WHERE user_id = ${user.id}::uuid
+             AND nlevel(path) = 1
+             AND archived_at IS NULL) AS has_root,
+        EXISTS(SELECT 1 FROM user_subscription
+           WHERE user_id = ${user.id}::uuid) AS has_sub,
+        EXISTS(SELECT 1 FROM twist_instance ti
+           JOIN twist t ON t.id = ti.twist_id
+           WHERE ti.owner_id = ${user.id}::uuid
+             AND t.name = 'Plot'
+             AND t.environment = 'public'
+             AND ti.archived_at IS NULL) AS has_plot_twist,
+        EXISTS(SELECT 1 FROM team_invitation
+           WHERE email = ${user.email}) AS has_invites,
+        EXISTS(SELECT 1 FROM domain
+           WHERE name = split_part(${user.email}, '@', 2)
+             AND auto_join = TRUE
+             AND team_id IS NOT NULL
+             AND NOT EXISTS(
+               SELECT 1 FROM team_user tu
+                WHERE tu.team_id = "domain".team_id
+                  AND tu.user_id = ${user.id}::uuid
+             )) AS has_auto_join_domain,
+        (${claimsPicture}::text IS NOT NULL
+           AND EXISTS(SELECT 1 FROM "user"
+                       WHERE id = ${user.id}::uuid
+                         AND avatar_url IS NULL)) AS needs_avatar_backfill
+    `.execute(c.var.db);
+
+    const row = status.rows[0];
+    if (
+      row &&
+      row.contact_id &&
+      row.has_root &&
+      row.has_sub &&
+      row.has_plot_twist &&
+      !row.has_invites &&
+      !row.has_auto_join_domain &&
+      !row.needs_avatar_backfill
+    ) {
+      return c.json({
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        contactId: row.contact_id,
+      });
+    }
+  }
+
   // New user: JWT was valid but user doesn't exist in DB.
   // The auth middleware verified the JWT and set clerkClaims.
   if (!user) {

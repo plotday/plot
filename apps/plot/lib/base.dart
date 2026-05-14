@@ -45,7 +45,8 @@ class Base {
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static Uuid? get userIdOrNull => Injector.appInstance.get<Base>()._userId;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
-  static ActorId? get actorIdOrNull => Injector.appInstance.get<Base>()._actorId;
+  static ActorId? get actorIdOrNull =>
+      Injector.appInstance.get<Base>()._actorId;
 
   /// True when identity was set via sign-in or /activate (not restored from
   /// local storage). UserBloc uses this to decide whether to call /activate
@@ -169,9 +170,10 @@ class Base {
     // user gets stuck with a dead session until they manually sign out.
     authService.sessionInvalidatedStream.listen((_) {
       log.warning('Clerk reported session invalid via error stream');
-      handleTokenResult(
-        (token: null, failure: TokenFailureReason.sessionInvalid),
-      );
+      handleTokenResult((
+        token: null,
+        failure: TokenFailureReason.sessionInvalid,
+      ));
     });
 
     // Step 3: Try to restore identity from local storage (no network needed)
@@ -181,32 +183,46 @@ class Base {
       log.warning("Failed to restore identity from local storage", e, stack);
     }
 
-    // Step 4: If Clerk has a session but local identity wasn't restored, OR
-    // the restored identity is incomplete (userId present but contactId/
-    // actorId missing — e.g. pre-contact-id app versions), resolve via API.
-    // Skip if using FailedAuthService (no session possible).
+    // Step 4: When Clerk has a session, validate identity with the server.
+    // - If we couldn't restore local identity (first sign-in) or it's
+    //   incomplete (userId present but contactId/actorId missing — e.g.
+    //   pre-contact-id app versions): block on /activate, sign out of
+    //   Clerk on failure so the user can sign in fresh.
+    // - If we have a complete restored identity: validate in the background
+    //   with a timeout. App startup proceeds with the restored identity; if
+    //   /activate returns a different user.id (e.g. after a DB reset), the
+    //   resulting User emission triggers Store rebuild in UserBloc. Failures
+    //   are non-fatal — the user keeps working with restored data.
+    // Skip entirely when using FailedAuthService (no session possible).
     final localIdentityIncomplete =
         base._userId != null && base._actorId == null;
-    if ((!base._currentUserController.hasValue || localIdentityIncomplete) &&
-        authService is! FailedAuthService &&
-        authService.isSignedIn) {
-      log.info(
-        localIdentityIncomplete
-            ? 'Local identity missing contact ID, resolving identity'
-            : 'Clerk session found without local identity, resolving identity',
-      );
-      try {
-        await Base.resolveIdentity();
-      } catch (e, stack) {
-        log.warning('Failed to resolve identity on startup', e, stack);
-        // Session token is likely expired/invalid. Sign out of Clerk so the
-        // user can sign in fresh instead of being stuck ("already signed in").
-        log.info('Signing out stale Clerk session');
+    final hasRestoredIdentity =
+        base._currentUserController.valueOrNull != null &&
+        !localIdentityIncomplete;
+    if (authService is! FailedAuthService && authService.isSignedIn) {
+      if (!hasRestoredIdentity) {
+        log.info(
+          localIdentityIncomplete
+              ? 'Local identity missing contact ID, resolving identity'
+              : 'Clerk session found without local identity, resolving identity',
+        );
         try {
-          await authService.signOut();
-        } catch (signOutError) {
-          log.warning('Failed to sign out stale session', signOutError);
+          await Base.resolveIdentity();
+        } catch (e, stack) {
+          log.warning('Failed to resolve identity on startup', e, stack);
+          // Session token is likely expired/invalid. Sign out of Clerk so
+          // the user can sign in fresh instead of being stuck ("already
+          // signed in").
+          log.info('Signing out stale Clerk session');
+          try {
+            await authService.signOut();
+          } catch (signOutError) {
+            log.warning('Failed to sign out stale session', signOutError);
+          }
         }
+      } else {
+        log.info('Validating restored identity with /activate in background');
+        unawaited(_validateRestoredIdentity());
       }
     }
 
@@ -256,6 +272,27 @@ class Base {
     } catch (e) {
       log.warning('Failed to decode JWT payload: $e');
       return null;
+    }
+  }
+
+  /// Background validation of a restored identity. Calls /activate with a
+  /// short timeout; failures are swallowed so the user keeps working with
+  /// their restored identity. If the server returns a different user.id
+  /// (e.g. after a server-side DB reset), setIdentity() emits a new User
+  /// and UserBloc tears down and rebuilds the Store under the new identity.
+  static Future<void> _validateRestoredIdentity() async {
+    try {
+      await resolveIdentity().timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      log.info(
+        'Background /activate timed out — continuing with restored identity',
+      );
+    } catch (e, stack) {
+      log.warning(
+        'Background /activate failed — continuing with restored identity',
+        e,
+        stack,
+      );
     }
   }
 
