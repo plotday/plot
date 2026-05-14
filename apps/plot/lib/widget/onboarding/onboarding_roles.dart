@@ -401,9 +401,15 @@ class _RolePromptContentState extends State<_RolePromptContent> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          widget.title,
-          style: theme.typography.md.copyWith(fontWeight: FontWeight.w600),
+        Padding(
+          // Reserve space for the floating close button rendered by [Modal].
+          padding: const EdgeInsets.only(
+            right: modalCloseButtonReservedWidth,
+          ),
+          child: Text(
+            widget.title,
+            style: theme.typography.md.copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
         SizedBox(height: theme.spacing.md),
         FTextField(

@@ -3,11 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/priority.dart' show formatTrackedDuration;
 import 'package:plot/widget/scroll_edge_fade.dart';
@@ -46,32 +44,18 @@ class _TimeTrackingHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Text(
-              'Time on ${priority.title}',
-              style: TextStyle(
-                fontSize: context.theme.typography.lg.fontSize,
-                fontWeight: FontWeight.w600,
-                color: context.theme.colors.foreground,
-              ),
-            ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Padding(
+        // Reserve space for the floating close button rendered by Modal.
+        padding: const EdgeInsets.only(right: modalCloseButtonReservedWidth),
+        child: Text(
+          'Time on ${priority.title}',
+          style: TextStyle(
+            fontSize: context.theme.typography.lg.fontSize,
+            fontWeight: FontWeight.w600,
+            color: context.theme.colors.foreground,
           ),
-          // Close (X) button — Modal has no built-in close affordance,
-          // so each modal that wants one provides it.
-          FButton(
-            variant: FButtonVariant.ghost,
-            onPress: () => Modal.popAll(context),
-            child: Icon(
-              FontAwesomeIcons.xmark,
-              size: context.theme.iconSizes.sm,
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

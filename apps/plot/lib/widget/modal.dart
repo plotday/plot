@@ -7,8 +7,15 @@ import 'package:forui/forui.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/layout.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/toast.dart';
+
+/// Reserved space (px) on the top-right of modals to keep clear of the
+/// floating close button. Input-at-top modals add this as right-padding to
+/// their top row so the X doesn't visually collide with their content.
+const double modalCloseButtonReservedWidth = 40;
 
 class Modal extends StatelessWidget {
   const Modal({
@@ -18,6 +25,7 @@ class Modal extends StatelessWidget {
     this.maxWidthPercentage = 0.8,
     this.maxHeightPercentage = 0.8,
     this.padding = const EdgeInsets.all(16),
+    this.showCloseButton = true,
     super.key,
   });
 
@@ -27,6 +35,11 @@ class Modal extends StatelessWidget {
   final double maxWidthPercentage;
   final double maxHeightPercentage;
   final EdgeInsets padding;
+
+  /// Whether this modal should show the floating close (X) button in the
+  /// top-right corner when rendered as a dialog (multi-panel) at the top of
+  /// the modal stack. Bottom sheets and nested modals never show it.
+  final bool showCloseButton;
 
   Future<Value<T>> show<T>(BuildContext context) {
     return ModalProvider.of(context).push<T>(context, this);
@@ -155,14 +168,53 @@ class Modal extends StatelessWidget {
 
         return ConstrainedBox(
           constraints: effectiveConstraints,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Stack(
             children: [
-              if (header != null) header!,
-              Flexible(
-                child: Container(padding: padding, child: builder(context)),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (header != null) header!,
+                  Flexible(
+                    child: Container(padding: padding, child: builder(context)),
+                  ),
+                ],
               ),
+              if (showCloseButton)
+                const Positioned(
+                  top: 8,
+                  right: 8,
+                  child: _ModalCloseButton(),
+                ),
             ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Floating close (X) button rendered by [Modal] in the top-right corner.
+/// Only visible when the modal is the top of the stack and rendered as a
+/// dialog (multi-panel). Nested modals show their own back button; bottom
+/// sheets dismiss via swipe.
+class _ModalCloseButton extends StatelessWidget {
+  const _ModalCloseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!context.isMultiPanel) return const SizedBox.shrink();
+    return ValueListenableBuilder<int>(
+      valueListenable: ModalProvider.of(context).modalStackNotifier,
+      builder: (context, stackLength, _) {
+        if (stackLength > 1) return const SizedBox.shrink();
+        return FButton.icon(
+          variant: FButtonVariant.ghost,
+          onPress: () =>
+              Modal.pop<dynamic>(context, Value<dynamic>.absent()),
+          child: Icon(
+            PlotIcon.close,
+            size: context.theme.iconSizes.sm,
+            color: context.theme.colors.mutedForeground,
           ),
         );
       },

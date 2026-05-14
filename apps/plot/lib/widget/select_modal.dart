@@ -845,13 +845,22 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       position: EditableAreaPosition.top,
                       padding: false,
                       autofocus: hasPhysicalKeyboard(),
-                      builder: (context, focusNode) => Padding(
-                        padding: context.theme.spacing.padding,
-                        child: ValueListenableBuilder<int>(
-                          valueListenable: ModalProvider.of(
-                            context,
-                          ).modalStackNotifier,
-                          builder: (context, stackLength, child) => Row(
+                      builder: (context, focusNode) => ValueListenableBuilder<int>(
+                        valueListenable: ModalProvider.of(
+                          context,
+                        ).modalStackNotifier,
+                        builder: (context, stackLength, child) => Padding(
+                          // When this modal is at the top of the stack, leave
+                          // room on the right for the floating close button
+                          // rendered by [Modal] so it doesn't overlap the
+                          // search field or the optional `+` button.
+                          padding: context.theme.spacing.padding.copyWith(
+                            right: stackLength <= 1
+                                ? context.theme.spacing.padding.right +
+                                    modalCloseButtonReservedWidth
+                                : context.theme.spacing.padding.right,
+                          ),
+                          child: Row(
                             children: [
                               if (stackLength > 1)
                                 FButton.icon(
@@ -946,7 +955,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 return const SizedBox.shrink();
                               }
                               return Padding(
-                                padding: context.theme.spacing.paddingSm,
+                                // Reserve room on the right for the floating
+                                // close button when this modal is top-level.
+                                padding: context.theme.spacing.paddingSm
+                                    .copyWith(
+                                      right: nested
+                                          ? context.theme.spacing.paddingSm.right
+                                          : context.theme.spacing.paddingSm
+                                                  .right +
+                                              modalCloseButtonReservedWidth,
+                                    ),
                                 child: Row(
                                   children: [
                                     if (nested)

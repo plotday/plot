@@ -35,6 +35,7 @@ class FormModal extends Modal {
         key: ObjectKey(form),
         constraints: constraints ?? const BoxConstraints(maxHeight: 640, maxWidth: 750),
         maxWidthPercentage: maxWidthPercentage ?? 0.8,
+        showCloseButton: form.dismissable,
       );
 
   Future<CommandReturn> run(BuildContext context) {
@@ -726,24 +727,22 @@ class FormModalState extends State<_FormModal> {
                                     ),
                                   ),
                                 Expanded(
-                                  child: Text(
-                                    widget.form.title,
-                                    style: context.theme.typography.md
-                                        .copyWith(fontWeight: FontWeight.w600),
+                                  child: Padding(
+                                    // Reserve space so the floating close
+                                    // button (rendered by Modal) doesn't
+                                    // overlap the title text.
+                                    padding: EdgeInsets.only(
+                                      right: stackLength <= 1
+                                          ? modalCloseButtonReservedWidth
+                                          : 0,
+                                    ),
+                                    child: Text(
+                                      widget.form.title,
+                                      style: context.theme.typography.md
+                                          .copyWith(fontWeight: FontWeight.w600),
+                                    ),
                                   ),
                                 ),
-                                if (stackLength <= 1 && widget.form.dismissable)
-                                  FButton.icon(
-                                    variant: FButtonVariant.ghost,
-                                    onPress: () => Modal.pop<CommandReturn>(
-                                      context,
-                                      Value.absent(),
-                                    ),
-                                    child: Icon(
-                                      PlotIcon.close,
-                                      size: context.theme.iconSizes.sm,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
