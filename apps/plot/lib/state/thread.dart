@@ -61,6 +61,15 @@ class ThreadBloc extends Cubit<ThreadState> {
     await draft.save();
   }
 
+  /// Optimistically update [state.thread] so widgets that read this bloc
+  /// (e.g. the thread actions row's Finish/To-do button) rebuild without
+  /// waiting for the SQLite save → `Thread.watchOne` round trip. The
+  /// watcher will reconcile to the persisted value shortly after.
+  void optimisticallyUpdateThread(Thread updated) {
+    if (updated.id != state.thread.id) return;
+    emit(state.copyWith(thread: updated));
+  }
+
   /// Sets the note being replied to. Pass null to clear.
   /// Clears editing state when replying (mutual exclusion).
   /// When replying to a private note, auto-marks the draft as private and

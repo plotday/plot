@@ -16,6 +16,7 @@ import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/thread.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'logging.dart';
 
@@ -857,6 +858,12 @@ abstract class _UpdateThreadCommand extends Command {
       return;
     }
     bloc?.optimisticallyUpdateThread(updatedThread);
+    // Also push the optimistic update into ThreadBloc (when present) so the
+    // open ThreadPage rebuilds immediately instead of waiting for the
+    // SQLite save → Thread.watchOne stream to tick.
+    try {
+      context.read<ThreadBloc>().optimisticallyUpdateThread(updatedThread);
+    } catch (_) {}
     await onUpdate(updatedThread);
     // After save, reload the agenda from fresh stream data so changes that
     // add/remove items (e.g. starting a link schedule thread creates a base
@@ -1003,6 +1010,13 @@ class FinishThread extends _UpdateThreadCommand {
 
     if (!context.mounted) return const CommandDone();
     HapticFeedback.mediumImpact();
+    final finished = thread.copyWith(todo: false, bump: bump);
+    // Optimistically flip ThreadBloc's thread (when present) so the Finish
+    // button on the open ThreadPage swaps to To-do instantly instead of
+    // waiting for the SQLite save → Thread.watchOne stream to tick.
+    try {
+      context.read<ThreadBloc>().optimisticallyUpdateThread(finished);
+    } catch (_) {}
     if (onBeforeRun != null) {
       // Animation layer handles optimistic removal
       await onBeforeRun!(context);
@@ -1011,7 +1025,7 @@ class FinishThread extends _UpdateThreadCommand {
       // instances to todo=false so the icon reflects the finished state.
       priorityBloc?.optimisticallyRemoveThread(thread.id, finishTodo: true);
     }
-    await onUpdate(thread.copyWith(todo: false, bump: bump));
+    await onUpdate(finished);
 
     // Complete notes assigned to current user
     final actorId = Base.actorId;
