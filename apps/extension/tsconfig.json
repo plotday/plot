@@ -1,0 +1,10 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["chrome"]
+  },
+  "include": ["entrypoints/**/*", "src/**/*", "wxt.config.ts", ".wxt/wxt.d.ts"]
+}
