@@ -543,18 +543,6 @@ export abstract class Plot extends ITool {
   abstract getUserId(): Promise<string>;
 
   /**
-   * Returns the owner user's root priority ID. Used as the implicit default
-   * when an operation needs a priority but the caller didn't supply one —
-   * for example, `plot.createPriority()` without a parent, or
-   * `plot.getThreads()` without an explicit `priorityId`.
-   *
-   * On the server, priority resolution for newly created threads/links
-   * happens automatically via `match_priority_for_user`; twists rarely need
-   * to call this directly.
-   */
-  abstract getDefaultPriorityId(): Promise<string>;
-
-  /**
    * Creates a new schedule for a thread.
    *
    * Schedules define when a thread occurs in time. A thread can have
