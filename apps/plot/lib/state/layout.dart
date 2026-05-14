@@ -34,6 +34,42 @@ class LayoutBloc extends Cubit<LayoutState> {
   /// When true, prefer middle panel over left when both can't fit.
   /// Set by thread commands so resize transitions preserve thread context.
   bool preferMiddle = false;
+
+  /// Handlers the active page header registers so the mobile bottom-nav
+  /// can toggle or close the contextual search on whatever page is
+  /// currently visible. Null when no page with search is mounted.
+  VoidCallback? _searchToggleHandler;
+  VoidCallback? _searchCloseHandler;
+
+  void registerSearchToggle(VoidCallback handler) {
+    _searchToggleHandler = handler;
+  }
+
+  void unregisterSearchToggle(VoidCallback handler) {
+    if (identical(_searchToggleHandler, handler)) {
+      _searchToggleHandler = null;
+    }
+  }
+
+  void registerSearchClose(VoidCallback handler) {
+    _searchCloseHandler = handler;
+  }
+
+  void unregisterSearchClose(VoidCallback handler) {
+    if (identical(_searchCloseHandler, handler)) {
+      _searchCloseHandler = null;
+    }
+  }
+
+  void requestSearchToggle() {
+    _searchToggleHandler?.call();
+  }
+
+  void requestSearchClose() {
+    _searchCloseHandler?.call();
+  }
+
+  bool get hasSearchToggle => _searchToggleHandler != null;
   // User has requested left panel visibility.
   // if there's insufficient width, it will still be hidden.
   bool leftPanelRequested;
@@ -52,23 +88,14 @@ class LayoutBloc extends Cubit<LayoutState> {
     bool effectiveLeftVisible = false;
     bool effectiveMiddleVisible = false;
     if (isMulti) {
-      effectiveLeftVisible = leftPanelRequested;
-      effectiveMiddleVisible = middlePanelRequested;
-      // Check if there's enough space for both panels when both are preferred
-      final canShowBoth = width >= LayoutState.threePanelMinWidth;
-      if (!canShowBoth && leftPanelRequested && middlePanelRequested) {
-        if (preferMiddle) {
-          // Not enough space for both panels, prefer middle panel
-          effectiveLeftVisible = false;
-        } else {
-          // Not enough space for both panels, prefer left panel
-          effectiveMiddleVisible = false;
-        }
-        if (explicit) {
-          // Update requested states to match effective states
-          leftPanelRequested = effectiveLeftVisible;
-          middlePanelRequested = effectiveMiddleVisible;
-        }
+      // Multi-panel mode is always 2 (no left sidebar) or 3 (with left
+      // sidebar) panels. The middle (priorities feed) is always visible;
+      // only the left sidebar toggles. Left needs room for all three.
+      effectiveMiddleVisible = true;
+      final canShowThree = width >= LayoutState.threePanelMinWidth;
+      effectiveLeftVisible = leftPanelRequested && canShowThree;
+      if (explicit) {
+        leftPanelRequested = effectiveLeftVisible;
       }
     } else {
       effectiveMiddleVisible = false;

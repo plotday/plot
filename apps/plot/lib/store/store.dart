@@ -601,12 +601,12 @@ class Store extends _$Store {
       } else {
         // New user or no local data - critical sync blocks, rest is deferred
         log.info("New user sync: starting connectivity check and critical sync");
-        onStartStatus?.call('Connecting...');
+        onStartStatus?.call('Welcome to Plot');
         try {
           await Future(() async {
             await inst._waitForNetworkConnectivity();
             log.info("New user sync: connectivity confirmed, starting critical sync");
-            onStartStatus?.call('Syncing your data...');
+            onStartStatus?.call('Setting things up…');
             await inst._startSyncCritical();
             log.info("New user sync: critical sync complete");
           }).timeout(const Duration(seconds: 30));

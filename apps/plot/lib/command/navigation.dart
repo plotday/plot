@@ -47,10 +47,10 @@ class ToggleLeftSidebarCommand extends Command {
     : super(
         title: isVisible
             ? 'Hide agenda and priorities'
-            : 'Show agenda and priorities',
+            : 'Open sidebar',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
-        icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.schedule,
+        icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
       );
 
   final bool isVisible;
@@ -97,56 +97,25 @@ class CyclePanelsCommand extends Command {
   static String menuLabel(LayoutState layoutState) => _title(layoutState);
 
   static String _title(LayoutState layoutState) {
-    if (layoutState.leftPanelVisible && layoutState.middlePanelVisible) {
-      return 'Close priorities';
-    } else if (layoutState.leftPanelVisible) {
-      return 'Close priorities';
-    } else if (layoutState.middlePanelVisible) {
-      return 'Close threads';
-    }
-    return 'Open sidebar';
+    // Multi-panel mode is always 2 (no left sidebar) or 3 (with left
+    // sidebar) panels — the middle is always visible. The only thing to
+    // cycle is the left sidebar.
+    return layoutState.leftPanelVisible
+        ? 'Hide agenda and priorities'
+        : 'Open sidebar';
   }
 
   static IconData _icon(LayoutState layoutState) {
-    if (layoutState.leftPanelVisible || layoutState.middlePanelVisible) {
-      return PlotIcon.sidebarClose;
-    }
-    return PlotIcon.sidebarOpen;
+    return layoutState.leftPanelVisible
+        ? PlotIcon.sidebarClose
+        : PlotIcon.sidebarOpen;
   }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final layoutBloc = context.read<LayoutBloc>();
     final state = layoutBloc.state;
-    final visibleCount = 1 +
-        (state.leftPanelVisible ? 1 : 0) +
-        (state.middlePanelVisible ? 1 : 0);
-
-    final canShowThree =
-        layoutBloc.width >= LayoutState.threePanelMinWidth;
-
-    if (canShowThree) {
-      // 3-panel capable: 3 → 2 (hide left) → 1 (hide middle) → 3
-      if (visibleCount >= 3) {
-        layoutBloc.setPanelVisibility(left: false);
-      } else if (visibleCount == 2) {
-        layoutBloc.setPanelVisibility(middle: false);
-      } else {
-        layoutBloc.setPanelVisibility(left: true, middle: true);
-      }
-    } else {
-      // 2-panel: toggle the active sidebar panel on/off
-      if (state.middlePanelVisible) {
-        // Middle+Right → Right-only
-        layoutBloc.setPanelVisibility(middle: false);
-      } else if (state.leftPanelVisible) {
-        // Left+Right → Right-only
-        layoutBloc.setPanelVisibility(left: false);
-      } else {
-        // Right-only → restore left (browsing default)
-        layoutBloc.setPanelVisibility(left: true);
-      }
-    }
+    layoutBloc.setLeftPanelVisible(!state.leftPanelVisible);
     return const CommandDone();
   }
 }
@@ -166,33 +135,7 @@ class ToggleSidebarCommand extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final layoutBloc = LayoutBloc.instance;
     if (layoutBloc == null) return const CommandDone();
-
-    final state = layoutBloc.state;
-    final visibleCount = 1 +
-        (state.leftPanelVisible ? 1 : 0) +
-        (state.middlePanelVisible ? 1 : 0);
-
-    final canShowThree =
-        layoutBloc.width >= LayoutState.threePanelMinWidth;
-
-    if (canShowThree) {
-      if (visibleCount >= 3) {
-        layoutBloc.setPanelVisibility(left: false);
-      } else if (visibleCount == 2) {
-        layoutBloc.setPanelVisibility(middle: false);
-      } else {
-        layoutBloc.setPanelVisibility(left: true, middle: true);
-      }
-    } else {
-      // 2-panel: toggle the active sidebar panel on/off
-      if (state.middlePanelVisible) {
-        layoutBloc.setPanelVisibility(middle: false);
-      } else if (state.leftPanelVisible) {
-        layoutBloc.setPanelVisibility(left: false);
-      } else {
-        layoutBloc.setPanelVisibility(left: true);
-      }
-    }
+    layoutBloc.setLeftPanelVisible(!layoutBloc.state.leftPanelVisible);
     return const CommandDone();
   }
 }

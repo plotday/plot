@@ -351,6 +351,15 @@ class _ButtonState extends State<Button> {
   }
 
   /// Build style delta for non-selected icon-only buttons.
+  ///
+  /// Resting icon color defaults to `plotColors.muted` so all icon buttons
+  /// share the same dim tone (matching `FColors.mutedForeground`). Hover
+  /// lifts to `colour.foreground` for a dramatic brightness jump. Callers
+  /// can override either with `color:` / `hoverColor:`.
+  ///
+  /// Primary buttons opt out: the theme already paints the icon in the
+  /// accent color over a pale tinted background, and muting it makes the
+  /// button read as disabled.
   FButtonStyleDelta _buildIconOnlyStyle(BuildContext context) {
     final sizeStyles = switch (widget.style) {
       ButtonStyle.primary => context.theme.buttonStyles.primary,
@@ -358,69 +367,44 @@ class _ButtonState extends State<Button> {
       ButtonStyle.ghost => context.theme.buttonStyles.ghost,
     };
     final iconPadV = sizeStyles.md.iconContentStyle.padding.resolve(TextDirection.ltr).top;
-
-    if (widget.color != null) {
-      // Need to resolve the full style to modify icon color
-      var style = sizeStyles.md;
-
-      style = style.copyWith(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
-          ),
-        ]),
-      );
-
-      final iconStyle = style.iconContentStyle.iconStyle;
-      final hoverColor = widget.hoverColor ?? context.colour.foreground;
-      style = style.copyWith(
-        // ignore: unused_result
-        iconContentStyle: FButtonIconContentStyleDelta.delta(
-          padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
-          iconStyle: _iconVariants(
-            base: iconStyle.resolve({}).copyWith(color: widget.color),
-            hovered: iconStyle
-                .resolve({FTappableVariant.hovered})
-                .copyWith(color: hoverColor),
-          ),
-        ),
-      );
-
-      return style;
-    }
-
-    // In light mode, fade the inactive icon well toward the background so
-    // hover (foreground) is a dramatic brightness jump. Dark mode already
-    // has enough contrast between foreground and primary, so we leave it.
-    // Primary buttons opt out: the theme already paints the icon in the
-    // accent color over a pale tinted background, and fading toward the
-    // page background makes the button read as disabled.
-    final isLight = context.colour.brightness == Brightness.light;
     final isPrimary = widget.style == ButtonStyle.primary;
-    final iconStyle = sizeStyles.md.iconContentStyle.iconStyle;
-    final restingColor = Color.lerp(
-      context.colour.foreground,
-      context.colour.background,
-      0.6,
-    );
 
-    return FButtonStyleDelta.delta(
+    var style = sizeStyles.md.copyWith(
       decoration: FVariantsDelta.delta([
         FVariantOperation.all(
           DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
         ),
       ]),
+    );
+
+    if (isPrimary && widget.color == null) {
+      // Keep the primary theme's icon coloring; only patch padding.
+      return style.copyWith(
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(
+            EdgeInsets.symmetric(vertical: iconPadV),
+          ),
+        ),
+      );
+    }
+
+    final restingColor = widget.color ?? context.colour.muted;
+    final hoverColor = widget.hoverColor ?? context.colour.foreground;
+    final iconStyle = style.iconContentStyle.iconStyle;
+
+    return style.copyWith(
       // ignore: unused_result
       iconContentStyle: FButtonIconContentStyleDelta.delta(
-        padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
-        iconStyle: isLight && !isPrimary
-            ? _iconVariants(
-                base: iconStyle.resolve({}).copyWith(color: restingColor),
-                hovered: iconStyle
-                    .resolve({FTappableVariant.hovered})
-                    .copyWith(color: context.colour.foreground),
-              )
-            : null,
+        padding: EdgeInsetsGeometryDelta.value(
+          EdgeInsets.symmetric(vertical: iconPadV),
+        ),
+        iconStyle: _iconVariants(
+          base: iconStyle.resolve({}).copyWith(color: restingColor),
+          hovered: iconStyle
+              .resolve({FTappableVariant.hovered})
+              .copyWith(color: hoverColor),
+        ),
       ),
     );
   }

@@ -272,8 +272,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       threadListSource = null;
     }
 
-    // Reload agenda items with new filter
-    _loadPriority();
+    // The agenda is universal and ignores filters; only the activity
+    // feed needs to refresh.
+    _loadPriority(reloadAgenda: false);
   }
 
   void updateIconFilter(String iconValue) {
@@ -286,8 +287,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Updating icon filter to $current');
     emit(state.copyWith(iconFilter: current));
 
-    // Reload agenda items with new filter
-    _loadPriority();
+    // The agenda is universal and ignores filters; only the activity
+    // feed needs to refresh.
+    _loadPriority(reloadAgenda: false);
   }
 
   /// Called immediately on every keystroke to update search text in state
@@ -309,10 +311,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     // When searching, force navigation to use activityFeed (matches UI)
     if (search.isNotEmpty) {
       threadListSource = ThreadListSource.activityFeed;
-      // Cancel stale subscriptions so unfiltered results don't flash
+      // Cancel stale subscriptions so unfiltered results don't flash.
+      // The agenda subscription is intentionally left alone — the
+      // agenda is universal and search never narrows it.
       _activityFeedSubscription?.cancel();
       _todoThreadsSubscription?.cancel();
-      _agendaSubscription?.cancel();
     } else {
       threadListSource = null;
     }
@@ -325,12 +328,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       emit(state.copyWith(search: search));
     }
 
-    // Reset limits but preserve sync state - search filters local data only
-    _agendaLimit = 50;
-    if (search.isEmpty) {
-      _loadAgenda(triggerSync: false);
-    }
-
+    // The agenda doesn't react to search — only the activity feed does.
     _activityFeedLimit = 50;
     _activityFeedLastRawRowCount = 0;
     _activityFeedLimitIncreased = false;
@@ -484,6 +482,22 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// this list and call [_rebuildAgendaModel] to derive a fresh
   /// [AgendaModel] without re-running the agenda DB query.
   List<Thread> _lastAgendaThreads = const [];
+
+  /// Latest todos/associated emissions captured by the agenda
+  /// subscription's `combineLatest3` callback. When `_loadAgenda`
+  /// re-subscribes (e.g. on `fetchMoreAgendaItems` to widen the LIMIT
+  /// or horizon), the new `todosStream` and `associatedStream` use
+  /// these as their `startWith` seeds. Without them the leading
+  /// throttle emission would briefly contain events-only data —
+  /// dropping todos and associated children — and the agenda would
+  /// collapse from N items to a handful for ~100ms. On cold start
+  /// they're the empty defaults, matching the original cold-start
+  /// behavior (let combineLatest fire on eventsStream alone).
+  ThreadWatchResult _seedTodosResult = const (
+    threads: <Thread>[],
+    rawRowCount: 0,
+  );
+  List<Thread> _seedAssociatedThreads = const <Thread>[];
 
   /// Rebuild the agenda model from the cached threads list and emit
   /// it. Optional [extra] state-shape changes (e.g. updated activity
@@ -2335,11 +2349,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       Date.today(),
       Date.today().addDays(_agendaHorizonDays),
     );
+    // The agenda is universal — search, filter, and icon filters are
+    // priority-page concepts and never narrow the agenda. Only
+    // [showArchived] gates which threads appear here, mirroring the
+    // user's archived-view toggle.
     final eventsStream = Thread.watch(
       archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-      search: state.search.isNotEmpty ? state.search : null,
       order: ThreadOrder.sorted,
       limit: _agendaLimit,
       includeUnscheduled: false,
@@ -2364,21 +2379,28 @@ class PriorityBloc extends Cubit<PriorityState> {
     // in the low-hundreds range.
     final todosStream = Thread.watch(
       archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-      search: state.search.isNotEmpty ? state.search : null,
       order: ThreadOrder.sorted,
       todoOnly: true,
-    ).startWith(const (threads: <Thread>[], rawRowCount: 0));
-    // Seed the associations stream with an empty list so [combineLatest]
-    // can fire on the FIRST emission of [eventsStream] alone. Without
-    // this, cold-start agenda render is gated on the 6-join associations
-    // SQL completing — which on a fresh app open is often empty anyway.
-    // When the real associations emission arrives moments later it will
-    // re-fire combineLatest and the throttleTime/distinct downstream
-    // collapses the burst.
+    ).startWith(_seedTodosResult);
+    // Seed the associations stream so [combineLatest] can fire on the
+    // FIRST emission of [eventsStream] alone. Without this, cold-start
+    // agenda render is gated on the 6-join associations SQL completing —
+    // which on a fresh app open is often empty anyway. When the real
+    // associations emission arrives moments later it will re-fire
+    // combineLatest and the throttleTime/distinct downstream collapses
+    // the burst.
+    //
+    // On cold start [_seedAssociatedThreads]/[_seedTodosResult] are the
+    // empty defaults (matching the original behavior). On re-subscribe
+    // — fetchMoreAgendaItems, setPriority, time changes, full resync —
+    // they hold the most recent values from the previous subscription,
+    // so the leading throttle emission contains real todos/associations
+    // instead of empties. Without this, the agenda would briefly drop to
+    // events-only during every resubscribe; an in-flight ballistic
+    // scroll would then clamp against a near-zero `maxScrollExtent` and
+    // jump to the top by the time real data returned.
     final associatedStream = Thread.watchAssociatedThreads()
-        .startWith(const <Thread>[]);
+        .startWith(_seedAssociatedThreads);
 
     _agendaSubscription =
         Rx.combineLatest3<
@@ -2391,6 +2413,13 @@ class PriorityBloc extends Cubit<PriorityState> {
               todosResult,
               associatedThreads,
             ) {
+              // Capture the latest per-stream values so a future
+              // re-subscription (fetchMoreAgendaItems, setPriority,
+              // time change, full resync) can seed its todos/associated
+              // startWith() with real data instead of empties. See the
+              // declaration of [_seedTodosResult] above.
+              _seedTodosResult = todosResult;
+              _seedAssociatedThreads = associatedThreads;
               // Merge events + todos, deduplicating by (id, occurrence,
               // isLinkScheduleInstance) since a thread with both a
               // user-only todo and a calendar event surfaces in both
@@ -3266,6 +3295,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (isClosed) return;
     if (_activityFeedSyncNoMore &&
         _activityFeedLastRawRowCount < _activityFeedLimit) {
+      // Also write the instance var so the next [_rebuildActivityFeedSections]
+      // (which emits `activityFeedDoneEnd: _activityFeedDoneEnd`) preserves
+      // this value. Without this, a todo-thread stream emission that fires
+      // after sync completes — common on first sign-in when pullActivityFeed
+      // writes onboarding threads and the todo watcher re-runs — would emit
+      // the stale `false` and the bottom-of-list spinner spins forever.
+      _activityFeedDoneEnd = true;
       emit(state.copyWith(activityFeedDoneEnd: true));
     }
   }

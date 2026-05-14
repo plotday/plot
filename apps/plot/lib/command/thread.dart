@@ -147,8 +147,13 @@ class ChangeCurrentThread extends ThreadCommand {
       );
     }
 
-    // Update NowBloc to the thread's priority (what user is working on)
-    nowBloc.setFocus(thread!.priority);
+    // Keep NowBloc.context aligned with the priority shown in the header
+    // title (the page priority), not the thread's specific priority. The
+    // header's tracking pill checks `nowState.context.id ==
+    // widget.priority.id` to decide whether to show — when this drifts to
+    // the thread's sub-priority the pill silently disappears, which is
+    // never what the user wants while the activity feed is still visible.
+    nowBloc.setFocus(currentPriority);
 
     // Push directly onto the inner stack so the cupertino slide fires.
     // `root.navigate(PriorityRoute > ThreadRoute)` (the fallback) swaps
@@ -871,9 +876,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
          title: title ?? (thread.todo ? 'Finish' : 'To do'),
          eventObject: EventObject.activity,
          eventAction: EventAction.started,
-         icon: stateIcon
-             ? PlotIcon.note
-             : PlotIcon.addTodo,
+         icon: stateIcon ? PlotIcon.note : PlotIcon.addTodo,
        );
 
   @override
@@ -1340,12 +1343,14 @@ class PickScheduleThread extends Command {
                 // modal immediately and let the SQLite writes finish in the
                 // background. The agenda underneath has already painted the
                 // thread on the new date.
-                unawaited(ScheduleThread(
-                  _thread,
-                  when: date.toDate(),
-                  onUpdate: _onUpdate,
-                  priorityBloc: bloc,
-                ).run(context));
+                unawaited(
+                  ScheduleThread(
+                    _thread,
+                    when: date.toDate(),
+                    onUpdate: _onUpdate,
+                    priorityBloc: bloc,
+                  ).run(context),
+                );
                 Modal.pop(context, Value<CommandReturn>(const CommandDone()));
               },
             ),
@@ -1356,12 +1361,14 @@ class PickScheduleThread extends Command {
                   child: FButton(
                     variant: FButtonVariant.secondary,
                     onPress: () {
-                      unawaited(ScheduleThread(
-                        _thread,
-                        when: Thread.todoNowDate,
-                        onUpdate: _onUpdate,
-                        priorityBloc: bloc,
-                      ).run(context));
+                      unawaited(
+                        ScheduleThread(
+                          _thread,
+                          when: Thread.todoNowDate,
+                          onUpdate: _onUpdate,
+                          priorityBloc: bloc,
+                        ).run(context),
+                      );
                       Modal.pop(
                         context,
                         Value<CommandReturn>(const CommandDone()),
@@ -2669,7 +2676,7 @@ Future<Commands> _buildSharedCommands(
       ShareThreadGroup(thread, group, onUpdate: onUpdate);
 
   return Commands(
-    prompt: 'Share with',
+    prompt: 'Share with contact or email',
     emptyMessage: 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||

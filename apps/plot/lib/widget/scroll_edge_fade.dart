@@ -1,3 +1,4 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 /// Fades the top and bottom edges of a scrollable child to communicate that
@@ -44,7 +45,26 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
     final reversed = metrics.axisDirection == AxisDirection.up;
     final atTop = reversed ? atMax : atMin;
     final atBottom = reversed ? atMin : atMax;
-    if (atTop != _atTop || atBottom != _atBottom) {
+    if (atTop == _atTop && atBottom == _atBottom) return;
+    // ScrollEndNotification fires from inside RenderViewport.performLayout
+    // when applyContentDimensions ends a ballistic scroll (e.g. items
+    // arriving from an infinite-list fetch). Calling setState during layout
+    // trips Flutter's "Build scheduled during frame" assertion; defer to a
+    // post-frame callback when invoked from a build/layout/paint phase.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    final inFrame = phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks ||
+        phase == SchedulerPhase.postFrameCallbacks;
+    if (inFrame) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (atTop == _atTop && atBottom == _atBottom) return;
+        setState(() {
+          _atTop = atTop;
+          _atBottom = atBottom;
+        });
+      });
+    } else {
       setState(() {
         _atTop = atTop;
         _atBottom = atBottom;

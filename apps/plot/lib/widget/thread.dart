@@ -987,6 +987,13 @@ class SharedCommandButton extends HookWidget {
         ? thread.scheduleContacts
         : null;
 
+    // Track hover so the unshared icon matches sibling `Button.icon`s:
+    // resting `muted`, hover lifts to `foreground`.
+    final isHovered = useState(false);
+    final iconColor = isHovered.value
+        ? context.colour.foreground
+        : context.colour.muted;
+
     final Widget child = shared
         ? AvatarGroup(
             actors: actors,
@@ -998,7 +1005,11 @@ class SharedCommandButton extends HookWidget {
             width: iconSize,
             height: iconSize,
             child: Center(
-              child: FaIcon(command.icon ?? PlotIcon.shareAdd, size: iconSize),
+              child: FaIcon(
+                command.icon ?? PlotIcon.shareAdd,
+                size: iconSize,
+                color: iconColor,
+              ),
             ),
           );
 
@@ -1035,9 +1046,13 @@ class SharedCommandButton extends HookWidget {
     // would shadow it. Keep the title tooltip only for the unshared share
     // icon state.
     if (shared) return button;
-    return FTooltip(
-      tipBuilder: (context, controller) => Text(command.title),
-      child: button,
+    return MouseRegion(
+      onEnter: (_) => isHovered.value = true,
+      onExit: (_) => isHovered.value = false,
+      child: FTooltip(
+        tipBuilder: (context, controller) => Text(command.title),
+        child: button,
+      ),
     );
   }
 }

@@ -226,7 +226,7 @@ Future<Commands> buildSharedSelectionCommands({
       ShareSelectionGroup(selection, group, onUpdate: onUpdate);
 
   return Commands(
-    prompt: 'Share with',
+    prompt: 'Share with contact or email',
     emptyMessage: 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||

@@ -125,26 +125,27 @@ class AgendaTile extends StatelessWidget {
     }
     // Determine what to show in the center
     String? centerText = text;
-    // Split date into two parts for center-on-month alignment
-    String? dateCenterLeft;
+    // Split date into weekday, month name, and day number for centered
+    // rendering.
+    String? dateWeekday;
     String? dateMonth;
-    String? dateCenterRight;
-    if (centerText == null) {
-      if (dateTimeRange != null) {
-        // Show time from DateTimeRange
-        final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
-        if (timeOfDay != null && timeOfDay.isMidnight != true) {
-          centerText = context.isMultiPanel
-              ? timeOfDay.formatShort(context)
-              : timeOfDay.formatNarrow(context);
-        }
-      } else if (date != null) {
-        // Show date split into day-of-week and month+day for centered layout
-        dateCenterLeft = date!.format(format: 'EEEE');
-        dateCenterRight = date!.format(format: 'd');
-        dateMonth = date!.year == Date.today().year
-            ? date!.format(format: 'MMM')
-            : date!.format(format: 'MMM yyyy');
+    String? dateDay;
+    if (date != null) {
+      // Centered "Weekday, Month Day" using the full names. Computed even
+      // when [text] or [dateTimeRange] is also set so the date header
+      // can always render its primary label.
+      dateWeekday = date!.format(format: 'EEEE');
+      dateDay = date!.format(format: 'd');
+      dateMonth = date!.year == Date.today().year
+          ? date!.format(format: 'MMMM')
+          : date!.format(format: 'MMMM yyyy');
+    } else if (centerText == null && dateTimeRange != null) {
+      // Show time from DateTimeRange
+      final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
+      if (timeOfDay != null && timeOfDay.isMidnight != true) {
+        centerText = context.isMultiPanel
+            ? timeOfDay.formatShort(context)
+            : timeOfDay.formatNarrow(context);
       }
     }
 
@@ -218,73 +219,58 @@ class AgendaTile extends StatelessWidget {
     if (date != null) {
       final headerBg = context.colour.headerBackground;
       final smSize = context.theme.typography.sm.fontSize;
-      final veryMuted = context.theme.plotColors.veryMuted;
 
-      final Widget child;
-      if (dateCenterLeft != null) {
-        // Gutter holds "[Mon] [24]" right-aligned on a single sm line —
-        // short month name in veryMuted, date number in foreground. The
-        // main area renders the day-of-week (sm, veryMuted) on the same
-        // baseline.
-        final timeColWidth = agendaLeadingWidth(context);
-        final spacing = context.theme.spacing;
-        final gutter = Padding(
-          padding: EdgeInsets.only(right: spacing.sm),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Text.rich(
-              TextSpan(
-                style: TextStyle(fontSize: smSize),
-                children: [
-                  TextSpan(
-                    text: dateMonth!.trimLeft(),
-                    style: TextStyle(
-                      color: context.theme.colors.foreground,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const TextSpan(text: ' '),
-                  TextSpan(
-                    text: dateCenterRight!,
-                    style: TextStyle(
-                      color: context.theme.colors.foreground,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        );
-        child = Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(width: timeColWidth, child: gutter),
-            Expanded(
-              child: Text(
-                dateCenterLeft,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.theme.colors.mutedForeground,
-                  fontSize: smSize,
-                  fontWeight: FontWeight.w500,
+      // "Weekday  Day  Month" with the day number perfectly centered.
+      // Two equal-width Expanded halves sit on either side of the day
+      // number — weekday right-aligned in the left half, month
+      // left-aligned in the right half — so the day number stays at the
+      // absolute horizontal center regardless of weekday/month width.
+      // Weekday and month are muted; the day number is foreground.
+      final mutedStyle = TextStyle(
+        color: context.theme.colors.mutedForeground,
+        fontSize: smSize,
+        fontWeight: FontWeight.w500,
+      );
+      final dayStyle = TextStyle(
+        color: context.theme.colors.foreground,
+        fontSize: smSize,
+        fontWeight: FontWeight.w600,
+      );
+      final spacing = context.theme.spacing;
+      final child = Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: spacing.sm),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  dateWeekday!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mutedStyle,
                 ),
               ),
             ),
-          ],
-        );
-      } else {
-        // Relative date label ("Yesterday", "2 days ago", etc.)
-        child = Center(
-          child: Text(
-            centerText!,
-            style: TextStyle(color: veryMuted, fontSize: smSize),
           ),
-        );
-      }
+          Text(dateDay!, style: dayStyle),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(left: spacing.sm),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  dateMonth!.trimLeft(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mutedStyle,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
 
       return Container(
         color: headerBg,

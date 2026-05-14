@@ -109,6 +109,39 @@ class NoteEditorState extends State<NoteEditor> {
   /// Twist IDs toggled OFF by the user for the current note.
   final Set<TwistInstanceId> _disabledTwists = {};
 
+  /// Working copy of attachments while editing an existing note. Null when
+  /// not editing — in that case attachments come from `widget.draft.actions`.
+  /// On submit, this list replaces the edited note's actions.
+  List<UserAction>? _editingActions;
+
+  /// Attachments to render and operate on. While editing, that's the
+  /// in-progress copy; otherwise it's the draft note's actions.
+  List<UserAction> get _currentActions {
+    if (_editingActions != null) return _editingActions!;
+    return widget.draft.actions ?? const <UserAction>[];
+  }
+
+  /// Persists a new attachment list to the right place: the in-memory editing
+  /// copy, the new-thread draft, or the note-mode draft.
+  void _setCurrentActions(List<UserAction> actions) {
+    if (_editingActions != null) {
+      setState(() {
+        _editingActions = actions;
+      });
+      return;
+    }
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged!(
+        widget.thread!,
+        note: widget.draft.copyWith(actions: actions),
+      );
+      return;
+    }
+    context.read<ThreadBloc>().updateDraft(
+      widget.draft.copyWith(actions: actions),
+    );
+  }
+
   void _resetDisabledTwists() {
     _disabledTwists.clear();
     if (widget.isNewThreadMode) return;
@@ -251,10 +284,7 @@ class NoteEditorState extends State<NoteEditor> {
     );
 
     FilePreviewCache.put(pendingFileId, imageBytes);
-    _updateActions([
-      ...(widget.draft.actions ?? const <UserAction>[]),
-      placeholder,
-    ]);
+    _setCurrentActions([..._currentActions, placeholder]);
 
     try {
       final response = await api.uploadFile(
@@ -281,7 +311,7 @@ class NoteEditorState extends State<NoteEditor> {
 
       FilePreviewCache.rekey(pendingFileId, realFileId);
 
-      final actions = widget.draft.actions ?? const <UserAction>[];
+      final actions = _currentActions;
       var replaced = false;
       final updated = actions.map((a) {
         if (!replaced && a is FileUserAction && a.fileId == pendingFileId) {
@@ -297,7 +327,7 @@ class NoteEditorState extends State<NoteEditor> {
         FilePreviewCache.evict(realFileId);
         return;
       }
-      _updateActions(updated);
+      _setCurrentActions(updated);
     } on NetworkException {
       _removePendingAttachment(pendingFileId);
       if (mounted) {
@@ -322,12 +352,12 @@ class NoteEditorState extends State<NoteEditor> {
   void _removePendingAttachment(String pendingFileId) {
     FilePreviewCache.evict(pendingFileId);
     if (!mounted) return;
-    final actions = widget.draft.actions ?? const <UserAction>[];
+    final actions = _currentActions;
     final filtered = actions
         .where((a) => !(a is FileUserAction && a.fileId == pendingFileId))
         .toList();
     if (filtered.length == actions.length) return;
-    _updateActions(filtered);
+    _setCurrentActions(filtered);
   }
 
   /// Handle a URL pasted into an otherwise empty editor: attach it as an
@@ -335,14 +365,13 @@ class NoteEditorState extends State<NoteEditor> {
   /// asynchronously resolve title and favicon to update the placeholder.
   Future<void> _handleUrlPasteWhenEmpty(String url) async {
     final placeholder = ExternalUserAction(title: url, url: url);
-    final currentActions = widget.draft.actions ?? const <UserAction>[];
-    _updateActions([...currentActions, placeholder]);
+    _setCurrentActions([..._currentActions, placeholder]);
 
     final metadata = await fetchUrlMetadata(url);
     if (!mounted) return;
     if (metadata.title == null && metadata.favicon == null) return;
 
-    final actions = widget.draft.actions ?? const <UserAction>[];
+    final actions = _currentActions;
     final resolved = ExternalUserAction(
       title: metadata.title ?? url,
       url: url,
@@ -357,16 +386,7 @@ class NoteEditorState extends State<NoteEditor> {
       return a;
     }).toList();
     if (!replaced) return;
-    _updateActions(updated);
-  }
-
-  void _updateActions(List<UserAction> actions) {
-    final updatedDraft = widget.draft.copyWith(actions: actions);
-    if (widget.isNewThreadMode) {
-      widget.onDraftChanged!(widget.thread!, note: updatedDraft);
-    } else {
-      context.read<ThreadBloc>().updateDraft(updatedDraft);
-    }
+    _setCurrentActions(updated);
   }
 
   Future<void> _saveDraft(String content) async {
@@ -408,14 +428,30 @@ class NoteEditorState extends State<NoteEditor> {
           prev.editingNote != curr.editingNote || prev.replyTo != curr.replyTo,
       listener: (context, activityState) {
         if (activityState.editingNote != null) {
+          // Seed the working attachment list from the note being edited.
+          setState(() {
+            _editingActions = List.of(
+              activityState.editingNote!.actions ?? const <UserAction>[],
+            );
+          });
           // Load editing note content into editor
           _editorKey.currentState?.reset(
             activityState.editingNote!.content ?? '',
           );
           focus();
         } else if (activityState.replyTo != null) {
+          if (_editingActions != null) {
+            setState(() {
+              _editingActions = null;
+            });
+          }
           focus();
         } else {
+          if (_editingActions != null) {
+            setState(() {
+              _editingActions = null;
+            });
+          }
           // Restore draft content
           _editorKey.currentState?.reset(widget.draft.content ?? '');
         }
@@ -640,41 +676,45 @@ class NoteEditorState extends State<NoteEditor> {
         ? '${firstLine.substring(0, 60)}...'
         : firstLine;
     final activityBloc = context.read<ThreadBloc>();
+    final accent = context.colour.accent;
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
       child: Container(
-        padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+        padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6, right: 2),
         decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: context.colour.accent, width: 2),
-          ),
+          color: accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: accent.withValues(alpha: 0.35)),
         ),
         child: Row(
           children: [
             Icon(
               FontAwesomeIcons.penToSquare,
-              size: 10,
-              color: context.colour.accent,
+              size: 12,
+              color: accent,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
-              'Editing',
+              'Editing note',
               style: context.theme.typography.xs.copyWith(
-                color: context.colour.accent,
+                color: accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                preview,
-                style: context.theme.typography.xs.copyWith(
-                  color: context.colour.muted,
+            if (preview.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  preview,
+                  style: context.theme.typography.xs.copyWith(
+                    color: context.colour.muted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
+            ] else
+              const Spacer(),
             Button.icon(
               CommandWrapper(
                 EditNote(editingNote, activityBloc: activityBloc),
@@ -696,8 +736,8 @@ class NoteEditorState extends State<NoteEditor> {
 
   /// Renders attached files and links as compact rows with an X to remove.
   Widget _buildAttachmentRows() {
-    final actions = widget.draft.actions;
-    if (actions == null || actions.isEmpty) return const SizedBox.shrink();
+    final actions = _currentActions;
+    if (actions.isEmpty) return const SizedBox.shrink();
 
     final attachments = actions
         .where(
@@ -927,35 +967,15 @@ class NoteEditorState extends State<NoteEditor> {
     if (!result.present || !mounted) return;
     final newStatus = result.value;
     final updatedAction = action.copyWith(status: newStatus.status);
-    final currentActions = widget.draft.actions ?? const [];
-    final updatedActions = currentActions
+    final updatedActions = _currentActions
         .map((a) => identical(a, action) ? updatedAction : a)
         .toList();
-    if (widget.isNewThreadMode) {
-      widget.onDraftChanged!(
-        widget.thread!,
-        note: widget.draft.copyWith(actions: updatedActions),
-      );
-    } else {
-      context
-          .read<ThreadBloc>()
-          .updateDraft(widget.draft.copyWith(actions: updatedActions));
-    }
+    _setCurrentActions(updatedActions);
   }
 
   void _removeAttachment(UserAction action) {
-    final currentActions = widget.draft.actions ?? const [];
-    final updatedActions = currentActions.where((a) => a != action).toList();
-
-    if (widget.isNewThreadMode) {
-      widget.onDraftChanged!(
-        widget.thread!,
-        note: widget.draft.copyWith(actions: updatedActions),
-      );
-    } else {
-      final updatedDraft = widget.draft.copyWith(actions: updatedActions);
-      context.read<ThreadBloc>().updateDraft(updatedDraft);
-    }
+    final updatedActions = _currentActions.where((a) => a != action).toList();
+    _setCurrentActions(updatedActions);
   }
 
   // -- Bottom bars --
@@ -968,15 +988,21 @@ class NoteEditorState extends State<NoteEditor> {
         final isCurrentlyEditing = activityState.editingNote != null;
         final threadState = context.read<ThreadBloc>().state;
         final priorityId = threadState.thread.priority.id.toString();
+
+        // Attachment-related toolbar buttons are available in both modes.
+        // Task/assign/private/twist toggles only apply to new notes.
+        void applyActions(List<UserAction> actions) =>
+            _setCurrentActions(actions);
+
         return Row(
           children: [
-            if (!isCurrentlyEditing)
-              IgnorePointer(
-                ignoring: _saving,
-                child: Opacity(
-                  opacity: _saving ? 0.6 : 1.0,
-                  child: Row(
-                    children: [
+            IgnorePointer(
+              ignoring: _saving,
+              child: Opacity(
+                opacity: _saving ? 0.6 : 1.0,
+                child: Row(
+                  children: [
+                    if (!isCurrentlyEditing) ...[
                       // Task toggle
                       Button.icon(
                         ToggleSelfTask(widget.draft),
@@ -1001,50 +1027,31 @@ class NoteEditorState extends State<NoteEditor> {
                           ),
                           selected: widget.draft.isPrivate,
                         ),
-                      // Link button
-                      Button.icon(
-                        AddLink(
-                          currentActions: widget.draft.actions ?? const [],
-                          onActionsChanged: (actions) {
-                            final updatedDraft = widget.draft.copyWith(
-                              actions: actions,
-                            );
-                            context.read<ThreadBloc>().updateDraft(
-                              updatedDraft,
-                            );
-                          },
-                          onNavigateToThread: widget.onNavigateToThread,
-                        ),
+                    ],
+                    // Link button
+                    Button.icon(
+                      AddLink(
+                        currentActions: _currentActions,
+                        onActionsChanged: applyActions,
+                        onNavigateToThread: widget.onNavigateToThread,
                       ),
+                    ),
+                    Button.icon(
+                      AttachFile(
+                        priorityId: priorityId,
+                        currentLinks: _currentActions,
+                        onLinksChanged: applyActions,
+                      ),
+                    ),
+                    if (isMobilePlatform())
                       Button.icon(
-                        AttachFile(
+                        TakePhoto(
                           priorityId: priorityId,
-                          currentLinks: widget.draft.actions ?? const [],
-                          onLinksChanged: (actions) {
-                            final updatedDraft = widget.draft.copyWith(
-                              actions: actions,
-                            );
-                            context.read<ThreadBloc>().updateDraft(
-                              updatedDraft,
-                            );
-                          },
+                          currentLinks: _currentActions,
+                          onLinksChanged: applyActions,
                         ),
                       ),
-                      if (isMobilePlatform())
-                        Button.icon(
-                          TakePhoto(
-                            priorityId: priorityId,
-                            currentLinks: widget.draft.actions ?? const [],
-                            onLinksChanged: (actions) {
-                              final updatedDraft = widget.draft.copyWith(
-                                actions: actions,
-                              );
-                              context.read<ThreadBloc>().updateDraft(
-                                updatedDraft,
-                              );
-                            },
-                          ),
-                        ),
+                    if (!isCurrentlyEditing) ...[
                       // Twist button (only when thread has twists)
                       if (threadState.threadTwists.isNotEmpty)
                         _buildTwistButton(context),
@@ -1052,24 +1059,35 @@ class NoteEditorState extends State<NoteEditor> {
                       if (threadState.threadTwists.isNotEmpty)
                         _buildConnectorButton(context),
                     ],
-                  ),
+                  ],
                 ),
               ),
+            ),
             const Spacer(),
             // Right side: Save button (always visible)
             Button.icon(
-              CommandWrapper(
-                AddNote(Future.value(widget.draft)),
-                run: (action, context) async {
-                  _editorKey.currentState?.submit(false);
-                  return const CommandDone();
-                },
-              ),
+              isCurrentlyEditing
+                  ? CommandWrapper(
+                      AddNote(Future.value(widget.draft)),
+                      title: 'Save changes',
+                      icon: Value(PlotIcon.save),
+                      run: (action, context) async {
+                        _editorKey.currentState?.submit(false);
+                        return const CommandDone();
+                      },
+                    )
+                  : CommandWrapper(
+                      AddNote(Future.value(widget.draft)),
+                      run: (action, context) async {
+                        _editorKey.currentState?.submit(false);
+                        return const CommandDone();
+                      },
+                    ),
               style: ButtonStyle.primary,
               loading: _saving,
               enabled:
                   !_saving &&
-                  (!_isEmpty || (widget.draft.actions?.isNotEmpty ?? false)),
+                  (!_isEmpty || _currentActions.isNotEmpty),
             ),
           ],
         );
@@ -1429,20 +1447,10 @@ class NoteEditorState extends State<NoteEditor> {
 
   void _shortcutAddLink(BuildContext context) {
     if (_saving) return;
-    final currentActions = widget.draft.actions ?? const <UserAction>[];
-    void onActionsChanged(List<UserAction> actions) {
-      final updatedDraft = widget.draft.copyWith(actions: actions);
-      if (widget.isNewThreadMode) {
-        widget.onDraftChanged?.call(widget.thread!, note: updatedDraft);
-      } else {
-        context.read<ThreadBloc>().updateDraft(updatedDraft);
-      }
-    }
-
     context.run(
       AddLink(
-        currentActions: currentActions,
-        onActionsChanged: onActionsChanged,
+        currentActions: _currentActions,
+        onActionsChanged: _setCurrentActions,
         onNavigateToThread: widget.onNavigateToThread,
       ),
     );
@@ -1502,8 +1510,16 @@ class NoteEditorState extends State<NoteEditor> {
         _saving = true;
       });
       try {
-        final updatedNote = editingNote.copyWith(content: body);
+        final updatedNote = editingNote.copyWith(
+          content: body,
+          actions: _editingActions ?? editingNote.actions,
+        );
         await activityBloc.updateNote(updatedNote);
+        if (mounted) {
+          setState(() {
+            _editingActions = null;
+          });
+        }
         // Reset editor to draft content
         _editorKey.currentState?.reset(widget.draft.content ?? '');
       } finally {

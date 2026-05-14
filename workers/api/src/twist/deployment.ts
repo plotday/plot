@@ -24,7 +24,7 @@ export interface DeployTwistOptions {
   publisherId: number | null;
   userId: string | null;
   input: DeploymentInput;
-  environment: Exclude<TwistEnvironment, "public">;
+  environment: TwistEnvironment;
   name: string;
   description?: string;
   logoUrl?: string;

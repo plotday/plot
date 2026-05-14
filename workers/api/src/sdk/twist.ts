@@ -14,6 +14,8 @@ import { createLogger } from "@plotday/worker-util";
 import { deploymentRateLimiter } from "../middleware/rate-limit";
 import { getEffectivePlan } from "../utils/plan";
 
+declare const ENV: string;
+
 const twist = new Hono<{ Bindings: Bindings }>();
 
 const MAX_MODULE_SIZE = 10 * 1024 * 1024; // 10 MB in bytes
@@ -77,7 +79,7 @@ const TwistDeploymentSchema = z
     logoUrlDark: z.string().url().optional(),
     publisherId: z.coerce.number().optional(),
     environment: z
-      .enum(["personal", "private", "review"])
+      .enum(["personal", "private", "review", "public"])
       .optional()
       .default("personal"),
     // Set by clients (e.g. the Twist Builder UI) when the twist source was
@@ -383,6 +385,31 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         "Bad request: description is required for non-personal deployments",
         { status: 400 }
       );
+    }
+
+    // Direct deploys to "public" are a dev-only shortcut for @plot.day users.
+    // In production, public must be reached via the review → auto-approve flow.
+    if (environment === "public") {
+      const isDevelopment = typeof ENV !== "undefined" && ENV === "development";
+      if (!isDevelopment) {
+        return new Response(
+          "Forbidden: direct public deploys are only allowed in development",
+          { status: 403 }
+        );
+      }
+      if (!userToken || !user) {
+        return new Response(
+          "Unauthorized: user token required for public deploys",
+          { status: 401 }
+        );
+      }
+      const email = user.email?.toLowerCase() ?? "";
+      if (!email.endsWith("@plot.day")) {
+        return new Response(
+          "Forbidden: only @plot.day users can deploy directly to public",
+          { status: 403 }
+        );
+      }
     }
 
     // Determine the publisher that owns this package. If any non-personal

@@ -59,39 +59,47 @@ class PriorityWrapper implements AutoRouteWrapper {
           child: ThreadHeaderNotifierProvider(
             child: BlocBuilder<LayoutBloc, LayoutState>(
               builder: (context, layoutState) {
-                Widget body = Column(
-                  children: [
-                    const UnifiedHeader(),
-                    Expanded(
-                      child: ResizablePanelLayout(
-                        leftTop: const LeftPanelAgendaView(),
-                        left: PrioritiesPanelContent(),
-                        middle: PriorityPage(priorityId: priorityId),
-                        child: BlocSelector<PriorityBloc, PriorityState, int>(
-                          selector: (state) =>
-                              (state.thread?.priority.displayColor ??
-                                      state.draft.priority.displayColor)
-                                  .index,
-                          builder: (context, threadColorIndex) {
-                            final threadColor = ThemeColor(threadColorIndex);
-                            final brightness = context.colour.brightness;
-                            return ProxyProvider0<ColourSchemeData>(
-                              update: (_, _) => ColourSchemeData(
-                                themeColor: threadColor,
-                                brightness: brightness,
-                              ),
-                              child: AutoRouter(
-                                key: _routerKey,
-                                placeholder: (context) => const LoadingPage(),
-                                clipBehavior: Clip.none,
-                              ),
-                            );
-                          },
+                // In single-panel mode UnifiedHeader sits above the panel
+                // layout. In multi-panel mode the panel layout splits the
+                // window into A (sidebar header + agenda + priorities) and
+                // B (main header + shared squircle containing middle +
+                // right). The outer A|B divider runs top-to-bottom; the
+                // inner middle|right divider stays inside the squircle.
+                final panelLayout = ResizablePanelLayout(
+                  leftTop: const LeftPanelAgendaView(),
+                  left: PrioritiesPanelContent(),
+                  middle: PriorityPage(priorityId: priorityId),
+                  child: BlocSelector<PriorityBloc, PriorityState, int>(
+                    selector: (state) =>
+                        (state.thread?.priority.displayColor ??
+                                state.draft.priority.displayColor)
+                            .index,
+                    builder: (context, threadColorIndex) {
+                      final threadColor = ThemeColor(threadColorIndex);
+                      final brightness = context.colour.brightness;
+                      return ProxyProvider0<ColourSchemeData>(
+                        update: (_, _) => ColourSchemeData(
+                          themeColor: threadColor,
+                          brightness: brightness,
                         ),
-                      ),
-                    ),
-                  ],
+                        child: AutoRouter(
+                          key: _routerKey,
+                          placeholder: (context) => const LoadingPage(),
+                          clipBehavior: Clip.none,
+                        ),
+                      );
+                    },
+                  ),
                 );
+
+                Widget body = layoutState.multiPanel
+                    ? panelLayout
+                    : Column(
+                        children: [
+                          const UnifiedHeader(),
+                          Expanded(child: panelLayout),
+                        ],
+                      );
 
                 if (layoutState.multiPanel) {
                   body = DecoratedBox(
@@ -945,13 +953,26 @@ class _PriorityPageState extends State<PriorityPage>
         !showFooter &&
         state.activityFeedDoneEnd &&
         state.activityFeedLoaded) {
+      final isFiltering =
+          state.filter.isNotEmpty || state.iconFilter.isNotEmpty;
+      final String emptyMessage;
+      if (isSearching && isFiltering) {
+        emptyMessage = 'No threads match your search and filters.';
+      } else if (isSearching) {
+        emptyMessage = 'No threads match your search.';
+      } else if (isFiltering) {
+        emptyMessage = 'No threads match your filters.';
+      } else {
+        emptyMessage =
+            'Threads track your specific goals and activities, with tasks, notes, and linked documents in one place.\nCreate a thread or add a connection to add threads here.';
+      }
       return Padding(
         padding: EdgeInsets.symmetric(
           horizontal: context.contentPaddingH,
           vertical: context.theme.spacing.xl,
         ),
         child: Text(
-          'Threads track your specific goals and activities, with tasks, notes, and linked documents in one place.\nCreate a thread or add a connection to add threads here.',
+          emptyMessage,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: context.theme.plotColors.veryMuted,

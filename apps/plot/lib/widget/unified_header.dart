@@ -28,9 +28,31 @@ import 'icon.dart';
 import 'thread.dart';
 import 'window.dart';
 
+/// Selects which slice of the header to render.
+///
+/// [single] is the all-in-one header used in single-panel mode and as a
+/// fallback. In multi-panel mode the [ResizablePanelLayout] renders the
+/// [sidebar] variant at the top of the left column and the [main] variant
+/// at the top of the right column — each is a complete, self-contained
+/// header (no cross-region state plumbing).
+enum HeaderVariant { single, sidebar, main }
+
+/// Fixed height for every header variant. Locked to a constant so swapping
+/// trailing controls (timer pill vs. plain icon button, etc.) never makes
+/// the header shrink — content stays vertically centered within this band.
+const double _kHeaderHeight = 44.0;
+
 /// A single header spanning the full window width, placed above all panels.
+///
+/// In single-panel mode renders one combined header. In multi-panel mode
+/// the panel layout instantiates one [sidebar] variant inside the left
+/// column and one [main] variant inside the right column — that way the
+/// outer resize divider naturally runs top-to-bottom of the window without
+/// the header content having to be split across regions.
 class UnifiedHeader extends StatefulWidget {
-  const UnifiedHeader({super.key});
+  const UnifiedHeader({this.variant = HeaderVariant.single, super.key});
+
+  final HeaderVariant variant;
 
   @override
   State<UnifiedHeader> createState() => _UnifiedHeaderState();
@@ -57,6 +79,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
     _panelController?.registerSearchToggle(_toggleSearch);
+    LayoutBloc.instance?.registerSearchToggle(_toggleSearch);
+    LayoutBloc.instance?.registerSearchClose(_closeSearchIfOpen);
     // No PriorityBloc when the header is used on the Priorities tab
     // (single-panel root view). That path renders the no-priority header
     // and has nothing to wire up here.
@@ -70,29 +94,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
   void _onSearchChanged() {
     final search = _searchController.text;
-    // The controller fires this listener on selection changes too; ignore
-    // those so cursor moves don't tear down in-flight remote search results.
     if (search == _lastSearchText) return;
     _lastSearchText = search;
-
-    // Immediately update search text in state and cancel stale subscriptions
-    // so old unfiltered results stop flowing while the user types. The
-    // actual query is throttled below.
     context.read<PriorityBloc>().prepareSearch(search);
-
-    // Clearing the box should feel instant — no point waiting 500 ms to
-    // tear down filtered results when the user just wiped the field.
     if (search.isEmpty) {
       _debounceTimer?.cancel();
       _dispatchSearch();
       return;
     }
-
-    // Throttle with trailing edge: first keystroke arms a 500 ms timer;
-    // further keystrokes during that window are absorbed (no reset);
-    // when it fires, _dispatchSearch reads the latest controller text. A
-    // new timer is armed by the next keystroke, so continued typing yields
-    // an update every ~500 ms and the final text always gets searched.
     if (_debounceTimer == null || !_debounceTimer!.isActive) {
       _debounceTimer = Timer(
         const Duration(milliseconds: 500),
@@ -113,15 +122,34 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   void _toggleSearch() {
     if (_searchExpanded) {
       _closeSearch();
-    } else {
-      setState(() {
-        _searchExpanded = true;
-        _panelController?.updateSearchExpanded(true);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _searchFocusNode.requestFocus();
-        });
-      });
+      return;
     }
+    setState(() {
+      _searchExpanded = true;
+      _panelController?.updateSearchExpanded(true);
+    });
+    _focusSearchSoon();
+  }
+
+  /// Tries to focus the search field on the next frame, retrying for a
+  /// few frames if focus doesn't take. Cross-tab navigation from the
+  /// bottom-nav Search button can race with the navigator's own focus
+  /// management — the page mounts, the search field builds, our first
+  /// `requestFocus` lands, then the navigator's post-route focus pass
+  /// steals it back. Retrying across frames lets us reclaim focus once
+  /// that transition settles.
+  void _focusSearchSoon({int attempt = 0}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_searchExpanded) return;
+      _searchFocusNode.requestFocus();
+      if (!_searchFocusNode.hasFocus && attempt < 4) {
+        _focusSearchSoon(attempt: attempt + 1);
+      }
+    });
+  }
+
+  void _closeSearchIfOpen() {
+    if (_searchExpanded) _closeSearch();
   }
 
   void _closeSearch() {
@@ -130,17 +158,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       _panelController?.updateSearchExpanded(false);
       _searchController.clear();
     });
-    // Clear PriorityBloc search and filters
     final priorityBloc = context.read<PriorityBloc>();
     priorityBloc.updateSearch('');
     priorityBloc.updateFilter([]);
-    // Clear icon filters one by one (toggles them off)
     for (final icon in List<String>.from(priorityBloc.state.iconFilter)) {
       priorityBloc.updateIconFilter(icon);
     }
-    // Clear PrioritiesBloc search
     context.read<PrioritiesBloc>().updateSearch('');
-    // Clear activity search
     final notifier = ThreadHeaderNotifierProvider.read(context);
     notifier?.onSearchChanged?.call('');
     notifier?.onSearchClosed?.call();
@@ -149,6 +173,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   @override
   void dispose() {
     _panelController?.unregisterSearchToggle();
+    LayoutBloc.instance?.unregisterSearchToggle(_toggleSearch);
+    LayoutBloc.instance?.unregisterSearchClose(_closeSearchIfOpen);
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -174,7 +200,15 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
   @override
   Widget build(BuildContext context) {
-    _scheduleTrafficLightAlignment();
+    // Only the variants that own the leftmost traffic-light slot publish a
+    // height to the window-chrome aligner — single (single-panel mode) and
+    // sidebar (multi-panel A column). [_kHeaderHeight] is the constant
+    // they all hit thanks to the SizedBox wrapper below.
+    final bool ownsTrafficLights = widget.variant == HeaderVariant.single ||
+        widget.variant == HeaderVariant.sidebar;
+    if (ownsTrafficLights) {
+      _scheduleTrafficLightAlignment();
+    }
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         // On the Priorities tab in single-panel mode there is no
@@ -183,21 +217,98 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         try {
           context.read<PriorityBloc>();
         } on ProviderNotFoundException {
-          return _buildNoPriorityHeader(context, layoutState);
+          return _wrapHeader(
+            context,
+            layoutState,
+            _buildNoPriorityHeaderChildren(context, layoutState),
+            suffixes: <Widget>[
+              Button.icon(_buildNoPriorityMenuCommand()),
+              if (Window.toolbarPadding
+                      .resolve(TextDirection.ltr)
+                      .right !=
+                  0)
+                SizedBox(
+                  width: Window.toolbarPadding
+                      .resolve(TextDirection.ltr)
+                      .right,
+                ),
+            ],
+          );
         }
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
-            // of() registers an InheritedNotifier dependency, so this
-            // builder already rebuilds when the notifier fires.
             final notifier = ThreadHeaderNotifierProvider.of(context);
-            return _buildHeader(context, layoutState, state, notifier);
+            switch (widget.variant) {
+              case HeaderVariant.single:
+                return _buildSingleHeader(
+                  context,
+                  layoutState,
+                  state,
+                  notifier,
+                );
+              case HeaderVariant.sidebar:
+                return _buildSidebarHeader(context, layoutState);
+              case HeaderVariant.main:
+                return _buildMainHeader(
+                  context,
+                  layoutState,
+                  state,
+                  notifier,
+                );
+            }
           },
         );
       },
     );
   }
 
-  Widget _buildHeader(
+  // ---------------------------------------------------------------------------
+  // Header shell: every variant goes through this so they share the same
+  // height, the same FHeader styling, and the same drag/clip wrapping.
+
+  Widget _wrapHeader(
+    BuildContext context,
+    LayoutState layoutState,
+    List<Widget> titleChildren, {
+    List<Widget> suffixes = const <Widget>[],
+    BoxDecoration? decoration,
+  }) {
+    Widget header = ClipRect(
+      key: _headerKey,
+      child: SizedBox(
+        height: _kHeaderHeight,
+        child: DecoratedBox(
+          decoration: decoration ?? const BoxDecoration(),
+          child: FHeader(
+            style: FHeaderStyleDelta.delta(
+              // Header is height-locked to [_kHeaderHeight]. FHeader's
+              // default padding (top:8, bottom:10 from `pagePadding`)
+              // would shrink the inner title slot to ~26px — just shy
+              // of FTextField's intrinsic ~30px, so opening search
+              // overflows the FLabel column by exactly 4px. Zero out
+              // vertical padding so the title row gets the full header
+              // band; horizontal page padding is preserved.
+              padding: EdgeInsetsGeometryDelta.value(
+                const EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
+            title: Row(spacing: 8, children: titleChildren),
+            suffixes: suffixes,
+          ),
+        ),
+      ),
+    );
+
+    if (Platform.instance.isWindows) {
+      header = DragToMoveArea(child: header);
+    }
+    return header;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Single-panel header: one combined row above the panel area.
+
+  Widget _buildSingleHeader(
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
@@ -206,335 +317,192 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
-
+    final thread = state.thread;
     final isThreadVisible = notifier?.isThreadVisible ?? false;
-    final hasActivity = state.thread != null || isThreadVisible;
-    // PriorityPage panel is considered hidden when we're in single-panel mode
-    // or when the middle panel isn't visible in multi-panel mode.
-    final priorityPageHidden =
-        !layoutState.multiPanel || !layoutState.middlePanelVisible;
+    final hasActivity = thread != null || isThreadVisible;
 
-    final leadingWidgets = _buildLeadingWidgets(
-      context,
-      layoutState,
-      hasActivity,
-      resolvedToolbarPadding,
-    );
-    final rightWidgets = _buildRightWidgets(
-      context,
-      layoutState,
-      state,
-      notifier,
-      resolvedToolbarPadding,
-    );
-
-    final titleSection = _searchExpanded
-        ? _buildSearchField(context, layoutState, state, notifier)
-        : _buildTitle(
-            context,
-            layoutState,
-            state,
-            hasActivity,
-            priorityPageHidden,
-          );
-
-    // In multi-panel mode the title is centered. Mirror each side with an
-    // invisible (but space-occupying) copy of the opposite side's buttons so
-    // both halves of the [Expanded] title slot have equal width — the title
-    // text then truly centers on the window midpoint regardless of how many
-    // buttons live on either side. The mirrors stay in the layout but skip
-    // paint, hit-testing, and semantics.
-    final List<Widget> titleRowChildren;
-    final List<Widget> headerSuffixes;
-    if (layoutState.multiPanel) {
-      Widget mirror(List<Widget> children) => Visibility(
-        visible: false,
-        maintainSize: true,
-        maintainAnimation: true,
-        maintainState: true,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: children,
+    final List<Widget> leading = [
+      if (resolvedToolbarPadding.left != 0)
+        SizedBox(width: resolvedToolbarPadding.left),
+      if (hasActivity)
+        Button.icon(
+          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
         ),
-      );
-      Widget group(List<Widget> children) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      );
+    ];
 
-      titleRowChildren = <Widget>[
-        if (leadingWidgets.isNotEmpty) group(leadingWidgets),
-        if (rightWidgets.isNotEmpty) mirror(rightWidgets),
-        titleSection,
-        if (leadingWidgets.isNotEmpty) mirror(leadingWidgets),
-        if (rightWidgets.isNotEmpty) group(rightWidgets),
-      ];
-      headerSuffixes = const <Widget>[];
+    final Widget titleSection;
+    if (_searchExpanded) {
+      titleSection = _buildSearchField(context, layoutState, state, notifier);
+    } else if (thread != null) {
+      titleSection = _buildThreadTitleSection(context, thread);
     } else {
-      titleRowChildren = <Widget>[...leadingWidgets, titleSection];
-      headerSuffixes = rightWidgets;
+      titleSection = _buildTitleSection(
+        context,
+        layoutState,
+        state,
+        alignLeft: true,
+      );
     }
 
-    // In multi-panel mode, the header sits transparently on the priority-
-    // tinted frame background painted at the page level. In single-panel
-    // mode, paint the darkest panel background directly (a wrapping
-    // darkenTheme would dim foreground/muted lightness too and reduce icon
-    // contrast against the darkened surface).
-    final BoxDecoration decoration = layoutState.multiPanel
-        ? const BoxDecoration()
-        : BoxDecoration(
-            color: context.colour.panelDarkestBackground,
-            border: Border(
-              bottom: BorderSide(
-                color: context.theme.colors.border,
-                width: 1,
-              ),
-            ),
-          );
-    Widget header = ClipRect(
-      key: _headerKey,
-      child: DecoratedBox(
-        decoration: decoration,
-        child: FHeader(
-          style: FHeaderStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-          ),
-          title: Row(spacing: 8, children: titleRowChildren),
-          suffixes: headerSuffixes,
-        ),
+    // Single-panel: thread actions live in the header (no squircle).
+    final trailing = <Widget>[
+      if (thread != null) ..._buildActiveTagToggles(context, thread),
+      if (thread != null) _buildTodoToggle(context, thread),
+      if (thread != null && !thread.isReadOnly) Button.icon(EditThread(thread)),
+      if (thread != null && !thread.isReadOnly)
+        SharedCommandButton(thread: thread),
+      // Single-panel: search lives in the bottom nav, not the header.
+      Button.icon(
+        _buildPriorityAndThreadMenuCommand(state, layoutState, notifier),
+      ),
+      if (resolvedToolbarPadding.right != 0)
+        SizedBox(width: resolvedToolbarPadding.right),
+    ];
+
+    final decoration = BoxDecoration(
+      color: context.colour.panelDarkestBackground,
+      border: Border(
+        bottom: BorderSide(color: context.theme.colors.border, width: 1),
       ),
     );
 
-    // Wrap with DragToMoveArea on Windows
-    if (Platform.instance.isWindows) {
-      header = DragToMoveArea(child: header);
-    }
-
-    return header;
+    return _wrapHeader(
+      context,
+      layoutState,
+      [...leading, titleSection],
+      suffixes: trailing,
+      decoration: decoration,
+    );
   }
 
-  /// Leading widgets shown before the title (window padding + panel
-  /// navigation buttons). Returned as a flat list so [_buildHeader] can mirror
-  /// the group on both sides of the title for centering in multi-panel mode.
-  List<Widget> _buildLeadingWidgets(
+  // ---------------------------------------------------------------------------
+  // Multi-panel sidebar header (left column).
+
+  Widget _buildSidebarHeader(
     BuildContext context,
     LayoutState layoutState,
-    bool hasActivity,
-    EdgeInsets resolvedToolbarPadding,
   ) {
-    final muted = context.theme.plotColors.muted;
-    // All header icon buttons share the footer ListTile's coloring:
-    // [plotColors.muted] at rest and [theme.colors.foreground] on hover
-    // (the latter is Button.icon's default hoverColor when a [color] is set).
-    final Widget navigation;
-    // Single-panel with thread: back button clears the thread.
-    if (hasActivity && !layoutState.multiPanel) {
-      navigation = Button.icon(
-        CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
-        color: muted,
-      );
-    }
-    // Single-panel without thread: no leading button. Priorities is its
-    // own bottom-nav tab now, so the previous "back to Priorities" arrow
-    // would just duplicate the tab bar and look like history navigation.
-    else if (!layoutState.multiPanel) {
-      navigation = const SizedBox.shrink();
-    }
-    // Multi-panel right-only with a thread visible: back + open priorities
-    // + open threads. Back clears the thread but keeps the middle panel
-    // closed, so the user can return to the priority page without the
-    // thread shrinking.
-    else if (layoutState.multiPanel &&
-        !layoutState.leftPanelVisible &&
-        !layoutState.middlePanelVisible &&
-        hasActivity) {
-      navigation = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Button.icon(ToggleLeftSidebarCommand(isVisible: false), color: muted),
-          Button.icon(
-            ToggleMiddleSidebarCommand(isVisible: false),
-            color: muted,
-          ),
-          Button.icon(
-            CommandWrapper(
-              ChangeCurrentThread(null),
-              icon: Value(PlotIcon.back),
-            ),
-            color: muted,
-          ),
-        ],
-      );
-    }
-    // 2-panel left+right with activity: the priority page (threads list)
-    // is hidden, so add a back button alongside the cycle button to let
-    // the user return to it.
-    else if (layoutState.isTwoPanel &&
-        layoutState.leftPanelVisible &&
-        !layoutState.middlePanelVisible &&
-        hasActivity &&
-        context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth) {
-      navigation = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Button.icon(
-            CyclePanelsCommand(layoutState: layoutState),
-            color: muted,
-          ),
-          Button.icon(
-            CommandWrapper(
-              ChangeCurrentThread(null),
-              icon: Value(PlotIcon.back),
-            ),
-            color: muted,
-          ),
-        ],
-      );
-    }
-    // 2-panel browsing (960–1309px): cycle
-    else if (layoutState.isTwoPanel &&
-        context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth) {
-      navigation = Button.icon(
-        CyclePanelsCommand(layoutState: layoutState),
-        color: muted,
-      );
-    }
-    // ≥ 1310px right-only: priorities icon + open threads
-    else if (layoutState.multiPanel &&
-        !layoutState.leftPanelVisible &&
-        !layoutState.middlePanelVisible) {
-      navigation = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Button.icon(ToggleLeftSidebarCommand(isVisible: false), color: muted),
-          Button.icon(
-            ToggleMiddleSidebarCommand(isVisible: false),
-            color: muted,
-          ),
-        ],
-      );
-    }
-    // ≥ 1310px with sidebar(s): explicit toggle buttons
-    else {
-      navigation = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Button.icon(
-            ToggleLeftSidebarCommand(isVisible: layoutState.leftPanelVisible),
-            color: muted,
-          ),
-          if (!(layoutState.leftPanelVisible &&
-              layoutState.middlePanelVisible))
-            Button.icon(
-              ToggleMiddleSidebarCommand(
-                isVisible: layoutState.middlePanelVisible,
-              ),
-              color: muted,
-            ),
-        ],
-      );
-    }
-
-    return <Widget>[
-      // macOS traffic light padding
-      if (resolvedToolbarPadding.left != 0)
-        SizedBox(width: resolvedToolbarPadding.left),
-      navigation,
-    ];
+    final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+      TextDirection.ltr,
+    );
+    return _wrapHeader(
+      context,
+      layoutState,
+      <Widget>[
+        if (resolvedToolbarPadding.left != 0)
+          SizedBox(width: resolvedToolbarPadding.left),
+        const Expanded(child: SizedBox.shrink()),
+        Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
+      ],
+    );
   }
 
-  /// Right-side widgets shown after the title (thread actions, new-thread,
-  /// search, menu, window padding). Used either as FHeader suffixes
-  /// (single-panel) or mirrored into the title row (multi-panel).
-  List<Widget> _buildRightWidgets(
+  // ---------------------------------------------------------------------------
+  // Multi-panel main header (right column). One piece: leading open-sidebar
+  // (when sidebar is hidden) + left-aligned title + tracking pill +
+  // trailing new-thread / search / menu. Thread-specific buttons live
+  // inside the thread squircle below, not here.
+
+  Widget _buildMainHeader(
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
     ThreadHeaderNotifier? notifier,
-    EdgeInsets resolvedToolbarPadding,
   ) {
-    final thread = state.thread;
-    return <Widget>[
-      // Active tag toggles (when thread is visible)
-      if (thread != null) ..._buildActiveTagToggles(context, thread),
+    final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+      TextDirection.ltr,
+    );
+    final showOpenSidebar = !layoutState.leftPanelVisible;
 
-      // Todo toggle (when thread is visible)
-      if (thread != null) _buildTodoToggle(context, thread),
+    final List<Widget> leading = [
+      // When the sidebar is hidden the main column is the leftmost — it
+      // also owns the macOS traffic-light gap.
+      if (showOpenSidebar && resolvedToolbarPadding.left != 0)
+        SizedBox(width: resolvedToolbarPadding.left),
+      if (showOpenSidebar)
+        Button.icon(ToggleLeftSidebarCommand(isVisible: false)),
+    ];
 
-      // Edit thread (when thread is visible). Hidden for read-only viewers.
-      if (thread != null && !thread.isReadOnly)
-        Button.icon(
-          EditThread(thread),
-          color: context.theme.plotColors.muted,
-        ),
+    final Widget titleSection = _searchExpanded
+        ? _buildSearchField(context, layoutState, state, notifier)
+        : _buildTitleSection(
+            context,
+            layoutState,
+            state,
+            alignLeft: true,
+          );
 
-      // Share thread (when thread is visible). Hidden for read-only viewers.
-      if (thread != null && !thread.isReadOnly)
-        SharedCommandButton(thread: thread),
-
-      // New Thread button (multiPanel only, since bottom nav has it otherwise)
-      if (layoutState.multiPanel && !state.context.isTwistDev)
-        Button.icon(NewThread(), color: context.theme.plotColors.muted),
-
-      // Hide search in single-panel mode when viewing a thread — the header
-      // is dedicated to thread actions, and search would target the
-      // priority's thread list which isn't visible.
-      if (layoutState.multiPanel || thread == null) _searchButton(),
-
-      Button.icon(
-        _buildMenuCommand(state, layoutState, notifier),
-        color: context.theme.plotColors.muted,
-      ),
-
-      // Windows window control padding
+    final List<Widget> trailing = <Widget>[
+      _searchButton(),
+      if (!state.context.isTwistDev) Button.icon(NewThread()),
+      Button.icon(_buildPriorityMenuCommand(state)),
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
     ];
+
+    return _wrapHeader(
+      context,
+      layoutState,
+      [...leading, titleSection],
+      suffixes: trailing,
+    );
+  }
+
+  /// Wraps a text-bearing widget so its bounding box hugs the actual
+  /// glyph metrics — the default text line box includes half-leading
+  /// above ascent and below descent, which makes a Row of "text + icon"
+  /// look mis-centered (the icon's box is tight; the text's is taller).
+  /// Removing leading via [TextHeightBehavior] lets [CrossAxisAlignment]
+  /// .center actually align the visible glyphs.
+  static Widget _tightTextBox({required Widget child}) {
+    return DefaultTextStyle.merge(
+      textHeightBehavior: const TextHeightBehavior(
+        applyHeightToFirstAscent: false,
+        applyHeightToLastDescent: false,
+      ),
+      child: child,
+    );
   }
 
   Widget _searchButton() {
     // Keep the header-side button as the search icon even while search is
-    // expanded — the close affordance lives inside the input as an X. The
-    // command still toggles; _toggleSearch reads _searchExpanded to decide.
+    // expanded — the close affordance lives inside the input as an X.
     return Button.icon(
       ToggleSearchCommand(searchExpanded: false, onToggle: _toggleSearch),
-      color: context.theme.plotColors.muted,
     );
   }
 
-  Widget _buildTitle(
+  /// Builds the title widget (priority/event title + tracking pill).
+  /// When [alignLeft] is true the title hugs the start of its slot;
+  /// otherwise it centers.
+  Widget _buildTitleSection(
     BuildContext context,
     LayoutState layoutState,
-    PriorityState state,
-    bool hasActivity,
-    bool priorityPageHidden,
-  ) {
-    final alignment = layoutState.multiPanel
-        ? Alignment.center
-        : Alignment.centerLeft;
+    PriorityState state, {
+    required bool alignLeft,
+  }) {
+    final alignment = alignLeft
+        ? Alignment.centerLeft
+        : Alignment.center;
 
-    // Pair a title widget with the time-tracking pill so the two read as
-    // one unit. The pill sits to the right of the title with a small gap
-    // and stays out of the row entirely on twist-dev priorities (which
-    // don't track time). The sub-priorities scope toggle, when present,
-    // lives inline with the priority leaf inside [PriorityLabel] — see
-    // the priority-label branches below.
     Widget withTrackingPill(Widget title) {
       if (state.context.isTwistDev) return title;
       return Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Flexible(child: title),
+          // Strip the line box's leading/trailing half-leading so the
+          // visible glyphs of the priority title vertically center
+          // against the tracking icon/pill — without this the text box
+          // includes descender space the icon's box doesn't, and the
+          // text reads as nudged up by a couple of pixels.
+          Flexible(child: _tightTextBox(child: title)),
           const SizedBox(width: 8),
           _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
     }
 
-    // Caret + toggle wiring shared by the single- and multi-panel priority
-    // titles. Mirrors the priorities-list expand caret: chevronDown while
-    // sub-priority content is rolled up into this feed (the default),
-    // chevronRight while it's collapsed away (direct-only feed).
     final IconData scopeCaret = state.hideSubPriorities
         ? FontAwesomeIcons.chevronDown
         : FontAwesomeIcons.chevronRight;
@@ -542,34 +510,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ToggleHideSubPriorities(context: context),
     );
 
-    // Thread open while the PriorityPage panel is hidden: show thread title
-    // (or hide the title when the thread is a new draft without a title).
-    if (priorityPageHidden && hasActivity) {
-      final thread = state.thread;
-      if (thread == null) {
-        return const Expanded(child: SizedBox.shrink());
-      }
-
-      return Expanded(
-        child: Align(
-          alignment: alignment,
-          child: withTrackingPill(
-            Text(
-              thread.displayTitle,
-              overflow: TextOverflow.ellipsis,
-              textHeightBehavior: const TextHeightBehavior(),
-              style: context.theme.typography.sm.copyWith(
-                fontWeight: FontWeight.w600,
-                color: context.theme.colors.foreground,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Wrap the priority-driven title so the header swaps to the
-    // selected event's title (and back) without manual invalidation.
     return Expanded(
       child: Align(
         alignment: alignment,
@@ -588,7 +528,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 Text(
                   currentEvent.displayTitle,
                   overflow: TextOverflow.ellipsis,
-                  textHeightBehavior: const TextHeightBehavior(),
+                  // Drop the line box's half-leading; the wrapper in
+                  // [withTrackingPill] supplies a default, but Text
+                  // ignores that whenever it's set explicitly here.
+                  textHeightBehavior: const TextHeightBehavior(
+                    applyHeightToFirstAscent: false,
+                    applyHeightToLastDescent: false,
+                  ),
                   style: context.theme.typography.sm.copyWith(
                     fontWeight: FontWeight.w600,
                     color: context.theme.colors.foreground,
@@ -620,6 +566,32 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
+  /// Single-panel thread title shown in place of the priority title +
+  /// tracking pill while a thread is open. The thread body has no header
+  /// of its own in single-panel mode, so this surfaces the thread's
+  /// title up in the global header.
+  Widget _buildThreadTitleSection(BuildContext context, Thread thread) {
+    return Expanded(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          thread.displayTitle,
+          overflow: TextOverflow.ellipsis,
+          // Match the priority-title path: drop half-leading so the
+          // glyphs sit at the visual center of the header band.
+          textHeightBehavior: const TextHeightBehavior(
+            applyHeightToFirstAscent: false,
+            applyHeightToLastDescent: false,
+          ),
+          style: context.theme.typography.sm.copyWith(
+            fontWeight: FontWeight.w600,
+            color: context.theme.colors.foreground,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchField(
     BuildContext context,
     LayoutState layoutState,
@@ -627,7 +599,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     ThreadHeaderNotifier? notifier,
   ) {
     List<Command> buildFilters(BuildContext ctx) {
-      // Merge priority tags and note tags, deduplicated by Tag identity
       final allTags = <Tag, (Tag, int)>{};
       for (final tagData in state.tags) {
         allTags[tagData.$1] = tagData;
@@ -637,11 +608,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           allTags.putIfAbsent(tagData.$1, () => tagData);
         }
       }
-
       return [
         ...state.iconCounts.map((d) => ToggleIconFilter(d.$1, context: ctx)),
         ...allTags.keys.map((tag) => ToggleActivityFilter(tag, context: ctx)),
-        // Active filters not in current tag counts
         ...state.filter
             .where((tag) => !allTags.containsKey(tag))
             .map((tag) => ToggleActivityFilter(tag, context: ctx)),
@@ -655,9 +624,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     return Expanded(
       child: Align(
-        alignment: layoutState.multiPanel
-            ? Alignment.center
-            : Alignment.centerLeft,
+        alignment: Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(
@@ -690,14 +657,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                             filterCommandsBuilder: buildFilters,
                           ),
                           selected: hasActiveFilters,
-                          color: context.theme.plotColors.muted,
                         ),
                       Button.icon(
                         ToggleSearchCommand(
                           searchExpanded: true,
                           onToggle: _closeSearch,
                         ),
-                        color: context.theme.plotColors.muted,
                       ),
                     ],
                   );
@@ -719,7 +684,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final isTodo = thread.todo;
     final isScheduled = isTodo && thread.isFuture;
 
-    // Icon 1: Calendar scheduling icon
     final calendarIcon = Button.icon(
       CommandWrapper(
         PickScheduleThread(thread),
@@ -728,15 +692,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ),
       selected: isScheduled,
       selectedColor: threadColor,
-      color: isScheduled ? null : context.theme.plotColors.muted,
     );
 
-    // Icon 2: To-do state icon
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
         CommandWrapper(StartThread(thread), icon: Value(PlotIcon.addTodo)),
-        color: context.theme.plotColors.muted,
       );
     } else {
       todoIcon = Button.icon(
@@ -757,7 +718,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
-  /// Builds active tag toggle buttons for the current thread.
   List<Widget> _buildActiveTagToggles(BuildContext context, Thread thread) {
     return thread.tags.keys
         .where((tag) {
@@ -769,70 +729,26 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           return true;
         })
         .take(3)
-        .map(
-          (tag) => Button.icon(
-            ToggleThreadTag(thread, tag),
-            color: context.theme.plotColors.muted,
-          ),
-        )
+        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
         .toList();
   }
 
-  Widget _buildNoPriorityHeader(
+  // ---------------------------------------------------------------------------
+  // No-priority fallback (Priorities tab) — shared by every variant since
+  // it sits outside the [PriorityBloc] scope.
+
+  List<Widget> _buildNoPriorityHeaderChildren(
     BuildContext context,
     LayoutState layoutState,
   ) {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
-
-    final titleChildren = <Widget>[
+    return <Widget>[
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
       const Expanded(child: SizedBox.shrink()),
     ];
-
-    final suffixes = <Widget>[
-      Button.icon(
-        _buildNoPriorityMenuCommand(),
-        color: context.theme.plotColors.muted,
-      ),
-      if (resolvedToolbarPadding.right != 0)
-        SizedBox(width: resolvedToolbarPadding.right),
-      const SizedBox.shrink(),
-    ];
-
-    // Multi-panel: transparent over the priority-tinted frame painted at
-    // the page level. Single-panel: opaque darkest-panel background.
-    final BoxDecoration decoration = layoutState.multiPanel
-        ? const BoxDecoration()
-        : BoxDecoration(
-            color: context.colour.panelDarkestBackground,
-            border: Border(
-              bottom: BorderSide(
-                color: context.theme.colors.border,
-                width: 1,
-              ),
-            ),
-          );
-    Widget header = ClipRect(
-      key: _headerKey,
-      child: DecoratedBox(
-        decoration: decoration,
-        child: FHeader(
-          style: FHeaderStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
-          ),
-          title: Row(spacing: 8, children: titleChildren),
-          suffixes: suffixes,
-        ),
-      ),
-    );
-
-    if (Platform.instance.isWindows) {
-      header = DragToMoveArea(child: header);
-    }
-    return header;
   }
 
   Command _buildNoPriorityMenuCommand() {
@@ -858,7 +774,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
-  Command _buildMenuCommand(
+  /// Single-panel menu: thread-level commands + priority-level commands
+  /// combined, since the squircle row doesn't exist.
+  Command _buildPriorityAndThreadMenuCommand(
     PriorityState state,
     LayoutState layoutState,
     ThreadHeaderNotifier? notifier,
@@ -868,12 +786,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final thread = state.thread;
-        // Capture the bloc here — when ArchiveThread runs through the modal
-        // it may dispatch with an Overlay-rooted context that can't resolve
-        // the bloc, which would skip the optimistic feed update.
         final priorityBloc = context.read<PriorityBloc?>();
-        // Build priority groups before any await so BuildContext is not
-        // carried across an async gap.
         final priorityGroups = currentPriorityCommandGroups(
           state.thread?.priority ?? state.context,
           context: context,
@@ -884,6 +797,22 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         return Commands(
           groups: [...threadGroups, ...priorityGroups],
         );
+      },
+    );
+  }
+
+  /// Multi-panel main-header menu: priority-level commands only. Thread
+  /// commands live in the thread squircle's own "..." menu.
+  Command _buildPriorityMenuCommand(PriorityState state) {
+    return ShowCommands(
+      title: 'Menu',
+      icon: PlotIcon.menu,
+      commandsBuilder: (context) async {
+        final priorityGroups = currentPriorityCommandGroups(
+          state.context,
+          context: context,
+        );
+        return Commands(groups: priorityGroups);
       },
     );
   }
@@ -1037,10 +966,7 @@ class _PriorityHeaderTrackingControlState
     // animates the trailing-widget width so the title slides
     // smoothly across the swap.
     final Widget child = isInactive
-        ? Button.icon(
-            StartTimer(),
-            color: context.theme.plotColors.muted,
-          )
+        ? Button.icon(StartTimer())
         : _buildPill(context, nowState, live);
 
     return AnimatedSize(
@@ -1419,34 +1345,50 @@ class _PillLabel extends StatelessWidget {
     final pomoState = live.state;
     final fontSize = context.theme.typography.sm.fontSize;
 
-    if (centerHovered) {
-      if (pomoState == PomodoroState.grace) {
-        return Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(FontAwesomeIcons.stop, size: 9, color: foreground),
-              const SizedBox(width: 5),
-              Text(
-                'Stop',
-                style: TextStyle(
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w500,
-                  color: foreground,
-                  height: 1,
-                ),
-              ),
-            ],
-          ),
-        );
-      }
+    final Widget child = centerHovered
+        ? _buildHoverContent(pomoState, fontSize)
+        : _buildDurationContent(pomoState, fontSize);
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 150),
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
+      child: KeyedSubtree(
+        key: ValueKey<bool>(centerHovered),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildHoverContent(PomodoroState pomoState, double? fontSize) {
+    if (pomoState == PomodoroState.grace) {
       return Center(
-        child: Icon(FontAwesomeIcons.pause, size: 10, color: foreground),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(FontAwesomeIcons.stop, size: 9, color: foreground),
+            const SizedBox(width: 5),
+            Text(
+              'Stop',
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w500,
+                color: foreground,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
       );
     }
+    return Center(
+      child: Icon(FontAwesomeIcons.pause, size: 10, color: foreground),
+    );
+  }
 
+  Widget _buildDurationContent(PomodoroState pomoState, double? fontSize) {
     if (pomoState == PomodoroState.grace) {
       return Center(
         child: AnimatedBuilder(

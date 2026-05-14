@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 
@@ -416,6 +417,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       builder: (context, panelConstraints) {
                         return Column(
                       children: [
+                        // In multi-panel mode the unified header has no
+                        // thread-specific buttons. Surface them here at
+                        // the top of the thread squircle so they stay
+                        // pinned while the notes list scrolls below.
+                        if (layoutStateForPanels.multiPanel)
+                          _ThreadActionsRow(thread: state.thread),
                         if (state.threadNoteId != null)
                           _ThreadFilterBar(threadNoteId: state.threadNoteId!),
                         ...state.links.map(
@@ -1173,5 +1180,114 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
       }).toList(),
     );
     return items;
+  }
+}
+
+/// Pinned action row inside the thread squircle (multi-panel only).
+///
+/// In multi-panel mode the unified header carries no thread-specific
+/// buttons — they live here, fixed at the top of the squircle so the
+/// notes scroll list underneath can fade against its top edge cleanly.
+///
+/// Start of the row: tag toggles, Todo/Finish, Schedule.
+/// End of the row: Edit, Share, "…" menu (thread-level commands only).
+class _ThreadActionsRow extends StatelessWidget {
+  const _ThreadActionsRow({required this.thread});
+
+  final Thread thread;
+
+  @override
+  Widget build(BuildContext context) {
+    final threadColor = context.colour.colours.fromTheme(
+      thread.priority.displayColor,
+    );
+    final isTodo = thread.todo;
+    final isScheduled = isTodo && thread.isFuture;
+    final readOnly = thread.isReadOnly;
+
+    final Widget todoButton;
+    if (!isTodo) {
+      todoButton = Button.icon(
+        CommandWrapper(StartThread(thread), icon: Value(PlotIcon.addTodo)),
+      );
+    } else {
+      todoButton = Button.icon(
+        CommandWrapper(
+          FinishThread(thread),
+          icon: Value(FontAwesomeIcons.circle),
+          hoverIcon: Value(FontAwesomeIcons.circleCheck),
+          title: 'Finish',
+        ),
+        selected: true,
+        selectedColor: threadColor,
+      );
+    }
+
+    final scheduleButton = Button.icon(
+      CommandWrapper(
+        PickScheduleThread(thread),
+        icon: Value(PlotIcon.schedule),
+        title: 'Schedule',
+      ),
+      selected: isScheduled,
+      selectedColor: threadColor,
+    );
+
+    // Surface up to three active addable tag toggles (Reply is included
+    // only when the current actor already replied — same logic as the
+    // unified header's previous in-place tags row).
+    final activeTagButtons = thread.tags.keys
+        .where((tag) {
+          if (tag == Tag.todo) return false;
+          if (!tag.addable) return false;
+          if (tag == Tag.reply) {
+            return thread.tags[tag]?.contains(Base.actorId) ?? false;
+          }
+          return true;
+        })
+        .take(3)
+        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
+        .toList();
+
+    final startGroup = <Widget>[
+      ...activeTagButtons,
+      todoButton,
+      scheduleButton,
+    ];
+
+    final endGroup = <Widget>[
+      if (!readOnly) Button.icon(EditThread(thread)),
+      if (!readOnly) SharedCommandButton(thread: thread),
+      Button.icon(_buildThreadMenuCommand(thread)),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.theme.spacing.xs,
+        vertical: context.theme.spacing.xs,
+      ),
+      child: Row(
+        children: [
+          ...startGroup,
+          const Spacer(),
+          ...endGroup,
+        ],
+      ),
+    );
+  }
+
+  Command _buildThreadMenuCommand(Thread thread) {
+    return ShowCommands(
+      title: 'Menu',
+      icon: PlotIcon.menu,
+      commandsBuilder: (context) async {
+        final priorityBloc = context.read<PriorityBloc?>();
+        final groups = await threadCommandGroups(
+          thread,
+          priorityBloc: priorityBloc,
+        );
+        return Commands(groups: groups);
+      },
+    );
   }
 }

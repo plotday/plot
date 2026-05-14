@@ -335,7 +335,14 @@ class InfiniteList extends StatefulWidget {
     this.scrollController,
     this.scrollStorageKey,
     this.estimatedItemExtent = 75,
-    this.overflow = 3,
+    // One page of buffer past the viewport is enough — the fetcher fires
+    // again as the user scrolls into it. Larger values (the previous
+    // default was 3) ask for `pageSize * (overflow * 2 + 1)` items per
+    // round, which over-fetches on tall windows: e.g. pageSize=28 +
+    // overflow=3 asks for 196 items, well past what a typical agenda or
+    // feed can supply, causing the fetcher's "still under target" branch
+    // to fire repeatedly before content catches up.
+    this.overflow = 1,
     this.reverse = false,
     this.onReorder,
     this.nonReorderablePrefixCount = 0,
@@ -360,6 +367,18 @@ class InfiniteListState extends State<InfiniteList> {
   late final ScrollController _scrollController;
 
   bool _fetching = false;
+
+  /// `widget.count` and `lastVisible` at the most recent fetcher call.
+  /// Used by [_loadIfNecessary] to suppress redundant fetches: if neither
+  /// the count nor the visible window has advanced since we last asked,
+  /// the fetcher already had its shot and couldn't grow the list past
+  /// here — wait for the user to scroll closer to the bottom before
+  /// trying again. Without this, sparse data sources (e.g. a fresh
+  /// agenda where the fetcher can only surface ~30 fill-days per round
+  /// while [InfiniteList]'s overflow buffer asks for several pages on a
+  /// tall window) loop on every `didUpdateWidget`.
+  int _lastFetchCount = -1;
+  int _lastFetchLastVisible = -1;
 
   /// Snapshot of (index -> key) for visible items, used for anchor correction.
   Map<int, String> _visibleKeySnapshot = {};
@@ -421,6 +440,18 @@ class InfiniteListState extends State<InfiniteList> {
       return;
     }
 
+    // Back-off when the fetcher saturated. If neither the underlying
+    // count nor the visible window has advanced since we last asked,
+    // re-firing now would just hand the fetcher the same (or smaller)
+    // window — and rebuild-driven re-entries (sync emissions, parent
+    // re-renders) would do this hundreds of times in a single frame
+    // budget. The scroll listener clears these on real movement so the
+    // next page is still fetched ahead of the user.
+    if (widget.count <= _lastFetchCount &&
+        lastVisible <= _lastFetchLastVisible) {
+      return;
+    }
+
     // Determine scroll direction
     final scrollingUp =
         _scrollController.position.userScrollDirection ==
@@ -442,6 +473,9 @@ class InfiniteListState extends State<InfiniteList> {
       'InfiniteList loading more items: '
       'newFirst=$newFirst, newCount=$newCount, pageSize=$pageSize',
     );
+
+    _lastFetchCount = widget.count;
+    _lastFetchLastVisible = lastVisible;
 
     try {
       _fetching = true;

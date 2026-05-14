@@ -2,8 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:collection/collection.dart';
-
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
@@ -14,11 +12,19 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/widget/icon.dart';
 
-/// Visual indices used by the bottom nav.
+/// Indices into the AutoTabsRouter's `routes`. These identify which
+/// inner navigator stack is active. The Activity stack is still where
+/// threads and priority pages live even though it no longer has its
+/// own bottom-nav button.
 const int _kTabPriorities = 0;
 const int _kTabAgenda = 1;
 const int _kTabActivity = 2;
-const int _kBtnNew = 3;
+
+/// Visual indices used by the bottom nav (5 items, no Activity).
+const int _kNavPriorities = 0;
+const int _kNavAgenda = 1;
+const int _kBtnNew = 2;
+const int _kBtnSearch = 3;
 const int _kBtnMore = 4;
 
 @RoutePage(name: "PrioritiesShellRoute")
@@ -98,10 +104,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         (pathSegments.isNotEmpty && pathSegments.first == 't');
   }
 
-  /// Maps the active tab + URL to the visual nav index. The Priorities,
-  /// Agenda, and Activity tabs each map directly to their bottom-nav
-  /// indices; "New" lights up while the user is on `…/new`; thread pages
-  /// hide the nav so they have no highlighted index.
+  /// Maps the active tab + URL to the visual nav index. Priorities and
+  /// Agenda map directly to their bottom-nav slots; the Activity tab no
+  /// longer has a bottom-nav button, so it (and any priority page) shows
+  /// no highlight. "New" lights up while the user is on `…/new`; thread
+  /// pages hide the nav so they have no highlighted index either.
   int _currentNavIndex(BuildContext context, TabsRouter tabsRouter) {
     final currentPath = context.router.currentPath;
     if (currentPath.endsWith('/new')) return _kBtnNew;
@@ -111,7 +118,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         (pathSegments.isNotEmpty && pathSegments.first == 't')) {
       return -1;
     }
-    return tabsRouter.activeIndex;
+    switch (tabsRouter.activeIndex) {
+      case _kTabPriorities:
+        return _kNavPriorities;
+      case _kTabAgenda:
+        return _kNavAgenda;
+      default:
+        // Activity tab (or anything else) — no bottom-nav highlight.
+        return -1;
+    }
   }
 
   void _handleNavTap(
@@ -119,18 +134,25 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     TabsRouter tabsRouter,
     int index,
   ) {
+    // Navigating away from the current page should leave search closed —
+    // otherwise coming back via Search would toggle the stale state closed
+    // instead of opening it fresh. More just opens a modal, so it leaves
+    // search alone.
+    if (index != _kBtnSearch && index != _kBtnMore) {
+      LayoutBloc.instance?.requestSearchClose();
+    }
     switch (index) {
-      case _kTabPriorities:
+      case _kNavPriorities:
         tabsRouter.setActiveIndex(_kTabPriorities);
         return;
-      case _kTabAgenda:
+      case _kNavAgenda:
         tabsRouter.setActiveIndex(_kTabAgenda);
-        return;
-      case _kTabActivity:
-        _activateActivityTab(context, tabsRouter);
         return;
       case _kBtnNew:
         _openNewThread(context, tabsRouter);
+        return;
+      case _kBtnSearch:
+        _openSearch(context, tabsRouter);
         return;
       case _kBtnMore:
         ShowSettings().run(context);
@@ -138,36 +160,54 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     }
   }
 
-  /// Switch to the Activity tab. If the tab has no route on its stack
-  /// yet (first activation), push the user's current/default priority.
-  /// If we're already on the Activity tab inside a thread, pop back to
-  /// the priority root instead of staying on the thread.
-  void _activateActivityTab(BuildContext context, TabsRouter tabsRouter) {
+  /// Bottom-nav Search button. Search lives on a [PriorityRoute] — so
+  /// when the user is on the Priorities or Agenda tab (or any non-priority
+  /// route) we first switch to the Activity tab, navigating to the user's
+  /// default/root priority if its stack is empty. If we're already on a
+  /// priority page, the existing header just expands its search inline.
+  void _openSearch(BuildContext context, TabsRouter tabsRouter) {
+    final layoutBloc = LayoutBloc.instance;
+    final onActivityTab = tabsRouter.activeIndex == _kTabActivity;
+
+    if (onActivityTab &&
+        layoutBloc != null &&
+        layoutBloc.hasSearchToggle) {
+      layoutBloc.requestSearchToggle();
+      return;
+    }
+
     final activityRouter = tabsRouter.stackRouterOfIndex(_kTabActivity);
-    final alreadyOnTab = tabsRouter.activeIndex == _kTabActivity;
-
-    if (alreadyOnTab && activityRouter != null) {
-      // On the Activity tab — drop back to the priority root if we drilled
-      // deeper (e.g. into a thread or new-thread page). Repeated taps on
-      // the Activity tab while at the root are no-ops.
-      while (activityRouter.canPop()) {
-        activityRouter.maybePop();
-      }
-      return;
-    }
-
-    // First activation of the tab (or switching back to it from another
-    // tab). If the tab already holds a stack, just activate it; else
-    // push the user's current/default priority.
     if (activityRouter != null && activityRouter.stack.isNotEmpty) {
+      // Activity tab already has a priority page on its stack — just
+      // surface it and let its header pick up the toggle request.
       tabsRouter.setActiveIndex(_kTabActivity);
+      _expandSearchWhenReady(context, attempt: 0);
       return;
     }
+
     final priorityIdString = _activityPriorityIdString(context);
     if (priorityIdString == null) return;
     context.router.navigate(
       PriorityRoute(priorityIdString: priorityIdString),
     );
+    _expandSearchWhenReady(context, attempt: 0);
+  }
+
+  /// Polls across frames until a unified_header registers its toggle
+  /// handler with [LayoutBloc] (which happens in its first
+  /// didChangeDependencies). Mirrors [_pushNewThreadWhenInnerReady]'s
+  /// frame budget for parity with the New-thread cold-start path.
+  void _expandSearchWhenReady(BuildContext context, {required int attempt}) {
+    if (!context.mounted) return;
+    final layoutBloc = LayoutBloc.instance;
+    if (layoutBloc != null && layoutBloc.hasSearchToggle) {
+      layoutBloc.requestSearchToggle();
+      return;
+    }
+    if (attempt >= 120) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _expandSearchWhenReady(context, attempt: attempt + 1);
+    });
   }
 
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
@@ -294,35 +334,16 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   List<FBottomNavigationBarItem> _buildNavItems(BuildContext context) {
     return [
       FBottomNavigationBarItem(
-        icon: Icon(PlotIcon.priorities),
-        label: _buildNavLabel('Priorities'),
-      ),
-      FBottomNavigationBarItem(
-        icon: Icon(PlotIcon.agenda),
-        label: _buildNavLabel('Agenda'),
-      ),
-      FBottomNavigationBarItem(
         icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
           builder: (context, state) {
-            final pathSegments = context.router.currentPath
-                .split('/')
-                .where((s) => s.isNotEmpty)
-                .toList();
-            final priorityIdString =
-                pathSegments.isNotEmpty ? pathSegments[0] : null;
-            final priority = priorityIdString != null
-                ? state.priorities.firstWhereOrNull(
-                    (p) => p.id.toShortString() == priorityIdString,
-                  )
-                : null;
-            final hasUnread = priority != null &&
-                (priority.unread ||
-                    priority.descendants().any((p) => p.unread));
+            final hasUnread = state.priorities.any(
+              (p) => p.unread || p.descendants().any((d) => d.unread),
+            );
 
             return Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(PlotIcon.activity),
+                Icon(PlotIcon.priorities),
                 if (hasUnread)
                   Positioned(
                     top: -2,
@@ -340,11 +361,19 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
             );
           },
         ),
-        label: _buildNavLabel('Activity'),
+        label: _buildNavLabel('Priorities'),
+      ),
+      FBottomNavigationBarItem(
+        icon: Icon(PlotIcon.agenda),
+        label: _buildNavLabel('Agenda'),
       ),
       FBottomNavigationBarItem(
         icon: Icon(PlotIcon.addNote),
         label: _buildNavLabel('New'),
+      ),
+      FBottomNavigationBarItem(
+        icon: Icon(PlotIcon.search),
+        label: _buildNavLabel('Search'),
       ),
       FBottomNavigationBarItem(
         icon: StreamBuilder<List<TwistConnectionRow>>(
@@ -433,11 +462,9 @@ class _MobileShellChromeState extends State<_MobileShellChrome> {
             child: IgnorePointer(
               ignoring: !widget.showNav,
               child: _PersistentBottomNav(
-                currentIndex:
-                    widget.currentIndex < 0 ? 0 : widget.currentIndex,
+                currentIndex: widget.currentIndex,
                 onChange: widget.onChange,
                 items: widget.items,
-                highlight: widget.currentIndex >= 0,
               ),
             ),
           ),
@@ -452,13 +479,15 @@ class _PersistentBottomNav extends StatelessWidget {
     required this.currentIndex,
     required this.onChange,
     required this.items,
-    required this.highlight,
   });
 
+  /// Visual index of the highlighted item, or -1 when no item should be
+  /// highlighted (e.g. while viewing a priority's activity list, which
+  /// no longer has a dedicated bottom-nav slot). FBottomNavigationBar
+  /// supports -1 natively — it just renders every item unselected.
   final int currentIndex;
   final ValueChanged<int> onChange;
   final List<FBottomNavigationBarItem> items;
-  final bool highlight;
 
   @override
   Widget build(BuildContext context) {
@@ -473,19 +502,10 @@ class _PersistentBottomNav extends StatelessWidget {
             top: false,
             left: false,
             right: false,
-            // When the current route doesn't correspond to any tab (e.g.
-            // a thread) we render the nav with no highlighted item by
-            // hiding the selection ring via opacity tricks. In practice
-            // we only render when [highlight] is true since
-            // [_MobileShellChrome] hides the nav on those routes; the
-            // flag is kept for completeness.
-            child: Opacity(
-              opacity: highlight ? 1.0 : 0.0,
-              child: FBottomNavigationBar(
-                index: currentIndex,
-                onChange: onChange,
-                children: items,
-              ),
+            child: FBottomNavigationBar(
+              index: currentIndex,
+              onChange: onChange,
+              children: items,
             ),
           ),
         ),
