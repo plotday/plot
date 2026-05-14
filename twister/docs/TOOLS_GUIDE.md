@@ -25,7 +25,7 @@ The Plot tool is the core interface for creating and managing activities and pri
 
 ### Workspace-Level Twists
 
-A twist is installed by a single user at the workspace level — it is **not** scoped to a particular priority. `this.userId` exposes the installing user's ID, and `plot.getUserId()` / `plot.getDefaultPriorityId()` are available if you need them explicitly.
+A twist is installed by a single user at the workspace level — it is **not** scoped to a particular priority. `this.userId` exposes the installing user's ID, and `plot.getUserId()` is available if you need it explicitly.
 
 When a twist creates a thread or link without specifying a priority, the server picks one automatically for the owner user via `match_priority_for_user`. You only need to provide a `priority` (or a `priorityId` filter) when you want to override that automatic routing.
 
