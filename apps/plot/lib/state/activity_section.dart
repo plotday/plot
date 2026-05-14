@@ -70,7 +70,7 @@ class ActivitySectionMarker {
       case ActivitySection.eventAgenda:
         return 'Event Agenda';
       case ActivitySection.today:
-        return 'Today';
+        return 'Doing';
       case ActivitySection.scheduled:
         return 'Scheduled';
       case ActivitySection.newSection:

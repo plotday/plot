@@ -868,7 +868,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
     bool stateIcon = false,
     String? title,
   }) : super(
-         title: title ?? (thread.todo ? 'Finish' : 'Do today'),
+         title: title ?? (thread.todo ? 'Finish' : 'To do'),
          eventObject: EventObject.activity,
          eventAction: EventAction.started,
          icon: stateIcon
@@ -886,7 +886,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 class StartThread extends _UpdateThreadCommand {
   StartThread(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'Do today',
+        title: 'To do',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.addTodo,

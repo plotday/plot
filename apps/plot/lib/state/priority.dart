@@ -1521,7 +1521,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // places the thread in the correct section in the same frame as the
     // click. A naive in-place map of `state.activityFeedItems` would
     // leave the thread in its previous section (e.g. Done stayed Done
-    // when the user clicked Do today) until the DB stream landed.
+    // when the user clicked To do) until the DB stream landed.
     _patchActivityFeedSourcesForOptimisticUpdate(updatedThread);
 
     final feed = _buildActivityFeedItems();

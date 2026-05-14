@@ -3012,7 +3012,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// and no dates set. Effectively: not a todo.
   bool get done => _userSchedule != null && !todo;
 
-  /// Active = marked "Do today" (user schedule with `todoNowDate` sentinel)
+  /// Active = marked "To do" (user schedule with `todoNowDate` sentinel)
   /// or todo with a user-schedule date that is today or in the past.
   ///
   /// Primary state for threads currently being worked on; rendered in the
