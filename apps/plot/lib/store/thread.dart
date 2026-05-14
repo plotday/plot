@@ -2421,57 +2421,73 @@ class Thread extends Equatable implements Comparable<Thread> {
     return sortedThreadsByPriority;
   }
 
-  Thread({
-    required this.priority,
+  factory Thread({
+    required Priority priority,
     String? title,
     String? preview,
     bool draft = false,
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
-  }) : _thread = ThreadRow(
-         id: Uuid.generate(),
-         createdAt: DateTime.now(),
-         updatedAt: DateTime.now(),
-         priorityId: priority.id,
-         draft: draft,
-         title: title,
-         preview: preview,
-         unread: false,
-         importance: 0,
-         urgency: null,
-         readAt: null,
-         hasEmbedding: false,
-         // Seed topic + per-priority sharing defaults onto the draft thread so
-         // it inherits the routing key, any auto-attached contacts/groups, and
-         // pending email invites before the user types. When no explicit
-         // config.topic is set, fall back to the priority id itself for
-         // non-root priorities, so sibling threads filed in the same
-         // sub-priority share a topic filter for classify_thread_for_user.
-         topic: priority.priorityConfig.topic ??
-             (priority.path.isRoot ? null : priority.id.toString()),
-         contacts: priority.inheritedDefaultSharedContacts.isEmpty
-             ? null
-             : List<Uuid>.from(priority.inheritedDefaultSharedContacts),
-         groups: priority.inheritedDefaultSharedGroups.isEmpty
-             ? null
-             : List<Uuid>.from(priority.inheritedDefaultSharedGroups),
-         inviteEmails: priority.inheritedDefaultSharedInviteEmails.isEmpty
-             ? null
-             : jsonEncode(priority.inheritedDefaultSharedInviteEmails),
-       ),
-       _schedule = null,
-       _userSchedule = null,
-       _tags = null,
-       _notes = notes,
-       _active = null,
-       _unreadComputed = null,
-       _linkSourceCreatedAt = null,
-       _activityDirty = true,
-       _activityRemoteDirty = true,
-       _scheduleDirty = true,
-       isLinkScheduleInstance = false,
-       rsvpInheritedFromSeries = false;
+  }) {
+    final now = Time.now();
+    final threadId = Uuid.generate();
+    final activity = ThreadRow(
+      id: threadId,
+      createdAt: now,
+      updatedAt: now,
+      priorityId: priority.id,
+      draft: draft,
+      title: title,
+      preview: preview,
+      unread: false,
+      importance: 0,
+      urgency: null,
+      readAt: null,
+      hasEmbedding: false,
+      // Seed topic + per-priority sharing defaults onto the draft thread so
+      // it inherits the routing key, any auto-attached contacts/groups, and
+      // pending email invites before the user types. When no explicit
+      // config.topic is set, fall back to the priority id itself for
+      // non-root priorities, so sibling threads filed in the same
+      // sub-priority share a topic filter for classify_thread_for_user.
+      topic: priority.priorityConfig.topic ??
+          (priority.path.isRoot ? null : priority.id.toString()),
+      contacts: priority.inheritedDefaultSharedContacts.isEmpty
+          ? null
+          : List<Uuid>.from(priority.inheritedDefaultSharedContacts),
+      groups: priority.inheritedDefaultSharedGroups.isEmpty
+          ? null
+          : List<Uuid>.from(priority.inheritedDefaultSharedGroups),
+      inviteEmails: priority.inheritedDefaultSharedInviteEmails.isEmpty
+          ? null
+          : jsonEncode(priority.inheritedDefaultSharedInviteEmails),
+    );
+    // Honor `at:` / `on:` by materializing the canonical schedule row.
+    // DB constraint `schedule_at_xor_on` requires exactly one of the two,
+    // so prefer `at` when both are passed.
+    final schedule = (at != null || on != null)
+        ? ScheduleRow(
+            id: Uuid.generate(),
+            updatedAt: now,
+            threadId: threadId,
+            startAt: at?.start,
+            endAt: at?.end,
+            startOn: at == null ? on?.start : null,
+            endOn: at == null ? on?.end : null,
+            outstandingTasks: false,
+          )
+        : null;
+    return Thread._fromStore(
+      activity: activity,
+      priority: priority,
+      schedule: schedule,
+      notes: notes,
+      activityDirty: true,
+      activityRemoteDirty: true,
+      scheduleDirty: true,
+    );
+  }
 
   Thread._fromStore({
     required ThreadRow activity,
