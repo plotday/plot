@@ -353,6 +353,33 @@ Manual / integration:
 - Run the timer through a block; verify the block's live overlay
   counts down; verify other blocks for the same priority do not.
 
+## Documentation updates
+
+`docs/agenda.md` describes the current cascade behavior and needs to be
+rewritten alongside the code:
+
+- **"Pending Duration Cascade" section** — replace entirely. The new copy
+  describes per-block pending: each block independently owns a planned
+  duration; editing it writes a `priority_block` row at the block's
+  `effective_at`; nothing cascades into or out of the block. Keep the note
+  about the gutter UI and the `cascadeDuration` field name (still used as
+  the carrier on the `AgendaBlock` model).
+- **"Drop Behavior" — cross-period drop into a gap with no pending duration
+  set** — the default 30m write changes from "writes priority's total
+  pending" to "writes a `priority_block` row at the destination gap's
+  anchor with `duration = min(30m, available-gap-room)`". Behavior stays
+  visually identical; only the storage location changes.
+- **"Inline Duration Bump" — Priority blocks (cascade slice / no slice)** —
+  collapse the two cases into one bullet: "Priority and priority-led gap
+  blocks — the block's own pending duration. There is no priority-wide
+  total to re-anchor; each block stands alone."
+- **"Block Sort Within a Period"** — no change. Order semantics are
+  preserved.
+
+`docs/updates.md` — add a one-liner to the top section:
+"Time you add to a block in the agenda now applies only to that block
+instead of every day."
+
 ## Rollout
 
 - No DB migration. Ship the Flutter / Drift changes in one PR.
