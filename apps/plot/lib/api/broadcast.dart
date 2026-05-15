@@ -14,6 +14,7 @@ import 'package:plot/api/broadcast_channel.dart';
 
 typedef MessageHandler = Future<void> Function(Map<String, dynamic> message);
 typedef ReconnectedHandler = void Function();
+typedef NeedsCatchUpCheck = bool Function();
 
 class BroadcastClient with WidgetsBindingObserver {
   static BroadcastClient? _instance;
@@ -28,6 +29,7 @@ class BroadcastClient with WidgetsBindingObserver {
   Timer? _pingTimer;
   StreamSubscription<dynamic>? _messageSubscription;
   ReconnectedHandler? _onReconnected;
+  NeedsCatchUpCheck? _needsCatchUpOnFirstConnect;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   static const Duration _baseReconnectDelay = Duration(seconds: 1);
@@ -57,10 +59,12 @@ class BroadcastClient with WidgetsBindingObserver {
     MessageHandler messageHandler,
     int clientId, {
     ReconnectedHandler? onReconnected,
+    NeedsCatchUpCheck? needsCatchUpOnFirstConnect,
   }) async {
     _messageHandler = messageHandler;
     _clientId = clientId;
     _onReconnected = onReconnected;
+    _needsCatchUpOnFirstConnect = needsCatchUpOnFirstConnect;
 
     // Cancel any existing connectivity subscription to prevent leaks
     await _connectivitySubscription?.cancel();
@@ -228,6 +232,15 @@ class BroadcastClient with WidgetsBindingObserver {
       } else {
         _wasEverConnected = true;
         log.info("WebSocket connected");
+        // The startup catch-up sync is owned by whoever called connect(). If
+        // it hasn't run (or hasn't succeeded yet) by the time the WebSocket
+        // first comes up, trigger the reconnect handler so it can run now.
+        // Skipping this stranded clients whose startup sync failed against
+        // an unreachable API: the socket eventually reconnected but no
+        // catch-up sync ever fired.
+        if (_needsCatchUpOnFirstConnect?.call() == true) {
+          _onReconnected?.call();
+        }
       }
     } on WebSocketChannelException catch (e) {
       // Check for auth errors during connection establishment

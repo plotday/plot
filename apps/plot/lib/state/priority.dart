@@ -1235,15 +1235,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     final needed = first + count;
     final currentItems = state.agendaItems.length;
     var shouldReload = false;
-    if (needed > _agendaLimit) {
-      _agendaLimit = needed;
-      _agendaHorizonDays += 90;
-      shouldReload = true;
-    } else if (!state.agendaDoneEnd && currentItems < needed) {
-      // JOIN multiplication: need more raw rows to get enough unique threads.
-      // Only bump when we actually don't have enough items — spurious fetcher
-      // calls during first-frame layout (pageSize=1) should not inflate limits.
-      _agendaLimit += 50;
+    // Pagination is by date range only: extend the horizon when the
+    // InfiniteList asks for more rows than we currently render.
+    if (!state.agendaDoneEnd && currentItems < needed) {
       _agendaHorizonDays += 90;
       shouldReload = true;
     }
@@ -2202,15 +2196,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
 
     if (reloadAgenda) {
-      // Initial window is intentionally smaller than the viewport-equivalent
-      // 50-row default: a cold cache pays for every joined row in
-      // [Thread.watch], every Thread inflation in [_mapResultsToThreads],
-      // and every per-thread pass in [AgendaBuilder.build]. 25 rows + a
-      // 30-day horizon is enough to fill typical viewports (and the
-      // 14-day buffer past last-content date keeps the fill spinner from
-      // being immediate). [fetchMoreAgendaItems] already grows both bounds
-      // when the user scrolls near the end.
-      _agendaLimit = 25;
+      // Initial 30-day horizon. [fetchMoreAgendaItems] extends this
+      // as the user scrolls forward.
       _agendaHorizonDays = 30;
       _agendaFillDays = 0;
       _agendaSyncNoMore = false;
@@ -2356,13 +2343,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     final eventsStream = Thread.watch(
       archived: state.showArchived,
       order: ThreadOrder.sorted,
-      limit: _agendaLimit,
       includeUnscheduled: false,
       range: dateRange,
       // Restrict the datetime-based event branches to "in progress at
       // now and forward" — `makeAgendaItems` drops past link schedule
-      // instances anyway, so fetching them only wastes a row of the
-      // pagination budget that should be carrying real events.
+      // instances anyway, so fetching them only wastes work.
       eventsActiveAt: DateTime.now(),
       // Drop the user-schedule branches; the todosStream below is the
       // sole source for those rows.
@@ -2460,7 +2445,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
               // `rawRowCount` still drives the pagination grow logic in
               // [fetchMoreAgendaItems]; it should reflect the events
-              // stream alone since that's where LIMIT lives.
+              // stream alone since that's where pagination is anchored.
               return (
                 threads: [...merged, ...extra],
                 rawRowCount: eventsResult.rawRowCount,
@@ -2710,39 +2695,19 @@ class PriorityBloc extends Cubit<PriorityState> {
 
       if (_agendaSyncNoMore) break;
 
-      // Check local agenda to decide if we need more pages. Mirrors
-      // the events stream above — todos aren't paginated, so they
-      // don't factor into the "have we reached the horizon" decision.
-      final localThreads = await Thread.get(
-        priorityPath: priorityToLoad.path,
-        archived: archived,
-        order: ThreadOrder.sorted,
-        includeUnscheduled: false,
-        limit: _agendaLimit,
-        range: CustomBoundedDateRange(
-          Date.today(),
-          Date.today().addDays(_agendaHorizonDays),
-        ),
-        eventsActiveAt: DateTime.now(),
-        eventsOnly: true,
-      );
-
-      final hasEnoughItems = localThreads.length >= _agendaLimit;
-
-      // Compare sync boundary with the last visible item's date.
+      // Stop when the sync boundary covers the visible horizon — we've
+      // fetched every event up to today + _agendaHorizonDays. Pagination
+      // is by date range, not row count.
+      final horizonEnd = Date.today()
+          .addDays(_agendaHorizonDays)
+          .toDateTime();
       final syncBoundary = syncState?.last != null
           ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
           : null;
-      final lastItemDate = localThreads.isNotEmpty
-          ? localThreads.last.agendaAt
-          : null;
-      final syncedPastLastItem =
-          syncBoundary != null &&
-          lastItemDate != null &&
-          !syncBoundary.isBefore(lastItemDate);
+      final syncedToHorizon =
+          syncBoundary != null && !syncBoundary.isBefore(horizonEnd);
 
-      // Stop when both conditions are met: page is full AND sync covers it.
-      if (hasEnoughItems && syncedPastLastItem) break;
+      if (syncedToHorizon) break;
     }
 
     // Agenda is infinite — never mark it as done at the end.
@@ -3386,10 +3351,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// coalescing every shared write reruns the entire sectioning pipeline
   /// twice in a row.
   bool _activityFeedRebuildScheduled = false;
-  // Initial cold-start window kept small for fast first paint; see the
-  // matching reset in [_loadPriority] for the rationale. Grows via
+  // Initial cold-start window kept small for fast first paint; grows via
   // [fetchMoreAgendaItems] as the user scrolls.
-  int _agendaLimit = 25;
   int _agendaHorizonDays = 30;
   // Minimum days from today to populate with empty headers. Starts at 0
   // so [makeAgendaItems]'s 14-day buffer past the last-content date

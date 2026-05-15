@@ -498,8 +498,8 @@ class Store extends _$Store {
   static String? get currentUserId => _currentUserId;
 
   static Future<void> stop() async {
-    _authRetryTimer?.cancel();
-    _authRetryTimer = null;
+    _syncRetryTimer?.cancel();
+    _syncRetryTimer = null;
     _syncRetryCount = 0;
     if (Injector.appInstance.exists<Store>()) {
       // Get reference before removing from injector
@@ -765,7 +765,7 @@ class Store extends _$Store {
   }
 
   static int _syncRetryCount = 0;
-  static Timer? _authRetryTimer;
+  static Timer? _syncRetryTimer;
 
   /// Verify the session with Clerk and act accordingly. If the session is
   /// definitively invalid, [Base.handleTokenResult] triggers sign-out. If
@@ -787,39 +787,42 @@ class Store extends _$Store {
     // If sessionInvalid, Base will sign out — no retry needed.
     if (result.failure == TokenFailureReason.sessionInvalid) return;
 
-    _scheduleAuthRetry();
+    _scheduleSyncRetry();
   }
 
   /// Schedule a future `_startSync` with exponential backoff (capped at 5
-  /// minutes). Used when a sync attempt couldn't get an auth token but the
-  /// session isn't definitively dead.
-  static void _scheduleAuthRetry() {
+  /// minutes). Used when a sync attempt fails for a transient reason: a
+  /// missing auth token (but the session isn't definitively dead), or a
+  /// network/5xx error from the API. Without this, recovery depends on a
+  /// lifecycle/connectivity event firing — so an API outage that lasts past
+  /// startup leaves the client stuck on stale data with no way back.
+  static void _scheduleSyncRetry() {
     _syncRetryCount++;
     final delaySec = min(30 * _syncRetryCount, 300);
     log.warning(
-      "Auth error during sync (attempt $_syncRetryCount), retrying in ${delaySec}s",
+      "Sync error (attempt $_syncRetryCount), retrying in ${delaySec}s",
     );
 
-    _authRetryTimer?.cancel();
+    _syncRetryTimer?.cancel();
     if (Injector.appInstance.exists<Store>()) {
-      _authRetryTimer = Timer(Duration(seconds: delaySec), () {
+      _syncRetryTimer = Timer(Duration(seconds: delaySec), () {
         if (Injector.appInstance.exists<Store>()) {
           Store.get._startSync().catchError((Object e, StackTrace s) {
-            log.warning("Auth retry sync failed", e, s);
+            log.warning("Retry sync failed", e, s);
           });
         }
       });
     }
   }
 
-  /// Reset auth failure tracking after successful sync.
-  static void _resetAuthFailures() {
+  /// Reset retry tracking after a successful sync.
+  static void _resetSyncRetry() {
     if (_syncRetryCount > 0) {
-      log.info("Sync recovered after $_syncRetryCount auth failures");
+      log.info("Sync recovered after $_syncRetryCount failed attempts");
     }
     _syncRetryCount = 0;
-    _authRetryTimer?.cancel();
-    _authRetryTimer = null;
+    _syncRetryTimer?.cancel();
+    _syncRetryTimer = null;
   }
 
   BroadcastClient? _broadcastClient;
@@ -827,6 +830,7 @@ class Store extends _$Store {
   _StoreLifecycleObserver? _lifecycleObserver;
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
+  bool _hasSyncedSuccessfully = false;
   bool _isOnline = false;
   bool _isBufferingBroadcasts = false;
   bool _closing = false;
@@ -1831,8 +1835,9 @@ class Store extends _$Store {
       // Use orchestrator for dependency-aware sync
       // This pulls all entities (parents→children), then pushes all (children→parents)
       await SyncOrchestrator.instance.syncAll();
+      _hasSyncedSuccessfully = true;
       if (_syncRetryCount == countBefore) {
-        _resetAuthFailures();
+        _resetSyncRetry();
       }
     } catch (e, stackTrace) {
       // Check if this is an auth error - if so, schedule retry
@@ -1855,8 +1860,14 @@ class Store extends _$Store {
           stackTrace: stackTrace.toString(),
           context: 'sync_rls_violation',
         );
+      } else {
+        // Transient (network/5xx) failure — schedule a retry so we recover
+        // without needing a lifecycle or connectivity event to fire. The
+        // WebSocket-reconnect path also kicks a sync, but it only helps if
+        // the socket itself reconnected; an HTTP-only outage (socket up,
+        // 5xx on /sync/*) wouldn't trigger anything.
+        _scheduleSyncRetry();
       }
-      // Network errors and other issues are logged but don't stop the app
       log.warning("Error during _syncAll", e, stackTrace);
     }
   }
@@ -1898,6 +1909,12 @@ class Store extends _$Store {
       _handleBroadcastMessage,
       clientId,
       onReconnected: _handleReconnected,
+      // If the startup sync hasn't run or hasn't succeeded yet (e.g. API was
+      // unreachable at launch), have the WebSocket's first connect trigger
+      // the catch-up too. When a sync is currently in flight we skip — that
+      // sync will catch us up itself.
+      needsCatchUpOnFirstConnect: () =>
+          !_isSyncing && !_hasSyncedSuccessfully,
     );
   }
 
@@ -2026,7 +2043,7 @@ class Store extends _$Store {
           log.warning(
             'No session token before sync — skipping and scheduling retry',
           );
-          _scheduleAuthRetry();
+          _scheduleSyncRetry();
         }
         // Token-failure early-return: reset _isSyncing so the scheduled
         // retry (or any other caller) can actually run. The success path
@@ -2067,7 +2084,7 @@ class Store extends _$Store {
         _syncDebouncer(table);
       }
       _bufferedTables.clear();
-      _resetAuthFailures();
+      _resetSyncRetry();
     } catch (e, stackTrace) {
       if (_isAuthError(e)) {
         log.warning("Auth error during deferred sync", e, stackTrace);
@@ -2112,7 +2129,7 @@ class Store extends _$Store {
           log.warning(
             'No session token before sync — skipping and scheduling retry',
           );
-          _scheduleAuthRetry();
+          _scheduleSyncRetry();
         }
         return;
       }
