@@ -17,6 +17,11 @@ class NowBloc extends Cubit<NowState> {
   StreamSubscription<void>? _subscription;
   Timer? _trackTick;
 
+  /// Local date at which the current `_subscription` was started. When
+  /// the local date changes (across midnight), the priority_block watch
+  /// is re-issued so its bounded UNION query re-narrows.
+  DateTime? _subscriptionLocalDate;
+
   @override
   Future<void> close() {
     stop();
@@ -24,6 +29,12 @@ class NowBloc extends Cubit<NowState> {
   }
 
   Future<void> start() {
+    final nowSubscriptionStart = Time.now();
+    _subscriptionLocalDate = DateTime(
+      nowSubscriptionStart.year,
+      nowSubscriptionStart.month,
+      nowSubscriptionStart.day,
+    );
     final completer = Completer<void>();
     _subscription =
         Rx.combineLatest6(
@@ -92,6 +103,17 @@ class NowBloc extends Cubit<NowState> {
   ///      [_closeActiveSession] (which also writes the
   ///      consumed time back to `priority_block`).
   Future<void> _onTrackTick() async {
+    final tickNow = Time.now();
+    final tickDate = DateTime(tickNow.year, tickNow.month, tickNow.day);
+    if (_subscriptionLocalDate != null && tickDate != _subscriptionLocalDate) {
+      // Local date rolled over — re-subscribe so the priority_block
+      // query re-binds today_midnight to the new day. Return so the
+      // session maintenance below runs against the fresh subscription's
+      // next emission rather than the about-to-be-cancelled one.
+      _resubscribePriorityBlocks();
+      return;
+    }
+
     if (state is! NowLoaded) return;
     final s = loadedState;
     final session = s.session;
@@ -115,6 +137,19 @@ class NowBloc extends Cubit<NowState> {
         session.copyWith(end: now.add(const Duration(minutes: 3))),
       ).save();
     }
+  }
+
+  /// Tear down and rebuild the combined subscription so the
+  /// `streamPriorityBlocksGroupedByPriority` query re-binds its
+  /// `today_midnight` parameter. Called on local-date rollover.
+  void _resubscribePriorityBlocks() {
+    _subscription?.cancel();
+    _subscription = null;
+    _trackTick?.cancel();
+    _trackTick = null;
+    // start() resets _subscriptionLocalDate per its initialization,
+    // so the next rollover will fire correctly.
+    start();
   }
 
   /// Close out the currently-active foreground session by pinning its
