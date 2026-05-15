@@ -315,9 +315,9 @@ class Session extends SessionRow {
 
   /// Most recent active pomodoro session for [priorityId], or null if
   /// none qualifies. Mirrors the active-branch gate in
-  /// `NowBloc.watchPendingDisplay`: most recent row whose `at.isNow()`
+  /// `NowBloc.watchBlockDisplay`: most recent row whose `at.isNow()`
   /// is true with both `pomodoroAt` and `pomodoro` set. Used by
-  /// `NowBloc.applyPendingBump` to look up the live row at write time
+  /// `NowBloc.applyBlockBump` to look up the live row at write time
   /// — stream snapshots can drift between successive ± clicks.
   static Future<Session?> activeFor(PriorityId priorityId) async {
     if (!Store.isAvailable) return null;
@@ -375,7 +375,7 @@ class Session extends SessionRow {
   }
 
   /// Like [latestPausedFor] but returns a reactive stream. Used by
-  /// `watchPendingDisplay` so the agenda's per-priority display flips to
+  /// `watchBlockDisplay` so the agenda's per-block display flips to
   /// "remaining at pause" the moment the user pauses, and back to the
   /// configured priority_block duration after Stop/Resume cycles.
   static Stream<Session?> watchLatestPausedFor(PriorityId priorityId) {

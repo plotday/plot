@@ -6,13 +6,9 @@ typedef PriorityBlockId = Uuid;
 /// `duration` at a given `effectiveAt`. Used by the agenda renderer to
 /// look up these values at any moment in time.
 ///
-/// Two conventions for `effectiveAt`:
-///   * [kCurrentEffectiveAt] (epoch) — the canonical "current" row.
-///     Adjustments to pending duration or order upsert onto this single
-///     sentinel row per priority; there is no timeline of past changes.
-///   * A future timestamp — a planned change that takes effect at that
-///     moment (the resolver picks the latest row whose `effectiveAt <=
-///     moment`).
+/// Every row uses a real block-start timestamp as `effectiveAt`. The
+/// duration resolver ([resolveBlockDurations]) and order resolver
+/// ([effectivePriorityOrderAt]) each pick the latest eligible row.
 ///
 /// Falls back to `priority.order_value` when no row exists.
 @DataClassName('PriorityBlockRow')
@@ -26,10 +22,10 @@ class PriorityBlocks extends Table
       real().map(const OrderConverter())();
   DateTimeColumn get effectiveAt =>
       dateTime().map(const LocalDateTimeConverter())();
-  /// Pending planned duration for the priority as of `effectiveAt`. NULL
-  /// or zero means "no pending" (priority drops out of the agenda cascade).
-  /// Resolved via [effectivePriorityDurationAt]. Stored locally as seconds
-  /// and serialized to/from Postgres `interval` via [IntervalConverter].
+  /// Pending planned duration for the priority at this `effective_at`.
+  /// Resolved per agenda block via [resolveBlockDurations]. Stored
+  /// locally as seconds and serialized to/from Postgres `interval` via
+  /// [IntervalConverter].
   IntColumn get duration =>
       integer().nullable().map(const IntervalConverter())();
 }
@@ -121,39 +117,6 @@ double effectivePriorityOrderAt({
     }
   }
   return best?.orderValue.value ?? fallback;
-}
-
-/// Canonical "current" effective_at for the priority_block row that
-/// carries a priority's order_value and pending duration right now.
-/// Adjustments to current pending upsert onto this single sentinel row
-/// keyed by `(priority_id, effective_at)`. Future-dated rows represent
-/// planned changes that take effect at their `effective_at`.
-final DateTime kCurrentEffectiveAt = DateTime.utc(1970, 1, 1);
-
-/// Effective pending-duration resolver — pure function, no DB.
-///
-/// Returns the priority's pending planned duration at [moment]: the latest
-/// non-archived priority_block row with a non-null `duration` whose
-/// `effective_at <= moment` wins. Rows without `duration` (e.g. future
-/// reorder anchors that only carry `order_value`) don't override pending.
-/// Returns null when no row contributes a duration (priority drops out of
-/// the agenda cascade).
-Duration? effectivePriorityDurationAt({
-  required DateTime moment,
-  required Iterable<PriorityBlockRow> blocksForPriority,
-}) {
-  PriorityBlockRow? best;
-  for (final row in blocksForPriority) {
-    if (row.archivedAt != null) continue;
-    if (row.effectiveAt.isAfter(moment)) continue;
-    if (row.duration == null) continue;
-    if (best == null || row.effectiveAt.isAfter(best.effectiveAt)) {
-      best = row;
-    }
-  }
-  final d = best?.duration;
-  if (d == null || d <= Duration.zero) return null;
-  return d;
 }
 
 /// Pure function. Returns a map from agenda block id to the duration
@@ -256,109 +219,6 @@ class PriorityBlock extends PriorityBlockRow {
     );
   }
 
-  /// Set the priority's current pending duration to [newDuration].
-  /// Local-first: upserts the canonical row at [kCurrentEffectiveAt];
-  /// the sync orchestrator pushes it whenever the next push window opens.
-  ///
-  /// Semantics:
-  ///   - normalize null/≤0 → null,
-  ///   - if normalized equals the current duration, no-op,
-  ///   - if normalized is null, soft-archive the canonical row,
-  ///   - otherwise upsert the canonical row in place, carrying forward
-  ///     the priority's effective order so reorders aren't lost.
-  static Future<void> setPendingDuration(
-    PriorityId priorityId,
-    Duration? newDuration,
-  ) async {
-    if (!Store.isAvailable) return;
-    final normalized =
-        (newDuration == null || newDuration <= Duration.zero) ? null : newDuration;
-
-    final rows = await (Store.get.select(table)
-          ..where((t) => t.priorityId.equals(priorityId.toBytes())))
-        .get();
-
-    // The (priority_id, effective_at) unique index includes archived
-    // rows, so look up the slot regardless of archive state and update
-    // in place rather than inserting a new id that would collide.
-    final slotRow = rows.firstWhereOrNull(
-      (r) => r.effectiveAt.isAtSameMomentAs(kCurrentEffectiveAt),
-    );
-    final currentDuration = slotRow?.archivedAt == null ? slotRow?.duration : null;
-
-    final now = DateTime.now();
-    // Past-dated, non-epoch rows that still carry a `duration` mask the
-    // canonical row in [effectivePriorityDurationAt] (which picks the
-    // latest `effective_at <= now`). Archive them so the epoch row is
-    // authoritative for "current". Future-dated rows are left alone —
-    // they're planned changes that should still take effect.
-    final maskingRows = rows
-        .where((r) =>
-            r.archivedAt == null &&
-            r.duration != null &&
-            !r.effectiveAt.isAtSameMomentAs(kCurrentEffectiveAt) &&
-            !r.effectiveAt.isAfter(now))
-        .toList();
-
-    if (maskingRows.isEmpty && normalized == currentDuration) return;
-
-    for (final row in maskingRows) {
-      final archived = row.copyWith(
-        archivedAt: Value(now),
-        updatedAt: now,
-      );
-      await Store.get.save(
-        table,
-        archived.toCompanion(false),
-        PriorityBlocksBase(),
-      );
-    }
-
-    if (normalized == null) {
-      if (slotRow == null || slotRow.archivedAt != null) return;
-      final archived = slotRow.copyWith(
-        archivedAt: Value(now),
-        updatedAt: now,
-      );
-      await Store.get.save(
-        table,
-        archived.toCompanion(false),
-        PriorityBlocksBase(),
-      );
-      return;
-    }
-
-    final inheritedOrder = effectivePriorityOrderAt(
-      moment: now,
-      blocksForPriority: rows,
-      fallback: 0,
-    );
-
-    final row = slotRow != null
-        ? slotRow.copyWith(
-            orderValue: Order(inheritedOrder),
-            duration: Value(normalized),
-            archivedAt: const Value(null),
-            updatedAt: now,
-          )
-        : PriorityBlockRow(
-            id: Uuid.generate(),
-            priorityId: priorityId,
-            createdBy: Base.userId,
-            orderValue: Order(inheritedOrder),
-            effectiveAt: kCurrentEffectiveAt,
-            duration: normalized,
-            archivedAt: null,
-            createdAt: now,
-            updatedAt: now,
-          );
-    await Store.get.save(
-      table,
-      row.toCompanion(false),
-      PriorityBlocksBase(),
-    );
-  }
-
   /// Upsert a `priority_block` row for [priorityId] at `effective_at =
   /// blockStart`, carrying [newDuration]. Carries the priority's
   /// effective order at [blockStart] into `order_value` so the row also
@@ -377,11 +237,6 @@ class PriorityBlock extends PriorityBlockRow {
     required DateTime blockStart,
     required Duration? newDuration,
   }) async {
-    assert(
-      !blockStart.isAtSameMomentAs(kCurrentEffectiveAt),
-      'setBlockDuration must not write to the epoch sentinel; '
-      'use setPendingDuration for that slot',
-    );
     if (!Store.isAvailable) return;
     final normalized =
         (newDuration == null || newDuration <= Duration.zero) ? null : newDuration;

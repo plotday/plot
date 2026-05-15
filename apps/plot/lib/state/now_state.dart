@@ -314,17 +314,21 @@ final class NowLoaded extends NowState {
     return ratio;
   }
 
-  /// Pending duration for [p] resolved against the priority_block
-  /// timeline at [now]. Returns null when the priority has no row
-  /// contributing a duration. Pure read of state — the bloc reads the
-  /// same value through `_pendingFor`, this getter just exposes it for
-  /// the pill's inactive-state display.
+  /// Pending duration for priority [p] resolved at "the block containing
+  /// `now`": the latest in-window `priority_block` row whose
+  /// `effective_at <= now`, treating the timeline as if `now` were a
+  /// single block at `[now, now]`. Returns null when no in-window row
+  /// applies. Rows with `effective_at < today's midnight` (the order
+  /// anchors) are ignored.
   Duration? pendingFor(Priority p) {
     final rows = priorityBlocksByPriority[p.id] ?? const [];
-    return effectivePriorityDurationAt(
-      moment: now,
+    final todayMidnight = DateTime(now.year, now.month, now.day);
+    final out = resolveBlockDurations(
+      todayMidnight: todayMidnight,
+      blocks: [(id: 'now', start: now)],
       blocksForPriority: rows,
     );
+    return out['now'];
   }
 
   DateTimeRange? get at {

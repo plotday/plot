@@ -790,7 +790,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     } else if (_blockHasEditablePending(block)) {
       // Priority blocks and gap blocks that have promoted a priority
       // into their header both surface the priority's pending in the
-      // gutter. Prefer the live value from [NowBloc.watchPendingDisplay]
+      // gutter. Prefer the live value from [NowBloc.watchBlockDisplay]
       // so an active session's countdown shows; once the subscription
       // has emitted, trust its value (including an explicit null after a
       // ± clear) — falling back to the agenda model's stale
@@ -1082,11 +1082,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
   }
 
   /// Apply a ±15m bump to a [PriorityBlock]'s displayed value. Routes
-  /// through [NowBloc.applyPendingBump] so the write lands on the same
+  /// through [NowBloc.applyBlockBump] so the write lands on the same
   /// row the gutter label is reading (active or paused-explicit session
-  /// when one is in play, otherwise `priority_block.duration`). Without
-  /// this routing a bump on a session-derived display would write to
-  /// `priority_block.duration` and the user would see nothing change.
+  /// when one is in play, otherwise `priority_block.duration` at this
+  /// block's start). Without this routing a bump on a session-derived
+  /// display would write to `priority_block.duration` and the user
+  /// would see nothing change.
   void _applyPriorityBump({
     required Priority priority,
     required Duration? newDisplayed,

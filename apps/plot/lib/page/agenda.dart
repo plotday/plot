@@ -10,7 +10,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) to avoid
 // shadowing agenda_model.dart's UI block re-exported via priority.dart.
-// We still need to call its static `setPendingDuration` helper, which
+// We still need to call its static `setBlockDuration` helper, which
 // lives on the store-side class, so bring it in under an alias.
 import 'package:plot/store/store.dart' hide PriorityBlock;
 import 'package:plot/store/store.dart' as store show PriorityBlock;

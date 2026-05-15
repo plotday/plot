@@ -1203,19 +1203,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     return priority?.order.value ?? 0.0;
   }
 
-  /// Effective pending duration for [id] at [moment] (defaults to now),
-  /// resolved against the same `priority_block` cache the agenda
-  /// renderer uses. Returns null when the priority has no row with
-  /// `duration` set (= the priority does not currently participate in
-  /// the gap cascade).
-  Duration? pendingDurationFor(PriorityId id, {DateTime? moment}) {
-    final blocks = _priorityBlocksByPriority[id] ?? const <PriorityBlockRow>[];
-    return effectivePriorityDurationAt(
-      moment: moment ?? DateTime.now(),
-      blocksForPriority: blocks,
-    );
-  }
-
   Priority? _findPriorityById(PriorityId id) {
     for (final t in _lastAgendaThreads) {
       if (t.priority.id == id) return t.priority;
