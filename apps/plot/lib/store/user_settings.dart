@@ -61,8 +61,14 @@ class UserSettingsEntity {
   }
 
   static Stream<UserSettingsRow?> watch() {
+    // NowBloc.start() runs this from the UserReady listener, which can race
+    // with a forced sign-out that has already nulled `_userId`. Match the
+    // guard in `Priority._watchActivePriorityIds` and emit a single null
+    // rather than crashing on `Base.userId!`.
+    final userId = Base.userIdOrNull;
+    if (userId == null) return Stream<UserSettingsRow?>.value(null);
     return (table.select()
-          ..where((tbl) => tbl.userId.equals(Base.userId.toBytes())))
+          ..where((tbl) => tbl.userId.equals(userId.toBytes())))
         .watchSingleOrNull();
   }
 
