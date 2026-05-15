@@ -72,7 +72,9 @@ export function meta(_: Route.MetaArgs) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState(0);
   const [entering, setEntering] = useState(false);
-  const enteringTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const enteringTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   const handleTabChange = (index: number) => {
     if (index === activeTab) return;
