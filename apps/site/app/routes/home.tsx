@@ -143,9 +143,15 @@ export default function Home() {
             <div className={classes.heroScreenshotGlow} />
             <picture>
               <source
+                srcSet="/assets/screenshot-d.webp"
+                type="image/webp"
+                media="(prefers-color-scheme: dark)"
+              />
+              <source
                 srcSet="/assets/screenshot-d.png"
                 media="(prefers-color-scheme: dark)"
               />
+              <source srcSet="/assets/screenshot.webp" type="image/webp" />
               <img
                 src="/assets/screenshot.png"
                 alt="Plot interface showing a team conversation transforming into a prioritized action item"
