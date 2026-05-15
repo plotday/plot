@@ -629,14 +629,27 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     DateTime targetPeriodStart,
     Date? targetDate,
   ) {
-    final current = bloc.pendingDurationFor(priorityId);
+    // Look up whether a row already exists for this priority at the
+    // target period's anchor. The agenda model already attached the
+    // resolved duration; read it off the matching block.
+    final agenda = bloc.state.agenda;
+    Duration? current;
+    for (final section in agenda.sections) {
+      if (targetDate != null &&
+          section is DateSection &&
+          section.date != targetDate) {
+        continue;
+      }
+      for (final block in section.blocks) {
+        if (block.priority.id != priorityId) continue;
+        if (block.start != targetPeriodStart) continue;
+        if (block is PriorityBlock) current = block.cascadeDuration;
+        if (block is GapBlock) current = block.cascadeDuration;
+      }
+    }
     if (current != null && current > Duration.zero) return;
 
-    final available = _availableInGap(
-      bloc.state.agenda,
-      targetPeriodStart,
-      targetDate,
-    );
+    final available = _availableInGap(agenda, targetPeriodStart, targetDate);
     if (available == null || available <= Duration.zero) {
       _log.info(
         '[agenda block-drop] skip pending default: no gap room at '
@@ -650,10 +663,12 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       '[agenda block-drop] defaulting pending duration: priority=$priorityId '
       'period=$targetPeriodStart available=$available -> $newPending',
     );
-    // Fire-and-forget — the next agenda rebuild picks up the new row
-    // and the priority's cascade slice lands in the target gap.
     unawaited(
-      store.PriorityBlock.setPendingDuration(priorityId, newPending),
+      store.PriorityBlock.setBlockDuration(
+        priorityId: priorityId,
+        blockStart: targetPeriodStart,
+        newDuration: newPending,
+      ),
     );
   }
 

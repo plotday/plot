@@ -36,7 +36,7 @@ class AgendaBuilder {
       associationsByParentId: associationsByParentId,
     );
 
-    final effectiveNow = now ?? DateTime.now();
+    final effectiveNow = now ?? Time.now();
     final base = _atomsToModel(atoms, context: context);
     final consolidated = _consolidateAndSort(
       base,
