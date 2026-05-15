@@ -493,7 +493,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
       if (td != null && td.isAfter(Date.today())) {
         targetAnchor = td.toDateTime();
       } else if (td != null) {
-        targetAnchor = DateTime.now();
+        targetAnchor = Time.now();
       }
     }
 
@@ -603,7 +603,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     }
 
     final periodReferenceTime =
-        targetAnchor ?? target.targetPeriodStart ?? DateTime.now();
+        targetAnchor ?? target.targetPeriodStart ?? Time.now();
     _log.info(
       '[agenda block-drop] same-period reorder: priority=${sourcePriority.id} '
       'above=${above ?? "-"} below=${below ?? "-"} '
@@ -706,7 +706,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final start = gap.range.start;
     final end = gap.range.end;
     if (start == null || end == null) return null;
-    final nowTs = DateTime.now();
+    final nowTs = Time.now();
     final effectiveStart = nowTs.isAfter(start) ? nowTs : start;
     if (!effectiveStart.isBefore(end)) return null;
     return end.difference(effectiveStart);

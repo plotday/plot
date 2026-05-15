@@ -413,8 +413,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .distinct()
         .transform(
           ExpiringStreamTransformer((priorities) {
-            // Re-evaluate every minute on the minute for time-based active status
-            final now = DateTime.now();
+            // Re-evaluate every minute on the minute for time-based active status.
+            // Uses [Time.now] so expiry stays consistent with the transformer's
+            // own `Time.now()`-based timer math under frozen time (otherwise the
+            // computed wait could be years long and the stream would stop
+            // re-evaluating).
+            final now = Time.now();
             final expiry = now.add(
               Duration(
                 seconds: 60 - now.second,
@@ -552,7 +556,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     final userId = Base.userIdOrNull;
     if (userId == null) return {};
 
-    final now = DateTime.now();
+    final now = Time.now();
     final today = Date.today().toString();
     final idBytes = ids.map((id) => id.toBytes()).toList();
 
@@ -678,7 +682,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     sharedQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
 
     final sharedStream = sharedQuery.watch().map((results) {
-      final now = DateTime.now();
+      final now = Time.now();
       final today = Date.today().toString();
       return results
           .where((row) {
@@ -721,7 +725,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     userQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
 
     final userStream = userQuery.watch().map((results) {
-      final now = DateTime.now();
+      final now = Time.now();
       final today = Date.today().toString();
       return results
           .where((row) {

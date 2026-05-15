@@ -478,7 +478,7 @@ class SchedulesBase extends BaseTable {
     if (!json.containsKey('at') &&
         !json.containsKey('on') &&
         json['user_id'] == null) {
-      final today = DateTime.now();
+      final today = Time.now();
       final dateStr =
           '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
       json['on'] = '[$dateStr,)';
@@ -752,7 +752,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       ),
       ascending: true,
       archived: archived,
-      rangeStart: DateTime.now().toUtc(),
+      rangeStart: Time.now().toUtc(),
     );
 
     if (pulledTo == null) return;
@@ -1143,7 +1143,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     final a = Store.get.threads;
     final p = Store.get.priorities;
 
-    final now = DateTime.now();
+    final now = Time.now();
     final today = Date.today().toString();
     final priorityPathLike = '$priorityPath.%';
 
@@ -1482,7 +1482,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
       ),
     ]);
-    final now = DateTime.now();
+    final now = Time.now();
 
     // Add priority filtering:
     // 1. Filter by priorityPath if provided
@@ -1883,7 +1883,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt, pastScheduleEnd)
         // Falls back to createdAt only when all are null.
         final epoch = Constant(DateTime.fromMillisecondsSinceEpoch(0));
-        final now = DateTime.now();
+        final now = Time.now();
         final schedEnd = CaseWhenExpression(
           cases: [
             CaseWhen(
@@ -1949,7 +1949,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   static Future<Set<ThreadId>> _getActiveThreadIds(List<ThreadId> ids) async {
     if (ids.isEmpty) return {};
 
-    final now = DateTime.now();
+    final now = Time.now();
     final today = Date.today().toString();
 
     // Get all user contact IDs from Actor cache
@@ -2088,7 +2088,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       // schedule so that Thread.at is populated for display purposes.
       ScheduleRow? effectiveScheduleRow = baseScheduleRow;
       if (baseScheduleRow == null) {
-        final now = DateTime.now();
+        final now = Time.now();
         ScheduleRow? bestFuture;
         DateTime? bestFutureStart;
         ScheduleRow? bestPast;
@@ -2927,7 +2927,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   DateTime? get _lastPastOccurrenceEnd {
     if (_schedule == null) return null;
 
-    final now = DateTime.now();
+    final now = Time.now();
     // A cancelled (archived) recurring schedule still has an RRULE, so naively
     // iterating it would keep producing today's occurrence forever. Cap the
     // search at the cancellation time so cancelled events don't appear as

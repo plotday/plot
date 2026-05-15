@@ -343,7 +343,7 @@ class Link extends Equatable {
       ..where(db.links.threadId.equals(threadId.toBytes()));
 
     return query.watch().map((rows) {
-      final now = DateTime.now();
+      final now = Time.now();
       final activeLinks = <Link>[];
       Link? mostRecentEnded;
       DateTime? mostRecentEndTime;

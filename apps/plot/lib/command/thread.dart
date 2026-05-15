@@ -1336,7 +1336,7 @@ class PickScheduleThread extends Command {
               control: .managedDate(
                 controller: FCalendarController.date(
                   selectable: (date) {
-                    final today = DateTime.now();
+                    final today = Time.now();
                     final todayStart = DateTime(
                       today.year,
                       today.month,
@@ -1479,7 +1479,7 @@ class RescheduleAllInBlock extends Command {
               control: .managedDate(
                 controller: FCalendarController.date(
                   selectable: (date) {
-                    final today = DateTime.now();
+                    final today = Time.now();
                     final todayStart = DateTime(
                       today.year,
                       today.month,

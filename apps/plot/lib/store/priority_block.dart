@@ -64,7 +64,7 @@ class PriorityBlocksBase extends BaseTable {
 Stream<Map<PriorityId, List<PriorityBlockRow>>>
     streamPriorityBlocksGroupedByPriority() {
   final db = Store.get;
-  final now = DateTime.now();
+  final now = Time.now();
   final todayMidnight = DateTime(now.year, now.month, now.day);
 
   final query = db.customSelect(

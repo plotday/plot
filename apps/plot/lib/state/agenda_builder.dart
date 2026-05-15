@@ -313,7 +313,7 @@ class AgendaBuilder {
     required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
   }) {
     // Reference time for this gap's block ordering = gap.range.start.
-    final referenceTime = gap.range.start ?? DateTime.now();
+    final referenceTime = gap.range.start ?? Time.now();
 
     // Aggregate all threads by priority (gap.threads is the lead block).
     final byPriority = <Uuid, _PriorityAccum>{};

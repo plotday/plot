@@ -31,7 +31,7 @@ class ScheduledDay extends Equatable {
       ExpiringStreamTransformer((result) {
         final allThreads = result.$1;
         final defaultPriority = result.$2;
-        final now = DateTime.now();
+        final now = Time.now();
         final currentEvent = allThreads.any(
           (a) => a.at?.includes(now) == true,
         );

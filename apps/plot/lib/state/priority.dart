@@ -202,7 +202,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (existing != null) return existing;
     final future = Thread.loadRepresentativeForFeed(
       base,
-      now: now ?? DateTime.now(),
+      now: now ?? Time.now(),
     );
     _representativeCache[key] = future;
     return future;
@@ -2413,8 +2413,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       range: dateRange,
       // Restrict the datetime-based event branches to "in progress at
       // now and forward" — `makeAgendaItems` drops past link schedule
-      // instances anyway, so fetching them only wastes work.
-      eventsActiveAt: DateTime.now(),
+      // instances anyway, so fetching them only wastes work. Uses
+      // [Time.now] so the agenda matches the user's frozen time when
+      // time travel is enabled (otherwise events on dates between
+      // frozen-now and real-now silently disappear).
+      eventsActiveAt: Time.now(),
       // Drop the user-schedule branches; the todosStream below is the
       // sole source for those rows.
       eventsOnly: true,
