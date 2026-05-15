@@ -328,6 +328,81 @@ class NowBloc extends Cubit<NowState> {
     await PriorityBlock.setPendingDuration(priorityId, newDisplayed);
   }
 
+  /// Block-aware version of [applyPendingBump]. Same routing logic
+  /// (session row when one is in play, otherwise `priority_block`) but
+  /// the priority_block write lands at `effective_at = blockStart`
+  /// rather than the epoch sentinel, and "is a session in play" means
+  /// "is a session for this priority pomodoroAt-anchored inside this
+  /// block's [blockStart, blockEnd) window".
+  static Future<void> applyBlockBump({
+    required PriorityId priorityId,
+    required DateTime blockStart,
+    required DateTime blockEnd,
+    required Duration? currentDisplayed,
+    required Duration? newDisplayed,
+  }) async {
+    final delta =
+        (newDisplayed ?? Duration.zero) - (currentDisplayed ?? Duration.zero);
+    if (delta == Duration.zero) return;
+
+    bool inWindow(DateTime t) =>
+        !t.isBefore(blockStart) && t.isBefore(blockEnd);
+
+    final liveActive = await Session.activeFor(priorityId);
+    final liveInBlock = liveActive != null &&
+        liveActive.pomodoroAt != null &&
+        inWindow(liveActive.pomodoroAt!);
+    Session? livePaused;
+    bool pausedInBlock = false;
+    if (!liveInBlock) {
+      livePaused = await Session.latestPausedFor(priorityId);
+      pausedInBlock = livePaused != null &&
+          livePaused.pomodoroAt != null &&
+          inWindow(livePaused.pomodoroAt!);
+    }
+    final liveSource = liveInBlock
+        ? liveActive
+        : pausedInBlock
+            ? livePaused
+            : null;
+
+    final clearing = newDisplayed == null;
+    if (clearing) {
+      if (liveSource != null && liveSource.pomodoroAt != null) {
+        final anchorOffset = liveSource.at.isNow()
+            ? Time.now().difference(liveSource.pomodoroAt!)
+            : liveSource.end.difference(liveSource.pomodoroAt!);
+        final collapsed = liveSource.at.isNow()
+            ? liveSource.copyWith(
+                end: Time.now(), pomodoro: Value(anchorOffset))
+            : liveSource.copyWith(pomodoro: Value(anchorOffset));
+        await Session.fromStore(collapsed).save();
+      }
+      await PriorityBlock.setBlockDuration(
+        priorityId: priorityId,
+        blockStart: blockStart,
+        newDuration: null,
+      );
+      return;
+    }
+
+    if (liveSource != null &&
+        liveSource.pomodoro != null &&
+        liveSource.pomodoroAt != null) {
+      final newPomodoro = liveSource.pomodoro! + delta;
+      await Session.fromStore(
+        liveSource.copyWith(pomodoro: Value(newPomodoro)),
+      ).save();
+      return;
+    }
+
+    await PriorityBlock.setBlockDuration(
+      priorityId: priorityId,
+      blockStart: blockStart,
+      newDuration: newDisplayed,
+    );
+  }
+
 
   /// Context is the priority being displayed, which may
   /// be more general than the focus.
