@@ -49,21 +49,54 @@ class PriorityBlocksBase extends BaseTable {
   }
 }
 
-/// Stream every non-archived priority_block row, grouped by priority id.
-/// Convenient for feeding [AgendaBuilder.build]'s
-/// `priorityBlocksByPriority` parameter.
+/// Stream every `priority_block` row that the agenda might care about,
+/// grouped by priority id. Returns a UNION of:
+///   1. All non-archived rows with `effective_at >= todayMidnight`
+///      (the forward window — today, future, and pre-planned changes).
+///   2. The per-priority carry-forward anchor: the most-recent
+///      non-archived row strictly before `todayMidnight`, so the
+///      cumulative order resolver still has a baseline once historical
+///      rows fall out of the forward window.
+///
+/// Anchor rows participate in [effectivePriorityOrderAt] only;
+/// [resolveBlockDurations] filters them out and ignores their
+/// `duration` values.
 ///
 /// Top-level (rather than a method on [PriorityBlock]) so callers that
 /// hide [PriorityBlock] to disambiguate against agenda_model's UI block
 /// can still reach the helper.
 Stream<Map<PriorityId, List<PriorityBlockRow>>>
     streamPriorityBlocksGroupedByPriority() {
-  final query = Store.get.select(Store.get.priorityBlocks)
-    ..where((t) => t.archivedAt.isNull());
+  final db = Store.get;
+  final now = DateTime.now();
+  final todayMidnight = DateTime(now.year, now.month, now.day);
+
+  final query = db.customSelect(
+    '''
+SELECT * FROM priority_blocks
+WHERE archived_at IS NULL AND effective_at >= ?1
+
+UNION ALL
+
+SELECT pb.* FROM priority_blocks pb
+WHERE pb.archived_at IS NULL
+  AND pb.effective_at < ?1
+  AND pb.effective_at = (
+    SELECT MAX(effective_at) FROM priority_blocks
+    WHERE priority_id = pb.priority_id
+      AND archived_at IS NULL
+      AND effective_at < ?1
+  )
+''',
+    variables: [Variable.withDateTime(todayMidnight)],
+    readsFrom: {db.priorityBlocks},
+  );
+
   return query.watch().map((rows) {
     final out = <PriorityId, List<PriorityBlockRow>>{};
     for (final r in rows) {
-      out.putIfAbsent(r.priorityId, () => <PriorityBlockRow>[]).add(r);
+      final row = db.priorityBlocks.map(r.data);
+      out.putIfAbsent(row.priorityId, () => <PriorityBlockRow>[]).add(row);
     }
     return out;
   });
