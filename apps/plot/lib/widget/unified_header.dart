@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:auto_route/auto_route.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -6,6 +7,7 @@ import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
+
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
@@ -69,6 +71,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   PriorityShortcutsProviderState? _panelController;
   final GlobalKey _headerKey = GlobalKey();
   double? _lastMeasuredHeaderHeight;
+  // Subscribed to the router so the header can collapse to its
+  // NewThreadPage variant in the same frame the route changes, instead
+  // of waiting for NewThreadPage's post-frame `register` callback.
+  ChangeNotifier? _navHistory;
+  bool _isNewThreadRoute = false;
 
   @override
   void initState() {
@@ -92,6 +99,51 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     } on ProviderNotFoundException {
       // Intentionally no-op.
     }
+    // Listen on the *root* router. The inner AutoRouter (which hosts
+    // NewThreadRoute) sits below UnifiedHeader, so its pushes don't
+    // notify our local router's history — only the root history hears
+    // every navigation across the tree.
+    final history = context.router.root.navigationHistory;
+    if (_navHistory != history) {
+      _navHistory?.removeListener(_onRouteChanged);
+      _navHistory = history;
+      history.addListener(_onRouteChanged);
+    }
+    ThreadHeaderNotifier.pendingNewThreadIntent.removeListener(
+      _onPendingNewThreadChanged,
+    );
+    ThreadHeaderNotifier.pendingNewThreadIntent.addListener(
+      _onPendingNewThreadChanged,
+    );
+    _isNewThreadRoute = _computeIsNewThreadRoute();
+  }
+
+  bool _computeIsNewThreadRoute() {
+    // Root `currentPath` walks the full nested-router tree, so it
+    // becomes `/p/<id>/new` the moment the inner router pushes
+    // NewThreadRoute — even though that route lives below us.
+    return context.router.root.currentPath.endsWith('/new');
+  }
+
+  void _onRouteChanged() {
+    if (!mounted) return;
+    final next = _computeIsNewThreadRoute();
+    // Only clear the intent flag once we've actually arrived at /new —
+    // earlier route changes (the initial PriorityRoute push, the empty
+    // PriorityOnlyRoute) fire before NewThreadRoute lands and we want
+    // the collapsed variant to stay through all of them. priorities_shell
+    // also schedules a safety-net timeout for the cancelled-navigation
+    // case.
+    if (next && ThreadHeaderNotifier.pendingNewThreadIntent.value) {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    }
+    if (next == _isNewThreadRoute) return;
+    setState(() => _isNewThreadRoute = next);
+  }
+
+  void _onPendingNewThreadChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onSearchChanged() {
@@ -177,6 +229,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     _panelController?.unregisterSearchToggle();
     LayoutBloc.instance?.unregisterSearchToggle(_toggleSearch);
     LayoutBloc.instance?.unregisterSearchClose(_closeSearchIfOpen);
+    _navHistory?.removeListener(_onRouteChanged);
+    ThreadHeaderNotifier.pendingNewThreadIntent.removeListener(
+      _onPendingNewThreadChanged,
+    );
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -321,7 +377,50 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
     final thread = state.thread;
     final isThreadVisible = notifier?.isThreadVisible ?? false;
+    // We're on (or about to be on) NewThreadPage in any of:
+    //   1. The path already ends with `/new` (NewThreadPage mounted).
+    //   2. NewThreadPage's notifier flag is set (post-frame register
+    //      has fired).
+    //   3. `middlePanelVisible` is true with no thread open — that's
+    //      the PriorityOnlyRoute state right before its post-frame
+    //      redirect to /new fires (multi-panel only path).
+    //   4. The pending-intent flag is set by an external caller (e.g.
+    //      bottom-nav "New") that knows it's navigating us to /new but
+    //      hasn't gotten the inner router pushed yet.
+    final isNewThread =
+        _isNewThreadRoute ||
+        (notifier?.isNewThread ?? false) ||
+        (layoutState.middlePanelVisible && thread == null) ||
+        ThreadHeaderNotifier.pendingNewThreadIntent.value;
     final hasActivity = thread != null || isThreadVisible;
+
+    // NewThreadPage in single-panel mode: chrome lives inside the page
+    // (priority chip, type chip, etc.), so the global header collapses
+    // to a bare back-button row. Background matches the NewThreadPage
+    // surface (which is translucent over `context.colour.background`) so
+    // the header reads as part of the same canvas.
+    if (isNewThread) {
+      return _wrapHeader(
+        context,
+        layoutState,
+        [
+          if (resolvedToolbarPadding.left != 0)
+            SizedBox(width: resolvedToolbarPadding.left),
+          Button.icon(
+            CommandWrapper(
+              ChangeCurrentThread(null),
+              icon: Value(PlotIcon.back),
+            ),
+          ),
+          const Expanded(child: SizedBox.shrink()),
+        ],
+        suffixes: <Widget>[
+          if (resolvedToolbarPadding.right != 0)
+            SizedBox(width: resolvedToolbarPadding.right),
+        ],
+        decoration: BoxDecoration(color: context.colour.background),
+      );
+    }
 
     final List<Widget> leading = [
       if (resolvedToolbarPadding.left != 0)

@@ -8,23 +8,36 @@ import 'package:plot/store/store.dart';
 /// ThreadPage registers its search callbacks and tag data when it mounts,
 /// and unregisters on dispose.
 class ThreadHeaderNotifier extends ChangeNotifier {
+  /// Set true by external triggers (e.g. the bottom-nav "New" button)
+  /// when a navigation to NewThreadPage is *imminent* but the inner
+  /// router isn't mounted yet. Allows [UnifiedHeader] to render the
+  /// collapsed variant immediately, before the route change settles —
+  /// otherwise the full header flashes during the cross-tab navigation
+  /// while priorities_shell polls for the inner router to appear.
+  /// Cleared once NewThreadPage mounts (or the route resolves elsewhere).
+  static final ValueNotifier<bool> pendingNewThreadIntent =
+      ValueNotifier(false);
+
   void Function(String)? onSearchChanged;
   void Function()? onSearchClosed;
   List<(Tag, int)> tags = const [];
   List<Tag> filter = const [];
   bool isThreadVisible = false;
+  bool isNewThread = false;
 
   void register({
     required void Function(String) onSearchChanged,
     required void Function() onSearchClosed,
     required List<(Tag, int)> tags,
     required List<Tag> filter,
+    bool isNewThread = false,
   }) {
     this.onSearchChanged = onSearchChanged;
     this.onSearchClosed = onSearchClosed;
     this.tags = tags;
     this.filter = filter;
     isThreadVisible = true;
+    this.isNewThread = isNewThread;
     notifyListeners();
   }
 
@@ -34,6 +47,7 @@ class ThreadHeaderNotifier extends ChangeNotifier {
     tags = const [];
     filter = const [];
     isThreadVisible = false;
+    isNewThread = false;
     // Defer notification to avoid calling notifyListeners during dispose/unmount
     // when the widget tree is locked.
     WidgetsBinding.instance.addPostFrameCallback((_) {

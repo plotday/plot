@@ -11,6 +11,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/thread_header_notifier.dart';
 
 /// Indices into the AutoTabsRouter's `routes`. These identify which
 /// inner navigator stack is active. The Activity stack is still where
@@ -242,6 +243,17 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
 
     final priorityIdString = _activityPriorityIdString(context);
     if (priorityIdString == null) return;
+    // Signal the intent so UnifiedHeader collapses immediately rather
+    // than flashing the full priority header while PriorityWrapper is
+    // mounting and we're polling for the inner router to appear.
+    // Cleared by NewThreadPage on mount; this timeout is a safety net
+    // in case the polling ever fails to land us on /new (e.g. the
+    // priority load future never resolves) so the collapsed header
+    // doesn't persist forever.
+    ThreadHeaderNotifier.pendingNewThreadIntent.value = true;
+    Future.delayed(const Duration(seconds: 3), () {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    });
     context.router.navigate(
       PriorityRoute(priorityIdString: priorityIdString),
     );

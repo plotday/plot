@@ -129,6 +129,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     _priorityBloc = context.read<PriorityBloc>();
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
+    // We've arrived — clear the navigation-intent flag set by callers
+    // like the bottom-nav "New" button (priorities_shell._openNewThread).
+    if (ThreadHeaderNotifier.pendingNewThreadIntent.value) {
+      ThreadHeaderNotifier.pendingNewThreadIntent.value = false;
+    }
     // Prefer middle panel on resize while NewThreadPage is visible
     context.read<LayoutBloc>().preferMiddle = true;
     // Register ThreadEditor with the focus coordination provider
@@ -139,6 +144,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         onSearchClosed: () {},
         tags: const [],
         filter: const [],
+        isNewThread: true,
       );
       _provider?.registerActivityPanel(
         editorFocusCallback: () => _threadEditorKey.currentState?.focus(),
