@@ -568,7 +568,8 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
       // Handles browser back / gesture back which bypass PopScope.
       context.read<PriorityBloc>().setThread(null);
       final layoutState = context.read<LayoutBloc>().state;
-      if (layoutState.middlePanelVisible) {
+      if (layoutState.middlePanelVisible &&
+          !context.router.currentPath.endsWith('/new')) {
         context.router.navigate(NewThreadRoute());
       }
     });
@@ -578,7 +579,8 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
   void didUpdateWidget(PriorityOnlyPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final layoutState = context.read<LayoutBloc>().state;
-    if (layoutState.middlePanelVisible) {
+    if (layoutState.middlePanelVisible &&
+        !context.router.currentPath.endsWith('/new')) {
       context.router.navigate(NewThreadRoute());
     }
   }
