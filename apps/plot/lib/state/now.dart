@@ -173,8 +173,13 @@ class NowBloc extends Cubit<NowState> {
   ///   2. Paused-explicit session for this priority whose `pomodoroAt`
   ///      falls in `[blockStart, blockEnd)` →
   ///      `pomodoroAt + pomodoro - end` (frozen remaining at pause).
-  ///   3. The block's resolved row duration via the per-priority block
-  ///      walker against `priority_block` rows.
+  ///   3. Otherwise null — the caller composes this stream's value with
+  ///      the block's static `cascadeDuration` from the agenda model
+  ///      (`live ?? block.cascadeDuration`). The agenda builder's
+  ///      multi-block walker (`_attachBlockDurations`) is the single
+  ///      source of truth for which row attaches to which block;
+  ///      duplicating that resolve here as a single-block walker would
+  ///      let a row consumed by an earlier block leak onto later blocks.
   static Stream<PriorityPendingDisplay> watchBlockDisplay({
     required PriorityId priorityId,
     required DateTime blockStart,
@@ -183,12 +188,11 @@ class NowBloc extends Cubit<NowState> {
     bool inWindow(DateTime t) =>
         !t.isBefore(blockStart) && t.isBefore(blockEnd);
 
-    return Rx.combineLatest4(
-      streamPriorityBlocksGroupedByPriority(),
+    return Rx.combineLatest3(
       Session.watchCurrent(),
       Session.watchLatestPausedFor(priorityId),
       Stream<void>.periodic(const Duration(minutes: 1), (_) {}).startWith(null),
-      (blocksByPriority, currentSession, pausedExplicit, _) {
+      (currentSession, pausedExplicit, _) {
         final now = Time.now();
         final activeInBlock =
             currentSession != null &&
@@ -215,15 +219,7 @@ class NowBloc extends Cubit<NowState> {
             duration: remaining > Duration.zero ? remaining : null,
           );
         }
-        final rows = blocksByPriority[priorityId] ?? const [];
-        final todayMidnight = DateTime(now.year, now.month, now.day);
-        // Single-block walker — the block itself is the only entry.
-        final out = resolveBlockDurations(
-          todayMidnight: todayMidnight,
-          blocks: [(id: 'b', start: blockStart)],
-          blocksForPriority: rows,
-        );
-        return PriorityPendingDisplay(duration: out['b']);
+        return const PriorityPendingDisplay();
       },
     );
   }

@@ -789,22 +789,20 @@ class _BlockHeaderState extends State<_BlockHeader> {
       }
     } else if (_blockHasEditablePending(block)) {
       // Priority blocks and gap blocks that have promoted a priority
-      // into their header both surface the priority's pending in the
-      // gutter. Prefer the live value from [NowBloc.watchBlockDisplay]
-      // so an active session's countdown shows; once the subscription
-      // has emitted, trust its value (including an explicit null after a
-      // ± clear) — falling back to the agenda model's stale
-      // `cascadeDuration` would leave the gutter showing the pre-clear
-      // number even though the underlying row is gone. When the
-      // priority has no pending and the block is a [GapBlock], the
-      // gap's own range duration takes over (preserves the legacy gap
-      // time-marker behaviour).
+      // into their header both surface the block's pending in the
+      // gutter. [NowBloc.watchBlockDisplay] only overlays an active or
+      // paused-explicit session's live remaining; otherwise it emits
+      // null and we use the block's resolved `cascadeDuration` from the
+      // agenda model. The model walker (`_attachBlockDurations`) is the
+      // single source of truth for which row attaches to which block,
+      // so we never duplicate that resolve in the widget. When the
+      // block has no pending and is a [GapBlock], the gap's own range
+      // duration takes over (preserves the legacy time-marker
+      // behaviour).
       final slice = block is PriorityBlock
           ? block.cascadeDuration
           : (block as GapBlock).cascadeDuration;
-      final pending = _pendingDisplay != null
-          ? _pendingDisplay!.duration
-          : slice;
+      final pending = _pendingDisplay?.duration ?? slice;
       Duration? displayed = pending;
       if (displayed == null && block is GapBlock) {
         final dur = dateTimeRange?.duration;
@@ -1007,19 +1005,17 @@ class _BlockHeaderState extends State<_BlockHeader> {
       );
     }
     if (_blockHasEditablePending(block)) {
-      // First frame before the stream emits has no display snapshot —
-      // fall back to the agenda model's cascade slice so the gutter still
-      // shows something. After the first emission [_pendingDisplay]
-      // tracks the live value (and its source); the snapshot's `null`
-      // means the bottom of the cascade (no row contributing) and must
-      // win over the stale slice, otherwise a fresh clear instantly
-      // restages the old value through the bump math.
+      // The live overlay [_pendingDisplay] only carries a session's
+      // remaining time (active or paused-explicit, anchored inside this
+      // block's window). When there's no in-window session it emits
+      // null, and we use the block's resolved `cascadeDuration` from
+      // the agenda model — the only source that knows about preceding
+      // blocks already consuming a row, so a row attached to day 2 by
+      // the walker never leaks into day 3's bump current.
       final slice = block is PriorityBlock
           ? block.cascadeDuration
           : (block as GapBlock).cascadeDuration;
-      final current = _pendingDisplay != null
-          ? _pendingDisplay!.duration
-          : slice;
+      final current = _pendingDisplay?.duration ?? slice;
       return (
         current,
         (newDur) => _applyPriorityBump(
