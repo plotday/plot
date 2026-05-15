@@ -206,6 +206,22 @@ Future<void> run(List<String> args) async {
           PendingInvite.token = segments[1];
         }
       }
+
+      // iOS scene-based cold-start share fallback. In scene mode iOS delivers
+      // the share-extension URL via `scene(_:willConnectTo:options:)` only,
+      // never `scene(_:openURLContexts:)`, and `app_links` only implements
+      // `application(_:open:options:)` — so `getInitialLink()` returns null
+      // and the share is lost. The ShareExtension always writes its payload
+      // to App Group `UserDefaults["ShareKey"]` before opening the host, so
+      // its presence on launch reliably indicates a fresh share.
+      if (!kIsWeb && Platform.isIOS && PendingShare.url == null) {
+        final content = await _readIosSharedContent(Uri.parse('share:?key=ShareKey'));
+        final shared = content != null ? extractHttpUrl(content) : null;
+        if (shared != null) {
+          log.info('iOS cold-start share via App Group → URL: $shared');
+          PendingShare.url = shared;
+        }
+      }
     } catch (error, stackTrace) {
       log.warning('Deep link initialization failed', error, stackTrace);
     }
