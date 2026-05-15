@@ -247,9 +247,9 @@ class PriorityBlock extends AgendaBlock {
   @override
   DateTime get end => windowEnd;
 
-  /// The priority's total pending duration folded into this block by the
-  /// cascade pass. Null for blocks outside today's section, or for
-  /// priorities with no pending duration.
+  /// The pending duration resolved for this block by the per-block
+  /// walker (`resolveBlockDurations`). Null when no `priority_block`
+  /// row contributes to this block's window.
   final Duration? cascadeDuration;
 
   @override
@@ -331,11 +331,11 @@ class GapBlock extends AgendaBlock {
   /// Null for "normal" gaps where `range.start` is the canonical anchor.
   final DateTime? periodAnchor;
 
-  /// The lead priority's pending duration folded into this gap by the
-  /// cascade pass. Mirrors [PriorityBlock.cascadeDuration] so a gap that
-  /// promotes a priority into its header still surfaces the priority's
-  /// editable pending value. Null on gap blocks with no priority lead
-  /// or no pending duration.
+  /// The pending duration resolved for this gap by the per-block walker
+  /// (`resolveBlockDurations`) when the gap promotes a priority into its
+  /// header. Mirrors [PriorityBlock.cascadeDuration] so the same gutter
+  /// editing flow works on either kind. Null on gap blocks with no
+  /// priority lead or no `priority_block` row at the gap's start.
   final Duration? cascadeDuration;
 
   @override
