@@ -541,6 +541,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
   /// leaving a sub-step remainder.
   static const _minimumDuration = Duration(minutes: 15);
 
+  /// `(start, end)` for the block this header introduces. Reads the
+  /// uniform `start`/`end` getters added on `AgendaBlock`.
+  ({DateTime start, DateTime end}) get _blockWindow {
+    final b = widget.block;
+    return (start: b.start, end: b.end);
+  }
+
   /// True when this block header is itself a drag source (a non-event
   /// block with a known parent block id). Outside-priority gating is
   /// no longer relevant in the universal agenda — every priority's
@@ -573,9 +580,16 @@ class _BlockHeaderState extends State<_BlockHeader> {
       _tick?.cancel();
       _scheduleTick();
     }
-    if (oldWidget.priority.id != widget.priority.id ||
-        _blockHasEditablePending(oldWidget.block) !=
-            _blockHasEditablePending(widget.block)) {
+    final editableChanged = _blockHasEditablePending(oldWidget.block) !=
+        _blockHasEditablePending(widget.block);
+    final priorityChanged = oldWidget.priority.id != widget.priority.id;
+    // Window comparison only matters for blocks where the subscription
+    // is live; reading start/end on blocks without time anchors throws.
+    final windowChanged = _blockHasEditablePending(widget.block) &&
+        _blockHasEditablePending(oldWidget.block) &&
+        (oldWidget.block.start != widget.block.start ||
+            oldWidget.block.end != widget.block.end);
+    if (priorityChanged || editableChanged || windowChanged) {
       _pendingSub?.cancel();
       _pendingDisplay = null;
       _subscribePending();
@@ -606,7 +620,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
   void _subscribePending() {
     if (!_blockHasEditablePending(widget.block)) return;
-    _pendingSub = NowBloc.watchPendingDisplay(widget.priority.id).listen((d) {
+    final w = _blockWindow;
+    _pendingSub = NowBloc.watchBlockDisplay(
+      priorityId: widget.priority.id,
+      blockStart: w.start,
+      blockEnd: w.end,
+    ).listen((d) {
       if (!mounted) return;
       setState(() => _pendingDisplay = d);
     });
@@ -771,7 +790,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     } else if (_blockHasEditablePending(block)) {
       // Priority blocks and gap blocks that have promoted a priority
       // into their header both surface the priority's pending in the
-      // gutter. Prefer the live value from [NowBloc.watchPendingDisplay]
+      // gutter. Prefer the live value from [NowBloc.watchBlockDisplay]
       // so an active session's countdown shows; once the subscription
       // has emitted, trust its value (including an explicit null after a
       // ± clear) — falling back to the agenda model's stale
@@ -1063,18 +1082,22 @@ class _BlockHeaderState extends State<_BlockHeader> {
   }
 
   /// Apply a ±15m bump to a [PriorityBlock]'s displayed value. Routes
-  /// through [NowBloc.applyPendingBump] so the write lands on the same
+  /// through [NowBloc.applyBlockBump] so the write lands on the same
   /// row the gutter label is reading (active or paused-explicit session
-  /// when one is in play, otherwise `priority_block.duration`). Without
-  /// this routing a bump on a session-derived display would write to
-  /// `priority_block.duration` and the user would see nothing change.
+  /// when one is in play, otherwise `priority_block.duration` at this
+  /// block's start). Without this routing a bump on a session-derived
+  /// display would write to `priority_block.duration` and the user
+  /// would see nothing change.
   void _applyPriorityBump({
     required Priority priority,
     required Duration? newDisplayed,
     required Duration? currentDisplayed,
   }) {
-    NowBloc.applyPendingBump(
+    final w = _blockWindow;
+    NowBloc.applyBlockBump(
       priorityId: priority.id,
+      blockStart: w.start,
+      blockEnd: w.end,
       currentDisplayed: currentDisplayed,
       newDisplayed: newDisplayed,
     );

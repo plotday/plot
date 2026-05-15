@@ -192,6 +192,16 @@ sealed class AgendaBlock extends Equatable {
   List<Thread> get threads;
   bool get isOutside;
 
+  /// Inclusive start of this block's time window. Used as `effective_at`
+  /// when the user edits the block's pending duration, and as the lower
+  /// bound when checking session containment.
+  DateTime get start;
+
+  /// Exclusive end of this block's time window. Used as the upper bound
+  /// when checking session containment. Standalone blocks at section
+  /// end use the section's next-midnight as their end.
+  DateTime get end;
+
   @override
   List<Object?> get props => [id, priority, threads, isOutside];
 
@@ -210,6 +220,8 @@ class PriorityBlock extends AgendaBlock {
     required this.id,
     required this.priority,
     required this.threads,
+    required this.windowStart,
+    required this.windowEnd,
     this.isOutside = false,
     this.cascadeDuration,
   });
@@ -223,13 +235,26 @@ class PriorityBlock extends AgendaBlock {
   @override
   final bool isOutside;
 
-  /// The priority's total pending duration folded into this block by the
-  /// cascade pass. Null for blocks outside today's section, or for
-  /// priorities with no pending duration.
+  /// Inclusive start of this block's day-local window.
+  final DateTime windowStart;
+
+  /// Exclusive end of this block's day-local window.
+  final DateTime windowEnd;
+
+  @override
+  DateTime get start => windowStart;
+
+  @override
+  DateTime get end => windowEnd;
+
+  /// The pending duration resolved for this block by the per-block
+  /// walker (`resolveBlockDurations`). Null when no `priority_block`
+  /// row contributes to this block's window.
   final Duration? cascadeDuration;
 
   @override
-  List<Object?> get props => [id, priority, threads, isOutside, cascadeDuration];
+  List<Object?> get props =>
+      [id, priority, threads, isOutside, cascadeDuration, windowStart, windowEnd];
 }
 
 /// A scheduled event thread together with any associated child threads,
@@ -256,6 +281,16 @@ class EventBlock extends AgendaBlock {
 
   @override
   List<Thread> get threads => [event, ...associated];
+
+  @override
+  DateTime get start =>
+      event.at?.start ??
+      (throw StateError('EventBlock without event.at.start'));
+
+  @override
+  DateTime get end =>
+      event.at?.end ??
+      (throw StateError('EventBlock without event.at.end'));
 
   @override
   List<Object?> get props =>
@@ -296,12 +331,20 @@ class GapBlock extends AgendaBlock {
   /// Null for "normal" gaps where `range.start` is the canonical anchor.
   final DateTime? periodAnchor;
 
-  /// The lead priority's pending duration folded into this gap by the
-  /// cascade pass. Mirrors [PriorityBlock.cascadeDuration] so a gap that
-  /// promotes a priority into its header still surfaces the priority's
-  /// editable pending value. Null on gap blocks with no priority lead
-  /// or no pending duration.
+  /// The pending duration resolved for this gap by the per-block walker
+  /// (`resolveBlockDurations`) when the gap promotes a priority into its
+  /// header. Mirrors [PriorityBlock.cascadeDuration] so the same gutter
+  /// editing flow works on either kind. Null on gap blocks with no
+  /// priority lead or no `priority_block` row at the gap's start.
   final Duration? cascadeDuration;
+
+  @override
+  DateTime get start =>
+      range.start ?? (throw StateError('GapBlock without range.start'));
+
+  @override
+  DateTime get end =>
+      range.end ?? (throw StateError('GapBlock without range.end'));
 
   @override
   List<Object?> get props =>

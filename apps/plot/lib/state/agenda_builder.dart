@@ -36,7 +36,7 @@ class AgendaBuilder {
       associationsByParentId: associationsByParentId,
     );
 
-    final effectiveNow = now ?? DateTime.now();
+    final effectiveNow = now ?? Time.now();
     final base = _atomsToModel(atoms, context: context);
     final consolidated = _consolidateAndSort(
       base,
@@ -54,284 +54,17 @@ class AgendaBuilder {
       inputThreads: threads,
       now: effectiveNow,
     );
-    // Cascade pending priority durations into today's gap region (and
-    // overflow to the after-last-event zone). Pure post-process; no
-    // mutation of priority_block rows.
-    return _cascadePendingDurations(
-      withUnread,
-      now: effectiveNow,
+    // Populate each PriorityBlock's windowStart/windowEnd based on its
+    // position relative to time-anchored siblings in the section.
+    final withWindows = _populateBlockWindows(withUnread);
+    // Attach per-block pending durations using the resolveBlockDurations
+    // walker. Each priority's rows are resolved independently across all
+    // sections; the result folds onto each block's cascadeDuration field.
+    return _attachBlockDurations(
+      withWindows,
+      todayMidnight: _todayMidnightFromNow(effectiveNow),
       priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
     );
-  }
-
-  /// Fold each priority's pending duration into today's section.
-  ///
-  /// For every priority with pending duration > 0:
-  ///   * if a thread-bearing [PriorityBlock] for that priority exists in
-  ///     today's section, rewrite it with [PriorityBlock.cascadeDuration]
-  ///     set to the priority's total pending — no extra block is added,
-  ///   * otherwise append a synthetic empty cascade [PriorityBlock] at
-  ///     the section tail so the pending time is still visible.
-  ///
-  /// Pure layout pass — no `priority_block` rows are written.
-  static AgendaModel _cascadePendingDurations(
-    AgendaModel model, {
-    required DateTime now,
-    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
-  }) {
-    if (priorityBlocksByPriority.isEmpty) return model;
-
-    final pendingByPriority = <PriorityId, Duration>{};
-    for (final entry in priorityBlocksByPriority.entries) {
-      final pending = effectivePriorityDurationAt(
-        moment: now,
-        blocksForPriority: entry.value,
-      );
-      if (pending != null && pending > Duration.zero) {
-        pendingByPriority[entry.key] = pending;
-      }
-    }
-    if (pendingByPriority.isEmpty) return model;
-
-    final priorityById = <Uuid, Priority>{};
-    for (final block in model.allBlocks) {
-      priorityById.putIfAbsent(block.priority.id, () => block.priority);
-    }
-
-    final newSections = <AgendaSection>[];
-    for (final section in model.sections) {
-      if (section is! DateSection || !section.isNow) {
-        newSections.add(section);
-        continue;
-      }
-      newSections.add(_foldCascadeIntoTodaySection(
-        section,
-        now: now,
-        pendingByPriority: pendingByPriority,
-        priorityById: priorityById,
-        priorityBlocksByPriority: priorityBlocksByPriority,
-      ));
-    }
-    return AgendaModel(sections: List.unmodifiable(newSections));
-  }
-
-  /// Take pending duration off the head of [queue] and emit one
-  /// [PriorityBlock] per priority that fits in [available]. Returns the
-  /// emitted cascade slices plus the total duration consumed (so callers
-  /// can render a residual gap with the leftover time). Mutates [queue]
-  /// (drops priorities once `remaining == 0`) and stops when [available]
-  /// Fold each priority's total pending duration into [section]. For
-  /// every priority in [pendingByPriority]:
-  ///   * if an existing thread-bearing [PriorityBlock] for that priority
-  ///     is present, rewrite it with `cascadeDuration` set,
-  ///   * otherwise append a synthetic empty cascade block at the
-  ///     section tail (in priority order).
-  static DateSection _foldCascadeIntoTodaySection(
-    DateSection section, {
-    required DateTime now,
-    required Map<PriorityId, Duration> pendingByPriority,
-    required Map<Uuid, Priority> priorityById,
-    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
-  }) {
-    final remaining = Map<PriorityId, Duration>.from(pendingByPriority);
-
-    final newBlocks = <AgendaBlock>[];
-    for (final block in section.blocks) {
-      if (block is PriorityBlock) {
-        final pending = remaining.remove(block.priority.id);
-        if (pending != null) {
-          newBlocks.add(PriorityBlock(
-            id: block.id,
-            priority: block.priority,
-            threads: block.threads,
-            isOutside: block.isOutside,
-            cascadeDuration: pending,
-          ));
-          continue;
-        }
-      } else if (block is GapBlock && block.threads.isNotEmpty) {
-        // GapBlocks that promote a priority into their header (gap with
-        // threads) participate in the cascade just like PriorityBlocks —
-        // otherwise the lead priority's pending duration would never get
-        // attached and the gutter would show the gap's full range
-        // duration instead of the priority's editable pending value.
-        final pending = remaining.remove(block.priority.id);
-        if (pending != null) {
-          newBlocks.add(GapBlock(
-            id: block.id,
-            priority: block.priority,
-            range: block.range,
-            threads: block.threads,
-            isOutside: block.isOutside,
-            periodAnchor: block.periodAnchor,
-            cascadeDuration: pending,
-          ));
-          continue;
-        }
-      }
-      newBlocks.add(block);
-    }
-
-    if (remaining.isEmpty) {
-      return DateSection(
-        date: section.date,
-        blocks: List.unmodifiable(_emitResidualGaps(newBlocks)),
-        isNow: section.isNow,
-        scheduleAt: section.scheduleAt,
-      );
-    }
-
-    final tail = remaining.entries
-        .where((e) => priorityById.containsKey(e.key))
-        .toList();
-    for (final entry in tail) {
-      final p = priorityById[entry.key]!;
-      newBlocks.add(PriorityBlock(
-        id: 'p_${section.id}_${p.path.value}_cascade',
-        priority: p,
-        threads: const [],
-        isOutside: false,
-        cascadeDuration: entry.value,
-      ));
-    }
-
-    // Re-sort the trailing standalone PriorityBlock run by priority order.
-    // The cascade tail appends synthetic [PriorityBlock]s for priorities that
-    // had no thread-bearing block in the section, but appending alone leaves
-    // them after every real block — so when the user reorders a cascade-only
-    // priority above a real one, the new `priority_block` row is written but
-    // the rendered layout never reflects it. Sorting the trailing run here
-    // makes both real and synthetic blocks honor `effectivePriorityOrderAt`.
-    //
-    // Stops at the first non-[PriorityBlock] from the end so we don't reach
-    // back across an [EventBlock] or [GapBlock] header — those anchor their
-    // following priorities to a specific time period and must not be reshuffled.
-    var runStart = newBlocks.length;
-    while (runStart > 0 && newBlocks[runStart - 1] is PriorityBlock) {
-      runStart--;
-    }
-    if (runStart < newBlocks.length - 1) {
-      final run = newBlocks.sublist(runStart).cast<PriorityBlock>().toList()
-        ..sort((a, b) {
-          final aOrd = effectivePriorityOrderAt(
-            moment: now,
-            blocksForPriority:
-                priorityBlocksByPriority[a.priority.id] ?? const [],
-            fallback: a.priority.order.value,
-          );
-          final bOrd = effectivePriorityOrderAt(
-            moment: now,
-            blocksForPriority:
-                priorityBlocksByPriority[b.priority.id] ?? const [],
-            fallback: b.priority.order.value,
-          );
-          return aOrd.compareTo(bOrd);
-        });
-      newBlocks
-        ..removeRange(runStart, newBlocks.length)
-        ..addAll(run);
-    }
-
-    return DateSection(
-      date: section.date,
-      blocks: List.unmodifiable(_emitResidualGaps(newBlocks)),
-      isNow: section.isNow,
-      scheduleAt: section.scheduleAt,
-    );
-  }
-
-  /// Walk a section's blocks and emit a residual [GapBlock] at the end
-  /// of each gap region whose blocks don't consume the full gap. The
-  /// residual carries the leftover duration so the user sees both the
-  /// dropped block's slice and what time is still free in that period.
-  ///
-  /// A "gap region" is a [GapBlock] header followed by any number of
-  /// [PriorityBlock]s within the same section. The cascade attaches
-  /// `cascadeDuration` to each block in the region; if the total
-  /// consumed is less than the gap's range duration, a residual gap is
-  /// emitted with the remaining time, anchored after the consumed slice.
-  ///
-  /// **Empty-gap + cascade-slice merge.** When an empty [GapBlock]
-  /// (no threads, no priority lead) is immediately followed by an
-  /// empty [PriorityBlock] with `cascadeDuration` (the synthetic tail
-  /// slice the cascade emits for a priority with no thread-bearing
-  /// block in this section), the two would otherwise render as
-  /// stacked markers — a bare time marker for the gap and a priority
-  /// breadcrumb with a duration label for the slice. They share the
-  /// same anchor in the agenda, so merging them into one
-  /// priority-lead gap block produces the user-meaningful "10pm
-  /// Movement Building 30m" header instead of two disjoint rows.
-  static List<AgendaBlock> _emitResidualGaps(List<AgendaBlock> blocks) {
-    final out = <AgendaBlock>[];
-    var i = 0;
-    while (i < blocks.length) {
-      final b = blocks[i];
-      if (b is! GapBlock) {
-        out.add(b);
-        i++;
-        continue;
-      }
-
-      // Detect the empty-gap + cascade-slice merge before emitting.
-      // The merge applies only when the gap is otherwise inert (no
-      // threads, no cascadeDuration of its own) and the very next
-      // block is a cascade slice (empty PriorityBlock with a
-      // cascadeDuration). The merged block keeps the gap's range and
-      // periodAnchor so existing drop targeting still anchors there.
-      GapBlock gap = b;
-      final hasPriorityLead =
-          gap.threads.isNotEmpty || gap.cascadeDuration != null;
-      var consumeIdx = i + 1;
-      if (!hasPriorityLead &&
-          consumeIdx < blocks.length &&
-          blocks[consumeIdx] is PriorityBlock) {
-        final pb = blocks[consumeIdx] as PriorityBlock;
-        if (pb.threads.isEmpty && pb.cascadeDuration != null) {
-          gap = GapBlock(
-            id: pb.id,
-            priority: pb.priority,
-            range: gap.range,
-            threads: const [],
-            isOutside: gap.isOutside,
-            periodAnchor: gap.periodAnchor,
-            cascadeDuration: pb.cascadeDuration,
-          );
-          consumeIdx++;
-        }
-      }
-
-      // Emit the (possibly merged) gap, then walk its trailing
-      // PriorityBlocks accumulating consumed durations.
-      out.add(gap);
-      var consumed = gap.cascadeDuration ?? Duration.zero;
-      var j = consumeIdx;
-      while (j < blocks.length && blocks[j] is PriorityBlock) {
-        final pb = blocks[j] as PriorityBlock;
-        out.add(pb);
-        consumed += pb.cascadeDuration ?? Duration.zero;
-        j++;
-      }
-      final gapStart = gap.range.start;
-      final gapEnd = gap.range.end;
-      final gapDuration = gap.range.duration;
-      if (consumed > Duration.zero &&
-          gapStart != null &&
-          gapEnd != null &&
-          gapDuration != null &&
-          consumed < gapDuration) {
-        final residualStart = gapStart.add(consumed);
-        out.add(GapBlock(
-          id: '${gap.id}_residual',
-          priority: gap.priority,
-          range: DateTimeRange(residualStart, gapEnd),
-          threads: const [],
-          isOutside: gap.isOutside,
-          periodAnchor: gap.periodAnchor ?? gapStart,
-        ));
-      }
-      i = j;
-    }
-    return out;
   }
 
   /// Append every input thread with [Thread.unread] true that is not
@@ -423,11 +156,14 @@ class AgendaBuilder {
       if (block is! PriorityBlock) continue;
       final extras = remaining.remove(block.priority.id);
       if (extras == null || extras.isEmpty) continue;
+      // Window is a placeholder; _populateBlockWindows rewrites it during build().
       newBlocks[i] = PriorityBlock(
         id: block.id,
         priority: block.priority,
         threads: List.unmodifiable([...block.threads, ...extras]),
         isOutside: false,
+        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
       );
     }
 
@@ -446,6 +182,8 @@ class AgendaBuilder {
           priority: p,
           threads: List.unmodifiable(extras),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
       );
     }
@@ -638,6 +376,7 @@ class AgendaBuilder {
     final out = <AgendaBlock>[leadGap];
     for (var k = 1; k < ranked.length; k++) {
       final r = ranked[k];
+      // Window is a placeholder; _populateBlockWindows rewrites it during build().
       out.add(
         PriorityBlock(
           id: 'p_${sectionId}_${r.priority.path.value}'
@@ -645,6 +384,8 @@ class AgendaBuilder {
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
       );
     }
@@ -701,6 +442,7 @@ class AgendaBuilder {
     // BlockDropZone slot keys) — which breaks AnimatedContainer
     // continuity at the drop boundary and produces visible "snap"
     // artifacts after the drop completes.
+    // Window is a placeholder; _populateBlockWindows rewrites it during build().
     return [
       for (final r in ranked)
         PriorityBlock(
@@ -708,8 +450,200 @@ class AgendaBuilder {
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
     ];
+  }
+
+  /// For every priority, walk its agenda blocks in chronological order
+  /// (across all sections) and attach the duration that `priority_block`
+  /// rows resolve to for each block. Replaces the previous
+  /// `_cascadePendingDurations` fold, which surfaced a per-priority
+  /// total on today only.
+  static AgendaModel _attachBlockDurations(
+    AgendaModel model, {
+    required DateTime todayMidnight,
+    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
+  }) {
+    if (priorityBlocksByPriority.isEmpty) return model;
+
+    // 1. Build a chronological block list per priority.
+    final blocksByPriority = <PriorityId, List<({String id, DateTime start})>>{};
+    for (final section in model.sections) {
+      for (final block in section.blocks) {
+        // PriorityBlocks and priority-led GapBlocks are the only kinds
+        // that carry a priority's pending; EventBlocks do not.
+        if (block is PriorityBlock || block is GapBlock) {
+          final list = blocksByPriority.putIfAbsent(
+            block.priority.id,
+            () => <({String id, DateTime start})>[],
+          );
+          list.add((id: block.id, start: block.start));
+        }
+      }
+    }
+    for (final list in blocksByPriority.values) {
+      list.sort((a, b) => a.start.compareTo(b.start));
+    }
+
+    // 2. Resolve durations per priority.
+    final resolvedByBlockId = <String, Duration>{};
+    for (final entry in blocksByPriority.entries) {
+      final rows = priorityBlocksByPriority[entry.key] ?? const [];
+      final perBlock = resolveBlockDurations(
+        todayMidnight: todayMidnight,
+        blocks: entry.value,
+        blocksForPriority: rows,
+      );
+      for (final mapEntry in perBlock.entries) {
+        final d = mapEntry.value;
+        if (d != null) {
+          resolvedByBlockId[mapEntry.key] = d;
+        }
+      }
+    }
+
+    if (resolvedByBlockId.isEmpty) return model;
+
+    // 3. Fold the resolved durations back onto each block.
+    final newSections = <AgendaSection>[];
+    for (final section in model.sections) {
+      final newBlocks = <AgendaBlock>[];
+      for (final block in section.blocks) {
+        final dur = resolvedByBlockId[block.id];
+        if (dur == null) {
+          newBlocks.add(block);
+          continue;
+        }
+        if (block is PriorityBlock) {
+          newBlocks.add(PriorityBlock(
+            id: block.id,
+            priority: block.priority,
+            threads: block.threads,
+            isOutside: block.isOutside,
+            cascadeDuration: dur,
+            windowStart: block.windowStart,
+            windowEnd: block.windowEnd,
+          ));
+        } else if (block is GapBlock) {
+          newBlocks.add(GapBlock(
+            id: block.id,
+            priority: block.priority,
+            range: block.range,
+            threads: block.threads,
+            isOutside: block.isOutside,
+            periodAnchor: block.periodAnchor,
+            cascadeDuration: dur,
+          ));
+        } else {
+          newBlocks.add(block);
+        }
+      }
+      switch (section) {
+        case DateSection s:
+          newSections.add(DateSection(
+            date: s.date,
+            blocks: List.unmodifiable(newBlocks),
+            isNow: s.isNow,
+            scheduleAt: s.scheduleAt,
+          ));
+        case TextSection s:
+          newSections.add(TextSection(
+            text: s.text,
+            blocks: List.unmodifiable(newBlocks),
+          ));
+      }
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
+  }
+
+  /// Compute today's local midnight from [now]. Pulled out so tests
+  /// can pass a frozen `now`.
+  static DateTime _todayMidnightFromNow(DateTime now) =>
+      DateTime(now.year, now.month, now.day);
+
+  /// Returns `(start, end)` for a standalone [PriorityBlock] at index
+  /// [blockIndex] inside [sectionBlocks], which all belong to
+  /// [sectionDate]. Walks back to find the closest preceding time-anchored
+  /// block (gap or event) and forward to find the next. The standalone's
+  /// window is `[prevEnd ?? sectionMidnight, nextStart ?? sectionMidnight + 1d)`.
+  static ({DateTime start, DateTime end}) _standaloneWindow({
+    required Date sectionDate,
+    required List<AgendaBlock> sectionBlocks,
+    required int blockIndex,
+  }) {
+    final midnight = sectionDate.toDateTime();
+    DateTime? prevEnd;
+    for (var i = blockIndex - 1; i >= 0; i--) {
+      final b = sectionBlocks[i];
+      if (b is GapBlock) {
+        prevEnd = b.range.end;
+        if (prevEnd != null) break;
+      } else if (b is EventBlock) {
+        prevEnd = b.event.at?.end;
+        if (prevEnd != null) break;
+      }
+    }
+    DateTime? nextStart;
+    for (var i = blockIndex + 1; i < sectionBlocks.length; i++) {
+      final b = sectionBlocks[i];
+      if (b is GapBlock) {
+        nextStart = b.range.start;
+        if (nextStart != null) break;
+      } else if (b is EventBlock) {
+        nextStart = b.event.at?.start;
+        if (nextStart != null) break;
+      }
+    }
+    return (
+      start: prevEnd ?? midnight,
+      end: nextStart ?? midnight.add(const Duration(days: 1)),
+    );
+  }
+
+  /// Rebuild every [PriorityBlock] in every [DateSection] with the
+  /// `start`/`end` window derived from its position in the section.
+  /// `GapBlock` and `EventBlock` already carry their own time anchors
+  /// and are passed through unchanged.
+  static AgendaModel _populateBlockWindows(AgendaModel model) {
+    final newSections = <AgendaSection>[];
+    for (final section in model.sections) {
+      if (section is! DateSection) {
+        newSections.add(section);
+        continue;
+      }
+      final blocks = section.blocks;
+      final rebuilt = <AgendaBlock>[];
+      for (var i = 0; i < blocks.length; i++) {
+        final b = blocks[i];
+        if (b is PriorityBlock) {
+          final w = _standaloneWindow(
+            sectionDate: section.date,
+            sectionBlocks: blocks,
+            blockIndex: i,
+          );
+          rebuilt.add(PriorityBlock(
+            id: b.id,
+            priority: b.priority,
+            threads: b.threads,
+            isOutside: b.isOutside,
+            cascadeDuration: b.cascadeDuration,
+            windowStart: w.start,
+            windowEnd: w.end,
+          ));
+        } else {
+          rebuilt.add(b);
+        }
+      }
+      newSections.add(DateSection(
+        date: section.date,
+        blocks: List.unmodifiable(rebuilt),
+        isNow: section.isNow,
+        scheduleAt: section.scheduleAt,
+      ));
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
   }
 
   /// Group a flat [AgendaItem] list into sections and blocks.
@@ -888,6 +822,7 @@ class AgendaBuilder {
                 k++;
               }
               final run = gapItems.sublist(start, k);
+              // Window is a placeholder; _populateBlockWindows rewrites it during build().
               current!.blocks.add(
                 PriorityBlock(
                   id: 'p_${current!.sectionId}_${priority.path.value}'
@@ -895,6 +830,8 @@ class AgendaBuilder {
                   priority: priority,
                   threads: List.unmodifiable(run.map((a) => a.thread)),
                   isOutside: false,
+                  windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+                  windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
                 ),
               );
             }
@@ -1008,12 +945,15 @@ class _SectionBuilder {
 
   void flushPriorityBlock() {
     if (_openPriority == null || _openThreads.isEmpty) return;
+    // Window is a placeholder; _populateBlockWindows rewrites it during build().
     blocks.add(
       PriorityBlock(
         id: 'p_${sectionId}_${_openPriority!.path.value}_${blocks.length}',
         priority: _openPriority!,
         threads: List.unmodifiable(_openThreads),
         isOutside: false,
+        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
       ),
     );
     _openPriority = null;
