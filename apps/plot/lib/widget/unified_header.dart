@@ -970,7 +970,7 @@ class _PriorityHeaderTrackingControlState
   // Narrow stadium pill that now only shows the countdown text. The
   // play affordance lives outside the pill as a separate header icon
   // button, freed up width that previously held the play glyph.
-  static const double _pillWidth = 88;
+  static const double _pillWidth = 94;
   static const double _pillHeight = 22;
   // Ghost +/− button hit areas. Sized to abut the centered countdown
   // text on each side so every horizontal pixel of the pill is one of
