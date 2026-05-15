@@ -113,6 +113,12 @@ class Window extends StatefulWidget {
     // applied, so macOS doesn't shift the window to accommodate the toolbar.
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
       await _restoreWindowState();
+      // The macOS window is kept hidden at launch (see MainFlutterWindow.swift
+      // `order(_:relativeTo:)` override) so the user doesn't see the default
+      // Nib frame flash to the saved size. Show it now that the saved bounds
+      // have been applied. No-op on Windows where the window is already
+      // visible — `show()` just re-focuses it.
+      await windowManager.show();
     }
   }
 
