@@ -210,6 +210,34 @@ class Session extends SessionRow {
     await row.save();
   }
 
+  /// Most-recent non-archived 'skip' session for the given
+  /// (schedule, occurrence). Used by [NowBloc.startSession] to detect a
+  /// recently-paused event and revive the ring's engaged-before-pause
+  /// elapsed time on resume.
+  static Future<Session?> latestSkipFor(
+    Uuid scheduleId, {
+    DateTime? occurrenceAt,
+  }) async {
+    if (!Store.isAvailable) return null;
+    final row = await (Store.get.select(table)
+          ..where(
+            (t) =>
+                t.scheduleId.equals(scheduleId.toBytes()) &
+                (occurrenceAt == null
+                    ? t.occurrenceAt.isNull()
+                    : t.occurrenceAt.equals(occurrenceAt)) &
+                t.source.equals('skip') &
+                t.archivedAt.isNull(),
+          )
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.start, mode: OrderingMode.desc),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    if (row == null) return null;
+    return Session.fromStore(row);
+  }
+
   /// Stream the most-recent non-archived 'skip' session for the given
   /// (schedule, occurrence). Drives the auto-event timer's hide-after-stop
   /// behavior so a Pause/Stop press takes effect immediately and persists

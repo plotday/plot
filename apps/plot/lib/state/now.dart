@@ -487,6 +487,12 @@ class NowBloc extends Cubit<NowState> {
         final remainingAtPause = originalPomodoro - elapsedAtPause;
         if (remainingAtPause > Duration.zero) {
           final shiftedPomodoroAt = now.subtract(elapsedAtPause);
+          _emitOptimisticSession(
+            ctx,
+            pomodoro: originalPomodoro,
+            pomodoroAt: shiftedPomodoroAt,
+            now: now,
+          );
           await Session.resume(
             ctx,
             end: now.add(const Duration(minutes: 3)),
@@ -494,9 +500,6 @@ class NowBloc extends Cubit<NowState> {
             pomodoroAt: shiftedPomodoroAt,
             explicit: true,
           );
-          if (s.previewPomodoro != null) {
-            emit(s.copyWith(previewPomodoro: null));
-          }
           return;
         }
       }
@@ -509,12 +512,55 @@ class NowBloc extends Cubit<NowState> {
     // resume tracking the event rather than spinning up an unrelated
     // window. Caller [override] and the staged inactive preview still
     // win when set.
+    //
+    // Resume-after-event-pause: if a live 'skip' marker exists for the
+    // in-progress event (auto-event-timer was paused via Stop), shift
+    // the new session so the ring continues from its engaged-before-pause
+    // fill instead of resetting to zero. Anchor `pomodoroAt` at
+    // `eventStart + pauseDuration` and shrink `pomodoro` by the same
+    // amount so progress = engagedBeforePause / (eventTotal − pauseDuration)
+    // and remaining = eventEnd − now. Clamp the skip's end to `now` so it
+    // (a) accurately records the actual pause window and (b) won't re-fire
+    // this branch on a later Start after the resumed session burns down.
     Duration? eventRemaining;
     final event = s.inProgressEventForContext;
     if (event != null && event.priority.id == ctx.id) {
+      final eventStart = event.at?.start;
       final end = event.at?.end;
-      if (end != null && end.isAfter(now)) {
+      if (eventStart != null && end != null && end.isAfter(now)) {
         eventRemaining = end.difference(now);
+        if (override == null && event.scheduleId != null) {
+          final skip = await Session.latestSkipFor(
+            event.scheduleId!,
+            occurrenceAt: eventStart,
+          );
+          if (skip != null &&
+              !skip.start.isBefore(eventStart) &&
+              skip.start.isBefore(now) &&
+              skip.end.isAfter(now)) {
+            final pauseDuration = now.difference(skip.start);
+            final eventTotal = end.difference(eventStart);
+            final newPomodoro = eventTotal - pauseDuration;
+            if (newPomodoro > Duration.zero) {
+              final shiftedPomodoroAt = eventStart.add(pauseDuration);
+              _emitOptimisticSession(
+                ctx,
+                pomodoro: newPomodoro,
+                pomodoroAt: shiftedPomodoroAt,
+                now: now,
+              );
+              await Session.fromStore(skip.copyWith(end: now)).save();
+              await Session.resume(
+                ctx,
+                end: now.add(const Duration(minutes: 3)),
+                pomodoro: newPomodoro,
+                pomodoroAt: shiftedPomodoroAt,
+                explicit: true,
+              );
+              return;
+            }
+          }
+        }
       }
     }
     final base =
@@ -526,6 +572,12 @@ class NowBloc extends Cubit<NowState> {
     final pomodoro = _capToEnd(ctx, base);
     if (pomodoro <= Duration.zero) return;
 
+    _emitOptimisticSession(
+      ctx,
+      pomodoro: pomodoro,
+      pomodoroAt: now,
+      now: now,
+    );
     await Session.resume(
       ctx,
       end: now.add(const Duration(minutes: 3)),
@@ -533,9 +585,31 @@ class NowBloc extends Cubit<NowState> {
       pomodoroAt: now,
       explicit: true,
     );
-    if (s.previewPomodoro != null) {
-      emit(s.copyWith(previewPomodoro: null));
-    }
+  }
+
+  /// Optimistic state update for [startSession]'s paths: synthesizes a
+  /// `source='active'` session matching what `Session.resume` is about to
+  /// persist and emits it immediately so the pill swaps from the Start
+  /// button to the running ring without waiting for the DB write + Drift
+  /// watcher to round-trip. The watcher's next emission overwrites this
+  /// with the real saved row (same `pomodoroAt`/`pomodoro`, so the user
+  /// sees no flicker).
+  void _emitOptimisticSession(
+    Priority ctx, {
+    required Duration pomodoro,
+    required DateTime pomodoroAt,
+    required DateTime now,
+  }) {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    final optimistic = Session(
+      priority: ctx,
+      end: now.add(const Duration(minutes: 3)),
+      pomodoro: pomodoro,
+      pomodoroAt: pomodoroAt,
+      explicit: true,
+    );
+    emit(s.copyWith(session: optimistic, previewPomodoro: null));
   }
 
   /// Pause the active session: close it without altering its planned
