@@ -123,6 +123,52 @@ Duration? effectivePriorityDurationAt({
   return d;
 }
 
+/// Pure function. Returns a map from agenda block id to the duration
+/// that block should display.
+///
+/// Walks the priority's blocks in chronological order; each block
+/// consumes every unconsumed in-window row whose `effective_at <=
+/// block.start`, and gets the latest such row's `duration`. Rows whose
+/// `effective_at` is strictly before [todayMidnight] are ignored (they
+/// serve only as the order resolver's anchor and never contribute a
+/// duration). Archived rows and rows whose `duration` is null or non-positive are skipped.
+///
+/// [blocks] must be sorted ascending by `start`.
+Map<String, Duration?> resolveBlockDurations({
+  required DateTime todayMidnight,
+  required List<({String id, DateTime start})> blocks,
+  required Iterable<PriorityBlockRow> blocksForPriority,
+}) {
+  final rows = blocksForPriority
+      .where((r) => r.archivedAt == null)
+      .where((r) => r.duration != null && r.duration! > Duration.zero)
+      .where((r) => !r.effectiveAt.isBefore(todayMidnight))
+      .toList()
+    ..sort((a, b) => a.effectiveAt.compareTo(b.effectiveAt));
+
+  assert(() {
+    for (var i = 1; i < blocks.length; i++) {
+      if (blocks[i].start.isBefore(blocks[i - 1].start)) {
+        return false;
+      }
+    }
+    return true;
+  }(), 'blocks must be sorted ascending by start');
+
+  final out = <String, Duration?>{};
+  var rowIdx = 0;
+  for (final b in blocks) {
+    Duration? best;
+    while (rowIdx < rows.length &&
+        !rows[rowIdx].effectiveAt.isAfter(b.start)) {
+      best = rows[rowIdx].duration;
+      rowIdx++;
+    }
+    out[b.id] = best;
+  }
+  return out;
+}
+
 /// Domain wrapper around a PriorityBlockRow with helpers for the common
 /// sync/save flows. Mirrors the Priority/Session pattern.
 class PriorityBlock extends PriorityBlockRow {
