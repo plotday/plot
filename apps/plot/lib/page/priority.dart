@@ -164,12 +164,10 @@ class _PriorityCommandScope extends StatelessWidget {
     // currently-enabled one.
     final nowState = context.watch<NowBloc>().state;
     return CommandScope(
-      commands: [
-        ...currentPriorityCommandGroups(
-          bloc.state.thread?.priority ?? bloc.state.context,
-        ),
-        ...timerCommandGroups(nowState),
-      ],
+      commands: currentPriorityCommandGroups(
+        bloc.state.thread?.priority ?? bloc.state.context,
+        nowState: nowState,
+      ),
       child: child,
     );
   }

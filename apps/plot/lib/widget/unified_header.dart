@@ -891,6 +891,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         final priorityGroups = currentPriorityCommandGroups(
           state.thread?.priority ?? state.context,
           context: context,
+          nowState: context.read<NowBloc?>()?.state,
         );
         final threadGroups = thread != null
             ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
@@ -912,6 +913,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         final priorityGroups = currentPriorityCommandGroups(
           state.context,
           context: context,
+          nowState: context.read<NowBloc?>()?.state,
         );
         return Commands(groups: priorityGroups);
       },

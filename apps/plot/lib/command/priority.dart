@@ -529,12 +529,14 @@ List<Command> priorityCommands(Priority priority) => [
 List<Command> currentPriorityCommands(
   Priority priority, {
   BuildContext? context,
+  NowState? nowState,
 }) => [
   ...prioritySecondaryCommands(priority),
   if (context != null) ToggleArchivedVisibility(context: context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),
+  if (nowState != null) ...timerCommands(nowState),
 ];
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
@@ -547,10 +549,15 @@ List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
 List<StaticCommandGroup> currentPriorityCommandGroups(
   Priority priority, {
   BuildContext? context,
+  NowState? nowState,
 }) => [
   StaticCommandGroup(
     title: 'Priority: ${priority.title}',
-    commands: currentPriorityCommands(priority, context: context),
+    commands: currentPriorityCommands(
+      priority,
+      context: context,
+      nowState: nowState,
+    ),
   ),
 ];
 

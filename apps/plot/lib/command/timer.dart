@@ -27,26 +27,18 @@ final SingleActivator timerAddShortcut =
 final SingleActivator timerRemoveShortcut =
     platformSingleActivator(LogicalKeyboardKey.minus, shift: true);
 
-/// Command groups exposing keyboard shortcuts for the timer family.
-/// Returns the start/pause toggle (whichever is currently runnable) plus
-/// end and add/remove time when an active session exists. The priority
-/// page mounts these in its [CommandScope] so the shortcuts work
-/// anywhere on the page, not just when the header pill has focus.
-List<StaticCommandGroup> timerCommandGroups(NowState state) {
+/// Timer commands appended to the priority command group so shortcuts
+/// are discoverable alongside the rest of the priority's actions. The
+/// priority page mounts the priority group (which includes these) in
+/// its [CommandScope] so the shortcuts work anywhere on the page, not
+/// just when the header pill has focus.
+List<Command> timerCommands(NowState state) {
   if (state is! NowLoaded) return const [];
   if (state.context == null) return const [];
-  final pomodoro = state.pomodoroState;
-  final inactive = pomodoro == PomodoroState.inactive;
+  final inactive = state.pomodoroState == PomodoroState.inactive;
   return [
-    StaticCommandGroup(
-      title: 'Timer',
-      commands: [
-        if (inactive) StartTimer() else StopTimer(),
-        if (!inactive) EndTimer(),
-        AddTime(),
-        RemoveTime(),
-      ],
-    ),
+    if (inactive) StartTimer() else StopTimer(),
+    if (!inactive) ...[EndTimer(), AddTime(), RemoveTime()],
   ];
 }
 
@@ -169,7 +161,7 @@ class AddTime extends Command {
 class RemoveTime extends Command {
   RemoveTime()
     : super(
-        title: 'Remove 15 minutes',
+        title: 'Remove time',
         icon: FontAwesomeIcons.minus,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
