@@ -34,8 +34,8 @@ class PomodoroRingPainter extends CustomPainter {
       size.width - strokeWidth,
       size.height - strokeWidth,
     );
-    final radius = Radius.circular(rect.height / 2);
-    final rrect = RRect.fromRectAndRadius(rect, radius);
+    final r = rect.height / 2;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(r));
 
     final bg = Paint()
       ..color = backgroundColor
@@ -46,15 +46,31 @@ class PomodoroRingPainter extends CustomPainter {
     final clamped = progress.clamp(0.0, 1.0);
     if (clamped <= 0) return;
 
-    // Build the full perimeter as a single Path, then extract the
-    // leading [clamped] fraction via PathMetric. This handles the
-    // stadium corners correctly without per-arc math.
-    final perimeter = Path()..addRRect(rrect);
+    // Build the perimeter starting at top-center (12 o'clock) and
+    // running clockwise, so PathMetric's 0 offset is the visual start
+    // of the sweep. Avoids relying on Path.addRRect's implicit start.
+    final centerX = rect.center.dx;
+    final cy = rect.center.dy;
+    final perimeter = Path()
+      ..moveTo(centerX, rect.top)
+      ..lineTo(rect.right - r, rect.top)
+      ..arcTo(
+        Rect.fromCircle(center: Offset(rect.right - r, cy), radius: r),
+        -math.pi / 2,
+        math.pi,
+        false,
+      )
+      ..lineTo(rect.left + r, rect.bottom)
+      ..arcTo(
+        Rect.fromCircle(center: Offset(rect.left + r, cy), radius: r),
+        math.pi / 2,
+        math.pi,
+        false,
+      )
+      ..lineTo(centerX, rect.top);
+
     final metrics = perimeter.computeMetrics().toList();
     if (metrics.isEmpty) return;
-    // Rotate the start point to 12-o-clock: PathMetric on an RRect
-    // starts mid-right side; offset by 3/4 of the perimeter so the
-    // visual sweep begins at the top.
     final fg = Paint()
       ..color = foregroundColor
       ..style = PaintingStyle.stroke
@@ -62,16 +78,8 @@ class PomodoroRingPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     for (final metric in metrics) {
       final length = metric.length;
-      final start = length * 0.75;
       final sweep = length * clamped;
-      final end = start + sweep;
-      // Wrap around the seam if the sweep crosses the end of the path.
-      if (end <= length) {
-        canvas.drawPath(metric.extractPath(start, end), fg);
-      } else {
-        canvas.drawPath(metric.extractPath(start, length), fg);
-        canvas.drawPath(metric.extractPath(0, end - length), fg);
-      }
+      canvas.drawPath(metric.extractPath(0, sweep), fg);
     }
   }
 
