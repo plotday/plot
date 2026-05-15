@@ -694,7 +694,11 @@ class _EverythingTileState extends State<_EverythingTile> {
         child: PriorityNotification(
           unread: widget.hasUnread,
           color: widget.root.displayColor,
-          colorOverride: widget.monochrome ? indicatorColor : null,
+          // Keep the monochrome resting tone for the empty leading slot,
+          // but let the unread dot render in the priority's own color.
+          colorOverride: widget.monochrome && !widget.hasUnread
+              ? indicatorColor
+              : null,
         ),
       ),
       textStyle: widget.textStyle.copyWith(color: textColor),

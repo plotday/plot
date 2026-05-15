@@ -192,18 +192,27 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       },
       indentLevel: widget.indentLevel,
       textStyle: effectiveTextStyle,
-      leadingBuilder: (isHovered, hasFocus) => Padding(
-        padding: EdgeInsets.only(
-          left: leadingH,
-          right: buildContext.theme.spacing.sm,
-          bottom: 2,
-        ),
-        child: PriorityNotification(
-          unread: widget.unread ?? priority.unread,
-          color: priority.displayColor,
-          colorOverride: widget.monochrome ? indicatorColor : null,
-        ),
-      ),
+      leadingBuilder: (isHovered, hasFocus) {
+        final isUnread = widget.unread ?? priority.unread;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: leadingH,
+            right: buildContext.theme.spacing.sm,
+            bottom: 2,
+          ),
+          child: PriorityNotification(
+            unread: isUnread,
+            color: priority.displayColor,
+            // Keep the monochrome resting tone for the empty leading slot,
+            // but let the unread dot render in the priority's own color so
+            // it reads as a priority-tinted notification against the
+            // monochrome frame.
+            colorOverride: widget.monochrome && !isUnread
+                ? indicatorColor
+                : null,
+          ),
+        );
+      },
     );
 
     if (hasPhysicalKeyboard()) {
