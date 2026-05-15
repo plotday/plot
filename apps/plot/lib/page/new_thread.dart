@@ -95,9 +95,6 @@ class NewThreadPageState extends State<NewThreadPage> {
   PriorityBloc? _priorityBloc;
   bool _hasAppliedQueryParams = false;
 
-  // Twists for the selected draft priority (may differ from context priority)
-  List<TwistInstance>? _draftTwists;
-
   /// People + groups the user has recently shared threads with, ordered by
   /// the same MRU sort the share modal uses. Drives the suggestion chips.
   List<ShareCandidate> _recentCandidates = const [];
@@ -255,11 +252,6 @@ class NewThreadPageState extends State<NewThreadPage> {
         );
         await bloc.updateDraft(updatedDraft);
       }
-
-      // Load twists for the selected priority if different from context
-      if (queryPriority != null) {
-        await _loadTwistsForPriority(queryPriority);
-      }
     }
 
     // Share intent: add the shared URL as a link action on the draft note.
@@ -333,16 +325,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Clear middle panel preference when leaving NewThreadPage
     LayoutBloc.instance?.preferMiddle = false;
     super.dispose();
-  }
-
-  /// Loads twists for the given priority and updates local state.
-  /// Twists are workspace-level now, so the same list applies regardless of
-  /// which priority is selected. Kept as a no-op hook so callers don't need to
-  /// branch.
-  Future<void> _loadTwistsForPriority(Priority priority) async {
-    setState(() {
-      _draftTwists = null;
-    });
   }
 
   /// Loads people + groups for the "with" suggestion chips, sorted by the
@@ -654,7 +636,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       await bloc.updateDraft(updated);
     }
     bloc.setNewThreadDefaultPriority(priority);
-    await _loadTwistsForPriority(priority);
     if (mounted) {
       _loadRecentCandidates();
       _refreshPinnedChips();
@@ -1357,14 +1338,20 @@ class NewThreadPageState extends State<NewThreadPage> {
           child: BlocBuilder<PriorityBloc, PriorityState>(
             // During initial load PriorityBloc emits 6-10 times (agenda,
             // activity feed, tags, icon counts, twists, actors). Only the
-            // fields below actually affect this page — rebuilding for the
-            // rest forces a fresh NoteEditor widget each emit and is the
-            // primary cause of the on-open editor flicker.
+            // fields below actually affect this page's chrome — rebuilding
+            // for the rest forces a fresh NoteEditor widget each emit and
+            // is the primary cause of the on-open editor flicker.
+            //
+            // `twists` and `actors` are deliberately excluded: in production
+            // with many contacts the Drift `Actor.watch` stream emits many
+            // times during initial sync, and rebuilding the chip row +
+            // scaffold on each emit makes the page visibly flicker until
+            // the stream settles. NoteEditor subscribes to those fields
+            // internally via its own BlocBuilder so the inner Editor still
+            // sees fresh @-mention candidates.
             buildWhen: (prev, curr) =>
                 prev.draft != curr.draft ||
                 prev.draftNote != curr.draftNote ||
-                prev.twists != curr.twists ||
-                prev.actors != curr.actors ||
                 prev.context != curr.context,
             builder: (context, state) {
               final isViewerMode = state.draft.priority.isViewer;
@@ -1438,8 +1425,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   key: _threadEditorKey,
                                   draft: state.draftNote,
                                   thread: state.draft,
-                                  twists: _draftTwists ?? state.twists,
-                                  actors: state.actors,
                                   onDraftChanged: _handleDraftChanged,
                                   flushToBottom: true,
                                   showScheduleActions: false,
@@ -1494,8 +1479,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                           key: _threadEditorKey,
                                           draft: state.draftNote,
                                           thread: state.draft,
-                                          twists: _draftTwists ?? state.twists,
-                                          actors: state.actors,
                                           onDraftChanged: _handleDraftChanged,
                                           flushToBottom: false,
                                           showScheduleActions: false,

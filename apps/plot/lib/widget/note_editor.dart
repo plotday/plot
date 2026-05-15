@@ -27,8 +27,6 @@ class NoteEditor extends StatefulWidget {
     this.flushToBottom = false,
     // New thread mode parameters (all null/default in note mode)
     this.thread,
-    this.twists,
-    this.actors,
     this.onDraftChanged,
     this.showScheduleActions = true,
     this.hint,
@@ -49,8 +47,6 @@ class NoteEditor extends StatefulWidget {
 
   /// When non-null, the editor operates in new-thread mode.
   final Thread? thread;
-  final List<TwistInstance>? twists;
-  final List<Actor>? actors;
   final Future<void> Function(Thread thread, {Note? note})? onDraftChanged;
 
   /// Whether to show the To Do and Schedule action buttons in the bottom bar.
@@ -416,9 +412,19 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   Widget build(BuildContext context) {
     if (widget.isNewThreadMode) {
-      return _buildEditorArea(
-        twists: widget.twists!,
-        actors: widget.actors ?? const [],
+      // Subscribe to PriorityBloc internally so the parent NewThreadPage
+      // doesn't have to include `twists`/`actors` in its BlocBuilder
+      // buildWhen. Without this isolation, every emit of the Drift actors
+      // stream during initial sync (many in production with lots of
+      // contacts) would rebuild the entire chip row + scaffold above this
+      // editor. With this internal subscription, only the Editor subtree
+      // rebuilds on twists/actors changes.
+      return BlocBuilder<PriorityBloc, PriorityState>(
+        buildWhen: (prev, curr) =>
+            prev.twists != curr.twists || prev.actors != curr.actors,
+        builder: (context, state) {
+          return _buildEditorArea(twists: state.twists, actors: state.actors);
+        },
       );
     }
 
@@ -1180,7 +1186,8 @@ class NoteEditorState extends State<NoteEditor> {
                     ),
                   ),
                 // Twist button (when twists are available)
-                if (!widget.viewerMode && (widget.twists?.isNotEmpty ?? false))
+                if (!widget.viewerMode &&
+                    context.read<PriorityBloc>().state.twists.isNotEmpty)
                   _buildNewThreadTwistButton(),
               ],
             ),
@@ -1351,7 +1358,10 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<void> _openNewThreadTwistPicker(BuildContext context) async {
-    final twists = (widget.twists ?? const <TwistInstance>[])
+    final twists = context
+        .read<PriorityBloc>()
+        .state
+        .twists
         .where((t) => !t.isSource)
         .toList();
     if (twists.isEmpty) return;
@@ -1461,7 +1471,10 @@ class NoteEditorState extends State<NoteEditor> {
   void _shortcutSelectTwist(BuildContext context) {
     if (_saving) return;
     if (widget.isNewThreadMode) {
-      if (widget.viewerMode || (widget.twists?.isEmpty ?? true)) return;
+      if (widget.viewerMode ||
+          context.read<PriorityBloc>().state.twists.isEmpty) {
+        return;
+      }
       _openNewThreadTwistPicker(context);
     } else {
       final threadState = context.read<ThreadBloc>().state;
@@ -1592,7 +1605,7 @@ class NoteEditorState extends State<NoteEditor> {
 
     final data = await finalizeThreadDraft(
       body,
-      twists: widget.twists!,
+      twists: context.read<PriorityBloc>().state.twists,
       alt: alt,
     );
     if (!mounted) return;
