@@ -477,6 +477,12 @@ export async function detectTasks(
 ): Promise<void> {
   const db = createDb(env);
   try {
+    // Pre-check: avoid the LLM call when task detection has already run
+    // for this source note. Connectors may re-sync the same note multiple
+    // times (e.g. repeated PubSub deliveries for one Gmail message), and
+    // each call lands here with checkForTasks=true.
+    if (await hasExistingTaskNotes(db, noteId)) return;
+
     const context = await gatherContext(db, noteId, threadId);
     if (!context) return;
 
@@ -491,10 +497,40 @@ export async function detectTasks(
       return;
     }
 
-    await createTaskNotes(env, db, tasks, context, threadId, userId, twistInstanceId);
+    // Serialize concurrent batches for the same source note. Without this,
+    // parallel detectTasks calls each snapshot existingTodos as empty before
+    // any writes and every batch's tasks land — observed as 6 tasks (3
+    // batches × 2 tasks) from one Gmail message. The advisory lock is
+    // transaction-scoped, so the gate covers the existence recheck and the
+    // task writes together; later batches see the prior batch's tasks
+    // inside the lock and bail.
+    await db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${noteId}::text))`.execute(trx);
+
+      if (await hasExistingTaskNotes(trx, noteId)) return;
+
+      await createTaskNotes(env, trx, tasks, context, threadId, userId, twistInstanceId);
+    });
   } finally {
     await db.destroy();
   }
+}
+
+async function hasExistingTaskNotes(
+  db: Kysely<DB>,
+  sourceNoteId: string
+): Promise<boolean> {
+  const existing = await db
+    .selectFrom("note as n")
+    .innerJoin("note_tag as nt", "nt.note_id", "n.id")
+    .select("n.id")
+    .where("n.re_note_id", "=", sourceNoteId)
+    .where("n.archived_at", "is", null)
+    .where("nt.tag_id", "=", 1) // Tag.Todo
+    .where("nt.archived_at", "is", null)
+    .limit(1)
+    .executeTakeFirst();
+  return existing !== undefined;
 }
 
 interface DetectedTask {
