@@ -338,8 +338,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// priority identity / path / display fields, not the unread/active dot
   /// state. Callers that render the priority list itself should keep using
   /// [get].
-  static Future<List<Priority>> getRaw({bool? archived = false}) {
-    return _get(archived: archived).get();
+  static Future<List<Priority>> getRaw({
+    bool? archived = false,
+    PriorityOrder order = PriorityOrder.sorted,
+  }) {
+    return _get(archived: archived, order: order).get();
   }
 
   static Stream<List<Priority>> watch({

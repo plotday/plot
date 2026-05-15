@@ -1589,28 +1589,38 @@ class MoveToPriority extends PriorityCommand {
     final priorityBloc = context.read<PriorityBloc?>();
     final updated = thread.copyWith(priority: priority!);
     priorityBloc?.optimisticallyUpdateThread(updated);
-    await updated.save();
-    // Best-effort learning signal — fire and forget so the move modal closes
-    // immediately instead of waiting on the network round trip. The
-    // thread_priority.priority_id is already in sync via the save() above;
-    // this endpoint sets user_moved = TRUE and triggers
-    // reclassify_user_threads. A failure here leaves the move intact.
-    unawaited(
-      api
-          .post<dynamic>(
-            '/sync/priority-moves',
-            body: {
-              'thread_id': thread.id.toString(),
-              'priority_id': priority!.id.toString(),
-            },
-          )
-          .catchError((Object _) {
-            // Offline / transient — the move itself is already synced via
-            // thread save; the learning signal will be re-sent next time.
-            return null;
-          }),
-    );
+    // Fire-and-forget the local save + learning signal so the modal closes
+    // the moment the user picks a priority. The optimistic override above
+    // already moved the thread in the UI; settling on the Drift watch
+    // emission only requires save() to land eventually.
+    unawaited(_persistPriorityMove(updated, priority!));
     return const CommandDone();
+  }
+}
+
+Future<void> _persistPriorityMove(Thread updated, Priority priority) async {
+  try {
+    await updated.save();
+  } catch (e, stackTrace) {
+    log.warning('Error persisting priority move', e, stackTrace);
+    Tracker.captureException(e, stackTrace);
+    // Save failed — skip the learning signal so we don't tell the server
+    // about a move that isn't going to land.
+    return;
+  }
+  // Best-effort learning signal — sets user_moved = TRUE and triggers
+  // reclassify_user_threads. A failure here leaves the move intact.
+  try {
+    await api.post<dynamic>(
+      '/sync/priority-moves',
+      body: {
+        'thread_id': updated.id.toString(),
+        'priority_id': priority.id.toString(),
+      },
+    );
+  } catch (_) {
+    // Offline / transient — the move itself is already synced via thread
+    // save; the learning signal will be re-sent next time.
   }
 }
 
@@ -1658,7 +1668,11 @@ class MoveThreadToPriority extends ShowCommands {
   final Thread thread;
 
   static Future<Commands> _getMoveCommands(Thread thread) async {
-    final priorities = await Priority.get(order: PriorityOrder.recent);
+    // `getRaw` skips `pullArchived` and the active/unread enrichment (two
+    // join queries on threads + schedules) — none of which the move modal
+    // displays — so the modal opens immediately instead of stalling on the
+    // enrichment round-trip.
+    final priorities = await Priority.getRaw(order: PriorityOrder.recent);
     final filteredPriorities = priorities
         .where((p) => p.id != thread.priority.id)
         .toList();
@@ -1699,24 +1713,10 @@ class _CreateAndMoveToNewPriority extends Command {
     if (priority == null) return const CommandSkipped();
     final updated = thread.copyWith(priority: priority);
     priorityBloc?.optimisticallyUpdateThread(updated);
-    await updated.save();
-    // Best-effort learning signal — fire and forget so the move modal closes
-    // immediately instead of waiting on the network round trip.
-    unawaited(
-      api
-          .post<dynamic>(
-            '/sync/priority-moves',
-            body: {
-              'thread_id': thread.id.toString(),
-              'priority_id': priority.id.toString(),
-            },
-          )
-          .catchError((Object _) {
-            // Offline / transient — the move itself is already synced via
-            // thread save; the learning signal will be re-sent next time.
-            return null;
-          }),
-    );
+    // Fire-and-forget so the modal closes immediately. The optimistic
+    // override moved the thread in the UI; save() and the learning signal
+    // settle in the background. See [_persistPriorityMove].
+    unawaited(_persistPriorityMove(updated, priority));
     return const CommandDone();
   }
 }
