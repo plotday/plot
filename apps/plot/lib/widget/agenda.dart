@@ -1077,19 +1077,29 @@ class _BlockHeaderState extends State<_BlockHeader> {
     return Swipeable(startCommand: addCmd, endCommand: removeCmd, child: child);
   }
 
-  /// Apply a ±15m bump to a [PriorityBlock]'s displayed value. Routes
-  /// through [NowBloc.applyBlockBump] so the write lands on the same
-  /// row the gutter label is reading (active or paused-explicit session
-  /// when one is in play, otherwise `priority_block.duration` at this
-  /// block's start). Without this routing a bump on a session-derived
-  /// display would write to `priority_block.duration` and the user
-  /// would see nothing change.
+  /// Apply a ±15m bump to a block's displayed value. Two parts:
+  ///
+  /// 1. **Optimistic** — push the new duration through
+  ///    [PriorityBloc.optimisticBlockDuration] so the agenda gutter
+  ///    updates in the same frame as the button press.
+  /// 2. **Authoritative** — route the actual write through
+  ///    [NowBloc.applyBlockBump], which lands on a session row when
+  ///    one is anchored inside the block's window, otherwise on
+  ///    `priority_block` at the block's start. The watch-driven
+  ///    rebuild then confirms the state once the DB settles. If the
+  ///    authoritative write went to a session, the next priority_block
+  ///    emission harmlessly reverts the optimistic mutation.
   void _applyPriorityBump({
     required Priority priority,
     required Duration? newDisplayed,
     required Duration? currentDisplayed,
   }) {
     final w = _blockWindow;
+    context.read<PriorityBloc>().optimisticBlockDuration(
+          priorityId: priority.id,
+          blockStart: w.start,
+          newDuration: newDisplayed,
+        );
     NowBloc.applyBlockBump(
       priorityId: priority.id,
       blockStart: w.start,

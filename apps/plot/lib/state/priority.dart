@@ -940,6 +940,80 @@ class PriorityBloc extends Cubit<PriorityState> {
     unawaited(block.save());
   }
 
+  /// Apply an optimistic duration change for a block, then schedule the
+  /// underlying `priority_block` write. Mirrors the reorder optimistic
+  /// pattern above so the agenda gutter updates in the same frame as
+  /// the button press, with the watch-driven rebuild confirming the
+  /// state once the DB write settles.
+  ///
+  /// Caller is responsible for routing session-anchored bumps through
+  /// [NowBloc.applyBlockBump] separately — this method only updates the
+  /// per-block row state. If the eventual DB write goes to a session
+  /// row instead, the next subscription emission will revert this
+  /// optimistic mutation harmlessly.
+  void optimisticBlockDuration({
+    required PriorityId priorityId,
+    required DateTime blockStart,
+    required Duration? newDuration,
+  }) {
+    final normalized =
+        (newDuration == null || newDuration <= Duration.zero) ? null : newDuration;
+    final now = DateTime.now();
+
+    final updated = <PriorityId, List<PriorityBlockRow>>{
+      for (final entry in _priorityBlocksByPriority.entries)
+        entry.key: List.of(entry.value),
+    };
+    final list = updated.putIfAbsent(priorityId, () => <PriorityBlockRow>[]);
+    PriorityBlockRow? slotRow;
+    var slotIndex = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].effectiveAt.isAtSameMomentAs(blockStart)) {
+        slotRow = list[i];
+        slotIndex = i;
+        break;
+      }
+    }
+
+    if (normalized == null) {
+      if (slotRow != null && slotRow.archivedAt == null) {
+        list[slotIndex] = slotRow.copyWith(
+          archivedAt: Value(now),
+          updatedAt: now,
+        );
+      }
+    } else {
+      final inheritedOrder = effectivePriorityOrderAt(
+        moment: blockStart,
+        blocksForPriority: list,
+        fallback: 0,
+      );
+      if (slotRow != null) {
+        list[slotIndex] = slotRow.copyWith(
+          orderValue: Order(inheritedOrder),
+          duration: Value(normalized),
+          archivedAt: const Value(null),
+          updatedAt: now,
+        );
+      } else {
+        list.add(PriorityBlockRow(
+          id: Uuid.generate(),
+          priorityId: priorityId,
+          createdBy: Base.userId,
+          orderValue: Order(inheritedOrder),
+          effectiveAt: blockStart,
+          duration: normalized,
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        ));
+      }
+    }
+
+    _priorityBlocksByPriority = updated;
+    _rebuildAgendaModel();
+  }
+
   /// Drop a thread inside another priority's block — reparents and
   /// reorders within that block. `above` / `below` are the dragged
   /// thread's new neighbours inside the target block.
@@ -2118,13 +2192,18 @@ class PriorityBloc extends Cubit<PriorityState> {
       _scheduleActivityFeedRebuild();
     });
 
-    // Watch the per-priority order timeline. Updates reflect immediately
-    // in the next agenda rebuild; AgendaBuilder falls back to
-    // priority.order for any priority that has no rows here.
+    // Watch the per-priority order timeline. Each emission updates the
+    // cache AND triggers an agenda rebuild so per-block durations
+    // resolved by `_attachBlockDurations` reflect the new rows.
+    // Without the rebuild, a row write (e.g. from `applyBlockBump`)
+    // updates `_priorityBlocksByPriority` but the displayed
+    // `cascadeDuration` stays stale until some other event happens to
+    // rebuild the agenda.
     _priorityBlocksSubscription?.cancel();
     _priorityBlocksSubscription = streamPriorityBlocksGroupedByPriority().listen(
       (grouped) {
         _priorityBlocksByPriority = grouped;
+        _rebuildAgendaModel();
       },
     );
 
