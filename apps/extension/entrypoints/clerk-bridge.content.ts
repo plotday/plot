@@ -4,7 +4,12 @@
 // module calls into this via chrome.tabs.sendMessage(tabId, { kind: ... }).
 
 export default defineContentScript({
-  matches: ["https://app.plot.day/*", "http://localhost:8788/*"],
+  matches: [
+    "https://app.plot.day/*",
+    "https://plot.day/*",
+    "http://localhost:8788/*",
+    "http://localhost:5173/*",
+  ],
   runAt: "document_idle",
   main() {
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

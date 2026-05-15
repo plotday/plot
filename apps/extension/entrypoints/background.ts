@@ -1,6 +1,6 @@
 import { AuthRequiredError, capturePage } from "@/src/api";
 import { getToken, invalidateToken } from "@/src/auth";
-import { PLOT_APP_BASE } from "@/src/config";
+import { PLOT_APP_BASE, PLOT_SITE_BASE } from "@/src/config";
 import { getSavedShortId, setSavedShortId } from "@/src/storage";
 
 export default defineBackground(() => {
@@ -24,7 +24,7 @@ export default defineBackground(() => {
       await setBadge(tab.id, "!", "#d04646");
       // Open Plot so the user can sign in. The badge clears next time they
       // navigate back to this tab.
-      await chrome.tabs.create({ url: PLOT_APP_BASE });
+      await chrome.tabs.create({ url: `${PLOT_SITE_BASE}/signin` });
       return;
     }
 
@@ -39,7 +39,7 @@ export default defineBackground(() => {
       if (err instanceof AuthRequiredError) {
         await invalidateToken();
         await setBadge(tab.id, "!", "#d04646");
-        await chrome.tabs.create({ url: PLOT_APP_BASE });
+        await chrome.tabs.create({ url: `${PLOT_SITE_BASE}/signin` });
         return;
       }
       console.error("[plot] capture failed:", err);

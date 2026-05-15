@@ -4,7 +4,13 @@
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
+  "config": {
+    "env_file": ".env",
+    "deploy_vars": "WXT_API_ROOT:API_ROOT WXT_APP_ROOT:APP_ROOT WXT_SITE_ROOT:SITE_ROOT"
+  },
   "scripts": {
+    "get-env": "bash ../../scripts/get-env",
+    "set-env": "bash ../../scripts/set-env",
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",

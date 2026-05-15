@@ -2,14 +2,16 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   manifest: {
-    name: "Plot — Save to your day",
+    name: "Save to Plot",
     short_name: "Plot",
     description:
-      "Capture the current page into Plot in one click. Auto-filed to the best priority.",
+      "Create a thread in Plot for the current page. Click a second time to open in Plot.",
     permissions: ["activeTab", "storage", "scripting"],
     host_permissions: [
       "https://app.plot.day/*",
+      "https://plot.day/*",
       "http://localhost:8788/*",
+      "http://localhost:5173/*",
     ],
     action: {
       default_title: "Save this page to Plot",

@@ -1,13 +1,12 @@
-import { PLOT_APP_BASE } from "./config";
+import { PLOT_APP_BASE, PLOT_SITE_BASE } from "./config";
 import { clearCachedToken, getCachedToken, setCachedToken } from "./storage";
 
-// Find an open, logged-in app.plot.day tab (any subpath, any window) so the
-// content script can hand us a fresh Clerk JWT. Falls back to undefined when
-// the user has none open — the background opens app.plot.day for them.
-async function findAppTab(): Promise<chrome.tabs.Tab | undefined> {
-  const tabs = await chrome.tabs.query({
-    url: [`${PLOT_APP_BASE}/*`, `${PLOT_APP_BASE.replace(/\/$/, "")}/*`],
-  });
+// Find an open, logged-in Plot tab so the content script can hand us a fresh
+// Clerk JWT. Both the site (where users sign in) and the app load Clerk JS
+// under the same `clerk.plot.day` frontend domain, so either host works.
+async function findClerkHostTab(): Promise<chrome.tabs.Tab | undefined> {
+  const patterns = [`${PLOT_SITE_BASE}/*`, `${PLOT_APP_BASE}/*`];
+  const tabs = await chrome.tabs.query({ url: patterns });
   return tabs.find((t) => typeof t.id === "number");
 }
 
@@ -43,17 +42,17 @@ async function requestTokenFromTab(tabId: number): Promise<string | null> {
 
 export type TokenLookup =
   | { token: string }
-  | { token: null; reason: "no-app-tab" | "not-signed-in" };
+  | { token: null; reason: "no-plot-tab" | "not-signed-in" };
 
 // Returns a fresh JWT or a reason the caller can act on. We don't proactively
-// open app.plot.day here — the background script decides whether to do that
-// (and surface a toast) based on which user action triggered the lookup.
+// open Plot here — the background script decides whether to do that (and
+// where to send the user) based on which action triggered the lookup.
 export async function getToken(): Promise<TokenLookup> {
   const cached = await getCachedToken();
   if (cached) return { token: cached };
 
-  const tab = await findAppTab();
-  if (!tab?.id) return { token: null, reason: "no-app-tab" };
+  const tab = await findClerkHostTab();
+  if (!tab?.id) return { token: null, reason: "no-plot-tab" };
 
   const token = await requestTokenFromTab(tab.id);
   if (!token) return { token: null, reason: "not-signed-in" };
