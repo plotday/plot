@@ -54,11 +54,14 @@ class AgendaBuilder {
       inputThreads: threads,
       now: effectiveNow,
     );
+    // Populate each PriorityBlock's windowStart/windowEnd based on its
+    // position relative to time-anchored siblings in the section.
+    final withWindows = _populateBlockWindows(withUnread);
     // Cascade pending priority durations into today's gap region (and
     // overflow to the after-last-event zone). Pure post-process; no
     // mutation of priority_block rows.
     return _cascadePendingDurations(
-      withUnread,
+      withWindows,
       now: effectiveNow,
       priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
     );
@@ -146,8 +149,8 @@ class AgendaBuilder {
             threads: block.threads,
             isOutside: block.isOutside,
             cascadeDuration: pending,
-            windowStart: DateTime.fromMillisecondsSinceEpoch(0), // overwritten by _populateBlockWindows
-            windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
+            windowStart: block.windowStart,
+            windowEnd: block.windowEnd,
           ));
           continue;
         }
@@ -186,16 +189,21 @@ class AgendaBuilder {
     final tail = remaining.entries
         .where((e) => priorityById.containsKey(e.key))
         .toList();
+    final sectionMidnight = section.date.toDateTime();
     for (final entry in tail) {
       final p = priorityById[entry.key]!;
+      // Full-day window: cascade-tail blocks are synthetic display-only artifacts.
+      // Task 5 replaces _cascadePendingDurations with _attachBlockDurations, which
+      // folds durations onto windows produced by _populateBlockWindows directly —
+      // these synthetic blocks go away at that point.
       newBlocks.add(PriorityBlock(
         id: 'p_${section.id}_${p.path.value}_cascade',
         priority: p,
         threads: const [],
         isOutside: false,
         cascadeDuration: entry.value,
-        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
-        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
+        windowStart: sectionMidnight,
+        windowEnd: sectionMidnight.add(const Duration(days: 1)),
       ));
     }
 
@@ -427,6 +435,7 @@ class AgendaBuilder {
       if (block is! PriorityBlock) continue;
       final extras = remaining.remove(block.priority.id);
       if (extras == null || extras.isEmpty) continue;
+      // Window is a placeholder; _populateBlockWindows rewrites it during build().
       newBlocks[i] = PriorityBlock(
         id: block.id,
         priority: block.priority,
@@ -646,6 +655,7 @@ class AgendaBuilder {
     final out = <AgendaBlock>[leadGap];
     for (var k = 1; k < ranked.length; k++) {
       final r = ranked[k];
+      // Window is a placeholder; _populateBlockWindows rewrites it during build().
       out.add(
         PriorityBlock(
           id: 'p_${sectionId}_${r.priority.path.value}'
@@ -711,6 +721,7 @@ class AgendaBuilder {
     // BlockDropZone slot keys) — which breaks AnimatedContainer
     // continuity at the drop boundary and produces visible "snap"
     // artifacts after the drop completes.
+    // Window is a placeholder; _populateBlockWindows rewrites it during build().
     return [
       for (final r in ranked)
         PriorityBlock(
@@ -722,6 +733,89 @@ class AgendaBuilder {
           windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
     ];
+  }
+
+  /// Returns `(start, end)` for a standalone [PriorityBlock] at index
+  /// [blockIndex] inside [sectionBlocks], which all belong to
+  /// [sectionDate]. Walks back to find the closest preceding time-anchored
+  /// block (gap or event) and forward to find the next. The standalone's
+  /// window is `[prevEnd ?? sectionMidnight, nextStart ?? sectionMidnight + 1d)`.
+  static ({DateTime start, DateTime end}) _standaloneWindow({
+    required Date sectionDate,
+    required List<AgendaBlock> sectionBlocks,
+    required int blockIndex,
+  }) {
+    final midnight = sectionDate.toDateTime();
+    DateTime? prevEnd;
+    for (var i = blockIndex - 1; i >= 0; i--) {
+      final b = sectionBlocks[i];
+      if (b is GapBlock) {
+        prevEnd = b.range.end;
+        if (prevEnd != null) break;
+      } else if (b is EventBlock) {
+        prevEnd = b.event.at?.end;
+        if (prevEnd != null) break;
+      }
+    }
+    DateTime? nextStart;
+    for (var i = blockIndex + 1; i < sectionBlocks.length; i++) {
+      final b = sectionBlocks[i];
+      if (b is GapBlock) {
+        nextStart = b.range.start;
+        if (nextStart != null) break;
+      } else if (b is EventBlock) {
+        nextStart = b.event.at?.start;
+        if (nextStart != null) break;
+      }
+    }
+    return (
+      start: prevEnd ?? midnight,
+      end: nextStart ?? midnight.add(const Duration(days: 1)),
+    );
+  }
+
+  /// Rebuild every [PriorityBlock] in every [DateSection] with the
+  /// `start`/`end` window derived from its position in the section.
+  /// `GapBlock` and `EventBlock` already carry their own time anchors
+  /// and are passed through unchanged.
+  static AgendaModel _populateBlockWindows(AgendaModel model) {
+    final newSections = <AgendaSection>[];
+    for (final section in model.sections) {
+      if (section is! DateSection) {
+        newSections.add(section);
+        continue;
+      }
+      final blocks = section.blocks;
+      final rebuilt = <AgendaBlock>[];
+      for (var i = 0; i < blocks.length; i++) {
+        final b = blocks[i];
+        if (b is PriorityBlock) {
+          final w = _standaloneWindow(
+            sectionDate: section.date,
+            sectionBlocks: blocks,
+            blockIndex: i,
+          );
+          rebuilt.add(PriorityBlock(
+            id: b.id,
+            priority: b.priority,
+            threads: b.threads,
+            isOutside: b.isOutside,
+            cascadeDuration: b.cascadeDuration,
+            windowStart: w.start,
+            windowEnd: w.end,
+          ));
+        } else {
+          rebuilt.add(b);
+        }
+      }
+      newSections.add(DateSection(
+        date: section.date,
+        blocks: List.unmodifiable(rebuilt),
+        isNow: section.isNow,
+        scheduleAt: section.scheduleAt,
+      ));
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
   }
 
   /// Group a flat [AgendaItem] list into sections and blocks.
@@ -900,6 +994,7 @@ class AgendaBuilder {
                 k++;
               }
               final run = gapItems.sublist(start, k);
+              // Window is a placeholder; _populateBlockWindows rewrites it during build().
               current!.blocks.add(
                 PriorityBlock(
                   id: 'p_${current!.sectionId}_${priority.path.value}'
@@ -1022,6 +1117,7 @@ class _SectionBuilder {
 
   void flushPriorityBlock() {
     if (_openPriority == null || _openThreads.isEmpty) return;
+    // Window is a placeholder; _populateBlockWindows rewrites it during build().
     blocks.add(
       PriorityBlock(
         id: 'p_${sectionId}_${_openPriority!.path.value}_${blocks.length}',

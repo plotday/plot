@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart' as ui;
 import 'package:plot/store/store.dart';
 
@@ -69,6 +70,27 @@ void main() {
       );
       expect(block.start, start);
       expect(block.end, end);
+    });
+  });
+
+  group('AgendaBuilder block windows', () {
+    setUp(() => Time.setFrozenTime(DateTime(2026, 5, 14, 14, 0)));
+    tearDown(() => Time.unfreeze());
+
+    test('standalone PriorityBlock with no time-anchored siblings uses '
+        'section midnight to next midnight', () {
+      final p = _testPriority();
+      final t = Thread(priority: p, title: 't');
+      final model = AgendaBuilder.build(
+        threads: [t],
+        context: p,
+        horizonDays: 1,
+      );
+      final block = model.allBlocks.whereType<ui.PriorityBlock>().firstWhere(
+        (b) => b.priority.id == p.id,
+      );
+      expect(block.start, DateTime(2026, 5, 14));
+      expect(block.end, DateTime(2026, 5, 15));
     });
   });
 }
