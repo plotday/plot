@@ -47,6 +47,6 @@ export default defineConfig(() => ({
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     reactRouter(),
-    tsconfigPaths(),
+    tsconfigPaths({ projects: ["tsconfig.json"] }),
   ],
 }));
