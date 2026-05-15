@@ -58,16 +58,27 @@ Events: one per event block; sorted by event start time across blocks. Todos wit
 
 Per-block sorting is computed by `AgendaSort.compareThreadsInBlock` and feeds the block's `·`-joined summary line.
 
-## Pending Duration Cascade
+## Pending Duration Per Block
 
-Each priority can have a **pending duration** — the planned time the user wants to commit to that priority. The agenda folds those pending durations into today's section:
+Each agenda block can have its own **pending duration** — planned time the
+user wants to commit to that block. Pending duration is per-block, not
+per-priority: editing time on one day's block affects only that block.
 
-- If today's section already contains a `PriorityBlock` for that priority, the cascade pass rewrites it with `cascadeDuration` set to the priority's pending. The block continues to carry its existing threads; only the duration metadata is added.
-- If today's section has no block for that priority, a synthetic empty cascade block is appended to the end of today's section (in priority order), so the pending time is still visible.
+- The +/− gutter on a priority block (or a priority-led gap block) writes
+  a `priority_block` row at `effective_at = block.start` with the new
+  duration. The next agenda rebuild reads it back and attaches it to the
+  block via `cascadeDuration`.
+- Blocks without a row in their window display no pending. Nothing
+  cascades into a block from earlier days or earlier blocks; nothing
+  carries over to later blocks.
+- When the user runs the timer, the block containing `now` shows
+  remaining time live; the static row duration is the source once the
+  session ends.
 
-The cascade is a pure post-process — no `priority_block` rows are written; only the displayed model is rewritten. The pending duration is shown on the block header's gutter (next to the time column) and can be edited inline via the +/− buttons on hover (desktop) or short swipes (mobile). For blocks with no thread (cascade-only), editing changes the priority's total pending; for blocks with threads, editing the cascade slice maps back to the priority's total pending.
-
-Priorities with no pending duration are unaffected by the cascade — they continue to appear only where they have threads.
+The render is a pure post-process — the agenda builder folds each row's
+duration onto the matching block via the per-block resolver and never
+writes back. Priorities with no row in their window are unaffected by
+the fold and continue to appear only where they have threads.
 
 ## "Now" Indicator and Time Awareness
 
@@ -114,7 +125,13 @@ A grip affordance appears on hover. While dragging, the source block dims in pla
 
 - **Same period as the source** — reorders priorities within that period. Writes a `priority_block` row at the gap's anchor; later gaps that haven't been individually reordered inherit the new order. Re-reordering the same period replaces the previous entry.
 - **Different period (same day or another day)** — for thread-bearing blocks, repins every thread in the block to the destination period's gap anchor (via thread schedule rewrites); if the destination already has a block of the same priority, the threads merge into it. For empty cascade-only blocks (`threads` is empty), no thread schedules exist to rewrite, so the drop falls through to the reorder path with `effectiveAt` = the destination gap's anchor — the priority's cascade slice naturally lands in the new gap on the next rebuild.
-- **Cross-period drop into a gap with no pending duration set** — when the source priority has no pending duration, the drop also writes a default pending of `min(30m, available-gap-room)`. This applies regardless of whether the dragged block has threads; the next agenda rebuild folds the new pending into the cascade.
+- **Cross-period drop into a gap with no pending duration set** — when
+  the target gap has no `priority_block` row at its anchor for the
+  source priority, the drop also writes a default
+  `priority_block` row at the gap's anchor with `duration =
+  min(30m, available-gap-room)`. This applies regardless of whether the
+  dragged block has threads; the next agenda rebuild reads the row and
+  attaches it as the destination block's pending duration.
 - **Above a gap header** — treated as "into that gap's period". The gap header's boundary slot belongs to the gap's own period, not the previous one.
 
 ### Drop Zone Physics
@@ -154,8 +171,9 @@ When the user releases, slot heights snap to 0 immediately (not animated) so an 
 On hover (desktop), a ±15m button pair appears on the right side of priority and gap blocks (and on event headers). The buttons edit:
 
 - **Event blocks** — the event thread's duration (via `SetThreadDuration`).
-- **Priority blocks (cascade slice)** — the priority's total pending duration (slice-aware: if the block is one cascade slice of a multi-period split, the edit re-anchors the priority's total so the next rebuild redistributes correctly).
-- **Priority blocks (no slice)** — the priority's total pending duration directly.
+- **Priority and priority-led gap blocks** — the block's own pending
+  duration. There is no priority-wide total to re-anchor; each block
+  stands alone.
 - **Empty gap blocks** — no editable duration; the bump UI is suppressed.
 
 On touch, short right/left swipes on the same block headers map to +15m / −15m, giving mobile users equivalent control without the hover pair.
