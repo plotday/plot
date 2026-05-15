@@ -712,11 +712,26 @@ class PriorityState extends Equatable {
         // Keep pinned todos out of today's grouped sections so they flow
         // through to the event loop's makeBlock for placement after their
         // target events.
+        //
+        // Stale pin exception: a todo pinned after an event on a past day
+        // has `pinnedAfterTime` < today's start, so no anchor in today's
+        // event loop or gap branches will match (they all require an
+        // exact `pinnedAfterTime == anchor` equality). Without this
+        // guard, the thread silently drops out of today entirely on day
+        // rollover. `agendaAt` already collapses stale schedule dates to
+        // "today, anytime"; mirror that here so the same thread also
+        // surfaces in the agenda flow alongside other anytime-today
+        // todos.
+        final dayStartLocal = date.toStart();
         final pinnedTodos = allBeforeNowUnscheduled
-            .where((a) => a.isPinnedTodo)
+            .where((a) =>
+                a.isPinnedTodo &&
+                !a.pinnedAfterTime!.isBefore(dayStartLocal))
             .toList();
         final beforeNowUnscheduled = allBeforeNowUnscheduled
-            .where((a) => !a.isPinnedTodo)
+            .where((a) =>
+                !a.isPinnedTodo ||
+                a.pinnedAfterTime!.isBefore(dayStartLocal))
             .toList();
 
         if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {

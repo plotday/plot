@@ -204,5 +204,137 @@ void main() {
       expect(mergedThreadIds, contains(todayThread.id),
           reason: 'today\'s own thread must remain in today\'s block');
     });
+
+    test('a todo pinned after an event on a past day surfaces on today\'s '
+        'section after midnight rollover', () {
+      // Regression: in production, four Doing-column todos at Movement
+      // Building shared this state — `user_schedule.start_at = Thursday
+      // 11am ET` (pinned after a Thursday event), `user_schedule.start_on
+      // = null`. On Thursday they appeared correctly under that event;
+      // at midnight Friday they vanished from the agenda entirely.
+      //
+      // The root cause: `Thread.agendaAt` collapses a stale schedule
+      // date to "today, anytime" (so the thread buckets onto today), but
+      // `Thread.isPinnedTodo` / `pinnedAfterTime` keep reporting the
+      // original Thursday afternoon time. `makeAgendaItems` then peels
+      // it into `pinnedTodos` and looks for a Friday anchor matching
+      // Thursday afternoon — there is none, so the thread is silently
+      // dropped.
+      //
+      // The end-of-day gap branch has fallbacks (`!createdDateHeader`
+      // and `startOfDay && remainingUnscheduled.isNotEmpty`) that catch
+      // stranded todos when no events exist on the day — so the bug
+      // only manifests when there is at least one scheduled event
+      // today, which forces the end-of-day gap to take the
+      // `!startOfDay` branch that only claims pins whose
+      // `pinnedAfterTime` matches the gap's exact start time. The
+      // production trigger was the user's Personal calendar events
+      // (Paul, Phil, Warkentins) sitting on Friday alongside the
+      // stranded Plot todos.
+      //
+      // The fix mirrors `agendaAt`'s normalization at the partition site:
+      // a pinned todo whose `pinnedAfterTime` is before today's start is
+      // treated as unpinned for placement, so it lands in today's flow.
+      // Override the group-level "2pm" frozen time: the production bug
+      // surfaced right at midnight Friday with all of Friday's events
+      // still in the future, which is what forces the event loop to
+      // run and the end-of-day gap to take the `!startOfDay` branch.
+      Time.setFrozenTime(DateTime(2026, 5, 2, 0, 1));
+
+      final priority = _testPriority(title: 'Movement Building', path: 'mb');
+      final personal = _testPriority(title: 'Personal', path: 'personal');
+
+      final today = Date.today();
+      expect(today, equals(Date(2026, 5, 2)));
+      final yesterdayAfternoon = DateTime(2026, 5, 1, 15, 0);
+
+      // A scheduled (non-todo, non-link) event today, AFTER frozen
+      // "now" so it stays in `remainingScheduled` and the event loop
+      // iterates it. That advances `previousEnd` past midnight, which
+      // forces the end-of-day gap to take the `!startOfDay` branch
+      // where the bug strands the pinned todo.
+      final todayEvent = Thread(
+        priority: personal,
+        title: 'Paul call',
+        at: DateTimeRange(
+          DateTime(2026, 5, 2, 9, 30),
+          DateTime(2026, 5, 2, 10, 0),
+        ),
+      );
+
+      final pinnedToYesterday = Thread(
+        priority: priority,
+        title: 'pinned after yesterday\'s event',
+        userSchedule: ScheduleRow(
+          id: Uuid.generate(),
+          updatedAt: DateTime(2026, 5, 1, 15, 0),
+          threadId: Uuid.generate(),
+          userId: Uuid.generate(),
+          startAt: yesterdayAfternoon,
+          // startOn intentionally null → makes this a pinned todo
+          // (pinnedAfterTime returns startAt; isPinnedTodo == true).
+          order: Order.first(),
+          outstandingTasks: false,
+        ),
+      );
+
+      // A second todo on today via the `todoNowDate` ("anytime today")
+      // sentinel. This thread takes the normal path through
+      // `beforeNowUnscheduled` and creates the today date header before
+      // the end-of-day gap branch runs — which is what makes the bug
+      // manifest, because the gap branch's `!createdDateHeader`
+      // fallback no longer catches stranded pinned todos.
+      final anytimeToday = Thread(
+        priority: priority,
+        title: 'anytime today',
+        userSchedule: ScheduleRow(
+          id: Uuid.generate(),
+          updatedAt: DateTime(2026, 5, 2, 10, 0),
+          threadId: Uuid.generate(),
+          userId: Uuid.generate(),
+          startOn: Thread.todoNowDate,
+          order: Order.first(),
+          outstandingTasks: false,
+        ),
+      );
+
+      // Sanity-check the fixture matches the production state.
+      expect(pinnedToYesterday.todo, isTrue,
+          reason: 'thread must be a todo (user_schedule with startAt set)');
+      expect(pinnedToYesterday.isPinnedTodo, isTrue,
+          reason: 'startAt set + startOn null = pinned todo');
+      expect(pinnedToYesterday.pinnedAfterTime, equals(yesterdayAfternoon),
+          reason: 'pin time is yesterday afternoon');
+      expect(pinnedToYesterday.agendaAt.toDate(), equals(today),
+          reason: 'agendaAt already normalizes stale pins to today');
+      expect(anytimeToday.todo, isTrue);
+      expect(anytimeToday.isPinnedTodo, isFalse);
+
+      final model = AgendaBuilder.build(
+        threads: [pinnedToYesterday, anytimeToday, todayEvent],
+        context: priority,
+        horizonDays: 30,
+      );
+
+      final todaySection = model.sections
+          .whereType<ui.DateSection>()
+          .firstWhere((s) => s.isNow,
+              orElse: () => throw StateError(
+                  'expected a today (isNow) section in the model'));
+
+      final todayThreadIds = todaySection.blocks
+          .expand((b) => b.threads)
+          .map((t) => t.id)
+          .toSet();
+      expect(
+        todayThreadIds,
+        contains(pinnedToYesterday.id),
+        reason: 'a todo pinned after a past-day event must appear in '
+            'today\'s section after the midnight rollover, not silently '
+            'drop out because no anchor on today matches its pin time',
+      );
+      expect(todayThreadIds, contains(anytimeToday.id),
+          reason: 'the unpinned anytime-today todo must still appear');
+    });
   });
 }

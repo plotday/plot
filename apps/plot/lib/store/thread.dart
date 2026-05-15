@@ -2429,6 +2429,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
+    /// Optional per-user schedule. Production paths populate this via
+    /// the Drift query in [Thread.watch] (left-join onto `user_schedule`);
+    /// exposed here so tests can construct a [Thread] in a specific todo
+    /// or pinned-todo state without going through [copyWith] (which
+    /// requires a live [Base.userId]).
+    ScheduleRow? userSchedule,
   }) {
     final now = Time.now();
     final threadId = Uuid.generate();
@@ -2482,6 +2488,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       activity: activity,
       priority: priority,
       schedule: schedule,
+      userSchedule: userSchedule,
       notes: notes,
       activityDirty: true,
       activityRemoteDirty: true,
