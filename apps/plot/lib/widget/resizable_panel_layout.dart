@@ -270,7 +270,16 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     return ColoredBox(
       // Transparent on the priority-tinted frame.
       color: const Color(0x00000000),
+      // Stretch so the unified header fills the column's width. Without
+      // this, Column's default center alignment hands the header a loose
+      // horizontal constraint and the FHeader shrink-wraps to its
+      // non-flex content — the `Expanded(SizedBox.shrink())` between the
+      // traffic-light gap and the toggle button can't expand, so the
+      // toggle ends up near the middle of the column instead of at its
+      // right edge, visually offsetting the panel boundary in the header
+      // from the boundary defined by the body below.
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const UnifiedHeader(variant: HeaderVariant.sidebar),
           Expanded(child: _buildSidebarBody(context)),
@@ -284,6 +293,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     required bool hasLeftSidebar,
   }) {
     return Column(
+      // Same reason as [_buildSidebarColumn]: stretch so the main header's
+      // `Expanded` title section can fill the available width and the
+      // trailing icons land at the column's right edge.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const UnifiedHeader(variant: HeaderVariant.main),
         Expanded(child: _buildMainBody(context, hasLeftSidebar: hasLeftSidebar)),
