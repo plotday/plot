@@ -326,6 +326,91 @@ class PriorityBlock extends PriorityBlockRow {
     );
   }
 
+  /// Upsert a `priority_block` row for [priorityId] at `effective_at =
+  /// blockStart`, carrying [newDuration]. Carries the priority's
+  /// effective order at [blockStart] into `order_value` so the row also
+  /// participates in the order timeline (same convention reorders use).
+  ///
+  /// Local-first: upserts the row at `(priorityId, blockStart)`; the
+  /// sync orchestrator pushes it on the next push window.
+  ///
+  /// Semantics:
+  ///   - normalize null/≤0 → null,
+  ///   - if normalized equals the current row's duration, no-op,
+  ///   - if normalized is null, soft-archive the row at this slot,
+  ///   - otherwise upsert in place at `(priorityId, blockStart)`.
+  static Future<void> setBlockDuration({
+    required PriorityId priorityId,
+    required DateTime blockStart,
+    required Duration? newDuration,
+  }) async {
+    assert(
+      !blockStart.isAtSameMomentAs(kCurrentEffectiveAt),
+      'setBlockDuration must not write to the epoch sentinel; '
+      'use setPendingDuration for that slot',
+    );
+    if (!Store.isAvailable) return;
+    final normalized =
+        (newDuration == null || newDuration <= Duration.zero) ? null : newDuration;
+
+    final rows = await (Store.get.select(table)
+          ..where((t) => t.priorityId.equals(priorityId.toBytes())))
+        .get();
+
+    final slotRow = rows.firstWhereOrNull(
+      (r) => r.effectiveAt.isAtSameMomentAs(blockStart),
+    );
+    final currentDuration =
+        slotRow?.archivedAt == null ? slotRow?.duration : null;
+    if (normalized == currentDuration) return;
+
+    final now = DateTime.now();
+
+    if (normalized == null) {
+      if (slotRow == null || slotRow.archivedAt != null) return;
+      final archived = slotRow.copyWith(
+        archivedAt: Value(now),
+        updatedAt: now,
+      );
+      await Store.get.save(
+        table,
+        archived.toCompanion(false),
+        PriorityBlocksBase(),
+      );
+      return;
+    }
+
+    final inheritedOrder = effectivePriorityOrderAt(
+      moment: blockStart,
+      blocksForPriority: rows,
+      fallback: 0,
+    );
+
+    final row = slotRow != null
+        ? slotRow.copyWith(
+            orderValue: Order(inheritedOrder),
+            duration: Value(normalized),
+            archivedAt: const Value(null),
+            updatedAt: now,
+          )
+        : PriorityBlockRow(
+            id: Uuid.generate(),
+            priorityId: priorityId,
+            createdBy: Base.userId,
+            orderValue: Order(inheritedOrder),
+            effectiveAt: blockStart,
+            duration: normalized,
+            archivedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          );
+    await Store.get.save(
+      table,
+      row.toCompanion(false),
+      PriorityBlocksBase(),
+    );
+  }
+
   /// Stream every non-archived priority_block row for the current user.
   /// Used by PriorityBloc to keep an in-memory map of orderings.
   static Stream<List<PriorityBlock>> streamAll() {
