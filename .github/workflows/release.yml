@@ -315,18 +315,18 @@ jobs:
           cd apps/plot
           shorebird release ios -- --export-options-plist=ios/ExportOptions.plist
 
-      - name: Verify .env in IPA
+      - name: Verify app.env in IPA
         run: |
           IPA_PATH=$(find apps/plot/build/ios/ipa -name "*.ipa" -print -quit)
           TEMP_DIR=$(mktemp -d)
           unzip -q "$IPA_PATH" -d "$TEMP_DIR"
-          ENV_CONTENT=$(find "$TEMP_DIR" -path "*/flutter_assets/.env" -exec cat {} \;)
+          ENV_CONTENT=$(find "$TEMP_DIR" -path "*/flutter_assets/app.env" -exec cat {} \;)
           if [ -z "$ENV_CONTENT" ]; then
-            echo "ERROR: .env is empty in the IPA bundle!"
+            echo "ERROR: app.env is empty in the IPA bundle!"
             rm -rf "$TEMP_DIR"
             exit 1
           fi
-          echo "✓ .env is correctly bundled ($(echo "$ENV_CONTENT" | wc -l) lines)"
+          echo "✓ app.env is correctly bundled ($(echo "$ENV_CONTENT" | wc -l) lines)"
           rm -rf "$TEMP_DIR"
 
       - name: Upload to App Store Connect
@@ -502,15 +502,15 @@ jobs:
           cd apps/plot
           shorebird release android
 
-      - name: Verify .env in AAB
+      - name: Verify app.env in AAB
         run: |
           AAB_PATH="apps/plot/build/app/outputs/bundle/release/app-release.aab"
-          ENV_CONTENT=$(unzip -p "$AAB_PATH" "base/assets/flutter_assets/.env")
+          ENV_CONTENT=$(unzip -p "$AAB_PATH" "base/assets/flutter_assets/app.env")
           if [ -z "$ENV_CONTENT" ]; then
-            echo "ERROR: .env is empty in the AAB bundle!"
+            echo "ERROR: app.env is empty in the AAB bundle!"
             exit 1
           fi
-          echo "✓ .env is correctly bundled ($(echo "$ENV_CONTENT" | wc -l) lines)"
+          echo "✓ app.env is correctly bundled ($(echo "$ENV_CONTENT" | wc -l) lines)"
 
       - name: Install fastlane
         run: |
@@ -718,14 +718,14 @@ jobs:
           cd apps/plot
           shorebird release macos
 
-      - name: Verify .env in macOS app bundle
+      - name: Verify app.env in macOS app bundle
         run: |
-          ENV_PATH="apps/plot/build/macos/Build/Products/Release/Plot.app/Contents/Frameworks/App.framework/Versions/A/Resources/flutter_assets/.env"
+          ENV_PATH="apps/plot/build/macos/Build/Products/Release/Plot.app/Contents/Frameworks/App.framework/Versions/A/Resources/flutter_assets/app.env"
           if [ ! -s "$ENV_PATH" ]; then
-            echo "ERROR: .env is empty or missing in the macOS app bundle!"
+            echo "ERROR: app.env is empty or missing in the macOS app bundle!"
             exit 1
           fi
-          echo "✓ .env is correctly bundled ($(wc -l < "$ENV_PATH") lines)"
+          echo "✓ app.env is correctly bundled ($(wc -l < "$ENV_PATH") lines)"
 
       - name: Sign for App Store and create package
         run: |
