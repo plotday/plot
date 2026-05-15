@@ -94,11 +94,17 @@ class PriorityWrapper implements AutoRouteWrapper {
 
                 Widget body = layoutState.multiPanel
                     ? panelLayout
-                    : Column(
-                        children: [
-                          const UnifiedHeader(),
-                          Expanded(child: panelLayout),
-                        ],
+                    : SafeArea(
+                        top: true,
+                        bottom: false,
+                        left: false,
+                        right: false,
+                        child: Column(
+                          children: [
+                            const UnifiedHeader(),
+                            Expanded(child: panelLayout),
+                          ],
+                        ),
                       );
 
                 if (layoutState.multiPanel) {

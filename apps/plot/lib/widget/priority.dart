@@ -403,60 +403,97 @@ class PriorityLabel extends StatelessWidget {
     // line without leaving leftover space between the content and the
     // trailing slot (a multi-Flexible Row layout leaves a visible gap when
     // one Flexible underuses its allocation). The trailing-caret variant
-    // needs the Row path so the leaf and its icon can share a tap target,
-    // so it falls through to the Row branch below.
-    if (onSelect == null && leafTrailingIcon == null) {
+    // still goes through Text.rich for the label and only places the caret
+    // as a sibling inside a shared tap target.
+    if (onSelect == null) {
       final resolvedFontSize =
           fontSize ?? context.theme.typography.md.fontSize;
       final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
       final leafWeight = boldLeaf ? FontWeight.w600 : null;
-      final spans = <InlineSpan>[];
-      for (var i = 0; i < ancestors.length; i++) {
-        final ancestor = ancestors[i];
-        final isLast = i == ancestors.length - 1;
-        final ancestorColor =
-            mutedAncestorColor ??
-            color ??
-            context.colour.colours.fromTheme(displayColors[i], muted: true);
-        spans.add(TextSpan(
-          text: ancestor.title,
-          style: TextStyle(
-            color: ancestorColor,
-            fontSize: resolvedFontSize,
-            height: height,
-            fontWeight: ancestorWeight,
-          ),
-        ));
-        if (!isLast || priority != null) {
+      final restLeafColor = color ??
+          context.colour.colours.fromTheme(currentColor, muted: muted);
+
+      Widget buildRichText(Color leafColor) {
+        final spans = <InlineSpan>[];
+        for (var i = 0; i < ancestors.length; i++) {
+          final ancestor = ancestors[i];
+          final isLast = i == ancestors.length - 1;
+          final ancestorColor =
+              mutedAncestorColor ??
+              color ??
+              context.colour.colours.fromTheme(displayColors[i], muted: true);
           spans.add(TextSpan(
-            text: Priority.separator,
+            text: ancestor.title,
             style: TextStyle(
-              color: mutedAncestorColor ??
-                  color ??
-                  context.theme.colors.mutedForeground,
+              color: ancestorColor,
               fontSize: resolvedFontSize,
-              height: height ?? 1,
+              height: height,
               fontWeight: ancestorWeight,
             ),
           ));
+          if (!isLast || priority != null) {
+            spans.add(TextSpan(
+              text: Priority.separator,
+              style: TextStyle(
+                color: mutedAncestorColor ??
+                    color ??
+                    context.theme.colors.mutedForeground,
+                fontSize: resolvedFontSize,
+                height: height ?? 1,
+                fontWeight: ancestorWeight,
+              ),
+            ));
+          }
         }
+        if (priority != null) {
+          spans.add(TextSpan(
+            text: priority!.title,
+            style: TextStyle(
+              color: leafColor,
+              fontSize: resolvedFontSize,
+              height: height,
+              fontWeight: leafWeight,
+            ),
+          ));
+        }
+        return Text.rich(
+          TextSpan(children: spans),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        );
       }
-      if (priority != null) {
-        spans.add(TextSpan(
-          text: priority!.title,
-          style: TextStyle(
-            color: color ??
-                context.colour.colours.fromTheme(currentColor, muted: muted),
-            fontSize: resolvedFontSize,
-            height: height,
-            fontWeight: leafWeight,
-          ),
-        ));
+
+      if (leafTrailingIcon == null) {
+        return buildRichText(restLeafColor);
       }
-      return Text.rich(
-        TextSpan(children: spans),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
+
+      // Caret variant: keep the label inside a single Text.rich so it
+      // ellipsizes against the full available width, and render the
+      // caret as a sibling. Wrapping both in a Row+Flexible lets the
+      // text shrink before the caret while the caret stays flush with
+      // whatever the text actually rendered to.
+      Widget body(Color leafColor) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Flexible(child: buildRichText(leafColor)),
+          const SizedBox(width: 4),
+          Icon(leafTrailingIcon, size: 10, color: leafColor),
+        ],
+      );
+
+      if (onLeafTap == null) {
+        return body(restLeafColor);
+      }
+
+      return _HoverColored(
+        restColor: restLeafColor,
+        hoverColor: context.colour.foreground,
+        builder: (context, c) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onLeafTap,
+          child: body(c),
+        ),
       );
     }
 
