@@ -1245,7 +1245,9 @@ function generateSQL(
   const contactIdMap: RefMap<string> = { user: contactId };
   const priorityIdMap: RefMap<string> = {};
   const sourceIdMap: RefMap<string> = {}; // source ref -> twist_instance_id
+  const sourceByRef: RefMap<SeedSource> = {}; // source ref -> SeedSource (for direct-URL icon fallback)
   const twistIdMap: RefMap<string> = {}; // twist ref -> twist_instance_id
+  const twistByRef: RefMap<SeedTwist> = {}; // twist ref -> SeedTwist (for direct-URL icon fallback)
   const threadIdMap: RefMap<string> = {};
 
   // Generated entity arrays
@@ -1312,6 +1314,7 @@ function generateSQL(
   // Process sources
   if (data.sources) {
     for (const source of data.sources) {
+      sourceByRef[source.ref] = source;
       processSource(
         source,
         userId,
@@ -1325,6 +1328,7 @@ function generateSQL(
   // Process twists (non-source twists like Claude, ChatGPT)
   if (data.twists) {
     for (const twist of data.twists) {
+      twistByRef[twist.ref] = twist;
       processTwist(
         twist,
         userId,
@@ -1350,7 +1354,9 @@ function generateSQL(
         contactIdMap,
         priorityIdMap,
         sourceIdMap,
+        sourceByRef,
         twistIdMap,
+        twistByRef,
         threadIdMap,
         threads,
         threadTags,
@@ -1917,7 +1923,9 @@ function processThread(
   contactIdMap: RefMap<string>,
   priorityIdMap: RefMap<string>,
   sourceIdMap: RefMap<string>,
+  sourceByRef: RefMap<SeedSource>,
   twistIdMap: RefMap<string>,
+  twistByRef: RefMap<SeedTwist>,
   threadIdMap: RefMap<string>,
   outThreads: GeneratedThread[],
   outTags: GeneratedThreadTag[],
@@ -1989,25 +1997,45 @@ function processThread(
     contacts: Array.from(contactIds),
   });
 
-  // If twist_ref is set, emit a post-insert UPDATE to resolve the twist icon
+  // If twist_ref is set, emit a post-insert UPDATE to resolve the twist icon.
+  // Personal-fallback twists are created already archived (so they stay out
+  // of the user's "Available connections"), which makes a `twist:<id>` icon
+  // fall through to a generic icon in the app. COALESCE the connector form
+  // for live public twists with the seed's static logo URL otherwise.
   if (thread.twist_ref) {
     const ptId = twistIdMap[thread.twist_ref];
     if (ptId) {
+      const twistData = twistByRef[thread.twist_ref];
+      const fallbackLogo = twistData?.logo ?? null;
       outPostInsertSQL.push(
-        `UPDATE thread SET icon = 'twist:' || (SELECT twist_id::text FROM twist_instance WHERE id = ${sqlString(ptId)}) WHERE id = ${sqlString(id)};`
+        `UPDATE thread SET icon = COALESCE(` +
+          `(SELECT 'twist:' || pti.twist_id::text FROM twist_instance pti JOIN twist t ON t.id = pti.twist_id ` +
+          `WHERE pti.id = ${sqlString(ptId)} AND t.environment = 'public' AND t.archived_at IS NULL AND pti.archived_at IS NULL), ` +
+          `${sqlString(fallbackLogo)}` +
+          `) WHERE id = ${sqlString(id)};`
       );
     }
   }
 
-  // Auto-set connector icon from first link's source (if no explicit icon or twist_ref)
+  // Auto-set connector icon from first link's source (if no explicit icon or twist_ref).
+  // Same COALESCE pattern as above — see twist_ref comment for rationale.
   if (!thread.icon && !thread.twist_ref && thread.links?.length) {
     const firstLinkWithSource = thread.links.find((l) => l.source_ref);
     if (firstLinkWithSource?.source_ref) {
       const ptId = sourceIdMap[firstLinkWithSource.source_ref];
       if (ptId) {
-        const linkType = firstLinkWithSource.type ? `:${firstLinkWithSource.type}` : '';
+        const linkTypeSuffix = firstLinkWithSource.type ? `:${firstLinkWithSource.type}` : '';
+        const sourceData = sourceByRef[firstLinkWithSource.source_ref];
+        const linkTypeLogo = firstLinkWithSource.type
+          ? sourceData?.link_types.find((lt) => lt.type === firstLinkWithSource.type)?.logo
+          : undefined;
+        const fallbackLogo = linkTypeLogo ?? sourceData?.logo ?? null;
         outPostInsertSQL.push(
-          `UPDATE thread SET icon = 'connector:' || (SELECT twist_id::text FROM twist_instance WHERE id = ${sqlString(ptId)}) || '${linkType}' WHERE id = ${sqlString(id)};`
+          `UPDATE thread SET icon = COALESCE(` +
+            `(SELECT 'connector:' || pti.twist_id::text || '${linkTypeSuffix}' FROM twist_instance pti JOIN twist t ON t.id = pti.twist_id ` +
+            `WHERE pti.id = ${sqlString(ptId)} AND t.environment = 'public' AND t.archived_at IS NULL AND pti.archived_at IS NULL), ` +
+            `${sqlString(fallbackLogo)}` +
+            `) WHERE id = ${sqlString(id)};`
         );
       }
     }
