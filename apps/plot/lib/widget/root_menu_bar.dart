@@ -11,6 +11,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'app_context.dart';
 import 'editor.dart';
+import 'modal.dart';
 
 /// Root-level menu bar that persists across navigation changes.
 ///
@@ -92,11 +93,19 @@ class RootMenuBar extends StatelessWidget {
 
   /// Dispatch an edit operation. Tries the active SuperEditor first, then
   /// falls back to Flutter's text editing intents for regular TextFields.
+  ///
+  /// When a modal is open, the active SuperEditor is skipped — its `perform*`
+  /// methods call `requestFocus()` on the underlying focus node, which would
+  /// steal focus from a TextField inside the modal. `activeInstance` is
+  /// intentionally not cleared on blur (see EditorState._onFocusChange), so
+  /// the modal-open check is the chokepoint that keeps shortcuts routed to
+  /// the modal's focused widget instead of the background editor.
   void _editAction(
     void Function(EditorState editor) editorAction,
     Intent textFieldIntent,
   ) {
-    final editor = EditorState.activeInstance;
+    final editor =
+        ModalProvider.hasOpenModals ? null : EditorState.activeInstance;
     if (editor != null) {
       editorAction(editor);
       return;
@@ -112,14 +121,18 @@ class RootMenuBar extends StatelessWidget {
       PlatformMenuItemGroup(
         members: <PlatformMenuItem>[
           PlatformMenuItem(
-            onSelected: () =>
-                EditorState.activeInstance?.performUndo(),
+            onSelected: () => _editAction(
+              (e) => e.performUndo(),
+              const UndoTextIntent(SelectionChangedCause.keyboard),
+            ),
             shortcut: platformSingleActivator(LogicalKeyboardKey.keyZ),
             label: 'Undo',
           ),
           PlatformMenuItem(
-            onSelected: () =>
-                EditorState.activeInstance?.performRedo(),
+            onSelected: () => _editAction(
+              (e) => e.performRedo(),
+              const RedoTextIntent(SelectionChangedCause.keyboard),
+            ),
             shortcut:
                 platformSingleActivator(LogicalKeyboardKey.keyZ, shift: true),
             label: 'Redo',
