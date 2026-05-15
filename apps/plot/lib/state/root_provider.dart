@@ -281,37 +281,41 @@ class RootProviderState extends State<RootProvider> {
                       // the default PriorityRoute the initial nav is about to
                       // land on, and drops our `children: [NewThreadRoute]`.
                       PendingShare.onReady = (url) {
-                        String previousRoute = '';
+                        String previousPath = '';
                         void attempt(int tries) {
                           final ctx = navigatorKey?.currentContext;
                           final mounted = ctx?.mounted == true;
-                          final routeName = mounted
-                              ? router.current.name
-                              : '';
-                          // Settled = mounted, not a shell route (shells are
-                          // parents that further resolve), and stable across
-                          // two consecutive frames (router is not still
-                          // navigating through parent routes to a leaf).
+                          // `router.current.name` only reports the top-level
+                          // route (always "AppShellRoute" here) — it never
+                          // changes as the inner navigators resolve through
+                          // shells to a leaf. `currentPath` walks the full
+                          // nested stack and becomes the actual destination
+                          // (e.g. "/agenda" or "/p/<id>") once cold-start
+                          // navigation lands.
+                          final currentPath = mounted ? router.currentPath : '';
+                          // Settled = mounted, past the bare "/" entry point,
+                          // and stable for two consecutive frames so we don't
+                          // race the initial /agenda or /p/<id> redirect.
                           final settled = mounted &&
-                              routeName.isNotEmpty &&
-                              !routeName.contains('Shell') &&
-                              routeName == previousRoute;
+                              currentPath.isNotEmpty &&
+                              currentPath != '/' &&
+                              currentPath == previousPath;
                           log.info(
                             'PendingShare.onReady callback attempt #$tries: '
-                            'mounted=$mounted, route="$routeName", '
-                            'prev="$previousRoute", settled=$settled',
+                            'mounted=$mounted, path="$currentPath", '
+                            'prev="$previousPath", settled=$settled',
                           );
                           if (settled) {
                             ctx!.run(OpenSharedLink(url));
                           } else if (tries < 30) {
-                            previousRoute = routeName;
+                            previousPath = currentPath;
                             WidgetsBinding.instance.addPostFrameCallback(
                               (_) => attempt(tries + 1),
                             );
                           } else {
                             log.warning(
                               'PendingShare.onReady: gave up after $tries attempts '
-                              '— router never settled (last route="$routeName")',
+                              '— router never settled (last path="$currentPath")',
                             );
                           }
                         }
