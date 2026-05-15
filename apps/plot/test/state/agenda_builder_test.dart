@@ -66,11 +66,15 @@ void main() {
       id: 'p_today_${priority.path.value}_0',
       priority: priority,
       threads: [todayThreadA, todayThreadB],
+      windowStart: DateTime(2026, 5, 2),
+      windowEnd: DateTime(2026, 5, 3),
     );
     final tomorrowBlock = ui.PriorityBlock(
       id: 'p_tomorrow_${priority.path.value}_0',
       priority: priority,
       threads: [tomorrowThread],
+      windowStart: DateTime(2026, 5, 3),
+      windowEnd: DateTime(2026, 5, 4),
     );
 
     final model = ui.AgendaModel(sections: [

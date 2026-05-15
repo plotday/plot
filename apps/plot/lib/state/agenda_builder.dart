@@ -146,6 +146,8 @@ class AgendaBuilder {
             threads: block.threads,
             isOutside: block.isOutside,
             cascadeDuration: pending,
+            windowStart: DateTime.fromMillisecondsSinceEpoch(0), // overwritten by _populateBlockWindows
+            windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
           ));
           continue;
         }
@@ -192,6 +194,8 @@ class AgendaBuilder {
         threads: const [],
         isOutside: false,
         cascadeDuration: entry.value,
+        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
       ));
     }
 
@@ -428,6 +432,8 @@ class AgendaBuilder {
         priority: block.priority,
         threads: List.unmodifiable([...block.threads, ...extras]),
         isOutside: false,
+        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
       );
     }
 
@@ -446,6 +452,8 @@ class AgendaBuilder {
           priority: p,
           threads: List.unmodifiable(extras),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
       );
     }
@@ -645,6 +653,8 @@ class AgendaBuilder {
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
       );
     }
@@ -708,6 +718,8 @@ class AgendaBuilder {
           priority: r.priority,
           threads: List.unmodifiable(r.threads),
           isOutside: false,
+          windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+          windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
         ),
     ];
   }
@@ -895,6 +907,8 @@ class AgendaBuilder {
                   priority: priority,
                   threads: List.unmodifiable(run.map((a) => a.thread)),
                   isOutside: false,
+                  windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+                  windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
                 ),
               );
             }
@@ -1014,6 +1028,8 @@ class _SectionBuilder {
         priority: _openPriority!,
         threads: List.unmodifiable(_openThreads),
         isOutside: false,
+        windowStart: DateTime.fromMillisecondsSinceEpoch(0),
+        windowEnd: DateTime.fromMillisecondsSinceEpoch(0),
       ),
     );
     _openPriority = null;
