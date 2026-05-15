@@ -193,6 +193,69 @@ class NowBloc extends Cubit<NowState> {
     );
   }
 
+  /// Live remaining-duration stream for a specific agenda block.
+  /// Resolution order:
+  ///   1. Active session for this priority whose `pomodoroAt` falls in
+  ///      `[blockStart, blockEnd)` AND `at.isNow()` →
+  ///      `pomodoroAt + pomodoro - now`.
+  ///   2. Paused-explicit session for this priority whose `pomodoroAt`
+  ///      falls in `[blockStart, blockEnd)` →
+  ///      `pomodoroAt + pomodoro - end` (frozen remaining at pause).
+  ///   3. The block's resolved row duration via the per-priority block
+  ///      walker against `priority_block` rows.
+  static Stream<PriorityPendingDisplay> watchBlockDisplay({
+    required PriorityId priorityId,
+    required DateTime blockStart,
+    required DateTime blockEnd,
+  }) {
+    bool inWindow(DateTime t) =>
+        !t.isBefore(blockStart) && t.isBefore(blockEnd);
+
+    return Rx.combineLatest4(
+      streamPriorityBlocksGroupedByPriority(),
+      Session.watchCurrent(),
+      Session.watchLatestPausedFor(priorityId),
+      Stream<void>.periodic(const Duration(minutes: 1), (_) {}).startWith(null),
+      (blocksByPriority, currentSession, pausedExplicit, _) {
+        final now = Time.now();
+        final activeInBlock =
+            currentSession != null &&
+            currentSession.priority?.id == priorityId &&
+            currentSession.at.isNow() &&
+            currentSession.pomodoroAt != null &&
+            currentSession.pomodoro != null &&
+            inWindow(currentSession.pomodoroAt!);
+        if (activeInBlock) {
+          final end =
+              currentSession.pomodoroAt!.add(currentSession.pomodoro!);
+          final remaining = end.difference(now);
+          return PriorityPendingDisplay(
+            duration: remaining > Duration.zero ? remaining : null,
+          );
+        }
+        if (pausedExplicit != null &&
+            pausedExplicit.pomodoroAt != null &&
+            inWindow(pausedExplicit.pomodoroAt!)) {
+          final originalEnd =
+              pausedExplicit.pomodoroAt!.add(pausedExplicit.pomodoro!);
+          final remaining = originalEnd.difference(pausedExplicit.end);
+          return PriorityPendingDisplay(
+            duration: remaining > Duration.zero ? remaining : null,
+          );
+        }
+        final rows = blocksByPriority[priorityId] ?? const [];
+        final todayMidnight = DateTime(now.year, now.month, now.day);
+        // Single-block walker — the block itself is the only entry.
+        final out = resolveBlockDurations(
+          todayMidnight: todayMidnight,
+          blocks: [(id: 'b', start: blockStart)],
+          blocksForPriority: rows,
+        );
+        return PriorityPendingDisplay(duration: out['b']);
+      },
+    );
+  }
+
   /// Apply a ±15m bump to the priority's displayed pending duration,
   /// writing to whichever row is the current display source so the
   /// edited value is what the user sees.
