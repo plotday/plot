@@ -225,12 +225,13 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// squircle, with an inner resize divider between them).
   Widget _buildMainBody(BuildContext context, {required bool hasLeftSidebar}) {
     final radius = const Radius.circular(_panelRadius);
-    // Middle panel: rounded outer (left) corner when no sidebar precedes
-    // it; flat right corner because it shares the squircle seam with the
-    // right panel.
+    // Middle panel: rounded outer-left corners (the sidebar floats with a
+    // gap, not a shared seam, so the middle panel is the leftmost outer
+    // edge of the main squircle); flat right corners that share the
+    // internal seam with the right panel.
     final middleRadiusResolved = BorderRadius.only(
-      topLeft: hasLeftSidebar ? Radius.zero : radius,
-      bottomLeft: hasLeftSidebar ? Radius.zero : radius,
+      topLeft: radius,
+      bottomLeft: radius,
       topRight: Radius.zero,
       bottomRight: Radius.zero,
     );
