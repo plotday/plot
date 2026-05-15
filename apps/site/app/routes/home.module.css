@@ -114,7 +114,7 @@
 
 .heroScreenshot {
   width: 100%;
-  aspect-ratio: 1512 / 805;
+  aspect-ratio: 16 / 10;
   border-radius: var(--mantine-radius-lg);
   border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
   box-shadow: var(--shadow-lg);

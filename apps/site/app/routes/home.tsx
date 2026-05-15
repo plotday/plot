@@ -229,7 +229,7 @@ export default function Home() {
           <Text className={classes.hingeText}>
             Each keeps us busy.
             <br />
-            What we need is something that keeps us moving forward.
+            What we need is something that moves us forward.
           </Text>
         </Container>
       </Box>
