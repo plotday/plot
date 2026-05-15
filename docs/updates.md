@@ -1,3 +1,4 @@
+- Fixed rapid Add/Remove time presses on the timer pill silently dropping changes — pressing `+` or `−` several times in quick succession now lands every press, instead of one of them appearing to take effect and then snapping back.
 - Time you add to a block in the agenda now applies only to that block instead of every day.
 - Cleaner top edge on iOS and Android — the priority header now blends into the status bar so they read as one strip, and the agenda starts with a clean divider line above the first day instead of bleeding into the status bar background.
 - Cleaner new-thread page on mobile — the priority header is gone, replaced by a single back button above the page, so the focus stays on what you're writing. The back button also appears immediately when you tap "New" from the bottom nav, instead of briefly flashing the priority's full header during the transition.

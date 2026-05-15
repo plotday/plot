@@ -93,6 +93,29 @@ class SessionsBase extends BaseTable {
     json['end'] = range.end?.toDb() ?? fallback;
     return SessionRow.fromJson(json);
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // See SchedulesBase.processPulledRows — same race protection. Without
+    // this, rapid Add/Remove time presses lose changes: each press pushes,
+    // the server broadcasts the change back, the broadcast triggers a
+    // pull, and the pull's GET returns an older server snapshot (the
+    // next push hasn't landed yet) which overwrites the newer local
+    // pomodoro and makes the pill appear to revert.
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final sessionRow = row as SessionRow;
+      final local = await (store.select(store.sessions)
+            ..where((s) => s.id.equals(sessionRow.id.toBytes())))
+          .getSingleOrNull();
+      if (local != null && local.pending != null) continue;
+      result.add(row);
+    }
+    return result;
+  }
 }
 
 class Session extends SessionRow {

@@ -22,6 +22,23 @@ class NowBloc extends Cubit<NowState> {
   /// is re-issued so its bounded UNION query re-narrows.
   DateTime? _subscriptionLocalDate;
 
+  /// Tail of the serialized pomodoro-adjustment chain. Add/Remove time
+  /// shortcuts (and [adjustPomodoro]) all race through here so rapid
+  /// presses are processed one at a time. Without this, each press
+  /// reads `state.session.pomodoro` before Drift's watcher has emitted
+  /// the previous save, so two fast `+` presses both compute "current
+  /// + 15m" from the same stale baseline and the second increment is
+  /// silently dropped.
+  Future<void> _pomodoroOpChain = Future<void>.value();
+
+  /// Most recently saved `pomodoro` for the active context session,
+  /// ahead of (or matching) what `state.session.pomodoro` shows. Used
+  /// as the baseline for the next adjustment so chained ops compound
+  /// even when the watcher hasn't emitted yet. Cleared whenever the
+  /// session id changes or the watcher catches up to this value.
+  Duration? _intendedPomodoro;
+  Uuid? _intendedSessionId;
+
   @override
   Future<void> close() {
     stop();
@@ -61,6 +78,15 @@ class NowBloc extends Cubit<NowState> {
         ).listen(
           (state) {
             emit(state);
+            // Watcher caught up: if the emitted session matches our
+            // tracked intent (or is a different session entirely),
+            // drop the intent so subsequent ops read from state again.
+            final sessionId = state.session?.id;
+            if (sessionId != _intendedSessionId ||
+                state.session?.pomodoro == _intendedPomodoro) {
+              _intendedPomodoro = null;
+              _intendedSessionId = null;
+            }
             if (!completer.isCompleted) {
               completer.complete();
             }
@@ -555,6 +581,32 @@ class NowBloc extends Cubit<NowState> {
     await closed.save();
   }
 
+  /// Run [op] after any in-flight pomodoro adjustment finishes. Two
+  /// rapid `+` presses arriving inside the same Drift-watcher tick
+  /// would otherwise both read the same stale `state.session.pomodoro`
+  /// and recompute the same target, dropping the second increment.
+  /// Chaining lets the second op read the prior op's saved value off
+  /// [_intendedPomodoro].
+  Future<void> _runPomodoroOp(Future<void> Function() op) {
+    final next = _pomodoroOpChain.then((_) => op());
+    // Swallow errors on the chain tail so a single failure doesn't
+    // poison subsequent ops. Callers still see the error on the
+    // returned future.
+    _pomodoroOpChain = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  /// Baseline pomodoro for the next adjustment on [session]. Prefers
+  /// the most recently saved value when it applies to the same session
+  /// id, so chained presses compound through the watcher's async
+  /// emission gap.
+  Duration _baselineFor(Session session) {
+    if (_intendedSessionId == session.id && _intendedPomodoro != null) {
+      return _intendedPomodoro!;
+    }
+    return session.pomodoro!;
+  }
+
   /// Adjust the pomodoro by [delta] (positive or negative). When a
   /// session is active and belongs to the context priority, the row's
   /// `pomodoro` field is mutated and saved. When inactive (or when the
@@ -562,7 +614,10 @@ class NowBloc extends Cubit<NowState> {
   /// [NowLoaded.previewPomodoro] which the pill renders.
   ///
   /// Both branches floor at [kMinPomodoro] and cap at `pomodoroEndCap − now`.
-  Future<void> adjustPomodoro(Duration delta) async {
+  Future<void> adjustPomodoro(Duration delta) =>
+      _runPomodoroOp(() => _adjustPomodoro(delta));
+
+  Future<void> _adjustPomodoro(Duration delta) async {
     if (state is! NowLoaded) return;
     final s = loadedState;
     final ctx = s.context;
@@ -578,10 +633,12 @@ class NowBloc extends Cubit<NowState> {
         session.pomodoro != null;
 
     if (isActiveForCtx) {
-      final current = session.pomodoro!;
+      final current = _baselineFor(session);
       final proposed = current + delta;
       final clamped = _clampPomodoro(ctx, proposed, anchor: session.pomodoroAt);
       if (clamped == current) return;
+      _intendedPomodoro = clamped;
+      _intendedSessionId = session.id;
       await Session.fromStore(
         session.copyWith(pomodoro: Value(clamped)),
       ).save();
@@ -601,7 +658,10 @@ class NowBloc extends Cubit<NowState> {
   /// `pomodoro` so `pomodoroAt + pomodoro = now + newRemaining`; for
   /// inactive (or non-context active) state, [NowLoaded.previewPomodoro]
   /// is updated instead.
-  Future<void> decreasePomodoro() async {
+  Future<void> decreasePomodoro() =>
+      _runPomodoroOp(() => _decreasePomodoro());
+
+  Future<void> _decreasePomodoro() async {
     if (state is! NowLoaded) return;
     final s = loadedState;
     final ctx = s.context;
@@ -617,9 +677,10 @@ class NowBloc extends Cubit<NowState> {
         session.pomodoro != null;
 
     if (isActiveForCtx) {
+      final baseline = _baselineFor(session);
       final now = Time.now();
       final elapsed = now.difference(session.pomodoroAt!);
-      final remaining = session.pomodoro! - elapsed;
+      final remaining = baseline - elapsed;
       final newRemaining = remaining > kPomodoroStep
           ? remaining - kPomodoroStep
           : kMinPomodoro;
@@ -628,7 +689,9 @@ class NowBloc extends Cubit<NowState> {
         elapsed + newRemaining,
         anchor: session.pomodoroAt,
       );
-      if (clamped == session.pomodoro) return;
+      if (clamped == baseline) return;
+      _intendedPomodoro = clamped;
+      _intendedSessionId = session.id;
       await Session.fromStore(
         session.copyWith(pomodoro: Value(clamped)),
       ).save();
@@ -647,7 +710,10 @@ class NowBloc extends Cubit<NowState> {
   /// `pomodoro` so `pomodoroAt + pomodoro = now + nextBoundary`. For
   /// inactive (or non-context active) state, the preview duration the
   /// pill renders is advanced instead.
-  Future<void> bumpPomodoroToNext15() async {
+  Future<void> bumpPomodoroToNext15() =>
+      _runPomodoroOp(() => _bumpPomodoroToNext15());
+
+  Future<void> _bumpPomodoroToNext15() async {
     if (state is! NowLoaded) return;
     final s = loadedState;
     final ctx = s.context;
@@ -663,8 +729,9 @@ class NowBloc extends Cubit<NowState> {
         session.pomodoro != null;
 
     if (isActiveForCtx) {
+      final baseline = _baselineFor(session);
       final now = Time.now();
-      final end = session.pomodoroAt!.add(session.pomodoro!);
+      final end = session.pomodoroAt!.add(baseline);
       final remaining = end.difference(now);
       final next = _nextStepBoundary(remaining);
       final newPomodoro = now.difference(session.pomodoroAt!) + next;
@@ -678,7 +745,9 @@ class NowBloc extends Cubit<NowState> {
       // session to outlive the next handoff. Already-explicit sessions
       // keep `explicit = true` (no-op).
       final promoteExplicit = !session.explicit;
-      if (clamped == session.pomodoro && !promoteExplicit) return;
+      if (clamped == baseline && !promoteExplicit) return;
+      _intendedPomodoro = clamped;
+      _intendedSessionId = session.id;
       await Session.fromStore(
         session.copyWith(
           pomodoro: Value(clamped),
