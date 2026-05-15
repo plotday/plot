@@ -92,8 +92,11 @@ class _AgendaBody extends StatelessWidget {
         //
         // The first date row has no separator above it (separators sit
         // *between* items). On desktop the panel squircle paints that
-        // top edge for us; on mobile we add it explicitly so the date
-        // row doesn't bleed into the status-bar background.
+        // top edge for us; on mobile we add an explicit 1px divider so
+        // the first row reads as the top of a list rather than bleeding
+        // into the status-bar background. (DecoratedBox + Border.top is
+        // not enough — the list's opaque rows paint over a background
+        // decoration, hiding the line.)
         return Scaffold(
           scrollable: false,
           translucent: true,
@@ -103,16 +106,15 @@ class _AgendaBody extends StatelessWidget {
             bottom: false,
             left: false,
             right: false,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: context.theme.colors.border,
-                    width: 1,
-                  ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: 1,
+                  color: context.theme.colors.border,
                 ),
-              ),
-              child: AgendaList(items: state.agendaViewItems),
+                Expanded(child: AgendaList(items: state.agendaViewItems)),
+              ],
             ),
           ),
         );

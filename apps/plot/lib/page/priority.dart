@@ -94,16 +94,26 @@ class PriorityWrapper implements AutoRouteWrapper {
 
                 Widget body = layoutState.multiPanel
                     ? panelLayout
-                    : SafeArea(
-                        top: true,
-                        bottom: false,
-                        left: false,
-                        right: false,
-                        child: Column(
-                          children: [
-                            const UnifiedHeader(),
-                            Expanded(child: panelLayout),
-                          ],
+                    // Single-panel (mobile): paint the OS status-bar slot
+                    // with the header's background color so the two read
+                    // as one continuous strip on iOS/Android. The
+                    // SafeArea pushes the actual UnifiedHeader below the
+                    // status bar; the ColoredBox extends *behind* that
+                    // inset so the area showing through the system clock
+                    // / dynamic island matches the header.
+                    : ColoredBox(
+                        color: context.colour.panelDarkestBackground,
+                        child: SafeArea(
+                          top: true,
+                          bottom: false,
+                          left: false,
+                          right: false,
+                          child: Column(
+                            children: [
+                              const UnifiedHeader(),
+                              Expanded(child: panelLayout),
+                            ],
+                          ),
                         ),
                       );
 
@@ -1118,7 +1128,7 @@ class _PriorityPageState extends State<PriorityPage>
                   final natives = sectionDate == null
                       ? const <Thread>[]
                       : state.activityFeedNativesByDate[sectionDate] ??
-                          const <Thread>[];
+                            const <Thread>[];
                   if (natives.isNotEmpty) {
                     return [
                       _SectionHeaderWithRescheduleAll(
@@ -1344,17 +1354,13 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
     // rendered the icon below the label on iOS while looking centered
     // on macOS.
     final button = Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.theme.spacing.sm,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.sm),
       child: Button.icon(
         RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
       ),
     );
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.colour.headerBackground,
-      ),
+      decoration: BoxDecoration(color: context.colour.headerBackground),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
