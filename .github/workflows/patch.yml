@@ -233,8 +233,11 @@ jobs:
           # aborts the macOS build with "could not find an analyze_snapshot
           # binary whose --sdk_version matches gen_snapshot". Remove once
           # Shorebird ships a fix.
-          git -C "$HOME/.shorebird" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$HOME/.shorebird" checkout v1.6.98
+          # Install dir varies per OS (macOS: ~/.shorebird, Linux:
+          # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
+          SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
+          git -C "$SHOREBIRD_DIR" checkout v1.6.98
           shorebird --version
 
       - name: Patch iOS
@@ -399,8 +402,11 @@ jobs:
           # aborts the macOS build with "could not find an analyze_snapshot
           # binary whose --sdk_version matches gen_snapshot". Remove once
           # Shorebird ships a fix.
-          git -C "$HOME/.shorebird" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$HOME/.shorebird" checkout v1.6.98
+          # Install dir varies per OS (macOS: ~/.shorebird, Linux:
+          # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
+          SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
+          git -C "$SHOREBIRD_DIR" checkout v1.6.98
           shorebird --version
 
       - name: Patch Android
@@ -593,8 +599,11 @@ jobs:
           # aborts the macOS build with "could not find an analyze_snapshot
           # binary whose --sdk_version matches gen_snapshot". Remove once
           # Shorebird ships a fix.
-          git -C "$HOME/.shorebird" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$HOME/.shorebird" checkout v1.6.98
+          # Install dir varies per OS (macOS: ~/.shorebird, Linux:
+          # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
+          SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
+          git -C "$SHOREBIRD_DIR" checkout v1.6.98
           shorebird --version
 
       - name: Patch macOS
@@ -732,8 +741,11 @@ jobs:
           # aborts the macOS build with "could not find an analyze_snapshot
           # binary whose --sdk_version matches gen_snapshot". Remove once
           # Shorebird ships a fix.
-          git -C "$HOME/.shorebird" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$HOME/.shorebird" checkout v1.6.98
+          # Install dir varies per OS (macOS: ~/.shorebird, Linux:
+          # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
+          SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
+          git -C "$SHOREBIRD_DIR" checkout v1.6.98
           shorebird --version
 
       - name: Patch Windows
