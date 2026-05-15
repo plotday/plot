@@ -417,20 +417,12 @@ class Actor extends ActorRow {
     Priority? priority,
     int mruSize = 5,
     int threadWindow = 200,
+    int searchLimit = 50,
   }) async {
-    final actors = await get(
-      types: [ActorType.user, ActorType.contact],
-      search: search,
-      inviteable: true,
-      primary: true,
-    );
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-    actors.removeWhere(
-      (a) => a.self || selfIds.contains(a.id.toUuid()),
-    );
 
-    final groups = await Group.getPostable(search: search);
-
+    // Run thread scans first — drives MRU ranking, and in the empty-search
+    // path also gates which candidates we materialize at all.
     final scoped = await _scanThreadsForSharing(
       selfIds: selfIds,
       priorityPath: priority?.path,
@@ -443,6 +435,38 @@ class Actor extends ActorRow {
             priorityPath: null,
             limit: threadWindow,
           );
+
+    // Candidate sourcing splits on whether the user is searching. With no
+    // search we only materialize people who appear in the recent thread
+    // window — alphabetically loading every inviteable contact on every
+    // modal open is what made this slow for accounts with thousands of
+    // contacts. Typing a few characters surfaces anyone outside that
+    // window. Groups are always small ("a handful per user") so we keep
+    // loading them in full.
+    final List<Actor> actors;
+    final List<GroupRow> groups;
+    if (search == null || search.isEmpty) {
+      final actorIds = <Uuid>{
+        ...scoped.firstSeenIndex.keys,
+        ...global.firstSeenIndex.keys,
+      };
+      actors = await _getInviteablePrimaryByIds(
+        actorIds.map(ActorId.fromUuid),
+      );
+      groups = await Group.getPostable();
+    } else {
+      actors = await get(
+        types: [ActorType.user, ActorType.contact],
+        search: search,
+        inviteable: true,
+        primary: true,
+        limit: searchLimit,
+      );
+      groups = await Group.getPostable(search: search);
+    }
+    actors.removeWhere(
+      (a) => a.self || selfIds.contains(a.id.toUuid()),
+    );
 
     String sortKey(ShareCandidate c) => switch (c) {
           ActorShareCandidate(:final actor) =>
@@ -671,6 +695,37 @@ class Actor extends ActorRow {
       );
     final rows = await query.get();
     return rows.map((r) => r.id.toUuid().toString()).toList();
+  }
+
+  /// Fetches user/contact actors by id and applies the share-picker's
+  /// standard non-archived / inviteable / primary filters in one query.
+  /// Used by [getSortedShareCandidates] to materialize only the candidates
+  /// surfaced by the recent-threads scan.
+  static Future<List<Actor>> _getInviteablePrimaryByIds(
+    Iterable<ActorId> ids,
+  ) async {
+    final idList = ids.toList(growable: false);
+    if (idList.isEmpty) return const [];
+    final a = Store.get.actors;
+    final typeStrings = [ActorType.user, ActorType.contact]
+        .map((t) => t.name.toSnakeCase())
+        .toList();
+    final query = Store.get.select(a)
+      ..where(
+        (row) =>
+            row.id.isIn(idList.map((id) => id.toBytes()).toList()) &
+            row.archivedAt.isNull() &
+            row.type.isIn(typeStrings) &
+            row.inviteable.equals(true) &
+            row.primary.equals(true) &
+            (row.name.isNotNull() | row.email.isNotNull()),
+      );
+    final rows = await query.get();
+    final actors = rows.map(Actor.fromStore).toList();
+    for (final actor in actors) {
+      _cacheActor(actor);
+    }
+    return actors;
   }
 
   static MultiSelectable<Actor> _get({
