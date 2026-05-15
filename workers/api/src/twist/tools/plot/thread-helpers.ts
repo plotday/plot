@@ -259,6 +259,22 @@ export function cleanConvertedMarkdown(markdown: string): string {
   // Exclude pipes from both sides so we don't shred table rows like `|  | cell |`.
   markdown = markdown.replace(/([^\s|])  +(?=[^\s|])/g, "$1\n\n");
 
+  // Flatten multi-line link text. ai.toMarkdown() sometimes emits links as:
+  //   [
+  //
+  //   Link Text ](url)
+  // A blank line inside link text is not valid CommonMark, so renderers fall
+  // back to showing the raw `[...](url)` characters. Collapse internal
+  // whitespace to a single space. Nested brackets are excluded so image-links
+  // like `[ ![alt](src) ](url)` are left untouched.
+  markdown = markdown.replace(
+    /\[([^[\]]*?\n[^[\]]*?)\]\(([^)]+)\)/g,
+    (_, label: string, url: string) => {
+      const flat = label.replace(/\s+/g, " ").trim();
+      return flat ? `[${flat}](${url})` : "";
+    }
+  );
+
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
 

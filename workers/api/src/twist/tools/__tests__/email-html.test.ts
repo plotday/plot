@@ -144,3 +144,47 @@ describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
     expect(out).toBe("Hello");
   });
 });
+
+describe("cleanConvertedMarkdown \u2014 multi-line links", () => {
+  it("flattens links with a blank line after the opening bracket", () => {
+    // ai.toMarkdown() pattern seen in LinkedIn newsletter emails:
+    // each prominent link is emitted as `[\n\n  Link Text ](url)`, which is
+    // not valid CommonMark and renders as raw text in any compliant renderer.
+    const input = "[\n\nThe Beautiful Mess ](https://example.com/newsletter)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("[The Beautiful Mess](https://example.com/newsletter)");
+  });
+
+  it("flattens multiple broken links and collapses internal whitespace", () => {
+    const input = [
+      "[",
+      "",
+      "Single-Player vs. Multiplayer AI Series ](https://example.com/a)",
+      "",
+      "[",
+      "",
+      "John Cutler ](https://example.com/b)",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toContain("[Single-Player vs. Multiplayer AI Series](https://example.com/a)");
+    expect(out).toContain("[John Cutler](https://example.com/b)");
+  });
+
+  it("leaves single-line image-links untouched", () => {
+    const input = "[ ![LinkedIn](https://cdn.example.com/icon.png) ](https://example.com/feed)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("leaves well-formed single-line links untouched", () => {
+    const input = "[Read the post](https://example.com/post)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("drops links whose flattened label is empty", () => {
+    const input = "[\n\n  \n\n](https://example.com/empty)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toContain("example.com/empty");
+  });
+});
