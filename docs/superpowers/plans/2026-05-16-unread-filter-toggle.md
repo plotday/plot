@@ -6,6 +6,8 @@
 
 **Architecture:** New `bool unreadFilterActive` on `PriorityState`. `activityFeedViewItems` getter returns either the unfiltered list or a filtered subset (unread threads + the section/sub-section headers immediately preceding them). The bloc's single agenda/feed rebuild helper (`_rebuildAgendaModel`) auto-disables the filter when the recomputed feed has zero unread. A new `ToggleUnreadFilter` command exposes the action via a header `Button.icon` and the `⌘⇧U` / `Ctrl+Shift+U` shortcut. The button renders only when the priority feed has unread items.
 
+The notification-tap flow is rewired to use this filter. Single-thread notifications still route through `ThreadLookupRoute` (unchanged). Multi-thread notifications used to scroll the activity feed to the New section header — now they open the priority with the unread filter on. A `bool unreadFilterPending` companion flag suppresses auto-off and shows a `Spinner` while we wait for the activity feed (and any in-flight sync) to surface the unread threads; it clears once the first emit with unread items arrives or after a 10-second timeout.
+
 **Tech Stack:** Flutter / Dart, `flutter_bloc`, forui, project's `Command` + `Button.icon` patterns, `platformSingleActivator` helper.
 
 **Spec:** `docs/superpowers/specs/2026-05-16-unread-filter-toggle-design.md`
@@ -14,12 +16,15 @@
 
 ## File map
 
-- **Modify** `apps/plot/lib/state/priority_state.dart` — add `unreadFilterActive` field, `hasUnreadInFeed` getter, `activityFeedViewItems` getter, propagate through factory / `_` ctor / `copyWith` / `props`.
-- **Modify** `apps/plot/lib/state/priority.dart` — add `toggleUnreadFilter()` to `PriorityBloc`; enforce auto-off in `_rebuildAgendaModel`; reset filter when context priority changes.
+- **Modify** `apps/plot/lib/state/priority_state.dart` — add `unreadFilterActive` and `unreadFilterPending` fields, `hasUnreadInFeed` and `activityFeedViewItems` getters, propagate through factory / `_` ctor / `copyWith` / `props`.
+- **Modify** `apps/plot/lib/state/priority.dart` — add `toggleUnreadFilter()` and `activateUnreadFilterFromNotification()` to `PriorityBloc`; enforce auto-off in `_rebuildAgendaModel` (suppressed while pending; clears pending once unread items arrive); cancel the pending timer in `close()`; reset both flags when the context priority changes.
+- **Modify** `apps/plot/lib/state/activity_section.dart` — drop the unused `PendingNotificationScroll.section` field and replace with `PendingActivityFeedView.openUnreadFilter` (a static `bool`). The class previously only carried `section`, which no consumer needs once notification taps switch to the filter signal.
 - **Create** `apps/plot/lib/command/unread_filter.dart` — defines `ToggleUnreadFilter` command (title, icon, hoverIcon, shortcut, `on`, `enabled`, `run`) and exports a `unreadFilterShortcut` `SingleActivator`.
-- **Modify** `apps/plot/lib/page/priority.dart` — change activity-feed rendering to consume `state.activityFeedViewItems` instead of `state.activityFeedItems` in the body builder and the notification-scroll listener; bind the command shortcut into the priority `CommandScope`.
+- **Modify** `apps/plot/lib/page/priority.dart` — change activity-feed rendering to consume `state.activityFeedViewItems`; remove the `BlocListener` that scrolled the feed to the notification's section header; add a one-shot consumer of `PendingActivityFeedView.openUnreadFilter` that calls `bloc.activateUnreadFilterFromNotification()`; render a centered `Spinner` when the filter is on, the view is empty, and the feed is loading or pending.
+- **Modify** `apps/plot/lib/page/notification_landing.dart` — set `PendingActivityFeedView.openUnreadFilter = true` instead of `PendingNotificationScroll.section = ActivitySection.newSection`. The prefetch + replace-stack behavior is otherwise unchanged.
 - **Modify** `apps/plot/lib/widget/unified_header.dart` — insert the `Button.icon(ToggleUnreadFilter(...))` between the priority title and the tracking-pill control in `_buildTitleSection`'s `withTrackingPill`, gated on `state.hasUnreadInFeed`.
-- **Create** `apps/plot/test/state/priority_state_unread_filter_test.dart` — unit tests for the new getters and copyWith propagation.
+- **Modify** `apps/plot/lib/command/priority.dart` — add `ToggleUnreadFilter.fromContext(context)` to `currentPriorityCommands` so the shortcut is registered in the priority scope.
+- **Create** `apps/plot/test/state/priority_state_unread_filter_test.dart` — unit tests for the new getters, pending flag, and `copyWith` propagation.
 - **Create** `apps/plot/test/command/unread_filter_test.dart` — lightweight smoke test for the command's metadata (title, shortcut, icons) so the file is referenced by the build.
 
 ---
@@ -110,6 +115,7 @@ PriorityState _stateWith({
   required Priority priority,
   required List<AgendaItem> activityFeedItems,
   bool unreadFilterActive = false,
+  bool unreadFilterPending = false,
 }) {
   final draft = Thread(priority: priority, draft: true);
   final draftNote = Note(
@@ -127,6 +133,7 @@ PriorityState _stateWith({
     draftNote: draftNote,
     activityFeedItems: activityFeedItems,
     unreadFilterActive: unreadFilterActive,
+    unreadFilterPending: unreadFilterPending,
   );
 }
 
@@ -254,6 +261,23 @@ void main() {
         isTrue,
       );
     });
+
+    test('copyWith propagates unreadFilterPending', () {
+      final p = _testPriority();
+      final state = _stateWith(priority: p, activityFeedItems: const []);
+      expect(state.unreadFilterPending, isFalse);
+      expect(
+        state.copyWith(unreadFilterPending: true).unreadFilterPending,
+        isTrue,
+      );
+      expect(
+        state
+            .copyWith(unreadFilterPending: true)
+            .copyWith()
+            .unreadFilterPending,
+        isTrue,
+      );
+    });
   });
 }
 ```
@@ -267,41 +291,53 @@ Expected: compile errors — `unreadFilterActive` is not a known parameter, `has
 
 Edit `apps/plot/lib/state/priority_state.dart`. Apply four small changes inside the existing `PriorityState` class.
 
-1. Factory constructor signature — add the named parameter (insert after `hideSubPriorities` near line 36):
+1. Factory constructor signature — add the named parameters (insert after `hideSubPriorities` near line 36):
 
 ```dart
     bool hideSubPriorities = true,
     bool unreadFilterActive = false,
+    bool unreadFilterPending = false,
   }) {
 ```
 
-And pass it through to the private constructor at the bottom of the factory body (after `hideSubPriorities: hideSubPriorities,`):
+And pass them through to the private constructor at the bottom of the factory body (after `hideSubPriorities: hideSubPriorities,`):
 
 ```dart
       hideSubPriorities: hideSubPriorities,
       unreadFilterActive: unreadFilterActive,
+      unreadFilterPending: unreadFilterPending,
     );
   }
 ```
 
-2. Private constructor — add the parameter (after `this.hideSubPriorities = true,`):
+2. Private constructor — add the parameters (after `this.hideSubPriorities = true,`):
 
 ```dart
     this.hideSubPriorities = true,
     this.unreadFilterActive = false,
+    this.unreadFilterPending = false,
   });
 ```
 
-3. Field declaration — add after the `hideSubPriorities` final field (around line 177):
+3. Field declarations — add after the `hideSubPriorities` final field (around line 177):
 
 ```dart
   final bool hideSubPriorities;
 
   /// True while the user has the unread-only filter toggled on for this
   /// priority's activity feed. In-memory only; resets when the bloc
-  /// recomputes the feed with zero unread items, or when the context
-  /// priority changes.
+  /// recomputes the feed with zero unread items (and no pending
+  /// notification arrival), or when the context priority changes.
   final bool unreadFilterActive;
+
+  /// True while the filter was activated by a multi-thread notification
+  /// tap and we are still waiting for unread items to surface (the
+  /// activity feed is loading, or local DB doesn't have them yet and
+  /// sync is in flight). Suppresses [unreadFilterActive] auto-off and
+  /// drives a centered spinner in the feed body. Cleared by the bloc
+  /// when the first emit with at least one unread item arrives or
+  /// after a 10-second timeout.
+  final bool unreadFilterPending;
 ```
 
 4. Getters — add immediately after `doneStart` / `doneEnd` (around line 181, before `agendaViewItems`):
@@ -343,11 +379,12 @@ And pass it through to the private constructor at the bottom of the factory body
   }
 ```
 
-5. `copyWith` — add the parameter (in the signature near line 1157):
+5. `copyWith` — add the parameters (in the signature near line 1157):
 
 ```dart
     bool? hideSubPriorities,
     bool? unreadFilterActive,
+    bool? unreadFilterPending,
   }) {
 ```
 
@@ -356,15 +393,17 @@ And in the body (after `hideSubPriorities: hideSubPriorities ?? this.hideSubPrio
 ```dart
       hideSubPriorities: hideSubPriorities ?? this.hideSubPriorities,
       unreadFilterActive: unreadFilterActive ?? this.unreadFilterActive,
+      unreadFilterPending: unreadFilterPending ?? this.unreadFilterPending,
     );
   }
 ```
 
-6. `props` — add `unreadFilterActive` at the end of the list (around line 1244):
+6. `props` — add both flags at the end of the list (around line 1244):
 
 ```dart
     hideSubPriorities,
     unreadFilterActive,
+    unreadFilterPending,
   ];
 ```
 
@@ -387,43 +426,119 @@ git commit -m "Add unread filter state and view-items getter to PriorityState"
 
 ---
 
-## Task 2: Add toggle method and auto-off invariant to `PriorityBloc`
+## Task 2: Add toggle / notification-activation methods and auto-off invariant to `PriorityBloc`
 
 **Files:**
 - Modify: `apps/plot/lib/state/priority.dart`
 
-- [ ] **Step 1: Add `toggleUnreadFilter` method to `PriorityBloc`**
+- [ ] **Step 1: Add a pending-timeout field on the bloc**
 
-Open `apps/plot/lib/state/priority.dart`. Find a stable insertion point near other public mutators (the file is ~3800 lines; any method that calls `emit(state.copyWith(...))` is fine — group with the section-toggle / scope-toggle methods near `_rebuildAgendaModel` if there's a natural cluster, otherwise insert directly above `_rebuildAgendaModel` at line 510):
+Open `apps/plot/lib/state/priority.dart`. Near the other private bloc fields (search for `Timer?` to find an existing pattern; otherwise add near the seed/threads field around line 501), add:
+
+```dart
+  /// Active timer that will clear `state.unreadFilterPending` if no
+  /// unread items arrive within the notification-activation window.
+  /// Started by [activateUnreadFilterFromNotification] and cancelled
+  /// by [_rebuildAgendaModel] (on first emit with unread items) or by
+  /// [close].
+  Timer? _unreadFilterPendingTimer;
+```
+
+If the file does not already import `dart:async`, add:
+
+```dart
+import 'dart:async';
+```
+
+- [ ] **Step 2: Add `toggleUnreadFilter` and `activateUnreadFilterFromNotification` methods**
+
+Insert directly above `_rebuildAgendaModel` (around line 510):
 
 ```dart
   /// Toggle the unread-only filter for the activity feed. No-op when
   /// there are no unread threads in the feed (the header button is
   /// already hidden in that case; the shortcut path falls through).
+  /// Also clears any pending notification-activation state so the
+  /// spinner does not linger after the user manually toggles off.
   void toggleUnreadFilter() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
     if (!state.hasUnreadInFeed) {
-      if (state.unreadFilterActive) {
-        emit(state.copyWith(unreadFilterActive: false));
+      if (state.unreadFilterActive || state.unreadFilterPending) {
+        emit(state.copyWith(
+          unreadFilterActive: false,
+          unreadFilterPending: false,
+        ));
       }
       return;
     }
-    emit(state.copyWith(unreadFilterActive: !state.unreadFilterActive));
+    emit(state.copyWith(
+      unreadFilterActive: !state.unreadFilterActive,
+      unreadFilterPending: false,
+    ));
+  }
+
+  /// Enable the unread filter as part of a multi-thread notification
+  /// tap. Also marks the filter "pending" so the feed shows a centered
+  /// spinner instead of an empty state while the activity feed loads
+  /// and any in-flight sync delivers unread items. The pending flag
+  /// auto-clears when [_rebuildAgendaModel] first sees unread items or
+  /// after 10 seconds, whichever comes first.
+  void activateUnreadFilterFromNotification() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = Timer(const Duration(seconds: 10), () {
+      if (isClosed) return;
+      if (!state.unreadFilterPending) return;
+      emit(state.copyWith(unreadFilterPending: false));
+    });
+    emit(state.copyWith(
+      unreadFilterActive: true,
+      unreadFilterPending: true,
+    ));
   }
 ```
 
-- [ ] **Step 2: Add auto-off enforcement inside `_rebuildAgendaModel`**
+- [ ] **Step 3: Cancel the timer in `close()`**
 
-In the same file, modify `_rebuildAgendaModel` (line 510). After the `AgendaBuilder.build(...)` call and before `emit(...)`, compute whether the recomputed feed still has any unread thread and force-off the filter when it doesn't.
-
-Replace the current emit block (lines 523-531) with:
+Find the bloc's `close()` override (search for `Future<void> close()`). Add a cancel before the `return super.close()`:
 
 ```dart
-    // Auto-off: if the recomputed feed has no unread threads, drop the
-    // filter so the user does not land on an empty filtered view next
-    // time they return to the priority. The header button hides in the
-    // same frame because [hasUnreadInFeed] is now false.
+  @override
+  Future<void> close() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
+    // ...existing teardown...
+    return super.close();
+  }
+```
+
+If the bloc does not already override `close()`, add the override in a sensible place (near other lifecycle methods). The full method:
+
+```dart
+  @override
+  Future<void> close() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
+    return super.close();
+  }
+```
+
+- [ ] **Step 4: Add auto-off enforcement (pending-aware) inside `_rebuildAgendaModel`**
+
+Modify `_rebuildAgendaModel` (line 510). After `AgendaBuilder.build(...)` and before `emit(...)`, replace the existing emit block (lines 523-531) with:
+
+```dart
+    // Decide whether to flip the filter off or clear the pending flag.
+    // - Auto-off: if the filter is active and the recomputed feed has
+    //   zero unread items AND we are NOT waiting for a notification
+    //   arrival, drop the filter so the user does not land on an empty
+    //   filtered view next time they return to the priority.
+    // - Clear pending: if pending is set and we now have unread items,
+    //   the spinner can come down and the timer is no longer needed.
     bool? unreadFilterOverride;
-    if (state.unreadFilterActive && activityFeedItems != null) {
+    bool? unreadFilterPendingOverride;
+    if (activityFeedItems != null &&
+        (state.unreadFilterActive || state.unreadFilterPending)) {
       bool anyUnread = false;
       for (final item in activityFeedItems) {
         if (item is AgendaThreadItem && item.thread.unread) {
@@ -431,7 +546,16 @@ Replace the current emit block (lines 523-531) with:
           break;
         }
       }
-      if (!anyUnread) unreadFilterOverride = false;
+      if (state.unreadFilterPending && anyUnread) {
+        unreadFilterPendingOverride = false;
+        _unreadFilterPendingTimer?.cancel();
+        _unreadFilterPendingTimer = null;
+      }
+      if (state.unreadFilterActive &&
+          !state.unreadFilterPending &&
+          !anyUnread) {
+        unreadFilterOverride = false;
+      }
     }
     emit(
       state.copyWith(
@@ -441,14 +565,18 @@ Replace the current emit block (lines 523-531) with:
         activityFeedItems: activityFeedItems,
         activityFeedNativesByDate: activityFeedNativesByDate,
         unreadFilterActive: unreadFilterOverride,
+        unreadFilterPending: unreadFilterPendingOverride,
       ),
     );
   }
 ```
 
-Note: `unreadFilterOverride` stays `null` (no change) when the filter is off or the feed isn't being recomputed in this emit; it goes to `false` only when auto-off triggers. `copyWith` interprets `null` as "keep current".
+Notes:
+- The `null` defaults of `unreadFilterOverride` and `unreadFilterPendingOverride` mean `copyWith` keeps the current value (no change).
+- Auto-off is suppressed while pending is true. That handles the notification window: even if the feed loads briefly with zero unread (e.g., sync delivers them in a second emit), the filter stays on.
+- Pending clears as soon as we see unread items, so subsequent reads from the filtered view trigger normal auto-off behavior.
 
-- [ ] **Step 3: Reset filter on context-priority change**
+- [ ] **Step 5: Reset filter and pending on context-priority change**
 
 Find the existing emit site that resets state when the priority context changes — the most obvious tell is `activityFeedItems: const [],` (search for that literal). The matching block is around line 1704:
 
@@ -456,30 +584,38 @@ Find the existing emit site that resets state when the priority context changes 
         activityFeedItems: const [],
 ```
 
-Add `unreadFilterActive: false,` immediately after that line so opening a new priority always starts with the filter off:
+Add the two flag resets immediately after that line so opening a new priority always starts with both flags clear, and cancel the timer:
 
 ```dart
         activityFeedItems: const [],
         unreadFilterActive: false,
+        unreadFilterPending: false,
 ```
 
-If the search reveals multiple matches that reset the feed on context change, add `unreadFilterActive: false,` to every one of them (search for `activityFeedItems: const [],` to find them all).
+Also cancel the timer earlier in the same context-switch path (right where the previous priority's state is torn down — adjacent to clearing other per-priority state):
 
-- [ ] **Step 4: Verify lint**
+```dart
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
+```
+
+If the search reveals multiple emit sites that reset the feed on context change, add the two flag resets to every one of them.
+
+- [ ] **Step 6: Verify lint**
 
 Run: `cd apps/plot && flutter analyze lib/state/priority.dart`
 Expected: no issues found.
 
-- [ ] **Step 5: Re-run state tests**
+- [ ] **Step 7: Re-run state tests**
 
 Run: `cd apps/plot && flutter test test/state/`
 Expected: all state-layer tests still pass (the unread-filter tests from Task 1 and any pre-existing tests).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add apps/plot/lib/state/priority.dart
-git commit -m "Add toggleUnreadFilter and auto-off invariant to PriorityBloc"
+git commit -m "Add unread filter bloc methods, pending state, and auto-off invariant"
 ```
 
 ---
@@ -612,14 +748,14 @@ git commit -m "Add ToggleUnreadFilter command"
 
 ---
 
-## Task 4: Render the filtered view in the activity feed
+## Task 4: Render the filtered view and drop the scroll-to-section listener
 
 **Files:**
 - Modify: `apps/plot/lib/page/priority.dart`
 
 - [ ] **Step 1: Switch the body builder to read from `activityFeedViewItems`**
 
-Open `apps/plot/lib/page/priority.dart`. Find `_buildBody` (line 874) and the immediately-following block (line 877):
+Open `apps/plot/lib/page/priority.dart`. Find `_buildBody` (line 824) and the immediately-following block (line 827):
 
 ```dart
         final items = state.activityFeedItems;
@@ -633,20 +769,24 @@ Replace with:
 
 This is the only feed-render read site that needs the filtered view; the others (lines 380, 398, 454) are navigation helpers that walk the full feed to find the next/previous thread, and they should keep operating on `state.activityFeedItems` so up/down navigation does not change semantics when the filter is on.
 
-- [ ] **Step 2: Make the notification-scroll listener tolerate the filter**
+- [ ] **Step 2: Remove the scroll-to-section `BlocListener`**
 
-Find the `BlocListener<PriorityBloc, PriorityState>` near line 814 (`PendingNotificationScroll`). Its `listenWhen` compares `previous.activityFeedItems != current.activityFeedItems`. That's fine — the notification scroll always targets the unfiltered feed. No change needed in that listener. (Documenting here so the implementer doesn't second-guess.)
+Find the `BlocListener<PriorityBloc, PriorityState>` that consumes `PendingNotificationScroll.section` (around line 760, with the comment "When a multi-thread notification opened this priority, scroll the activity feed so the 'New' header lands at the top once items load."). Delete the entire `BlocListener` block (the whole `BlocListener<PriorityBloc, PriorityState>( listenWhen: ..., listener: ..., )` and the leading comment), including the trailing comma that separates it from the next listener.
+
+After deletion, the surrounding `MultiBlocListener.listeners` list still contains the other listeners (e.g. the `BlocListener<NowBloc, NowState>` that mirrors `currentEvent`). Make sure the list still parses cleanly — drop the dangling comma if the removed block was the last listener.
+
+The new multi-thread notification behavior (open with filter on, show spinner) is added in Tasks 7 and 8.
 
 - [ ] **Step 3: Verify lint**
 
 Run: `cd apps/plot && flutter analyze lib/page/priority.dart`
-Expected: no issues found.
+Expected: no issues found. (Unused import for `ActivitySectionMarker` or `PendingNotificationScroll` may now be reported — remove them if so.)
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add apps/plot/lib/page/priority.dart
-git commit -m "Render activity feed from activityFeedViewItems"
+git commit -m "Render activity feed from view items; drop notification scroll-to-section"
 ```
 
 ---
@@ -796,7 +936,206 @@ git commit -m "Bind unread filter shortcut into priority command list"
 
 ---
 
-## Task 7: End-to-end verification
+## Task 7: Replace `PendingNotificationScroll` with `PendingActivityFeedView`
+
+**Files:**
+- Modify: `apps/plot/lib/state/activity_section.dart`
+- Modify: `apps/plot/lib/page/notification_landing.dart`
+
+Goal: change the cross-component signal that the notification-tap flow leaves behind. Today it asks the priority page to scroll to a section. After this task it asks the priority page to enable the unread filter.
+
+- [ ] **Step 1: Replace the static-flag class**
+
+Open `apps/plot/lib/state/activity_section.dart`. Replace the existing `PendingNotificationScroll` class (lines 3-12, including its doc comment) with:
+
+```dart
+/// Cross-component signal: when the user taps a multi-thread
+/// notification, [NotificationLandingPage] sets this to true. The
+/// matching priority page consumes it on mount, calls
+/// `PriorityBloc.activateUnreadFilterFromNotification()`, and clears
+/// the flag. Single-thread notifications still route through
+/// `ThreadLookupRoute` and never touch this signal.
+class PendingActivityFeedView {
+  static bool openUnreadFilter = false;
+}
+```
+
+The old `PendingNotificationScroll` had a single field (`static ActivitySection? section`) consumed only by the `BlocListener` removed in Task 4 and written only by `NotificationLandingPage` (rewritten in Step 2 below). It has no remaining consumers, so the rename is safe.
+
+- [ ] **Step 2: Update `NotificationLandingPage` to set the new flag**
+
+Open `apps/plot/lib/page/notification_landing.dart`. Find the line (around 79):
+
+```dart
+    PendingNotificationScroll.section = ActivitySection.newSection;
+```
+
+Replace with:
+
+```dart
+    PendingActivityFeedView.openUnreadFilter = true;
+```
+
+Also, if `import 'package:plot/state/activity_section.dart';` is the only thing pulling in `ActivitySection`, the import line itself stays (the new class lives in the same file). If the file has an explicit `ActivitySection` reference that is now unused, remove it.
+
+- [ ] **Step 3: Verify lint**
+
+Run: `cd apps/plot && flutter analyze lib/state/activity_section.dart lib/page/notification_landing.dart`
+Expected: no issues found.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/plot/lib/state/activity_section.dart apps/plot/lib/page/notification_landing.dart
+git commit -m "Replace PendingNotificationScroll with PendingActivityFeedView signal"
+```
+
+---
+
+## Task 8: Consume the notification signal on the priority page
+
+**Files:**
+- Modify: `apps/plot/lib/page/priority.dart`
+
+Goal: when the priority page mounts (or rebinds to a different priority) with `PendingActivityFeedView.openUnreadFilter` set, call `bloc.activateUnreadFilterFromNotification()` exactly once and clear the flag.
+
+- [ ] **Step 1: Locate the priority page's `initState`**
+
+Open `apps/plot/lib/page/priority.dart`. Find the state class for the priority page (search for `class _PriorityPageState` or `extends State<PriorityPage>`) and its `initState` override. The route key includes the priority id, so a fresh `_PriorityPageState` is created per priority navigation — `initState` is the right hook for a one-shot post-mount action.
+
+- [ ] **Step 2: Add a post-frame consumer of the notification flag**
+
+In `_PriorityPageState.initState`, immediately after `super.initState();` (and after any other existing setup that does not depend on context), append:
+
+```dart
+    // One-shot: when the user lands on this priority from a
+    // multi-thread notification tap, [NotificationLandingPage] leaves
+    // `PendingActivityFeedView.openUnreadFilter` set. Consume and
+    // clear the flag in a post-frame callback so `PriorityBloc` is
+    // already available via context.read.
+    if (PendingActivityFeedView.openUnreadFilter) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!PendingActivityFeedView.openUnreadFilter) return;
+        PendingActivityFeedView.openUnreadFilter = false;
+        context
+            .read<PriorityBloc>()
+            .activateUnreadFilterFromNotification();
+      });
+    }
+```
+
+The mounted/flag double-check makes the call idempotent in case the post-frame callback fires after a fast nav-away.
+
+- [ ] **Step 3: Verify the import**
+
+If `PendingActivityFeedView` is not already accessible, add to the imports at the top of `priority.dart`:
+
+```dart
+import 'package:plot/state/activity_section.dart';
+```
+
+(The file likely already imports it for `ActivitySection`/`ActivitySectionMarker` — if so, no change needed.)
+
+- [ ] **Step 4: Verify lint**
+
+Run: `cd apps/plot && flutter analyze lib/page/priority.dart`
+Expected: no issues found.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/plot/lib/page/priority.dart
+git commit -m "Activate unread filter on priority page after notification tap"
+```
+
+---
+
+## Task 9: Show a loading spinner while the filter is pending
+
+**Files:**
+- Modify: `apps/plot/lib/page/priority.dart`
+
+Goal: when `unreadFilterActive == true` and the filtered view is empty, show a centered `Spinner` instead of the empty-state text — but only while we are still loading or waiting for the notification-driven sync to deliver unread items. The auto-off invariant from Task 2 ensures the empty-and-not-pending state is rare; this is the safety net for the notification window.
+
+- [ ] **Step 1: Import the `Spinner` widget**
+
+In `apps/plot/lib/page/priority.dart`, add (if not already present):
+
+```dart
+import 'package:plot/widget/spinner.dart';
+```
+
+- [ ] **Step 2: Add the spinner branch to the empty-state block**
+
+Find the empty-state branch around line 1073 (begins with `final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;`). The current block is:
+
+```dart
+    final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+    if (!hasAnyThread &&
+        !showFooter &&
+        state.activityFeedDoneEnd &&
+        state.activityFeedLoaded) {
+      final isFiltering =
+          state.filter.isNotEmpty || state.iconFilter.isNotEmpty;
+      final String emptyMessage;
+      // ...
+      return Padding(
+        // ...empty-text rendering...
+      );
+    }
+```
+
+Before that block, insert a higher-priority branch that renders the spinner when the filter is active and we are still waiting for items:
+
+```dart
+    final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+
+    // Filter on, view empty, and still waiting: either the activity
+    // feed has not finished its initial load, or we are inside the
+    // notification-activation window waiting for sync to deliver
+    // unread items. Show a centered spinner instead of the empty
+    // state so the user understands the screen is not frozen.
+    if (!hasAnyThread &&
+        !showFooter &&
+        state.unreadFilterActive &&
+        (state.unreadFilterPending || !state.activityFeedLoaded)) {
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.contentPaddingH,
+          vertical: context.theme.spacing.xl,
+        ),
+        child: Center(
+          child: Spinner.message('Loading unread threads'),
+        ),
+      );
+    }
+
+    if (!hasAnyThread &&
+        !showFooter &&
+        state.activityFeedDoneEnd &&
+        state.activityFeedLoaded) {
+      // ...existing empty-state branch unchanged...
+    }
+```
+
+(Leave the existing empty-state block exactly as it is below — the new branch only runs when the conditions above match; otherwise control flows to the original branch.)
+
+- [ ] **Step 3: Verify lint**
+
+Run: `cd apps/plot && flutter analyze lib/page/priority.dart`
+Expected: no issues found.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/plot/lib/page/priority.dart
+git commit -m "Show spinner when unread filter is pending or feed is loading"
+```
+
+---
+
+## Task 10: End-to-end verification
 
 **Files:** none (manual + repo-wide check).
 
@@ -829,6 +1168,19 @@ In the running app (hot reload is on per project conventions):
    - Verify: toggle activates exactly as the button does, even without leaving the editor.
 7. Open a priority with **no** unread threads.
    - Verify: no envelope button appears, and the shortcut is a no-op.
+8. Single-thread notification:
+   - Trigger or simulate a notification that targets exactly one thread (the existing `ThreadLookupRoute` path).
+   - Verify: behavior is unchanged — the app opens directly on the thread.
+9. Multi-thread notification (happy path):
+   - Run `TestNotificationNavigation` from the debug commands (or wait for a real batch notification) targeting a priority with multiple unread threads.
+   - Verify: the priority opens with the unread filter on (envelope button is selected) and unread threads are visible under their section headers.
+10. Multi-thread notification (slow-sync path):
+    - Simulate a slow data path by toggling network briefly, or by tapping a multi-thread notification immediately after sign-in when the local DB is sparse.
+    - Verify: the activity feed body shows a centered "Loading unread threads" spinner while the page is empty and pending.
+    - Verify: as soon as the unread items arrive, the spinner is replaced by the filtered list and the spinner does not flash back.
+11. Multi-thread notification (10-second fallback):
+    - Force the unread items to never arrive (e.g., revoke network completely after the priority page mounts but before sync delivers).
+    - Verify: after roughly 10 seconds the pending state clears and the spinner disappears. The filter remains on but the priority shows the "No unread threads" auto-off path (filter turns itself off on the next bloc emit with zero unread).
 
 - [ ] **Step 4: Commit any cleanup**
 
@@ -844,13 +1196,14 @@ If no cleanup is needed, skip this step.
 - [ ] **Step 5: Update docs**
 
 Per `AGENTS.md`:
-- Add a one-line user-facing bullet to the top section of `docs/updates.md`:
+- Add two user-facing bullets to the top section of `docs/updates.md`:
 
 ```markdown
 - Quickly see only unread threads in a priority by toggling the new envelope button (or pressing ⌘⇧U / Ctrl+Shift+U) in the priority header.
+- Tapping a notification that covers multiple threads now opens the priority with the unread filter on, so you land directly on what's new.
 ```
 
-- Add a corresponding mention under the appropriate section of `docs/features.md` (look for the "Priorities" or "Activity feed" subsection — add a short bullet describing the unread filter capability).
+- Add a corresponding mention under the appropriate section of `docs/features.md` (look for the "Priorities" or "Activity feed" subsection — add a short bullet describing the unread filter capability, and note the notification-tap behavior alongside any existing notification description).
 
 Commit:
 
