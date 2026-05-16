@@ -32,6 +32,11 @@ class RootPage extends StatelessWidget {
         if (!layoutState.multiPanel) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!context.mounted) return;
+            // Skip if we've already navigated past the root path. Without
+            // this, a queued post-frame from a stale NowBloc emit can fire
+            // after the user has moved on, replaceAll-ing the stack and
+            // wiping out their open thread.
+            if (context.router.currentPath != '/') return;
             context.router.replaceAll([const AgendaRoute()]);
           });
           return const LoadingPage();
@@ -42,6 +47,14 @@ class RootPage extends StatelessWidget {
             final top = nowState.priority;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!context.mounted) return;
+              // Skip if we've already navigated past the root path. Multiple
+              // NowBloc emissions during cold-start queue multiple post-frame
+              // replaceAlls; the first lands us on /p/<id>/new and any later
+              // ones would re-resolve the inner stack to [NewThreadRoute],
+              // popping a ThreadRoute the user just opened. `context.mounted`
+              // alone isn't enough — Element teardown lags one frame behind
+              // the router state change.
+              if (context.router.currentPath != '/') return;
               // BlocBuilder already gated on multiPanel == true above, so
               // always land with NewThreadRoute in the right panel.
               context.router.replaceAll([

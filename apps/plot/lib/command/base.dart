@@ -358,7 +358,13 @@ extension BuildContextCommandExtension on BuildContext {
 }
 
 abstract class CommandGroup {
-  CommandGroup({this.title, this.subtitle, this.infoBuilder, this.shortcut, this.onActivate});
+  CommandGroup({
+    this.title,
+    this.subtitle,
+    this.infoBuilder,
+    this.shortcut,
+    this.onActivate,
+  });
 
   final String? title;
   final String? subtitle; // count
@@ -445,7 +451,11 @@ class Commands {
 
   Future<CommandReturn> show(BuildContext context, {bool? showFilter}) async {
     try {
-      return await CommandModal(this, rootContext: context, showFilter: showFilter).run(context);
+      return await CommandModal(
+        this,
+        rootContext: context,
+        showFilter: showFilter,
+      ).run(context);
     } on Error catch (e, t) {
       log.warning('Error running command bar', e, t);
       rethrow;
