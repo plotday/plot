@@ -31,7 +31,19 @@ class User extends Equatable {
 }
 
 class Base {
+  /// The Clerk-backed [AuthService]. Only valid after [awaitAuthReady] resolves
+  /// — on warm starts [init] returns before Clerk has finished initializing so
+  /// callers that touch this directly (UI sign-in flow, [AutoSignIn]) must
+  /// await readiness first. Token-fetching paths route through
+  /// [getSessionTokenWithReason] which gates internally.
   static AuthService get auth => Injector.appInstance.get<Base>()._auth;
+
+  /// Completes once Clerk has finished initializing and [_auth] is assigned.
+  /// On warm starts (returning user with restored local identity) [init]
+  /// returns before this resolves so the app can open Drift in parallel.
+  static Future<void> awaitAuthReady() =>
+      Injector.appInstance.get<Base>()._authReadyCompleter.future;
+
   static Stream<User?> get user =>
       Injector.appInstance.get<Base>()._currentUserController.stream;
   static bool get signedIn => Injector.appInstance.get<Base>()._userId != null;
@@ -82,6 +94,9 @@ class Base {
     }
     _tokenFetchInFlight = Completer<TokenResult>();
     try {
+      // Warm-start path: [init] returns before Clerk finishes initializing,
+      // so wait for [_auth] to be assigned before touching it.
+      await Injector.appInstance.get<Base>()._authReadyCompleter.future;
       final result = await auth.getSessionTokenWithReason(
         forceRefresh: forceRefresh,
       );
@@ -148,7 +163,48 @@ class Base {
   static Future<void> init() async {
     log.info("Initializing Clerk auth");
 
-    // Step 1: Create auth service (may fail if Clerk is down)
+    // Register Base immediately so identity-restoration can emit on the user
+    // stream. _auth is late-assigned inside _initAuthService() once Clerk
+    // finishes initializing.
+    final base = Base._();
+    Injector.appInstance.registerSingleton<Base>(() => base);
+
+    // Restore identity from local storage first — no network or Clerk call
+    // needed. For returning users this emits a User on the BehaviorSubject
+    // immediately so UserBloc can open the Drift DB (Store.start) in parallel
+    // with Clerk initialization.
+    try {
+      await base._restoreIdentity();
+    } catch (e, stack) {
+      log.warning("Failed to restore identity from local storage", e, stack);
+    }
+
+    final localIdentityIncomplete =
+        base._userId != null && base._actorId == null;
+    final hasRestoredIdentity =
+        base._currentUserController.valueOrNull != null &&
+        !localIdentityIncomplete;
+
+    if (hasRestoredIdentity) {
+      // Warm start: Clerk runs in the background. Token-using paths
+      // (getSessionTokenWithReason) await _authReadyCompleter; the UI never
+      // touches Base.auth before UserBloc emits UserReady, by which point
+      // /activate-validated identity has typically resolved.
+      unawaited(base._initAuthService());
+      log.info("Clerk init running in parallel with Drift open");
+    } else {
+      // Cold start, signed-out, or pre-contact-id local identity: must
+      // finish Clerk init before returning so the sign-in UI or
+      // resolveIdentity can run synchronously.
+      await base._initAuthService();
+    }
+  }
+
+  /// Creates the Clerk auth service, wires its session-invalidation stream,
+  /// resolves/validates identity, and unblocks token-fetch callers via
+  /// [_authReadyCompleter]. Called by [init] — synchronously on cold starts,
+  /// in the background on warm starts so Drift can open in parallel.
+  Future<void> _initAuthService() async {
     AuthService authService;
     try {
       authService = await createAuthService(
@@ -160,9 +216,12 @@ class Base {
       authService = FailedAuthService();
     }
 
-    // Step 2: Always register Base so the app can proceed
-    final base = Base._(authService);
-    Injector.appInstance.registerSingleton<Base>(() => base);
+    _auth = authService;
+    // Unblock token-fetch callers as soon as _auth is assignable. The
+    // identity-resolution paths below themselves call into the API (via
+    // resolveIdentity → /activate → getSessionTokenWithReason), which would
+    // deadlock if we held the completer until they finished.
+    _authReadyCompleter.complete();
 
     // Listen for asynchronous Clerk session-invalidation signals (e.g. the
     // background token poller surfacing `authentication_invalid`). Without
@@ -170,20 +229,17 @@ class Base {
     // user gets stuck with a dead session until they manually sign out.
     authService.sessionInvalidatedStream.listen((_) {
       log.warning('Clerk reported session invalid via error stream');
-      handleTokenResult((
+      Base.handleTokenResult((
         token: null,
         failure: TokenFailureReason.sessionInvalid,
       ));
     });
 
-    // Step 3: Try to restore identity from local storage (no network needed)
-    try {
-      await base._restoreIdentity();
-    } catch (e, stack) {
-      log.warning("Failed to restore identity from local storage", e, stack);
-    }
+    final localIdentityIncomplete = _userId != null && _actorId == null;
+    final hasRestoredIdentity =
+        _currentUserController.valueOrNull != null && !localIdentityIncomplete;
 
-    // Step 4: When Clerk has a session, validate identity with the server.
+    // When Clerk has a session, validate identity with the server.
     // - If we couldn't restore local identity (first sign-in) or it's
     //   incomplete (userId present but contactId/actorId missing — e.g.
     //   pre-contact-id app versions): block on /activate, sign out of
@@ -194,11 +250,6 @@ class Base {
     //   resulting User emission triggers Store rebuild in UserBloc. Failures
     //   are non-fatal — the user keeps working with restored data.
     // Skip entirely when using FailedAuthService (no session possible).
-    final localIdentityIncomplete =
-        base._userId != null && base._actorId == null;
-    final hasRestoredIdentity =
-        base._currentUserController.valueOrNull != null &&
-        !localIdentityIncomplete;
     if (authService is! FailedAuthService && authService.isSignedIn) {
       if (!hasRestoredIdentity) {
         log.info(
@@ -222,14 +273,14 @@ class Base {
         }
       } else {
         log.info('Validating restored identity with /activate in background');
-        unawaited(_validateRestoredIdentity());
+        unawaited(Base._validateRestoredIdentity());
       }
     }
 
-    // Step 5: Ensure the user stream always emits so the UI can proceed
-    if (!base._currentUserController.hasValue) {
+    // Ensure the user stream always emits so the UI can proceed.
+    if (!_currentUserController.hasValue) {
       log.info('No identity available, emitting signed-out state');
-      base._currentUserController.add(null);
+      _currentUserController.add(null);
     }
 
     log.info("Clerk auth ready");
@@ -398,9 +449,10 @@ class Base {
     await base._auth.signOut();
   }
 
-  Base._(this._auth);
+  Base._();
 
-  final AuthService _auth;
+  late final AuthService _auth;
+  final Completer<void> _authReadyCompleter = Completer<void>();
   Uuid? _userId;
   ActorId? _actorId;
   DateTime? _signInTime;

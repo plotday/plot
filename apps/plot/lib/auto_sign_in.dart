@@ -35,6 +35,11 @@ class AutoSignIn {
 
     _log.info('Auto sign-in requested for user: $targetUser');
 
+    // Base.init may have returned before Clerk finished initializing (warm
+    // start path). Any branch below that calls Base.signOut() or
+    // Base.auth.attemptSignIn() needs the auth service to be ready.
+    await Base.awaitAuthReady();
+
     try {
       // Check current user
       final isSignedIn = Base.signedIn;
