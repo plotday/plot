@@ -13,7 +13,8 @@ final Logger _log = Logger('plot.page.notification_landing');
 /// Landing page for a multi-thread notification tap. Shows a [LoadingPage]
 /// while it prefetches any of the notification's thread rows that aren't
 /// yet local, then replaces the stack with the LCA priority's activity
-/// feed (scrolled to the "New" section).
+/// feed and signals (via [PendingActivityFeedView.openUnreadFilter]) that
+/// the priority should open with the unread filter on.
 ///
 /// Used only by the notification-tap flow. The single-thread case still
 /// goes through [ThreadLookupRoute].
@@ -76,7 +77,7 @@ class _NotificationLandingPageState extends State<NotificationLandingPage> {
     }
 
     if (!mounted) return;
-    PendingNotificationScroll.section = ActivitySection.newSection;
+    PendingActivityFeedView.openUnreadFilter = true;
     final multi = context.read<LayoutBloc>().state.multiPanel;
     context.router.replaceAll([
       PriorityRoute(
