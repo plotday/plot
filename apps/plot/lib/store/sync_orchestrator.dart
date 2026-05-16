@@ -19,6 +19,14 @@ class SyncOrchestrator {
   final Map<SyncEntity, Completer<bool>> _pushCompleters = {};
   final Map<SyncEntity, Completer<void>> _pullCompleters = {};
 
+  // True while [syncAll] is running. Keeps completed [_pushCompleters]
+  // entries in the map across push levels so the recursive dep-walk
+  // inside each entity's push doesn't re-push every parent in every
+  // level — without this flag, the per-call `finally` clears the
+  // completer between levels and `push(priority)` runs once per
+  // descendant level. Cleared by syncAll's own finally.
+  bool _syncAllInProgress = false;
+
   // Entities marked dirty during an in-flight pull. After the in-flight pull
   // completes, each dirty entity is pulled again so updates that arrived
   // mid-pull aren't deferred until the next broadcast cycle.
@@ -211,37 +219,49 @@ class SyncOrchestrator {
     // Wait out 429 cooldown if active
     await _waitForRateLimitCooldown();
 
-    _syncOrchestratorLog.info('Starting syncAll: pull all → push all');
+    final sw = Stopwatch()..start();
+    _syncOrchestratorLog.info('syncAll: start (pull → push)');
 
-    // Phase 1: Pull all (parents → children)
-    final pullLevels = _computePullLevels();
-    _syncOrchestratorLog.fine(
-      'Pull levels: ${pullLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
-    );
+    // Mark the syncAll window so push() preserves completers across
+    // levels (see field doc). Clear any stale state from a previously
+    // aborted run, then ensure the cleanup runs even if a phase throws.
+    _syncAllInProgress = true;
+    _pushCompleters.clear();
 
-    for (var i = 0; i < pullLevels.length; i++) {
-      final level = pullLevels[i];
-      _syncOrchestratorLog.fine(
-        'Pulling level $i: ${level.map((e) => e.debugName).toList()}',
+    try {
+      // Phase 1: Pull all (parents → children)
+      final pullLevels = _computePullLevels();
+      for (var i = 0; i < pullLevels.length; i++) {
+        final level = pullLevels[i];
+        final levelSw = Stopwatch()..start();
+        await _executePullLevel(level);
+        _syncOrchestratorLog.info(
+          'syncAll: pull L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
+          '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
+        );
+      }
+      final pullTotalMs = sw.elapsedMilliseconds;
+
+      // Phase 2: Push all (children → parents)
+      final pushLevels = _computePushLevels();
+      for (var i = 0; i < pushLevels.length; i++) {
+        final level = pushLevels[i];
+        final levelSw = Stopwatch()..start();
+        await _executePushLevel(level);
+        _syncOrchestratorLog.info(
+          'syncAll: push L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
+          '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
+        );
+      }
+
+      _syncOrchestratorLog.info(
+        'syncAll: complete ${sw.elapsedMilliseconds}ms '
+        '(pull ${pullTotalMs}ms, push ${sw.elapsedMilliseconds - pullTotalMs}ms)',
       );
-      await _executePullLevel(level);
+    } finally {
+      _syncAllInProgress = false;
+      _pushCompleters.clear();
     }
-
-    // Phase 2: Push all (children → parents)
-    final pushLevels = _computePushLevels();
-    _syncOrchestratorLog.fine(
-      'Push levels: ${pushLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
-    );
-
-    for (var i = 0; i < pushLevels.length; i++) {
-      final level = pushLevels[i];
-      _syncOrchestratorLog.fine(
-        'Pushing level $i: ${level.map((e) => e.debugName).toList()}',
-      );
-      await _executePushLevel(level);
-    }
-
-    _syncOrchestratorLog.info('Completed syncAll');
   }
 
   /// Performs minimal sync for first-time users.
@@ -360,6 +380,7 @@ class SyncOrchestrator {
 
     final completer = Completer<bool>();
     _pushCompleters[entity] = completer;
+    final sw = Stopwatch()..start();
 
     try {
       // Abort if the Store has been closed/removed during an async gap
@@ -376,6 +397,7 @@ class SyncOrchestrator {
         // Recursively push each dependency (will use existing completer if already in progress)
         await push(dep);
       }
+      final depsMs = sw.elapsedMilliseconds;
 
       // Re-check after awaiting dependencies — Store may have closed
       if (!Store.isAvailable) {
@@ -383,10 +405,11 @@ class SyncOrchestrator {
         return false;
       }
 
-      _syncOrchestratorLog.fine('Pushing ${entity.debugName}');
       final success = await entity.pushFn();
-      _syncOrchestratorLog.fine(
-        'Push ${entity.debugName}: ${success ? 'success' : 'failed'}',
+      _syncOrchestratorLog.info(
+        'push ${entity.debugName}: ${sw.elapsedMilliseconds}ms '
+        '(deps ${depsMs}ms, self ${sw.elapsedMilliseconds - depsMs}ms, '
+        '${success ? 'ok' : 'failed'})',
       );
       completer.complete(success);
       return success;
@@ -416,7 +439,13 @@ class SyncOrchestrator {
       }
       return false;
     } finally {
-      _pushCompleters.remove(entity);
+      // During [syncAll], leave the completer in place so dep-walks in
+      // later levels reuse the result (the recursive `push(dep)` chain
+      // would otherwise re-push every parent in every level). Cleared by
+      // syncAll's own finally.
+      if (!_syncAllInProgress) {
+        _pushCompleters.remove(entity);
+      }
     }
   }
 
@@ -438,14 +467,16 @@ class SyncOrchestrator {
 
     final completer = Completer<void>();
     _pullCompleters[entity] = completer;
+    final sw = Stopwatch()..start();
 
     try {
       // Abort if the Store has been closed/removed during an async gap
       if (!Store.isAvailable) return;
 
-      _syncOrchestratorLog.fine('Pulling ${entity.debugName}');
       await entity.pullFn();
-      _syncOrchestratorLog.fine('Pulled ${entity.debugName}');
+      _syncOrchestratorLog.info(
+        'pull ${entity.debugName}: ${sw.elapsedMilliseconds}ms',
+      );
       completer.complete();
     } catch (e, stackTrace) {
       _trackRateLimitIfNeeded(e);

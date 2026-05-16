@@ -972,20 +972,27 @@ class Store extends _$Store {
     // Start new push
     final completer = Completer<bool>();
     _pushCompleters[entity] = completer;
+    final sw = Stopwatch()..start();
 
     try {
       // First fetch rows with pending changes and mark them as sync-in-progress.
       // Exclude draft rows and rows belonging to draft threads — they shouldn't
       // be pushed until published.
       final draftFilter = _buildDraftFilter(table);
+      final claimSw = Stopwatch()..start();
       final List<QueryRow> pendingRows = await customWriteReturning(
         'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL$draftFilter RETURNING *',
         updates: {table},
       );
+      final claimMs = claimSw.elapsedMilliseconds;
 
       var success = false;
       if (pendingRows.isEmpty) {
         success = true;
+        log.info(
+          'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+          '(claim ${claimMs}ms, no pending rows)',
+        );
       } else {
         final pendingIds = pendingRows
             .map((r) => _rowIdString(r.data['id']))
@@ -1123,6 +1130,12 @@ class Store extends _$Store {
             }
           }
         }
+
+        log.info(
+          'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+          '(claim ${claimMs}ms, rows ${pendingRows.length}, '
+          '${success ? "ok" : "failed"})',
+        );
       }
 
       completer.complete(success);
@@ -1225,10 +1238,16 @@ class Store extends _$Store {
     bool initial = false,
   }) async {
     final entity = baseTable.fullName;
+    final sw = Stopwatch()..start();
+    var httpMs = 0;
+    var dbMs = 0;
+    var pages = 0;
 
+    final syncStateSw = Stopwatch()..start();
     final syncState = await (select(
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
+    dbMs += syncStateSw.elapsedMilliseconds;
 
     // Initial pull: skip if a horizon (or legacy pulledAt) already exists.
     final initialized =
@@ -1252,6 +1271,8 @@ class Store extends _$Store {
     var more = false;
 
     do {
+      pages++;
+      final httpSw = Stopwatch()..start();
       var (
         baseRows,
         _,
@@ -1266,6 +1287,7 @@ class Store extends _$Store {
         pageId: pageId,
         initial: initial,
       );
+      httpMs += httpSw.elapsedMilliseconds;
       more = batchMore;
       if (nextPage != null) {
         pageSeq = nextPage.seq;
@@ -1295,6 +1317,7 @@ class Store extends _$Store {
         }
       });
 
+      final writeSw = Stopwatch()..start();
       // Allow base table to merge with local pending state
       final processedRows = await baseTable.processPulledRows(this, storeRows);
 
@@ -1312,6 +1335,7 @@ class Store extends _$Store {
           batch.insertAll(table, processedRows, mode: InsertMode.insertOrReplace);
         });
       }
+      dbMs += writeSw.elapsedMilliseconds;
 
       totalRows += baseRows.length;
     } while (more);
@@ -1326,6 +1350,7 @@ class Store extends _$Store {
     final shouldStamp =
         finalHorizon != null ||
         (initial && baseTable.filterName == null);
+    var stamped = false;
     if (shouldStamp) {
       final horizonInt = finalHorizon != null
           ? int.tryParse(finalHorizon)
@@ -1340,6 +1365,7 @@ class Store extends _$Store {
           horizonInt != null && horizonInt == syncState?.lastHorizon;
       final alreadyInitialized = syncState?.pulledAt != null;
       if (!cursorUnchanged || !alreadyInitialized) {
+        final stampSw = Stopwatch()..start();
         final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
         await into(syncStates).insert(
           SyncStatesCompanion.insert(
@@ -1362,8 +1388,16 @@ class Store extends _$Store {
             ),
           ),
         );
+        dbMs += stampSw.elapsedMilliseconds;
+        stamped = true;
       }
     }
+
+    log.info(
+      'Store.pull ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+      '(http ${httpMs}ms, db ${dbMs}ms, pages $pages, rows $totalRows'
+      '${stamped ? ", stamped" : ""})',
+    );
 
     // No caller reads pull()'s return value (all callsites await without
     // assigning), so skip the trailing `sync_states` re-read that this
@@ -2258,7 +2292,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 330;
+  int get schemaVersion => 331;
 
   @override
   MigrationStrategy get migration {
@@ -3292,6 +3326,14 @@ class Store extends _$Store {
         "  AND (duration % 60 <> 0 OR duration <= 300)",
       );
     }
+    if (from < 331) {
+      // Schema bump exists only to trigger _createPerfIndexes below,
+      // which now includes partial indices on `pending IS NOT NULL` for
+      // every pushed table. The push claim query
+      // (`UPDATE … pending IS NOT NULL RETURNING *`) was full-scanning
+      // these tables on every push attempt — measured 800–1100ms on
+      // links and thread_tags during syncAll. No data migration here.
+    }
   }
 
   /// Foreign-key indexes used by the activity-feed and search queries.
@@ -3334,6 +3376,35 @@ class Store extends _$Store {
     await db.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_priorities_path ON priorities(path)',
     );
+
+    // Partial indices on `pending` for every pushed table. The push
+    // claim query is a `UPDATE … SET pending = pending | 1 WHERE
+    // pending IS NOT NULL … RETURNING *` issued once per entity per
+    // syncAll. Most rows have `pending = NULL` (never edited locally,
+    // or already cleared on push success), so a tiny partial index
+    // (only non-null rows are present) lets SQLite skip the table scan
+    // entirely. Measured ~800–1100ms claim times on links and
+    // thread_tags on populated workspaces — partial indices drop that
+    // to single-digit ms when nothing is pending.
+    const pushedTables = [
+      'priorities',
+      'twist_instances',
+      'threads',
+      'schedules',
+      'links',
+      'thread_tags',
+      'thread_associations',
+      'sessions',
+      'notes',
+      'note_tags',
+      'priority_blocks',
+    ];
+    for (final t in pushedTables) {
+      await db.customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_${t}_pending '
+        'ON $t(pending) WHERE pending IS NOT NULL',
+      );
+    }
   }
 
   /// Runs a SQL statement, ignoring "duplicate column" and "already exists" errors.
