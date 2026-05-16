@@ -3329,6 +3329,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     final suffix = archived ? '_archived' : '';
     final entityName = 'activity-feed:$path$suffix';
 
+    // True when the loop exits because the sync boundary now covers the
+    // last locally-visible item — i.e. we've pulled everything the feed
+    // can show, even though the server may still have more older items.
+    // Tracked across iterations so the post-loop guard can use it.
+    var syncedPastLastItem = false;
+
     // Fetch-more loop: pull pages until we have enough local items AND the
     // sync boundary covers the last visible item's date, or server has no more.
     for (var i = 0; i < 10; i++) {
@@ -3363,7 +3369,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       final lastItemDate = localThreads.isNotEmpty
           ? localThreads.last.activityAt
           : null;
-      final syncedPastLastItem =
+      syncedPastLastItem =
           syncBoundary != null &&
           lastItemDate != null &&
           !syncBoundary.isAfter(lastItemDate);
@@ -3373,7 +3379,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     if (isClosed) return;
-    if (_activityFeedSyncNoMore &&
+    // "Caught up" can mean either: server says no more (`_activityFeedSyncNoMore`),
+    // OR the sync boundary now covers our last visible item so anything still
+    // unpulled is outside the LIMIT window anyway (`syncedPastLastItem`). In
+    // both cases the trailing "loading more" spinner should stop spinning,
+    // otherwise it spins forever (the only other path to `doneEnd: true` is a
+    // subsequent stream emission whose `_activityFeedSig` differs — which
+    // never happens once the visible window has stabilised).
+    final caughtUp = _activityFeedSyncNoMore || syncedPastLastItem;
+    if (caughtUp &&
         _activityFeedLastRawRowCount < _activityFeedLimit) {
       // Also write the instance var so the next [_rebuildActivityFeedSections]
       // (which emits `activityFeedDoneEnd: _activityFeedDoneEnd`) preserves
