@@ -446,13 +446,16 @@ class _ModalProviderState extends State<ModalProvider> {
     // For absent values, use completeAbsent() to avoid type mismatches
     if (!result.present) {
       stackItem.completeAbsent();
+    } else if (stackItem is _ModalStackItem<T>) {
+      stackItem.completer.complete(result);
     } else {
-      // For present values, we need to handle potential type mismatches when
-      // nested modals have different type parameters. This can happen when
-      // a SelectModal<Command> is opened from within a FormModal<CommandReturn>.
-      // We use dynamic casting as a workaround.
-      // ignore: argument_type_not_assignable
-      stackItem.completer.complete(result as dynamic);
+      // The top stack item expects a different generic type than the caller is
+      // popping with — typically because a nested modal (e.g. a FormModal<
+      // CommandReturn>) is still on top when the outer modal tries to pop with
+      // its own T. Casting via dynamic doesn't help: Completer<Value<X>>.
+      // complete still runtime-checks the argument against X. Complete the
+      // mismatched item as absent rather than crashing.
+      stackItem.completeAbsent();
     }
 
     // Only close dialog if WE are the one that emptied the stack,
