@@ -425,18 +425,30 @@ class InfiniteListState extends State<InfiniteList> {
   }
 
   Future<void> _loadIfNecessary() async {
-    if (_fetching) {
-      return;
-    }
+    if (_fetching) return;
     if (!_scrollController.hasClients) return;
 
-    final (firstVisible, lastVisible) = estimateVisibleIndexes();
+    final (firstVisibleEst, lastVisibleEst) = estimateVisibleIndexes();
+    // The estimator divides total scroll extent by item count to derive
+    // an average item height. When the list first renders with very few
+    // items but a large fill-remaining sliver, that average snaps to a
+    // huge value (cached in `_maxObservedItemExtent`) and never shrinks,
+    // making the at-bottom view incorrectly look like "lots more below".
+    // Detect the true at-bottom state via maxScrollExtent so the fetcher
+    // fires reliably even when the estimator is stale.
+    final pos = _scrollController.position;
+    final atEnd = pos.maxScrollExtent <= 0
+        ? false
+        : pos.pixels >= pos.maxScrollExtent - 1.0;
+    final firstVisible = firstVisibleEst;
+    final lastVisible =
+        atEnd ? widget.count - 1 : lastVisibleEst;
     final pageSize = lastVisible - firstVisible + 1;
 
     // Check if we have enough buffer at the end
     final pagesAfter = (widget.count - 1 - lastVisible) / pageSize;
 
-    if (widget.doneEnd || pagesAfter >= widget.overflow) {
+    if (widget.doneEnd || (!atEnd && pagesAfter >= widget.overflow)) {
       return;
     }
 
@@ -447,7 +459,12 @@ class InfiniteListState extends State<InfiniteList> {
     // re-renders) would do this hundreds of times in a single frame
     // budget. The scroll listener clears these on real movement so the
     // next page is still fetched ahead of the user.
-    if (widget.count <= _lastFetchCount &&
+    //
+    // When the user is truly at the bottom (`atEnd`), bypass back-off:
+    // a previous fetch may have already updated lastFetchCount to the
+    // current count, but the user genuinely needs more rows surfaced.
+    if (!atEnd &&
+        widget.count <= _lastFetchCount &&
         lastVisible <= _lastFetchLastVisible) {
       return;
     }

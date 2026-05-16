@@ -329,9 +329,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // The agenda doesn't react to search — only the activity feed does.
-    _activityFeedLimit = 50;
-    _activityFeedLastRawRowCount = 0;
-    _activityFeedLimitIncreased = false;
+    _resetActivityFeedWindow();
     _loadActivityFeed(triggerSync: false);
 
     _runRemoteSearch(search);
@@ -501,6 +499,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   ThreadWatchResult _seedTodosResult = const (
     threads: <Thread>[],
     rawRowCount: 0,
+    feedTailCursor: null,
   );
   List<Thread> _seedAssociatedThreads = const <Thread>[];
 
@@ -1721,10 +1720,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reset only the activity-feed pagination — the agenda's pagination
     // and sync state carry over because the data hasn't been re-fetched.
-    _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
-    _activityFeedLastRawRowCount = 0;
-    _activityFeedLimitIncreased = false;
+    _resetActivityFeedWindow();
 
     // Re-init priority-scoped subscriptions (drafts, tags, icons,
     // activity feed). reloadAgenda: false skips the global agenda
@@ -2316,11 +2313,22 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadAgenda(profile: profile);
     }
 
-    _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
-    _activityFeedLastRawRowCount = 0;
-    _activityFeedLimitIncreased = false;
+    _resetActivityFeedWindow();
     _loadActivityFeed();
+  }
+
+  /// Clears appended pages and resets the cursor — invoked on every code
+  /// path that swaps the visible feed (priority switch, filter change,
+  /// search execute). Also bumps the generation so any in-flight
+  /// [fetchMoreActivityFeedItems] page hydration aborts before mutating
+  /// the (now stale) window state.
+  void _resetActivityFeedWindow() {
+    _activityFeedAppendedThreads = const [];
+    _activityFeedNextCursor = null;
+    _activityFeedHeadSaturated = false;
+    _activityFeedHeadTailCursor = null;
+    _activityFeedAppendGeneration++;
   }
 
   ThreadId? _watchingThreadId;
@@ -2564,6 +2572,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               return (
                 threads: [...merged, ...extra],
                 rawRowCount: eventsResult.rawRowCount,
+                feedTailCursor: null,
               );
             })
             .map((result) {
@@ -2857,14 +2866,16 @@ class PriorityBloc extends Cubit<PriorityState> {
           filter: state.filter.isNotEmpty ? state.filter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
+          // Fixed page size — never bumped. Phase-1 two-step query makes
+          // rawRowCount equal distinct thread count, so this is exactly
+          // the number of head threads. Scrolling appends static pages
+          // via [fetchMoreActivityFeedItems] cursor pagination.
           limit: _activityFeedLimit,
         ).listen((result) {
-          // Always signal that a stream emission has been observed, even
-          // when the signature is identical to the previous one (e.g. a
-          // limit bump returned the same data). This unblocks any
-          // [fetchMoreActivityFeedItems] caller awaiting the next
-          // emission so InfiniteList's `_fetching` guard releases only
-          // after data has actually arrived.
+          // Always signal that a stream emission has been observed.
+          // Unblocks any [fetchMoreActivityFeedItems] caller awaiting the
+          // next emission so InfiniteList's `_fetching` guard releases
+          // only after data has actually arrived.
           final emissionCompleter = _activityFeedNextEmission;
           if (emissionCompleter != null && !emissionCompleter.isCompleted) {
             _activityFeedNextEmission = null;
@@ -2879,85 +2890,63 @@ class PriorityBloc extends Cubit<PriorityState> {
           if (sig == _lastActivityFeedSig) return;
           _lastActivityFeedSig = sig;
 
-          final (:threads, :rawRowCount) = result;
-          _activityFeedLastRawRowCount = rawRowCount;
+          final (:threads, :rawRowCount, :feedTailCursor) = result;
+          // Post-Phase-1: rawRowCount equals distinct thread count, so
+          // saturation is a reliable signal that more local rows exist.
+          _activityFeedHeadSaturated = threads.length >= _activityFeedLimit;
+          // Stash the head-tail cursor (SQL-computed, matches the sort
+          // formula exactly) so [fetchMoreActivityFeedItems] can cursor-
+          // paginate beyond the head without re-deriving it from Dart's
+          // `Thread.activityAt` (which doesn't match the SQL in all cases).
+          _activityFeedHeadTailCursor = feedTailCursor;
 
           // Apply per-thread optimistic overrides so intermediate stream
           // snapshots (e.g. thread row written but user schedule not yet —
           // which derives todo=true even though the user just archived it)
           // don't flip the list back to a stale state. Unrelated threads
           // keep updating normally on every emission.
-          final patchedThreads = _applyOptimisticOverrides(threads);
+          final patchedHead = _applyOptimisticOverrides(threads);
 
-          // doneEnd when sync is complete AND either:
-          // - raw rows are below limit (no more data), OR
-          // - thread count hasn't grown despite limit increase (JOIN multiplication)
-          final threadCountStalled =
-              _activityFeedLimitIncreased &&
-              _activityFeedSyncNoMore &&
-              rawRowCount >= _activityFeedLimit &&
-              patchedThreads.length ==
-                  state.activityFeedItems
-                      .whereType<AgendaThreadItem>()
-                      .length &&
-              patchedThreads.length < _activityFeedLimit;
-          final isSearching = state.search.isNotEmpty;
-          final doneEnd =
-              (rawRowCount < _activityFeedLimit &&
-                  (isSearching || _activityFeedSyncNoMore)) ||
-              threadCountStalled;
-          _activityFeedLimitIncreased = false;
-          // Inject sticky threads that fell outside the SQL LIMIT
-          // after being marked as read (unreadSort dropped 1→0,
-          // pushing them past the LIMIT boundary).
-          final allThreads = List<Thread>.from(patchedThreads);
-          final threadIds = patchedThreads.map((t) => t.id).toSet();
+          // Inject sticky threads that fell out of the head after being
+          // marked read (unreadSort dropped 1→0).
+          final headIds = patchedHead.map((t) => t.id).toSet();
+          final headWithSticky = List<Thread>.from(patchedHead);
           for (final entry in _stickyUnreadIds.entries.toList()) {
-            if (threadIds.contains(entry.key)) {
-              // Refresh cached thread with latest stream data
+            if (headIds.contains(entry.key)) {
               _stickyUnreadIds[entry.key] = (
                 urgencyRank: entry.value.urgencyRank,
                 importance: entry.value.importance,
                 activityAt: entry.value.activityAt,
-                thread: patchedThreads.firstWhere((t) => t.id == entry.key),
+                thread: patchedHead.firstWhere((t) => t.id == entry.key),
               );
             } else {
-              // Thread fell outside LIMIT because it was marked read
-              // (unreadSort dropped 1→0). Inject with unread: false so
-              // the indicator updates while the position stays sticky.
-              allThreads.add(entry.value.thread.copyWith(unread: false));
+              headWithSticky.add(entry.value.thread.copyWith(unread: false));
             }
           }
 
-          _activityFeedRawThreads = allThreads;
-          _activityFeedDoneEnd = doneEnd;
-          _scheduleActivityFeedRebuild();
+          // Dedup appended pages against the current head. When the head
+          // shifts (sync surfaces a new top-of-feed thread), a previously-
+          // appended thread may now appear in the head — drop it from
+          // appended so it doesn't render twice.
+          final headIdsAfterSticky = headWithSticky.map((t) => t.id).toSet();
+          final dedupedAppended = _activityFeedAppendedThreads
+              .where((t) => !headIdsAfterSticky.contains(t.id))
+              .toList();
 
-          // When the server is exhausted but the SQL query saturated the
-          // LIMIT, there may be more local rows beyond it. The user would
-          // normally scroll to trigger [fetchMoreActivityFeedItems], but if
-          // they're parked at the bottom (no scroll past the buffer) the
-          // trailing spinner stays visible indefinitely with no fetch ever
-          // firing. Auto-bump the limit here to mirror what fetchMore would
-          // do — [threadCountStalled] terminates the cycle once a bump
-          // surfaces no new unique threads.
-          if (!doneEnd &&
-              _activityFeedSyncNoMore &&
-              rawRowCount >= _activityFeedLimit &&
-              !_activityFeedLimitIncreased) {
-            _activityFeedLimitIncreased = true;
-            _activityFeedLimit += 50;
-            scheduleMicrotask(() {
-              if (isClosed) return;
-              _loadActivityFeed(triggerSync: false);
-            });
-          }
+          _activityFeedRawThreads = [...headWithSticky, ...dedupedAppended];
+          _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
+          _scheduleActivityFeedRebuild();
         });
 
     _loadTodoThreads();
 
     if (triggerSync) {
-      _activityFeedSyncFuture = _triggerActivityFeedSync(priorityToLoad);
+      // Per-priority feed sync runs in the background. With cursor
+      // pagination the user's scroll-load doesn't depend on this future
+      // — [fetchMoreActivityFeedItems] reads whatever is locally
+      // available at fetch time, and head watcher re-emissions surface
+      // any newly-synced content automatically.
+      unawaited(_triggerActivityFeedSync(priorityToLoad));
     }
   }
 
@@ -3407,16 +3396,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     // subsequent stream emission whose `_activityFeedSig` differs — which
     // never happens once the visible window has stabilised).
     final caughtUp = _activityFeedSyncNoMore || syncedPastLastItem;
-    // Only trust `_activityFeedLastRawRowCount` once the watcher has actually
-    // fired (`_lastActivityFeedSig != null`). If sync completes faster than
-    // the first watcher emission, the count is still 0; flipping doneEnd
-    // here on `0 < limit` then gets clobbered back to false by the imminent
-    // watcher emission, which sees `rawRowCount == limit` and computes
-    // doneEnd=false. Let the watcher own the decision in that race.
+    // Only trust head-saturated state once the watcher has actually fired
+    // (`_lastActivityFeedSig != null`). If sync completes faster than the
+    // first watcher emission, `_activityFeedHeadSaturated` is still
+    // `false` (default) — flipping doneEnd here on the default would race
+    // with the imminent first watcher emission, which may then compute a
+    // truer doneEnd. Let the watcher own the decision in that race.
     final watcherHasFired = _lastActivityFeedSig != null;
-    if (caughtUp &&
-        watcherHasFired &&
-        _activityFeedLastRawRowCount < _activityFeedLimit) {
+    if (caughtUp && watcherHasFired && !_activityFeedHeadSaturated) {
       // Also write the instance var so the next [_rebuildActivityFeedSections]
       // (which emits `activityFeedDoneEnd: _activityFeedDoneEnd`) preserves
       // this value. Without this, a todo-thread stream emission that fires
@@ -3428,54 +3415,128 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
+  /// True when the loaded window covers everything that can be loaded:
+  /// head was non-saturated (no more local rows after head) AND no pages
+  /// were appended; OR head was saturated and the last append exhausted
+  /// the local set. Combined with sync-noMore / search-mode this drives
+  /// the trailing-spinner doneEnd flag.
+  bool _computeActivityFeedDoneEnd() {
+    final isSearching = state.search.isNotEmpty;
+    final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
+    final localExhausted = _activityFeedAppendedThreads.isEmpty
+        ? !_activityFeedHeadSaturated
+        : _activityFeedNextCursor == null;
+    return localExhausted && exhaustedRemote;
+  }
+
+  /// Cursor pointing at the row immediately after the last loaded thread,
+  /// for [Thread.fetchActivityFeedPage]. `null` means no more cursor —
+  /// either head is non-saturated (we know there's nothing past head) OR
+  /// the last appended page was non-saturated.
+  ({int unreadSort, String activityAt, ThreadId id})?
+      _computeActivityFeedTailCursor() {
+    if (_activityFeedNextCursor != null) return _activityFeedNextCursor;
+    if (_activityFeedAppendedThreads.isNotEmpty) {
+      // Last append was non-saturated → no more pages.
+      return null;
+    }
+    if (!_activityFeedHeadSaturated) return null;
+    // Use the SQL-derived head tail cursor stashed by the watcher's most
+    // recent emission. This matches the SQL formula exactly; deriving
+    // from `Thread.activityAt` in Dart would diverge for threads where
+    // `lastNoteSourceCreatedAt` is non-null but `link.sourceCreatedAt`
+    // is later (Dart picks max; SQL picks last_note via COALESCE).
+    return _activityFeedHeadTailCursor;
+  }
+
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
-    // The previous query maxed out the LIMIT — either because there are
-    // more rows beyond it, or because JOIN multiplication produced fewer
-    // unique threads than rows. In both cases bumping the limit can
-    // surface more threads. Only checked once a stream emission has
-    // populated `_activityFeedLastRawRowCount`; without this guard the
-    // limit ratcheted up by 50 on every scroll tick before the previous
-    // bump's emission had landed.
-    final queryMaxedOut =
-        _activityFeedLastRawRowCount >= _activityFeedLimit;
 
-    Completer<void>? emissionCompleter;
-    if (needed > _activityFeedLimit) {
-      _activityFeedLimitIncreased = true;
-      _activityFeedLimit = needed;
-      emissionCompleter = Completer<void>();
-      _activityFeedNextEmission = emissionCompleter;
-      _loadActivityFeed(
-        triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
-      );
-    } else if (!state.activityFeedDoneEnd && queryMaxedOut) {
-      // JOIN multiplication or full page: need more raw rows to surface
-      // additional unique threads.
-      _activityFeedLimitIncreased = true;
-      _activityFeedLimit += 50;
-      emissionCompleter = Completer<void>();
-      _activityFeedNextEmission = emissionCompleter;
-      _loadActivityFeed(
-        triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
-      );
-    }
+    // Already loaded enough? Nothing to do.
+    if (_activityFeedRawThreads.length >= needed) return;
 
-    // Hold InfiniteList's `_fetching` guard until the watcher has emitted
-    // the result of the new limit. Without this the fetcher resolves
-    // before data arrives and every subsequent scroll tick fires another
-    // (pointless) fetch.
-    if (emissionCompleter != null) {
-      await emissionCompleter.future;
-    }
-
-    // Also wait for any in-flight sync so remote rows are reflected
-    // before the guard releases.
-    final future = _activityFeedSyncFuture;
-    if (future != null) {
+    // Coalesce concurrent callers — InfiniteList can fire fetchMore on
+    // every scroll tick during fast scrolls; without this they spawn
+    // overlapping page fetches.
+    while (_activityFeedAppendInFlight != null) {
       try {
-        await future;
+        await _activityFeedAppendInFlight;
       } catch (_) {}
+      if (isClosed) return;
+      if (_activityFeedRawThreads.length >= needed) return;
+    }
+
+    while (_activityFeedRawThreads.length < needed &&
+        !_activityFeedDoneEnd) {
+      final cursor = _computeActivityFeedTailCursor();
+      if (cursor == null) {
+        // No more pages available locally; head not saturated or last
+        // appended page was non-saturated.
+        break;
+      }
+
+      final gen = _activityFeedAppendGeneration;
+      final priorityToLoad = state.context;
+      final isSearching = state.search.isNotEmpty;
+      final scopeByPath = isSearching ||
+          state.hideSubPriorities ||
+          _currentEventForFeed != null;
+
+      final completer = Completer<void>();
+      _activityFeedAppendInFlight = completer.future;
+      ActivityFeedPage? page;
+      try {
+        page = await Thread.fetchActivityFeedPage(
+          priorityPath: scopeByPath
+              ? (isSearching ? null : priorityToLoad.path)
+              : null,
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter:
+              state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+          after: cursor,
+        );
+      } finally {
+        completer.complete();
+        _activityFeedAppendInFlight = null;
+      }
+
+      if (isClosed) return;
+      // Reset happened during the await — drop this stale page.
+      if (gen != _activityFeedAppendGeneration) return;
+
+      _activityFeedAppendedThreads = [
+        ..._activityFeedAppendedThreads,
+        ...page.threads,
+      ];
+      // Saturated → there may be more; remember the cursor.
+      // Non-saturated → exhausted locally; null cursor stops further appends.
+      _activityFeedNextCursor =
+          page.saturated ? page.nextCursor : null;
+
+      // Recompute the displayed list. Head emission's dedup logic runs
+      // on the next watcher fire; for now just append optimistically.
+      // (Head re-emission triggered by table activity will dedup later.)
+      final headIds = <ThreadId>{};
+      final headEnd = _activityFeedLimit < _activityFeedRawThreads.length
+          ? _activityFeedLimit
+          : _activityFeedRawThreads.length;
+      for (var i = 0; i < headEnd; i++) {
+        headIds.add(_activityFeedRawThreads[i].id);
+      }
+      final dedupedNew =
+          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      _activityFeedRawThreads = [
+        ..._activityFeedRawThreads,
+        ...dedupedNew,
+      ];
+      _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
+      _scheduleActivityFeedRebuild();
+
+      if (!page.saturated) break;
     }
   }
 
@@ -3517,13 +3578,48 @@ class PriorityBloc extends Cubit<PriorityState> {
   // the user scrolls past the buffer so more empty days appear instead
   // of leaving the user on a stuck spinner.
   int _agendaFillDays = 0;
-  int _activityFeedLimit = 50;
+  /// Fixed page size for the activity feed — never grows. The watcher
+  /// always covers the head (top [_activityFeedLimit] threads); scrolling
+  /// past appends static pages via cursor pagination in
+  /// [fetchMoreActivityFeedItems], so watcher cost stays constant
+  /// regardless of scroll depth.
+  static const int _activityFeedLimit = 50;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
   Future<void>? _agendaSyncFuture;
-  Future<void>? _activityFeedSyncFuture;
-  int _activityFeedLastRawRowCount = 0;
-  bool _activityFeedLimitIncreased = false;
+
+  /// Pages loaded by [fetchMoreActivityFeedItems] beyond the head. These
+  /// are static snapshots — they don't live-update on table changes — so
+  /// scroll depth doesn't multiply the watcher's emission cost.
+  /// `_activityFeedRawThreads` is the head emission deduplicated against
+  /// this list. Reset on filter/priority/search change.
+  List<Thread> _activityFeedAppendedThreads = const [];
+
+  /// Cursor for the next [fetchMoreActivityFeedItems] page. `null` means
+  /// either no page has been appended yet (cursor is at head tail) OR the
+  /// last appended page was non-saturated (no more pages available
+  /// locally).
+  ({int unreadSort, String activityAt, ThreadId id})? _activityFeedNextCursor;
+
+  /// SQL-computed cursor of the head emission's tail row, populated by
+  /// the head watcher each emission. Used by [fetchMoreActivityFeedItems]
+  /// to start the first append from the right spot. Matches the SQL
+  /// formula exactly — deriving from `Thread.activityAt` in Dart doesn't.
+  ({int unreadSort, String activityAt, ThreadId id})? _activityFeedHeadTailCursor;
+
+  /// True when the most recent head emission returned [_activityFeedLimit]
+  /// threads (i.e. there may be more local content beyond the head).
+  /// Gates the first append.
+  bool _activityFeedHeadSaturated = false;
+
+  /// True while a [fetchMoreActivityFeedItems] page is being fetched, so
+  /// concurrent callers coalesce instead of racing.
+  Future<void>? _activityFeedAppendInFlight;
+
+  /// Generation counter bumped on reset (priority/filter/search switch).
+  /// Any in-flight append checks this before committing — keeps stale
+  /// page hydration from clobbering a freshly-reset window.
+  int _activityFeedAppendGeneration = 0;
 
   /// Resolved by the activity feed watcher's `listen` callback every time
   /// it fires. [fetchMoreActivityFeedItems] sets this before re-issuing
