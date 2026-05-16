@@ -6,11 +6,10 @@ import 'package:plot/command/unread_filter.dart';
 
 void main() {
   group('ToggleUnreadFilter command', () {
-    test('inactive form exposes the shortcut and envelope icons', () {
+    test('inactive form exposes the shortcut and envelope icon', () {
       final cmd = ToggleUnreadFilter(active: false);
       expect(cmd.title, 'Show unread only');
       expect(cmd.icon, FontAwesomeIcons.envelopeDot);
-      expect(cmd.hoverIcon, FontAwesomeIcons.solidEnvelopeDot);
       expect(cmd.on, isFalse);
       expect(cmd.shortcut, isA<SingleActivator>());
       final s = cmd.shortcut as SingleActivator;

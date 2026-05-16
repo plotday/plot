@@ -21,7 +21,6 @@ class ToggleUnreadFilter extends Command {
     : super(
         title: active ? 'Showing unread only' : 'Show unread only',
         icon: FontAwesomeIcons.envelopeDot,
-        hoverIcon: FontAwesomeIcons.solidEnvelopeDot,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
         shortcut: unreadFilterShortcut,
