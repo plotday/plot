@@ -503,6 +503,55 @@ class PriorityBloc extends Cubit<PriorityState> {
   );
   List<Thread> _seedAssociatedThreads = const <Thread>[];
 
+  /// Active timer that will clear `state.unreadFilterPending` if no
+  /// unread items arrive within the notification-activation window.
+  /// Started by [activateUnreadFilterFromNotification] and cancelled
+  /// by [_rebuildAgendaModel] (on first emit with unread items) or by
+  /// [close].
+  Timer? _unreadFilterPendingTimer;
+
+  /// Toggle the unread-only filter for the activity feed. No-op when
+  /// there are no unread threads in the feed (the header button is
+  /// already hidden in that case; the shortcut path falls through).
+  /// Also clears any pending notification-activation state so the
+  /// spinner does not linger after the user manually toggles off.
+  void toggleUnreadFilter() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
+    if (!state.hasUnreadInFeed) {
+      if (state.unreadFilterActive || state.unreadFilterPending) {
+        emit(state.copyWith(
+          unreadFilterActive: false,
+          unreadFilterPending: false,
+        ));
+      }
+      return;
+    }
+    emit(state.copyWith(
+      unreadFilterActive: !state.unreadFilterActive,
+      unreadFilterPending: false,
+    ));
+  }
+
+  /// Enable the unread filter as part of a multi-thread notification
+  /// tap. Also marks the filter "pending" so the feed shows a centered
+  /// spinner instead of an empty state while the activity feed loads
+  /// and any in-flight sync delivers unread items. The pending flag
+  /// auto-clears when [_rebuildAgendaModel] first sees unread items or
+  /// after 10 seconds, whichever comes first.
+  void activateUnreadFilterFromNotification() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = Timer(const Duration(seconds: 10), () {
+      if (isClosed) return;
+      if (!state.unreadFilterPending) return;
+      emit(state.copyWith(unreadFilterPending: false));
+    });
+    emit(state.copyWith(
+      unreadFilterActive: true,
+      unreadFilterPending: true,
+    ));
+  }
+
   /// Rebuild the agenda model from the cached threads list and emit
   /// it. Optional [extra] state-shape changes (e.g. updated activity
   /// feed, cleared selected thread) are layered onto the same emit.
@@ -519,6 +568,35 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
+    // Decide whether to flip the filter off or clear the pending flag.
+    // - Auto-off: if the filter is active and the recomputed feed has
+    //   zero unread items AND we are NOT waiting for a notification
+    //   arrival, drop the filter so the user does not land on an empty
+    //   filtered view next time they return to the priority.
+    // - Clear pending: if pending is set and we now have unread items,
+    //   the spinner can come down and the timer is no longer needed.
+    bool? unreadFilterOverride;
+    bool? unreadFilterPendingOverride;
+    if (activityFeedItems != null &&
+        (state.unreadFilterActive || state.unreadFilterPending)) {
+      bool anyUnread = false;
+      for (final item in activityFeedItems) {
+        if (item is AgendaThreadItem && item.thread.unread) {
+          anyUnread = true;
+          break;
+        }
+      }
+      if (state.unreadFilterPending && anyUnread) {
+        unreadFilterPendingOverride = false;
+        _unreadFilterPendingTimer?.cancel();
+        _unreadFilterPendingTimer = null;
+      }
+      if (state.unreadFilterActive &&
+          !state.unreadFilterPending &&
+          !anyUnread) {
+        unreadFilterOverride = false;
+      }
+    }
     emit(
       state.copyWith(
         thread: thread,
@@ -526,6 +604,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         agendaItems: agenda.flatItems(),
         activityFeedItems: activityFeedItems,
         activityFeedNativesByDate: activityFeedNativesByDate,
+        unreadFilterActive: unreadFilterOverride,
+        unreadFilterPending: unreadFilterPendingOverride,
       ),
     );
   }
@@ -1329,6 +1409,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   @override
   Future<void> close() {
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
     // Unregister time change callback
     Time.setOnTimeChanged(null);
 
@@ -1695,12 +1777,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     // from the agenda (in which case the destination defaults to direct-only
     // threads). See [_consumeFromAgendaFlag] for the rationale.
     final fromAgenda = _consumeFromAgendaFlag();
+    _unreadFilterPendingTimer?.cancel();
+    _unreadFilterPendingTimer = null;
     emit(
       state.copyWith(
         context: newPriority,
         agenda: newAgenda,
         agendaItems: newAgenda.flatItems(),
         activityFeedItems: const [],
+        unreadFilterActive: false,
+        unreadFilterPending: false,
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
         hideSubPriorities: !fromAgenda,
