@@ -134,10 +134,17 @@ class ChangeCurrentThread extends ThreadCommand {
       // forced `pop()` bypasses it. The fallback `root.navigate(...)`
       // replaces the inner stack instead of popping, skipping the
       // transition entirely.
+      //
+      // Only pop when there's something underneath. Notification taps and
+      // `/p/X/Y` / `/t/Y` deep links install a single ThreadRoute as the
+      // entire inner stack — popping it empties the AutoRouter and reveals
+      // its `LoadingPage` placeholder (spinner forever) instead of the
+      // activity feed.
       final innerRouter = _innerRouter(context);
       final topName = innerRouter?.current.name;
       if (innerRouter != null &&
-          (topName == ThreadRoute.name || topName == NewThreadRoute.name)) {
+          (topName == ThreadRoute.name || topName == NewThreadRoute.name) &&
+          innerRouter.stack.length > 1) {
         innerRouter.pop();
         return const CommandDone();
       }
