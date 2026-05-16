@@ -85,10 +85,15 @@ String _preprocessMarkdown(String markdown) {
     (match) => 'mention', // Generic fallback for old format without name
   );
 
-  // Drop empty-text links like `[](http://...)` (common in email-signature
-  // icon links). super_editor would warn and skip the attribution anyway, and
-  // every other Markdown renderer shows them as invisible/unclickable.
-  processed = processed.replaceAll(RegExp(r'\[\s*\]\([^)]*\)'), '');
+  // Drop links whose visible text would be empty after the deserializer
+  // extracts inline images into their own nodes — super_editor would warn
+  // (`SpanRange(0, -1)`) and every other Markdown renderer shows them as
+  // invisible/unclickable. Covers `[](url)`, `[ ](url)`, and
+  // `[![alt](img)](url)` (html2md's form for `<a href="X"><img></a>`).
+  processed = processed.replaceAll(
+    RegExp(r'\[(?:\s*!\[[^\]]*\]\([^)]*\))*\s*\]\([^)]*\)'),
+    '',
+  );
 
   return processed;
 }

@@ -79,10 +79,14 @@ String markdownToPlainText(String plotMarkdown) {
 /// Convert HTML from clipboard to Plot markdown for paste.
 String htmlToMarkdown(String html) {
   final markdown = html2md.convert(html);
-  // Strip empty-text links (e.g. `[](url)` produced when HTML anchors wrap
-  // icons/images with no text). The markdown deserializer would otherwise
-  // try to apply a LinkAttribution across an empty range and warn.
+  // Strip links whose visible text would be empty after the deserializer
+  // extracts inline images into their own nodes. Otherwise super_editor
+  // calls `addAttribution(LinkAttribution, SpanRange(0, -1))` and warns.
+  // Covers: `[](url)`, `[ ](url)`, and `[![alt](img)](url)` (the form
+  // html2md emits for `<a href="X"><img></a>` — common in email footers).
   return markdown.replaceAll(_emptyLinkPattern, '');
 }
 
-final _emptyLinkPattern = RegExp(r'\[\s*\]\([^)]*\)');
+final _emptyLinkPattern = RegExp(
+  r'\[(?:\s*!\[[^\]]*\]\([^)]*\))*\s*\]\([^)]*\)',
+);
