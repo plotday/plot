@@ -9,8 +9,8 @@ void main() {
     test('inactive form exposes the shortcut and envelope icons', () {
       final cmd = ToggleUnreadFilter(active: false);
       expect(cmd.title, 'Show unread only');
-      expect(cmd.icon, FontAwesomeIcons.envelope);
-      expect(cmd.hoverIcon, FontAwesomeIcons.solidEnvelope);
+      expect(cmd.icon, FontAwesomeIcons.envelopeDot);
+      expect(cmd.hoverIcon, FontAwesomeIcons.solidEnvelopeDot);
       expect(cmd.on, isFalse);
       expect(cmd.shortcut, isA<SingleActivator>());
       final s = cmd.shortcut as SingleActivator;
