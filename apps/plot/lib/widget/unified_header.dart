@@ -534,7 +534,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           );
 
     final List<Widget> trailing = <Widget>[
-      _searchButton(),
       if (!state.context.isTwistDev) Button.icon(NewThread()),
       Button.icon(_buildPriorityMenuCommand(state)),
       if (resolvedToolbarPadding.right != 0)
@@ -598,7 +597,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           // includes descender space the icon's box doesn't, and the
           // text reads as nudged up by a couple of pixels.
           Flexible(child: _tightTextBox(child: title)),
-          const SizedBox(width: 8),
+          if (layoutState.multiPanel) ...[
+            const SizedBox(width: 4),
+            _searchButton(),
+          ] else
+            const SizedBox(width: 8),
           _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
