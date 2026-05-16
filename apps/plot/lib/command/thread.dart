@@ -1517,14 +1517,38 @@ class RescheduleAllInBlock extends Command {
     if (!picked.present) return const CommandSkipped();
     if (!context.mounted) return const CommandSkipped();
 
-    for (final thread in threads) {
-      if (!context.mounted) return const CommandSkipped();
-      await ScheduleThread(
-        thread,
-        when: picked.value,
-        priorityBloc: bloc,
-      ).run(context);
+    // Compute the new state for each thread up front. Mirrors ScheduleThread:
+    // ensure it's a todo (creates per-user schedule if needed), then move to
+    // the target date on the per-user schedule.
+    final date = picked.value == Thread.todoNowDate ? null : picked.value;
+    final updates = threads.map((thread) {
+      final asTodo = thread.todo ? thread : thread.copyWith(todo: true);
+      return asTodo.reorderTo(asTodo.order, date: date);
+    }).toList();
+
+    // Apply optimistic updates synchronously so every thread visibly moves
+    // in the same frame. Each call mutates bloc state in memory; the agenda
+    // repaints once on the next vsync regardless of how many we apply.
+    for (final updated in updates) {
+      bloc?.optimisticallyUpdateThread(updated);
     }
+
+    // Persist in parallel and refresh the agenda once at the end. The old
+    // sequential `await ScheduleThread(...).run(...)` loop ran N awaited
+    // SQLite save chains and called refreshAgenda() N times — and
+    // refreshAgenda cancels and re-subscribes three Drift streams, which
+    // dominates the cost for large sections.
+    unawaited(() async {
+      try {
+        await Future.wait(updates.map((t) => t.save()));
+      } catch (e, stackTrace) {
+        log.warning('Error rescheduling threads in bulk', e, stackTrace);
+        Tracker.captureException(e, stackTrace);
+      } finally {
+        bloc?.refreshAgenda();
+      }
+    }());
+
     return const CommandDone();
   }
 }
