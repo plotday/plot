@@ -1049,6 +1049,27 @@ class _PriorityPageState extends State<PriorityPage>
             (state.hasArchivedMatches && !state.showArchived));
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+
+    // Filter on, view empty, and still waiting: either the activity
+    // feed has not finished its initial load, or we are inside the
+    // notification-activation window waiting for sync to deliver
+    // unread items. Show a centered spinner instead of the empty
+    // state so the user understands the screen is not frozen.
+    if (!hasAnyThread &&
+        !showFooter &&
+        state.unreadFilterActive &&
+        (state.unreadFilterPending || !state.activityFeedLoaded)) {
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.contentPaddingH,
+          vertical: context.theme.spacing.xl,
+        ),
+        child: Center(
+          child: Spinner.message('Loading unread threads'),
+        ),
+      );
+    }
+
     if (!hasAnyThread &&
         !showFooter &&
         state.activityFeedDoneEnd &&
