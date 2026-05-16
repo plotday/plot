@@ -757,48 +757,6 @@ class _PriorityPageState extends State<PriorityPage>
             }
           },
         ),
-        // When a multi-thread notification opened this priority, scroll
-        // the activity feed so the "New" header lands at the top once
-        // items load. Honors PendingNotificationScroll.section, which is
-        // set by RootProvider's notification-tap handler.
-        BlocListener<PriorityBloc, PriorityState>(
-          listenWhen: (previous, current) =>
-              PendingNotificationScroll.section != null &&
-              previous.activityFeedItems != current.activityFeedItems,
-          listener: (context, state) {
-            final section = PendingNotificationScroll.section;
-            if (section == null) return;
-            final items = state.activityFeedItems;
-            int? targetIndex;
-            for (var i = 0; i < items.length; i++) {
-              final item = items[i];
-              if (item is AgendaHeaderItem && item.text != null) {
-                final marker = ActivitySectionMarker.tryDecode(item.text!);
-                if (marker?.section == section) {
-                  targetIndex = i;
-                  break;
-                }
-              }
-            }
-            if (targetIndex == null) return;
-            PendingNotificationScroll.section = null;
-            final scrollController = ScrollControllerContext.of(context);
-            if (scrollController == null) return;
-            final index = targetIndex;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!scrollController.hasClients) return;
-              // Items have variable heights; the InfiniteList's
-              // estimatedItemExtent default (75) is the same heuristic
-              // used elsewhere in the codebase for index-based jumps.
-              const estimatedItemExtent = 75.0;
-              final estimated = (index * estimatedItemExtent).clamp(
-                0.0,
-                scrollController.position.maxScrollExtent,
-              );
-              scrollController.jumpTo(estimated);
-            });
-          },
-        ),
         // Mirror NowBloc.currentEvent into PriorityBloc so the activity
         // feed can render the "Event Agenda" section.
         BlocListener<NowBloc, NowState>(
@@ -824,7 +782,7 @@ class _PriorityPageState extends State<PriorityPage>
   Widget _buildBody(BuildContext context, PriorityState state) {
     return Builder(
       builder: (context) {
-        final items = state.activityFeedItems;
+        final items = state.activityFeedViewItems;
 
         // Build shortcuts map for plain Up/Down navigation
         final shortcuts = <ShortcutActivator, Intent>{
