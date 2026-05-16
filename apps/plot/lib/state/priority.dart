@@ -1718,6 +1718,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     profile.mark('emitted context-switched state');
 
+    // Clear the cached source lists for [_rebuildActivityFeedSections] so a
+    // first stream emission from the new subscription can't mix new-priority
+    // threads with old-priority threads still sitting in the other field.
+    // The first-emit gates below provide the atomic-swap guarantee; clearing
+    // these fields is belt-and-suspenders for any direct rebuild path that
+    // bypasses the gates.
+    _activityFeedRawThreads = const [];
+    _todoThreads = const [];
+
     // Reset only the activity-feed pagination — the agenda's pagination
     // and sync state carry over because the data hasn't been re-fetched.
     _activityFeedSyncNoMore = false;
@@ -2315,7 +2324,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _activityFeedSyncNoMore = false;
     _resetActivityFeedWindow();
-    _loadActivityFeed();
+    _loadActivityFeed(profile: profile);
   }
 
   /// Clears appended pages and resets the cursor — invoked on every code
@@ -2838,13 +2847,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     // fetchMoreAgendaItems will extend the horizon as the user scrolls.
   }
 
-  void _loadActivityFeed({bool triggerSync = true}) {
+  void _loadActivityFeed({
+    bool triggerSync = true,
+    _PriorityLoadProfile? profile,
+  }) {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
     _activityFeedSubscription?.cancel();
     // Reset distinct tracker so the first emission from this new
     // subscription is always processed.
     _lastActivityFeedSig = null;
+    // Reset the first-emission gates for both streams — [_loadTodoThreads]
+    // is invoked below, so a single reset point keeps both flags in sync.
+    _activityFeedFirstEmitted = false;
+    _todoThreadsFirstEmitted = false;
+    profile?.mark('_loadActivityFeed subscribing');
     // When [hideSubPriorities] is false the user has opted to see only
     // threads filed directly on this priority — pass `priorityId` instead
     // of `priorityPath` so the SQL filter switches from
@@ -2880,6 +2897,15 @@ class PriorityBloc extends Cubit<PriorityState> {
           if (emissionCompleter != null && !emissionCompleter.isCompleted) {
             _activityFeedNextEmission = null;
             emissionCompleter.complete();
+          }
+
+          // Mark the gate satisfied on every emission (cheap, idempotent)
+          // so the gate also unblocks if Drift coalesces multiple writes
+          // into a single first emission with the same signature as the
+          // initial empty result.
+          if (!_activityFeedFirstEmitted) {
+            _activityFeedFirstEmitted = true;
+            profile?.mark('_loadActivityFeed first emission');
           }
 
           // Drop identical re-emissions before paying the optimistic-
@@ -2938,7 +2964,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           _scheduleActivityFeedRebuild();
         });
 
-    _loadTodoThreads();
+    _loadTodoThreads(profile: profile);
 
     if (triggerSync) {
       // Per-priority feed sync runs in the background. With cursor
@@ -2956,10 +2982,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// visible regardless of pagination. Filter / icon-filter / search are
   /// passed through so the Today and Scheduled sections shrink to the
   /// matching subset while a search/filter is active.
-  void _loadTodoThreads() {
+  void _loadTodoThreads({_PriorityLoadProfile? profile}) {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
     _todoThreadsSubscription?.cancel();
+    profile?.mark('_loadTodoThreads subscribing');
     // Mirror [_loadActivityFeed]'s direct-only scope so the todo list and
     // feed stay consistent when sub-priorities are hidden — and likewise
     // honor the event-selected override that re-includes descendants.
@@ -2999,6 +3026,10 @@ class PriorityBloc extends Cubit<PriorityState> {
           // with their expected state AND injects expected-but-missing
           // threads, so a row dropped into Today stays in Today across
           // the entire save lifecycle.
+          if (!_todoThreadsFirstEmitted) {
+            _todoThreadsFirstEmitted = true;
+            profile?.mark('_loadTodoThreads first emission');
+          }
           final patched = _applyOptimisticOverrides(result.threads);
           _todoThreads = patched.where((t) => t.todo).toList();
           _scheduleActivityFeedRebuild();
@@ -3061,6 +3092,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Section headers carry an `ActivitySectionMarker`-encoded text so the
   /// drag dispatcher can recover the section identity.
   void _rebuildActivityFeedSections() {
+    // Gate on both streams' first emission. While either is pending, the
+    // source lists for one of them is the previous priority's data (or
+    // empty after setPriority cleared them), and rebuilding now would
+    // either flash old threads with new headers, or partial threads under
+    // new headers. Wait for an atomic swap.
+    if (!_activityFeedFirstEmitted || !_todoThreadsFirstEmitted) return;
     final (:items, :nativesByDate) = _buildActivityFeedItems();
     emit(
       state.copyWith(
@@ -3569,6 +3606,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// coalescing every shared write reruns the entire sectioning pipeline
   /// twice in a row.
   bool _activityFeedRebuildScheduled = false;
+
+  /// First-emission gates for the two streams that feed
+  /// [_rebuildActivityFeedSections]. Reset to false in [_loadActivityFeed]
+  /// (which also re-subscribes the todo stream) so they correctly track the
+  /// new subscriptions, and flipped true inside each listener on its first
+  /// emission. While either is false, [_rebuildActivityFeedSections]
+  /// suppresses its emit — otherwise the rebuild would mix the new
+  /// priority's headers with whichever list hadn't received its first
+  /// emission yet, producing the "old threads under new headers" flash on
+  /// priority switch.
+  bool _activityFeedFirstEmitted = false;
+  bool _todoThreadsFirstEmitted = false;
   // Initial cold-start window kept small for fast first paint; grows via
   // [fetchMoreAgendaItems] as the user scrolls.
   int _agendaHorizonDays = 30;
