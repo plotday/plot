@@ -537,7 +537,11 @@ class AddThreadWithLink extends Command {
       title: linkTitle,
       logo: linkFavicon,
     );
-    await Store.get.save(Store.get.links, linkRow, LinksBase());
+    await Store.get.save(
+      Store.get.links,
+      linkRow.toCompanion(false),
+      LinksBase(),
+    );
 
     if (context.mounted) {
       priorityBloc.setThread(savedThread);
