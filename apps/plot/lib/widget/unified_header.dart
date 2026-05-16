@@ -594,6 +594,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Strip the line box's leading/trailing half-leading so the
+          // visible glyphs of the priority title vertically center
+          // against the tracking icon/pill — without this the text box
+          // includes descender space the icon's box doesn't, and the
+          // text reads as nudged up by a couple of pixels.
           Flexible(child: _tightTextBox(child: title)),
           if (layoutState.multiPanel) ...[
             const SizedBox(width: 4),
