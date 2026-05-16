@@ -249,6 +249,12 @@ export function cleanConvertedMarkdown(markdown: string): string {
   // Leave regular whitespace alone so real paragraph spacing survives.
   markdown = markdown.replace(INVISIBLE_CHARS_RE, "");
 
+  // Drop empty-alt images like `![](url)`. Common for email logos, spacers,
+  // and tracking pixels where the source <img> has no alt attribute. Must run
+  // before the empty-text-link cleanup below so a nested `[![](logo)](link)`
+  // collapses cleanly to `` instead of leaving a stray `!` inside the link.
+  markdown = markdown.replace(/!\[\s*\]\([^)]*\)/g, "");
+
   // Drop empty-text links like `[](http://...)`. Email signatures wrap social
   // icons in `<a><img></a>`; once images are stripped these collapse to empty
   // links that no Markdown renderer can show as clickable.

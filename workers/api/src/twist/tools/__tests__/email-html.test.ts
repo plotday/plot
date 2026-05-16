@@ -188,3 +188,35 @@ describe("cleanConvertedMarkdown \u2014 multi-line links", () => {
     expect(out).not.toContain("example.com/empty");
   });
 });
+
+describe("cleanConvertedMarkdown — empty-alt images", () => {
+  it("drops standalone images with empty alt text", () => {
+    const input = "Hello\n\n![](https://www.gstatic.com/logo.png)\n\nWorld";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toContain("!");
+    expect(out).toBe("Hello\n\nWorld");
+  });
+
+  it("drops image-links where the image has no alt", () => {
+    // Common: `<a href="..."><img src="logo.png" /></a>` becomes
+    // `[![](logo.png)](url)`. Without alt text there is nothing to display,
+    // so the whole construct should be removed — not collapsed to `[!](url)`.
+    const input = "Header\n\n[![](https://cdn.example.com/logo.png)](https://example.com)\n\nBody";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toMatch(/\[!\]/);
+    expect(out).not.toContain("https://example.com");
+    expect(out).toBe("Header\n\nBody");
+  });
+
+  it("preserves images that have alt text", () => {
+    const input = "![Google](https://www.gstatic.com/logo.png)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("preserves image-links whose image has alt text", () => {
+    const input = "[![LinkedIn](https://cdn.example.com/icon.png)](https://example.com/feed)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+});
