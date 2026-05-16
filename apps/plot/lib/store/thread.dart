@@ -803,15 +803,22 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   static Future<bool> push() async {
-    final success =
-        await Store.get.push(Store.get.threads, ThreadsBase()) &&
-        await Store.get.push(Store.get.links, LinksBase()) &&
-        await Store.get.push(Store.get.schedules, SchedulesBase()) &&
-        await Store.get.push(
-          Store.get.threadAssociations,
-          ThreadAssociationsBase(),
-        ) &&
-        await Store.get.push(Store.get.threadTags, ThreadTagsBase());
+    // Run all five sub-pushes in parallel. They write to independent
+    // tables and share no ordering requirements (the per-table push
+    // already serialises against itself via _pushCompleters), so
+    // serialising them with `&& await` added the sum of their claim
+    // times — measured ~1.6s on a quiet sync where the max was ~1.1s.
+    final results = await Future.wait([
+      Store.get.push(Store.get.threads, ThreadsBase()),
+      Store.get.push(Store.get.links, LinksBase()),
+      Store.get.push(Store.get.schedules, SchedulesBase()),
+      Store.get.push(
+        Store.get.threadAssociations,
+        ThreadAssociationsBase(),
+      ),
+      Store.get.push(Store.get.threadTags, ThreadTagsBase()),
+    ]);
+    final success = results.every((r) => r);
 
     // Push pending read changes (readAt != null means user read locally)
     final readActivities = await (Store.get.select(

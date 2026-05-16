@@ -261,12 +261,14 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Push pending changes for both notes and note tags.
   static Future<bool> push() async {
-    final notesSuccess = await Store.get.push(Store.get.notes, NotesBase());
-    final tagsSuccess = await Store.get.push(
-      Store.get.noteTags,
-      NoteTagsBase(),
-    );
-    return notesSuccess && tagsSuccess;
+    // Notes and note_tags are independent at the SQL level — push them
+    // in parallel so the slower of the two sets the wall-clock cost
+    // instead of their sum.
+    final results = await Future.wait([
+      Store.get.push(Store.get.notes, NotesBase()),
+      Store.get.push(Store.get.noteTags, NoteTagsBase()),
+    ]);
+    return results.every((r) => r);
   }
 
   // Legacy method - use pullUpdates() instead

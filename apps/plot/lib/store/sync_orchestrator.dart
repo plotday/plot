@@ -87,7 +87,7 @@ class SyncOrchestrator {
   static final channel = SyncEntity(
     debugName: 'channel',
     dependsOn: [twistInstance],
-    pushFn: () async => false, // Read-only from API
+    pushFn: () async => true, // Read-only — no-op push always succeeds
     pullFn: Channel.pull,
   );
 

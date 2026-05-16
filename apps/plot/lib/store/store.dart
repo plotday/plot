@@ -3405,6 +3405,14 @@ class Store extends _$Store {
         'ON $t(pending) WHERE pending IS NOT NULL',
       );
     }
+
+    // Refresh statistics so the SQLite query planner picks the new
+    // partial indices for the push claim query. Without ANALYZE, the
+    // planner falls back to row-count heuristics and was observed to
+    // skip the partial index on populated tables (links, notes still
+    // ~1s claims after adding the index) — ANALYZE drops those to a
+    // few ms because the partial index is tiny.
+    await db.customStatement('ANALYZE');
   }
 
   /// Runs a SQL statement, ignoring "duplicate column" and "already exists" errors.
