@@ -95,12 +95,11 @@ class LinkModal {
             ));
           }
           final recentLinks = await Link.listRecent();
-          final recentResults = await _loadThreadsForLinks(recentLinks);
-          if (recentResults.isNotEmpty) {
+          if (recentLinks.isNotEmpty) {
             groups.add(SelectGroup(
               title: 'Recent',
-              items: recentResults
-                  .map((r) => _LinkItem.existing(r))
+              items: recentLinks
+                  .map((l) => _LinkItem.existing(_LinkSearchResult(link: l)))
                   .toList(),
             ));
           }
@@ -124,11 +123,12 @@ class LinkModal {
 
         if (isUrl) {
           final links = await Link.findBySourceUrl(text);
-          final results = await _loadThreadsForLinks(links);
-          if (results.isNotEmpty) {
+          if (links.isNotEmpty) {
             groups.add(SelectGroup(
               title: null,
-              items: results.map((r) => _LinkItem.existing(r)).toList(),
+              items: links
+                  .map((l) => _LinkItem.existing(_LinkSearchResult(link: l)))
+                  .toList(),
             ));
           } else {
             // Fetch metadata for the URL
@@ -148,11 +148,12 @@ class LinkModal {
           }
         } else {
           final links = await Link.searchByTitle(text);
-          final results = await _loadThreadsForLinks(links);
-          if (results.isNotEmpty) {
+          if (links.isNotEmpty) {
             groups.add(SelectGroup(
               title: null,
-              items: results.map((r) => _LinkItem.existing(r)).toList(),
+              items: links
+                  .map((l) => _LinkItem.existing(_LinkSearchResult(link: l)))
+                  .toList(),
             ));
           }
         }
@@ -265,14 +266,24 @@ class LinkModal {
       );
     }
 
-    final linkResult = item.linkResult!;
-    if (linkResult.thread != null) {
-      return LinkModalResult.thread(linkResult.thread!);
-    } else if (linkResult.link.sourceUrl != null) {
+    final link = item.linkResult!.link;
+    // Links that point at a Plot thread navigate to it; resolve the Thread
+    // lazily here (instead of eagerly for every Recent row at modal-open
+    // time) so the modal opens immediately. Fall through to the URL form
+    // if the thread has been deleted locally.
+    if (link.threadId != null) {
+      try {
+        final thread = await Thread.getOne(link.threadId!);
+        return LinkModalResult.thread(thread);
+      } catch (_) {
+        // Thread not found — treat as a plain URL.
+      }
+    }
+    if (link.sourceUrl != null) {
       return LinkModalResult.link(
-        url: linkResult.link.sourceUrl!,
-        title: linkResult.link.title,
-        favicon: linkResult.link.logo,
+        url: link.sourceUrl!,
+        title: link.title,
+        favicon: link.logo,
       );
     }
 
@@ -335,24 +346,6 @@ class LinkModal {
         (uri.scheme == 'http' || uri.scheme == 'https');
   }
 
-  static Future<List<_LinkSearchResult>> _loadThreadsForLinks(
-    List<Link> links,
-  ) async {
-    final results = <_LinkSearchResult>[];
-    for (final link in links) {
-      if (link.threadId == null) {
-        results.add(_LinkSearchResult(link: link, thread: null));
-        continue;
-      }
-      try {
-        final thread = await Thread.getOne(link.threadId!);
-        results.add(_LinkSearchResult(link: link, thread: thread));
-      } catch (_) {
-        // Thread not found — skip
-      }
-    }
-    return results;
-  }
 }
 
 /// Internal item type for the SelectModal.
@@ -385,7 +378,6 @@ class _LinkItem {
 
 class _LinkSearchResult {
   final Link link;
-  final Thread? thread;
 
-  _LinkSearchResult({required this.link, this.thread});
+  _LinkSearchResult({required this.link});
 }
