@@ -1325,7 +1325,9 @@ class _ThreadActionsRow extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.xs,
+          horizontal: context.isMultiPanel
+              ? 20.0
+              : context.contentPaddingH,
           vertical: context.theme.spacing.xs,
         ),
         child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
