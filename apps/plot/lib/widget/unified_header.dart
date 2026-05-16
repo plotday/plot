@@ -749,9 +749,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   ),
                 ),
                 suffixBuilder: (context, style, states) {
+                  final activeFilters = <Command>[
+                    for (final iconValue in state.iconFilter)
+                      ToggleIconFilter(iconValue, context: context),
+                    for (final tag in state.filter)
+                      ToggleActivityFilter(tag, context: context),
+                    if (notifier?.isThreadVisible == true)
+                      for (final tag in notifier!.filter)
+                        if (!state.filter.contains(tag))
+                          ToggleActivityFilter(tag, context: context),
+                  ];
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      for (final filter in activeFilters)
+                        Button.icon(filter, selected: true),
                       if (buildFilters(context).isNotEmpty)
                         Button.icon(
                           PickFilterCommand(

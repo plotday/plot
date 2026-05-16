@@ -9,7 +9,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/style/colors.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
@@ -348,39 +347,6 @@ class ToggleIconFilter extends Command {
   }
 }
 
-class _AccentWhenOn extends CommandWrapper {
-  _AccentWhenOn(super.command)
-    : super(
-        run: (c, ctx) async {
-          await c.run(ctx);
-          return const CommandRefresh();
-        },
-      );
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    // Logo-bearing filters (connector link types, twists) render their own
-    // icon via the wrapped command's buildIcon. Tinting isn't possible for
-    // multicolor logos, so convey on/off state via opacity instead.
-    final custom = command.buildIcon(context, hoverIcon: hoverIcon);
-    if (custom != null) {
-      return Opacity(
-        opacity: command.on == true ? 1.0 : 0.55,
-        child: custom,
-      );
-    }
-    final iconData = command.icon;
-    if (iconData == null) return null;
-    return Icon(
-      iconData,
-      size: context.theme.iconSizes.base,
-      color: command.on == true
-          ? context.theme.colors.primary
-          : context.theme.plotColors.muted,
-    );
-  }
-}
-
 class PickFilterCommand extends ShowCommands {
   PickFilterCommand({
     required List<Command> Function(BuildContext) filterCommandsBuilder,
@@ -398,17 +364,37 @@ class PickFilterCommand extends ShowCommands {
                .where((c) => c.tag != Tag.archived)
                .toList();
 
+           // Split active vs. inactive across both filter types. Active
+           // filters collect into a single "Filters" section at the top
+           // (mirroring the share picker's "Shared" section). Inactive
+           // options stay grouped by type below.
+           final activeFilters = <Command>[
+             ...iconFilters.where((c) => c.on == true),
+             ...tagFilters.where((c) => c.on == true),
+           ];
+           final inactiveIconFilters = iconFilters
+               .where((c) => c.on != true)
+               .toList();
+           final inactiveTagFilters = tagFilters
+               .where((c) => c.on != true)
+               .toList();
+
            return Commands(
              groups: [
-               if (iconFilters.isNotEmpty)
+               if (activeFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Filters',
+                   commands: activeFilters,
+                 ),
+               if (inactiveIconFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Thread type',
-                   commands: iconFilters.map(_AccentWhenOn.new).toList(),
+                   commands: inactiveIconFilters,
                  ),
-               if (tagFilters.isNotEmpty)
+               if (inactiveTagFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Tags',
-                   commands: tagFilters.map(_AccentWhenOn.new).toList(),
+                   commands: inactiveTagFilters,
                  ),
              ],
            );
