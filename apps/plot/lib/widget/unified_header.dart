@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/command/unread_filter.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
@@ -587,6 +588,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     Widget withTrackingPill(Widget title) {
       if (state.context.isTwistDev) return title;
+      final showUnreadToggle =
+          state.hasUnreadInFeed || state.unreadFilterActive;
       return Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -602,6 +605,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             _searchButton(),
           ] else
             const SizedBox(width: 8),
+          if (showUnreadToggle) ...[
+            const SizedBox(width: 8),
+            Button.icon(
+              ToggleUnreadFilter(active: state.unreadFilterActive),
+              selected: state.unreadFilterActive,
+            ),
+          ],
+          const SizedBox(width: 8),
           _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
