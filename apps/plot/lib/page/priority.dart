@@ -734,6 +734,26 @@ class _PriorityPageState extends State<PriorityPage>
   _cachedDropBoundaries;
 
   @override
+  void initState() {
+    super.initState();
+    // One-shot: when the user lands on this priority from a
+    // multi-thread notification tap, [NotificationLandingPage] leaves
+    // `PendingActivityFeedView.openUnreadFilter` set. Consume and
+    // clear the flag in a post-frame callback so `PriorityBloc` is
+    // already available via context.read.
+    if (PendingActivityFeedView.openUnreadFilter) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!PendingActivityFeedView.openUnreadFilter) return;
+        PendingActivityFeedView.openUnreadFilter = false;
+        context
+            .read<PriorityBloc>()
+            .activateUnreadFilterFromNotification();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _activityFeedDragController.dispose();
     super.dispose();
@@ -755,48 +775,6 @@ class _PriorityPageState extends State<PriorityPage>
             if (scrollController != null && scrollController.hasClients) {
               scrollController.jumpTo(0);
             }
-          },
-        ),
-        // When a multi-thread notification opened this priority, scroll
-        // the activity feed so the "New" header lands at the top once
-        // items load. Honors PendingNotificationScroll.section, which is
-        // set by RootProvider's notification-tap handler.
-        BlocListener<PriorityBloc, PriorityState>(
-          listenWhen: (previous, current) =>
-              PendingNotificationScroll.section != null &&
-              previous.activityFeedItems != current.activityFeedItems,
-          listener: (context, state) {
-            final section = PendingNotificationScroll.section;
-            if (section == null) return;
-            final items = state.activityFeedItems;
-            int? targetIndex;
-            for (var i = 0; i < items.length; i++) {
-              final item = items[i];
-              if (item is AgendaHeaderItem && item.text != null) {
-                final marker = ActivitySectionMarker.tryDecode(item.text!);
-                if (marker?.section == section) {
-                  targetIndex = i;
-                  break;
-                }
-              }
-            }
-            if (targetIndex == null) return;
-            PendingNotificationScroll.section = null;
-            final scrollController = ScrollControllerContext.of(context);
-            if (scrollController == null) return;
-            final index = targetIndex;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!scrollController.hasClients) return;
-              // Items have variable heights; the InfiniteList's
-              // estimatedItemExtent default (75) is the same heuristic
-              // used elsewhere in the codebase for index-based jumps.
-              const estimatedItemExtent = 75.0;
-              final estimated = (index * estimatedItemExtent).clamp(
-                0.0,
-                scrollController.position.maxScrollExtent,
-              );
-              scrollController.jumpTo(estimated);
-            });
           },
         ),
         // Mirror NowBloc.currentEvent into PriorityBloc so the activity
@@ -824,7 +802,7 @@ class _PriorityPageState extends State<PriorityPage>
   Widget _buildBody(BuildContext context, PriorityState state) {
     return Builder(
       builder: (context) {
-        final items = state.activityFeedItems;
+        final items = state.activityFeedViewItems;
 
         // Build shortcuts map for plain Up/Down navigation
         final shortcuts = <ShortcutActivator, Intent>{
@@ -1071,6 +1049,27 @@ class _PriorityPageState extends State<PriorityPage>
             (state.hasArchivedMatches && !state.showArchived));
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+
+    // Filter on, view empty, and still waiting: either the activity
+    // feed has not finished its initial load, or we are inside the
+    // notification-activation window waiting for sync to deliver
+    // unread items. Show a centered spinner instead of the empty
+    // state so the user understands the screen is not frozen.
+    if (!hasAnyThread &&
+        !showFooter &&
+        state.unreadFilterActive &&
+        (state.unreadFilterPending || !state.activityFeedLoaded)) {
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.contentPaddingH,
+          vertical: context.theme.spacing.xl,
+        ),
+        child: Center(
+          child: Spinner.message('Loading unread threads'),
+        ),
+      );
+    }
+
     if (!hasAnyThread &&
         !showFooter &&
         state.activityFeedDoneEnd &&

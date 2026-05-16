@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'command.dart';
+import 'package:plot/command/unread_filter.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
@@ -552,6 +553,7 @@ List<Command> currentPriorityCommands(
 }) => [
   ...prioritySecondaryCommands(priority),
   if (context != null) ToggleArchivedVisibility(context: context),
+  if (context != null) ToggleUnreadFilter.fromContext(context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),

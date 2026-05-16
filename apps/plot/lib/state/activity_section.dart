@@ -1,14 +1,13 @@
 import 'package:plot/store/store.dart';
 
-/// Cross-component signal: when a notification tap opens a priority for a
-/// multi-thread batch, the next-built activity feed reads this and scrolls
-/// to the matching section header (typically [ActivitySection.newSection])
-/// so the unread threads land at the top of the viewport.
-///
-/// Written by the notification tap handler; consumed and cleared by
-/// `_PriorityPageState` once the activity feed has items.
-class PendingNotificationScroll {
-  static ActivitySection? section;
+/// Cross-component signal: when the user taps a multi-thread
+/// notification, [NotificationLandingPage] sets this to true. The
+/// matching priority page consumes it on mount, calls
+/// `PriorityBloc.activateUnreadFilterFromNotification()`, and clears
+/// the flag. Single-thread notifications still route through
+/// `ThreadLookupRoute` and never touch this signal.
+class PendingActivityFeedView {
+  static bool openUnreadFilter = false;
 }
 
 /// The sections of the Activity tab. Each thread belongs to exactly

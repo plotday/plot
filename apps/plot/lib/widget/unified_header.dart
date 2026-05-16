@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/command/unread_filter.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
@@ -587,6 +588,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     Widget withTrackingPill(Widget title) {
       if (state.context.isTwistDev) return title;
+      final showUnreadToggle =
+          state.hasUnreadInFeed || state.unreadFilterActive;
+      final priorityColor = context.colour.colours.fromTheme(
+        state.context.displayColor,
+      );
       return Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -597,11 +603,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           // includes descender space the icon's box doesn't, and the
           // text reads as nudged up by a couple of pixels.
           Flexible(child: _tightTextBox(child: title)),
-          if (layoutState.multiPanel) ...[
-            const SizedBox(width: 4),
-            _searchButton(),
-          ] else
+          if (showUnreadToggle) ...[
             const SizedBox(width: 8),
+            Button.icon(
+              ToggleUnreadFilter(active: state.unreadFilterActive),
+              selected: state.unreadFilterActive,
+              selectedColor: priorityColor,
+            ),
+          ] else if (layoutState.multiPanel)
+            const SizedBox(width: 4)
+          else
+            const SizedBox(width: 8),
+          if (layoutState.multiPanel) _searchButton(),
           _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
