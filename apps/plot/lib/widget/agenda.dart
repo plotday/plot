@@ -1169,7 +1169,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // with descendants hidden, since the agenda already rolls them
           // up under each block.
           PriorityBloc.markNextPriorityFromAgenda();
-          context.router.navigate(
+          // Use the root router: when triggered from the Agenda tab,
+          // `context.router` is the agenda's nested StackRouter which has
+          // no PriorityRoute in its tree (PriorityRoute lives under the
+          // Activity tab's ActivityShell), so a scoped navigate throws
+          // `Failed to navigate to PriorityRoute`. The root navigator
+          // resolves the cross-tab path and handles the tab swap.
+          context.router.root.navigate(
             PriorityRoute(
               priorityIdString: eventThread.priority.id.toShortString(),
               children: [
