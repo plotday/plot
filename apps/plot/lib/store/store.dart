@@ -1298,14 +1298,20 @@ class Store extends _$Store {
       // Allow base table to merge with local pending state
       final processedRows = await baseTable.processPulledRows(this, storeRows);
 
-      await batch((batch) {
-        // Use insertOrReplace mode to ensure null values are explicitly set.
-        // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
-        //   "don't update this column" - causing unarchived items to stay archived
-        // - insertOrReplace deletes and re-inserts the row, ensuring all columns
-        //   including nulls are set correctly
-        batch.insertAll(table, processedRows, mode: InsertMode.insertOrReplace);
-      });
+      // Skip opening a write transaction when there's nothing to write.
+      // Drift's `batch()` acquires an exclusive lock regardless of payload,
+      // and a no-op pull (server returned zero rows) would otherwise serialise
+      // against concurrent watch-stream reads for no benefit.
+      if (processedRows.isNotEmpty) {
+        await batch((batch) {
+          // Use insertOrReplace mode to ensure null values are explicitly set.
+          // - insertAllOnConflictUpdate uses toColumns(true) which treats null as
+          //   "don't update this column" - causing unarchived items to stay archived
+          // - insertOrReplace deletes and re-inserts the row, ensuring all columns
+          //   including nulls are set correctly
+          batch.insertAll(table, processedRows, mode: InsertMode.insertOrReplace);
+        });
+      }
 
       totalRows += baseRows.length;
     } while (more);
@@ -1324,45 +1330,45 @@ class Store extends _$Store {
       final horizonInt = finalHorizon != null
           ? int.tryParse(finalHorizon)
           : null;
-      final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
-      await into(syncStates).insert(
-        SyncStatesCompanion.insert(
-          entity: entity,
-          lastHorizon: horizonInt != null
-              ? Value(horizonInt)
-              : const Value.absent(),
-          pulledAt: Value(nowMicros),
-          firstPulledAt: initial ? Value(nowMicros) : const Value.absent(),
-        ),
-        onConflict: DoUpdate(
-          (old) => SyncStatesCompanion(
-            entity: Value(entity),
+      // Short-circuit no-op pulls: when the cursor didn't advance and the
+      // entity is already initialized (`pulledAt` non-null), there's
+      // nothing meaningful to record. Skipping the upsert avoids
+      // serialising a write transaction against concurrent watch streams,
+      // which is the dominant per-entity cost during an idle-startup
+      // syncAll where ~16 entities all return zero rows.
+      final cursorUnchanged =
+          horizonInt != null && horizonInt == syncState?.lastHorizon;
+      final alreadyInitialized = syncState?.pulledAt != null;
+      if (!cursorUnchanged || !alreadyInitialized) {
+        final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
+        await into(syncStates).insert(
+          SyncStatesCompanion.insert(
+            entity: entity,
             lastHorizon: horizonInt != null
                 ? Value(horizonInt)
                 : const Value.absent(),
             pulledAt: Value(nowMicros),
             firstPulledAt: initial ? Value(nowMicros) : const Value.absent(),
-            // Preserve existing 'last' and 'noMore' values
           ),
-        ),
-      );
+          onConflict: DoUpdate(
+            (old) => SyncStatesCompanion(
+              entity: Value(entity),
+              lastHorizon: horizonInt != null
+                  ? Value(horizonInt)
+                  : const Value.absent(),
+              pulledAt: Value(nowMicros),
+              firstPulledAt: initial ? Value(nowMicros) : const Value.absent(),
+              // Preserve existing 'last' and 'noMore' values
+            ),
+          ),
+        );
+      }
     }
 
-    // Return the range that was pulled
-    // For descending tables, syncState.last is the oldest boundary
-    // Return (oldest, null) to represent the range from oldest onwards
-    final finalSyncState = await (select(
-      syncStates,
-    )..where((row) => row.entity.equals(entity))).getSingleOrNull();
-
-    if (finalSyncState?.last != null) {
-      final lastDateTime = DateTime.fromMicrosecondsSinceEpoch(
-        finalSyncState!.last!,
-        isUtc: true,
-      );
-      return (lastDateTime, null);
-    }
-
+    // No caller reads pull()'s return value (all callsites await without
+    // assigning), so skip the trailing `sync_states` re-read that this
+    // method used to perform to compute it. Keeping the signature for
+    // back-compat with existing callers.
     return null;
   }
 
