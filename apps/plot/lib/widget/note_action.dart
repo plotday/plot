@@ -11,7 +11,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/colors.dart';
+import 'package:plot/style/theme.dart' show darkenTheme;
 import 'package:plot/widget/auth_button.dart';
+import 'package:plot/widget/edit_link_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/modal.dart';
@@ -76,6 +79,7 @@ class NoteActionWidget extends StatelessWidget {
       case UserActionType.external:
         return ExternalLinkButton(
           link: link as ExternalUserAction,
+          note: note,
           variant: variant,
           style: style,
           textStyle: textStyle,
@@ -417,10 +421,12 @@ class _PlanActionWidgetState extends State<PlanActionWidget> {
   }
 }
 
-/// A button widget for non-OAuth links (external, hidden, etc.)
-class ExternalLinkButton extends StatelessWidget {
+/// Compact row for an external link attached to a note. Mirrors the visual
+/// design of the thread-pinned link row (favicon + title + "..." menu).
+class ExternalLinkButton extends StatefulWidget {
   const ExternalLinkButton({
     required this.link,
+    this.note,
     this.variant,
     this.style,
     this.textStyle,
@@ -428,44 +434,243 @@ class ExternalLinkButton extends StatelessWidget {
   });
 
   final ExternalUserAction link;
+
+  /// The note this link belongs to. Required for Edit / Pin actions. When
+  /// null (e.g. preview contexts), the menu falls back to open-only.
+  final Note? note;
+
+  /// Kept for source compatibility with the previous button-based API.
   final FButtonVariant? variant;
   final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
+  State<ExternalLinkButton> createState() => _ExternalLinkButtonState();
+}
+
+class _ExternalLinkButtonState extends State<ExternalLinkButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final favicon = link.favicon;
-    return FButton(
-      variant: variant ?? FButtonVariant.secondary,
-      style: style ?? const FButtonStyleDelta.context(),
-      mainAxisSize: MainAxisSize.min,
-      onPress: () => _handleTap(),
-      prefix: favicon != null
-          ? LogoImage(
-              url: favicon,
-              size: 14,
-              fallback: const Icon(PlotIcon.link, size: 14),
-            )
-          : const Icon(PlotIcon.link, size: 14),
-      child: Flexible(
-        child: Text(
-          link.title,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-          style: textStyle,
-        ),
+    return FTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) {
+          final favicon = widget.link.favicon;
+          return GestureDetector(
+            onTap: _handleTap,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.basic,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.theme.colors.background,
+                  border: Border.all(
+                    color: context.theme.colors.border,
+                    width: 0.5,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      if (favicon != null)
+                        LogoImage(
+                          url: favicon,
+                          size: 14,
+                          fallback: const Icon(PlotIcon.link, size: 14),
+                        )
+                      else
+                        const Icon(PlotIcon.link, size: 14),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.link.title,
+                          style: context.theme.typography.sm.copyWith(
+                            color: _hovered
+                                ? context.theme.colors.foreground
+                                : context.theme.colors.foreground.withValues(
+                                    alpha: 0.7,
+                                  ),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                      if (widget.note != null) ...[
+                        const SizedBox(width: 8),
+                        _NoteLinkMenu(
+                          link: widget.link,
+                          note: widget.note!,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
   void _handleTap() {
-    final url = link.url;
+    final url = widget.link.url;
     try {
       final uri = Uri.parse(url);
       launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e, t) {
       log.warning('Failed to launch URL: $url', e, t);
     }
+  }
+}
+
+/// "..." menu for a note-attached link row. Offers Edit and Pin.
+class _NoteLinkMenu extends StatefulWidget {
+  const _NoteLinkMenu({required this.link, required this.note});
+
+  final ExternalUserAction link;
+  final Note note;
+
+  @override
+  State<_NoteLinkMenu> createState() => _NoteLinkMenuState();
+}
+
+class _NoteLinkMenuState extends State<_NoteLinkMenu> {
+  final _controller = OverlayPortalController();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.theme.popoverMenuStyle;
+
+    return OverlayPortal(
+      controller: _controller,
+      overlayChildBuilder: (overlayContext) {
+        final buttonBox = this.context.findRenderObject() as RenderBox;
+        final overlay =
+            Overlay.of(overlayContext).context.findRenderObject() as RenderBox;
+        final position = buttonBox.localToGlobal(
+          Offset(buttonBox.size.width, buttonBox.size.height),
+          ancestor: overlay,
+        );
+
+        return Positioned(
+          top: position.dy,
+          right: overlay.size.width - position.dx,
+          child: TapRegion(
+            onTapOutside: (_) => _controller.hide(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: style.maxWidth),
+              child: DecoratedBox(
+                decoration: style.decoration,
+                child: FInheritedItemData(
+                  child: FItemGroup.merge(
+                    style: style.itemGroupStyle,
+                    divider: FItemDivider.full,
+                    children: [FItemGroup(children: _buildMenuItems())],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: () {
+          if (_controller.isShowing) {
+            _controller.hide();
+          } else {
+            _controller.show();
+          }
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.basic,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Icon(
+              PlotIcon.more,
+              size: 14,
+              color: context.theme.colors.foreground.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<FItem> _buildMenuItems() {
+    return [
+      FItem(
+        title: const Text('Edit link'),
+        onPress: () {
+          _controller.hide();
+          _editLink();
+        },
+      ),
+      FItem(
+        title: const Text('Pin to thread'),
+        onPress: () {
+          _controller.hide();
+          _pinLink();
+        },
+      ),
+    ];
+  }
+
+  Future<void> _editLink() async {
+    final result = await EditLinkModal(
+      initialTitle: widget.link.title,
+      initialUrl: widget.link.url,
+    ).run(context);
+    if (result == null) return;
+    if (result.title == widget.link.title && result.url == widget.link.url) {
+      return;
+    }
+    final updatedAction = ExternalUserAction(
+      title: result.title.isEmpty ? result.url : result.title,
+      url: result.url,
+      favicon: widget.link.favicon,
+    );
+    final actions = (widget.note.actions ?? const <UserAction>[])
+        .map((a) => identical(a, widget.link) || a == widget.link
+            ? updatedAction
+            : a)
+        .toList();
+    await widget.note.copyWith(actions: actions).save();
+  }
+
+  Future<void> _pinLink() async {
+    final threadId = widget.note.threadId;
+    final existing = await Link.getForThread(threadId);
+    if (existing.any((l) => l.sourceUrl == widget.link.url)) {
+      if (mounted) {
+        context.showToast(message: 'Link already pinned');
+      }
+      return;
+    }
+    final now = DateTime.now();
+    final linkRow = LinkRow(
+      id: Uuid.generate(),
+      createdAt: now,
+      updatedAt: now,
+      threadId: threadId,
+      sourceCreatedAt: now,
+      sourceUrl: widget.link.url,
+      title: widget.link.title,
+      logo: widget.link.favicon,
+    );
+    await Store.get.save(
+      Store.get.links,
+      linkRow.toCompanion(false),
+      LinksBase(),
+    );
   }
 }
 

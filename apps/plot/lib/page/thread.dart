@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/edit_link_modal.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 
@@ -783,9 +784,14 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
     );
   }
 
-  /// Show menu button if there are link actions or thread is an event.
+  /// Show menu button if there are link actions, the thread is an event,
+  /// or the link is user-editable (Edit / Unpin items are always
+  /// available on links not owned by a connector).
   bool get _hasMenuActions {
     if (widget.thread.at != null) return true;
+    final isUserEditable =
+        widget.link.sourceUrl != null && widget.link.getTypeConfig() == null;
+    if (isUserEditable) return true;
     final actions = widget.link.actions
         ?.where((a) => a.type != UserActionType.conferencing)
         .toList();
@@ -1181,7 +1187,54 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
         }
       }).toList(),
     );
+    // User-editable links (those backed by a sourceUrl from outside a
+    // connector context) get Edit + Unpin. Connector-managed links (with a
+    // type config) keep their source as the authority — editing them in
+    // Plot would lose data on the next sync.
+    final canEditLink =
+        widget.link.sourceUrl != null && widget.link.getTypeConfig() == null;
+    if (canEditLink) {
+      items.add(
+        FItem(
+          title: const Text('Edit link'),
+          onPress: () {
+            _controller.hide();
+            _editLink();
+          },
+        ),
+      );
+      items.add(
+        FItem(
+          title: const Text('Unpin'),
+          onPress: () {
+            _controller.hide();
+            _unpinLink();
+          },
+        ),
+      );
+    }
     return items;
+  }
+
+  Future<void> _editLink() async {
+    final link = widget.link;
+    final initialTitle = link.title ?? '';
+    final initialUrl = link.sourceUrl ?? '';
+    final result = await EditLinkModal(
+      initialTitle: initialTitle,
+      initialUrl: initialUrl,
+    ).run(context);
+    if (result == null) return;
+    if (result.title == initialTitle && result.url == initialUrl) return;
+    await Link.updateTitleAndUrl(
+      link,
+      title: result.title.isEmpty ? null : result.title,
+      url: result.url,
+    );
+  }
+
+  Future<void> _unpinLink() async {
+    await Link.unpinFromThread(widget.link);
   }
 }
 

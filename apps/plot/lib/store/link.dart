@@ -289,6 +289,41 @@ class Link extends Equatable {
     await Store.get.save(Store.get.links, updated.toCompanion(false), LinksBase());
   }
 
+  /// Update the user-editable title and URL of a link. Used by the pinned
+  /// link row's edit menu — keep separate from connector-driven updates.
+  static Future<void> updateTitleAndUrl(
+    Link link, {
+    required String? title,
+    required String url,
+  }) async {
+    final updated = link._link.copyWith(
+      title: Value(title),
+      sourceUrl: Value(url),
+      updatedAt: DateTime.now(),
+    );
+    await Store.get.save(
+      Store.get.links,
+      updated.toCompanion(false),
+      LinksBase(),
+    );
+  }
+
+  /// Detach a link from its thread (Unpin). The link row is preserved so
+  /// other clients see the change via incremental sync; setting thread_id
+  /// to null removes it from [watchForThread] without a `DELETE` (which
+  /// would be invisible to the seq cursor protocol).
+  static Future<void> unpinFromThread(Link link) async {
+    final updated = link._link.copyWith(
+      threadId: const Value(null),
+      updatedAt: DateTime.now(),
+    );
+    await Store.get.save(
+      Store.get.links,
+      updated.toCompanion(false),
+      LinksBase(),
+    );
+  }
+
   /// Find links by exact source URL match
   static Future<List<Link>> findBySourceUrl(String url) async {
     final rows = await (Store.get.select(

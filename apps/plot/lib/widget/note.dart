@@ -170,29 +170,9 @@ class _NoteWidgetState extends State<NoteWidget> {
                 top: 8,
                 bottom: 4,
               ),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: noteLinks
-                    .map(
-                      (link) => NoteActionWidget(
-                        link: link,
-                        note: widget.note,
-                        variant: FButtonVariant.secondary,
-                        style: FButtonStyleDelta.delta(
-                          contentStyle: FButtonContentStyleDelta.delta(
-                            padding: EdgeInsetsGeometryDelta.value(
-                              const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                            ),
-                          ),
-                        ),
-                        textStyle: context.theme.typography.sm,
-                      ),
-                    )
-                    .toList(),
+              child: _NoteActionsLayout(
+                actions: noteLinks,
+                note: widget.note,
               ),
             ),
           SizedBox(
@@ -729,6 +709,76 @@ class NoteCommands extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// Renders a note's action attachments.
+///
+/// External links display as full-width thin rows (mirroring the pinned
+/// thread-link row), so they're rendered in a vertical Column. All other
+/// action types (callbacks, files, conferencing links, etc.) remain in a
+/// horizontal Wrap below — they're chip-shaped and read better side by side.
+class _NoteActionsLayout extends StatelessWidget {
+  const _NoteActionsLayout({required this.actions, required this.note});
+
+  final List<UserAction> actions;
+  final Note note;
+
+  @override
+  Widget build(BuildContext context) {
+    final externalLinks = <UserAction>[];
+    final others = <UserAction>[];
+    for (final action in actions) {
+      if (action.type == UserActionType.external) {
+        externalLinks.add(action);
+      } else {
+        others.add(action);
+      }
+    }
+
+    final children = <Widget>[];
+    for (final link in externalLinks) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: NoteActionWidget(link: link, note: note),
+        ),
+      );
+    }
+    if (others.isNotEmpty) {
+      children.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: others
+              .map(
+                (link) => NoteActionWidget(
+                  link: link,
+                  note: note,
+                  variant: FButtonVariant.secondary,
+                  style: FButtonStyleDelta.delta(
+                    contentStyle: FButtonContentStyleDelta.delta(
+                      padding: EdgeInsetsGeometryDelta.value(
+                        const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  textStyle: context.theme.typography.sm,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
   }
 }
