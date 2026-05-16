@@ -1553,6 +1553,42 @@ class RescheduleAllInBlock extends Command {
   }
 }
 
+/// Bulk mark-as-read for every unread thread in the activity-feed "New"
+/// section. No confirmation modal — fires immediately, mirroring the
+/// per-thread read behaviour that runs after 750ms on the thread page.
+class MarkAllReadInNewSection extends Command {
+  MarkAllReadInNewSection(this.threads)
+    : super(
+        title: 'Mark all read',
+        icon: PlotIcon.doneAll,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final List<Thread> threads;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (threads.isEmpty) return const CommandSkipped();
+
+    PriorityBloc? bloc;
+    try {
+      bloc = context.read<PriorityBloc>();
+    } catch (_) {}
+
+    for (final thread in threads) {
+      if (!thread.unread) continue;
+      final updated = thread.copyWith(
+        unread: false,
+        readAt: Value(thread.contentTimestamp),
+      );
+      bloc?.optimisticallyUpdateThread(updated);
+      unawaited(updated.save());
+    }
+    return const CommandDone();
+  }
+}
+
 class ToggleThreadTag extends _UpdateThreadCommand {
   ToggleThreadTag(super.thread, this.tag, {super.onUpdate})
     : super(

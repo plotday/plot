@@ -1229,10 +1229,36 @@ class _PriorityPageState extends State<PriorityPage>
                             const <Thread>[];
                   if (natives.isNotEmpty) {
                     return [
-                      _SectionHeaderWithRescheduleAll(
+                      _SectionHeaderWithTrailingButton(
                         tile: tile,
-                        threads: natives,
-                        sectionLabel: marker.label,
+                        button: Button.icon(
+                          RescheduleAllInBlock(
+                            natives,
+                            sectionLabel: marker.label,
+                          ),
+                        ),
+                      ),
+                    ];
+                  }
+                }
+
+                // "Mark all read" affordance for the New block. Gather
+                // the unread threads under this header from displayItems
+                // — they aren't pre-cached on state like the date-keyed
+                // natives map.
+                if (marker != null &&
+                    marker.section == ActivitySection.newSection) {
+                  final unread = <Thread>[];
+                  for (var i = index + 1; i < displayItems.length; i++) {
+                    final next = displayItems[i];
+                    if (next is AgendaHeaderItem) break;
+                    if (next is AgendaThreadItem) unread.add(next.thread);
+                  }
+                  if (unread.isNotEmpty) {
+                    return [
+                      _SectionHeaderWithTrailingButton(
+                        tile: tile,
+                        button: Button.icon(MarkAllReadInNewSection(unread)),
                       ),
                     ];
                   }
@@ -1425,37 +1451,30 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   }
 }
 
-/// Section header (Today or a future Scheduled day) overlaid with a small
-/// "Reschedule all" affordance on the trailing edge. The underlying
-/// [AgendaTile] keeps its centered text and dark band; the button floats
-/// above it via a [Stack] so the section label stays visually centered.
-class _SectionHeaderWithRescheduleAll extends StatelessWidget {
-  const _SectionHeaderWithRescheduleAll({
+/// Section header (Today, a future Scheduled day, or New) overlaid with a
+/// small trailing-edge affordance ("Reschedule all" / "Mark all read").
+/// The underlying [AgendaTile] keeps its centered text and dark band; the
+/// button is laid out in a Row with an invisible mirror on the left so the
+/// centered title stays at the row's true horizontal midpoint.
+class _SectionHeaderWithTrailingButton extends StatelessWidget {
+  const _SectionHeaderWithTrailingButton({
     required this.tile,
-    required this.threads,
-    required this.sectionLabel,
+    required this.button,
   });
 
   final Widget tile;
-  final List<Thread> threads;
-  final String sectionLabel;
+  final Widget button;
 
   @override
   Widget build(BuildContext context) {
-    // Lay out as a Row with an invisible mirror of the button on the
-    // left. The visible button sits on the right; the mirror reserves
-    // matching space on the left so the centered title text stays at
-    // the row's true horizontal midpoint. Using a Row instead of a
-    // Stack overlay makes vertical alignment deterministic
-    // (CrossAxisAlignment.center, applied by a single layout primitive)
-    // and avoids the Stack-with-different-sized-children ambiguity that
-    // rendered the icon below the label on iOS while looking centered
-    // on macOS.
-    final button = Padding(
+    // Using a Row instead of a Stack overlay makes vertical alignment
+    // deterministic (CrossAxisAlignment.center, applied by a single
+    // layout primitive) and avoids the Stack-with-different-sized-
+    // children ambiguity that rendered the icon below the label on iOS
+    // while looking centered on macOS.
+    final padded = Padding(
       padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.sm),
-      child: Button.icon(
-        RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
-      ),
+      child: button,
     );
     return DecoratedBox(
       decoration: BoxDecoration(color: context.colour.headerBackground),
@@ -1467,10 +1486,10 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
             maintainSize: true,
             maintainAnimation: true,
             maintainState: true,
-            child: button,
+            child: padded,
           ),
           Expanded(child: tile),
-          button,
+          padded,
         ],
       ),
     );
