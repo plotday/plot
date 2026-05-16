@@ -431,6 +431,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Monotonic counter used to discard stale remote search responses.
   int _searchGeneration = 0;
 
+  /// Monotonic counter incremented at the top of every [setPriority]. Post-await
+  /// emits inside [setPriority] and [_finalizeDraftInBackground] check this so
+  /// that a B→C switch in mid-flight cancels A→B's pending draft emit.
+  int _priorityLoadGeneration = 0;
+
   /// Combined prepare + execute for callers that don't need debouncing.
   void updateSearch(String search) {
     prepareSearch(search);
@@ -1613,6 +1618,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
 
+    // Bump the generation so any in-flight chain-draft lookup or background
+    // finalization from a previous setPriority is fenced off — they check
+    // this counter before emitting and bail if a newer switch is underway.
+    final myGen = ++_priorityLoadGeneration;
+
     // Profile the priority switch end-to-end. The same stopwatch is passed
     // into _loadPriority/_loadAgenda so timestamps share an origin and the
     // user can see exactly how each phase contributes to time-to-threads.
@@ -1652,9 +1662,22 @@ class PriorityBloc extends Cubit<PriorityState> {
     // and won't naturally settle in the new one.
     _optimisticOverrides.clear();
 
+    // Sticky-unread entries are bound to threads under the previous priority's
+    // feed. Letting them survive means a thread that happens to appear in the
+    // new feed could keep an unexpected sort position.
+    _stickyUnreadIds.clear();
+
+    // Cancel any in-flight remote search so its result doesn't land in B
+    // after the user switched away from A.
+    _searchGeneration++;
+
     // Reset only the activity-feed scroll. Agenda scroll is preserved so
     // the user lands on the same visible block region after the switch.
     activityFeedScrollOffset = 0.0;
+
+    // Reset the "which list was last navigated from" hint. The new priority
+    // starts in its default navigation source until the user picks again.
+    threadListSource = null;
 
     // Switch context and rebuild the agenda model from cached threads
     // so the new context's blocks become the expanded ones (and
@@ -1682,6 +1705,16 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
         hideSubPriorities: !fromAgenda,
+        // Match the pre-persistence behavior: a fresh PriorityBloc started
+        // with empty filters / search. Carrying them across switches makes
+        // users hit "filtered to nothing" without realizing why.
+        filter: const [],
+        iconFilter: const [],
+        search: '',
+        remoteSearchExtras: const [],
+        remoteSearchInProgress: false,
+        remoteSearchOffline: false,
+        hasArchivedMatches: false,
       ),
     );
     profile.mark('emitted context-switched state');
@@ -1733,6 +1766,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     if (isClosed) return;
+    // A later setPriority(C) has fenced us off — don't emit B's chain draft
+    // into C's state.
+    if (myGen != _priorityLoadGeneration) {
+      profile.mark('draft emit skipped (newer setPriority in flight)');
+      return;
+    }
 
     // Emit the chosen draft right away so the new-thread input shows the
     // right priority chip. The actual draft note (and the legacy duplicate
@@ -1742,7 +1781,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     emit(state.copyWith(draft: newDraft));
     profile.mark('draft emitted');
 
-    unawaited(_finalizeDraftInBackground(newDraft, profile));
+    unawaited(_finalizeDraftInBackground(newDraft, profile, myGen));
   }
 
   /// Background completion for [setPriority]'s draft work. Runs the legacy
@@ -1753,6 +1792,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> _finalizeDraftInBackground(
     Thread newDraft,
     _PriorityLoadProfile profile,
+    int myGen,
   ) async {
     try {
       // Clean up duplicate drafts at the chosen draft's priority (legacy).
@@ -1818,6 +1858,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       profile.mark('draft note loaded (background)');
 
       if (isClosed) return;
+      // A newer setPriority has started — don't clobber the new priority's
+      // draft note with this stale one.
+      if (myGen != _priorityLoadGeneration) {
+        profile.mark('draft note emit skipped (newer setPriority in flight)');
+        return;
+      }
 
       // Skip the emit if the user has already started editing — replacing
       // their note with a stale DB copy would lose keystrokes.
@@ -3511,6 +3557,12 @@ class _LoadResult {
 class PriorityBlocProviderState extends State<PriorityBlocProvider> {
   late Future<_LoadResult> _bloc;
 
+  /// Monotonic counter incremented every time [didUpdateWidget] sees a new
+  /// priorityId or priority prop. Pairs with the bloc-side
+  /// `_priorityLoadGeneration` to drop stale `setPriority` calls when the
+  /// user toggles A→B→A faster than `Priority.getOne` resolves.
+  int _switchGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -3614,14 +3666,19 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
     super.didUpdateWidget(oldWidget);
 
     if (widget.priority != null && widget.priority != oldWidget.priority) {
+      final myGen = ++_switchGen;
       _bloc.then((result) {
         final priority = widget.priority;
         if (priority == null || result.bloc == null) return;
+        // A newer switch arrived while waiting on the bloc Future — let it
+        // win to avoid a stale priority emit clobbering the current one.
+        if (myGen != _switchGen || !mounted) return;
         result.bloc!.setPriority(priority);
         // Theme will be updated when new agenda loads (in _loadAgenda)
       });
     } else if (widget.priorityId != null &&
         widget.priorityId != oldWidget.priorityId) {
+      final myGen = ++_switchGen;
       // Stopwatch starts at the user-visible click time. Logs how long
       // didUpdateWidget's pre-setPriority work takes so the [PriorityProfile]
       // timeline covers the full click-to-threads window.
@@ -3636,6 +3693,8 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           '[PriorityProfile][didUpdate:${widget.priorityId}] '
           'Priority.getOne done @ ${didUpdateSw.elapsedMilliseconds}ms',
         );
+        // Drop this switch if a newer one has been requested since.
+        if (myGen != _switchGen || !mounted) return;
         result.bloc!.setPriority(priority);
         // Theme will be updated when new agenda loads (in _loadAgenda)
       });

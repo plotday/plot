@@ -27,12 +27,11 @@ import 'loading.dart';
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
-  PriorityWrapper({@PathParam("priorityId") required String priorityIdString})
-    : priorityId = PriorityId.tryFromShortString(priorityIdString),
-      _routerKey = GlobalKey(debugLabel: 'PriorityWrapper_$priorityIdString');
+  PriorityWrapper({@PathParam("priorityId") required this.priorityIdString})
+    : priorityId = PriorityId.tryFromShortString(priorityIdString);
 
+  final String priorityIdString;
   final PriorityId? priorityId;
-  final GlobalKey _routerKey;
 
   @override
   Widget wrappedRoute(BuildContext context) {
@@ -47,8 +46,99 @@ class PriorityWrapper implements AutoRouteWrapper {
       });
       return const SizedBox.shrink();
     }
-    return _build(context, priorityId);
+    // Wrap the subtree in a StatefulWidget so the inner AutoRouter's
+    // GlobalKey lives on State and survives `wrappedRoute` rebuilds. That
+    // way switching priorities flips this widget's `priorityId` prop
+    // through `didUpdateWidget` instead of remounting the whole tree.
+    return _PriorityWrapperHost(
+      priorityIdString: priorityIdString,
+      priorityId: priorityId,
+    );
   }
+}
+
+class _PriorityWrapperHost extends StatefulWidget {
+  const _PriorityWrapperHost({
+    required this.priorityIdString,
+    required this.priorityId,
+  });
+
+  final String priorityIdString;
+  final PriorityId priorityId;
+
+  @override
+  State<_PriorityWrapperHost> createState() => _PriorityWrapperHostState();
+}
+
+class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
+  // Stable across priority switches — the whole point of this host. Reusing
+  // the same key means the inner AutoRouter's Element survives, which
+  // means its Navigator stack, NewThreadPage/ThreadPage State, and (one
+  // level up) ResizablePanelLayout's FResizableController all persist.
+  final GlobalKey _routerKey = GlobalKey(
+    debugLabel: 'PriorityWrapper_innerRouter',
+  );
+
+  @override
+  void didUpdateWidget(_PriorityWrapperHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.priorityIdString == oldWidget.priorityIdString) return;
+
+    // The wrapper's priority just changed (e.g. user clicked B in the
+    // sidebar). The inner navigator may still hold a ThreadRoute from the
+    // previous priority — that thread doesn't belong to the new priority's
+    // feed and showing it would be incoherent. Replace the inner stack
+    // with the canonical landing for B (NewThreadRoute in multi-panel,
+    // PriorityOnlyRoute in single-panel).
+    //
+    // Skip the reset when the URL explicitly wants a thread (deep links
+    // like /t/:id or /p/B/:threadId resolve with ThreadRoute in the
+    // segment tree; AutoRoute will route the inner stack there
+    // automatically and we must not stomp on it).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final innerRouter = _findInnerRouter();
+      if (innerRouter == null) return;
+      if (innerRouter.topRoute.name != ThreadRoute.name) return;
+
+      final segments = context.router.root.urlState.segments;
+      if (_segmentsContainThread(segments)) return;
+
+      final multi = context.read<LayoutBloc>().state.multiPanel;
+      innerRouter.replaceAll([
+        multi ? NewThreadRoute() : PriorityOnlyRoute(),
+      ]);
+    });
+  }
+
+  StackRouter? _findInnerRouter() {
+    StackRouter? walk(RoutingController controller) {
+      final direct = controller.innerRouterOf<StackRouter>(
+        PriorityRoute.name,
+      );
+      if (direct != null) return direct;
+      for (final child in controller.childControllers) {
+        final hit = walk(child);
+        if (hit != null) return hit;
+      }
+      return null;
+    }
+    return walk(context.router.root);
+  }
+
+  static bool _segmentsContainThread(List<RouteMatch<dynamic>> segments) {
+    for (final segment in segments) {
+      if (segment.name == ThreadRoute.name) return true;
+      if (segment.hasChildren &&
+          _segmentsContainThread(segment.children!)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) => _build(context, widget.priorityId);
 
   Widget _build(BuildContext context, PriorityId priorityId) {
     return PriorityBlocProvider(
@@ -596,7 +686,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
       builder: (context, layoutState) {
         if (layoutState.middlePanelVisible) {
           // In multi-panel mode, always redirect to /new — NewThreadPage
-          // handles special cases (twist dev, viewer) itself.
+          // handles special cases (twist dev, viewer) itself. Most
+          // command-driven priority switches already pass
+          // `children: [NewThreadRoute()]` so this branch is only hit on
+          // cold deep-links / post-signin / notification fallbacks where
+          // LayoutBloc isn't reachable at navigation time.
           if (!context.router.currentPath.endsWith('/new')) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted && layoutState.middlePanelVisible) {
@@ -604,7 +698,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
               }
             });
           }
-          return const LoadingPage();
+          // Empty rather than a LoadingPage so the one-frame gap before
+          // NewThreadPage mounts doesn't flash a spinner. The middle panel
+          // (PriorityPage) is already rendered by the wrapper, so the user
+          // sees that immediately and the right panel just appears.
+          return const SizedBox.shrink();
         }
         return PriorityPage(priorityId: priorityId);
       },

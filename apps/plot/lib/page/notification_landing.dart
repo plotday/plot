@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:logging/logging.dart';
 
 import 'package:plot/page/loading.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/activity_section.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 
 final Logger _log = Logger('plot.page.notification_landing');
@@ -75,8 +77,12 @@ class _NotificationLandingPageState extends State<NotificationLandingPage> {
 
     if (!mounted) return;
     PendingNotificationScroll.section = ActivitySection.newSection;
+    final multi = context.read<LayoutBloc>().state.multiPanel;
     context.router.replaceAll([
-      PriorityRoute(priorityIdString: widget.priorityIdString),
+      PriorityRoute(
+        priorityIdString: widget.priorityIdString,
+        children: multi ? [NewThreadRoute()] : null,
+      ),
     ]);
   }
 

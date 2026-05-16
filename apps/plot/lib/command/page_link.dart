@@ -2,10 +2,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/env.dart';
 import 'package:plot/page/invite.dart';
 import 'package:plot/router.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 import 'logging.dart';
@@ -163,8 +166,15 @@ class OpenPageLink extends Command {
             ),
           );
         } else {
+          // Naked /p/:id — in multi-panel mode also push NewThreadRoute so
+          // the right panel lands on NewThreadPage instead of flashing the
+          // PriorityOnlyPage→LoadingPage redirect.
+          final multi = context.read<LayoutBloc>().state.multiPanel;
           context.router.push(
-            PriorityRoute(priorityIdString: priorityIdString),
+            PriorityRoute(
+              priorityIdString: priorityIdString,
+              children: multi ? [NewThreadRoute()] : null,
+            ),
           );
         }
         return const CommandDone();
@@ -178,7 +188,13 @@ class OpenPageLink extends Command {
 
       // Legacy /:priorityId[/:threadId | /new]
       if (segments.length == 1) {
-        context.router.push(PriorityRoute(priorityIdString: segments[0]));
+        final multi = context.read<LayoutBloc>().state.multiPanel;
+        context.router.push(
+          PriorityRoute(
+            priorityIdString: segments[0],
+            children: multi ? [NewThreadRoute()] : null,
+          ),
+        );
       } else if (segments.length >= 2) {
         if (segments[1] == 'new') {
           context.router.push(

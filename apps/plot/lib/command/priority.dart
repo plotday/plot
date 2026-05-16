@@ -17,6 +17,7 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/router.dart';
@@ -77,8 +78,16 @@ class ChangeCurrentPriority extends PriorityCommand {
     if (fromAgenda) {
       PriorityBloc.markNextPriorityFromAgenda();
     }
+    // In multi-panel mode the right panel should land on NewThreadPage for
+    // the new priority. Passing it as a child here drives AutoRoute to
+    // reconcile the inner stack to [NewThreadRoute] without going through
+    // the PriorityOnlyPage→LoadingPage redirect that used to flash.
+    final multi = context.read<LayoutBloc>().state.multiPanel;
     return CommandRoute(
-      PriorityRoute(priorityIdString: priority!.id.toShortString()),
+      PriorityRoute(
+        priorityIdString: priority!.id.toShortString(),
+        children: multi ? [NewThreadRoute()] : null,
+      ),
     );
   }
 }
@@ -134,8 +143,12 @@ class OpenPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final multi = context.read<LayoutBloc>().state.multiPanel;
     return CommandRoute(
-      PriorityRoute(priorityIdString: priorityId.toShortString()),
+      PriorityRoute(
+        priorityIdString: priorityId.toShortString(),
+        children: multi ? [NewThreadRoute()] : null,
+      ),
     );
   }
 }
@@ -165,8 +178,14 @@ class AddPriority extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     final savedPriority = await priority.save();
+    final multi = context.mounted
+        ? context.read<LayoutBloc>().state.multiPanel
+        : false;
     return CommandRoute(
-      PriorityRoute(priorityIdString: savedPriority.id.toShortString()),
+      PriorityRoute(
+        priorityIdString: savedPriority.id.toShortString(),
+        children: multi ? [NewThreadRoute()] : null,
+      ),
       replace: true,
     );
   }

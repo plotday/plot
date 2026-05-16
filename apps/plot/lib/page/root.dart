@@ -42,8 +42,13 @@ class RootPage extends StatelessWidget {
             final top = nowState.priority;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!context.mounted) return;
+              // BlocBuilder already gated on multiPanel == true above, so
+              // always land with NewThreadRoute in the right panel.
               context.router.replaceAll([
-                PriorityRoute(priorityIdString: top.id.toShortString()),
+                PriorityRoute(
+                  priorityIdString: top.id.toShortString(),
+                  children: [NewThreadRoute()],
+                ),
               ]);
             });
             return const LoadingPage();
