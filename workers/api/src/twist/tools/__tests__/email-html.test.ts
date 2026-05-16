@@ -120,6 +120,15 @@ describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
     expect(out).toBe("Line A\n\nLine B\n\nLine C");
   });
 
+  it("drops lines of only whitespace, including hard-break trailing spaces", () => {
+    // A line with just "  " (two trailing spaces) is a CommonMark hard line
+    // break with nothing after. ai.toMarkdown emits these from <p>&nbsp;</p>
+    // and similar layout-only constructs in email HTML. Treat them as blank.
+    const input = "First.\n  \n  \nSecond.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("First.\n\nSecond.");
+  });
+
   it("drops lines of only invisible/whitespace characters", () => {
     const input = "First.\n\n   \u034F \u00AD \u200B   \n\nSecond.";
     const out = cleanConvertedMarkdown(input);
@@ -170,10 +179,39 @@ describe("cleanConvertedMarkdown \u2014 multi-line links", () => {
     expect(out).toContain("[John Cutler](https://example.com/b)");
   });
 
-  it("leaves single-line image-links untouched", () => {
+  it("drops standalone image-links (decoration logos/icons)", () => {
+    // Email headers/footers wrap a logo or social icon in a link, e.g.
+    // `[ ![X Logo](icon.png) ](https://x.com/...)`. Each renders as a broken
+    // image block with vertical margin, creating the "blank space" effect
+    // the user sees in the note. Strip them — surrounding prose carries the
+    // meaning and the destination URL is already linked elsewhere if needed.
     const input = "[ ![LinkedIn](https://cdn.example.com/icon.png) ](https://example.com/feed)";
     const out = cleanConvertedMarkdown(input);
-    expect(out).toBe(input);
+    expect(out).toBe("");
+  });
+
+  it("drops a footer row of social-icon image-links", () => {
+    const input = [
+      "Sent by Letterboxd, P.O. Box 99280, Newmarket, Auckland 1149, New Zealand",
+      "",
+      "[ ![X Logo](https://cdn.example.com/x.png) ](https://x.com/letterboxd)",
+      "[ ![Bluesky Logo](https://cdn.example.com/bsky.png) ](https://bsky.app/profile/letterboxd.social)",
+      "[ ![YouTube Logo](https://cdn.example.com/yt.png) ](https://www.youtube.com/letterboxdhq)",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(
+      "Sent by Letterboxd, P.O. Box 99280, Newmarket, Auckland 1149, New Zealand"
+    );
+  });
+
+  it("preserves image-links that appear inline with other text", () => {
+    // An image-link inside a paragraph (with words around it) stays — the line
+    // carries real prose, so the image is part of richer content, not decoration.
+    const input = "Read more: [ ![Logo](icon.png) ](https://example.com/post) — full text below.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toContain("Read more:");
+    expect(out).toContain("[ ![Logo](icon.png) ](https://example.com/post)");
+    expect(out).toContain("full text below");
   });
 
   it("leaves well-formed single-line links untouched", () => {
@@ -214,9 +252,11 @@ describe("cleanConvertedMarkdown — empty-alt images", () => {
     expect(out).toBe(input);
   });
 
-  it("preserves image-links whose image has alt text", () => {
+  it("drops standalone image-links even without spaces inside the link", () => {
+    // Same standalone-decoration rule applies regardless of the whitespace
+    // ai.toMarkdown chooses to emit inside the outer link brackets.
     const input = "[![LinkedIn](https://cdn.example.com/icon.png)](https://example.com/feed)";
     const out = cleanConvertedMarkdown(input);
-    expect(out).toBe(input);
+    expect(out).toBe("");
   });
 });

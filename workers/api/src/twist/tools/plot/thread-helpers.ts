@@ -240,9 +240,10 @@ function isEmptyMarkdownBlock(line: string): boolean {
  * Aggressively flattens layout tables to paragraphs, drops empty rows, collapses
  * excessive horizontal rules / blank lines, and strips orphan pipe rows.
  *
- * Empty lines and empty Markdown blocks (empty headings, list items, emphasis,
- * blockquotes) are dropped so they never produce vertical whitespace in the
- * rendered output.
+ * Paragraphs are separated by a single blank line so super_editor renders them
+ * as distinct paragraph nodes. Empty/whitespace-only lines and empty Markdown
+ * blocks (empty headings, list items, emphasis, blockquotes) are dropped so they
+ * never produce stray empty paragraphs in the rendered output.
  */
 export function cleanConvertedMarkdown(markdown: string): string {
   // Strip invisible/zero-width characters used as email preheader padding.
@@ -259,6 +260,19 @@ export function cleanConvertedMarkdown(markdown: string): string {
   // icons in `<a><img></a>`; once images are stripped these collapse to empty
   // links that no Markdown renderer can show as clickable.
   markdown = markdown.replace(/\[\s*\]\([^)]*\)/g, "");
+
+  // Drop standalone image-links: a whole line whose only content is
+  // `[ ![alt](image-src) ](link-url)`. These are pure decoration in emails —
+  // header logos linking to the brand homepage, footer rows of social icons,
+  // poster thumbnails alongside article text, avatar links next to a name.
+  // In super_editor they render as image blocks whose URLs typically fail
+  // (CSP-blocked, expired CDN tokens) and leave tall empty rectangles that
+  // read as "blank space" in the note. The surrounding prose already carries
+  // the meaning, so dropping the decoration cleans up the rendering.
+  markdown = markdown.replace(
+    /^[ \t]*\[[ \t]*!\[[^\]]*\]\([^)]+\)[ \t]*\]\([^)]+\)[ \t]*$/gm,
+    ""
+  );
 
   // ai.toMarkdown() sometimes joins paragraphs on one line with double spaces
   // instead of proper newlines. Convert inline double-space separators to paragraph breaks.
@@ -356,7 +370,9 @@ export function cleanConvertedMarkdown(markdown: string): string {
     }
 
     // Trim trailing whitespace — `"foo   "` would otherwise create a
-    // Markdown hard break via the "two trailing spaces" rule.
+    // Markdown hard break via the "two trailing spaces" rule, AND so
+    // super_editor_markdown's _endsWithHardLineBreak() check doesn't pull
+    // the next blank line into the current paragraph.
     cleaned.push(line.replace(/\s+$/, ""));
     i++;
   }

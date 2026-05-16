@@ -1,3 +1,4 @@
+- Cleaner email threads — emails brought into Plot no longer carry the columns of broken decoration images that newsletters wrap their header logos, footer social icons, poster thumbnails and avatars in. The tall empty rectangles those used to leave between paragraphs (and the long stretch of nothing after an email's "sent by …" line) are gone, so the note is just the text and the links that matter.
 - Fixed rapid Add/Remove time presses on the timer pill silently dropping changes — pressing `+` or `−` several times in quick succession now lands every press, instead of one of them appearing to take effect and then snapping back.
 - Time you add to a block in the agenda now applies only to that block instead of every day.
 - Cleaner top edge on iOS and Android — the priority header now blends into the status bar so they read as one strip, and the agenda starts with a clean divider line above the first day instead of bleeding into the status bar background.
