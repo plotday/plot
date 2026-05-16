@@ -734,6 +734,26 @@ class _PriorityPageState extends State<PriorityPage>
   _cachedDropBoundaries;
 
   @override
+  void initState() {
+    super.initState();
+    // One-shot: when the user lands on this priority from a
+    // multi-thread notification tap, [NotificationLandingPage] leaves
+    // `PendingActivityFeedView.openUnreadFilter` set. Consume and
+    // clear the flag in a post-frame callback so `PriorityBloc` is
+    // already available via context.read.
+    if (PendingActivityFeedView.openUnreadFilter) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!PendingActivityFeedView.openUnreadFilter) return;
+        PendingActivityFeedView.openUnreadFilter = false;
+        context
+            .read<PriorityBloc>()
+            .activateUnreadFilterFromNotification();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _activityFeedDragController.dispose();
     super.dispose();
