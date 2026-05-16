@@ -144,6 +144,19 @@ class _PriorityLoadProfile {
 }
 
 class PriorityBloc extends Cubit<PriorityState> {
+  /// Live [PriorityBloc] instances. Multi-panel layout creates separate
+  /// blocs for the priority page, the [LeftPanelAgendaView], and the
+  /// thread page (`PriorityBlocProvider` per route + per panel). Each
+  /// bloc has its own [_optimisticOverrides] and [_lastAgendaThreads],
+  /// so without propagation only the originating bloc's agenda updates
+  /// immediately on drag-to-Doing — peer blocs must wait for the Drift
+  /// stream emission after save, which can be several seconds while
+  /// the sync orchestrator is holding SQLite locks. Constructor adds,
+  /// [close] removes; [applyActivityFeedThreadDrop] propagates its
+  /// optimistic override to peers so every visible agenda updates in
+  /// the same frame as the drop.
+  static final Set<PriorityBloc> _allInstances = <PriorityBloc>{};
+
   /// One-shot flag set by [ChangeCurrentPriority] (with `fromAgenda: true`)
   /// just before navigation. Consumed by the next [PriorityBloc] construction
   /// or [setPriority] call so the destination page opens with
@@ -219,6 +232,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         thread: thread,
         hideSubPriorities: !_consumeFromAgendaFlag(),
       )) {
+    _allInstances.add(this);
     _loadPriority();
 
     // Register callback to reload agenda when time changes (e.g., via TimeTravel)
@@ -1207,6 +1221,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // its pre-drop position.
     optimisticallyUpdateThread(updated, watchOrder: true);
 
+    // Propagate the optimistic override to peer bloc instances so the
+    // LeftPanelAgendaView (keyed to defaultPriority) and the thread-page
+    // bloc reflect the drop in the same frame. Without this, those views
+    // wait for the Drift stream to emit after [updated.save()] commits,
+    // which can be several seconds when the sync orchestrator holds
+    // SQLite locks. The activity feed in each peer is priority-scoped,
+    // so we only patch the agenda — see [_applyPeerOptimisticOverride].
+    for (final peer in _allInstances) {
+      if (peer == this || peer.isClosed) continue;
+      peer._applyPeerOptimisticOverride(updated, watchOrder: true);
+    }
+
     // Final emit: rebuild the sectioned feed from the now-updated source
     // lists. This wins over the in-place map `optimisticallyUpdateThread`
     // performs, so the row is rendered in its new section/order.
@@ -1329,6 +1355,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   @override
   Future<void> close() {
+    _allInstances.remove(this);
     // Unregister time change callback
     Time.setOnTimeChanged(null);
 
@@ -1605,6 +1632,65 @@ class PriorityBloc extends Cubit<PriorityState> {
       activityFeedItems: feed.items,
       activityFeedNativesByDate: feed.nativesByDate,
     );
+  }
+
+  /// Apply an optimistic override propagated from a peer bloc that ran
+  /// its own optimistic update (e.g. the priority page's bloc handled a
+  /// drag-to-Doing). Only patches the agenda model — the activity-feed
+  /// source lists (`_todoThreads`, `_activityFeedRawThreads`) are
+  /// priority-scoped to this bloc's own context and must not be reshaped
+  /// by another priority's drag, so we skip
+  /// [_patchActivityFeedSourcesForOptimisticUpdate]. The override is
+  /// still recorded so the subsequent Drift stream emission is patched
+  /// the same way as the originating bloc's — keeping the agenda in
+  /// sync until the saved row settles the override.
+  void _applyPeerOptimisticOverride(
+    Thread updatedThread, {
+    bool watchOrder = false,
+  }) {
+    if (updatedThread.draft) return;
+    final fields = watchOrder
+        ? <_OverrideField>{
+            _OverrideField.todo,
+            _OverrideField.archived,
+            _OverrideField.priorityId,
+            _OverrideField.unread,
+            _OverrideField.at,
+            _OverrideField.on,
+            _OverrideField.order,
+          }
+        : null;
+    _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(
+      expected: updatedThread,
+      fields: fields,
+    );
+
+    bool exactMatch(Thread t) =>
+        t.id == updatedThread.id &&
+        t.occurrence == updatedThread.occurrence &&
+        t.isLinkScheduleInstance == updatedThread.isLinkScheduleInstance;
+
+    final foundInAgenda = _lastAgendaThreads.any(
+      (t) => t.id == updatedThread.id,
+    );
+    final shouldRemove = !updatedThread.todo &&
+        updatedThread.at == null &&
+        updatedThread.on == null;
+
+    var rebuilt = _lastAgendaThreads.map((t) {
+      if (t.id != updatedThread.id) return t;
+      if (exactMatch(t)) return updatedThread;
+      return t.copyWith(todo: updatedThread.todo);
+    }).toList();
+
+    if (shouldRemove) {
+      rebuilt = rebuilt.where((t) => t.id != updatedThread.id).toList();
+    } else if (!foundInAgenda) {
+      if (updatedThread.todo) rebuilt.add(updatedThread);
+    }
+
+    _lastAgendaThreads = rebuilt;
+    _rebuildAgendaModel();
   }
 
   /// Force the agenda to rebuild from fresh stream data. Call after an
@@ -2589,6 +2675,21 @@ class PriorityBloc extends Cubit<PriorityState> {
               // dropped before we pay the _makeAgenda cost. Drift streams
               // re-fire on every table change, so repeated syncs of unrelated
               // tables produce many identical emissions.
+              //
+              // The signature includes schedule-derived fields
+              // (`todo`, `agendaAt`, `order`, `archivedAt`) in addition
+              // to the thread row's `updatedAt`. `Thread.save()` writes
+              // the thread row and the `user_schedule` row separately,
+              // so Drift can emit a snapshot in between — at that
+              // moment `t.updatedAt` has been bumped (sig differs from
+              // the pre-save state and passes [.distinct]) but
+              // `_userSchedule` still reflects the old startOn/order.
+              // The next emission, after the user_schedule write, leaves
+              // `t.updatedAt` unchanged, so without schedule fields in
+              // the sig that final emission would match the intermediate
+              // sig and be dropped — leaving the agenda stuck on the
+              // stale snapshot. Including the schedule-derived fields
+              // forces the post-userschedule emission through.
               final threadSig =
                   (result.threads
                           .map(
@@ -2596,7 +2697,11 @@ class PriorityBloc extends Cubit<PriorityState> {
                                 '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
                                 ':${t.occurrence ?? ''}'
                                 ':${t.isLinkScheduleInstance ? 1 : 0}'
-                                ':${t.priority.path.value}',
+                                ':${t.priority.path.value}'
+                                ':${t.todo ? 1 : 0}'
+                                ':${t.archivedAt?.microsecondsSinceEpoch ?? 0}'
+                                ':${t.agendaAt.microsecondsSinceEpoch}'
+                                ':${t.order.value}',
                           )
                           .toList()
                         ..sort())
