@@ -2932,6 +2932,26 @@ class PriorityBloc extends Cubit<PriorityState> {
           _activityFeedRawThreads = allThreads;
           _activityFeedDoneEnd = doneEnd;
           _scheduleActivityFeedRebuild();
+
+          // When the server is exhausted but the SQL query saturated the
+          // LIMIT, there may be more local rows beyond it. The user would
+          // normally scroll to trigger [fetchMoreActivityFeedItems], but if
+          // they're parked at the bottom (no scroll past the buffer) the
+          // trailing spinner stays visible indefinitely with no fetch ever
+          // firing. Auto-bump the limit here to mirror what fetchMore would
+          // do — [threadCountStalled] terminates the cycle once a bump
+          // surfaces no new unique threads.
+          if (!doneEnd &&
+              _activityFeedSyncNoMore &&
+              rawRowCount >= _activityFeedLimit &&
+              !_activityFeedLimitIncreased) {
+            _activityFeedLimitIncreased = true;
+            _activityFeedLimit += 50;
+            scheduleMicrotask(() {
+              if (isClosed) return;
+              _loadActivityFeed(triggerSync: false);
+            });
+          }
         });
 
     _loadTodoThreads();
@@ -3387,7 +3407,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     // subsequent stream emission whose `_activityFeedSig` differs — which
     // never happens once the visible window has stabilised).
     final caughtUp = _activityFeedSyncNoMore || syncedPastLastItem;
+    // Only trust `_activityFeedLastRawRowCount` once the watcher has actually
+    // fired (`_lastActivityFeedSig != null`). If sync completes faster than
+    // the first watcher emission, the count is still 0; flipping doneEnd
+    // here on `0 < limit` then gets clobbered back to false by the imminent
+    // watcher emission, which sees `rawRowCount == limit` and computes
+    // doneEnd=false. Let the watcher own the decision in that race.
+    final watcherHasFired = _lastActivityFeedSig != null;
     if (caughtUp &&
+        watcherHasFired &&
         _activityFeedLastRawRowCount < _activityFeedLimit) {
       // Also write the instance var so the next [_rebuildActivityFeedSections]
       // (which emits `activityFeedDoneEnd: _activityFeedDoneEnd`) preserves
