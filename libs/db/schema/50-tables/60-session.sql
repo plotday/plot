@@ -63,6 +63,12 @@ CREATE INDEX idx_session_user_id ON "public"."session" (user_id)
 WHERE
     archived_at IS NULL;
 
+-- Composite index serving /sync/sessions: WHERE user_id = $1 AND seq IN [a, b)
+-- ORDER BY seq, id LIMIT N. Without this, the seq-cursor pull is a Seq Scan +
+-- Sort even though both idx_session_user_id and idx_session_seq exist
+-- individually (neither covers the combined predicate + ordering).
+CREATE INDEX idx_session_user_seq ON "public"."session" ("user_id", "seq", "id");
+
 -- Idempotency key for the event-finalizer cron: at most one non-archived
 -- 'event' session per (user, schedule, occurrence). Partial so it does
 -- not constrain 'active'/'manual' rows which have schedule_id IS NULL,
