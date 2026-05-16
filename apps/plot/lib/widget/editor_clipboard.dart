@@ -78,5 +78,11 @@ String markdownToPlainText(String plotMarkdown) {
 
 /// Convert HTML from clipboard to Plot markdown for paste.
 String htmlToMarkdown(String html) {
-  return html2md.convert(html);
+  final markdown = html2md.convert(html);
+  // Strip empty-text links (e.g. `[](url)` produced when HTML anchors wrap
+  // icons/images with no text). The markdown deserializer would otherwise
+  // try to apply a LinkAttribution across an empty range and warn.
+  return markdown.replaceAll(_emptyLinkPattern, '');
 }
+
+final _emptyLinkPattern = RegExp(r'\[\s*\]\([^)]*\)');
