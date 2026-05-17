@@ -21,6 +21,15 @@ class PageBackCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Walk the URL navigation history, mirroring the browser back
+    // button's behaviour. Bottom-nav taps and in-tab priority switches
+    // use `markUrlStateForReplace` so URL history only contains the
+    // user's meaningful navigation steps, which makes this back walk
+    // do the right thing — go to the previous tab or the originating
+    // priority list — without ever surfacing a phantom intermediate
+    // priority. Mobile system back gestures take a different path
+    // (PopScope on [PriorityOnlyPage]) but end up at the same destination
+    // because URL history and the widget stack are kept aligned.
     context.router.back();
     return const CommandDone();
   }

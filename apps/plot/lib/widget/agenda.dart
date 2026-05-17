@@ -16,6 +16,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
+import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Width of the leading column: max of the widest time string and the
@@ -1169,12 +1170,34 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // with descendants hidden, since the agenda already rolls them
           // up under each block.
           PriorityBloc.markNextPriorityFromAgenda();
+          // Record the source tab so back from the destination priority
+          // page returns to Agenda instead of exiting the app. Mirrors
+          // the same recording that [ChangeCurrentPriority.run] does for
+          // the non-event-thread path.
+          try {
+            final tabsRouter = AutoTabsRouter.of(context);
+            if (tabsRouter.activeIndex != 2) {
+              PrioritiesShell.sourceTab = tabsRouter.activeIndex;
+            }
+          } catch (_) {
+            // AutoTabsRouter not in scope — leave sourceTab untouched.
+          }
           // Use the root router: when triggered from the Agenda tab,
           // `context.router` is the agenda's nested StackRouter which has
           // no PriorityRoute in its tree (PriorityRoute lives under the
           // Activity tab's ActivityShell), so a scoped navigate throws
           // `Failed to navigate to PriorityRoute`. The root navigator
           // resolves the cross-tab path and handles the tab swap.
+          //
+          // Mark for URL-history replace when already on the Activity tab
+          // (multi-panel agenda sidebar) so an in-tab event swap doesn't
+          // accumulate URL history. Cross-tab arrivals from single-panel
+          // /agenda push so browser back returns to the Agenda tab.
+          try {
+            if (AutoTabsRouter.of(context).activeIndex == 2) {
+              context.router.root.navigationHistory.markUrlStateForReplace();
+            }
+          } catch (_) {}
           context.router.root.navigate(
             PriorityRoute(
               priorityIdString: eventThread.priority.id.toShortString(),

@@ -7,6 +7,7 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/activity_feed_drag.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
+import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -577,26 +578,13 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
               ),
             );
 
-            if (!layoutState.multiPanel) {
-              child = PopScope(
-                canPop: false,
-                onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) {
-                    if (_isSearchExpanded) {
-                      tryCloseSearch();
-                    } else {
-                      // Back gesture at the priority root sends the user
-                      // home to the Agenda tab. Agenda is the default
-                      // landing tab, so this matches what the user sees
-                      // on cold start.
-                      AutoTabsRouter.of(context).setActiveIndex(1);
-                    }
-                  }
-                },
-                child: child,
-              );
-            }
-
+            // Back-handling for single-panel mode happens inside
+            // [PriorityOnlyPage] so the PopScope sits in the inner
+            // AutoRouter's top-route widget tree — that's where
+            // Android's predictive-back dispatcher looks. A PopScope
+            // here, at PriorityRoute level, would be outside the
+            // inner navigator and would not register as the
+            // back-handler for the active /p/X route on Android.
             return child;
           },
         ),
@@ -693,6 +681,34 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
     }
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
+        if (!layoutState.multiPanel) {
+          // Wrap PriorityPage with a PopScope so Android's predictive
+          // back (and any router.maybePop) is intercepted at the inner-
+          // navigator's TOP ROUTE level. A PopScope sitting outside the
+          // inner AutoRouter (in PriorityWrapper's tree) doesn't register
+          // with Android's OnBackInvokedDispatcher for the inner route, so
+          // the back gesture closes the activity instead of returning to
+          // the source tab. Search closing falls through via
+          // [ActivityPanelControllerProvider].
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) return;
+              final shortcuts =
+                  ActivityPanelControllerProvider.maybeOf(context);
+              if (shortcuts != null && shortcuts.tryCloseSearch()) return;
+              // Return to whichever bottom-nav tab the user came from
+              // when they tapped the priority chip. Cleared by the
+              // bottom-nav handler when the user taps Priorities/Agenda
+              // (so back from a tab-arrival exits the app cleanly).
+              // Falls back to Agenda for deep-link arrivals.
+              final source = PrioritiesShell.sourceTab ?? 1;
+              PrioritiesShell.sourceTab = null;
+              AutoTabsRouter.of(context).setActiveIndex(source);
+            },
+            child: PriorityPage(priorityId: priorityId),
+          );
+        }
         if (layoutState.middlePanelVisible) {
           // In multi-panel mode, always redirect to /new — NewThreadPage
           // handles special cases (twist dev, viewer) itself. Most

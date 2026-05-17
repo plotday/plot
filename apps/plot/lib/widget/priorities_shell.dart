@@ -32,6 +32,20 @@ const int _kBtnMore = 4;
 class PrioritiesShell extends StatefulWidget {
   const PrioritiesShell({super.key});
 
+  /// Bottom-nav tab the user was on when they tapped a priority chip that
+  /// navigates cross-tab into the Activity stack (`/p/:priorityId`).
+  /// Consumed by [PriorityShortcutsProvider]'s back-gesture PopScope to
+  /// return to that tab, so the back gesture from a priority page returns
+  /// to wherever the user came from (Agenda or Priorities) instead of
+  /// dropping out of the bottom-nav scope and exiting the app.
+  ///
+  /// Bottom-nav taps (Priorities/Agenda) clear this — they "replace" the
+  /// view rather than push, so back from a tab-arrival exits cleanly.
+  /// Cross-tab navigations from inside the Activity stack (e.g.
+  /// switching between priorities while already on `/p/:id`) leave this
+  /// untouched so the back gesture still returns to the original origin.
+  static int? sourceTab;
+
   @override
   State<PrioritiesShell> createState() => _PrioritiesShellState();
 }
@@ -144,9 +158,20 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     }
     switch (index) {
       case _kNavPriorities:
+        // Bottom nav is "replace" — back from /priorities should exit
+        // the app, not return to whatever cross-tab origin was tracked.
+        // [markUrlStateForReplace] is consumed by the next URL state
+        // emission (triggered by setActiveIndex → notifyAll →
+        // rebuildUrl) so the URL-history entry replaces the previous
+        // one instead of pushing. That keeps browser back / Cmd+[
+        // walking only the meaningful navigation steps.
+        PrioritiesShell.sourceTab = null;
+        context.router.root.navigationHistory.markUrlStateForReplace();
         tabsRouter.setActiveIndex(_kTabPriorities);
         return;
       case _kNavAgenda:
+        PrioritiesShell.sourceTab = null;
+        context.router.root.navigationHistory.markUrlStateForReplace();
         tabsRouter.setActiveIndex(_kTabAgenda);
         return;
       case _kBtnNew:

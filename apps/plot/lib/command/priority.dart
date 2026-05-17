@@ -10,6 +10,7 @@ import 'command.dart';
 import 'package:plot/command/unread_filter.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';
 import 'package:plot/widget/time_tracking_modal.dart';
@@ -79,6 +80,17 @@ class ChangeCurrentPriority extends PriorityCommand {
     if (fromAgenda) {
       PriorityBloc.markNextPriorityFromAgenda();
     }
+    _recordSourceTabIfCrossTab(context);
+
+    // Mark for URL-history replace when this is an in-tab navigation
+    // (priority-to-priority while already on the Activity tab) so the
+    // browser/Cmd+[ history doesn't accumulate one entry per priority
+    // the user paged through. Cross-tab arrivals (Priorities/Agenda →
+    // Activity) push so back walks back to the originating tab.
+    if (_isAlreadyOnActivityTab(context)) {
+      context.router.root.navigationHistory.markUrlStateForReplace();
+    }
+
     // In multi-panel mode the right panel should land on NewThreadPage for
     // the new priority. Passing it as a child here drives AutoRoute to
     // reconcile the inner stack to [NewThreadRoute] without going through
@@ -90,6 +102,41 @@ class ChangeCurrentPriority extends PriorityCommand {
         children: multi ? [NewThreadRoute()] : null,
       ),
     );
+  }
+}
+
+/// Whether the user is currently on the Activity tab (i.e. on a `/p/:id`
+/// page already). Used to decide between push and replace for URL
+/// history — cross-tab arrivals (Priorities/Agenda → Activity) push so
+/// back can return to the source tab; in-tab navigations (priority-to-
+/// priority while on `/p/:id`) mark the URL state for replace so the
+/// history stays flat.
+bool _isAlreadyOnActivityTab(BuildContext context) {
+  try {
+    return AutoTabsRouter.of(context).activeIndex == 2;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Records the user's current bottom-nav tab on [PrioritiesShell.sourceTab]
+/// when a cross-tab navigation (Priorities/Agenda → Activity) is about to
+/// fire, so the back gesture from the priority page can return there. Only
+/// updates `sourceTab` when the user is NOT already on the Activity tab —
+/// in-Activity navigations (priority-to-priority while on `/p/:id`) keep
+/// the original source so back still pops back to the real origin.
+void _recordSourceTabIfCrossTab(BuildContext context) {
+  try {
+    final tabsRouter = AutoTabsRouter.of(context);
+    // 2 = Activity tab (kept in sync with priorities_shell.dart). When
+    // already on Activity we're doing an in-place priority switch, not a
+    // cross-tab nav — leave the existing sourceTab alone.
+    if (tabsRouter.activeIndex != 2) {
+      PrioritiesShell.sourceTab = tabsRouter.activeIndex;
+    }
+  } catch (_) {
+    // AutoTabsRouter not in scope (e.g. command triggered from a modal
+    // outside the PrioritiesShell tree). Leave sourceTab untouched.
   }
 }
 
@@ -144,6 +191,10 @@ class OpenPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    _recordSourceTabIfCrossTab(context);
+    if (_isAlreadyOnActivityTab(context)) {
+      context.router.root.navigationHistory.markUrlStateForReplace();
+    }
     final multi = context.read<LayoutBloc>().state.multiPanel;
     return CommandRoute(
       PriorityRoute(
@@ -182,6 +233,7 @@ class AddPriority extends Command {
     final multi = context.mounted
         ? context.read<LayoutBloc>().state.multiPanel
         : false;
+    if (context.mounted) _recordSourceTabIfCrossTab(context);
     return CommandRoute(
       PriorityRoute(
         priorityIdString: savedPriority.id.toShortString(),
