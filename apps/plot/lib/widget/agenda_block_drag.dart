@@ -1396,37 +1396,42 @@ class _BlockDropZoneState extends State<BlockDropZone> {
           )
         : null;
 
+    // Top/bottom border paint inside the box's bounds, so each divider
+    // occupies a 1px slice of the expanded gap without growing the
+    // footprint. Only applied when the zone is active and the caller
+    // opted in via the corresponding flag. Theme reads are deferred so
+    // synthetic test cases that mount a [BlockDropZone] outside an
+    // [FTheme]/`ColourSchemeData` provider don't trip a build-time
+    // [ProviderNotFoundException] on a frame that wouldn't paint a
+    // divider anyway.
+    final showTop = isActive && widget.dividerAbove;
+    final showBottom = isActive && widget.dividerBelow;
+    BoxDecoration? decoration;
+    if (showTop || showBottom) {
+      final dividerColor = Color.alphaBlend(
+        context.theme.colors.border,
+        context.colour.background,
+      );
+      decoration = BoxDecoration(
+        border: Border(
+          top: showTop
+              ? BorderSide(color: dividerColor, width: 1)
+              : BorderSide.none,
+          bottom: showBottom
+              ? BorderSide(color: dividerColor, width: 1)
+              : BorderSide.none,
+        ),
+      );
+    }
     // [OverflowBox] lets the preview render at its full intrinsic height
     // even when the slot's animated height is smaller — without it, mid-
     // animation frames (animated height < preview height) trip Flutter's
     // RenderFlex overflow check on the preview's [Column]. The surrounding
     // [ClipRect] still clips the visual to the slot's animated height.
-    final dividerColor = Color.alphaBlend(
-      context.theme.colors.border,
-      context.colour.background,
-    );
-
-    // Top/bottom border paint inside the box's bounds, so each divider
-    // occupies a 1px slice of the expanded gap without growing the
-    // footprint. Only applied when the zone is active and the caller
-    // opted in via the corresponding flag.
-    final showTop = isActive && widget.dividerAbove;
-    final showBottom = isActive && widget.dividerBelow;
     return ClipRect(
       child: Container(
         height: height,
-        decoration: showTop || showBottom
-            ? BoxDecoration(
-                border: Border(
-                  top: showTop
-                      ? BorderSide(color: dividerColor, width: 1)
-                      : BorderSide.none,
-                  bottom: showBottom
-                      ? BorderSide(color: dividerColor, width: 1)
-                      : BorderSide.none,
-                ),
-              )
-            : null,
+        decoration: decoration,
         child: dimmed == null
             ? null
             : OverflowBox(
