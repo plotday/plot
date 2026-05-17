@@ -18,6 +18,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/util/priority_nav.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/theme_color.dart';
@@ -692,7 +693,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
           // [ActivityPanelControllerProvider].
           return PopScope(
             canPop: false,
-            onPopInvokedWithResult: (didPop, result) {
+            onPopInvokedWithResult: (didPop, popResult) {
               if (didPop) return;
               final shortcuts =
                   ActivityPanelControllerProvider.maybeOf(context);
@@ -702,9 +703,11 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
               // bottom-nav handler when the user taps Priorities/Agenda
               // (so back from a tab-arrival exits the app cleanly).
               // Falls back to Agenda for deep-link arrivals.
-              final source = PrioritiesShell.sourceTab ?? 1;
-              PrioritiesShell.sourceTab = null;
-              AutoTabsRouter.of(context).setActiveIndex(source);
+              final back = computeBackTabFromPriority(
+                currentSourceTab: PrioritiesShell.sourceTab,
+              );
+              PrioritiesShell.sourceTab = back.nextSourceTab;
+              AutoTabsRouter.of(context).setActiveIndex(back.targetTab);
             },
             child: PriorityPage(priorityId: priorityId),
           );

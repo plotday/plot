@@ -15,6 +15,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/priority_nav.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/priorities_shell.dart';
 import 'package:plot/widget/widget.dart';
@@ -1171,16 +1172,21 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // up under each block.
           PriorityBloc.markNextPriorityFromAgenda();
           // Record the source tab so back from the destination priority
-          // page returns to Agenda instead of exiting the app. Mirrors
-          // the same recording that [ChangeCurrentPriority.run] does for
-          // the non-event-thread path.
+          // page returns to Agenda instead of exiting the app. Mark for
+          // URL-history replace when already on the Activity tab so an
+          // in-tab event swap doesn't accumulate URL history.
+          TabsRouter? tabsRouter;
           try {
-            final tabsRouter = AutoTabsRouter.of(context);
-            if (tabsRouter.activeIndex != 2) {
-              PrioritiesShell.sourceTab = tabsRouter.activeIndex;
-            }
+            tabsRouter = AutoTabsRouter.of(context);
           } catch (_) {
-            // AutoTabsRouter not in scope — leave sourceTab untouched.
+            // AutoTabsRouter not in scope.
+          }
+          PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
+            activeTabIndex: tabsRouter?.activeIndex,
+            currentSourceTab: PrioritiesShell.sourceTab,
+          );
+          if (isOnActivityTab(tabsRouter)) {
+            context.router.root.navigationHistory.markUrlStateForReplace();
           }
           // Use the root router: when triggered from the Agenda tab,
           // `context.router` is the agenda's nested StackRouter which has
@@ -1188,16 +1194,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // Activity tab's ActivityShell), so a scoped navigate throws
           // `Failed to navigate to PriorityRoute`. The root navigator
           // resolves the cross-tab path and handles the tab swap.
-          //
-          // Mark for URL-history replace when already on the Activity tab
-          // (multi-panel agenda sidebar) so an in-tab event swap doesn't
-          // accumulate URL history. Cross-tab arrivals from single-panel
-          // /agenda push so browser back returns to the Agenda tab.
-          try {
-            if (AutoTabsRouter.of(context).activeIndex == 2) {
-              context.router.root.navigationHistory.markUrlStateForReplace();
-            }
-          } catch (_) {}
           context.router.root.navigate(
             PriorityRoute(
               priorityIdString: eventThread.priority.id.toShortString(),

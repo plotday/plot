@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import 'command.dart';
 import 'package:plot/command/unread_filter.dart';
+import 'package:plot/util/priority_nav.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/priorities_shell.dart';
@@ -80,14 +81,49 @@ class ChangeCurrentPriority extends PriorityCommand {
     if (fromAgenda) {
       PriorityBloc.markNextPriorityFromAgenda();
     }
-    _recordSourceTabIfCrossTab(context);
+
+    final tabsRouter = _tabsRouterOrNull(context);
+    PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
+      activeTabIndex: tabsRouter?.activeIndex,
+      currentSourceTab: PrioritiesShell.sourceTab,
+    );
+
+    final targetPriorityIdString = priority!.id.toShortString();
+    final multi = context.read<LayoutBloc>().state.multiPanel;
+
+    // Same-priority fast path: when the priority the user tapped is
+    // already on the Activity tab's stack, `root.navigate(PriorityRoute(
+    // X, children: null))` does something destructive to the inner
+    // [PriorityOnlyRoute] (drops it without remounting) and produces
+    // a forever-spinner. Skip the navigate, switch tabs explicitly,
+    // and force-refresh the inner route so Android's predictive-back
+    // dispatcher re-registers PopScope on the active page.
+    if (isSamePriorityAtActivityTop(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      priorityRouteName: PriorityRoute.name,
+    )) {
+      if (tabsRouter!.activeIndex != PriorityTabs.activity) {
+        tabsRouter.setActiveIndex(PriorityTabs.activity);
+      }
+      final innerRouter = findPriorityInnerRouter(
+        context.router.root,
+        PriorityRoute.name,
+      );
+      if (innerRouter != null) {
+        innerRouter.replaceAll([
+          multi ? NewThreadRoute() : PriorityOnlyRoute(),
+        ]);
+      }
+      return const CommandDone();
+    }
 
     // Mark for URL-history replace when this is an in-tab navigation
     // (priority-to-priority while already on the Activity tab) so the
     // browser/Cmd+[ history doesn't accumulate one entry per priority
     // the user paged through. Cross-tab arrivals (Priorities/Agenda →
     // Activity) push so back walks back to the originating tab.
-    if (_isAlreadyOnActivityTab(context)) {
+    if (isOnActivityTab(tabsRouter)) {
       context.router.root.navigationHistory.markUrlStateForReplace();
     }
 
@@ -95,48 +131,24 @@ class ChangeCurrentPriority extends PriorityCommand {
     // the new priority. Passing it as a child here drives AutoRoute to
     // reconcile the inner stack to [NewThreadRoute] without going through
     // the PriorityOnlyPage→LoadingPage redirect that used to flash.
-    final multi = context.read<LayoutBloc>().state.multiPanel;
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: priority!.id.toShortString(),
+        priorityIdString: targetPriorityIdString,
         children: multi ? [NewThreadRoute()] : null,
       ),
     );
   }
 }
 
-/// Whether the user is currently on the Activity tab (i.e. on a `/p/:id`
-/// page already). Used to decide between push and replace for URL
-/// history — cross-tab arrivals (Priorities/Agenda → Activity) push so
-/// back can return to the source tab; in-tab navigations (priority-to-
-/// priority while on `/p/:id`) mark the URL state for replace so the
-/// history stays flat.
-bool _isAlreadyOnActivityTab(BuildContext context) {
+/// Returns the [AutoTabsRouter] for [PrioritiesShell] if visible from
+/// [context]. Returns null when out of scope (e.g. command triggered
+/// from a modal outside the shell tree) so callers can fall back
+/// gracefully.
+TabsRouter? _tabsRouterOrNull(BuildContext context) {
   try {
-    return AutoTabsRouter.of(context).activeIndex == 2;
+    return AutoTabsRouter.of(context);
   } catch (_) {
-    return false;
-  }
-}
-
-/// Records the user's current bottom-nav tab on [PrioritiesShell.sourceTab]
-/// when a cross-tab navigation (Priorities/Agenda → Activity) is about to
-/// fire, so the back gesture from the priority page can return there. Only
-/// updates `sourceTab` when the user is NOT already on the Activity tab —
-/// in-Activity navigations (priority-to-priority while on `/p/:id`) keep
-/// the original source so back still pops back to the real origin.
-void _recordSourceTabIfCrossTab(BuildContext context) {
-  try {
-    final tabsRouter = AutoTabsRouter.of(context);
-    // 2 = Activity tab (kept in sync with priorities_shell.dart). When
-    // already on Activity we're doing an in-place priority switch, not a
-    // cross-tab nav — leave the existing sourceTab alone.
-    if (tabsRouter.activeIndex != 2) {
-      PrioritiesShell.sourceTab = tabsRouter.activeIndex;
-    }
-  } catch (_) {
-    // AutoTabsRouter not in scope (e.g. command triggered from a modal
-    // outside the PrioritiesShell tree). Leave sourceTab untouched.
+    return null;
   }
 }
 
@@ -191,14 +203,39 @@ class OpenPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    _recordSourceTabIfCrossTab(context);
-    if (_isAlreadyOnActivityTab(context)) {
+    final targetPriorityIdString = priorityId.toShortString();
+    final multi = context.read<LayoutBloc>().state.multiPanel;
+    final tabsRouter = _tabsRouterOrNull(context);
+    PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
+      activeTabIndex: tabsRouter?.activeIndex,
+      currentSourceTab: PrioritiesShell.sourceTab,
+    );
+    // Same-priority fast path — see [ChangeCurrentPriority.run].
+    if (isSamePriorityAtActivityTop(
+      tabsRouter: tabsRouter,
+      targetPriorityIdString: targetPriorityIdString,
+      priorityRouteName: PriorityRoute.name,
+    )) {
+      if (tabsRouter!.activeIndex != PriorityTabs.activity) {
+        tabsRouter.setActiveIndex(PriorityTabs.activity);
+      }
+      final innerRouter = findPriorityInnerRouter(
+        context.router.root,
+        PriorityRoute.name,
+      );
+      if (innerRouter != null) {
+        innerRouter.replaceAll([
+          multi ? NewThreadRoute() : PriorityOnlyRoute(),
+        ]);
+      }
+      return const CommandDone();
+    }
+    if (isOnActivityTab(tabsRouter)) {
       context.router.root.navigationHistory.markUrlStateForReplace();
     }
-    final multi = context.read<LayoutBloc>().state.multiPanel;
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: priorityId.toShortString(),
+        priorityIdString: targetPriorityIdString,
         children: multi ? [NewThreadRoute()] : null,
       ),
     );
@@ -233,7 +270,13 @@ class AddPriority extends Command {
     final multi = context.mounted
         ? context.read<LayoutBloc>().state.multiPanel
         : false;
-    if (context.mounted) _recordSourceTabIfCrossTab(context);
+    if (context.mounted) {
+      final tabsRouter = _tabsRouterOrNull(context);
+      PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
+        activeTabIndex: tabsRouter?.activeIndex,
+        currentSourceTab: PrioritiesShell.sourceTab,
+      );
+    }
     return CommandRoute(
       PriorityRoute(
         priorityIdString: savedPriority.id.toShortString(),
