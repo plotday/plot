@@ -1,0 +1,17 @@
+id: 012-019e2d3c
+description: "Sampled from prod (topic-shape: channel:N)."
+candidate:
+  title: Would anyone like some bigfoot geranium plants? I am thinning...
+  topic: channel:9716
+  contacts:
+    - 019bd6e2-e330-7418-9caf-afacd7cd5519
+    - 019e2cdb-5791-73a7-b994-c8dd5c2ae4e3
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019bd6d7-eb04-7203-921a-951df0d27964
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.123Z
+notes: ""

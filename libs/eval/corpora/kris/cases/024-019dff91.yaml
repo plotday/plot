@@ -1,16 +1,16 @@
-id: 024-57baabb6
+id: 024-019dff91
 description: "Sampled from prod (topic-shape: null)."
 candidate:
-  title: t-ef02c77cf8
+  title: Daily planner apps
   topic: null
   contacts:
-    - 30b04d4e-7efa-4312-a307-24cc346dba18
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
   groups: []
   embedding_ref: emb-57baabb6b6
 labels:
   gold: null
   gold_rationale: ""
-  expected: b302ac72-f882-4eb7-a92b-81bdf32f2989
+  expected: 019bd6d7-eb04-7203-921a-951df0d27964
   expected_stage: null
-  expected_recorded_at: 2026-05-17T15:57:33.613Z
+  expected_recorded_at: 2026-05-17T19:04:03.126Z
 notes: ""

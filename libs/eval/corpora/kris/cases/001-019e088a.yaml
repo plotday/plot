@@ -1,0 +1,16 @@
+id: 001-019e088a
+description: "Sampled from prod (topic-shape: channel:N)."
+candidate:
+  title: Agenda times
+  topic: channel:164
+  contacts:
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.114Z
+notes: ""

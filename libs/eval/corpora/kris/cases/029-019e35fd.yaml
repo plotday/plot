@@ -1,0 +1,16 @@
+id: 029-019e35fd
+description: "Sampled from prod (topic-shape: other)."
+candidate:
+  title: File EI report
+  topic: 019c48d7-9c7c-75d0-bf74-2064a09e2116
+  contacts:
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019cba8e-344a-7cc8-a5d7-5d38ba68a8d8
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.127Z
+notes: ""

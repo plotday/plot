@@ -1,0 +1,17 @@
+id: 026-019cd511
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: Update onboarding sign up
+  topic: null
+  contacts:
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+    - 019cc122-2563-70fd-85f7-ced1107d89a7
+  groups: []
+  embedding_ref: emb-24ad30d59b
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019dbcc7-d4de-703f-8123-f1d5523da3ae
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.127Z
+notes: ""

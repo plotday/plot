@@ -25,13 +25,7 @@ import { parseArgs } from "node:util";
 import pg from "pg";
 import { stringify as stringifyYaml } from "yaml";
 
-import {
-  anonymizeEmail,
-  anonymizeTitle,
-  hashShort,
-  remapInt,
-  remapUuid,
-} from "./anonymize";
+import { anonymizeEmail, anonymizeName, hashShort } from "./anonymize";
 
 const PROXY_URL =
   process.env.PROD_DB_URL ?? "postgres://readonly@127.0.0.1:5433/plot";
@@ -69,7 +63,12 @@ type PriorityRow = {
   title: string;
   key: string | null;
 };
-type ContactRow = { id: string; email: string | null; linked_to_user: boolean };
+type ContactRow = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  linked_to_user: boolean;
+};
 type ChannelRow = { id: number; default_priority_id: string | null };
 type ThreadRow = {
   id: string;
@@ -149,14 +148,14 @@ async function loadContacts(
   // appear in any of the user's threads.
   const { rows } = await client.query<ContactRow>(
     `WITH linked AS (
-       SELECT c.id, c.email, TRUE AS linked_to_user
+       SELECT c.id, c.email, c.name, TRUE AS linked_to_user
          FROM public.contact c
          JOIN public.user_contact uc
            ON uc.contact_id = c.id AND uc.user_id = $1 AND uc.linked = TRUE
         WHERE c.archived_at IS NULL
      ),
      counterparties AS (
-       SELECT DISTINCT c.id, c.email, FALSE AS linked_to_user
+       SELECT DISTINCT c.id, c.email, c.name, FALSE AS linked_to_user
          FROM public.contact c
          JOIN public.thread t
            ON c.id = ANY(t.contacts)
@@ -340,7 +339,11 @@ async function writeCorpus(
   await rm(join(outDir, "cases"), { recursive: true, force: true });
   await mkdir(join(outDir, "cases"), { recursive: true });
 
-  const newUserId = remapUuid(userId);
+  // Only PII (emails, contact names) is anonymized. Priority titles, thread
+  // titles, topics, channel IDs, group names, and UUIDs are preserved
+  // verbatim so the corpus is human-readable for manual review and so any
+  // classifier that uses semantic signals (LLM-based, embedding-based) sees
+  // the same text the production classifier sees.
 
   // Build embedding catalog: training + cases. Stable ref name per source thread.
   const embeddings: { ref: string; vector: number[] }[] = [];
@@ -357,9 +360,9 @@ async function writeCorpus(
 
   const world = {
     name: opts.out,
-    description: `Anonymized snapshot of ${opts.userEmail} extracted ${new Date()
+    description: `Snapshot of ${opts.userEmail} extracted ${new Date()
       .toISOString()
-      .slice(0, 10)} by libs/eval seeder/from-prod.`,
+      .slice(0, 10)} by libs/eval seeder/from-prod. Emails and contact names anonymized; other text preserved verbatim.`,
     schema_version: 1,
     source: {
       kind: "prod-extract",
@@ -367,38 +370,39 @@ async function writeCorpus(
       anonymized: true,
     },
     user: {
-      id: newUserId,
+      id: userId,
       email: anonymizeEmail(opts.userEmail) ?? "eval-user@example.test",
       primary_contact_id: null,
     },
     priorities: priorities.map((p) => ({
-      id: remapUuid(p.id),
-      path: p.path, // base58 paths are opaque already
-      title: anonymizeTitle(p.title),
-      key: p.key, // keys like @plot.app, @plot.twist-dev are public
+      id: p.id,
+      path: p.path,
+      title: p.title,
+      key: p.key,
     })),
     contacts: contacts.map((c) => ({
-      id: remapUuid(c.id),
+      id: c.id,
       email: anonymizeEmail(c.email),
+      name: anonymizeName(c.name),
       linked_to_user: c.linked_to_user,
     })),
     groups: groups.map((g) => ({
-      id: remapUuid(g.id),
-      title: anonymizeTitle(g.title),
+      id: g.id,
+      title: g.title,
     })),
     training_threads: trainingThreads.map((t) => ({
-      id: remapUuid(t.id),
-      title: anonymizeTitle(t.title),
-      topic: anonymizeTopic(t.topic),
-      contacts: t.contacts.map((id) => remapUuid(id)),
-      groups: t.groups.map((id) => remapUuid(id)),
+      id: t.id,
+      title: t.title,
+      topic: t.topic,
+      contacts: t.contacts,
+      groups: t.groups,
       embedding_ref: embRefOf.get(t.id) ?? null,
-      filed_to_priority: remapUuid(t.filed_to_priority),
+      filed_to_priority: t.filed_to_priority,
     })),
     embeddings,
     channels: channels.map((ch) => ({
-      id: remapInt(ch.id),
-      default_priority_id: ch.default_priority_id ? remapUuid(ch.default_priority_id) : null,
+      id: ch.id,
+      default_priority_id: ch.default_priority_id,
     })),
   };
 
@@ -406,30 +410,30 @@ async function writeCorpus(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
-    const expected = remapUuid(c.filed_to_priority);
     const yaml = stringifyYaml({
-      id: `${String(i + 1).padStart(3, "0")}-${hashShort(c.id, 8)}`,
+      id: `${String(i + 1).padStart(3, "0")}-${c.id.slice(0, 8)}`,
       description: `Sampled from prod (topic-shape: ${describeTopic(c.topic)}).`,
       candidate: {
-        title: anonymizeTitle(c.title),
-        topic: anonymizeTopic(c.topic),
-        contacts: c.contacts.map((id) => remapUuid(id)),
-        groups: c.groups.map((id) => remapUuid(id)),
+        title: c.title,
+        topic: c.topic,
+        contacts: c.contacts,
+        groups: c.groups,
         embedding_ref: embRefOf.get(c.id) ?? null,
       },
       labels: {
-        // Gold is unset — kris (or a future labeler) fills these in by hand.
+        // Gold is unset — fill in by hand after reviewing the candidate.
         gold: null,
         gold_rationale: "",
         // Expected = the priority currently filed in prod, which the current
-        // classifier should reproduce.
-        expected,
+        // classifier should reproduce on cases that weren't refiled by triggers
+        // or channel-default changes after the original classification.
+        expected: c.filed_to_priority,
         expected_stage: null,
         expected_recorded_at: new Date().toISOString(),
       },
       notes: "",
     });
-    const fileName = `${String(i + 1).padStart(3, "0")}-${hashShort(c.id, 8)}.yaml`;
+    const fileName = `${String(i + 1).padStart(3, "0")}-${c.id.slice(0, 8)}.yaml`;
     await writeFile(join(outDir, "cases", fileName), yaml, "utf-8");
   }
 
@@ -461,18 +465,6 @@ async function writeCorpus(
     ].join("\n"),
     "utf-8"
   );
-}
-
-function anonymizeTopic(topic: string | null): string | null {
-  if (topic === null) return null;
-  // Preserve shape exactly:
-  //  - channel:<id>  → channel:<remapped_id>
-  //  - priority:KEY  → preserved verbatim (keys are public)
-  //  - other         → hashed-but-stable token
-  const channelMatch = topic.match(/^channel:(\d+)$/);
-  if (channelMatch) return `channel:${remapInt(Number(channelMatch[1]))}`;
-  if (topic.startsWith("priority:")) return topic;
-  return `topic-${hashShort(topic, 10)}`;
 }
 
 function describeTopic(topic: string | null): string {

@@ -1,17 +1,17 @@
-id: 014-8ba06669
+id: 013-019e3392
 description: "Sampled from prod (topic-shape: priority:KEY)."
 candidate:
-  title: t-dd0e1c6edd
+  title: Welcome to Plot!
   topic: priority:@plot.app:welcome-user
   contacts:
-    - 295b9c76-b2f4-4a5c-a53a-44780ffa03e4
+    - 019e3392-65e2-76e7-ae4a-3f2efc74a64b
   groups:
-    - 30a17f77-d1eb-4581-a746-0a01e901b37b
+    - 019d8d3e-e009-7917-a0a0-a7690ae5409e
   embedding_ref: null
 labels:
   gold: null
   gold_rationale: ""
-  expected: cba0dc62-2356-4b16-ab64-6ae5ce82e630
+  expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
   expected_stage: null
-  expected_recorded_at: 2026-05-17T15:57:33.611Z
+  expected_recorded_at: 2026-05-17T19:04:03.123Z
 notes: ""

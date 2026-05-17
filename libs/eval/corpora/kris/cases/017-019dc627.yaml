@@ -1,0 +1,18 @@
+id: 017-019dc627
+description: "Sampled from prod (topic-shape: priority:KEY)."
+candidate:
+  title: Welcome to Plot!
+  topic: priority:@plot.app:welcome-user
+  contacts:
+    - 019cc122-2563-70fd-85f7-ced1107d89a7
+    - 019dc627-2af2-7379-a12f-a6e64828b14a
+  groups:
+    - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.124Z
+notes: ""

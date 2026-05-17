@@ -1,0 +1,17 @@
+id: 008-019e2d3d
+description: "Sampled from prod (topic-shape: channel:N)."
+candidate:
+  title: Kris, start a conversation with your new connection, Vanessa
+  topic: channel:9716
+  contacts:
+    - 019bd6e2-e330-7418-9caf-afacd7cd5519
+    - 019e2c5a-6909-7d83-8a32-051927089c54
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019bd6d7-eb04-7203-921a-951df0d27964
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.120Z
+notes: ""

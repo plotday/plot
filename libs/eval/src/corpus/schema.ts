@@ -17,6 +17,7 @@ const PrioritySchema = z.object({
 const ContactSchema = z.object({
   id: uuid,
   email: z.string().email().nullable().default(null),
+  name: z.string().nullable().default(null),
   linked_to_user: z.boolean().default(false),
 });
 

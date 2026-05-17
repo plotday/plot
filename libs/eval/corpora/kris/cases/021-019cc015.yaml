@@ -1,16 +1,16 @@
-id: 021-166db227
+id: 021-019cc015
 description: "Sampled from prod (topic-shape: null)."
 candidate:
-  title: t-28c6c3b59f
+  title: Fix Reddit title extraction
   topic: null
   contacts:
-    - 30b04d4e-7efa-4312-a307-24cc346dba18
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
   groups: []
   embedding_ref: emb-166db22735
 labels:
   gold: null
   gold_rationale: ""
-  expected: 70f78e7e-c984-45b2-a216-7061a790deb7
+  expected: 019cc015-8e4e-7076-8b35-257e775a7eac
   expected_stage: null
-  expected_recorded_at: 2026-05-17T15:57:33.612Z
+  expected_recorded_at: 2026-05-17T19:04:03.125Z
 notes: ""

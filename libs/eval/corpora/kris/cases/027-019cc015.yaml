@@ -1,0 +1,17 @@
+id: 027-019cc015
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: TalentLift Workflow Overview
+  topic: null
+  contacts:
+    - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+    - 019cc122-2563-70fd-85f7-ced1107d89a7
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 019c1bf7-a779-7741-9e15-a53ecd488aee
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T19:04:03.127Z
+notes: ""
