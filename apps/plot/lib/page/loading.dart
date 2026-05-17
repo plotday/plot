@@ -1,7 +1,31 @@
 import 'dart:async';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/widget/widget.dart';
+
+/// Thrown when a [LoadingPage] is still on screen 60s after it mounted —
+/// i.e. some operation that was supposed to complete in seconds is taking
+/// minutes. Captured to PostHog so UI freezes that aren't surfaced as
+/// regular exceptions still show up in error tracking.
+class StuckLoadingPageException implements Exception {
+  StuckLoadingPageException({
+    required this.message,
+    required this.userStatus,
+  });
+
+  final String? message;
+  final String? userStatus;
+
+  @override
+  String toString() {
+    final parts = <String>[];
+    if (message != null) parts.add('message="$message"');
+    if (userStatus != null) parts.add('userStatus="$userStatus"');
+    final detail = parts.isEmpty ? '' : ' (${parts.join(', ')})';
+    return 'StuckLoadingPageException: LoadingPage still visible after 60s$detail';
+  }
+}
 
 class LoadingPage extends StatefulWidget {
   const LoadingPage({this.message, super.key});
@@ -40,11 +64,23 @@ class _LoadingPageState extends State<LoadingPage> {
     });
 
     _stuckTimer = Timer(const Duration(seconds: 60), () {
-      if (mounted) {
-        setState(() {
-          _slowMessage = 'Something may have gone wrong';
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _slowMessage = 'Something may have gone wrong';
+      });
+      // 60s on a LoadingPage means an operation we expected to complete
+      // in seconds is taking minutes — almost always a UI/routing bug
+      // (e.g. an empty AutoRouter inner stack falling back to its
+      // placeholder forever) rather than a slow-network condition.
+      // Report it so it shows up in error tracking instead of just on
+      // the user's screen.
+      Tracker.captureException(
+        StuckLoadingPageException(
+          message: widget.message,
+          userStatus: UserBloc.statusNotifier.value,
+        ),
+        StackTrace.current,
+      );
     });
   }
 

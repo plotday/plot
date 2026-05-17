@@ -85,11 +85,21 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
     if (widget.priorityIdString == oldWidget.priorityIdString) return;
 
     // The wrapper's priority just changed (e.g. user clicked B in the
-    // sidebar). The inner navigator may still hold a ThreadRoute from the
-    // previous priority — that thread doesn't belong to the new priority's
-    // feed and showing it would be incoherent. Replace the inner stack
-    // with the canonical landing for B (NewThreadRoute in multi-panel,
-    // PriorityOnlyRoute in single-panel).
+    // sidebar). Force the inner stack to the canonical landing for B
+    // (NewThreadRoute in multi-panel, PriorityOnlyRoute in single-panel).
+    //
+    // This is needed for TWO reasons:
+    //
+    //  1. The inner navigator may still hold a ThreadRoute from the
+    //     previous priority — that thread doesn't belong to the new
+    //     priority's feed and showing it would be incoherent.
+    //  2. auto_route's in-place params update on PriorityRoute (A → B)
+    //     disposes the existing inner route widget (PriorityOnlyRoute(A)
+    //     or NewThreadRoute(A)) but fails to mount a new one, leaving
+    //     the inner AutoRouter with an empty stack. The AutoRouter then
+    //     falls back to its `LoadingPage` placeholder — a forever
+    //     spinner where the new priority's feed should be. Explicitly
+    //     replacing the inner stack here forces a fresh mount.
     //
     // Skip the reset when the URL explicitly wants a thread (deep links
     // like /t/:id or /p/B/:threadId resolve with ThreadRoute in the
@@ -99,7 +109,6 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
       if (!mounted) return;
       final innerRouter = _findInnerRouter();
       if (innerRouter == null) return;
-      if (innerRouter.topRoute.name != ThreadRoute.name) return;
 
       final segments = context.router.root.urlState.segments;
       if (_segmentsContainThread(segments)) return;
