@@ -989,10 +989,12 @@ class Store extends _$Store {
       var success = false;
       if (pendingRows.isEmpty) {
         success = true;
-        log.info(
-          'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
-          '(claim ${claimMs}ms, no pending rows)',
-        );
+        if (syncPerfLog) {
+          log.info(
+            'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+            '(claim ${claimMs}ms, no pending rows)',
+          );
+        }
       } else {
         final pendingIds = pendingRows
             .map((r) => _rowIdString(r.data['id']))
@@ -1131,11 +1133,13 @@ class Store extends _$Store {
           }
         }
 
-        log.info(
-          'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
-          '(claim ${claimMs}ms, rows ${pendingRows.length}, '
-          '${success ? "ok" : "failed"})',
-        );
+        if (syncPerfLog) {
+          log.info(
+            'Store.push ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+            '(claim ${claimMs}ms, rows ${pendingRows.length}, '
+            '${success ? "ok" : "failed"})',
+          );
+        }
       }
 
       completer.complete(success);
@@ -1393,11 +1397,13 @@ class Store extends _$Store {
       }
     }
 
-    log.info(
-      'Store.pull ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
-      '(http ${httpMs}ms, db ${dbMs}ms, pages $pages, rows $totalRows'
-      '${stamped ? ", stamped" : ""})',
-    );
+    if (syncPerfLog) {
+      log.info(
+        'Store.pull ${baseTable.fullName}: ${sw.elapsedMilliseconds}ms '
+        '(http ${httpMs}ms, db ${dbMs}ms, pages $pages, rows $totalRows'
+        '${stamped ? ", stamped" : ""})',
+      );
+    }
 
     // No caller reads pull()'s return value (all callsites await without
     // assigning), so skip the trailing `sync_states` re-read that this
@@ -3540,7 +3546,9 @@ class _StoreLifecycleObserver extends WidgetsBindingObserver {
     // server-side gaps, zombie sockets). If the socket is dead, _startSync
     // re-subscribes; otherwise _syncAll just catches up via the seq cursor.
     if (store._broadcastClient?.isConnected == true) {
-      _log.info('App resumed — pulling for catch-up');
+      if (syncPerfLog) {
+        _log.info('App resumed — pulling for catch-up');
+      }
       store._syncAll().catchError((Object error, StackTrace stackTrace) {
         _log.warning('Resume-triggered pull failed', error, stackTrace);
         return null;

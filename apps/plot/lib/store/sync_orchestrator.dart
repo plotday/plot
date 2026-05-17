@@ -220,7 +220,9 @@ class SyncOrchestrator {
     await _waitForRateLimitCooldown();
 
     final sw = Stopwatch()..start();
-    _syncOrchestratorLog.info('syncAll: start (pull → push)');
+    if (syncPerfLog) {
+      _syncOrchestratorLog.info('syncAll: start (pull → push)');
+    }
 
     // Mark the syncAll window so push() preserves completers across
     // levels (see field doc). Clear any stale state from a previously
@@ -235,10 +237,12 @@ class SyncOrchestrator {
         final level = pullLevels[i];
         final levelSw = Stopwatch()..start();
         await _executePullLevel(level);
-        _syncOrchestratorLog.info(
-          'syncAll: pull L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
-          '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
-        );
+        if (syncPerfLog) {
+          _syncOrchestratorLog.info(
+            'syncAll: pull L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
+            '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
+          );
+        }
       }
       final pullTotalMs = sw.elapsedMilliseconds;
 
@@ -248,16 +252,20 @@ class SyncOrchestrator {
         final level = pushLevels[i];
         final levelSw = Stopwatch()..start();
         await _executePushLevel(level);
-        _syncOrchestratorLog.info(
-          'syncAll: push L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
-          '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
-        );
+        if (syncPerfLog) {
+          _syncOrchestratorLog.info(
+            'syncAll: push L$i (${level.length}) ${levelSw.elapsedMilliseconds}ms '
+            '[${level.map((e) => e.debugName).join(",")}] @ ${sw.elapsedMilliseconds}ms',
+          );
+        }
       }
 
-      _syncOrchestratorLog.info(
-        'syncAll: complete ${sw.elapsedMilliseconds}ms '
-        '(pull ${pullTotalMs}ms, push ${sw.elapsedMilliseconds - pullTotalMs}ms)',
-      );
+      if (syncPerfLog) {
+        _syncOrchestratorLog.info(
+          'syncAll: complete ${sw.elapsedMilliseconds}ms '
+          '(pull ${pullTotalMs}ms, push ${sw.elapsedMilliseconds - pullTotalMs}ms)',
+        );
+      }
     } finally {
       _syncAllInProgress = false;
       _pushCompleters.clear();
@@ -406,11 +414,13 @@ class SyncOrchestrator {
       }
 
       final success = await entity.pushFn();
-      _syncOrchestratorLog.info(
-        'push ${entity.debugName}: ${sw.elapsedMilliseconds}ms '
-        '(deps ${depsMs}ms, self ${sw.elapsedMilliseconds - depsMs}ms, '
-        '${success ? 'ok' : 'failed'})',
-      );
+      if (syncPerfLog) {
+        _syncOrchestratorLog.info(
+          'push ${entity.debugName}: ${sw.elapsedMilliseconds}ms '
+          '(deps ${depsMs}ms, self ${sw.elapsedMilliseconds - depsMs}ms, '
+          '${success ? 'ok' : 'failed'})',
+        );
+      }
       completer.complete(success);
       return success;
     } catch (e, stackTrace) {
@@ -474,9 +484,11 @@ class SyncOrchestrator {
       if (!Store.isAvailable) return;
 
       await entity.pullFn();
-      _syncOrchestratorLog.info(
-        'pull ${entity.debugName}: ${sw.elapsedMilliseconds}ms',
-      );
+      if (syncPerfLog) {
+        _syncOrchestratorLog.info(
+          'pull ${entity.debugName}: ${sw.elapsedMilliseconds}ms',
+        );
+      }
       completer.complete();
     } catch (e, stackTrace) {
       _trackRateLimitIfNeeded(e);
