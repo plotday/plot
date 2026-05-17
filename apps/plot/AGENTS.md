@@ -3,7 +3,15 @@
 # Build, Run, Test Commands
 
 - **Lint**: `cd apps/plot && flutter analyze`
-- **Build**: The Flutter app is already running with hot reload enabled.
+- **Run / test the app from an agent**: invoke the `run-app` skill. It launches
+  Plot.app in an isolated `agent` profile (its own DB + Clerk session) so the
+  developer's daily debug/release instances keep running and the agent can
+  drive the app via dart-mcp without `InstanceLock` collisions. Key gotchas
+  the skill encodes: `mcp__dart-mcp__launch_app` does not forward `--profile`
+  or other entrypoint args (so a naive call collides with the dev profile);
+  the DTD URI it returns is a placeholder; the real one is the `app.dtd`
+  event from `flutter run --machine`. See
+  `.agents/skills/run-app/SKILL.md` for the full recipe.
 
 ## Web font cache-busting
 

@@ -389,7 +389,15 @@ Future<void> run(List<String> args) async {
       _instanceLock!.startWatching((deepLink) async {
         log.info('Received deep link from another instance: $deepLink');
 
-        // Focus the window
+        // Empty payload means another launch attempt happened with nothing to
+        // do (e.g. `flutter run` retriggered from the editor with no --url).
+        // Don't steal focus in that case — the user is in their editor and
+        // doesn't want us popping to the foreground.
+        if (deepLink.isEmpty) {
+          return;
+        }
+
+        // Focus the window so the deep-link navigation is visible.
         if (Platform.isMacOS || Platform.isWindows) {
           try {
             await windowManager.show();
@@ -400,16 +408,13 @@ Future<void> run(List<String> args) async {
           }
         }
 
-        // Navigate to deep link
-        if (deepLink.isNotEmpty) {
-          final context = navigatorKey?.currentContext;
-          if (context?.mounted == true) {
-            await OpenPageLink(deepLink).run(context!);
-          } else {
-            log.warning(
-              'Navigator context not available for instance deep link: $deepLink',
-            );
-          }
+        final context = navigatorKey?.currentContext;
+        if (context?.mounted == true) {
+          await OpenPageLink(deepLink).run(context!);
+        } else {
+          log.warning(
+            'Navigator context not available for instance deep link: $deepLink',
+          );
         }
       });
     }

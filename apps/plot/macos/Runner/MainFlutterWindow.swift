@@ -5,6 +5,7 @@ import window_manager
 class MainFlutterWindow: NSWindow {
   private var menuBarController: MenuBarController?
   private var widgetBridgePlugin: WidgetBridgePlugin?
+  private var windowChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -20,6 +21,27 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger,
       statusItemController: menuBarController
     )
+
+    // window_manager's `show()` unconditionally calls
+    // `NSApp.activate(ignoringOtherApps: true)` even when Dart passes
+    // `inactive: true` — the flag is dropped. That steals focus from the
+    // editor when Plot is launched via `flutter run`. Use `orderFront(nil)`
+    // ourselves: it makes the window visible without making it key, so the
+    // process never becomes the foreground app.
+    let channel = FlutterMethodChannel(
+      name: "day.plot.app/window",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "showInactive":
+        self?.orderFront(nil)
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    windowChannel = channel
 
     super.awakeFromNib()
   }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter/widgets.dart';
 import 'package:macos_ui/macos_ui.dart';
 import 'package:macos_window_utils/macos_window_utils.dart' as macos_win;
@@ -116,9 +117,17 @@ class Window extends StatefulWidget {
       // The macOS window is kept hidden at launch (see MainFlutterWindow.swift
       // `order(_:relativeTo:)` override) so the user doesn't see the default
       // Nib frame flash to the saved size. Show it now that the saved bounds
-      // have been applied. No-op on Windows where the window is already
-      // visible — `show()` just re-focuses it.
-      await windowManager.show();
+      // have been applied. window_manager's `show(inactive: true)` silently
+      // drops the flag on macOS and always activates the app — stealing
+      // focus from the editor that ran `flutter run`. Use our own method
+      // channel that calls `orderFront(nil)` so the window appears without
+      // bringing Plot to the foreground.
+      if (Platform.instance.isMacOS) {
+        const channel = MethodChannel('day.plot.app/window');
+        await channel.invokeMethod<void>('showInactive');
+      } else {
+        await windowManager.show();
+      }
     }
   }
 
