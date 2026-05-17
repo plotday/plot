@@ -1,0 +1,16 @@
+id: 021-166db227
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: t-28c6c3b59f
+  topic: null
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups: []
+  embedding_ref: emb-166db22735
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 70f78e7e-c984-45b2-a216-7061a790deb7
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.612Z
+notes: ""

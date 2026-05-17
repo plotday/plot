@@ -1,0 +1,16 @@
+id: 025-83b571c6
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: t-c787566840
+  topic: null
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups: []
+  embedding_ref: emb-83b571c6d9
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: b302ac72-f882-4eb7-a92b-81bdf32f2989
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.613Z
+notes: ""

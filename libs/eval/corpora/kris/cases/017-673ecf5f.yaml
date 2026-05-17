@@ -1,0 +1,18 @@
+id: 017-673ecf5f
+description: "Sampled from prod (topic-shape: priority:KEY)."
+candidate:
+  title: t-dd0e1c6edd
+  topic: priority:@plot.app:welcome-user
+  contacts:
+    - edc278d4-b04f-4a28-ad6a-a151ed2fab1e
+    - cf51ace3-e9d5-4e55-afb0-1e83fc7a9cb4
+  groups:
+    - 30a17f77-d1eb-4581-a746-0a01e901b37b
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: cba0dc62-2356-4b16-ab64-6ae5ce82e630
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.611Z
+notes: ""

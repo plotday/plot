@@ -1,0 +1,17 @@
+id: 026-24ad30d5
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: t-85cfbd582d
+  topic: null
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+    - edc278d4-b04f-4a28-ad6a-a151ed2fab1e
+  groups: []
+  embedding_ref: emb-24ad30d59b
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 53371829-7ef3-4a71-ad13-eb01183c2e2a
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.613Z
+notes: ""

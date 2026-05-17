@@ -1,0 +1,16 @@
+id: 005-d9799b19
+description: "Sampled from prod (topic-shape: channel:N)."
+candidate:
+  title: t-a7f71432d2
+  topic: channel:469212
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 9ac1a78b-1e77-4c36-a902-56880cd1fe85
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.607Z
+notes: ""

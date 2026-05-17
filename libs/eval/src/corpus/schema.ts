@@ -9,7 +9,7 @@ export const CorpusEmbeddingSchema = z.object({
 
 const PrioritySchema = z.object({
   id: uuid,
-  path: z.string().regex(/^[a-z0-9_]+(\.[a-z0-9_]+)*$/, "ltree-shaped path"),
+  path: z.string().regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/, "ltree-shaped path"),
   title: z.string(),
   key: z.string().nullable().default(null),
 });

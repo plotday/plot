@@ -1,0 +1,17 @@
+id: 011-29ba60d8
+description: "Sampled from prod (topic-shape: channel:N)."
+candidate:
+  title: t-8bf1b3b120
+  topic: channel:817194
+  contacts:
+    - 716ee2e9-849c-42e4-aab9-25ae68b93c2a
+    - 4afced92-8b38-42ce-a455-e0913e96110b
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: b302ac72-f882-4eb7-a92b-81bdf32f2989
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.610Z
+notes: ""

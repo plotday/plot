@@ -1,0 +1,17 @@
+id: 016-96e76234
+description: "Sampled from prod (topic-shape: priority:KEY)."
+candidate:
+  title: t-5992d4ec7e
+  topic: priority:@plot.twist-dev:publisher:019d97e7-347a-72b6-a40e-e812dffd8aa0
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups:
+    - d6a50599-c457-41fe-a9aa-0f560d54c23f
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: bf1f01fd-2237-4137-aa74-faed6e22a4aa
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.611Z
+notes: ""

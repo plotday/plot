@@ -1,0 +1,16 @@
+id: 029-45b3488e
+description: "Sampled from prod (topic-shape: other)."
+candidate:
+  title: t-711a6ea79d
+  topic: topic-f6f97ddc48
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: 5f05b682-d604-4624-a0fb-f1777990a0ce
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.613Z
+notes: ""

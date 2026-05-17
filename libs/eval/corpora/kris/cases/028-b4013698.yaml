@@ -1,0 +1,17 @@
+id: 028-b4013698
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: t-b9345790f1
+  topic: null
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+    - de0884a6-ac42-435f-a057-54c6e584b88d
+  groups: []
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: f5df94b2-1c4b-4c47-aac6-0d4449e4df65
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.613Z
+notes: ""

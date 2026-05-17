@@ -1,0 +1,17 @@
+id: 013-808100b3
+description: "Sampled from prod (topic-shape: priority:KEY)."
+candidate:
+  title: t-dd0e1c6edd
+  topic: priority:@plot.app:welcome-user
+  contacts:
+    - 66c18773-282c-4241-a6c7-6c421e2f9eb6
+  groups:
+    - 30a17f77-d1eb-4581-a746-0a01e901b37b
+  embedding_ref: null
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: cba0dc62-2356-4b16-ab64-6ae5ce82e630
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.610Z
+notes: ""

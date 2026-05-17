@@ -1,0 +1,16 @@
+id: 022-97820391
+description: "Sampled from prod (topic-shape: null)."
+candidate:
+  title: t-f3bef9140c
+  topic: null
+  contacts:
+    - 30b04d4e-7efa-4312-a307-24cc346dba18
+  groups: []
+  embedding_ref: emb-978203916d
+labels:
+  gold: null
+  gold_rationale: ""
+  expected: d4ec6e1a-1dd7-4912-ae98-2072f6ec34dc
+  expected_stage: null
+  expected_recorded_at: 2026-05-17T15:57:33.612Z
+notes: ""
