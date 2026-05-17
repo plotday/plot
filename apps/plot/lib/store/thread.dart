@@ -2485,6 +2485,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// not done, not archived, and scheduled for now/past or unscheduled.
   static Future<Set<ThreadId>> _getActiveThreadIds(List<ThreadId> ids) async {
     if (ids.isEmpty) return {};
+    if (!Store.isAvailable) return {};
 
     final now = Time.now();
     final today = Date.today().toString();
@@ -2534,6 +2535,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// An activity is unread if server says unread and we haven't overridden it locally.
   static Future<Set<ThreadId>> _getUnreadThreadIds(List<ThreadId> ids) async {
     if (ids.isEmpty) return {};
+    if (!Store.isAvailable) return {};
 
     final a = Store.get.threads;
     final query = Store.get.selectOnly(a)..addColumns([a.id]);
@@ -2581,6 +2583,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     // lookup runs on every Drift emission so the extra queries dominate
     // the agenda's cold-start gating time.
     final priorities = await Priority.getRaw(archived: null);
+    if (!Store.isAvailable) return [];
     final priorityMap = Priority.asMap(priorities);
 
     // Group results by activity ID to handle schedule occurrences
