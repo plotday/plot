@@ -487,14 +487,16 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     // both the cross-period move (thread-bearing sources) and the
     // reorder path's `periodReferenceTime` for cross-period cascade
     // drops below.
+    // When the drop lacks a gap anchor, fall back to the target date's
+    // midnight. The agenda render uses a per-section temporal lens
+    // (see `AgendaBuilder._consolidateAndSort`) so a row anchored at
+    // any moment within the target date will win for that date's
+    // standalone run. Using `Time.now()` here was a bug: past-day
+    // reorders ended up anchored to today, and same-day reorders kept
+    // creating fresh rows at different moments-of-day.
     DateTime? targetAnchor = target.targetPeriodStart;
-    if (targetAnchor == null) {
-      final td = target.targetDate;
-      if (td != null && td.isAfter(Date.today())) {
-        targetAnchor = td.toDateTime();
-      } else if (td != null) {
-        targetAnchor = Time.now();
-      }
+    if (targetAnchor == null && target.targetDate != null) {
+      targetAnchor = target.targetDate!.toDateTime();
     }
 
     // If the drop lands inside a gap and the source priority has no
@@ -534,7 +536,13 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         threadIds: sourceThreadIds,
         targetGapAnchorAt: targetAnchor,
       );
-      return;
+      // Fall through to the reorder logic below: moveBlock relocates
+      // the threads but doesn't establish priority-vs-priority ordering
+      // on the target day, so the source priority would land at its
+      // default order regardless of where in the target's list the
+      // user dropped. The reorder logic below brackets the drop
+      // position and writes a priority_block row at targetAnchor so
+      // the priority lands where the user actually dropped it.
     }
     // Empty-thread sources (cascade slices representing a priority's
     // pending duration laid into a gap) fall through to the reorder

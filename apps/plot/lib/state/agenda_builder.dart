@@ -7,6 +7,8 @@ import 'package:plot/state/priority.dart';
 // instead, which doesn't conflict.
 import 'package:plot/store/store.dart' hide PriorityBlock;
 
+DateTime _laterOf(DateTime a, DateTime b) => a.isAfter(b) ? a : b;
+
 /// Pure builder for the agenda's [AgendaModel].
 ///
 /// During this transitional iteration [build] delegates to
@@ -212,10 +214,26 @@ class AgendaBuilder {
   }) {
     final newSections = <AgendaSection>[];
     for (final section in model.sections) {
+      // Per-section temporal lens for standalone priority-block ordering.
+      // Each `DateSection`'s standalone run answers "what priority order
+      // is in effect for this date?" — using the section date's end as
+      // the floor lets a row anchored within that date win for that
+      // date's render. For today, take the later of `now` and EOD so a
+      // future-scheduled row within today is still visible while not
+      // regressing the "right now" order. Past sections keep `now` so
+      // today's reorders bleed forward into past renders the same way
+      // they did before.
+      final sectionNow = switch (section) {
+        DateSection s => _laterOf(
+            now,
+            s.date.toEnd().subtract(const Duration(microseconds: 1)),
+          ),
+        TextSection _ => now,
+      };
       final newBlocks = _consolidateSection(
         section.blocks,
         sectionId: section.id,
-        now: now,
+        now: sectionNow,
         priorityBlocksByPriority: priorityBlocksByPriority,
       );
       switch (section) {
