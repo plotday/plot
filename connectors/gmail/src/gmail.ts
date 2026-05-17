@@ -130,7 +130,10 @@ export class Gmail extends Connector<Gmail> {
     return {
       integrations: build(Integrations),
       network: build(Network, {
-        urls: ["https://gmail.googleapis.com/gmail/v1/*"],
+        urls: [
+          "https://gmail.googleapis.com/gmail/v1/*",
+          "https://people.googleapis.com/v1/*",
+        ],
       }),
     };
   }
