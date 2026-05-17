@@ -86,6 +86,22 @@ schedules.post("/sync/schedules", async (c) => {
   const schedule = body.schedule || body;
   const contacts = schedule.contacts || body.contacts;
 
+  // Occurrence override rows must not carry the parent series' recurrence
+  // fields — the DB enforces this via schedule_recurrence_xor_occurrence.
+  // Older clients (pre-fix in apps/plot/lib/store/thread.dart SchedulesBase
+  // .toBase) push synthetic occurrence rows that copied recurrence_rule and
+  // recurrence_exdates from the base, which causes a permanent 422 sync
+  // failure and strands any session pointing at the orphan row. Strip those
+  // fields server-side so legacy clients can drain their pending queue.
+  if (schedule && schedule.occurrence != null) {
+    delete schedule.recurrence_rule;
+    delete schedule.recurrence_exdates;
+  }
+  if (body.defaults && body.defaults.occurrence != null) {
+    delete body.defaults.recurrence_rule;
+    delete body.defaults.recurrence_exdates;
+  }
+
   // Reject updates to link schedules — only sources can modify those
   const linkId = schedule.link_id || body.defaults?.link_id;
   if (linkId) {
@@ -306,6 +322,10 @@ schedules.post("/sync/schedule/status", async (c) => {
         if (!base) return null;
 
         const newId = crypto.randomUUID();
+        // Occurrence override rows cannot carry the parent series' recurrence
+        // fields (DB constraint schedule_recurrence_xor_occurrence). Those
+        // fields live only on the base series row; the override inherits
+        // recurrence semantics via thread_id/link_id + occurrence lookup.
         await trx
           .insertInto("schedule" as any)
           .values({
@@ -317,8 +337,6 @@ schedules.post("/sync/schedule/status", async (c) => {
             end_at: base.end_at,
             start_on: base.start_on,
             end_on: base.end_on,
-            recurrence_rule: base.recurrence_rule,
-            recurrence_exdates: base.recurrence_exdates,
           })
           .execute();
 
