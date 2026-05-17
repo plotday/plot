@@ -480,6 +480,19 @@ class SchedulesBase extends BaseTable {
     json.remove('contacts');
     json.remove('current_user_status');
 
+    // Occurrence override rows must never carry the parent series'
+    // recurrence_rule / recurrence_exdates — the DB enforces this via
+    // schedule_recurrence_xor_occurrence. Thread.generateOccurrences carries
+    // those fields onto the synthetic schedule so in-memory display logic
+    // can see the series rule, but they must be stripped before pushing or
+    // the server rejects the row with a 422 and the sync orchestrator marks
+    // the row permanently failed (also stranding any session that points at
+    // it via session_schedule_id_fkey).
+    if (json['occurrence'] != null) {
+      json.remove('recurrence_rule');
+      json.remove('recurrence_exdates');
+    }
+
     // Per-user schedules: always include at/on explicitly (even if null)
     // to ensure the server's upsert_schedule clears these fields.
     // Without this, absent keys are treated as "keep existing" and stale
