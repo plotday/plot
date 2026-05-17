@@ -346,8 +346,19 @@ class _AuthButtonState extends State<AuthButton>
       // Consume the pre-warmed nonce so the next attempt re-initializes fresh.
       _pendingNonce = null;
 
-      // Always sign out first to force account selection
-      await GoogleSignIn.instance.signOut();
+      // Always sign out first to force account selection. On Android this
+      // routes through CredentialManager.clearCredentialState, which throws
+      // when no credential provider is registered for clearing — that's
+      // non-fatal for our purposes, so swallow it and continue.
+      try {
+        await GoogleSignIn.instance.signOut();
+      } on PlatformException catch (e) {
+        if (e.code != 'Clear Failed') rethrow;
+        log.info('Google sign-out skipped', {
+          'code': e.code,
+          'message': e.message,
+        });
+      }
 
       // Authenticate with full account picker
       final account = await GoogleSignIn.instance.authenticate(
