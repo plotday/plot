@@ -1,0 +1,79 @@
+#!/usr/bin/env tsx
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+
+import { listClassifiers } from "./classifiers/registry";
+import { runEval } from "./runner/run";
+import { formatReport, type ReportFormat } from "./scoring/report";
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+
+async function main() {
+  const { values } = parseArgs({
+    options: {
+      corpus: { type: "string" },
+      "corpus-dir": { type: "string" },
+      classifiers: { type: "string" },
+      format: { type: "string" },
+      "list-classifiers": { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+    allowPositionals: false,
+  });
+
+  if (values.help) {
+    printHelp();
+    return;
+  }
+
+  if (values["list-classifiers"]) {
+    console.log(listClassifiers().join("\n"));
+    return;
+  }
+
+  if (!values.corpus && !values["corpus-dir"]) {
+    console.error("Error: --corpus <name> or --corpus-dir <path> required.");
+    printHelp();
+    process.exit(2);
+  }
+
+  const corpusDir =
+    values["corpus-dir"] ??
+    resolve(SCRIPT_DIR, "..", "corpora", values.corpus!);
+
+  const classifierNames = (values.classifiers ?? "sql:current").split(",");
+  const format = ((values.format as ReportFormat) ?? "console") as ReportFormat;
+
+  const { results, summary } = await runEval({
+    corpusDir,
+    classifiers: classifierNames,
+  });
+
+  console.log(formatReport(summary, results, format));
+
+  const hasRegression = summary.perClassifier.some((c) => c.regressions > 0);
+  process.exit(hasRegression ? 1 : 0);
+}
+
+function printHelp() {
+  console.log(`Usage: pnpm --filter @plotday/eval eval -- [options]
+
+Options:
+  --corpus <name>           Corpus under libs/eval/corpora/<name>
+  --corpus-dir <path>       Absolute path to a corpus directory (overrides --corpus)
+  --classifiers <list>      Comma-separated classifier names (default: sql:current)
+  --format <console|json|markdown>
+                            Output format (default: console)
+  --list-classifiers        Print registered classifier names and exit
+  -h, --help                Show this help
+
+Environment:
+  DATABASE_URL              Postgres connection string (required)
+`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

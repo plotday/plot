@@ -1,0 +1,15 @@
+id: 002-root-fallback
+description: |
+  Candidate with no topic, no contacts, no embedding — none of the matching
+  stages apply, so the classifier falls back to the user's oldest root.
+candidate:
+  title: A wandering note
+  topic: null
+  contacts: []
+  groups: []
+  embedding_ref: null
+labels:
+  gold: b0000000-0000-4000-a000-000000000001
+  gold_rationale: No signals → root fallback.
+  expected: b0000000-0000-4000-a000-000000000001
+  expected_stage: root_fallback

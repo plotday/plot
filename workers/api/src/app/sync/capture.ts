@@ -2,7 +2,8 @@ import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { rpc, rpcUser } from "../../rpc";
+import { rpcUser } from "../../rpc";
+import { classifyThreadForUser } from "../../state/classify-thread";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
 import { notifySync } from "./notify";
@@ -109,10 +110,10 @@ capture.post("/sync/capture", async (c) => {
         await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
                   WHERE id = ${sql.val(threadId)}`.execute(trx);
       }
-      const matched = await rpc(trx, "classify_thread_for_user", {
-        p_user_id: userId,
-        p_thread_id: threadId,
-        p_embedding: queryEmbedding ?? null,
+      const matched = await classifyThreadForUser(trx, {
+        userId,
+        threadId,
+        embedding: queryEmbedding ?? null,
       });
       if (matched) {
         await sql`UPDATE thread_priority SET priority_id = ${sql.val(matched)}

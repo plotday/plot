@@ -3856,6 +3856,21 @@ export type Database = {
         }
         Returns: string
       }
+      classify_thread_for_user_explain: {
+        Args: {
+          p_contacts?: string[]
+          p_embedding?: unknown
+          p_groups?: string[]
+          p_thread_id?: string
+          p_topic?: string
+          p_user_id: string
+        }
+        Returns: {
+          priority_id: string
+          scores: Json
+          stage: string
+        }[]
+      }
       count_not_null: { Args: { val: unknown }; Returns: number }
       create_group: {
         Args: {

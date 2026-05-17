@@ -1,0 +1,66 @@
+name: synthetic-tiny
+description: |
+  Five hand-crafted cases exercising priority_prefix, root_fallback,
+  topic_shortcircuit, and scoring stages of classify_thread_for_user_explain.
+  Used by Vitest and as the CI smoke corpus. Channel_default and keyed_priority
+  cross-user stages are not covered here — they require multi-user world state
+  or twist_instance scaffolding and live in separate corpora.
+schema_version: 1
+source:
+  kind: handcrafted
+user:
+  id: aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa
+  email: synthetic-tiny@example.test
+  primary_contact_id: null
+
+priorities:
+  - id: b0000000-0000-4000-a000-000000000001
+    path: everything
+    title: Everything
+    key: null
+  - id: b0000000-0000-4000-a000-000000000002
+    path: everything.engineering
+    title: Engineering
+    key: "@eval.eng"
+  - id: b0000000-0000-4000-a000-000000000003
+    path: everything.personal
+    title: Personal
+    key: null
+  - id: b0000000-0000-4000-a000-000000000004
+    path: everything.newsletters
+    title: Newsletters
+    key: null
+
+contacts:
+  - id: c0000000-0000-4000-a000-000000000001
+    email: alice@example.test
+    linked_to_user: false
+  - id: c0000000-0000-4000-a000-000000000002
+    email: bob@example.test
+    linked_to_user: false
+
+groups: []
+
+# Training threads — the user_moved=TRUE rows the classifier scores against.
+training_threads:
+  # Filed under Personal, topic=channel:99 — used by topic_shortcircuit case.
+  - id: d0000000-0000-4000-a000-000000000001
+    title: Alice's personal note
+    topic: "channel:99"
+    contacts:
+      - c0000000-0000-4000-a000-000000000001
+    groups: []
+    embedding_ref: null
+    filed_to_priority: b0000000-0000-4000-a000-000000000003
+  # Filed under Engineering, no topic, contact=Bob — used by scoring case.
+  - id: d0000000-0000-4000-a000-000000000002
+    title: Deploy pipeline incident
+    topic: null
+    contacts:
+      - c0000000-0000-4000-a000-000000000002
+    groups: []
+    embedding_ref: null
+    filed_to_priority: b0000000-0000-4000-a000-000000000002
+
+embeddings: []
+channels: []

@@ -1,0 +1,16 @@
+id: 001-priority-prefix
+description: |
+  Topic prefixed with "priority:@eval.eng" should resolve to the keyed
+  Engineering priority via the priority_prefix stage (no user_moved siblings
+  share this exact topic, so it falls through to the prefix rule).
+candidate:
+  title: Welcome to Engineering
+  topic: "priority:@eval.eng:welcome"
+  contacts: []
+  groups: []
+  embedding_ref: null
+labels:
+  gold: b0000000-0000-4000-a000-000000000002
+  gold_rationale: Topic prefix names Engineering's key.
+  expected: b0000000-0000-4000-a000-000000000002
+  expected_stage: priority_prefix

@@ -510,6 +510,7 @@ export interface PriorityBlock {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   created_by: string;
+  duration: Interval | null;
   effective_at: Timestamp;
   id: Generated<string>;
   order_value: number;
@@ -611,12 +612,16 @@ export interface Session {
   archived_at: Timestamp | null;
   at: string;
   created_at: Generated<Timestamp>;
+  explicit: Generated<boolean>;
   id: Generated<string>;
+  occurrence_at: Timestamp | null;
   pomodoro: number | null;
   pomodoro_at: Timestamp | null;
   precedence: Generated<number>;
   priority_id: string | null;
+  schedule_id: string | null;
   seq: Generated<string>;
+  source: Generated<string>;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
   user_id: string;
@@ -1371,6 +1376,7 @@ export interface UserPriorityBlock {
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
   created_by: string | null;
+  duration: Interval | null;
   effective_at: Timestamp | null;
   id: string | null;
   order_value: number | null;
@@ -1427,7 +1433,10 @@ export interface UserSettings {
   email_frequency: EmailFrequency | null;
   email_token: string | null;
   enter_behavior: EnterBehavior | null;
+  event_sessions_finalized_through: Timestamp | null;
+  onboarding_completed: boolean | null;
   seq: Generated<string>;
+  tracking_paused_at: Timestamp | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }

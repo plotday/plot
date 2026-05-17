@@ -1,0 +1,22 @@
+id: 005-scoring-no-match
+description: |
+  Candidate has a contact that doesn't overlap with any training thread,
+  no topic match, no embedding → scoring stage produces no result above the
+  0.15 floor, so the classifier falls through to root_fallback.
+candidate:
+  title: Note from Alice with no training overlap
+  topic: null
+  contacts:
+    - c0000000-0000-4000-a000-000000000001
+  groups: []
+  embedding_ref: null
+labels:
+  gold: b0000000-0000-4000-a000-000000000003
+  gold_rationale: |
+    Ideally this should classify as Personal because Alice's training thread
+    is filed there, but Alice's training thread had topic=channel:99 — and
+    this candidate has no topic. Contact Jaccard alone (1/1 = 1.0, squared
+    1.0 × 0.35 = 0.35) DOES beat the floor, so scoring will fire and pick
+    Personal. Documents that scoring-only paths work.
+  expected: b0000000-0000-4000-a000-000000000003
+  expected_stage: scoring
