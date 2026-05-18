@@ -1,0 +1,50 @@
+{
+  "name": "@plotday/connector-granola",
+  "plotTwistId": "019e3c22-5328-7b6f-b2b6-0efa8e3dab16",
+  "displayName": "Granola",
+  "description": "Attach Granola meeting notes onto your calendar event threads",
+  "logoUrl": "https://plot.day/assets/logo-granola.png",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/granola"
+  },
+  "homepage": "https://plot.day",
+  "keywords": [
+    "plot",
+    "connector",
+    "granola",
+    "meetings"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

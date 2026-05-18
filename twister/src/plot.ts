@@ -927,11 +927,20 @@ export type Link = {
   channelId: string | null;
   /**
    * Cross-connector thread bundling key.
-   * When set, this link shares a thread with any link whose `source` matches
-   * this value (or whose `relatedSource` matches this link's `source`).
-   * Works regardless of creation order.
+   *
+   * @deprecated Use `sources` instead. Reads return the first element of
+   * `sources` for backward compatibility; new writes should populate `sources`.
    */
   relatedSource: string | null;
+  /**
+   * Canonical identifiers for this link. Two links whose `sources` arrays
+   * overlap share the same thread (array overlap, `sources && new.sources`).
+   *
+   * Use this to bundle with another connector via a canonical alias. For
+   * example, every calendar connector emits `icaluid:<iCalUID>` so any
+   * meeting-notes connector can bundle by setting the same alias.
+   */
+  sources: string[];
 };
 
 /**
@@ -940,18 +949,26 @@ export type Link = {
  * Links are created by sources to represent external entities.
  * Requires a source identifier for dedup/upsert.
  */
-export type NewLink = (
-  | {
-      /**
-       * Canonical ID for the item in an external system.
-       * When set, uniquely identifies the link within a priority tree. This performs
-       * an upsert.
-       */
-      source: string;
-    }
-  | {}
-) &
-  Partial<Omit<Link, "source" | "author" | "assignee" | "threadId">> & {
+export type NewLink = Partial<
+  Omit<Link, "author" | "assignee" | "threadId">
+> & {
+  /**
+   * Canonical ID for the item in an external system.
+   * When set, uniquely identifies the link within a priority tree. This performs
+   * an upsert.
+   *
+   * @deprecated Pass `sources: [...]` instead. Both fields can be set during
+   * the transition; the runtime will normalize.
+   */
+  source?: string;
+  /**
+   * Canonical identifiers for this item. Any element shared with another
+   * link's `sources` bundles the two links into the same thread. Used for
+   * cross-connector bundling — e.g. a meeting-notes connector setting
+   * `["granola:<id>", "icaluid:<uid>"]` to attach onto a calendar event
+   * thread that includes `icaluid:<uid>` in its own `sources`.
+   */
+  sources?: string[];
     /** The person that created the item. By default, it will be the twist itself. */
     author?: NewActor;
     /** The person assigned to the item. */

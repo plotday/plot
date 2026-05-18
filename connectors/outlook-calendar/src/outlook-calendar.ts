@@ -71,6 +71,28 @@ function detectConferencingProvider(url: string): ConferencingProvider {
   return ConferencingProvider.microsoftTeams;
 }
 
+/**
+ * Build canonical identifiers for an Outlook event. First element is the
+ * connector-native source (mailbox-qualified for global uniqueness).
+ * Additional elements are cross-vendor aliases so other connectors can bundle
+ * via `icaluid:<UID>` or `outlook-event:<id>` without knowing our exact
+ * `outlook-calendar:<calendarId>:<eventId>` format.
+ */
+function buildEventSources(opts: {
+  calendarId: string;
+  eventId?: string | null;
+  iCalUId?: string | null;
+  seriesMasterId?: string | null;
+}): string[] {
+  const { calendarId, eventId, iCalUId, seriesMasterId } = opts;
+  const sources: string[] = [];
+  const primaryId = eventId ?? seriesMasterId;
+  if (primaryId) sources.push(`outlook-calendar:${calendarId}:${primaryId}`);
+  if (iCalUId) sources.push(`icaluid:${iCalUId}`);
+  if (eventId) sources.push(`outlook-event:${eventId}`);
+  return sources;
+}
+
 type WatchState = {
   subscriptionId: string;
   calendarId: string;
@@ -446,6 +468,11 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
               : new Date(),
             preview: "Cancelled",
             source,
+            sources: buildEventSources({
+              calendarId,
+              eventId: outlookEvent.id,
+              iCalUId: outlookEvent.iCalUId,
+            }),
             channelId: calendarId,
             meta: { syncProvider: "microsoft", syncableId: calendarId },
             notes: [cancelNote],
@@ -580,6 +607,11 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         // Build NewLinkWithNotes from the transformed thread data
         const linkWithNotes: NewLinkWithNotes = {
           source: `outlook-calendar:${calendarId}:${outlookEvent.id}`,
+          sources: buildEventSources({
+            calendarId,
+            eventId: outlookEvent.id,
+            iCalUId: outlookEvent.iCalUId,
+          }),
           type: "event",
           title: threadData.title || "",
           access: "private",
@@ -654,6 +686,11 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         type: "event",
         title: "",
         source: masterCanonicalUrl,
+        sources: buildEventSources({
+          calendarId,
+          seriesMasterId: event.seriesMasterId,
+          iCalUId: event.iCalUId,
+        }),
         channelId: calendarId,
         meta: { syncProvider: "microsoft", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
@@ -711,6 +748,11 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       type: "event",
       title: "",
       source: masterCanonicalUrl,
+      sources: buildEventSources({
+        calendarId,
+        seriesMasterId: event.seriesMasterId,
+        iCalUId: event.iCalUId,
+      }),
       channelId: calendarId,
       meta: { syncProvider: "microsoft", syncableId: calendarId },
       scheduleOccurrences: [occurrence],

@@ -1,0 +1,261 @@
+import { type NewLinkWithNotes } from "@plotday/twister";
+import { Connector } from "@plotday/twister/connector";
+import { Options } from "@plotday/twister/options";
+import type { ToolBuilder } from "@plotday/twister/tool";
+import { Callbacks } from "@plotday/twister/tools/callbacks";
+import {
+  type AuthToken,
+  type Authorization,
+  type Channel,
+  Integrations,
+  type SyncContext,
+} from "@plotday/twister/tools/integrations";
+import { Network } from "@plotday/twister/tools/network";
+import { Store } from "@plotday/twister/tools/store";
+import { Tasks } from "@plotday/twister/tools/tasks";
+
+import { GranolaAPI, type GranolaNote } from "./granola-api";
+
+type SyncState = {
+  cursor: string | null;
+  initialSync: boolean;
+  syncHistoryMin?: string;
+};
+
+/**
+ * Granola connector — syncs AI meeting notes from Granola and attaches them
+ * to the matching calendar event thread (Google Calendar, Outlook, or Apple).
+ *
+ * Auth: API key (Bearer `grn_...`) supplied via Options. Granola's public API
+ * does not currently expose third-party OAuth — only Personal/Enterprise API
+ * keys (https://docs.granola.ai). WorkOS-based SSO in their docs covers
+ * end-user login to the Granola app itself, not programmatic access.
+ *
+ * Cross-connector bundling: each Granola note's `sources` includes the
+ * canonical `icaluid:<calendar_event_id>` alias plus Google/Outlook event-id
+ * aliases, so the upsert in `link.ts` finds an existing calendar event link
+ * by array overlap and attaches the Granola note onto that thread. When no
+ * calendar event matches, a standalone Granola thread is created instead.
+ */
+export class Granola extends Connector<Granola> {
+  build(build: ToolBuilder) {
+    return {
+      integrations: build(Integrations),
+      options: build(Options, {
+        apiKey: {
+          type: "text" as const,
+          secure: true,
+          label: "API key",
+          default: "",
+          placeholder: "grn_...",
+        },
+      }),
+      callbacks: build(Callbacks),
+      tasks: build(Tasks),
+      store: build(Store),
+      network: build(Network, {
+        urls: ["https://public-api.granola.ai/*"],
+      }),
+    };
+  }
+
+  private getAPI(): GranolaAPI {
+    return new GranolaAPI(this.tools.options.apiKey as string);
+  }
+
+  override async getAccountName(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string | null> {
+    // Granola's list-notes response carries owner.email — fetch one note as a
+    // cheap probe to recover the account label.
+    try {
+      const { data } = await this.getAPI().listNotes({ pageSize: 1 });
+      return data[0]?.owner.email ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Single channel for all Granola meeting notes.
+   */
+  async getChannels(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<Channel[]> {
+    // Probe credentials.
+    await this.getAPI().listNotes({ pageSize: 1 });
+    return [
+      {
+        id: "meeting-notes",
+        title: "Meeting Notes",
+        linkTypes: [
+          {
+            type: "meeting",
+            label: "Meeting",
+            logo: "/assets/logo-granola.png",
+          },
+        ],
+      },
+    ];
+  }
+
+  async onChannelEnabled(
+    channel: Channel,
+    context?: SyncContext
+  ): Promise<void> {
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(
+        `sync_history_min_${channel.id}`
+      );
+      if (
+        storedMin &&
+        new Date(storedMin) <= syncHistoryMin &&
+        !context?.recovering
+      ) {
+        return;
+      }
+      await this.set(
+        `sync_history_min_${channel.id}`,
+        syncHistoryMin.toISOString()
+      );
+    }
+
+    await this.set(`sync_enabled_${channel.id}`, true);
+    await this.startBatchSync(channel.id, syncHistoryMin);
+  }
+
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    await this.clear(`sync_enabled_${channel.id}`);
+    await this.clear(`sync_state_${channel.id}`);
+    await this.tools.integrations.archiveLinks({
+      channelId: channel.id,
+      meta: { syncProvider: "granola", channelId: channel.id },
+    });
+  }
+
+  private async startBatchSync(
+    channelId: string,
+    syncHistoryMin?: Date
+  ): Promise<void> {
+    await this.set(`sync_state_${channelId}`, {
+      cursor: null,
+      initialSync: true,
+      ...(syncHistoryMin
+        ? { syncHistoryMin: syncHistoryMin.toISOString() }
+        : {}),
+    } satisfies SyncState);
+
+    const cb = await this.callback(this.syncBatch, channelId, true);
+    await this.tools.tasks.runTask(cb);
+  }
+
+  /**
+   * Fetch a page of note ids, then for each one fetch full details and emit
+   * a link. Pagination chains via tasks.runTask() to respect Granola's
+   * 300 req/min rate limit and the worker's ~1000 req/exec budget.
+   */
+  async syncBatch(channelId: string, initialSync?: boolean): Promise<void> {
+    const state = await this.get<SyncState>(`sync_state_${channelId}`);
+    if (!state) return;
+    const isInitial = initialSync ?? state.initialSync;
+
+    const api = this.getAPI();
+    const list = await api.listNotes({
+      cursor: state.cursor,
+      pageSize: 30,
+      updatedAfter: state.syncHistoryMin ?? undefined,
+    });
+
+    for (const summary of list.data) {
+      try {
+        const note = await api.getNote(summary.id);
+        const link = this.transformNote(note, channelId, isInitial);
+        await this.tools.integrations.saveLink(link);
+      } catch (err) {
+        // Granola's get-note can fail if the note's AI summary is still
+        // pending. Skip and pick it up on the next sync.
+        console.error(
+          `[Granola] failed to ingest note ${summary.id}:`,
+          err
+        );
+      }
+    }
+
+    if (list.hasMore && list.cursor) {
+      await this.set(`sync_state_${channelId}`, {
+        cursor: list.cursor,
+        initialSync: isInitial,
+        ...(state.syncHistoryMin
+          ? { syncHistoryMin: state.syncHistoryMin }
+          : {}),
+      } satisfies SyncState);
+      const cb = await this.callback(this.syncBatch, channelId, isInitial);
+      await this.tools.tasks.runTask(cb);
+    } else {
+      await this.clear(`sync_state_${channelId}`);
+    }
+  }
+
+  /**
+   * Map a Granola note → NewLinkWithNotes. The `sources` array carries the
+   * connector-native id plus canonical aliases pointing at the calendar
+   * event. The runtime's array-overlap upsert attaches this note to the
+   * calendar thread if one exists; otherwise it creates a standalone thread.
+   */
+  private transformNote(
+    note: GranolaNote,
+    channelId: string,
+    initialSync: boolean
+  ): NewLinkWithNotes {
+    const sources: string[] = [`granola:note:${note.id}`];
+
+    // Granola's calendar_event_id is the meeting's calendar identifier. We
+    // don't know which calendar produced it (Google vs Outlook vs Apple),
+    // so emit aliases for every plausible namespace. Only the matching
+    // namespace will overlap with the calendar connector's `sources`.
+    const calendarEventId = note.calendar_event?.calendar_event_id;
+    if (calendarEventId) {
+      sources.push(`icaluid:${calendarEventId}`);
+      sources.push(`google-event:${calendarEventId}`);
+      sources.push(`google-calendar:${calendarEventId}`);
+      // Apple ICS UID — same UID format as iCalUID.
+      sources.push(`apple-calendar:${calendarEventId}`);
+    }
+
+    const content = note.summary_markdown ?? note.summary_text ?? "";
+
+    return {
+      source: `granola:note:${note.id}`,
+      sources,
+      title: note.title ?? note.calendar_event?.event_title ?? "Meeting notes",
+      type: "meeting",
+      channelId,
+      sourceUrl: note.web_url,
+      created: note.calendar_event?.scheduled_start_time
+        ? new Date(note.calendar_event.scheduled_start_time)
+        : new Date(note.created_at),
+      meta: {
+        syncProvider: "granola",
+        channelId,
+        noteId: note.id,
+        ...(calendarEventId ? { calendarEventId } : {}),
+      },
+      notes: [
+        {
+          // Stable key so re-syncing the same note replaces in place
+          // rather than appending a duplicate summary.
+          key: "granola-summary",
+          content,
+          contentType: "markdown" as const,
+          created: new Date(note.updated_at),
+        } as any,
+      ],
+      ...(initialSync ? { unread: false, archived: false } : {}),
+    };
+  }
+}
+
+export default Granola;
