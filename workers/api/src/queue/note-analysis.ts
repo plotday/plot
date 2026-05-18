@@ -4,7 +4,6 @@ import { PostHog } from "posthog-node";
 import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
-import { createSchedule } from "../app/sync/smart-schedule";
 import { rpcUser } from "../rpc";
 
 /**
@@ -447,10 +446,11 @@ async function applyUnreadStatus(
         p_note_created_at: noteSourceCreatedAt.toISOString(),
       });
 
-      // passive: unread in app but no push notification
-      if (urgency === "passive") continue;
-
-      await createSchedule(db, member.userId, threadId, "unread");
+      // Disabled: auto-add to agenda based on AI urgency was too aggressive.
+      // Unread status is still set above so notifications/badges work; we just
+      // no longer create an "unread" schedule entry. May be tuned and re-enabled later.
+      // if (urgency === "passive") continue;
+      // await createSchedule(db, member.userId, threadId, "unread");
     } catch (error) {
       console.error(
         `[note-analysis] Failed to apply unread status for user ${member.userId}:`,
@@ -469,284 +469,12 @@ async function applyUnreadStatus(
  * Called synchronously during note creation, not from the async queue.
  */
 export async function detectTasks(
-  env: Bindings,
-  noteId: string,
-  threadId: string,
-  userId: string,
-  twistInstanceId: string
+  _env: Bindings,
+  _noteId: string,
+  _threadId: string,
+  _userId: string,
+  _twistInstanceId: string
 ): Promise<void> {
-  const db = createDb(env);
-  try {
-    // Pre-check: avoid the LLM call when task detection has already run
-    // for this source note. Connectors may re-sync the same note multiple
-    // times (e.g. repeated PubSub deliveries for one Gmail message), and
-    // each call lands here with checkForTasks=true.
-    if (await hasExistingTaskNotes(db, noteId)) return;
-
-    const context = await gatherContext(db, noteId, threadId);
-    if (!context) return;
-
-    const tasks = await classifyTasks(env, context);
-    if (tasks.length === 0) return;
-
-    // Guard: reject if too many tasks detected (likely hallucination)
-    if (tasks.length > 3) {
-      console.warn(
-        `[detect-tasks] Rejecting ${tasks.length} tasks for note ${noteId} — too many detected`
-      );
-      return;
-    }
-
-    // Serialize concurrent batches for the same source note. Without this,
-    // parallel detectTasks calls each snapshot existingTodos as empty before
-    // any writes and every batch's tasks land — observed as 6 tasks (3
-    // batches × 2 tasks) from one Gmail message. The advisory lock is
-    // transaction-scoped, so the gate covers the existence recheck and the
-    // task writes together; later batches see the prior batch's tasks
-    // inside the lock and bail.
-    await db.transaction().execute(async (trx) => {
-      await sql`SELECT pg_advisory_xact_lock(hashtext(${noteId}::text))`.execute(trx);
-
-      if (await hasExistingTaskNotes(trx, noteId)) return;
-
-      await createTaskNotes(env, trx, tasks, context, threadId, userId, twistInstanceId);
-    });
-  } finally {
-    await db.destroy();
-  }
-}
-
-async function hasExistingTaskNotes(
-  db: Kysely<DB>,
-  sourceNoteId: string
-): Promise<boolean> {
-  const existing = await db
-    .selectFrom("note as n")
-    .innerJoin("note_tag as nt", "nt.note_id", "n.id")
-    .select("n.id")
-    .where("n.re_note_id", "=", sourceNoteId)
-    .where("n.archived_at", "is", null)
-    .where("nt.tag_id", "=", 1) // Tag.Todo
-    .where("nt.archived_at", "is", null)
-    .limit(1)
-    .executeTakeFirst();
-  return existing !== undefined;
-}
-
-interface DetectedTask {
-  actorId: string;
-  description: string;
-}
-
-async function classifyTasks(
-  env: Bindings,
-  context: NoteContext
-): Promise<DetectedTask[]> {
-  // Build member number mappings (same pattern as classifyNote)
-  const memberNumToId = new Map<number, string>();
-  const memberIdToNum = new Map<string, number>();
-  context.members.forEach((m, i) => {
-    const num = i + 1;
-    memberNumToId.set(num, m.id);
-    memberIdToNum.set(m.id, num);
-  });
-
-  const membersStr = context.members
-    .map((m) => `- #${memberIdToNum.get(m.id)}: ${m.name ?? "Unknown"}`)
-    .join("\n");
-
-  const todosStr =
-    context.existingTodos.length > 0
-      ? context.existingTodos
-          .map((t) => {
-            const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
-            return `- ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"}): assigned a task`;
-          })
-          .join("\n")
-      : "None";
-
-  const clearedTodosStr =
-    context.clearedTodos.length > 0
-      ? context.clearedTodos
-          .map((t) => {
-            const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
-            return `- ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"}): had a task that was cleared`;
-          })
-          .join("\n")
-      : "None";
-
-  const recentStr =
-    context.recentNotes.length > 0
-      ? context.recentNotes
-          .map((n) => {
-            const memberNum = n.authorId ? memberIdToNum.get(n.authorId) : undefined;
-            const authorLabel = memberNum
-              ? `${n.authorName ?? "Unknown"} (member #${memberNum})`
-              : (n.authorName ?? "Unknown");
-            return `- ${authorLabel}: ${(n.content ?? "").slice(0, 300)}`;
-          })
-          .join("\n")
-      : "None";
-
-  const authorNum = memberIdToNum.get(context.noteAuthorId);
-
-  const messages = [
-    {
-      role: "system" as const,
-      content: `You detect actionable tasks in messaging conversations (email, chat). Analyze the new message and determine if it contains clear tasks for specific people.
-
-A task exists when:
-1. Someone asks someone specific to do something ("Can you update the docs?")
-2. Someone commits to doing something in the future ("I'll send the report tomorrow")
-3. Someone asks a specific person a question that needs a response
-4. Something clearly demands a reply or action from a specific person
-
-Rules:
-- Only assign tasks to members in the priority members list (use member numbers).
-- If no specific person is identifiable as the assignee, do not create a task.
-- The note author cannot be assigned a task they are giving to themselves (self-commitments ARE tasks — assign to the author).
-- Do not duplicate tasks already covered by existing todos.
-- NEVER re-create tasks that were manually cleared by a user. "Cleared tasks" lists assignments that a user intentionally removed.
-- Write each task description as a standalone imperative statement (e.g. "Update the API documentation" not "Alice asked Bob to update the docs").
-- Keep descriptions concise — one sentence, under 100 characters when possible.
-- When in doubt, do not create a task. False negatives are far less disruptive than false positives.
-
-Respond with JSON only. No explanation.
-
-Output schema:
-{"tasks": [{"member": 1, "description": "Update the API documentation"}]}
-
-Empty tasks array if no clear tasks detected.`,
-    },
-    {
-      role: "user" as const,
-      content: `Thread: "${context.threadTitle ?? "Untitled"}"
-Priority members:
-${membersStr}
-Existing tasks:
-${todosStr}
-Cleared tasks (manually removed by user — do NOT re-create):
-${clearedTodosStr}
-Recent messages:
-${recentStr}
-
-New message by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
-    },
-  ];
-
-  const response = await env.AI.run(
-    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    { messages, max_tokens: 512 }
-  );
-
-  if (response instanceof ReadableStream) {
-    throw new Error("Unexpected stream response from AI");
-  }
-
-  const raw = response.response;
-  const text = (typeof raw === "string" ? raw : JSON.stringify(raw))?.trim();
-  if (!text) return [];
-
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return [];
-
-  try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed.tasks)) return [];
-
-    return parsed.tasks
-      .filter(
-        (t: any) =>
-          typeof t.member === "number" &&
-          typeof t.description === "string" &&
-          t.description.trim().length > 0
-      )
-      .map((t: any) => ({
-        actorId: memberNumToId.get(t.member),
-        description: t.description.trim(),
-      }))
-      .filter((t: DetectedTask): t is DetectedTask => t.actorId !== undefined)
-      // Filter out assignments to people not in the member list
-      .filter((t: DetectedTask) => context.memberIds.has(t.actorId))
-      // Filter out tasks that duplicate existing active todos for the same person
-      .filter(
-        (t: DetectedTask) =>
-          !context.existingTodos.some((et) => et.actorId === t.actorId)
-      )
-      // Filter out tasks for people whose todos were manually cleared
-      .filter(
-        (t: DetectedTask) =>
-          !context.clearedTodos.some((ct) => ct.actorId === t.actorId)
-      );
-  } catch {
-    console.error("[detect-tasks] Failed to parse AI response:", text);
-    return [];
-  }
-}
-
-async function createTaskNotes(
-  env: Bindings,
-  db: Kysely<DB>,
-  tasks: DetectedTask[],
-  context: NoteContext,
-  threadId: string,
-  userId: string,
-  twistInstanceId: string
-): Promise<void> {
-  for (const task of tasks) {
-    try {
-      // Create a Plot-authored reply note with the task description
-      const noteResult = await db
-        .insertInto("note")
-        .values({
-          author_id: twistInstanceId,
-          created_by: twistInstanceId,
-          thread_id: threadId,
-          content: task.description,
-          re_note_id: context.noteId,
-          access_contacts: null,
-          draft: false,
-          updated_by: 0, // AI-generated
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-
-      // Apply the todo tag to the new task note for the assigned person
-      await rpcUser(db, "update_note_tags", {
-        user_id: userId,
-        p_note_id: noteResult.id,
-        p_actor_id: userId,
-        p_client_id: 0,
-        p_tag_updates: { [`1:${task.actorId}`]: true }, // Tag.Todo = 1
-      });
-
-      // Create task schedule for the assignee
-      const contact = await db
-        .selectFrom("contact")
-        .select("user_id")
-        .where("id", "=", task.actorId)
-        .executeTakeFirst();
-      if (contact?.user_id) {
-        await createSchedule(db, contact.user_id, threadId, "task");
-      }
-    } catch (error) {
-      console.error(
-        `[detect-tasks] Failed to create task note for actor ${task.actorId}:`,
-        error
-      );
-      const postHog = new PostHog(env.POSTHOG_API_KEY, {
-        host: env.POSTHOG_HOST,
-        flushAt: 1,
-        flushInterval: 0,
-      });
-      postHog.captureException(error as Error, userId, {
-        context: "detect-tasks:createTaskNotes",
-        note_id: context.noteId,
-        actor_id: task.actorId,
-      });
-      await postHog.shutdown();
-    }
-  }
+  // Disabled: auto-task creation was too aggressive. May be tuned and re-enabled later.
+  return;
 }
