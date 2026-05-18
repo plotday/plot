@@ -49,13 +49,13 @@ async function main() {
     : undefined;
   const format = ((values.format as ReportFormat) ?? "console") as ReportFormat;
 
-  const { results, summary } = await runEval({
+  const { corpus, results, summary } = await runEval({
     corpusDir,
     classifiers: classifierNames,
     trainingSets,
   });
 
-  console.log(formatReport(summary, results, format));
+  console.log(formatReport(corpus, summary, results, format));
 
   const hasRegression = summary.perClassifierTraining.some((c) => c.regressions > 0);
   process.exit(hasRegression ? 1 : 0);

@@ -51,6 +51,7 @@ export type RunOptions = {
 };
 
 export async function runEval(opts: RunOptions): Promise<{
+  corpus: Corpus;
   results: RunResult[];
   summary: RunSummary;
 }> {
@@ -83,6 +84,7 @@ export async function runEval(opts: RunOptions): Promise<{
       });
     }
     return {
+      corpus,
       results,
       summary: summarize(corpus, opts.classifiers, selectedTrainingSets, cases.length, results),
     };

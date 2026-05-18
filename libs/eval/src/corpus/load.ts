@@ -13,20 +13,29 @@ import {
   type CorpusWorld,
 } from "./schema";
 
-async function loadYaml<T>(path: string, parse: (raw: unknown) => T): Promise<T> {
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+type SlugLookups = {
+  priority: Map<string, string>;
+  contact: Map<string, string>;
+  group: Map<string, string>;
+  priorityIds: Set<string>;
+  contactIds: Set<string>;
+  groupIds: Set<string>;
+};
+
+async function loadYamlText(path: string): Promise<unknown> {
   const text = await readFile(path, "utf-8");
-  const data = parseYaml(text);
-  return parse(data);
+  return parseYaml(text);
 }
 
 export async function loadCorpus(rootDir: string): Promise<Corpus> {
-  const world: CorpusWorld = await loadYaml(
-    join(rootDir, "world.yaml"),
-    (raw) => CorpusWorldSchema.parse(raw)
-  );
+  const worldRaw = await loadYamlText(join(rootDir, "world.yaml"));
+  const world: CorpusWorld = CorpusWorldSchema.parse(worldRaw);
+  const lookups = buildLookups(world);
 
-  const trainingSets = await loadTrainingSets(rootDir);
-  const cases = await loadCases(rootDir);
+  const trainingSets = await loadTrainingSets(rootDir, lookups);
+  const cases = await loadCases(rootDir, lookups);
 
   const embeddings = new Map<string, CorpusEmbedding>(
     world.embeddings.map((e) => [e.ref, e])
@@ -44,7 +53,159 @@ export async function loadCorpus(rootDir: string): Promise<Corpus> {
   };
 }
 
-async function loadTrainingSets(rootDir: string): Promise<CorpusTrainingSet[]> {
+function buildLookups(world: CorpusWorld): SlugLookups {
+  const priority = new Map<string, string>();
+  for (const p of world.priorities) {
+    if (priority.has(p.slug)) {
+      throw new Error(`Duplicate priority slug in world.yaml: ${p.slug}`);
+    }
+    priority.set(p.slug, p.id);
+  }
+
+  const contact = new Map<string, string>();
+  for (const c of world.contacts) {
+    if (c.slug) {
+      if (contact.has(c.slug)) {
+        throw new Error(`Duplicate contact slug in world.yaml: ${c.slug}`);
+      }
+      contact.set(c.slug, c.id);
+    }
+  }
+
+  const group = new Map<string, string>();
+  for (const g of world.groups) {
+    if (g.slug) {
+      if (group.has(g.slug)) {
+        throw new Error(`Duplicate group slug in world.yaml: ${g.slug}`);
+      }
+      group.set(g.slug, g.id);
+    }
+  }
+
+  return {
+    priority,
+    contact,
+    group,
+    priorityIds: new Set(world.priorities.map((p) => p.id)),
+    contactIds: new Set(world.contacts.map((c) => c.id)),
+    groupIds: new Set(world.groups.map((g) => g.id)),
+  };
+}
+
+function resolveRef(
+  ref: string,
+  kind: "priority" | "contact" | "group",
+  lookups: SlugLookups,
+  context: string
+): string {
+  if (UUID_RE.test(ref)) {
+    const ids =
+      kind === "priority"
+        ? lookups.priorityIds
+        : kind === "contact"
+          ? lookups.contactIds
+          : lookups.groupIds;
+    if (!ids.has(ref)) {
+      throw new Error(`${context}: ${kind} id ${ref} not declared in world.yaml`);
+    }
+    return ref;
+  }
+  const map =
+    kind === "priority"
+      ? lookups.priority
+      : kind === "contact"
+        ? lookups.contact
+        : lookups.group;
+  const resolved = map.get(ref);
+  if (!resolved) {
+    throw new Error(
+      `${context}: unknown ${kind} slug "${ref}". Declare it in world.yaml or reference by UUID.`
+    );
+  }
+  return resolved;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveTrainingSetRefs(raw: any, lookups: SlugLookups, file: string): any {
+  if (!raw || typeof raw !== "object") return raw;
+  return {
+    ...raw,
+    threads: Array.isArray(raw.threads)
+      ? raw.threads.map((t: Record<string, unknown>, i: number) => ({
+          ...t,
+          contacts: Array.isArray(t.contacts)
+            ? (t.contacts as string[]).map((c) =>
+                resolveRef(c, "contact", lookups, `${file}#threads[${i}].contacts`)
+              )
+            : t.contacts,
+          groups: Array.isArray(t.groups)
+            ? (t.groups as string[]).map((g) =>
+                resolveRef(g, "group", lookups, `${file}#threads[${i}].groups`)
+              )
+            : t.groups,
+          filed_to_priority:
+            typeof t.filed_to_priority === "string"
+              ? resolveRef(
+                  t.filed_to_priority,
+                  "priority",
+                  lookups,
+                  `${file}#threads[${i}].filed_to_priority`
+                )
+              : t.filed_to_priority,
+        }))
+      : raw.threads,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveCasesRefs(raw: any, lookups: SlugLookups, file: string): any {
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.cases)) return raw;
+  return {
+    ...raw,
+    cases: raw.cases.map((cs: Record<string, unknown>, i: number) => {
+      const candidate = (cs.candidate ?? {}) as Record<string, unknown>;
+      const labels = (cs.labels ?? {}) as Record<string, unknown>;
+      const caseRef = `${file}#cases[${i}](${(cs.id as string) ?? "?"})`;
+      return {
+        ...cs,
+        candidate: {
+          ...candidate,
+          contacts: Array.isArray(candidate.contacts)
+            ? (candidate.contacts as string[]).map((c) =>
+                resolveRef(c, "contact", lookups, `${caseRef}.candidate.contacts`)
+              )
+            : candidate.contacts,
+          groups: Array.isArray(candidate.groups)
+            ? (candidate.groups as string[]).map((g) =>
+                resolveRef(g, "group", lookups, `${caseRef}.candidate.groups`)
+              )
+            : candidate.groups,
+        },
+        labels: {
+          ...labels,
+          gold:
+            typeof labels.gold === "string"
+              ? resolveRef(labels.gold, "priority", lookups, `${caseRef}.labels.gold`)
+              : labels.gold,
+          expected:
+            typeof labels.expected === "string"
+              ? resolveRef(
+                  labels.expected,
+                  "priority",
+                  lookups,
+                  `${caseRef}.labels.expected`
+                )
+              : labels.expected,
+        },
+      };
+    }),
+  };
+}
+
+async function loadTrainingSets(
+  rootDir: string,
+  lookups: SlugLookups
+): Promise<CorpusTrainingSet[]> {
   const trainingsDir = join(rootDir, "trainings");
   let files: string[] = [];
   try {
@@ -61,9 +222,9 @@ async function loadTrainingSets(rootDir: string): Promise<CorpusTrainingSet[]> {
   const out: CorpusTrainingSet[] = [];
   for (const file of files) {
     const fileStem = basename(file).replace(/\.ya?ml$/, "");
-    const ts = await loadYaml(join(trainingsDir, file), (raw) =>
-      CorpusTrainingSetSchema.parse(raw)
-    );
+    const raw = await loadYamlText(join(trainingsDir, file));
+    const resolved = resolveTrainingSetRefs(raw, lookups, `trainings/${file}`);
+    const ts = CorpusTrainingSetSchema.parse(resolved);
     out.push({ ...ts, name: ts.name ?? fileStem });
   }
   if (out.length === 0) {
@@ -74,7 +235,7 @@ async function loadTrainingSets(rootDir: string): Promise<CorpusTrainingSet[]> {
   return out;
 }
 
-async function loadCases(rootDir: string): Promise<CorpusCase[]> {
+async function loadCases(rootDir: string, lookups: SlugLookups): Promise<CorpusCase[]> {
   const casesFile = join(rootDir, "cases.yaml");
   try {
     await stat(casesFile);
@@ -86,9 +247,9 @@ async function loadCases(rootDir: string): Promise<CorpusCase[]> {
     }
     throw err;
   }
-  const parsed = await loadYaml(casesFile, (raw) =>
-    CorpusCasesFileSchema.parse(raw)
-  );
+  const raw = await loadYamlText(casesFile);
+  const resolved = resolveCasesRefs(raw, lookups, "cases.yaml");
+  const parsed = CorpusCasesFileSchema.parse(resolved);
   return parsed.cases;
 }
 
@@ -98,38 +259,15 @@ function validateCorpus(
   cases: CorpusCase[],
   embeddings: Map<string, CorpusEmbedding>
 ): void {
-  const priorityIds = new Set(world.priorities.map((p) => p.id));
-  const contactIds = new Set(world.contacts.map((c) => c.id));
-  const groupIds = new Set(world.groups.map((g) => g.id));
-
-  // Training-set names must be unique.
+  // Slugs and IDs are already cross-checked during resolve. This pass only
+  // catches embedding refs and duplicate names/case-ids.
   const seenTs = new Set<string>();
   for (const ts of trainingSets) {
     if (seenTs.has(ts.name)) {
       throw new Error(`Duplicate training set name: ${ts.name}`);
     }
     seenTs.add(ts.name);
-
     for (const t of ts.threads) {
-      if (!priorityIds.has(t.filed_to_priority)) {
-        throw new Error(
-          `training-set[${ts.name}].threads[${t.id}]: filed_to_priority ${t.filed_to_priority} not declared in world.priorities`
-        );
-      }
-      for (const c of t.contacts) {
-        if (!contactIds.has(c)) {
-          throw new Error(
-            `training-set[${ts.name}].threads[${t.id}]: contact ${c} not declared in world.contacts`
-          );
-        }
-      }
-      for (const g of t.groups) {
-        if (!groupIds.has(g)) {
-          throw new Error(
-            `training-set[${ts.name}].threads[${t.id}]: group ${g} not declared in world.groups`
-          );
-        }
-      }
       if (t.embedding_ref && !embeddings.has(t.embedding_ref)) {
         throw new Error(
           `training-set[${ts.name}].threads[${t.id}]: embedding_ref ${t.embedding_ref} not declared in world.embeddings`
@@ -138,35 +276,18 @@ function validateCorpus(
     }
   }
 
-  // Case ids unique; refs resolved.
   const seenCaseIds = new Set<string>();
   for (const cs of cases) {
     if (seenCaseIds.has(cs.id)) {
       throw new Error(`Duplicate case id: ${cs.id}`);
     }
     seenCaseIds.add(cs.id);
-    for (const c of cs.candidate.contacts) {
-      if (!contactIds.has(c)) {
-        throw new Error(`case[${cs.id}]: contact ${c} not declared in world.contacts`);
-      }
-    }
-    for (const g of cs.candidate.groups) {
-      if (!groupIds.has(g)) {
-        throw new Error(`case[${cs.id}]: group ${g} not declared in world.groups`);
-      }
-    }
     if (cs.candidate.embedding_ref && !embeddings.has(cs.candidate.embedding_ref)) {
       throw new Error(
         `case[${cs.id}]: embedding_ref ${cs.candidate.embedding_ref} not declared in world.embeddings`
       );
     }
-    if (cs.labels.gold && !priorityIds.has(cs.labels.gold)) {
-      throw new Error(`case[${cs.id}]: gold ${cs.labels.gold} not declared in world.priorities`);
-    }
-    if (cs.labels.expected && !priorityIds.has(cs.labels.expected)) {
-      throw new Error(
-        `case[${cs.id}]: expected ${cs.labels.expected} not declared in world.priorities`
-      );
-    }
   }
+
+  void world; // unused now that resolve handles cross-refs
 }

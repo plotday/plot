@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 const uuid = z.string().uuid();
+const slug = z
+  .string()
+  .min(1)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase kebab-case slug");
 
 export const CorpusEmbeddingSchema = z.object({
   ref: z.string().min(1),
@@ -8,6 +12,7 @@ export const CorpusEmbeddingSchema = z.object({
 });
 
 const PrioritySchema = z.object({
+  slug,
   id: uuid,
   path: z.string().regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/, "ltree-shaped path"),
   title: z.string(),
@@ -15,6 +20,7 @@ const PrioritySchema = z.object({
 });
 
 const ContactSchema = z.object({
+  slug: slug.nullable().default(null),
   id: uuid,
   email: z.string().email().nullable().default(null),
   name: z.string().nullable().default(null),
@@ -22,6 +28,7 @@ const ContactSchema = z.object({
 });
 
 const GroupSchema = z.object({
+  slug: slug.nullable().default(null),
   id: uuid,
   title: z.string(),
 });

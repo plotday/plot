@@ -26,6 +26,7 @@ import pg from "pg";
 import { stringify as stringifyYaml } from "yaml";
 
 import { anonymizeEmail, anonymizeName, hashShort } from "./anonymize";
+import { contactSlugFromEmail, uniqueSlugifier } from "./slugs";
 
 const PROXY_URL =
   process.env.PROD_DB_URL ?? "postgres://readonly@127.0.0.1:5433/plot";
@@ -359,6 +360,34 @@ async function writeCorpus(
     }
   }
 
+  // Slug catalogs, keyed by UUID. Priorities get readable slugs derived from
+  // their title (dedup'd with the path's last segment if needed). Contacts and
+  // groups get short, generated slugs.
+  const prioritySlug = new Map<string, string>();
+  {
+    const slugify = uniqueSlugifier();
+    for (const p of priorities) {
+      const lastSegment = p.path.split(".").pop() ?? "";
+      prioritySlug.set(p.id, slugify(p.title, lastSegment));
+    }
+  }
+  const contactSlug = new Map<string, string>();
+  {
+    const slugify = uniqueSlugifier();
+    for (const c of contacts) {
+      const anonEmail = anonymizeEmail(c.email);
+      const base = contactSlugFromEmail(anonEmail, c.id);
+      contactSlug.set(c.id, slugify(base, `c-${c.id.replace(/-/g, "").slice(0, 8)}`));
+    }
+  }
+  const groupSlug = new Map<string, string>();
+  {
+    const slugify = uniqueSlugifier();
+    for (const g of groups) {
+      groupSlug.set(g.id, slugify(g.title, `g-${g.id.replace(/-/g, "").slice(0, 8)}`));
+    }
+  }
+
   const world = {
     name: opts.out,
     description: `Snapshot of ${opts.userEmail} extracted ${new Date()
@@ -376,18 +405,21 @@ async function writeCorpus(
       primary_contact_id: null,
     },
     priorities: priorities.map((p) => ({
+      slug: prioritySlug.get(p.id),
       id: p.id,
       path: p.path,
       title: p.title,
       key: p.key,
     })),
     contacts: contacts.map((c) => ({
+      slug: contactSlug.get(c.id),
       id: c.id,
       email: anonymizeEmail(c.email),
       name: anonymizeName(c.name),
       linked_to_user: c.linked_to_user,
     })),
     groups: groups.map((g) => ({
+      slug: groupSlug.get(g.id),
       id: g.id,
       title: g.title,
     })),
@@ -412,10 +444,10 @@ async function writeCorpus(
       id: t.id,
       title: t.title,
       topic: t.topic,
-      contacts: t.contacts,
-      groups: t.groups,
+      contacts: t.contacts.map((id) => contactSlug.get(id) ?? id),
+      groups: t.groups.map((id) => groupSlug.get(id) ?? id),
       embedding_ref: embRefOf.get(t.id) ?? null,
-      filed_to_priority: t.filed_to_priority,
+      filed_to_priority: prioritySlug.get(t.filed_to_priority) ?? t.filed_to_priority,
     })),
   };
   await writeFile(
@@ -432,14 +464,14 @@ async function writeCorpus(
       candidate: {
         title: c.title,
         topic: c.topic,
-        contacts: c.contacts,
-        groups: c.groups,
+        contacts: c.contacts.map((id) => contactSlug.get(id) ?? id),
+        groups: c.groups.map((id) => groupSlug.get(id) ?? id),
         embedding_ref: embRefOf.get(c.id) ?? null,
       },
       labels: {
         gold: null,
         gold_rationale: "",
-        expected: c.filed_to_priority,
+        expected: prioritySlug.get(c.filed_to_priority) ?? c.filed_to_priority,
         expected_stage: null,
         expected_recorded_at: new Date().toISOString(),
       },

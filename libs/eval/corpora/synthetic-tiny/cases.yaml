@@ -11,9 +11,9 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: b0000000-0000-4000-a000-000000000002
+      gold: engineering
       gold_rationale: Topic prefix names Engineering's key.
-      expected: b0000000-0000-4000-a000-000000000002
+      expected: engineering
       expected_stage: priority_prefix
 
   - id: 002-root-fallback
@@ -27,9 +27,9 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: b0000000-0000-4000-a000-000000000001
+      gold: everything
       gold_rationale: No signals → root fallback.
-      expected: b0000000-0000-4000-a000-000000000001
+      expected: everything
       expected_stage: root_fallback
 
   - id: 003-topic-shortcircuit
@@ -44,46 +44,44 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: b0000000-0000-4000-a000-000000000003
+      gold: personal
       gold_rationale: User has filed channel:99 threads in Personal before.
-      expected: b0000000-0000-4000-a000-000000000003
+      expected: personal
       expected_stage: topic_shortcircuit
 
   - id: 004-scoring-contacts
     description: |
-      Candidate shares contact=[Bob] with the Engineering training thread.
+      Candidate shares contact=[bob] with the Engineering training thread.
       Jaccard(contacts)=1.0 → con=1.0² × 0.35 = 0.35, beats the 0.15 floor.
       Should resolve to Engineering via the scoring stage.
     candidate:
       title: Bob mentions deploy
       topic: null
-      contacts:
-        - c0000000-0000-4000-a000-000000000002
+      contacts: [bob]
       groups: []
       embedding_ref: null
     labels:
-      gold: b0000000-0000-4000-a000-000000000002
+      gold: engineering
       gold_rationale: Contact overlap with Bob → Engineering training thread.
-      expected: b0000000-0000-4000-a000-000000000002
+      expected: engineering
       expected_stage: scoring
 
   - id: 005-scoring-no-match
     description: |
-      Candidate has contact=[Alice]. Alice's training thread is filed under
+      Candidate has contact=[alice]. Alice's training thread is filed under
       Personal, so contact Jaccard alone (1.0 squared × 0.35 = 0.35) beats
       the 0.15 floor and scoring fires to Personal. Documents that
       scoring-only paths work even without topic/embedding signals.
     candidate:
       title: Note from Alice with no training overlap
       topic: null
-      contacts:
-        - c0000000-0000-4000-a000-000000000001
+      contacts: [alice]
       groups: []
       embedding_ref: null
     labels:
-      gold: b0000000-0000-4000-a000-000000000003
+      gold: personal
       gold_rationale: |
         Alice's training thread is filed in Personal. Contact Jaccard alone
         clears the floor.
-      expected: b0000000-0000-4000-a000-000000000003
+      expected: personal
       expected_stage: scoring

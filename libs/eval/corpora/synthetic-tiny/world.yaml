@@ -14,28 +14,34 @@ user:
   primary_contact_id: null
 
 priorities:
-  - id: b0000000-0000-4000-a000-000000000001
+  - slug: everything
+    id: b0000000-0000-4000-a000-000000000001
     path: everything
     title: Everything
     key: null
-  - id: b0000000-0000-4000-a000-000000000002
+  - slug: engineering
+    id: b0000000-0000-4000-a000-000000000002
     path: everything.engineering
     title: Engineering
     key: "@eval.eng"
-  - id: b0000000-0000-4000-a000-000000000003
+  - slug: personal
+    id: b0000000-0000-4000-a000-000000000003
     path: everything.personal
     title: Personal
     key: null
-  - id: b0000000-0000-4000-a000-000000000004
+  - slug: newsletters
+    id: b0000000-0000-4000-a000-000000000004
     path: everything.newsletters
     title: Newsletters
     key: null
 
 contacts:
-  - id: c0000000-0000-4000-a000-000000000001
+  - slug: alice
+    id: c0000000-0000-4000-a000-000000000001
     email: alice@example.test
     linked_to_user: false
-  - id: c0000000-0000-4000-a000-000000000002
+  - slug: bob
+    id: c0000000-0000-4000-a000-000000000002
     email: bob@example.test
     linked_to_user: false
 
