@@ -2,6 +2,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
 
 import type { Corpus, CorpusTrainingSet } from "../corpus/schema";
+import { resolveDatabaseUrl } from "./resolve-db-url";
 
 export type SandboxOptions = {
   /** Postgres connection string. Defaults to $DATABASE_URL. */
@@ -28,11 +29,7 @@ export type SandboxHandle = {
  * with existing dev data).
  */
 export async function openSandbox(opts: SandboxOptions = {}): Promise<SandboxHandle> {
-  const url = opts.databaseUrl ?? process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL not set and no databaseUrl provided to openSandbox");
-  }
-
+  const url = opts.databaseUrl ?? resolveDatabaseUrl();
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   await client.query("BEGIN");
