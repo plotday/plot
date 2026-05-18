@@ -110,5 +110,15 @@ if [[ -d "$SOURCE/.husky/_" ]]; then
   echo "  copied .husky/_/"
 fi
 
+# Copy .claude/settings.local.json so the worktree inherits the user's
+# pre-approved permissions (and Claude Code env vars). Without this, every
+# command in a fresh worktree re-prompts for approval. worktree-db will
+# update env.DATABASE_URL to the worktree's port when it runs.
+if [[ -f "$SOURCE/.claude/settings.local.json" ]]; then
+  mkdir -p "$DEST/.claude"
+  cp "$SOURCE/.claude/settings.local.json" "$DEST/.claude/settings.local.json"
+  echo "  copied .claude/settings.local.json"
+fi
+
 echo ""
 echo "Done: $copied files copied, $symlinks_created symlinks created"
