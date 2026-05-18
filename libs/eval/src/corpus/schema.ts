@@ -55,7 +55,7 @@ export const CorpusWorldSchema = z.object({
   source: z
     .object({
       kind: z.enum(["prod-extract", "handcrafted"]),
-      extracted_at: z.string().datetime().nullable().default(null),
+      extracted_at: z.string().nullable().default(null),
       anonymized: z.boolean().default(false),
     })
     .default({ kind: "handcrafted", extracted_at: null, anonymized: false }),
@@ -107,7 +107,7 @@ export const CorpusCaseSchema = z.object({
       ])
       .nullable()
       .default(null),
-    expected_recorded_at: z.string().datetime().nullable().default(null),
+    expected_recorded_at: z.string().nullable().default(null),
   }),
   notes: z.string().default(""),
 });
