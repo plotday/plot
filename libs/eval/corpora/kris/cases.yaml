@@ -1,0 +1,502 @@
+cases:
+  - id: 001-019e088a
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Agenda times
+      topic: channel:164
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 002-019df366
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: T2
+      topic: channel:162
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 003-019dbffe
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Use this Meet! 🙏 (chat with Kris) - 2026/02/20 16:13 EST - Recording
+      topic: channel:164
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 004-019dbffe
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Play with Plot (Beth Round) - 2026/02/23 11:25 EST - Notes by Gemini
+      topic: channel:164
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 005-019dbff2
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Execution-focused leader discovery questions
+      topic: channel:163
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 006-019dbfe6
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Form 52 Placement Organization Cooperative Education Consent Form
+        (06-25).pdf
+      topic: channel:164
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd757-1784-7b62-a1e3-9f67fa927545
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 007-019e3842
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Nora's birthday
+      topic: channel:2087
+      contacts:
+        - 019bd6e2-e330-7418-9caf-afacd7cd5519
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 008-019e2d41
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Plot 1:1 Onboarding with Kris
+      topic: channel:1531
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019bd744-22be-73a8-baa1-1b306b29ef92
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 009-019e2d3c
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Your May 2025 Impact Report
+      topic: channel:9716
+      contacts:
+        - 019bd6e2-e330-7418-9caf-afacd7cd5519
+        - 019e2d3c-b2af-7323-8ec2-3b06e86d9b4a
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 010-019e2d3c
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: "Paid Consultation Request: Customers of Hybrid Cloud Storage Solutions"
+      topic: channel:9716
+      contacts:
+        - 019bd6e2-e330-7418-9caf-afacd7cd5519
+        - 019e2d3c-8b7b-7cb8-bcfc-a7a3e6922747
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 011-019e2d3c
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Doug Ford’s budget is leaving people behind
+      topic: channel:9716
+      contacts:
+        - 019bd6e2-e330-7418-9caf-afacd7cd5519
+        - 019bd749-7020-75a4-b611-f21ad6e8c7f0
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 012-019e2d3c
+    description: "Sampled from prod (topic-shape: channel:N)."
+    candidate:
+      title: Experienced that I how can I get of the hook...
+      topic: channel:9716
+      contacts:
+        - 019bd6e2-e330-7418-9caf-afacd7cd5519
+        - 019e2cdb-5791-73a7-b994-c8dd5c2ae4e3
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 013-019e3392
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: Welcome to Plot!
+      topic: priority:@plot.app:welcome-user
+      contacts:
+        - 019e3392-65e2-76e7-ae4a-3f2efc74a64b
+      groups:
+        - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 014-019e2dd5
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: Welcome to Plot!
+      topic: priority:@plot.app:welcome-user
+      contacts:
+        - 019d4df1-3c8c-7532-85cd-b8578e311d99
+      groups:
+        - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 015-019e0303
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: Welcome to Plot!
+      topic: priority:@plot.app:welcome-user
+      contacts:
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+        - 019e0303-90cc-7fba-be07-d4ed6d4fb9e6
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups:
+        - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 016-019de191
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: GitHub connector logs (public)
+      topic: priority:@plot.twist-dev:publisher:019d97e7-347a-72b6-a40e-e812dffd8aa0
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups:
+        - 019d97e7-347a-72b6-a40e-e812dffd8aa0
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6cd-a592-7428-99fd-10501ea6b4dc
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 017-019dc627
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: Welcome to Plot!
+      topic: priority:@plot.app:welcome-user
+      contacts:
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+        - 019dc627-2af2-7379-a12f-a6e64828b14a
+      groups:
+        - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 018-019dbb84
+    description: "Sampled from prod (topic-shape: priority:KEY)."
+    candidate:
+      title: Welcome to Plot!
+      topic: priority:@plot.app:welcome-user
+      contacts:
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+        - 019dac4d-18be-7b5b-9e18-993f64cbf77a
+      groups:
+        - 019d8d3e-e009-7917-a0a0-a7690ae5409e
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 019-019cb9a4
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Insurance Status for Plot
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019c3921-5f80-7540-a9a4-d61d5f13770e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019dbcc7-d4de-703f-8123-f1d5523da3ae
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 020-019e0959
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Self Serve Onboarding Added to Web App
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c2469-a944-7804-b812-c9f5e02c1eaa
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 021-019cc015
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Fix Reddit title extraction
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: emb-166db22735
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019cc015-8e4e-7076-8b35-257e775a7eac
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 022-019dff92
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Speed up thread creation
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: emb-978203916d
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6cb-93cc-7a08-8f5c-aecbe0722b12
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 023-019cb9b4
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Save links without note
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: emb-d73858dc53
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019cb9b4-6cfe-7efd-ba4a-c7d274087747
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 024-019dff91
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Daily planner apps
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: emb-57baabb6b6
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 025-019dff8e
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Flutter agent skills
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: emb-83b571c6d9
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019bd6d7-eb04-7203-921a-951df0d27964
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 026-019cd511
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Update onboarding sign up
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+      groups: []
+      embedding_ref: emb-24ad30d59b
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019dbcc7-d4de-703f-8123-f1d5523da3ae
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 027-019cc015
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: TalentLift Workflow Overview
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019cc122-2563-70fd-85f7-ced1107d89a7
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c1bf7-a779-7741-9e15-a53ecd488aee
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 028-019cb99c
+    description: "Sampled from prod (topic-shape: null)."
+    candidate:
+      title: Prepare for NRC IRAP Funding Application
+      topic: null
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+        - 019c3921-5f80-7540-a9a4-d61d5f13770e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019c1bf7-a779-7741-9e15-a53ecd488aee
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 029-019e35fd
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: File EI report
+      topic: 019c48d7-9c7c-75d0-bf74-2064a09e2116
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019cba8e-344a-7cc8-a5d7-5d38ba68a8d8
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""
+  - id: 030-019e27c7
+    description: "Sampled from prod (topic-shape: other)."
+    candidate:
+      title: Exploring Time Concepts
+      topic: 019e03e8-6de5-71ab-9d38-75b7dec26da7
+      contacts:
+        - 019bd6c9-ebb9-78a4-8edf-4138d526550e
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: 019e03e8-6de5-71ab-9d38-75b7dec26da7
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T00:01:15.035Z
+    notes: ""

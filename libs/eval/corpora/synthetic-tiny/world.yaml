@@ -40,27 +40,5 @@ contacts:
     linked_to_user: false
 
 groups: []
-
-# Training threads — the user_moved=TRUE rows the classifier scores against.
-training_threads:
-  # Filed under Personal, topic=channel:99 — used by topic_shortcircuit case.
-  - id: d0000000-0000-4000-a000-000000000001
-    title: Alice's personal note
-    topic: "channel:99"
-    contacts:
-      - c0000000-0000-4000-a000-000000000001
-    groups: []
-    embedding_ref: null
-    filed_to_priority: b0000000-0000-4000-a000-000000000003
-  # Filed under Engineering, no topic, contact=Bob — used by scoring case.
-  - id: d0000000-0000-4000-a000-000000000002
-    title: Deploy pipeline incident
-    topic: null
-    contacts:
-      - c0000000-0000-4000-a000-000000000002
-    groups: []
-    embedding_ref: null
-    filed_to_priority: b0000000-0000-4000-a000-000000000002
-
 embeddings: []
 channels: []

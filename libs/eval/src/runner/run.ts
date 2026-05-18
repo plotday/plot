@@ -1,8 +1,9 @@
 import { getClassifier } from "../classifiers/registry";
 import type { ClassifierContext } from "../classifiers/types";
-import type { Corpus, CorpusCase } from "../corpus/schema";
+import type { Corpus, CorpusCase, CorpusTrainingSet } from "../corpus/schema";
 import { loadCorpus } from "../corpus/load";
 import {
+  loadTrainingSet,
   loadWorld,
   openSandbox,
   stageCandidate,
@@ -13,6 +14,7 @@ export type RunResult = {
   corpus: string;
   caseId: string;
   classifier: string;
+  trainingSet: string;
   predicted: string | null;
   stage: string;
   scores: Record<string, unknown>;
@@ -28,8 +30,9 @@ export type RunResult = {
 export type RunSummary = {
   corpus: string;
   totalCases: number;
-  perClassifier: {
+  perClassifierTraining: {
     classifier: string;
+    trainingSet: string;
     goldAccuracy: number | null;
     expectedAccuracy: number | null;
     regressions: number;
@@ -43,6 +46,8 @@ export type RunOptions = {
   databaseUrl?: string;
   /** Optional filter: only run cases whose id matches. */
   caseFilter?: (caseId: string) => boolean;
+  /** Optional filter: only run named training sets. Default = all. */
+  trainingSets?: string[];
 };
 
 export async function runEval(opts: RunOptions): Promise<{
@@ -50,20 +55,37 @@ export async function runEval(opts: RunOptions): Promise<{
   summary: RunSummary;
 }> {
   const corpus = await loadCorpus(opts.corpusDir);
+  const cases = opts.caseFilter
+    ? corpus.cases.filter((c) => opts.caseFilter!(c.id))
+    : corpus.cases;
+  const selectedTrainingSets = opts.trainingSets
+    ? corpus.trainingSets.filter((ts) => opts.trainingSets!.includes(ts.name))
+    : corpus.trainingSets;
+  if (selectedTrainingSets.length === 0) {
+    throw new Error(
+      `No training sets selected. Available: ${corpus.trainingSets.map((t) => t.name).join(", ")}`
+    );
+  }
+
   const sandbox = await openSandbox({ databaseUrl: opts.databaseUrl });
   try {
     await loadWorld(sandbox, corpus);
     const results: RunResult[] = [];
-    const cases = opts.caseFilter
-      ? corpus.cases.filter((c) => opts.caseFilter!(c.id))
-      : corpus.cases;
-    for (const cs of cases) {
-      for (const classifierName of opts.classifiers) {
-        const result = await runOneCase(sandbox, corpus, cs, classifierName);
-        results.push(result);
-      }
+    for (const ts of selectedTrainingSets) {
+      await sandbox.withSavepoint(`training_${sanitize(ts.name)}`, async () => {
+        await loadTrainingSet(sandbox, corpus, ts);
+        for (const cs of cases) {
+          for (const classifierName of opts.classifiers) {
+            const result = await runOneCase(sandbox, corpus, ts, cs, classifierName);
+            results.push(result);
+          }
+        }
+      });
     }
-    return { results, summary: summarize(corpus, opts.classifiers, results) };
+    return {
+      results,
+      summary: summarize(corpus, opts.classifiers, selectedTrainingSets, cases.length, results),
+    };
   } finally {
     await sandbox.close();
   }
@@ -72,21 +94,17 @@ export async function runEval(opts: RunOptions): Promise<{
 async function runOneCase(
   sandbox: SandboxHandle,
   corpus: Corpus,
+  trainingSet: CorpusTrainingSet,
   cs: CorpusCase,
   classifierName: string
 ): Promise<RunResult> {
   const classifier = getClassifier(classifierName);
-  // Resolve embedding from refs.
   const emb = cs.candidate.embedding_ref
     ? corpus.embeddings.get(cs.candidate.embedding_ref)
     : null;
-  // Generate a stable but unique thread_id for the case row, scoped to the
-  // savepoint. Use a deterministic UUIDv5-like scheme by hashing the case id?
-  // For simplicity we use a fixed prefix + counter; the row is gone after
-  // ROLLBACK TO SAVEPOINT so collisions across cases are impossible.
   const threadId = caseIdToUuid(cs.id);
 
-  const result = await sandbox.withSavepoint(`case_${cs.id}`, async () => {
+  const result = await sandbox.withSavepoint(`case_${sanitize(cs.id)}`, async () => {
     await stageCandidate(sandbox, corpus, {
       threadId,
       title: cs.candidate.title,
@@ -122,6 +140,7 @@ async function runOneCase(
     corpus: corpus.name,
     caseId: cs.id,
     classifier: classifier.name,
+    trainingSet: trainingSet.name,
     predicted: result.priorityId,
     stage: result.stage,
     scores: result.scores ?? {},
@@ -138,30 +157,42 @@ async function runOneCase(
 function summarize(
   corpus: Corpus,
   classifiers: string[],
+  trainingSets: CorpusTrainingSet[],
+  totalCases: number,
   results: RunResult[]
 ): RunSummary {
-  const perClassifier = classifiers.map((c) => {
-    const rows = results.filter((r) => r.classifier === c);
-    const goldEval = rows.filter((r) => r.goldMatch !== null);
-    const expectedEval = rows.filter((r) => r.expectedMatch !== null);
-    return {
-      classifier: c,
-      goldAccuracy:
-        goldEval.length > 0
-          ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
-          : null,
-      expectedAccuracy:
-        expectedEval.length > 0
-          ? expectedEval.filter((r) => r.expectedMatch).length / expectedEval.length
-          : null,
-      regressions: expectedEval.filter((r) => r.expectedMatch === false).length,
-      avgDurationMs:
-        rows.length > 0
-          ? rows.reduce((sum, r) => sum + r.durationMs, 0) / rows.length
-          : 0,
-    };
-  });
-  return { corpus: corpus.name, totalCases: results.length / classifiers.length, perClassifier };
+  const perClassifierTraining: RunSummary["perClassifierTraining"] = [];
+  for (const c of classifiers) {
+    for (const ts of trainingSets) {
+      const rows = results.filter(
+        (r) => r.classifier === c && r.trainingSet === ts.name
+      );
+      const goldEval = rows.filter((r) => r.goldMatch !== null);
+      const expectedEval = rows.filter((r) => r.expectedMatch !== null);
+      perClassifierTraining.push({
+        classifier: c,
+        trainingSet: ts.name,
+        goldAccuracy:
+          goldEval.length > 0
+            ? goldEval.filter((r) => r.goldMatch).length / goldEval.length
+            : null,
+        expectedAccuracy:
+          expectedEval.length > 0
+            ? expectedEval.filter((r) => r.expectedMatch).length / expectedEval.length
+            : null,
+        regressions: expectedEval.filter((r) => r.expectedMatch === false).length,
+        avgDurationMs:
+          rows.length > 0
+            ? rows.reduce((sum, r) => sum + r.durationMs, 0) / rows.length
+            : 0,
+      });
+    }
+  }
+  return { corpus: corpus.name, totalCases, perClassifierTraining };
+}
+
+function sanitize(name: string): string {
+  return name.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
 /**
@@ -170,19 +201,20 @@ function summarize(
  * we just need it stable across re-runs for debugging.
  */
 function caseIdToUuid(caseId: string): string {
-  // FNV-1a hash → 32 hex digits, formatted as UUID v4.
   let h1 = 0x811c9dc5;
   let h2 = 0xdeadbeef;
   for (let i = 0; i < caseId.length; i++) {
-    h1 = (Math.imul(h1 ^ caseId.charCodeAt(i), 16777619) >>> 0);
-    h2 = (Math.imul(h2 ^ caseId.charCodeAt(i), 2654435761) >>> 0);
+    h1 = Math.imul(h1 ^ caseId.charCodeAt(i), 16777619) >>> 0;
+    h2 = Math.imul(h2 ^ caseId.charCodeAt(i), 2654435761) >>> 0;
   }
   const a = h1.toString(16).padStart(8, "0");
   const b = (h2 >>> 16).toString(16).padStart(4, "0");
   const c = ((h1 ^ h2) >>> 16).toString(16).padStart(4, "0");
   const d = (h2 & 0xffff).toString(16).padStart(4, "0");
-  const e = ((Math.imul(h1, h2) >>> 0).toString(16) +
-    (Math.imul(h1 ^ h2, 0x9e3779b1) >>> 0).toString(16))
+  const e = (
+    (Math.imul(h1, h2) >>> 0).toString(16) +
+    (Math.imul(h1 ^ h2, 0x9e3779b1) >>> 0).toString(16)
+  )
     .padStart(12, "0")
     .slice(0, 12);
   return `${a}-${b}-4${c.slice(1)}-8${d.slice(1)}-${e}`;

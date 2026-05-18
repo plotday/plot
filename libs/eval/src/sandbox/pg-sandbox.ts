@@ -1,7 +1,7 @@
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
 
-import type { Corpus } from "../corpus/schema";
+import type { Corpus, CorpusTrainingSet } from "../corpus/schema";
 
 export type SandboxOptions = {
   /** Postgres connection string. Defaults to $DATABASE_URL. */
@@ -88,8 +88,10 @@ export async function openSandbox(opts: SandboxOptions = {}): Promise<SandboxHan
 
 /**
  * Loads a corpus world into the open sandbox transaction. After this returns,
- * the user, priorities, contacts, groups, training threads, and channels
- * exist (only inside the outer transaction).
+ * the user, priorities, contacts, groups, channels, and embeddings exist
+ * (only inside the outer transaction). Training threads are NOT inserted —
+ * each training set is loaded separately via loadTrainingSet so the runner
+ * can iterate across multiple variants.
  */
 export async function loadWorld(
   sandbox: SandboxHandle,
@@ -171,9 +173,32 @@ export async function loadWorld(
     );
   }
 
-  // 6. Training threads. Each becomes a thread row + a thread_priority row
-  //    with user_moved=TRUE (the classifier's training signal).
-  for (const t of world.training_threads) {
+  // Re-enable triggers so subsequent training-set and candidate inserts go
+  // through the normal production path (peer filing, seq bumps, etc.).
+  await rawQuery(`SET LOCAL session_replication_role = origin`);
+}
+
+/**
+ * Inserts a training set's threads into the sandbox. Each becomes a thread
+ * row + a thread_priority row with user_moved=TRUE (the classifier's
+ * training signal). Callers should wrap this in a savepoint so the rows can
+ * be rolled back when switching to the next training set.
+ *
+ * Triggers are suppressed during the load because these threads represent
+ * historical user actions whose side effects (peer filing) already happened
+ * in production and would only add noise here.
+ */
+export async function loadTrainingSet(
+  sandbox: SandboxHandle,
+  corpus: Corpus,
+  trainingSet: CorpusTrainingSet
+): Promise<void> {
+  const { rawQuery } = sandbox;
+  const { world } = corpus;
+
+  await rawQuery(`SET LOCAL session_replication_role = replica`);
+
+  for (const t of trainingSet.threads) {
     const emb = t.embedding_ref ? corpus.embeddings.get(t.embedding_ref) : null;
     const embLiteral = emb ? toHalfvecLiteral(emb.vector) : null;
     await rawQuery(
@@ -201,8 +226,6 @@ export async function loadWorld(
     );
   }
 
-  // Re-enable triggers so per-case candidate inserts go through the normal
-  // production path (peer filing, seq bumps, etc.).
   await rawQuery(`SET LOCAL session_replication_role = origin`);
 }
 

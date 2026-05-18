@@ -1,0 +1,89 @@
+cases:
+  - id: 001-priority-prefix
+    description: |
+      Topic prefixed with "priority:@eval.eng" should resolve to the keyed
+      Engineering priority via the priority_prefix stage (no user_moved
+      siblings share this exact topic, so it falls through to the prefix rule).
+    candidate:
+      title: Welcome to Engineering
+      topic: "priority:@eval.eng:welcome"
+      contacts: []
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: b0000000-0000-4000-a000-000000000002
+      gold_rationale: Topic prefix names Engineering's key.
+      expected: b0000000-0000-4000-a000-000000000002
+      expected_stage: priority_prefix
+
+  - id: 002-root-fallback
+    description: |
+      Candidate with no topic, no contacts, no embedding — none of the matching
+      stages apply, so the classifier falls back to the user's oldest root.
+    candidate:
+      title: A wandering note
+      topic: null
+      contacts: []
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: b0000000-0000-4000-a000-000000000001
+      gold_rationale: No signals → root fallback.
+      expected: b0000000-0000-4000-a000-000000000001
+      expected_stage: root_fallback
+
+  - id: 003-topic-shortcircuit
+    description: |
+      Candidate topic exactly matches a user_moved training thread's topic
+      (channel:99). topic_shortcircuit stage should return Personal directly
+      without entering scoring.
+    candidate:
+      title: Another channel:99 message
+      topic: "channel:99"
+      contacts: []
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: b0000000-0000-4000-a000-000000000003
+      gold_rationale: User has filed channel:99 threads in Personal before.
+      expected: b0000000-0000-4000-a000-000000000003
+      expected_stage: topic_shortcircuit
+
+  - id: 004-scoring-contacts
+    description: |
+      Candidate shares contact=[Bob] with the Engineering training thread.
+      Jaccard(contacts)=1.0 → con=1.0² × 0.35 = 0.35, beats the 0.15 floor.
+      Should resolve to Engineering via the scoring stage.
+    candidate:
+      title: Bob mentions deploy
+      topic: null
+      contacts:
+        - c0000000-0000-4000-a000-000000000002
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: b0000000-0000-4000-a000-000000000002
+      gold_rationale: Contact overlap with Bob → Engineering training thread.
+      expected: b0000000-0000-4000-a000-000000000002
+      expected_stage: scoring
+
+  - id: 005-scoring-no-match
+    description: |
+      Candidate has contact=[Alice]. Alice's training thread is filed under
+      Personal, so contact Jaccard alone (1.0 squared × 0.35 = 0.35) beats
+      the 0.15 floor and scoring fires to Personal. Documents that
+      scoring-only paths work even without topic/embedding signals.
+    candidate:
+      title: Note from Alice with no training overlap
+      topic: null
+      contacts:
+        - c0000000-0000-4000-a000-000000000001
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: b0000000-0000-4000-a000-000000000003
+      gold_rationale: |
+        Alice's training thread is filed in Personal. Contact Jaccard alone
+        clears the floor.
+      expected: b0000000-0000-4000-a000-000000000003
+      expected_stage: scoring

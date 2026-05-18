@@ -1,0 +1,23 @@
+name: full
+description: |
+  Two training threads — one filed under Personal (topic=channel:99,
+  contacts=[Alice]) to exercise topic_shortcircuit, one filed under
+  Engineering (no topic, contacts=[Bob]) to exercise scoring.
+
+threads:
+  - id: d0000000-0000-4000-a000-000000000001
+    title: Alice's personal note
+    topic: "channel:99"
+    contacts:
+      - c0000000-0000-4000-a000-000000000001
+    groups: []
+    embedding_ref: null
+    filed_to_priority: b0000000-0000-4000-a000-000000000003
+  - id: d0000000-0000-4000-a000-000000000002
+    title: Deploy pipeline incident
+    topic: null
+    contacts:
+      - c0000000-0000-4000-a000-000000000002
+    groups: []
+    embedding_ref: null
+    filed_to_priority: b0000000-0000-4000-a000-000000000002
