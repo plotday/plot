@@ -524,6 +524,9 @@ BEGIN
             INSERT INTO priority_setting (user_id, priority_id, key, value)
             VALUES (upsert_priority.user_id, _priority_id, 'color', to_jsonb(COALESCE(_input.color, _priority_default_color)))
             ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE user_id = upsert_priority.user_id AND priority_id = _priority_id AND key = 'color';
         END IF;
     END IF;
     -- Return the updated row from the view

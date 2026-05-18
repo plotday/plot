@@ -25,6 +25,7 @@ direct_settings AS (
         MAX(CASE WHEN key = 'top_order' THEN (value #>> '{}')::double precision END) AS top_order,
         MAX(CASE WHEN key = 'order' THEN (value #>> '{}')::double precision END) AS "order",
         MAX(CASE WHEN key = 'title' THEN value #>> '{}' END) AS title,
+        MAX(CASE WHEN key = 'color' THEN (value #>> '{}')::integer END) AS color,
         (MAX(CASE WHEN key = 'attention_window' THEN 1 END) IS NOT NULL) AS attention_window_set,
         (MAX(CASE WHEN key = 'see_within_requests' THEN 1 END) IS NOT NULL) AS see_within_requests_set,
         (MAX(CASE WHEN key = 'see_within_updates' THEN 1 END) IS NOT NULL) AS see_within_updates_set,
@@ -35,7 +36,6 @@ direct_settings AS (
 inherited_settings AS (
     SELECT user_id, priority_id,
         MAX(CASE WHEN key = 'pomodoro' THEN (value #>> '{}')::integer END) AS pomodoro,
-        MAX(CASE WHEN key = 'color' THEN (value #>> '{}')::integer END) AS color,
         MAX(CASE WHEN key = 'attention_window' THEN value::text END)::jsonb AS attention_window,
         MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
         MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates,
@@ -69,7 +69,11 @@ SELECT
     direct.top_order,
     COALESCE(direct."order", extract(epoch FROM p.created_at) * 1000) AS "order",
     inh.pomodoro,
-    inh.color,
+    -- color returns the priority's own color (direct setting, then priority.color, then NULL=inherit).
+    -- Ancestor inheritance is computed client-side so the client can distinguish
+    -- "explicitly set" from "inherited" — otherwise the edit form pre-fills with
+    -- the inherited value and saves it back as a specific color, losing inherit.
+    COALESCE(direct.color, p.color) AS color,
     p.key,
     COALESCE(upu.unread, FALSE) AS unread,
     'member'::text AS role,
