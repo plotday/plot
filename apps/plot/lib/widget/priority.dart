@@ -95,6 +95,22 @@ class PriorityWidget extends StatefulWidget {
 
 class _PriorityWidgetState extends State<PriorityWidget> {
   bool _isHovered = false;
+  // True when the in-flight pointer event started over the expand caret. Set
+  // on PointerDown by the wrapping Listener (see `build` below) and read by
+  // the gated `onTap` so taps on the caret expand/collapse without also
+  // triggering navigation. The flag is overwritten on every PointerDown, so
+  // it always reflects the most recent tap target.
+  bool _caretSuppressedTap = false;
+  final GlobalKey _caretKey = GlobalKey();
+
+  bool _isOverCaret(Offset globalPosition) {
+    final ctx = _caretKey.currentContext;
+    if (ctx == null) return false;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return false;
+    final origin = box.localToGlobal(Offset.zero);
+    return (origin & box.size).contains(globalPosition);
+  }
 
   @override
   Widget build(BuildContext buildContext) {
@@ -130,11 +146,19 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         ? restingColor
         : priorityAccent;
 
+    final navigationCommand = !isContext
+        ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
+        : null;
     final listTile = ListTile(
-      command: !isContext
-          ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
-          : null,
-      onTap: widget.onTap,
+      command: navigationCommand,
+      onTap: () {
+        if (_caretSuppressedTap) return;
+        if (widget.onTap != null) {
+          widget.onTap!();
+        } else if (navigationCommand != null) {
+          buildContext.run(navigationCommand);
+        }
+      },
       // Menu opens via long-left swipe on touch (see Swipeable wrapper
       // below) and via right-click on desktop (see ContextMenu wrapper
       // below). Long-press is reserved for starting a reorder drag.
@@ -164,10 +188,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
                 else ...[
                   Button.icon(ShowTimeLog(priority)),
                   Button.icon(
-                    SetTopPriority(
-                      priority,
-                      priority.topOrder == null,
-                    ),
+                    SetTopPriority(priority, priority.topOrder == null),
                   ),
                   Button.icon(ShowPriorityCommands(priority)),
                 ],
@@ -215,6 +236,21 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       },
     );
 
+    // When the caret is rendered, intercept PointerDown to record whether the
+    // tap started over the caret. Mobile uses a raw `Listener` for tap
+    // detection that ignores the gesture arena, so without this the parent
+    // ListTile would still navigate when the caret is tapped. Setting the
+    // flag here works on both desktop and mobile.
+    final Widget tile = widget.expandable
+        ? Listener(
+            behavior: HitTestBehavior.deferToChild,
+            onPointerDown: (event) {
+              _caretSuppressedTap = _isOverCaret(event.position);
+            },
+            child: listTile,
+          )
+        : listTile;
+
     if (hasPhysicalKeyboard()) {
       return ContextMenu(
         items: (close) => priorityCommands(priority)
@@ -229,7 +265,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
               ),
             )
             .toList(),
-        child: listTile,
+        child: tile,
       );
     }
 
@@ -237,7 +273,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     return Swipeable(
       key: ValueKey(priority.id),
       endLongCommand: ShowPriorityCommands(priority),
-      child: listTile,
+      child: tile,
     );
   }
 
@@ -275,6 +311,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       children: [
         Flexible(child: label),
         _ExpandCaretButton(
+          key: _caretKey,
           expanded: widget.expanded,
           color: caretColor,
           onTap: widget.onToggleExpand,
@@ -286,6 +323,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
 
 class _ExpandCaretButton extends StatefulWidget {
   const _ExpandCaretButton({
+    super.key,
     required this.expanded,
     required this.color,
     required this.onTap,
@@ -313,7 +351,7 @@ class _ExpandCaretButtonState extends State<_ExpandCaretButton> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: const EdgeInsets.only(left: 8, right: 8, top: 4, bottom: 4),
           child: Icon(
             widget.expanded
                 ? FontAwesomeIcons.chevronDown
@@ -415,12 +453,11 @@ class PriorityLabel extends StatelessWidget {
     // still goes through Text.rich for the label and only places the caret
     // as a sibling inside a shared tap target.
     if (onSelect == null) {
-      final resolvedFontSize =
-          fontSize ?? context.theme.typography.md.fontSize;
+      final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
       final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
       final leafWeight = boldLeaf ? FontWeight.w600 : null;
-      final restLeafColor = color ??
-          context.colour.colours.fromTheme(currentColor, muted: muted);
+      final restLeafColor =
+          color ?? context.colour.colours.fromTheme(currentColor, muted: muted);
 
       Widget buildRichText(Color leafColor) {
         final spans = <InlineSpan>[];
@@ -431,39 +468,46 @@ class PriorityLabel extends StatelessWidget {
               mutedAncestorColor ??
               color ??
               context.colour.colours.fromTheme(displayColors[i], muted: true);
-          spans.add(TextSpan(
-            text: ancestor.title,
-            style: TextStyle(
-              color: ancestorColor,
-              fontSize: resolvedFontSize,
-              height: height,
-              fontWeight: ancestorWeight,
-            ),
-          ));
-          if (!isLast || priority != null) {
-            spans.add(TextSpan(
-              text: Priority.separator,
+          spans.add(
+            TextSpan(
+              text: ancestor.title,
               style: TextStyle(
-                color: mutedAncestorColor ??
-                    color ??
-                    context.theme.colors.mutedForeground,
+                color: ancestorColor,
                 fontSize: resolvedFontSize,
-                height: height ?? 1,
+                height: height,
                 fontWeight: ancestorWeight,
               ),
-            ));
+            ),
+          );
+          if (!isLast || priority != null) {
+            spans.add(
+              TextSpan(
+                text: Priority.separator,
+                style: TextStyle(
+                  color:
+                      mutedAncestorColor ??
+                      color ??
+                      context.theme.colors.mutedForeground,
+                  fontSize: resolvedFontSize,
+                  height: height ?? 1,
+                  fontWeight: ancestorWeight,
+                ),
+              ),
+            );
           }
         }
         if (priority != null) {
-          spans.add(TextSpan(
-            text: priority!.title,
-            style: TextStyle(
-              color: leafColor,
-              fontSize: resolvedFontSize,
-              height: height,
-              fontWeight: leafWeight,
+          spans.add(
+            TextSpan(
+              text: priority!.title,
+              style: TextStyle(
+                color: leafColor,
+                fontSize: resolvedFontSize,
+                height: height,
+                fontWeight: leafWeight,
+              ),
             ),
-          ));
+          );
         }
         return Text.rich(
           TextSpan(children: spans),
@@ -601,10 +645,9 @@ class PriorityLabel extends StatelessWidget {
     required ThemeColor currentColor,
     required FontWeight? leafWeight,
   }) {
-    final restLeafColor = color ??
-        context.colour.colours.fromTheme(currentColor, muted: muted);
-    final resolvedFontSize =
-        fontSize ?? context.theme.typography.md.fontSize;
+    final restLeafColor =
+        color ?? context.colour.colours.fromTheme(currentColor, muted: muted);
+    final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
 
     Widget leafTextWith(Color c) => DefaultTextStyle(
       style: DefaultTextStyle.of(context).style.copyWith(
