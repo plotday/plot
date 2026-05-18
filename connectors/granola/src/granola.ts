@@ -46,8 +46,13 @@ export class Granola extends Connector<Granola> {
           type: "text" as const,
           secure: true,
           label: "API key",
+          description:
+            "Connect Plot to your Granola account so meeting notes attach to the right calendar event.",
           default: "",
           placeholder: "grn_...",
+          helpText:
+            "In Granola (desktop app), open Settings → Connectors → API keys, click Create new key, then paste it here. On Enterprise workspaces, your admin may need to enable personal API keys first.",
+          helpUrl: "https://docs.granola.ai/introduction",
         },
       }),
       callbacks: build(Callbacks),
