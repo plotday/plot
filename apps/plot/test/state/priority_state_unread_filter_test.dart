@@ -27,6 +27,7 @@ PriorityState _stateWith({
   required List<AgendaItem> activityFeedItems,
   bool unreadFilterActive = false,
   bool unreadFilterPending = false,
+  bool activityFeedDoneEnd = false,
 }) {
   final draft = Thread(priority: priority, draft: true);
   final draftNote = Note(
@@ -45,6 +46,7 @@ PriorityState _stateWith({
     activityFeedItems: activityFeedItems,
     unreadFilterActive: unreadFilterActive,
     unreadFilterPending: unreadFilterPending,
+    activityFeedDoneEnd: activityFeedDoneEnd,
   );
 }
 
@@ -157,6 +159,46 @@ void main() {
       expect(view[1], isA<AgendaHeaderItem>());
       expect(view[2], same(unreadT));
     });
+
+    test(
+      'activityFeedViewDoneEnd mirrors activityFeedDoneEnd when filter inactive',
+      () {
+        final p = _testPriority();
+        final unfinished = _stateWith(
+          priority: p,
+          activityFeedItems: const [],
+          activityFeedDoneEnd: false,
+        );
+        expect(unfinished.activityFeedViewDoneEnd, isFalse);
+        final finished = _stateWith(
+          priority: p,
+          activityFeedItems: const [],
+          activityFeedDoneEnd: true,
+        );
+        expect(finished.activityFeedViewDoneEnd, isTrue);
+      },
+    );
+
+    test(
+      'activityFeedViewDoneEnd is true when filter active even if raw feed not done',
+      () {
+        // Reproduces the bug: with the unread filter on, the InfiniteList's
+        // bottom spinner would otherwise spin forever because the fetcher
+        // early-returns against the raw thread count while the filtered
+        // count stays small.
+        final p = _testPriority();
+        final state = _stateWith(
+          priority: p,
+          activityFeedItems: [
+            _sectionHeader(ActivitySection.newSection),
+            AgendaThreadItem(_thread(p, unread: true)),
+          ],
+          unreadFilterActive: true,
+          activityFeedDoneEnd: false,
+        );
+        expect(state.activityFeedViewDoneEnd, isTrue);
+      },
+    );
 
     test('copyWith propagates unreadFilterActive', () {
       final p = _testPriority();

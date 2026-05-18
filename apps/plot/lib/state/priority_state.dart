@@ -235,6 +235,17 @@ class PriorityState extends Equatable {
     return result;
   }
 
+  /// Whether the activity feed view has no more items to load. When the
+  /// unread filter is active, the view is treated as exhausted regardless
+  /// of the raw feed's pagination state: the filter operates on locally
+  /// loaded threads, and the bottom "loading more" spinner would otherwise
+  /// spin forever — [InfiniteList] keys its spinner off this flag while
+  /// the fetcher early-returns (raw threads already cover the requested
+  /// filtered index range). Mirrors how search forces exhaustion in
+  /// [PriorityBloc._computeActivityFeedDoneEnd].
+  bool get activityFeedViewDoneEnd =>
+      activityFeedDoneEnd || unreadFilterActive;
+
   /// "Agenda": items starting from today, moving forward. Today's date
   /// header is preserved so the agenda always opens with a header above
   /// the first thread. When a current event is in progress, content

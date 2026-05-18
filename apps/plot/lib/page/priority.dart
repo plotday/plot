@@ -1169,7 +1169,7 @@ class _PriorityPageState extends State<PriorityPage>
       initialScrollOffset: bloc.activityFeedScrollOffset,
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: totalCount,
-      doneEnd: state.activityFeedDoneEnd,
+      doneEnd: state.activityFeedViewDoneEnd,
       fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
           _buildSeparator(context, displayItems, index, state, controller),
