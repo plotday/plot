@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb, createDb } from "../../db";
+import { sql, withDb, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpc, rpcUser } from "../../rpc";
 import { classifyThreadForUser } from "../../state/classify-thread";
@@ -18,7 +18,7 @@ import {
 } from "./helpers";
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
-import { notifySync } from "./notify";
+import { notifySync, notifyUserSyncByEnv } from "./notify";
 import { stripAnnounceContactsFromThreads } from "./viewer";
 import { twistFactory } from "../../twist/factory";
 
@@ -434,6 +434,13 @@ threads.post("/sync/threads", async (c) => {
 
   const userId = c.var.user.id;
 
+  // Set when the user's explicit priority pick transitions this thread's
+  // thread_priority.user_moved from FALSE to TRUE — i.e. this save is the
+  // first filing signal. Used post-response to kick off retroactive
+  // reclassification of the user's other threads against the new training
+  // example (mirrors POST /sync/priority-moves).
+  let userMovedTransitioned = false;
+
   const result = await withUserDb(c.var.db, userId, async (trx) => {
     const upsertResult = await rpcUser(trx, "upsert_thread", {
       user_id: userId,
@@ -475,10 +482,62 @@ threads.post("/sync/threads", async (c) => {
         console.error("[sync/threads] Auto-classification failed:", error);
         c.var.tracker.captureException(error as Error);
       }
+    } else if (
+      threadData.priority_id &&
+      !threadData.draft &&
+      upsertResult
+    ) {
+      // Explicit user priority pick on a finalized (non-draft) thread is the
+      // same filing signal as POST /sync/priority-moves. Flip user_moved to
+      // TRUE so this row joins the classifier's training set and stops being
+      // eligible for automatic re-filing. Guard on user_moved = FALSE so
+      // unrelated saves (title edits, etc.) don't repeatedly re-fire the
+      // retroactive reclassify side-effect below.
+      const transitioned = await sql<{ thread_id: string }>`
+        UPDATE thread_priority
+        SET user_moved = TRUE, updated_at = now()
+        WHERE thread_id = ${sql.val(upsertResult.id)}
+          AND user_id = ${sql.val(userId)}
+          AND user_moved = FALSE
+        RETURNING thread_id
+      `.execute(trx);
+      if (transitioned.rows.length > 0) {
+        userMovedTransitioned = true;
+      }
     }
 
     return upsertResult;
   });
+
+  // After a first-time explicit filing, retroactively re-file the user's
+  // other threads against the newly-expanded training set. Mirrors the
+  // waitUntil block in POST /sync/priority-moves. Bounded internally to 500
+  // candidates and guards user_moved = TRUE rows.
+  if (userMovedTransitioned && result) {
+    const reclassifyThreadId = result.id;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const logger = createLogger({ component: "sync-threads-reclassify" });
+        try {
+          await withDb(c.env, async (db) => {
+            await withUserDb(db, userId, async (trx) => {
+              await rpc(trx, "reclassify_user_threads", {
+                p_user_id: userId,
+                p_anchor_thread_id: reclassifyThreadId,
+              });
+            });
+            await notifyUserSyncByEnv(c.env, userId);
+          });
+        } catch (error) {
+          logger.error("Retroactive reclassify failed", error as Error, {
+            user_id: userId,
+            thread_id: reclassifyThreadId,
+          });
+          c.var.tracker.captureException(error as Error);
+        }
+      })()
+    );
+  }
 
   // Process pending email invitations: resolve emails → contacts, add to
   // thread.contacts via share_thread, send invitation emails.
