@@ -368,6 +368,7 @@ export interface Link {
    */
   source_priority_root: string | null;
   source_url: string | null;
+  sources: Generated<string[]>;
   /**
    * Source-defined status string (e.g., open, done, closed). Free text.
    */

@@ -626,6 +626,7 @@ export type Database = {
           source_created_at: string
           source_priority_root: unknown
           source_url: string | null
+          sources: string[]
           status: string | null
           sync_depth: number | null
           thread_id: string | null
@@ -654,6 +655,7 @@ export type Database = {
           source_created_at?: string
           source_priority_root?: unknown
           source_url?: string | null
+          sources?: string[]
           status?: string | null
           sync_depth?: number | null
           thread_id?: string | null
@@ -682,6 +684,7 @@ export type Database = {
           source_created_at?: string
           source_priority_root?: unknown
           source_url?: string | null
+          sources?: string[]
           status?: string | null
           sync_depth?: number | null
           thread_id?: string | null

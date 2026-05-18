@@ -908,6 +908,7 @@ export class Plot extends Tool implements IPlot {
       sourceUrl: item.link_source_url,
       channelId: item.link_channel_id ?? null,
       relatedSource: null,
+      sources: item.link_source ? [item.link_source] : [],
     };
   }
 

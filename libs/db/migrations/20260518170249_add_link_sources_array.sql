@@ -1,19 +1,17 @@
--- Upsert link with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_link
---   - Key absent: keep existing value
---   - Key present (even with null): use provided value (allows clearing to NULL)
--- Derivation: Automatically derives source_priority_root and twist_id
---
--- Parameters:
---   p_link: link data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_link)
---
--- Returns: The full link row
-CREATE OR REPLACE FUNCTION "user".upsert_link (user_id uuid, p_link jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS link
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "link" table
+ALTER TABLE "public"."link" ADD COLUMN "sources" text[] NOT NULL DEFAULT '{}';
+-- Create index "idx_link_sources" to table: "link"
+CREATE INDEX "idx_link_sources" ON "public"."link" USING GIN ("sources");
+-- Backfill sources from legacy source + related_source
+UPDATE "public"."link"
+SET sources = ARRAY(
+    SELECT DISTINCT s FROM UNNEST(ARRAY[source, related_source]) s
+    WHERE s IS NOT NULL AND s <> ''
+)
+WHERE cardinality(sources) = 0
+  AND (source IS NOT NULL OR related_source IS NOT NULL);
+-- Modify "upsert_link" function
+CREATE OR REPLACE FUNCTION "user"."upsert_link" ("user_id" uuid, "p_link" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."link" LANGUAGE plpgsql AS $$
 DECLARE
     v_result link;
     v_id uuid;
@@ -33,25 +31,23 @@ BEGIN
     v_thread_id := COALESCE((p_link ->> 'thread_id')::uuid, (p_defaults ->> 'thread_id')::uuid);
     v_source := p_link ->> 'source';
     -- Derive canonical sources array: prefer explicit `sources`, else fall back
-    -- to the legacy [source, related_source] pair (deduped, non-null, sorted
-    -- for deterministic ordering across users).
+    -- to the legacy [source, related_source] pair (deduped, non-null).
     IF p_link ? 'sources' THEN
-        v_sources := ARRAY(SELECT DISTINCT s FROM jsonb_array_elements_text(p_link -> 'sources') s WHERE s IS NOT NULL AND s <> '' ORDER BY s);
+        v_sources := ARRAY(SELECT DISTINCT s FROM jsonb_array_elements_text(p_link -> 'sources') s WHERE s IS NOT NULL AND s <> '');
     ELSIF p_defaults ? 'sources' THEN
-        v_sources := ARRAY(SELECT DISTINCT s FROM jsonb_array_elements_text(p_defaults -> 'sources') s WHERE s IS NOT NULL AND s <> '' ORDER BY s);
+        v_sources := ARRAY(SELECT DISTINCT s FROM jsonb_array_elements_text(p_defaults -> 'sources') s WHERE s IS NOT NULL AND s <> '');
     ELSE
         v_sources := ARRAY(
             SELECT DISTINCT s FROM UNNEST(ARRAY[
                 v_source,
                 p_link ->> 'related_source',
                 p_defaults ->> 'related_source'
-            ]) s WHERE s IS NOT NULL AND s <> '' ORDER BY s
+            ]) s WHERE s IS NOT NULL AND s <> ''
         );
     END IF;
-    -- Keep legacy `source` populated from the first (alphabetically smallest)
-    -- element if absent, so the (source, source_priority_root) unique
-    -- constraint and ON CONFLICT path continue to work. The sort guarantees
-    -- two users emitting the same sources set compute the same legacy source.
+    -- Keep legacy `source` populated from the first element if absent, so the
+    -- (source, source_priority_root) unique constraint and ON CONFLICT path
+    -- continue to work.
     IF v_source IS NULL AND cardinality(v_sources) > 0 THEN
         v_source := v_sources[1];
     END IF;
@@ -229,12 +225,11 @@ BEGIN
                 link.sync_depth
             END,
             source = COALESCE(v_source, link.source),
-            -- Union new sources with existing (dedupe, sort). Preserves
-            -- aliases other connectors may have already attached.
+            -- Union new sources with existing (dedupe). Preserves aliases other
+            -- connectors may have already attached to this link.
             sources = ARRAY(
                 SELECT DISTINCT s FROM UNNEST(link.sources || v_sources) s
                 WHERE s IS NOT NULL AND s <> ''
-                ORDER BY s
             ),
             source_priority_root = COALESCE(v_source_priority_root, link.source_priority_root),
             created_by = v_created_by,
@@ -261,4 +256,4 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;

@@ -594,6 +594,13 @@ export const CONNECTIONS: Connection[] = [
     available: false,
   },
   {
+    name: "Granola",
+    logo: "/assets/logo-granola.png",
+    category: "Productivity",
+    entities: ["Meeting Notes", "Transcripts"],
+    available: false,
+  },
+  {
     name: "Google Tasks",
     logo: "/assets/logo-google-tasks.svg",
     category: "Productivity",

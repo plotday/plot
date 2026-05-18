@@ -31,19 +31,36 @@ export async function createLink(
   link: NewLinkWithNotes
 ): Promise<Uuid> {
   try {
+    // Normalize identifiers to a single canonical array. Connectors may supply
+    // `sources` directly, or the legacy `source` + `relatedSource` pair; the
+    // runtime treats them all as elements of `sources` for upsert/bundling.
+    const sourcesArray: string[] = Array.from(
+      new Set(
+        [
+          ...(((link as any).sources as string[] | undefined) ?? []),
+          ...((link as any).source ? [(link as any).source as string] : []),
+          ...(link.relatedSource ? [link.relatedSource] : []),
+        ].filter((s): s is string => Boolean(s))
+      )
+    );
+    // Primary source for the legacy `source` column + thread.key dedup. Pick
+    // the sorted minimum so concurrent connectors that agree on at least one
+    // canonical alias compute the same key cross-user.
+    const primarySource: string | null =
+      sourcesArray.length > 0
+        ? [...sourcesArray].sort()[0]
+        : null;
+
     // Step 1: Create the thread (backward compat)
     // Convert link fields to thread fields for legacy thread creation
-    const hasSource = "source" in link && link.source;
+    const hasSource = sourcesArray.length > 0;
 
     const threadData: any = {
       title: link.title,
-      ...(hasSource ? { source: (link as any).source } : {}),
+      ...(hasSource ? { source: primarySource } : {}),
       // Use thread.key for database-level dedup: concurrent createLink calls
-      // for the same source will upsert the same thread instead of creating
-      // duplicates. relatedSource takes precedence so related links share a thread.
-      ...(hasSource
-        ? { key: link.relatedSource ?? (link as any).source }
-        : {}),
+      // that share any canonical alias converge on the same thread.
+      ...(hasSource ? { key: primarySource } : {}),
       ...(link.author ? { author: link.author } : {}),
       ...(link.assignee !== undefined ? { assignee: link.assignee } : {}),
       ...(link.meta !== undefined ? { meta: link.meta } : {}),
@@ -85,34 +102,11 @@ export async function createLink(
       : sql<boolean>`false`;
 
     if (hasSource && !threadData.id && currentTwistId !== null) {
-      const sourceValue = (link as any).source as string;
-      const relatedSourceValue = link.relatedSource ?? null;
-
       const existingLink = await plot.db
         .selectFrom("link")
         .select("link.thread_id")
         .where(twistIdFilter)
-        .where((eb) =>
-          eb.or([
-            eb("link.source", "=", sourceValue),
-            ...(relatedSourceValue
-              ? [eb("link.source", "=", relatedSourceValue)]
-              : []),
-            eb("link.related_source", "=", sourceValue),
-          ])
-        )
-        .orderBy(
-          relatedSourceValue
-            ? sql`CASE
-                WHEN link.source = ${sourceValue} THEN 0
-                WHEN link.source = ${relatedSourceValue} THEN 1
-                ELSE 2
-              END`
-            : sql`CASE
-                WHEN link.source = ${sourceValue} THEN 0
-                ELSE 2
-              END`
-        )
+        .where(sql<boolean>`link.sources && ${sql.val(sourcesArray)}::text[]`)
         .limit(1)
         .executeTakeFirst();
 
@@ -186,6 +180,7 @@ export async function createLink(
       ...(link.relatedSource !== undefined
         ? { related_source: link.relatedSource }
         : {}),
+      ...(hasSource ? { sources: sourcesArray } : {}),
     };
 
     let linkId: string;
@@ -193,7 +188,8 @@ export async function createLink(
     if (hasSource) {
       // Build upsert fields (only explicitly provided values for UPDATE)
       const linkUpsert: Record<string, any> = {
-        source: (link as any).source,
+        source: primarySource,
+        sources: sourcesArray,
         thread_id: threadId,
         updated_by: plot.getUpdatedBy(),
         sync_depth: plot.syncDepth + 1,
@@ -232,27 +228,49 @@ export async function createLink(
         threadId = linkResult.thread_id as Uuid;
       }
 
-      // Post-insert reconciliation for relatedSource race conditions.
-      // If this link has relatedSource and the related link is on a different thread,
-      // move this link to the related link's thread.
-      if (link.relatedSource) {
-        const relatedLink = await plot.db
-          .selectFrom("link")
-          .select(["link.thread_id"])
-          .where("link.source", "=", link.relatedSource)
-          .where("link.thread_id", "!=", threadId)
-          .where(twistIdFilter)
-          .executeTakeFirst();
+      // Post-insert reconciliation: if any other link in the same twist has
+      // overlapping `sources` but landed on a different thread (race condition
+      // where two concurrent saveLink calls both created threads), merge them.
+      // Move our newly-inserted link to the older thread and clean up.
+      const overlappingLinks = await plot.db
+        .selectFrom("link")
+        .select(["link.id", "link.thread_id", "link.created_at"])
+        .where("link.id", "!=", linkId)
+        .where("link.thread_id", "!=", threadId)
+        .where(twistIdFilter)
+        .where(sql<boolean>`link.sources && ${sql.val(sourcesArray)}::text[]`)
+        .orderBy("link.created_at", "asc")
+        .execute();
 
-        if (relatedLink?.thread_id) {
-          const oldThreadId = threadId;
-          threadId = relatedLink.thread_id as Uuid;
+      if (overlappingLinks.length > 0) {
+        // Prefer the oldest overlapping thread as the survivor.
+        const survivorThreadId = overlappingLinks[0].thread_id as Uuid;
+        const orphanedThreadIds = new Set<Uuid>();
+
+        // Move our just-inserted link onto the survivor thread.
+        if (survivorThreadId !== threadId) {
+          orphanedThreadIds.add(threadId);
           await plot.db
             .updateTable("link")
-            .set({ thread_id: threadId })
+            .set({ thread_id: survivorThreadId })
             .where("id", "=", linkId)
             .execute();
-          // Delete orphaned thread if no other links reference it
+          threadId = survivorThreadId;
+        }
+
+        // Move every other overlapping link onto the survivor thread too.
+        for (const rl of overlappingLinks) {
+          if (rl.thread_id === survivorThreadId) continue;
+          orphanedThreadIds.add(rl.thread_id as Uuid);
+          await plot.db
+            .updateTable("link")
+            .set({ thread_id: survivorThreadId })
+            .where("id", "=", rl.id)
+            .execute();
+        }
+
+        // Clean up orphaned threads with no remaining links.
+        for (const oldThreadId of orphanedThreadIds) {
           const remaining = await plot.db
             .selectFrom("link")
             .select("link.id")
@@ -262,39 +280,6 @@ export async function createLink(
             await plot.db
               .deleteFrom("thread")
               .where("id", "=", oldThreadId)
-              .execute();
-          }
-        }
-      }
-
-      // Reverse reconciliation: move links whose related_source matches this
-      // link's source to this thread.
-      {
-        const reverseLinks = await plot.db
-          .selectFrom("link")
-          .select(["link.id", "link.thread_id"])
-          .where("link.related_source", "=", (link as any).source as string)
-          .where("link.thread_id", "!=", threadId)
-          .where(twistIdFilter)
-          .execute();
-
-        for (const rl of reverseLinks) {
-          const oldThreadId = rl.thread_id;
-          await plot.db
-            .updateTable("link")
-            .set({ thread_id: threadId })
-            .where("id", "=", rl.id)
-            .execute();
-          // Delete orphaned thread if no other links reference it
-          const remaining = await plot.db
-            .selectFrom("link")
-            .select("link.id")
-            .where("link.thread_id", "=", oldThreadId!)
-            .executeTakeFirst();
-          if (!remaining) {
-            await plot.db
-              .deleteFrom("thread")
-              .where("id", "=", oldThreadId!)
               .execute();
           }
         }
@@ -507,6 +492,7 @@ export async function getLinks(
       "link.id",
       "link.thread_id",
       "link.source",
+      "link.sources",
       "link.source_created_at",
       "link.created_at",
       "link.title",
@@ -628,6 +614,7 @@ export async function getLinks(
       sourceUrl: row.source_url,
       channelId: row.channel_id ?? null,
       relatedSource: null,
+      sources: row.sources ?? [],
     };
 
     const noteRows = (row.thread_id ? notesByThread.get(row.thread_id) : null) ?? [];

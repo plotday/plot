@@ -482,12 +482,19 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     const sentinelId = sentinel.id;
 
+    // Match links sourced from Jira: legacy `source LIKE 'jira:%'` OR any
+    // canonical alias in `sources` starting with `jira:`.
+    const isJiraSourced = sql<boolean>`(
+      link.source LIKE 'jira:%'
+      OR EXISTS (SELECT 1 FROM UNNEST(link.sources) s WHERE s LIKE 'jira:%')
+    )`;
+
     // Replace Jira-sourced link author references
     await db
       .updateTable("link")
       .set({ author_id: sentinelId })
       .where("author_id", "=", contactId)
-      .where("source", "like", "jira:%")
+      .where(isJiraSourced)
       .execute();
 
     // Replace Jira-sourced link assignee references
@@ -495,14 +502,14 @@ export class PrivacyReporting extends DurableObject<Bindings> {
       .updateTable("link")
       .set({ assignee_id: sentinelId })
       .where("assignee_id", "=", contactId)
-      .where("source", "like", "jira:%")
+      .where(isJiraSourced)
       .execute();
 
     // Replace Jira-sourced note author references
     const jiraLinks = await db
       .selectFrom("link")
       .select("thread_id")
-      .where("source", "like", "jira:%")
+      .where(isJiraSourced)
       .execute();
 
     if (jiraLinks.length > 0) {
@@ -528,18 +535,23 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     }
 
     // Check if contact has remaining non-Jira references
+    const isNotJiraSourced = sql<boolean>`NOT (
+      link.source LIKE 'jira:%'
+      OR EXISTS (SELECT 1 FROM UNNEST(link.sources) s WHERE s LIKE 'jira:%')
+    )`;
+
     const nonJiraAuthorResult = await db
       .selectFrom("link")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("author_id", "=", contactId)
-      .where("source", "not like", "jira:%")
+      .where(isNotJiraSourced)
       .executeTakeFirstOrThrow();
 
     const nonJiraAssigneeResult = await db
       .selectFrom("link")
       .select((eb) => eb.fn.countAll().as("count"))
       .where("assignee_id", "=", contactId)
-      .where("source", "not like", "jira:%")
+      .where(isNotJiraSourced)
       .executeTakeFirstOrThrow();
 
     const hasNonJiraRefs =

@@ -11,8 +11,15 @@ CREATE TABLE "public"."link" (
     -- Root of the priority path, set by trigger when source is non-null
     "source_priority_root" ltree,
     -- Cross-connector thread bundling: links with source matching another link's
-    -- related_source (or vice versa) share the same thread
+    -- related_source (or vice versa) share the same thread.
+    -- DEPRECATED: superseded by `sources`. Still populated for one release for
+    -- back-compat with readers that haven't migrated yet.
     "related_source" text,
+    -- Canonical identifiers for this link. Two links overlap in `sources` share
+    -- a thread (array overlap, `sources && new.sources`). Lets any connector
+    -- bundle through canonical aliases (e.g. `icaluid:<iCalUID>`) without
+    -- depending on another connector's exact source format.
+    "sources" text[] NOT NULL DEFAULT '{}',
     -- Actor ID to credit with creating this link
     "author_id" uuid,
     -- Twist definition ID (twist.id) that created this link
@@ -80,10 +87,13 @@ CREATE INDEX idx_link_priority_id ON "public"."link" ("priority_id")
 WHERE
     priority_id IS NOT NULL;
 
--- Index for cross-connector thread bundling via related_source
+-- Index for cross-connector thread bundling via related_source (legacy)
 CREATE INDEX idx_link_related_source ON "public"."link" ("related_source")
 WHERE
     related_source IS NOT NULL;
+
+-- GIN index for sources[] overlap (&&) and contains (@>) lookups
+CREATE INDEX idx_link_sources ON "public"."link" USING GIN ("sources");
 
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_link_updated_at ON "public"."link" ("updated_at");

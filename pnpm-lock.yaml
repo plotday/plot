@@ -449,6 +449,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  public/connectors/granola:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   public/connectors/jira:
     dependencies:
       '@plotday/twister':

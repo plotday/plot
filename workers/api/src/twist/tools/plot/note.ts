@@ -134,18 +134,24 @@ export async function createNote(
       // ID provided directly
       activityId = note.thread.id;
     } else if ("source" in note.thread) {
-      // Look up activity by source and priority root via the link table
+      // Look up activity by source and priority root via the link table.
+      // Match either the legacy `source` column or any element of `sources`,
+      // so a connector can attach a note to a calendar event by any of its
+      // canonical aliases (e.g. `icaluid:<UID>`).
+      const sourceValue = note.thread.source;
       const priorityRoot = await plot.getPriorityRoot();
       const existingLink = await plot.db
         .selectFrom("link")
         .select("thread_id")
-        .where("source", "=", note.thread.source)
         .where("source_priority_root", "=", priorityRoot)
+        .where(
+          sql<boolean>`(link.source = ${sourceValue} OR link.sources @> ARRAY[${sourceValue}]::text[])`
+        )
         .executeTakeFirst();
 
       if (!existingLink || !existingLink.thread_id) {
         throw new Error(
-          `Activity not found with source "${note.thread.source}": Not found`
+          `Activity not found with source "${sourceValue}": Not found`
         );
       }
 
