@@ -2,7 +2,7 @@
   "name": "@plotday/connector-granola",
   "plotTwistId": "019e3c22-5328-7b6f-b2b6-0efa8e3dab16",
   "displayName": "Granola",
-  "description": "Attach Granola meeting notes onto your calendar event threads",
+  "description": "Add Granola meeting notes to your calendar event threads",
   "logoUrl": "https://plot.day/assets/logo-granola.png",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
