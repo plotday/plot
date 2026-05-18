@@ -347,18 +347,27 @@ Future<FormData> _buildNewPriorityForm(
   final currentPriority = nowBloc.state is NowLoaded
       ? (nowBloc.state as NowLoaded).priority
       : null;
-  final defaultParent =
+  final fallbackParent =
       parent ??
       currentPriority ??
       prioritiesBloc.state.root ??
       await Priority.getDefault();
+  final defaultParent = fallbackParent.isPlot
+      ? (prioritiesBloc.state.root ?? await Priority.getDefault())
+      : fallbackParent;
 
   final parentSelect = FormSelect<Priority>(
     key: 'parent',
     label: 'Parent',
     initialValue: defaultParent,
-    items: (search) async =>
-        Priority.get(order: PriorityOrder.nested, search: search),
+    items: (search) async {
+      final priorities = await Priority.get(order: PriorityOrder.nested);
+      return priorities.where((p) {
+        if (p.isPlot) return false;
+        if (search == null || search.isEmpty) return true;
+        return p.matchesSearch(search);
+      }).toList();
+    },
     labelBuilder: (p) => PriorityLabel(priority: p),
     titleBuilder: (p) => p.ancestorsLabel() != null
         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
@@ -512,11 +521,16 @@ class EditPriorityCommand extends ShowForm {
             items: (search) async {
               final priorities = await Priority.get(
                 order: PriorityOrder.nested,
-                search: search,
               );
               return priorities.where((candidate) {
                 if (candidate.id == p.id) return false;
                 if (p.path.isParent(candidate.path)) return false;
+                if (candidate.isPlot) return false;
+                if (search != null &&
+                    search.isNotEmpty &&
+                    !candidate.matchesSearch(search)) {
+                  return false;
+                }
                 return true;
               }).toList();
             },
@@ -564,19 +578,20 @@ class EditPriorityCommand extends ShowForm {
                           const ThemeColor.defaultColor(),
                     ),
                   ),
-                  FormShareSelect(
-                    key: 'shared',
-                    label: 'Share new threads',
-                    placeholder: 'No one',
-                    priority: p,
-                    initialValue: SharedSelection(
-                      contacts: List<Uuid>.from(p.defaultSharedContacts),
-                      groups: List<Uuid>.from(p.defaultSharedGroups),
-                      inviteEmails: List<String>.from(
-                        p.defaultSharedInviteEmails,
+                  if (!p.isPlot)
+                    FormShareSelect(
+                      key: 'shared',
+                      label: 'Share new threads',
+                      placeholder: 'No one',
+                      priority: p,
+                      initialValue: SharedSelection(
+                        contacts: List<Uuid>.from(p.defaultSharedContacts),
+                        groups: List<Uuid>.from(p.defaultSharedGroups),
+                        inviteEmails: List<String>.from(
+                          p.defaultSharedInviteEmails,
+                        ),
                       ),
                     ),
-                  ),
                   FormButton(
                     key: 'save',
                     isPrimary: true,
@@ -584,23 +599,27 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
-                      final shared =
-                          (values['shared'] as SharedSelection?) ??
-                          const SharedSelection();
+                      final shared = values['shared'] as SharedSelection?;
                       return EditPriority(
                         Future.value(
-                          p.copyWith(
-                            title: title,
-                            parent: newParent,
-                            color: Value(color),
-                            defaultContacts: Value(shared.contacts),
-                            defaultGroups: Value(shared.groups),
-                            defaultInviteEmails: Value(
-                              shared.inviteEmails.isEmpty
-                                  ? null
-                                  : jsonEncode(shared.inviteEmails),
-                            ),
-                          ),
+                          shared == null
+                              ? p.copyWith(
+                                  title: title,
+                                  parent: newParent,
+                                  color: Value(color),
+                                )
+                              : p.copyWith(
+                                  title: title,
+                                  parent: newParent,
+                                  color: Value(color),
+                                  defaultContacts: Value(shared.contacts),
+                                  defaultGroups: Value(shared.groups),
+                                  defaultInviteEmails: Value(
+                                    shared.inviteEmails.isEmpty
+                                        ? null
+                                        : jsonEncode(shared.inviteEmails),
+                                  ),
+                                ),
                         ),
                       );
                     },
@@ -627,10 +646,10 @@ class ShowPriorityCommands extends ShowCommands {
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
-  if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
+  if (!priority.isViewer) EditPriorityCommand(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
-  if (!priority.isViewer) NewPriority(parent: priority),
+  if (!priority.isViewer && !priority.isPlot) NewPriority(parent: priority),
   if (!priority.root && !priority.isViewer && !priority.isPlot)
     TogglePriorityArchived(priority),
 ];

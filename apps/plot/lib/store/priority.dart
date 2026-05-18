@@ -1125,6 +1125,19 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .join();
   }
 
+  /// Whether this priority matches [search] against its own title or any
+  /// visible ancestor title. Lets a query like "Personal" return both
+  /// "Personal" itself and every descendant filed under it.
+  bool matchesSearch(String search) {
+    final query = search.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    if (title.toLowerCase().contains(query)) return true;
+    for (final ancestor in ancestors()) {
+      if (ancestor.title.toLowerCase().contains(query)) return true;
+    }
+    return false;
+  }
+
   /// Get the effective topOrder for sorting, considering both this priority's
   /// topOrder and the minimum topOrder from its ancestry.
   /// Returns the minimum (earliest) value, as lower Order values sort first.
@@ -1170,7 +1183,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// tab). True for viewer priorities, or when `config.view == 'activity'`.
   bool get isActivityOnly => isViewer || priorityConfig.viewIsActivity;
 
-  /// Whether this is a system priority that shouldn't be edited/archived by users.
+  /// Whether this is a system priority. Users can rename / recolor / re-parent
+  /// these, but cannot archive them, add sub-priorities under them, configure
+  /// default sharing on them, or pick them as a parent for another priority.
   bool get isPlot =>
       key == '@plot.app' || key == '@plot.twist-dev' || key == '@plot';
 
