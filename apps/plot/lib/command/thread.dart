@@ -242,8 +242,10 @@ class NewThread extends Command {
   bool enabled(BuildContext context) {
     // Disable when already on the new thread page
     if (context.router.current.name == NewThreadRoute.name) return false;
-    // Disable for viewer priorities
-    final priority = context.read<PriorityBloc>().state.context;
+    // The command bar surfaces commands across scopes, so this can be
+    // called from a context without a PriorityBloc (e.g. Agenda tab).
+    final priority = context.read<PriorityBloc?>()?.state.context;
+    if (priority == null) return false;
     if (priority.isViewer) return false;
     return true;
   }
