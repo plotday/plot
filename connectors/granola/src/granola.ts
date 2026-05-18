@@ -1,4 +1,4 @@
-import { type NewLinkWithNotes } from "@plotday/twister";
+import { type Action, ActionType, type NewLinkWithNotes } from "@plotday/twister";
 import { Connector } from "@plotday/twister/connector";
 import { Options } from "@plotday/twister/options";
 import type { ToolBuilder } from "@plotday/twister/tool";
@@ -230,7 +230,20 @@ export class Granola extends Connector<Granola> {
       sources.push(`apple-calendar:${calendarEventId}`);
     }
 
-    const content = note.summary_markdown ?? note.summary_text ?? "";
+    const rawContent = note.summary_markdown ?? note.summary_text ?? "";
+    const { content, chatUrl } = stripChatTrailer(rawContent);
+
+    // Prefer the explicit "Chat with meeting transcript" URL from the trailer
+    // (it's the deep link Granola itself promotes); fall back to web_url.
+    const granolaUrl = chatUrl ?? note.web_url;
+
+    const actions: Action[] = [
+      {
+        type: ActionType.external,
+        title: "Chat with meeting transcript",
+        url: granolaUrl,
+      },
+    ];
 
     return {
       source: `granola:note:${note.id}`,
@@ -238,7 +251,8 @@ export class Granola extends Connector<Granola> {
       title: note.title ?? note.calendar_event?.event_title ?? "Meeting notes",
       type: "meeting",
       channelId,
-      sourceUrl: note.web_url,
+      sourceUrl: granolaUrl,
+      actions,
       created: note.calendar_event?.scheduled_start_time
         ? new Date(note.calendar_event.scheduled_start_time)
         : new Date(note.created_at),
@@ -261,6 +275,28 @@ export class Granola extends Connector<Granola> {
       ...(initialSync ? { unread: false, archived: false } : {}),
     };
   }
+}
+
+/**
+ * Strip Granola's auto-appended "Chat with meeting transcript: <url>" trailer
+ * (preceded by a horizontal rule) from the summary markdown. The URL is
+ * promoted to an action button on the link instead, so the note body ends on
+ * the real summary content rather than a bare URL.
+ */
+function stripChatTrailer(markdown: string): {
+  content: string;
+  chatUrl: string | null;
+} {
+  const match = markdown.match(
+    /\n+(?:---|\*\*\*|___)\s*\n+Chat with meeting transcript:\s*(\S+)\s*$/i
+  );
+  if (!match || match.index === undefined) {
+    return { content: markdown, chatUrl: null };
+  }
+  return {
+    content: markdown.slice(0, match.index).trimEnd(),
+    chatUrl: match[1],
+  };
 }
 
 export default Granola;
