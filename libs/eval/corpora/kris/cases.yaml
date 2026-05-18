@@ -174,7 +174,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: personal
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -353,38 +353,6 @@ cases:
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
     notes: ""
-  - id: 022-019dff92
-    description: "Sampled from prod (topic-shape: null)."
-    candidate:
-      title: Speed up thread creation
-      topic: null
-      contacts:
-        - c-3f5cc8fd9fc9
-      groups: []
-      embedding_ref: emb-978203916d
-    labels:
-      gold: null
-      gold_rationale: ""
-      expected: everything
-      expected_stage: null
-      expected_recorded_at: 2026-05-18T00:30:34.947Z
-    notes: ""
-  - id: 023-019cb9b4
-    description: "Sampled from prod (topic-shape: null)."
-    candidate:
-      title: Save links without note
-      topic: null
-      contacts:
-        - c-3f5cc8fd9fc9
-      groups: []
-      embedding_ref: emb-d73858dc53
-    labels:
-      gold: null
-      gold_rationale: ""
-      expected: finance-admin
-      expected_stage: null
-      expected_recorded_at: 2026-05-18T00:30:34.947Z
-    notes: ""
   - id: 024-019dff91
     description: "Sampled from prod (topic-shape: null)."
     candidate:
@@ -395,7 +363,7 @@ cases:
       groups: []
       embedding_ref: emb-57baabb6b6
     labels:
-      gold: null
+      gold: market-and-competitors
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -514,7 +482,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: product
       gold_rationale: ""
       expected: content
       expected_stage: null
@@ -532,7 +500,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: finance-admin
       gold_rationale: ""
       expected: wififi-licensing
       expected_stage: null
@@ -548,7 +516,7 @@ cases:
       groups: []
       embedding_ref: emb-48cccefc73
     labels:
-      gold: null
+      gold: wififi-licensing
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -564,7 +532,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: finances
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -581,7 +549,7 @@ cases:
       groups: []
       embedding_ref: emb-19e8f3d4c3
     labels:
-      gold: null
+      gold: product
       gold_rationale: ""
       expected: finance-admin
       expected_stage: null
@@ -597,7 +565,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: personal
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -614,7 +582,7 @@ cases:
       groups: []
       embedding_ref: emb-d806a9e24d
     labels:
-      gold: null
+      gold: product
       gold_rationale: ""
       expected: personal
       expected_stage: null
@@ -632,7 +600,7 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: talentlift
       gold_rationale: ""
       expected: talentlift
       expected_stage: null
@@ -649,8 +617,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: talentlift
+      gold_rationale: "Author, contacts"
       expected: marketing
       expected_stage: null
       expected_recorded_at: 2026-05-18T14:59:19.797Z
