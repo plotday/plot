@@ -267,9 +267,7 @@ class AddPriority extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     final savedPriority = await priority.save();
-    final multi = context.mounted
-        ? context.read<LayoutBloc>().state.multiPanel
-        : false;
+    final multi = context.mounted ? context.isMultiPanel : false;
     if (context.mounted) {
       final tabsRouter = _tabsRouterOrNull(context);
       PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
