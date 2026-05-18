@@ -248,6 +248,40 @@ void main() {
       expect(back.targetTab, PriorityTabs.agenda);
       expect(back.nextSourceTab, isNull);
     });
+
+    test(
+        '/agenda → switch to /p/A → tap A-scheduled event in agenda → '
+        'back → /agenda', () {
+      // The tap on a scheduled event for the currently-open priority is
+      // the third forever-spinner case. The agenda's tap handler shares
+      // the same source-tab tracking as the priority tap, so this
+      // sequence drives the same pure-logic surface.
+      int? sourceTab;
+
+      // Cross-tab: /agenda → tap priority A → on Activity.
+      sourceTab = computeSourceTabAfterPriorityTap(
+        activeTabIndex: PriorityTabs.agenda,
+        currentSourceTab: sourceTab,
+      );
+      expect(sourceTab, PriorityTabs.agenda);
+
+      // In-tab: while on /p/A the user taps an event in the agenda
+      // that belongs to A. The agenda tile is mounted under the
+      // Activity tab's nav (left-panel agenda in single-panel mode),
+      // so `activeTabIndex` is Activity. Source must be preserved.
+      sourceTab = computeSourceTabAfterPriorityTap(
+        activeTabIndex: PriorityTabs.activity,
+        currentSourceTab: sourceTab,
+      );
+      expect(sourceTab, PriorityTabs.agenda,
+          reason:
+              'tapping a scheduled event while on the same priority must '
+              'not overwrite the recorded Agenda origin');
+
+      // Back from the destination thread page returns to Agenda.
+      final back = computeBackTabFromPriority(currentSourceTab: sourceTab);
+      expect(back.targetTab, PriorityTabs.agenda);
+    });
   });
 }
 

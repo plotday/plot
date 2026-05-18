@@ -1188,6 +1188,36 @@ class _BlockHeaderState extends State<_BlockHeader> {
           if (isOnActivityTab(tabsRouter)) {
             context.router.root.navigationHistory.markUrlStateForReplace();
           }
+          final targetPriorityIdString =
+              eventThread.priority.id.toShortString();
+          final targetThreadIdString = eventThread.id.toShortString();
+          // Same-priority fast path: when PriorityRoute(target) is already
+          // mounted on the Activity tab, `root.navigate(PriorityRoute(X,
+          // children: [ThreadRoute(...)]))` hits auto_route's in-place
+          // params update — it drops the existing inner route
+          // (PriorityOnlyRoute / ThreadRoute) without mounting the new
+          // ThreadRoute, leaving the inner AutoRouter empty so it falls
+          // back to LoadingPage → forever spinner. Skip the navigate and
+          // drive the inner stack explicitly.
+          if (isSamePriorityAtActivityTop(
+            tabsRouter: tabsRouter,
+            targetPriorityIdString: targetPriorityIdString,
+            priorityRouteName: PriorityRoute.name,
+          )) {
+            if (tabsRouter!.activeIndex != PriorityTabs.activity) {
+              tabsRouter.setActiveIndex(PriorityTabs.activity);
+            }
+            final innerRouter = findPriorityInnerRouter(
+              context.router.root,
+              PriorityRoute.name,
+            );
+            if (innerRouter != null) {
+              innerRouter.replaceAll([
+                ThreadRoute(threadIdString: targetThreadIdString),
+              ]);
+              return;
+            }
+          }
           // Use the root router: when triggered from the Agenda tab,
           // `context.router` is the agenda's nested StackRouter which has
           // no PriorityRoute in its tree (PriorityRoute lives under the
@@ -1196,9 +1226,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // resolves the cross-tab path and handles the tab swap.
           context.router.root.navigate(
             PriorityRoute(
-              priorityIdString: eventThread.priority.id.toShortString(),
+              priorityIdString: targetPriorityIdString,
               children: [
-                ThreadRoute(threadIdString: eventThread.id.toShortString()),
+                ThreadRoute(threadIdString: targetThreadIdString),
               ],
             ),
           );
