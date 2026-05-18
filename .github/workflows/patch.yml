@@ -170,7 +170,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: .flutter-version
+          flutter-version-file: .fvmrc
           channel: "stable"
           cache: true
 
@@ -332,7 +332,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: .flutter-version
+          flutter-version-file: .fvmrc
           channel: "stable"
           cache: true
 
@@ -502,7 +502,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: .flutter-version
+          flutter-version-file: .fvmrc
           channel: "stable"
           cache: true
 
@@ -678,7 +678,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: .flutter-version
+          flutter-version-file: .fvmrc
           channel: "stable"
           cache: true
 
