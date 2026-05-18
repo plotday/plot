@@ -368,6 +368,10 @@ class EditorState extends State<Editor> {
   final Debouncer _debouncer = Debouncer();
   bool _isEmpty = true;
 
+  /// Guards against double-paste when both the hardware Cmd+V keyboard
+  /// action and the macOS `paste:` selector arrive for the same Cmd+V.
+  DateTime? _lastSmartPasteAt;
+
   // Snapshot-based undo/redo (SuperEditor's replay-based undo is broken)
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
@@ -415,11 +419,20 @@ class EditorState extends State<Editor> {
     }
   }
 
-  /// Returns the appropriate input source based on the current platform
+  /// Returns the appropriate input source based on the current platform.
+  ///
+  /// macOS uses IME so that:
+  /// - The Character Viewer (Ctrl+Cmd+Space) and other system-level text
+  ///   inputs reach the editor via `NSTextInputClient.insertText:`.
+  /// - System actions like `paste:` (triggered by Cmd+V, including when
+  ///   synthesized by tools like Raycast that don't reliably propagate the
+  ///   Cmd modifier to Flutter's HardwareKeyboard) are dispatched through
+  ///   selectors, which we handle below.
   TextInputSource get _inputSource {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
         return TextInputSource.ime;
       default:
         return TextInputSource.keyboard;
@@ -902,6 +915,13 @@ class EditorState extends State<Editor> {
                         : defaultKeyboardActions),
                     _bubbleSpecialKeys, // Process meta key combos first to allow propagation
                   ],
+                  selectorHandlers: {
+                    ...defaultEditorSelectorHandlers,
+                    // macOS `paste:` selector — fires for Cmd+V via the IME,
+                    // including synthetic events (e.g. Raycast emoji picker)
+                    // whose Cmd modifier doesn't reach HardwareKeyboard.
+                    'paste:': _handlePasteSelector,
+                  },
                 ),
               ),
             ),
@@ -1651,12 +1671,37 @@ class EditorState extends State<Editor> {
       return ExecutionInstruction.continueExecution;
     }
 
+    _triggerSmartPaste(selection);
+    return ExecutionInstruction.haltExecution;
+  }
+
+  /// Selector handler for macOS `paste:`. Fires when the OS dispatches Cmd+V
+  /// (or any synthesized paste action, e.g. from Raycast's CGEventPost) via
+  /// `NSTextInputClient`. This path doesn't depend on Flutter's
+  /// HardwareKeyboard modifier tracking, so it works for synthetic events
+  /// where the Cmd flag isn't reflected in `isMetaPressed`.
+  void _handlePasteSelector(SuperEditorContext editContext) {
+    final selection = editContext.composer.selection;
+    if (selection == null) return;
+    _triggerSmartPaste(selection);
+  }
+
+  /// Schedule a smart paste, deduplicating against same-tick hardware/selector
+  /// dispatches for the same Cmd+V. On macOS in IME mode both the hardware
+  /// key handler and the `paste:` selector fire for a real Cmd+V; synthesized
+  /// events from tools like Raycast only reach the selector path.
+  void _triggerSmartPaste(DocumentSelection selection) {
+    final now = DateTime.now();
+    if (_lastSmartPasteAt != null &&
+        now.difference(_lastSmartPasteAt!).inMilliseconds < 200) {
+      return;
+    }
+    _lastSmartPasteAt = now;
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await _readClipboardAndPaste(selection);
     });
-
-    return ExecutionInstruction.haltExecution;
   }
 
   /// Read clipboard using super_clipboard and paste with format priority.
