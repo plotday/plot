@@ -37,6 +37,17 @@ import {
   updateAttendeePartstat,
 } from "./ics-parser";
 
+/**
+ * Build canonical identifiers for an Apple calendar (ICS) event. First
+ * element is the connector-native source; second is the cross-vendor
+ * `icaluid:<UID>` alias so other connectors can bundle into this thread.
+ * Apple's ICS UID is already the iCalUID by spec.
+ */
+function buildEventSources(uid: string | null | undefined): string[] {
+  if (!uid) return [];
+  return [`apple-calendar:${uid}`, `icaluid:${uid}`];
+}
+
 type SyncState = {
   calendarHref: string;
   initialSync: boolean;
@@ -528,6 +539,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
       const link: NewLinkWithNotes = {
         source,
+        sources: buildEventSources(icsEvent.uid),
         type: "event",
         title: icsEvent.summary ?? undefined,
         status: "Cancelled",
@@ -661,6 +673,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     const link: NewLinkWithNotes = {
       source,
+      sources: buildEventSources(icsEvent.uid),
       type: "event",
       title: icsEvent.summary || "",
       status:
@@ -762,6 +775,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         type: "event",
         title: undefined,
         source: masterSource,
+        sources: buildEventSources(icsEvent.uid),
         channelId: calendarHref,
         meta: { syncProvider: "apple", syncableId: calendarHref },
         scheduleOccurrences: [cancelledOccurrence],
@@ -828,6 +842,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       type: "event",
       title: undefined,
       source: masterSource,
+      sources: buildEventSources(icsEvent.uid),
       channelId: calendarHref,
       meta: { syncProvider: "apple", syncableId: calendarHref },
       scheduleOccurrences: [occurrence],

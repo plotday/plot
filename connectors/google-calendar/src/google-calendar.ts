@@ -45,6 +45,27 @@ type Calendar = {
   primary: boolean;
 };
 
+/**
+ * Build the canonical identifiers for a calendar event. The first element is
+ * the connector-native source (preserves existing thread.key dedup across
+ * users). Additional elements are cross-vendor aliases that let other
+ * connectors (e.g. meeting-notes apps) bundle into this thread by referencing
+ * the same canonical identifier.
+ */
+function buildEventSources(opts: {
+  iCalUID?: string | null;
+  eventId?: string | null;
+  fallbackId?: string | null;
+}): string[] {
+  const { iCalUID, eventId, fallbackId } = opts;
+  const sources: string[] = [];
+  const primaryId = iCalUID ?? eventId ?? fallbackId;
+  if (primaryId) sources.push(`google-calendar:${primaryId}`);
+  if (iCalUID) sources.push(`icaluid:${iCalUID}`);
+  if (eventId) sources.push(`google-event:${eventId}`);
+  return sources;
+}
+
 type SyncOptions = {
   timeMin?: Date | null;
   timeMax?: Date | null;
@@ -960,6 +981,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             // Convert to link with cancellation note
             const link: NewLinkWithNotes = {
               source: canonicalUrl,
+              sources: buildEventSources({
+                iCalUID: event.iCalUID,
+                eventId: event.id,
+              }),
               created: event.created ? new Date(event.created) : undefined,
               type: "event",
               title: activityData.title || undefined,
@@ -1105,6 +1130,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
           const link: NewLinkWithNotes = {
             source: canonicalUrl,
+            sources: buildEventSources({
+              iCalUID: event.iCalUID,
+              eventId: event.id,
+            }),
             created: event.created ? new Date(event.created) : undefined,
             type: "event",
             status:
@@ -1324,6 +1353,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         type: "event",
         title: undefined,
         source: masterCanonicalUrl,
+        sources: buildEventSources({
+          iCalUID: event.iCalUID,
+          fallbackId: event.recurringEventId,
+        }),
         channelId: calendarId,
         meta: { syncProvider: "google", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
@@ -1400,6 +1433,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       type: "event",
       title: undefined,
       source: masterCanonicalUrl,
+      sources: buildEventSources({
+        iCalUID: event.iCalUID,
+        fallbackId: event.recurringEventId,
+      }),
       channelId: calendarId,
       meta: { syncProvider: "google", syncableId: calendarId },
       scheduleOccurrences: [occurrence],

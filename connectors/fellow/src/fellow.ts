@@ -287,10 +287,21 @@ export class Fellow extends Connector<Fellow> {
       // Fellow note ids are tenant-scoped, so qualify with the workspace
       // subdomain to keep source globally unique across users.
       source: `fellow:${subdomain}:note:${note.id}`,
-      // Cross-connector thread bundling: join existing calendar thread
-      ...(note.event_guid
-        ? { relatedSource: `google-calendar:${note.event_guid}` }
-        : {}),
+      // Cross-connector thread bundling: include canonical aliases so this
+      // note attaches to the existing calendar event thread regardless of
+      // which calendar connector created it. `icaluid:` works for Google,
+      // Outlook, and Apple; `google-event:` and `google-calendar:` cover the
+      // legacy Google-only path (Fellow's `event_guid` is the calendar UID).
+      sources: [
+        `fellow:${subdomain}:note:${note.id}`,
+        ...(note.event_guid
+          ? [
+              `google-calendar:${note.event_guid}`,
+              `icaluid:${note.event_guid}`,
+              `google-event:${note.event_guid}`,
+            ]
+          : []),
+      ],
       title: note.title || "Meeting Notes",
       type: "meeting",
       channelId,
