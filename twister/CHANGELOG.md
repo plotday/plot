@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.51.0
+
+### Added
+
+- `NewLink.sources: string[]` for cross-connector thread bundling via canonical aliases. Two links whose `sources` arrays overlap share a thread. `NewLink.source` (single string) and `NewLink.relatedSource` are deprecated — the runtime normalizes legacy values into `sources` on save, so existing connectors keep working unchanged. ([#138](https://github.com/plotday/plot/pull/138) [`bfcb534`](https://github.com/plotday/plot/commit/bfcb5343e57956a2652d12088b3fc953a602adbf))
+
 ## 0.50.0
 
 ### Added
