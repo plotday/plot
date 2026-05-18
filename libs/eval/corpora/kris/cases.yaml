@@ -9,8 +9,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: talentlift
+      gold_rationale: Contact and topic
       expected: plot
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -25,8 +25,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: finance-admin
+      gold_rationale: Topic
       expected: plot
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -57,8 +57,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: onboarding
+      gold_rationale: Content
       expected: plot
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -73,8 +73,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: execution-focus-leader-discovery
+      gold_rationale: Content
       expected: plot
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -106,8 +106,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: personal
+      gold_rationale: Channel, content
       expected: personal
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -123,8 +123,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: onboarding
+      gold_rationale: Content
       expected: personal
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -157,8 +157,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: income
+      gold_rationale: Content
       expected: personal
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -314,8 +314,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: finance-admin
+      gold_rationale: Content
       expected: onboarding
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -347,7 +347,7 @@ cases:
       groups: []
       embedding_ref: emb-166db22735
     labels:
-      gold: null
+      gold: product
       gold_rationale: ""
       expected: wififi-licensing
       expected_stage: null
@@ -428,8 +428,8 @@ cases:
       groups: []
       embedding_ref: emb-24ad30d59b
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: onboarding
+      gold_rationale: Content
       expected: onboarding
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -462,8 +462,8 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
-      gold_rationale: ""
+      gold: finance-admin
+      gold_rationale: Content
       expected: movement-building
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
@@ -497,9 +497,161 @@ cases:
       groups: []
       embedding_ref: null
     labels:
-      gold: null
+      gold: building-our-team
       gold_rationale: ""
       expected: building-our-team
       expected_stage: null
       expected_recorded_at: 2026-05-18T00:30:34.947Z
+    notes: ""
+  - id: 031-019e0797
+    description: Curated from prod (manual pick, other).
+    candidate:
+      title: Google Access Approval Pending
+      topic: 019e03e8-6de5-71ab-9d38-75b7dec26da7
+      contacts:
+        - c-3f5cc8fd9fc9
+        - c-50067386eb6a
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: content
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.597Z
+    notes: ""
+  - id: 032-019dac0c
+    description: Curated from prod (manual pick, channel:N).
+    candidate:
+      title: "Fwd: HONK Parking Receipt"
+      topic: channel:124
+      contacts:
+        - c-6d7f6da85922
+        - c-77278cefba52
+        - c-3f5cc8fd9fc9
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: wififi-licensing
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.626Z
+    notes: ""
+  - id: 033-019db0d8
+    description: Curated from prod (manual pick, no-topic).
+    candidate:
+      title: "Contact lawyer re: Stephen's claim"
+      topic: null
+      contacts:
+        - c-3f5cc8fd9fc9
+      groups: []
+      embedding_ref: emb-48cccefc73
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: personal
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.655Z
+    notes: ""
+  - id: 034-019cba8e
+    description: Curated from prod (manual pick, no-topic).
+    candidate:
+      title: File personal taxes
+      topic: null
+      contacts:
+        - c-3f5cc8fd9fc9
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: personal
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.675Z
+    notes: ""
+  - id: 035-019db0c5
+    description: Curated from prod (manual pick, no-topic).
+    candidate:
+      title: Your missing threads should have returned. This was a…
+      topic: null
+      contacts:
+        - c-3f5cc8fd9fc9
+        - c-6864536f26df
+      groups: []
+      embedding_ref: emb-19e8f3d4c3
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: finance-admin
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.699Z
+    notes: ""
+  - id: 036-019cb8fe
+    description: Curated from prod (manual pick, no-topic).
+    candidate:
+      title: Set up Amy's Meal Train with Shane
+      topic: null
+      contacts:
+        - c-3f5cc8fd9fc9
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: personal
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.724Z
+    notes: ""
+  - id: 037-019d990a
+    description: Curated from prod (manual pick, no-topic).
+    candidate:
+      title: Plot on mobile zoomed in device tab bar has line overflowing…
+      topic: null
+      contacts:
+        - c-3f5cc8fd9fc9
+        - c-25a0f07273dc
+      groups: []
+      embedding_ref: emb-d806a9e24d
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: personal
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.747Z
+    notes: ""
+  - id: 038-019e2d3a
+    description: Curated from prod (manual pick, channel:N).
+    candidate:
+      title: Confidentiality agreement + code of conduct
+      topic: channel:9716
+      contacts:
+        - c-77278cefba52
+        - c-e5b7dd0f4383
+        - c-76b433152c78
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: talentlift
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.777Z
+    notes: ""
+  - id: 039-019e2c66
+    description: Curated from prod (manual pick, channel:N).
+    candidate:
+      title: 2025-2028 Strateg... - Including a target percentage of earn...
+      topic: channel:9691
+      contacts:
+        - c-495cd2ddf8b7
+        - c-cf8b9784fd1f
+      groups: []
+      embedding_ref: null
+    labels:
+      gold: null
+      gold_rationale: ""
+      expected: marketing
+      expected_stage: null
+      expected_recorded_at: 2026-05-18T14:59:19.797Z
     notes: ""
