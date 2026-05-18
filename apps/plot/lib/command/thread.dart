@@ -750,10 +750,15 @@ class EditThread extends ShowForm {
                     label: 'Priority',
                     initialValue: thread.priority,
                     required: true,
-                    items: (search) async => Priority.get(
-                      order: PriorityOrder.nested,
-                      search: search,
-                    ),
+                    items: (search) async {
+                      final priorities = await Priority.get(
+                        order: PriorityOrder.nested,
+                      );
+                      if (search == null || search.isEmpty) return priorities;
+                      return priorities
+                          .where((p) => p.matchesSearch(search))
+                          .toList();
+                    },
                     labelBuilder: (p) => PriorityLabel(priority: p),
                     titleBuilder: (p) => p.ancestorsLabel() != null
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'

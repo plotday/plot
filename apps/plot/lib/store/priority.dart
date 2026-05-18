@@ -1125,17 +1125,23 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .join();
   }
 
-  /// Whether this priority matches [search] against its own title or any
-  /// visible ancestor title. Lets a query like "Personal" return both
-  /// "Personal" itself and every descendant filed under it.
+  /// Whether this priority matches [search] using word-prefix matching
+  /// against its own title and every visible ancestor title. Each
+  /// whitespace-separated search token must prefix some word somewhere
+  /// in the path — so "per" matches "Personal" and "Personal › Fitness"
+  /// but never "Hyper", and "per fit" still matches "Personal › Fitness".
   bool matchesSearch(String search) {
     final query = search.trim().toLowerCase();
     if (query.isEmpty) return true;
-    if (title.toLowerCase().contains(query)) return true;
-    for (final ancestor in ancestors()) {
-      if (ancestor.title.toLowerCase().contains(query)) return true;
-    }
-    return false;
+    final tokens = query.split(RegExp(r'\s+'));
+    final words = <String>[
+      title,
+      for (final ancestor in ancestors()) ancestor.title,
+    ]
+        .expand((t) => t.toLowerCase().split(RegExp(r'[\s/]+')))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    return tokens.every((t) => words.any((w) => w.startsWith(t)));
   }
 
   /// Get the effective topOrder for sorting, considering both this priority's

@@ -592,10 +592,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     final result = await SelectModal.open<Priority>(
       context,
       items: (search) async {
-        final priorities = await Priority.get(
-          order: PriorityOrder.nested,
-          search: search,
-        );
+        final priorities = await Priority.get(order: PriorityOrder.nested);
         return [SelectGroup(title: null, items: priorities)];
       },
       itemBuilder: (priority, _) =>
@@ -603,8 +600,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       selectedValue: state.draft.priority,
       prompt: 'Select priority',
       onAdd: (ctx) => createPriorityInline(ctx, parent: state.draft.priority),
-      filter: (priority, search) =>
-          priority.title.toLowerCase().contains(search),
+      filter: (priority, search) => priority.matchesSearch(search),
     );
     if (!result.present) return;
     final picked = result.value;

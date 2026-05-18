@@ -159,12 +159,11 @@ class PriorityGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final priorities = await Priority.get(
-      order: PriorityOrder.recent,
-      search: search,
-    );
-    final all = priorities.map((priority) => builder(priority)).toList();
-    return CommandGroup.filter(all, search);
+    final priorities = await Priority.get(order: PriorityOrder.recent);
+    final filtered = search == null || search.isEmpty
+        ? priorities
+        : priorities.where((p) => p.matchesSearch(search)).toList();
+    return filtered.map((priority) => builder(priority)).toList();
   }
 }
 

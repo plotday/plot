@@ -66,10 +66,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
     final result = await SelectModal.open<Priority>(
       context,
       items: (search) async {
-        final priorities = await Priority.get(
-          order: PriorityOrder.nested,
-          search: search,
-        );
+        final priorities = await Priority.get(order: PriorityOrder.nested);
         return [SelectGroup(title: null, items: priorities)];
       },
       itemBuilder: (priority, _) =>
@@ -77,8 +74,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
       selectedValue: _selectedPriority,
       prompt: 'Priority',
       onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),
-      filter: (priority, search) =>
-          priority.title.toLowerCase().contains(search),
+      filter: (priority, search) => priority.matchesSearch(search),
     );
 
     if (result.present) {
