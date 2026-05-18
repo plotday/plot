@@ -75,15 +75,6 @@ threads:
     groups: []
     embedding_ref: null
     filed_to_priority: talentlift
-  - id: 019e2c58-a6c3-71d8-9c91-cf6334c05b4f
-    title: Board retreat session
-    topic: channel:9694
-    contacts:
-      - c-76b433152c78
-      - c-495cd2ddf8b7
-    groups: []
-    embedding_ref: null
-    filed_to_priority: talentlift
   - id: 019dacb5-7b16-7329-a6e8-45bce4aa9de6
     title: Get Mike to help with T2
     topic: 019c2469-a944-7804-b812-c9f5e02c1eaa
@@ -188,14 +179,6 @@ threads:
     groups: []
     embedding_ref: null
     filed_to_priority: personal
-  - id: 019dbfda-7145-7964-a553-77a448e6fc8c
-    title: Test Doc 1 -- changed
-    topic: channel:155
-    contacts:
-      - c-3f5cc8fd9fc9
-    groups: []
-    embedding_ref: null
-    filed_to_priority: testing
   - id: 019cc6a2-cd91-7163-a473-d91d924238c3
     title: Find a sump pump cover
     topic: null
