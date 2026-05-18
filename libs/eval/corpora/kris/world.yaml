@@ -18,12 +18,12 @@ priorities:
   key: null
 - slug: using-plot
   id: 019d8cc7-caac-70ca-9d07-d8119383a0cb
-  path: ajHjvN5oiGEd.4cpLW7039QFf
+  path: ajHjvN5oiGEd.l3HS.fByy.4cpLW7039QFf
   title: Using Plot
   key: '@plot.app'
 - slug: wififi-licensing
   id: 019cc015-8e4e-7076-8b35-257e775a7eac
-  path: ajHjvN5oiGEd.7y4G
+  path: ajHjvN5oiGEd.JSbh.7y4G
   title: WiFiFi Licensing
   key: null
 - slug: getting-started
@@ -38,7 +38,7 @@ priorities:
   key: null
 - slug: finances
   id: 019cba8e-344a-7cc8-a5d7-5d38ba68a8d8
-  path: ajHjvN5oiGEd.JSbh.vgfo
+  path: ajHjvN5oiGEd.uxKa.vgfo
   title: Finances
   key: null
 - slug: plot
@@ -158,17 +158,17 @@ priorities:
   key: null
 - slug: twist-development
   id: 019bd6cd-a592-7428-99fd-10501ea6b4dc
-  path: ajHjvN5oiGEd.v38Q
+  path: ajHjvN5oiGEd.l3HS.1VC7.v38Q
   title: Twist Development
   key: '@plot.twist-dev'
 - slug: income
   id: 019dd49a-fa59-7e53-9058-fef0eff70fa2
-  path: ajHjvN5oiGEd.ZmMT
+  path: ajHjvN5oiGEd.JSbh.ZmMT
   title: Income
   key: null
 - slug: home
   id: 019e3c6b-4d8a-7017-84aa-f81de8837d11
-  path: ajHjvN5oiGEd.JSbh.4a0H
+  path: ajHjvN5oiGEd.uxKa.4a0H
   title: Home
   key: null
 - slug: friends
@@ -183,7 +183,7 @@ priorities:
   key: null
 - slug: kids
   id: 019e3c75-7dda-7ee2-855e-91006407f9d4
-  path: ajHjvN5oiGEd.JSbh.yQyF
+  path: ajHjvN5oiGEd.uxKa.yQyF
   title: Kids
   key: null
 - slug: board
@@ -200,6 +200,26 @@ priorities:
   id: 019e3c75-fac4-7b10-be1d-0b74467c7a9c
   path: ajHjvN5oiGEd.RGvx.1Ilq.Ufyi
   title: Retreat
+  key: null
+- slug: elevation
+  id: 019e3c88-63ad-73f8-b400-6d21fb449a3f
+  path: ajHjvN5oiGEd.JSbh.QUso
+  title: Elevation
+  key: null
+- slug: user-success
+  id: 019e3c92-1eaa-75a4-9b4b-76230bf9a86c
+  path: ajHjvN5oiGEd.l3HS.fByy
+  title: User Success
+  key: null
+- slug: governance-committee
+  id: 019e3c7c-0f48-7df4-9c46-2467abd834bc
+  path: ajHjvN5oiGEd.RGvx.1Ilq.RzAl
+  title: Governance Committee
+  key: null
+- slug: search-committee
+  id: 019e3c7c-66a3-7cad-aa45-c25b3f80202d
+  path: ajHjvN5oiGEd.RGvx.1Ilq.YPZH
+  title: Search Committee
   key: null
 contacts:
 - slug: c-495cd2ddf8b7
