@@ -53,9 +53,14 @@ class UserSettingsEntity {
   }
 
   static Future<UserSettingsRow?> get() async {
+    // Matches the guard in [watch] — start() callers from the UserReady
+    // listener can race with a forced sign-out that has already nulled
+    // `_userId`.
+    final userId = Base.userIdOrNull;
+    if (userId == null) return null;
     final result =
         await (table.select()
-              ..where((tbl) => tbl.userId.equals(Base.userId.toBytes())))
+              ..where((tbl) => tbl.userId.equals(userId.toBytes())))
             .getSingleOrNull();
     return result;
   }
