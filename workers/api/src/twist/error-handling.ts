@@ -5,6 +5,7 @@ import { createLogger } from "@plotday/worker-util";
 import { processStackTrace } from "../utils/stacktrace";
 import { Tracker } from "../utils/tracker";
 import { isTransientError } from "../utils/transient-error";
+import { ThreadFilingSkippedError } from "./tools/plot/thread-helpers";
 
 /**
  * Retrieves the sourcemap for a twist from R2 storage.
@@ -78,6 +79,15 @@ export async function handleTwistOperation<T>(
     // these silently — escalating them to TWIST_LOGS_QUEUE or PostHog
     // would just add noise to the user-facing twist log on every retry.
     if (isTransientError(error)) {
+      throw error;
+    }
+
+    // ThreadFilingSkippedError is a "skip" sentinel, not a failure. It fires
+    // when a team-connector tries to file a thread for a user who has no
+    // priority in the team — a normal outcome of stale team membership.
+    // Suppress it from the twist log and PostHog Error Tracking so it doesn't
+    // pollute error reporting. Still rethrow so callers can short-circuit.
+    if (error instanceof ThreadFilingSkippedError) {
       throw error;
     }
 

@@ -82,6 +82,25 @@ export function handleDbOperationError(
 }
 
 /**
+ * Marker error thrown when a team-connector tries to file a thread for a user
+ * who is not in the connector's team (no matching team priority for them).
+ * This is a normal "skip" condition — the runtime suppresses it from the
+ * twist error log and PostHog Error Tracking so it doesn't masquerade as a bug.
+ *
+ * Why: A team-scoped twist_instance can outlive the user's team membership
+ * (e.g. they were removed from the team). Webhooks for that connector still
+ * dispatch to the user's twist_instance, but the user has nowhere to file the
+ * resulting thread. Throwing aborts the per-user filing without polluting
+ * error reporting.
+ */
+export class ThreadFilingSkippedError extends Error {
+  constructor(message = "Cannot file thread: user is not in the team associated with this connector.") {
+    super(message);
+    this.name = "ThreadFilingSkippedError";
+  }
+}
+
+/**
  * Converts ActorType enum to database actor type string.
  */
 export function actorTypeToString(type: ActorType): string {

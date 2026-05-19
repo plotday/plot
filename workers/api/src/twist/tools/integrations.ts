@@ -38,6 +38,7 @@ import {
   type StoredTokenData,
 } from "../../provider";
 import { hashExternalContent } from "./hash-external-content";
+import { ThreadFilingSkippedError } from "./plot/thread-helpers";
 import type { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
 import { invokeWebhookCallback } from "../invoke-webhook";
@@ -1158,7 +1159,18 @@ export class Integrations extends Tool implements IAuth {
     await this.injectAccountContact(link);
 
     const plot = this.getPlot();
-    const threadId = await plot.createLink(link);
+    let threadId: Uuid;
+    try {
+      threadId = await plot.createLink(link);
+    } catch (error) {
+      if (error instanceof ThreadFilingSkippedError) {
+        // Team-connector firing for a user who has no priority in the team.
+        // Treat as a soft skip — saveLink already returns null for filtered
+        // items, so connectors that handle null gracefully keep working.
+        return null;
+      }
+      throw error;
+    }
 
     // Propagate status tags to the thread
     await this.propagateLinkStatusTags(plot, threadId);

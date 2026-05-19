@@ -27,6 +27,7 @@ import {
   markThreadReadForAuthor,
   prepareThreadForDb,
   processTagsActors,
+  ThreadFilingSkippedError,
   type PreparedThread,
 } from "./thread-helpers";
 import { fromDbThread } from "./converters";
@@ -186,8 +187,11 @@ export async function createThread(
     // Use shared helper for all preparation logic
     const prepared = await prepareThreadForDb(plot, activity);
     if (!prepared) {
-      // Team-connector thread with no matching team priority for this user — skip.
-      throw new Error("Cannot file thread: user is not in the team associated with this connector.");
+      // Team-connector thread with no matching team priority for this user.
+      // Skip filing by throwing the marker error: callers in this worker
+      // (integrations.saveLink) catch it and return null so connector batches
+      // continue, and handleTwistOperation suppresses it from error reporting.
+      throw new ThreadFilingSkippedError();
     }
     const { priorityId, authorId, ...prep } = prepared;
 

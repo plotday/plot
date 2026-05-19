@@ -71,7 +71,14 @@ BEGIN
             FROM public.priority
             WHERE user_id = NEW.user_id
               AND path = subpath(NEW.path, 0, nlevel(NEW.path) - 1);
-            IF NEW.team_id IS DISTINCT FROM v_parent_team_id THEN
+            IF v_parent_team_id IS NULL AND nlevel(NEW.path) = 2 THEN
+                -- Top-level promotion: a direct child of the root may be
+                -- promoted from NULL to a team_id even when the root has
+                -- no team scope. Mirrors the INSERT branch in
+                -- priority_team_inherit so an existing user-scoped priority
+                -- can be re-tagged as the team's top-level priority.
+                NULL;
+            ELSIF NEW.team_id IS DISTINCT FROM v_parent_team_id THEN
                 RAISE EXCEPTION 'descendant priority.team_id must match parent (%); got %',
                     v_parent_team_id, NEW.team_id;
             END IF;
