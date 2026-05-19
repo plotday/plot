@@ -1068,12 +1068,14 @@ export async function markThreadReadForAuthor(
  *
  * @param plot - The Plot instance
  * @param activity - The NewThread or NewThreadWithNotes to prepare
- * @returns PreparedThread containing all data needed for insertion
+ * @returns PreparedThread containing all data needed for insertion, or null
+ *   if the thread cannot be filed for the owner user (e.g. team-connector thread
+ *   with no matching team priority for this user).
  */
 export async function prepareThreadForDb(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes
-): Promise<PreparedThread> {
+): Promise<PreparedThread | null> {
   // Activity exceptions are handled via occurrences[] array
   if ("recurrence" in activity || "occurrence" in activity) {
     throw new Error(
@@ -1124,6 +1126,7 @@ export async function prepareThreadForDb(
   } else {
     // Classify via user-defined priority rules.
     const ownerUserId = await plot.getUserId();
+    const creatorTeamId = await plot.getTwistInstanceTeamId(plot.twistInstanceId);
 
     const matched = await rpc(plot.db, "classify_thread_for_user", {
       p_user_id: ownerUserId,
@@ -1136,8 +1139,43 @@ export async function prepareThreadForDb(
         : Array.isArray(matched)
           ? (matched[0] as string | undefined)
           : (matched as string | null | undefined);
-    targetPriorityId =
-      matchedPriorityId ?? (await plot.getDefaultPriorityId());
+
+    // classify_thread_for_user can only derive team scope when given a
+    // p_thread_id, but the thread doesn't exist yet at this point. So for
+    // team-connector twists, validate the matched priority's team_id here.
+    // Without this, a team thread could land in a non-team priority via
+    // topic_shortcircuit / scoring / keyed_priority / channel_default /
+    // priority_prefix stages.
+    let validatedMatchedId: string | null = null;
+    if (matchedPriorityId != null) {
+      if (creatorTeamId != null) {
+        const matchedTeam = await plot.db
+          .selectFrom("priority")
+          .select("team_id")
+          .where("id", "=", matchedPriorityId)
+          .executeTakeFirst();
+        const matchedTeamId = (matchedTeam?.team_id as string | null) ?? null;
+        if (matchedTeamId != null && matchedTeamId === creatorTeamId) {
+          validatedMatchedId = matchedPriorityId;
+        }
+      } else {
+        validatedMatchedId = matchedPriorityId;
+      }
+    }
+
+    if (validatedMatchedId != null) {
+      targetPriorityId = validatedMatchedId;
+    } else if (creatorTeamId != null) {
+      // Team-connector authored: must file under a team priority. NULL means
+      // user is not in this team — don't file for them.
+      const teamPriorityId = await plot.getFirstTeamPriorityId(ownerUserId, creatorTeamId);
+      if (teamPriorityId == null) {
+        return null; // No filing for this user.
+      }
+      targetPriorityId = teamPriorityId;
+    } else {
+      targetPriorityId = await plot.getRootPriorityId(ownerUserId);
+    }
   }
 
   await plot.validatePriorityAccess(targetPriorityId);

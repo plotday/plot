@@ -167,6 +167,7 @@ FROM
     JOIN thread_priority tp ON tp.thread_id = a.id
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
+    JOIN priority p ON p.id = tp.priority_id
     LEFT JOIN thread_unread tu ON tu.user_id = tp.user_id
         AND tu.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
@@ -175,6 +176,15 @@ WHERE
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
+    )
+    AND (
+        p.team_id IS NULL
+        OR EXISTS (
+            SELECT 1 FROM public.team_user tu2
+            WHERE tu2.team_id = p.team_id
+              AND tu2.user_id = tp.user_id
+              AND tu2.archived_at IS NULL
+        )
     );
 
 

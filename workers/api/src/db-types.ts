@@ -501,6 +501,7 @@ export interface Priority {
   path: string;
   seq: Generated<string>;
   sync_depth: number | null;
+  team_id: Int8 | null;
   title: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
@@ -660,9 +661,11 @@ export interface TeamSubscription {
 }
 
 export interface TeamUser {
+  archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   role: Generated<TeamRole>;
+  seq: Generated<string>;
   team_id: Int8;
   user_id: string;
 }
@@ -1465,6 +1468,16 @@ export interface UserSync {
   user_id: string;
 }
 
+export interface UserTeamUser {
+  archived_at: Timestamp | null;
+  id: Int8 | null;
+  role: TeamRole | null;
+  seq: string | null;
+  team_id: Int8 | null;
+  team_name: string | null;
+  user_id: string | null;
+}
+
 export interface UserThread {
   activity_at: Timestamp | null;
   agenda_at: string | null;
@@ -1645,6 +1658,7 @@ export interface DB {
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
   "user.schedule": UserSchedule;
+  "user.team_user": UserTeamUser;
   "user.thread": UserThread;
   "user.thread_association": UserThreadAssociation;
   "user.thread_tags": UserThreadTags;

@@ -205,6 +205,19 @@ CREATE TRIGGER user_sync_schedule_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_schedule();
 
+-- User sync triggers for team_user table
+CREATE TRIGGER user_sync_team_user_insert
+  AFTER INSERT ON team_user
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_team_user();
+
+CREATE TRIGGER user_sync_team_user_update
+  AFTER UPDATE ON team_user
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_team_user();
+
 -- User sync triggers for group table
 CREATE TRIGGER user_sync_group_insert
   AFTER INSERT ON "group"

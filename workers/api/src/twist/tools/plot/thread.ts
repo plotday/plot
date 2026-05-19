@@ -27,6 +27,7 @@ import {
   markThreadReadForAuthor,
   prepareThreadForDb,
   processTagsActors,
+  type PreparedThread,
 } from "./thread-helpers";
 import { fromDbThread } from "./converters";
 import type { Plot } from "./index";
@@ -183,8 +184,12 @@ export async function createThread(
 ): Promise<{ id: Uuid; priorityId: string }> {
   try {
     // Use shared helper for all preparation logic
-    const { priorityId, authorId, ...prep } =
-      await prepareThreadForDb(plot, activity);
+    const prepared = await prepareThreadForDb(plot, activity);
+    if (!prepared) {
+      // Team-connector thread with no matching team priority for this user — skip.
+      throw new Error("Cannot file thread: user is not in the team associated with this connector.");
+    }
+    const { priorityId, authorId, ...prep } = prepared;
 
     // Set icon for twist-created threads if not already set by caller (e.g. createLink)
     // Skip auto-icon if the SDK 'type' field was set (mapped to icon by prepareThreadForDb)
@@ -633,7 +638,20 @@ export async function updateThread(
         .where("thread_id", "=", activityId)
         .where("user_id", "=", userId)
         .executeTakeFirst();
-      const priorityId = tpRow?.priority_id ?? await plot.getDefaultPriorityId();
+      let priorityId: string;
+      if (tpRow?.priority_id) {
+        priorityId = tpRow.priority_id;
+      } else {
+        // Fallback when thread_priority has no row for this user.
+        const creatorTeamId = await plot.getTwistInstanceTeamId(createdBy ?? plot.twistInstanceId);
+        if (creatorTeamId != null) {
+          // Team-connector authored: use the user's first team priority (if any).
+          const teamPriorityId = await plot.getFirstTeamPriorityId(userId, creatorTeamId);
+          priorityId = teamPriorityId ?? await plot.getRootPriorityId(userId);
+        } else {
+          priorityId = await plot.getRootPriorityId(userId);
+        }
+      }
 
       // Check if activity was created by this exact instance (fast path)
       const isExactInstance = createdBy === plot.twistInstanceId;
@@ -712,10 +730,17 @@ export async function updateThread(
     // Only notify sync DOs if we actually wrote something
     const hasTagUpdates = activity.tags !== undefined || activity.twistTags !== undefined;
     if (hasMeaningfulUpdates || hasTagUpdates) {
-      const defaultPriorityId = await plot.getDefaultPriorityId();
-      const prioritiesToNotify = new Set([defaultPriorityId]);
+      // Look up the thread's current priority for sync notification.
+      const tpNotify = await plot.db
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", activityId)
+        .executeTakeFirst();
+      const currentPriorityId =
+        tpNotify?.priority_id ?? (await plot.getRootPriorityId());
+      const prioritiesToNotify = new Set([currentPriorityId]);
       // If thread was moved, also notify the old priority
-      if (oldPriorityId && oldPriorityId !== defaultPriorityId) {
+      if (oldPriorityId && oldPriorityId !== currentPriorityId) {
         prioritiesToNotify.add(oldPriorityId);
       }
       await plot.notifySyncDOs(prioritiesToNotify);
@@ -957,13 +982,33 @@ export async function createThreads(
 
     const limit = pLimit(5);
     type DbActivity = { id: string; created_at: string | Date; priority_id: string };
-    const dbActivities: DbActivity[] = new Array(activities.length);
+    // dbActivities is sized after filtering — allocated below once filteredActivities is known.
+    let dbActivities: DbActivity[];
 
-    const preparedActivities = await Promise.all(
+    const allPreparedActivities = await Promise.all(
       processedActivities.map((activity) =>
         limit(() => prepareThreadForDb(plot, activity))
       )
     );
+
+    // Filter out activities that could not be filed (e.g. team-connector thread
+    // with no matching team priority for this user). Keep original and prepared
+    // in sync via a paired filter.
+    const filteredActivities: (NewThread | NewThreadWithNotes)[] = [];
+    const preparedActivities: PreparedThread[] = [];
+    for (let i = 0; i < processedActivities.length; i++) {
+      const prepared = allPreparedActivities[i];
+      if (prepared != null) {
+        filteredActivities.push(processedActivities[i]!);
+        preparedActivities.push(prepared);
+      }
+    }
+
+    if (preparedActivities.length === 0) {
+      return [];
+    }
+
+    dbActivities = new Array(preparedActivities.length);
 
     // Set icon for twist-created threads (single lookup for all activities)
     const ptRowBatch = await plot.db
@@ -974,7 +1019,7 @@ export async function createThreads(
     if (ptRowBatch) {
       const iconValue = `twist:${ptRowBatch.twist_id}`;
       for (let i = 0; i < preparedActivities.length; i++) {
-        const activity = processedActivities[i];
+        const activity = filteredActivities[i];
         // Skip if caller already set icon (e.g. createLink) or type (SDK sub-type)
         if ("icon" in activity && (activity as any).icon !== undefined) continue;
         if ("type" in activity && (activity as any).type !== undefined) continue;
@@ -1027,10 +1072,10 @@ export async function createThreads(
 
     // Process series-level tags for all activities
     const processedTagsArray: Array<Partial<Record<number, ActorId[]>> | null> =
-      new Array(activities.length);
+      new Array(preparedActivities.length);
 
     await Promise.all(
-      activities.map((activity, index) =>
+      filteredActivities.map((activity, index) =>
         limit(async () => {
           if (!activity.tags) {
             processedTagsArray[index] = null;
@@ -1085,8 +1130,8 @@ export async function createThreads(
     // Create notes for all activities, grouped by priority to pass context
     // and avoid redundant activity fetches inside createNote.
     const notesByPriority = new Map<string, NewNote[]>();
-    for (let index = 0; index < processedActivities.length; index++) {
-      const activity = processedActivities[index];
+    for (let index = 0; index < filteredActivities.length; index++) {
+      const activity = filteredActivities[index];
       if (
         !("notes" in activity) ||
         !activity.notes ||
@@ -1137,8 +1182,8 @@ export async function createThreads(
       authorId: string;
     }> = [];
 
-    for (let i = 0; i < activities.length; i++) {
-      const originalActivity = activities[i];
+    for (let i = 0; i < filteredActivities.length; i++) {
+      const originalActivity = filteredActivities[i];
       const shouldMarkAllAsRead = originalActivity?.unread === false;
 
       if (shouldMarkAllAsRead) {
@@ -1318,7 +1363,7 @@ export async function getThreads(
   } = options ?? {};
 
   const effectivePriorityId =
-    (priorityId as string | undefined) ?? (await plot.getDefaultPriorityId());
+    (priorityId as string | undefined) ?? (await plot.getRootPriorityId());
   await plot.validatePriorityAccess(effectivePriorityId);
 
   const clampedLimit = Math.min(Math.max(1, limit), 200);

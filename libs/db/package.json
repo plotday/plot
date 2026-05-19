@@ -16,7 +16,7 @@
     "apply-migrations": "./scripts/init-local-roles.sh && atlas migrate apply --env local --url \"${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/postgres}?sslmode=disable\" && ./scripts/db-lint.sh",
     "reset": "docker compose down -v && docker compose up -d && ./scripts/wait-for-pg.sh && ./scripts/init-local-roles.sh && atlas migrate apply --env local --url \"${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/postgres}?sslmode=disable\"",
     "lint": "pnpm --silent lint:pending-migrations && pnpm --silent lint:pending-types",
-    "lint:pending-migrations": "atlas migrate diff check_sync --env local 2>&1 | grep -q 'no changes' || (echo '❌ Pending migrations detected. Please apply or remove them.' && exit 1)",
+    "lint:pending-migrations": "bash -c 'OUT=$(atlas migrate diff check_sync --env local 2>&1); RC=$?; echo \"$OUT\"; if [ $RC -ne 0 ]; then echo \"❌ atlas migrate diff failed (exit $RC)\"; exit 1; fi; echo \"$OUT\" | grep -q \"no changes\" || (echo \"❌ Pending migrations detected. Please apply or remove them.\"; exit 1)'",
     "lint:pending-types": "tsx scripts/gen-types.ts --check",
     "test": "pnpm run test:setup && pnpm run test:lint && pnpm run test:run",
     "test:setup": "docker compose up -d && ./scripts/wait-for-pg.sh",

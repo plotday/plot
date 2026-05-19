@@ -488,6 +488,29 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (await query.getSingleOrNull()) != null;
   }
 
+  /// Returns the count of other non-archived top-level priorities that share
+  /// the same [teamId] as the given priority (excluding [excludeId]). A
+  /// top-level priority is one whose path has exactly one dot (depth == 2),
+  /// meaning its parent is the root priority. Used to decide whether archiving
+  /// a priority should trigger a "leave team" flow.
+  static Future<int> countOtherTopLevelTeamPriorities({
+    required BigInt teamId,
+    required Uuid excludeId,
+  }) async {
+    final query = Store.get.select(table)
+      ..where(
+        (t) =>
+            t.archivedAt.isNull() &
+            t.root.equals(false) &
+            t.teamId.equals(teamId) &
+            t.id.equalsValue(excludeId).not() &
+            // depth == 2: path has exactly one dot (e.g. "abc1.xyz2")
+            t.path.like('%.%') &
+            t.path.like('%.%.%').not(),
+      );
+    return (await query.get()).length;
+  }
+
   static Future<Priority> getDefault() async {
     return (await _default().getSingleOrNull())!;
   }
@@ -941,6 +964,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.topOrder,
     super.pomodoro = const Duration(minutes: 25),
     super.color,
+    super.teamId,
     this.draft = false,
     List<Uuid>? defaultContacts,
     List<Uuid>? defaultGroups,

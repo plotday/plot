@@ -17,7 +17,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "lint": "tsc --noEmit"
+    "lint": "wxt prepare && tsc --noEmit"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.279",

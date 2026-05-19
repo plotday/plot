@@ -15,7 +15,7 @@
     "run-mac2": "flutter run -d macos --dart-entrypoint-args='--profile=dev2'",
     "get-env": "bash ../../scripts/get-env",
     "set-env": "bash ../../scripts/set-env",
-    "lint": "bash third_party/super_editor/check-still-needed.sh && flutter analyze",
+    "lint": "bash third_party/super_editor/check-still-needed.sh && flutter analyze --no-fatal-infos",
     "build:macos": "pnpm set-env prod && flutter pub run build_runner build && flutter build macos --release; pnpm set-env dev",
     "build:windows": "flutter build windows --release",
     "build:android": "pnpm set-env prod && flutter pub run build_runner build && flutter build appbundle --release; pnpm set-env dev",

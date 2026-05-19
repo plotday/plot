@@ -337,6 +337,7 @@ Drag-and-drop moves threads between sections (drop on Today to make active, on a
 - Organization-level Stripe billing (separate from personal subscription)
 - Effective plan resolution (highest tier across personal + org memberships)
 - Organization management page (members, domains, billing)
+- Team-firewalled priorities: threads under a team-tagged top-level priority are visible only to current team members; joining a team auto-creates a priority, and archiving your last team priority prompts to leave the team
 
 ## Performance & Scalability
 

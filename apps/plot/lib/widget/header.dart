@@ -6,8 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'package:prism_flutter/prism_flutter.dart';
-
 import 'package:plot/command/command.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/colors.dart';

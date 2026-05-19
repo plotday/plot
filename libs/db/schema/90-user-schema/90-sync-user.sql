@@ -652,6 +652,43 @@ BEGIN
 END;
 $function$;
 
+-- User sync trigger function for team_user changes.
+-- Notifies the affected user directly (team_user rows are per-user).
+-- team_user has no updated_at column so we use now() for last_update_at.
+CREATE OR REPLACE FUNCTION public.sync_user_for_team_user ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_seq xid8;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(seq) INTO v_max_seq
+    FROM
+        new_table;
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
+    -- Notify the affected user directly
+    FOR v_user_id IN SELECT DISTINCT
+        user_id
+    FROM
+        new_table
+    ORDER BY
+        user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'team_user', now(), v_max_seq)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
 -- User sync trigger function for group changes.
 CREATE OR REPLACE FUNCTION public.sync_user_for_group ()
     RETURNS TRIGGER

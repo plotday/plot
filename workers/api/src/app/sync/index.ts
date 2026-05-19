@@ -25,6 +25,8 @@ import threadUnread from "./thread-unread";
 import groups from "./groups";
 import topics from "./topics";
 import priorityMoves from "./priority-moves";
+import priorityArchiveLeave from "./priority-archive-leave";
+import teamUsers from "./team-users";
 
 const sync = new Hono<{ Bindings: Bindings }>();
 
@@ -51,6 +53,8 @@ sync.route("/", threadAssociations);
 sync.route("/", groups);
 sync.route("/", topics);
 sync.route("/", priorityMoves);
+sync.route("/", priorityArchiveLeave);
+sync.route("/", teamUsers);
 
 sync.onError((err, c) => {
   // Handle authorization errors from assertPriorityAccess/assertThreadAccess

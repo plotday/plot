@@ -34,7 +34,7 @@ export async function getPriorities(
   } = options ?? {};
 
   const effectiveParentId =
-    (parentId as string | undefined) ?? (await plot.getDefaultPriorityId());
+    (parentId as string | undefined) ?? (await plot.getRootPriorityId());
   await plot.validatePriorityAccess(effectiveParentId);
 
   if (includeDescendants) {
@@ -120,7 +120,7 @@ export async function createPriority(
     }
   } else {
     // Default to the twist owner's root priority
-    parentId = await plot.getDefaultPriorityId();
+    parentId = await plot.getRootPriorityId();
   }
 
   // Validate access to the parent priority

@@ -161,7 +161,7 @@ export class Plot extends Tool implements IPlot {
   private _owner?: Actor;
   private _twistId?: number;
   private _userId?: string;
-  private _defaultPriorityId?: string;
+  private _rootPriorityId?: string;
   private _priorityRoot?: string;
   private _aiEnabled?: boolean;
 
@@ -396,25 +396,59 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Returns the default priority ID for this twist instance — the owner
-   * user's root priority. Used when a caller doesn't supply an explicit
-   * target (e.g. priority.create() without a parent, link source fallback).
+   * Returns the owner user's root priority ID (oldest nlevel=1 priority).
+   * Used as a structural default when no explicit parent is supplied
+   * (e.g. priority.create() without a parent, link source fallback).
    */
-  async getDefaultPriorityId(): Promise<string> {
-    if (!this._defaultPriorityId) {
-      const userId = await this.getUserId();
+  async getRootPriorityId(userId?: string): Promise<string> {
+    if (!this._rootPriorityId) {
+      const uid = userId ?? (await this.getUserId());
       const row = await this.db
         .selectFrom("priority")
         .select("id")
-        .where("user_id", "=", userId)
+        .where("user_id", "=", uid)
         .where("archived_at", "is", null)
         .orderBy(sql`nlevel(path)`, "asc")
         .orderBy("created_at", "asc")
         .limit(1)
         .executeTakeFirstOrThrow();
-      this._defaultPriorityId = row.id;
+      this._rootPriorityId = row.id;
     }
-    return this._defaultPriorityId;
+    return this._rootPriorityId;
+  }
+
+  /**
+   * Returns the team_id (as a string, matching the Int8 select type) for a
+   * twist_instance actor, or null if it is a personal (non-team) twist instance.
+   */
+  async getTwistInstanceTeamId(actorId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("twist_instance")
+      .select("team_id")
+      .where("id", "=", actorId)
+      .executeTakeFirst();
+    // Int8 columns are returned as strings at runtime.
+    return (row?.team_id as string | null) ?? null;
+  }
+
+  /**
+   * Returns the ID of the user's first (shallowest, oldest) priority that
+   * belongs to the given team, or null if the user has no team priorities.
+   * @param teamId - The team_id as a string (Int8 select type).
+   */
+  async getFirstTeamPriorityId(userId: string, teamId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("priority")
+      // @ts-ignore - Kysely infers Int8 filter as number, but string is correct at runtime
+      .where("team_id", "=", teamId)
+      .select("id")
+      .where("user_id", "=", userId)
+      .where("archived_at", "is", null)
+      .orderBy(sql`nlevel(path)`, "asc")
+      .orderBy("created_at", "asc")
+      .limit(1)
+      .executeTakeFirst();
+    return row?.id ?? null;
   }
 
   /**
@@ -424,7 +458,7 @@ export class Plot extends Tool implements IPlot {
   async getPriorityRoot(): Promise<string> {
     if (!this._priorityRoot) {
       try {
-        const defaultPriorityId = await this.getDefaultPriorityId();
+        const defaultPriorityId = await this.getRootPriorityId();
         const data = await this.db
           .selectFrom("priority")
           .select("path")

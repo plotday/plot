@@ -56,6 +56,18 @@ class SyncOrchestrator {
     pullFn: Group.pull,
   );
 
+  /// TeamUser entity (read-only, no dependencies).
+  /// Tracks which teams the current user belongs to. On a team-leave the
+  /// server archives the user's team priorities (Task 6 trigger); those
+  /// changes arrive via the normal priority sync cursor. No explicit
+  /// client-side cascade is needed beyond applying the team_user update.
+  static final teamUser = SyncEntity(
+    debugName: 'team_user',
+    dependsOn: [],
+    pushFn: () async => true, // Read-only, skip push
+    pullFn: TeamUser.pull,
+  );
+
   /// UserSettings entity (no dependencies, per-user settings)
   static final userSettings = SyncEntity(
     debugName: 'user_settings',
@@ -137,6 +149,7 @@ class SyncOrchestrator {
   static final allEntities = [
     actor,
     group,
+    teamUser,
     userSettings,
     priority,
     twistInstance,
@@ -198,6 +211,7 @@ class SyncOrchestrator {
     return switch (table) {
       'user_actor' || 'actor' => actor,
       'user_group' || 'group' || 'user_topic' || 'topic' => group,
+      'user_team_user' || 'team_user' => teamUser,
       'user_settings' => userSettings,
       'user_priority' || 'priority' => priority,
       'user_twist' || 'twist_instance' => twistInstance,

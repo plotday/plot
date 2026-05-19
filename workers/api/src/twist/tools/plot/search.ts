@@ -24,7 +24,7 @@ export async function search(
   }
 
   const scopePriorityId =
-    options?.priorityId ?? (await plot.getDefaultPriorityId());
+    options?.priorityId ?? (await plot.getRootPriorityId());
   await plot.validatePriorityAccess(scopePriorityId);
 
   const limit = Math.min(options?.limit ?? SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);

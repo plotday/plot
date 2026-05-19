@@ -703,8 +703,8 @@ export async function createNotes(
 
   // Notify sync DOs once for the batch (unless called from createActivities which notifies itself)
   if (!activityContext) {
-    const defaultPriorityId = await plot.getDefaultPriorityId();
-    await plot.notifySyncDOs(new Set([defaultPriorityId]));
+    const rootPriorityId = await plot.getRootPriorityId();
+    await plot.notifySyncDOs(new Set([rootPriorityId]));
   }
 
   return noteIds;

@@ -80,6 +80,7 @@ part 'thread_sub_type.dart';
 part 'user_settings.dart';
 part 'channel.dart';
 part 'group.dart';
+part 'team_user.dart';
 
 part 'store.g.dart';
 
@@ -459,6 +460,7 @@ abstract class BaseTable {
     Channels,
     Groups,
     ThreadAssociations,
+    TeamUsers,
   ],
   include: {'priority.drift'},
 )
@@ -2298,7 +2300,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 331;
+  int get schemaVersion => 332;
 
   @override
   MigrationStrategy get migration {
@@ -3339,6 +3341,22 @@ class Store extends _$Store {
       // (`UPDATE … pending IS NOT NULL RETURNING *`) was full-scanning
       // these tables on every push attempt — measured 800–1100ms on
       // links and thread_tags during syncAll. No data migration here.
+    }
+    if (from < 332) {
+      // Team membership sync. Creates the team_users table that mirrors the
+      // server's user.team_user view. Used to track which teams the user
+      // belongs to and detect team-leave transitions (archived_at transitions
+      // NULL → non-NULL). Priority archival on team leave is handled server-side
+      // (Task 6 trigger) and propagated to the client via the normal priority
+      // sync cursor.
+      try {
+        await m.createTable(teamUsers);
+      } catch (e) {
+        // Tolerate "already exists" in case a previous build at 331 already
+        // created this table (the team-firewall branch reserved 331 before
+        // it was reassigned to the perf-index bump on main).
+        if (!e.toString().toLowerCase().contains('already exists')) rethrow;
+      }
     }
   }
 

@@ -140,7 +140,6 @@ function makePlotStub({
     getUpdatedBy: vi.fn(() => 0),
     getUserId: vi.fn(async () => "user-1"),
     getPriorityRoot: vi.fn(async () => "priority-root"),
-    getDefaultPriorityId: vi.fn(async () => "priority-1"),
   } as any;
 }
 

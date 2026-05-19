@@ -86,6 +86,7 @@ async function requireAdmin(c: any, orgId: string) {
     .select(["id", "role"])
     .where("team_id", "=", orgId as any)
     .where("user_id", "=", user.id)
+    .where("archived_at", "is", null)
     .executeTakeFirst();
 
   if (!member || member.role !== "admin") {
@@ -114,6 +115,7 @@ team.get("/team", async (c) => {
       "os.status",
     ])
     .where("om.user_id", "=", user.id)
+    .where("om.archived_at", "is", null)
     .execute();
 
   // Get member counts
@@ -125,6 +127,7 @@ team.get("/team", async (c) => {
       .select(["team_id"])
       .select((eb: any) => eb.fn.count("id").as("count"))
       .where("team_id", "in", orgIds)
+      .where("archived_at", "is", null)
       .groupBy("team_id")
       .execute();
 
@@ -175,6 +178,7 @@ team.get("/team/:id", async (c) => {
         "u.name",
       ])
       .where("om.team_id", "=", orgId)
+      .where("om.archived_at", "is", null)
       .execute(),
     c.var.db
       .selectFrom("domain")
@@ -402,6 +406,7 @@ team.delete("/team/:id/members/:userId", async (c) => {
     .select("role")
     .where("team_id", "=", orgId as any)
     .where("user_id", "=", targetUserId)
+    .where("archived_at", "is", null)
     .executeTakeFirst();
 
   if (!targetMember) {
@@ -414,6 +419,7 @@ team.delete("/team/:id/members/:userId", async (c) => {
       .select((eb: any) => eb.fn.count("id").as("count"))
       .where("team_id", "=", orgId as any)
       .where("role", "=", "admin")
+      .where("archived_at", "is", null)
       .executeTakeFirst();
 
     if (Number((adminCount as any)?.count) <= 1) {
@@ -422,7 +428,8 @@ team.delete("/team/:id/members/:userId", async (c) => {
   }
 
   await c.var.db
-    .deleteFrom("team_user")
+    .updateTable("team_user")
+    .set({ archived_at: new Date() })
     .where("team_id", "=", orgId as any)
     .where("user_id", "=", targetUserId)
     .execute();
@@ -452,6 +459,7 @@ team.patch("/team/:id/members/:userId", async (c) => {
       .select("role")
       .where("team_id", "=", orgId as any)
       .where("user_id", "=", targetUserId)
+      .where("archived_at", "is", null)
       .executeTakeFirst();
 
     if (targetMember?.role === "admin") {
@@ -460,6 +468,7 @@ team.patch("/team/:id/members/:userId", async (c) => {
         .select((eb: any) => eb.fn.count("id").as("count"))
         .where("team_id", "=", orgId as any)
         .where("role", "=", "admin")
+        .where("archived_at", "is", null)
         .executeTakeFirst();
 
       if (Number((adminCount as any)?.count) <= 1) {

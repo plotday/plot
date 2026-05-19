@@ -371,13 +371,13 @@ export async function createLinkOnly(
     const hasSource = "source" in link && link.source;
 
     // Resolve assignee. Scope contact linking to the twist owner's root priority.
-    const defaultPriorityId = await plot.getDefaultPriorityId();
+    const rootPriorityId = await plot.getRootPriorityId();
     let assigneeId: string | null | undefined = undefined;
     if (link.assignee !== undefined) {
       assigneeId = await processNewActor(
         plot,
         link.assignee,
-        defaultPriorityId
+        rootPriorityId
       );
     }
 
@@ -400,7 +400,7 @@ export async function createLinkOnly(
 
     const linkValues: Record<string, any> = {
       thread_id: null,
-      priority_id: defaultPriorityId,
+      priority_id: rootPriorityId,
       created_by: plot.twistInstanceId,
       author_id: plot.twistInstanceId,
       updated_by: plot.getUpdatedBy(),

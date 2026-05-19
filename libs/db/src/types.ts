@@ -977,6 +977,7 @@ export type Database = {
           path: unknown
           seq: unknown
           sync_depth: number | null
+          team_id: number | null
           title: string
           updated_at: string
           updated_by: number
@@ -998,6 +999,7 @@ export type Database = {
           path: unknown
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title: string
           updated_at?: string
           updated_by?: number
@@ -1019,6 +1021,7 @@ export type Database = {
           path?: unknown
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title?: string
           updated_at?: string
           updated_by?: number
@@ -1029,6 +1032,12 @@ export type Database = {
             foreignKeyName: "priority_created_by_fkey"
             columns: ["created_by"]
             referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_team_id_fkey"
+            columns: ["team_id"]
+            referencedRelation: "team"
             referencedColumns: ["id"]
           },
           {
@@ -1696,23 +1705,29 @@ export type Database = {
       }
       team_user: {
         Row: {
+          archived_at: string | null
           created_at: string
           id: number
           role: Database["public"]["Enums"]["team_role"]
+          seq: unknown
           team_id: number
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           id?: never
           role?: Database["public"]["Enums"]["team_role"]
+          seq?: unknown
           team_id: number
           user_id: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           id?: never
           role?: Database["public"]["Enums"]["team_role"]
+          seq?: unknown
           team_id?: number
           user_id?: string
         }
@@ -4632,6 +4647,25 @@ export type Database = {
           },
           {
             foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      team_user: {
+        Row: {
+          archived_at: string | null
+          id: number | null
+          role: Database["public"]["Enums"]["team_role"] | null
+          seq: unknown
+          team_id: number | null
+          team_name: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_user_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
