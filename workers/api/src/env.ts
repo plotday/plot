@@ -222,6 +222,10 @@ export type Bindings = {
   readonly APP_SYNC_RATE_LIMITER: RateLimit;
   readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
   readonly SDK_RATE_LIMITER: RateLimit;
+  // Per-channel Voyager call throttle. Key by channelId so each LinkedIn
+  // connection has its own bucket (6 calls per 10s) — a single user's burst
+  // can't trigger LinkedIn-side throttling for other users.
+  readonly LINKEDIN_RATE_LIMITER: RateLimit;
 
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;

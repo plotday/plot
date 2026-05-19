@@ -123,6 +123,11 @@ dependencies:
   super_clipboard: ^0.9.1
   markdown: ^7.3.0
   html2md: ^1.3.2
+  # Used by lib/widget/linkedin_login_modal.dart to host an in-app LinkedIn
+  # login page, capture the `li_at`/`JSESSIONID` session cookies, and post
+  # them to the server. Broader platform reach than webview_flutter
+  # (macOS + Windows out of the box) and exposes a rich cookie API.
+  flutter_inappwebview: ^6.1.5
 
 dependency_overrides:
   # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart

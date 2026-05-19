@@ -84,6 +84,13 @@ export const CONNECTIONS: Connection[] = [
     available: false,
   },
   {
+    name: "LinkedIn",
+    logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+    category: "Communication",
+    entities: ["Messages", "Connection requests"],
+    available: false,
+  },
+  {
     name: "Outlook Calendar",
     ...si("microsoftoutlook", "0078D4", "47A5ED"),
     category: "Calendar",

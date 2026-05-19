@@ -19,6 +19,7 @@ import { Callbacks } from "./callbacks";
 import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
 import { Smtp, type SmtpOptions } from "./smtp";
+import { LinkedIn } from "./linkedin";
 import { Network } from "./network";
 import { Plot } from "./plot";
 import { Store } from "./store";
@@ -68,6 +69,7 @@ function getToolClass(
   | typeof Twists
   | typeof Imap
   | typeof Smtp
+  | typeof LinkedIn
   | null {
   switch (toolId) {
     case "Plot":
@@ -90,6 +92,8 @@ function getToolClass(
       return Imap;
     case "Smtp":
       return Smtp;
+    case "LinkedIn":
+      return LinkedIn;
     case "Options":
       return null; // Handled specially — not a real tool
     default:
@@ -238,6 +242,13 @@ export function createTool(
       return new Imap(options as ImapOptions);
     case "Smtp":
       return new Smtp(options as SmtpOptions);
+    case "LinkedIn":
+      return new LinkedIn({
+        env,
+        db,
+        twistInstanceId,
+        path,
+      });
     case "Options":
       // Options is not a real tool — return a plain object with resolved values.
       // The schema is passed as `options`, config comes from twist_instance.config

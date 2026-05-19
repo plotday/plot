@@ -65,6 +65,25 @@ export type AirtableProviderData = {
   email: string | null;
 };
 
+// LinkedIn uses a captured `li_at` session cookie (not OAuth), plus a few
+// extras the Voyager API needs on every request:
+//  - `jsessionid` doubles as the CSRF token (sent as the `csrf-token` header)
+//  - `userAgent` is pinned to the device that captured the cookie so the
+//    server-side fingerprint matches the client's
+//  - the profile triple identifies the connected account and gives the
+//    Connections UI a label without an extra round-trip
+//
+// Uses `email` and `userId` to match the conventions extractEmail /
+// extractUserId expect.
+export type LinkedInProviderData = {
+  jsessionid: string;
+  userAgent: string;
+  platform: "ios" | "android" | "desktop" | "web";
+  userId: string;     // urn:li:fsd_profile:<id>
+  fullName: string;
+  email: string | null;
+};
+
 // Union of all provider-specific data types
 export type ProviderData =
   | SlackProviderData
@@ -76,7 +95,8 @@ export type ProviderData =
   | NotionProviderData
   | AsanaProviderData
   | TodoistProviderData
-  | AirtableProviderData;
+  | AirtableProviderData
+  | LinkedInProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
@@ -377,8 +397,11 @@ const parseLinearTokenResponse = async (
 
 type ProviderConfig = {
   name: string;
-  authUrl: string;
-  tokenUrl: string;
+  // Omitted for non-OAuth providers (e.g. LinkedIn cookie auth). When absent,
+  // GenerateAuthUrl / HandleOauthCallback refuse to handle this provider —
+  // the client must use the provider's dedicated auth endpoint instead.
+  authUrl?: string;
+  tokenUrl?: string;
   additionalParams?: Record<string, string>;
   // When true, send client_id/client_secret via HTTP Basic Authentication
   // header on the token endpoint instead of the request body. Required by
@@ -427,6 +450,8 @@ export function extractUserId(provider: AuthProvider, providerData: ProviderData
       return (providerData as GitHubProviderData | LinearProviderData | AirtableProviderData).userId ?? null;
     case "slack":
       return (providerData as SlackProviderData).authed_user?.id ?? null;
+    case "linkedin":
+      return (providerData as LinkedInProviderData).userId ?? null;
     default:
       return null;
   }
@@ -594,5 +619,42 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     requiresHttpsRedirect: true,
     parseTokenResponse: parseAirtableTokenResponse,
     extractAccountLabel: (d) => (d as AirtableProviderData).email || null,
+  },
+  linkedin: {
+    name: "LinkedIn",
+    // Cookie-based auth: no OAuth endpoints. The client posts the captured
+    // li_at cookie to POST /twist/:id/integrations/linkedin/cookie instead
+    // of going through GenerateAuthUrl / HandleOauthCallback. The endpoint
+    // assembles a synthetic OAuth-shaped tokenInfo and invokes the
+    // connector's `onAuth` callback; this parser then lifts the
+    // LinkedIn-specific fields out of that tokenInfo.
+    parseTokenResponse: (response: any): LinkedInProviderData | undefined => {
+      if (
+        !response?.access_token ||
+        !response?.jsessionid ||
+        !response?.userAgent ||
+        !response?.userId
+      ) {
+        return undefined;
+      }
+      const platform = response.platform as
+        | "ios"
+        | "android"
+        | "desktop"
+        | "web"
+        | undefined;
+      return {
+        jsessionid: response.jsessionid,
+        userAgent: response.userAgent,
+        platform: platform ?? "web",
+        userId: response.userId,
+        fullName: response.fullName ?? "",
+        email: response.email ?? null,
+      };
+    },
+    extractAccountLabel: (d) => {
+      const li = d as LinkedInProviderData;
+      return li.fullName || li.email || null;
+    },
   },
 };

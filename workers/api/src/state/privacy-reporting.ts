@@ -308,6 +308,9 @@ export class PrivacyReporting extends DurableObject<Bindings> {
     expires_in?: number;
   }> {
     const config = PROVIDER_CONFIGS[AuthProvider.Atlassian];
+    if (!config.tokenUrl) {
+      throw new Error("Atlassian provider config is missing tokenUrl");
+    }
     const clientSecret = this.env.AUTH_ATLASSIAN_SECRET;
 
     const params = new URLSearchParams({

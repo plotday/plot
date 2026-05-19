@@ -3865,10 +3865,12 @@ export class Integrations extends Tool implements IAuth {
     expires_in?: number;
   }> {
     const config = PROVIDER_CONFIGS[provider];
-    if (!config) {
-      // Programmer error / misconfiguration — not a transient issue, but also
-      // not an OAuth credential failure. Treat as permanent so we don't keep
-      // an unrefreshable token around forever.
+    if (!config || !config.tokenUrl) {
+      // Either programmer error / misconfiguration (unknown provider) or a
+      // non-OAuth provider (e.g. LinkedIn cookie auth) that has no refresh
+      // path. Treat as permanent so we don't keep an unrefreshable token
+      // around forever — the user must reconnect via the provider's
+      // dedicated auth endpoint.
       throw new TokenRefreshError(
         `Token refresh not implemented for ${provider}`,
         true
@@ -4185,7 +4187,7 @@ export class Integrations extends Tool implements IAuth {
     [key: string]: any; // Allow any provider-specific fields
   }> {
     const config = PROVIDER_CONFIGS[provider];
-    if (!config) {
+    if (!config || !config.tokenUrl) {
       throw new Error(`Token exchange not implemented for ${provider}`);
     }
 
@@ -4255,6 +4257,15 @@ export class Integrations extends Tool implements IAuth {
       const logger = createLogger();
       logger.error("Provider not supported", { provider });
       throw new Error(`Provider ${provider} not supported`);
+    }
+    if (!config.authUrl) {
+      // Non-OAuth provider (e.g. LinkedIn cookie auth). The client must use
+      // that provider's dedicated auth endpoint instead of the OAuth flow.
+      const logger = createLogger();
+      logger.error("Provider does not use OAuth", { provider });
+      throw new Error(
+        `Provider ${provider} does not use OAuth; use its dedicated auth endpoint`
+      );
     }
 
     // Merge email scopes with requested scopes

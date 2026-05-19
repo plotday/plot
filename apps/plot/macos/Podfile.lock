@@ -59,6 +59,9 @@ PODS:
     - GoogleUtilities/Reachability (~> 8.1)
     - GoogleUtilities/UserDefaults (~> 8.1)
     - nanopb (~> 3.30910.0)
+  - flutter_inappwebview_macos (0.0.1):
+    - FlutterMacOS
+    - OrderedSet (~> 6.0.3)
   - flutter_local_notifications (0.0.1):
     - FlutterMacOS
   - flutter_timezone (0.1.0):
@@ -122,6 +125,7 @@ PODS:
     - nanopb/encode (= 3.30910.0)
   - nanopb/decode (3.30910.0)
   - nanopb/encode (3.30910.0)
+  - OrderedSet (6.0.3)
   - package_info_plus (0.0.1):
     - FlutterMacOS
   - PostHog (3.58.1)
@@ -163,6 +167,7 @@ DEPENDENCIES:
   - file_selector_macos (from `Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos`)
   - firebase_core (from `Flutter/ephemeral/.symlinks/plugins/firebase_core/macos`)
   - firebase_messaging (from `Flutter/ephemeral/.symlinks/plugins/firebase_messaging/macos`)
+  - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
   - flutter_timezone (from `Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos`)
   - flutter_web_auth_2 (from `Flutter/ephemeral/.symlinks/plugins/flutter_web_auth_2/macos`)
@@ -200,6 +205,7 @@ SPEC REPOS:
     - GTMAppAuth
     - GTMSessionFetcher
     - nanopb
+    - OrderedSet
     - PostHog
     - PromisesObjC
 
@@ -222,6 +228,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/firebase_core/macos
   firebase_messaging:
     :path: Flutter/ephemeral/.symlinks/plugins/firebase_messaging/macos
+  flutter_inappwebview_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos
   flutter_local_notifications:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
   flutter_timezone:
@@ -280,6 +288,7 @@ SPEC CHECKSUMS:
   FirebaseCoreInternal: 7c12fc3011d889085e765e317d7b9fd1cef97af9
   FirebaseInstallations: 4e6e162aa4abaaeeeb01dd00179dfc5ad9c2194e
   FirebaseMessaging: 341004946fa7ffc741344b20f1b667514fc93e31
+  flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d
   flutter_local_notifications: 4bf37a31afde695b56091b4ae3e4d9c7a7e6cda0
   flutter_timezone: d272288c69082ad571630e0d17140b3d6b93dc0c
   flutter_web_auth_2: 7fe624ff12ddcb4c19e5dbcd56c9e9ea4899d967
@@ -294,6 +303,7 @@ SPEC CHECKSUMS:
   macos_ui: ff29104a215c2e1b76f37aacdcbba648abb25faa
   macos_window_utils: 23f54331a0fd51eea9e0ed347253bf48fd379d1d
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
+  OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
   package_info_plus: f0052d280d17aa382b932f399edf32507174e870
   PostHog: 162c013c6a8e442382f6804076bf3ad072c8778a
   posthog_flutter: 03b15ff7a78e2a4162baaf11f8db37b079412106

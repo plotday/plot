@@ -15,6 +15,8 @@ import { checkChannelConnectionLimit, PlanLimitError } from "../utils/limits";
 import { handleValidationError } from "../utils/validation";
 import type { OptionsSchema } from "@plotday/twister/options";
 import { saveSecureOptions } from "../utils/secure-options";
+import { invokeWebhookCallback } from "../twist/invoke-webhook";
+import { probeLinkedInProfile } from "../twist/tools/linkedin-voyager";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -473,6 +475,118 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
 
   return c.json({ ...result, callback: String(callback) });
 });
+
+// POST /twist/:id/integrations/linkedin/cookie
+// LinkedIn-specific auth flow. The OAuth provider for personal messaging
+// does not exist, so the client (in-app webview) captures the user's
+// `li_at` session cookie and posts it here. The server probes Voyager to
+// validate the cookie + discover profile info, then invokes the
+// connector's `onAuth` callback with a synthetic tokenInfo so downstream
+// code (token storage, contact creation, connection tracking, channel
+// dispatch) works identically to any OAuth provider.
+const LinkedInCookieRequestSchema = z.object({
+  liAt: z.string().min(10),
+  jsessionid: z.string().min(5),
+  userAgent: z.string().min(10),
+  platform: z.enum(["ios", "android", "desktop", "web"]),
+});
+
+twistIntegrations.post(
+  "/twist/:id/integrations/linkedin/cookie",
+  async (c) => {
+    const twistInstanceId = c.req.param("id");
+
+    const rawBody = await c.req.json();
+    const parseResult = LinkedInCookieRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return handleValidationError(parseResult.error);
+    }
+    const { liAt, jsessionid, userAgent, platform } = parseResult.data;
+
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    const integrationsPathStr = config.integrationsMap["linkedin"];
+    if (!integrationsPathStr) {
+      return c.json(
+        { message: "Provider linkedin not configured for this twist" },
+        400
+      );
+    }
+
+    // Probe Voyager. This both validates the cookie and gives us the
+    // profile triple we need for LinkedInProviderData. The raw cookie is
+    // never logged.
+    const profile = await probeLinkedInProfile({ liAt, jsessionid, userAgent });
+    if (!profile) {
+      return c.json(
+        { message: "Invalid or expired LinkedIn session cookie" },
+        401
+      );
+    }
+
+    // Create the onAuth callback exactly like the OAuth path does.
+    const callbacksId = c.env.CALLBACKS.idFromName(twistInstanceId);
+    const callbacksStub = c.env.CALLBACKS.get(callbacksId);
+    const callback = await callbacksStub.create({
+      twistInstanceId,
+      path: integrationsPathStr.split(":"),
+      functionName: "onAuth",
+      extraArgs: [],
+    });
+
+    // Assemble the tokenInfo. `parseTokenResponse` on the linkedin
+    // PROVIDER_CONFIG entry will lift `jsessionid`, `userAgent`, profile
+    // fields, etc. out of this onto LinkedInProviderData.
+    const tokenInfo = {
+      access_token: liAt,
+      refresh_token: undefined,
+      expires_in: undefined,
+      provider: "linkedin" as const,
+      scopes: [] as string[],
+      client_id: "",
+      jsessionid,
+      userAgent,
+      platform,
+      userId: profile.userId,
+      fullName: profile.fullName,
+      email: profile.email,
+    };
+
+    try {
+      const result = await invokeWebhookCallback(
+        c.env,
+        c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
+        String(callback),
+        tokenInfo
+      );
+      disposeRpc(result);
+    } catch (error) {
+      const logger = createLogger({ twist_instance_id: twistInstanceId });
+      logger.error("LinkedIn onAuth invocation failed", error as Error, {
+        provider: "linkedin",
+      });
+      return c.json({ message: "LinkedIn authentication failed" }, 500);
+    }
+
+    return c.json({
+      ok: true,
+      accountLabel: profile.fullName,
+      userId: profile.userId,
+    });
+  }
+);
 
 // POST /twist/:id/integrations/connect
 // For no-provider connectors: saves options, calls getChannels, returns channel list.
