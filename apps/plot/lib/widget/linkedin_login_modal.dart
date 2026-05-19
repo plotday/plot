@@ -243,6 +243,47 @@ class _LinkedInLoginModalContentState
     }
   }
 
+  /// A real-browser User-Agent matched to the running platform. Used for both
+  /// the in-app login webview and (after capture) the server-side Voyager
+  /// calls — pinning the same UA on both sides keeps LinkedIn's fingerprint
+  /// checks happy.
+  ///
+  /// We pin Chrome on every platform (not the platform-native browser). On
+  /// macOS/iOS, a Safari UA makes LinkedIn render a passkey/autofill chip
+  /// over the email input that blocks click-to-focus. Chrome doesn't get
+  /// that overlay, and Voyager doesn't distinguish Chrome vs Safari — it
+  /// only checks that *some* real browser token is present.
+  ///
+  /// Strings are intentionally a few minor versions back from "latest" so
+  /// they age well; LinkedIn doesn't require bleeding-edge.
+  static String _pinnedUserAgent() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        // CriOS = Chrome on iOS. Same WebKit underneath, different UA brand
+        // → no Safari passkey chip on the login form.
+        return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) '
+            'AppleWebKit/605.1.15 (KHTML, like Gecko) '
+            'CriOS/126.0.6478.122 Mobile/15E148 Safari/604.1';
+      case TargetPlatform.android:
+        return 'Mozilla/5.0 (Linux; Android 14; Pixel 8) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/126.0.6478.122 Mobile Safari/537.36';
+      case TargetPlatform.macOS:
+        return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/126.0.6478.127 Safari/537.36';
+      case TargetPlatform.windows:
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/126.0.6478.127 Safari/537.36';
+      case TargetPlatform.linux:
+      case TargetPlatform.fuchsia:
+        return 'Mozilla/5.0 (X11; Linux x86_64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/126.0.6478.127 Safari/537.36';
+    }
+  }
+
   Future<void> _clearWebViewCookies() async {
     try {
       final manager = CookieManager.instance();
@@ -265,12 +306,18 @@ class _LinkedInLoginModalContentState
     }
   }
 
-  void _retry() {
+  Future<void> _retry() async {
     setState(() {
       _errorMessage = null;
       _captureStarted = false;
     });
-    _controller?.loadUrl(urlRequest: URLRequest(url: _kLoginUrl));
+    // Wipe the webview's LinkedIn cookies before reloading. Without this,
+    // /login redirects straight back to /feed because the user is still
+    // signed in, we capture the same (rejected) cookie, and the server
+    // immediately rejects it again — "Try again" becomes a no-op. Clearing
+    // forces a fresh credential entry, which is what the user expects.
+    await _clearWebViewCookies();
+    await _controller?.loadUrl(urlRequest: URLRequest(url: _kLoginUrl));
   }
 
   // ---------------------------------------------------------------------------
@@ -384,9 +431,19 @@ class _LinkedInLoginModalContentState
               InAppWebView(
                 initialUrlRequest: URLRequest(url: _kLoginUrl),
                 initialSettings: InAppWebViewSettings(
-                  // IMPORTANT: do NOT override the user-agent. LinkedIn pins
-                  // session cookies to the UA that established them, and the
-                  // server replays requests using whatever UA we report here.
+                  // Pin a real-browser UA. The WKWebView/Android default UA
+                  // strings lack the trailing `Version/X Safari/X` (or
+                  // `Chrome/X`) token, which LinkedIn's Voyager API
+                  // fingerprints as automation and rejects with 403. We pin
+                  // a Chrome UA (not Safari) because a Mac/iOS Safari UA
+                  // makes LinkedIn enable a passkey/autofill chip on the
+                  // email input, and the chip's overlay swallows pointer
+                  // events — clicks miss and the I-beam never appears
+                  // (Shift+Tab still works because that's keyboard focus
+                  // traversal). Chrome on the same platforms skips that
+                  // chip, and Voyager accepts either brand on replay so
+                  // long as a `Safari` or `Chrome` token is present.
+                  userAgent: _pinnedUserAgent(),
                   isInspectable: false,
                   javaScriptEnabled: true,
                   // Some LinkedIn flows pop a new window after sign-in

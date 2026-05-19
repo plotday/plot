@@ -567,9 +567,13 @@ twistIntegrations.post(
       logger.warn(
         "LinkedIn cookie request: Voyager probe failed (cookie invalid/expired/blocked)"
       );
+      // 400, not 401: the caller IS authenticated to Plot — what failed is
+      // the LinkedIn credential they uploaded. Returning 401 here makes the
+      // Flutter API client think the user's Plot/Clerk session expired,
+      // which force-signs them out of the app entirely.
       return c.json(
         { message: "Invalid or expired LinkedIn session cookie" },
-        401
+        400
       );
     }
     logger.info("LinkedIn cookie request: Voyager probe succeeded", {
