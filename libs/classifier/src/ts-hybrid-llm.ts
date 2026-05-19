@@ -115,8 +115,13 @@ export function makeHybridLlmClassifier(
 
       const pp = await priorityPrefix(ctx, candidate.topic);
       if (pp) return finish(pp);
-      const kp = await keyedPriority(ctx, candidate.threadId);
-      if (kp) return finish(kp);
+      // Pre-insert callers (thread-helpers.prepareThreadForDb) classify
+      // before the thread row exists, so candidate.threadId is "". The
+      // keyed-priority join is only meaningful for an existing thread.
+      if (candidate.threadId !== "") {
+        const kp = await keyedPriority(ctx, candidate.threadId);
+        if (kp) return finish(kp);
+      }
       const tov = await priorityTitleOverride(
         ctx,
         candidate,
