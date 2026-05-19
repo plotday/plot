@@ -254,9 +254,6 @@ pnpm apply-migrations
 # Check that schema files match existing migrations (Atlas)
 pnpm diff-schema-migrations
 
-# Check for pending migrations (used in CI)
-pnpm --filter @plotday/db lint:pending-migrations
-
 # Regenerate TypeScript types from local database
 pnpm types
 

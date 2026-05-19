@@ -292,8 +292,8 @@ pnpm apply-migrations
 # Regenerate TypeScript types from local database
 pnpm types
 
-# Check for unapplied migrations (CI lint check)
-pnpm lint:pending-migrations
+# Check that schema files match existing migrations (run locally before commit)
+pnpm diff-schema-migrations
 
 # Check if types are out of sync (CI lint check)
 pnpm lint:pending-types
