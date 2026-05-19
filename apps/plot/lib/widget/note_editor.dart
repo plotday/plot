@@ -252,6 +252,13 @@ class NoteEditorState extends State<NoteEditor> {
       !widget.isNewThreadMode &&
       context.read<ThreadBloc>().state.editingNote != null;
 
+  /// Whether the editor's text input currently has primary focus.
+  bool get hasFocus => _currentFocusNode?.hasFocus ?? false;
+
+  /// Whether the editor has no content. Reflects the latest
+  /// `onIsEmptyChanged` callback from the underlying [Editor].
+  bool get isEmpty => _isEmpty;
+
   /// Handle an image pasted from clipboard: insert a placeholder attachment
   /// immediately (so the preview appears without waiting on the network) and
   /// upload in the background, swapping the placeholder for the real

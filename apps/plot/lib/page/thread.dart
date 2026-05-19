@@ -337,6 +337,23 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                   // Only handle plain arrow keys/enter/escape (no modifiers)
                   // Cmd-Up/Down should bubble up to global PriorityPage handler
                   if (!hasModifiers) {
+                    // When the NoteEditor has focus and content, arrow keys
+                    // should stay in the editor (move the caret) rather than
+                    // moving focus to other notes. On macOS the editor uses
+                    // IME, which delivers arrow keys as moveUp:/moveDown:
+                    // selectors and then bubbles the underlying key event
+                    // out of SuperEditor (via sendKeyEventToMacOs); without
+                    // this guard the bubble would hijack the caret motion.
+                    final noteEditorState = _noteEditorKey.currentState;
+                    final editorActive =
+                        noteEditorState != null &&
+                        noteEditorState.hasFocus &&
+                        !noteEditorState.isEmpty;
+                    if (editorActive &&
+                        (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+                            event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+                      return KeyEventResult.ignored;
+                    }
                     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
                       // Reversed list: moving up visually means higher index
                       listController.moveFocus(1);
