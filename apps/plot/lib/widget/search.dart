@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/logging.dart';
 import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
@@ -83,6 +84,21 @@ class _SearchWidgetState extends State<SearchWidget> {
           _focusNode.requestFocus();
         });
       } else {
+        // Hand focus back to the enclosing scope before the FTextField
+        // unmounts. Otherwise primary focus stays on the orphan FocusNode
+        // and the ancestor Shortcuts widget stops receiving key events
+        // (manifests as macOS "invalid key" beeps on global shortcuts).
+        log.info(
+          '[Focus] search collapse: primary=${FocusManager.instance.primaryFocus}, _focusNode.hasFocus=${_focusNode.hasFocus}',
+        );
+        if (_focusNode.hasFocus) {
+          _focusNode.unfocus();
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          log.info(
+            '[Focus] search collapse post-frame: primary=${FocusManager.instance.primaryFocus}',
+          );
+        });
         // Clear search when collapsing
         _controller.clear();
       }
