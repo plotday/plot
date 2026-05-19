@@ -15,8 +15,8 @@ import type {
 import type { DB } from "../../db-types";
 import { type Bindings } from "../../env";
 import { type StoredTokenData, type LinkedInProviderData } from "../../provider";
-import { type Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
+import { Store } from "./store";
 import { Tool } from "./tool";
 import {
   type VoyagerCredentials,
@@ -41,7 +41,19 @@ import {
  * retry) so the connector never has to think about pacing.
  */
 export class LinkedIn extends Tool implements ILinkedIn {
-  private storage: DurableObjectStub<Storage>;
+  /**
+   * Store handle that resolves to the SAME DurableObject as the sibling
+   * Integrations tool's store. `Store.path.slice(0, -1)` is what drives
+   * the DO id, so an Integrations tool at path `[…, "Integrations"]` and
+   * a LinkedIn tool at path `[…, "LinkedIn"]` both name into
+   * `${twistInstanceId}:${parentPath}` and share state.
+   *
+   * Critical: must use `Store`, not raw `STORAGE.get(...)`. Integrations
+   * writes via `Store.set` which serializes with superjson — a `JSON.parse`
+   * of the raw bytes returns the `{json, meta}` superjson envelope, not the
+   * value, and any field read off it is `undefined`.
+   */
+  private store: Store;
 
   constructor(
     private options: {
@@ -52,13 +64,11 @@ export class LinkedIn extends Tool implements ILinkedIn {
     }
   ) {
     super();
-    // Storage DO is keyed by twistInstanceId + path-of-parent, so the
-    // LinkedIn tool and its sibling Integrations tool share the same DO.
-    const toolPath = options.path.slice(0, -1);
-    const storageId = options.env.STORAGE.idFromName(
-      `${options.twistInstanceId}:${toolPath.join(":")}`
-    );
-    this.storage = options.env.STORAGE.get(storageId);
+    this.store = new Store({
+      path: options.path,
+      storage: options.env.STORAGE,
+      twistInstanceId: options.twistInstanceId,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -288,9 +298,11 @@ export class LinkedIn extends Tool implements ILinkedIn {
     profileUrn: string;
   }> {
     const channelConfigKey = `channel_config:linkedin:${channelId}`;
-    const channelConfig = await this.getJson<{ enabledBy?: string }>(
-      channelConfigKey
-    );
+    const channelConfig = await this.store.get<{
+      enabled?: boolean;
+      enabledBy?: string;
+      title?: string | null;
+    }>(channelConfigKey);
     if (!channelConfig?.enabledBy) {
       throw new Error(
         `LinkedIn channel ${channelId} is not enabled by any actor`
@@ -298,14 +310,20 @@ export class LinkedIn extends Tool implements ILinkedIn {
     }
 
     const tokenKey = `auth_token:linkedin:${channelConfig.enabledBy}`;
-    const token = await this.getJson<StoredTokenData>(tokenKey);
+    const token = await this.store.get<StoredTokenData>(tokenKey);
     if (!token?.access_token || !token.providerData) {
       throw new Error(
-        `LinkedIn channel ${channelId} has no usable stored token`
+        `LinkedIn channel ${channelId} has no usable stored token (enabledBy=${channelConfig.enabledBy})`
       );
     }
 
     const providerData = token.providerData as LinkedInProviderData;
+    if (!providerData.jsessionid || !providerData.userAgent) {
+      throw new Error(
+        `LinkedIn channel ${channelId} token is missing jsessionid/userAgent — reconnect`
+      );
+    }
+
     return {
       creds: {
         liAt: token.access_token,
@@ -365,7 +383,7 @@ export class LinkedIn extends Tool implements ILinkedIn {
     });
     try {
       const channelConfigKey = `channel_config:linkedin:${channelId}`;
-      const channelConfig = await this.getJson<{ enabledBy?: string }>(
+      const channelConfig = await this.store.get<{ enabledBy?: string }>(
         channelConfigKey
       );
       if (!channelConfig?.enabledBy) return;
@@ -404,20 +422,6 @@ export class LinkedIn extends Tool implements ILinkedIn {
     }
   }
 
-  /** Storage DO `get` decodes raw text — handle JSON ourselves. */
-  private async getJson<T>(key: string): Promise<T | null> {
-    const raw = await this.storage.get(key);
-    if (raw == null) return null;
-    if (typeof raw === "object") return raw as T;
-    if (typeof raw === "string") {
-      try {
-        return JSON.parse(raw) as T;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -1,10 +1,10 @@
 import 'dart:async';
+import 'dart:collection' show UnmodifiableListView;
 import 'dart:convert' show jsonEncode;
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
-import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, LogicalKeyboardKey;
+import 'package:flutter/services.dart' show Clipboard;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:forui/forui.dart';
@@ -274,67 +274,72 @@ class _LinkedInLoginModalContentState
   }
 
   // ---------------------------------------------------------------------------
-  // Keyboard shortcuts in text inputs (Cmd/Ctrl+A/V/C/X)
+  // Keyboard shortcuts in text inputs (Cmd/Ctrl + A/V/C/X)
   // ---------------------------------------------------------------------------
   //
-  // WKWebView on macOS doesn't reliably receive Cmd-modifier shortcuts when
-  // it's embedded inside Flutter — the parent Flutter window grabs the
-  // keystrokes first. The result is users can type into LinkedIn's login
-  // fields but can't paste their password (a real problem since most people
-  // use a password manager). We catch the canonical edit shortcuts at the
-  // Flutter layer and forward each one to the webview's focused element via
-  // JavaScript.
+  // The webview is a platform view (WKWebView on macOS/iOS, WebView on
+  // Android) with its own native event loop. Keystrokes typed inside it
+  // never reach Flutter's widget tree, so a Flutter-side `Shortcuts` /
+  // `CallbackShortcuts` wrapper can't see them. The fix has to live inside
+  // the page itself: a `keydown` capture-phase listener that detects the
+  // Cmd/Ctrl modifier shortcuts and either:
   //
-  // - Cmd/Ctrl+A: `document.execCommand("selectAll")` — still works in WebKit
-  //   even though execCommand is deprecated.
-  // - Cmd/Ctrl+V: read the system clipboard via Flutter's Clipboard API, then
-  //   insert the text into the focused element. We use `insertText` so the
-  //   element fires the same `input` event LinkedIn's form would expect.
-  // - Cmd/Ctrl+C: read the current Selection, copy to the system clipboard.
-  // - Cmd/Ctrl+X: read selection, copy, then delete.
+  //   - handles them entirely in JS (Cmd+A → `document.execCommand('selectAll')`)
+  //   - bounces back to Flutter (Cmd+V) so we can read the system clipboard
+  //     and `insertText` the result into the focused element
+  //
+  // Cmd+C / Cmd+X work natively in WKWebView once selection is established,
+  // so we don't override them. We use the capture phase + `preventDefault`
+  // so LinkedIn's own keydown handlers can't swallow the shortcut.
 
-  Future<void> _selectAll() async {
-    await _controller?.evaluateJavascript(
-      source: 'document.execCommand("selectAll")',
-    );
-  }
+  /// User script injected at document-start. Uses `window.flutter_inappwebview.callHandler`
+  /// to call our paste handler defined below.
+  static final _kEditShortcutsScript = UserScript(
+    source: r"""
+      (function () {
+        document.addEventListener(
+          'keydown',
+          function (e) {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            if (e.altKey) return; // leave Alt-combinations alone
+            var key = (e.key || '').toLowerCase();
+            if (key === 'a') {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                document.execCommand('selectAll');
+              } catch (_) {}
+              return;
+            }
+            if (key === 'v') {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                window.flutter_inappwebview.callHandler('linkedinPaste');
+              } catch (_) {}
+              return;
+            }
+            // Cmd/Ctrl+C and Cmd/Ctrl+X: leave WKWebView's native selection
+            // handling in place so the platform handles clipboard writes.
+          },
+          true /* capture phase, beat LinkedIn's own handlers */
+        );
+      })();
+    """,
+    injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+  );
 
-  Future<void> _paste() async {
+  /// Read the system clipboard via Flutter (the webview can't reach it
+  /// reliably in a non-https/secure context), then inject the text into the
+  /// focused element. Using `insertText` so the input fires the same
+  /// `input` event LinkedIn's React form is listening for.
+  Future<void> _onLinkedInPasteRequested() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text;
     if (text == null || text.isEmpty) return;
-    // jsonEncode handles every escape we need (newlines, quotes, unicode).
-    final js = 'document.execCommand("insertText", false, ${jsonEncode(text)})';
+    final js =
+        'document.execCommand("insertText", false, ${jsonEncode(text)})';
     await _controller?.evaluateJavascript(source: js);
-  }
-
-  Future<void> _copySelection() async {
-    final result = await _controller?.evaluateJavascript(
-      source: 'window.getSelection() ? window.getSelection().toString() : ""',
-    );
-    if (result is String && result.isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: result));
-    }
-  }
-
-  Future<void> _cutSelection() async {
-    await _copySelection();
-    await _controller?.evaluateJavascript(source: 'document.execCommand("delete")');
-  }
-
-  /// Build the Cmd+/Ctrl+ shortcut bindings for the webview. Both modifiers
-  /// are bound so the modal works on Windows/Linux as well as macOS.
-  Map<ShortcutActivator, VoidCallback> _webviewShortcuts() {
-    return {
-      const SingleActivator(LogicalKeyboardKey.keyA, meta: true): _selectAll,
-      const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
-      const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _paste,
-      const SingleActivator(LogicalKeyboardKey.keyV, control: true): _paste,
-      const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelection,
-      const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelection,
-      const SingleActivator(LogicalKeyboardKey.keyX, meta: true): _cutSelection,
-      const SingleActivator(LogicalKeyboardKey.keyX, control: true): _cutSelection,
-    };
   }
 
   @override
@@ -376,53 +381,53 @@ class _LinkedInLoginModalContentState
         Flexible(
           child: Stack(
             children: [
-              // CallbackShortcuts handles Cmd/Ctrl+A/V/C/X at the Flutter
-              // layer so the webview's text inputs work — WKWebView on macOS
-              // doesn't receive these keys when embedded in a Flutter app.
-              // Focus(autofocus: true) ensures the shortcuts widget is in the
-              // focus chain even before the user clicks into the webview.
-              CallbackShortcuts(
-                bindings: _webviewShortcuts(),
-                child: Focus(
-                  autofocus: true,
-                  child: InAppWebView(
-                    initialUrlRequest: URLRequest(url: _kLoginUrl),
-                    initialSettings: InAppWebViewSettings(
-                      // IMPORTANT: do NOT override the user-agent. LinkedIn pins
-                      // session cookies to the UA that established them, and the
-                      // server replays requests using whatever UA we report here.
-                      isInspectable: false,
-                      javaScriptEnabled: true,
-                      // Some LinkedIn flows pop a new window after sign-in
-                      // (e.g. the verification challenge). Keep navigation inside
-                      // this webview so cookies are observed in one store.
-                      supportMultipleWindows: false,
-                      // Limit linkedin.com only — block third-party redirects so
-                      // a stray ad/widget can't navigate us off-host.
-                      useShouldOverrideUrlLoading: true,
-                    ),
-                    onWebViewCreated: (controller) {
-                      _controller = controller;
-                    },
-                    shouldOverrideUrlLoading: (controller, action) async {
-                      final url = action.request.url;
-                      if (url == null) return NavigationActionPolicy.ALLOW;
-                      final host = url.host.toLowerCase();
-                      if (host.isEmpty || host.endsWith('linkedin.com')) {
-                        return NavigationActionPolicy.ALLOW;
-                      }
-                      // Block off-host navigations (licensing CDNs, ads, etc.).
-                      // The login flow only needs linkedin.com.
-                      return NavigationActionPolicy.CANCEL;
-                    },
-                    onLoadStop: (controller, url) {
-                      unawaited(_maybeCaptureCookies(url));
-                    },
-                    onUpdateVisitedHistory: (controller, url, _) {
-                      unawaited(_maybeCaptureCookies(url));
-                    },
-                  ),
+              InAppWebView(
+                initialUrlRequest: URLRequest(url: _kLoginUrl),
+                initialSettings: InAppWebViewSettings(
+                  // IMPORTANT: do NOT override the user-agent. LinkedIn pins
+                  // session cookies to the UA that established them, and the
+                  // server replays requests using whatever UA we report here.
+                  isInspectable: false,
+                  javaScriptEnabled: true,
+                  // Some LinkedIn flows pop a new window after sign-in
+                  // (e.g. the verification challenge). Keep navigation inside
+                  // this webview so cookies are observed in one store.
+                  supportMultipleWindows: false,
+                  // Limit linkedin.com only — block third-party redirects so
+                  // a stray ad/widget can't navigate us off-host.
+                  useShouldOverrideUrlLoading: true,
                 ),
+                // Inject the Cmd/Ctrl+A/V capture-phase listener at document
+                // start so it's installed before LinkedIn's own scripts run.
+                initialUserScripts:
+                    UnmodifiableListView([_kEditShortcutsScript]),
+                onWebViewCreated: (controller) {
+                  _controller = controller;
+                  controller.addJavaScriptHandler(
+                    handlerName: 'linkedinPaste',
+                    callback: (_) async {
+                      await _onLinkedInPasteRequested();
+                      return null;
+                    },
+                  );
+                },
+                shouldOverrideUrlLoading: (controller, action) async {
+                  final url = action.request.url;
+                  if (url == null) return NavigationActionPolicy.ALLOW;
+                  final host = url.host.toLowerCase();
+                  if (host.isEmpty || host.endsWith('linkedin.com')) {
+                    return NavigationActionPolicy.ALLOW;
+                  }
+                  // Block off-host navigations (licensing CDNs, ads, etc.).
+                  // The login flow only needs linkedin.com.
+                  return NavigationActionPolicy.CANCEL;
+                },
+                onLoadStop: (controller, url) {
+                  unawaited(_maybeCaptureCookies(url));
+                },
+                onUpdateVisitedHistory: (controller, url, _) {
+                  unawaited(_maybeCaptureCookies(url));
+                },
               ),
               if (_isSubmitting)
                 Positioned.fill(
