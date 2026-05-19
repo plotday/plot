@@ -495,16 +495,36 @@ twistIntegrations.post(
   "/twist/:id/integrations/linkedin/cookie",
   async (c) => {
     const twistInstanceId = c.req.param("id");
+    const logger = createLogger({
+      twist_instance_id: twistInstanceId,
+      provider: "linkedin",
+      route: "linkedin/cookie",
+    });
 
     const rawBody = await c.req.json();
     const parseResult = LinkedInCookieRequestSchema.safeParse(rawBody);
     if (!parseResult.success) {
+      logger.warn("LinkedIn cookie payload failed schema validation", {
+        issues: parseResult.error.issues.map((i) => ({
+          path: i.path,
+          code: i.code,
+        })),
+      });
       return handleValidationError(parseResult.error);
     }
     const { liAt, jsessionid, userAgent, platform } = parseResult.data;
+    // Never log the raw cookie. The cookie itself is the credential —
+    // only log lengths so we can confirm the payload arrived intact.
+    logger.info("LinkedIn cookie request received", {
+      platform,
+      ua_len: userAgent.length,
+      li_at_len: liAt.length,
+      jsession_len: jsessionid.length,
+    });
 
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
+      logger.warn("LinkedIn cookie request: twist instance not found");
       return c.json({ message: "Twist not found" }, 404);
     }
 
@@ -514,11 +534,26 @@ twistIntegrations.post(
       twistInfo.version
     );
     if (!config) {
+      logger.warn(
+        "LinkedIn cookie request: no twist config in TWIST_CONFIG KV",
+        {
+          twist_package_id: twistInfo.twistPackageId,
+          version: twistInfo.version,
+        }
+      );
       return c.json({ message: "Twist config not found" }, 404);
     }
 
     const integrationsPathStr = config.integrationsMap["linkedin"];
     if (!integrationsPathStr) {
+      logger.warn(
+        "LinkedIn cookie request: provider not in integrationsMap (connector probably not deployed at this twist version)",
+        {
+          twist_package_id: twistInfo.twistPackageId,
+          version: twistInfo.version,
+          known_providers: Object.keys(config.integrationsMap),
+        }
+      );
       return c.json(
         { message: "Provider linkedin not configured for this twist" },
         400
@@ -526,15 +561,22 @@ twistIntegrations.post(
     }
 
     // Probe Voyager. This both validates the cookie and gives us the
-    // profile triple we need for LinkedInProviderData. The raw cookie is
-    // never logged.
+    // profile triple we need for LinkedInProviderData.
     const profile = await probeLinkedInProfile({ liAt, jsessionid, userAgent });
     if (!profile) {
+      logger.warn(
+        "LinkedIn cookie request: Voyager probe failed (cookie invalid/expired/blocked)"
+      );
       return c.json(
         { message: "Invalid or expired LinkedIn session cookie" },
         401
       );
     }
+    logger.info("LinkedIn cookie request: Voyager probe succeeded", {
+      profile_user_id: profile.userId,
+      profile_name_len: profile.fullName.length,
+      profile_email_present: profile.email != null,
+    });
 
     // Create the onAuth callback exactly like the OAuth path does.
     const callbacksId = c.env.CALLBACKS.idFromName(twistInstanceId);
@@ -544,6 +586,9 @@ twistIntegrations.post(
       path: integrationsPathStr.split(":"),
       functionName: "onAuth",
       extraArgs: [],
+    });
+    logger.info("LinkedIn cookie request: onAuth callback created", {
+      integrations_path: integrationsPathStr,
     });
 
     // Assemble the tokenInfo. `parseTokenResponse` on the linkedin
@@ -572,13 +617,41 @@ twistIntegrations.post(
         tokenInfo
       );
       disposeRpc(result);
+      logger.info("LinkedIn cookie request: onAuth completed");
     } catch (error) {
-      const logger = createLogger({ twist_instance_id: twistInstanceId });
-      logger.error("LinkedIn onAuth invocation failed", error as Error, {
-        provider: "linkedin",
-      });
+      logger.error("LinkedIn onAuth invocation failed", error as Error);
       return c.json({ message: "LinkedIn authentication failed" }, 500);
     }
+
+    // Verify onAuth actually persisted the connection. Without this check a
+    // silent failure inside the callback (e.g. buildActor fell through to a
+    // synthetic actor because the contact insert failed) would return 200
+    // while the Flutter UI sees no connection on its next refresh — the user
+    // would land back on the setup modal with "Continue with LinkedIn" still
+    // showing instead of channels. Better to surface it as an explicit error.
+    const persisted = await c.var.db
+      .selectFrom("twist_instance_connection")
+      .select("connected_at")
+      .where("twist_instance_id", "=", twistInstanceId)
+      .where("provider", "=", "linkedin")
+      .executeTakeFirst();
+    if (!persisted) {
+      logger.error(
+        "LinkedIn onAuth completed but no twist_instance_connection row was written",
+        new Error("LinkedIn connection not persisted"),
+        { profile_user_id: profile.userId }
+      );
+      return c.json(
+        {
+          message:
+            "LinkedIn signed in, but the connection could not be saved. Try reconnecting; if it keeps failing, contact support.",
+        },
+        500
+      );
+    }
+    logger.info("LinkedIn cookie request: connection persisted", {
+      connected_at: persisted.connected_at,
+    });
 
     return c.json({
       ok: true,

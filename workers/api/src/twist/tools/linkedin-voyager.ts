@@ -11,6 +11,8 @@
  * limiting, marking re-auth, transforming responses) live in the tool.
  */
 
+import { createLogger } from "@plotday/worker-util";
+
 const VOYAGER_BASE = "https://www.linkedin.com/voyager/api";
 
 /**
@@ -144,13 +146,21 @@ export async function probeLinkedInProfile(
   fullName: string;
   email: string | null;
 } | null> {
+  const logger = createLogger({ component: "linkedin-voyager", op: "probe" });
   let raw: unknown;
   try {
     raw = await voyagerFetch(creds, "/me");
-  } catch {
+  } catch (error) {
+    logger.warn("Voyager /me probe threw", {
+      message: (error as Error)?.message ?? String(error),
+      status: (error as VoyagerAuthError)?.status,
+    });
     return null;
   }
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== "object") {
+    logger.warn("Voyager /me probe returned non-object body");
+    return null;
+  }
 
   // Voyager `/me` returns a normalized envelope with the calling member's
   // mini-profile under either `data.miniProfile` or `included[].$type ==
@@ -169,11 +179,28 @@ export async function probeLinkedInProfile(
         entry?.entityUrn?.startsWith?.("urn:li:fs_miniProfile:")
     );
 
-  if (!mini) return null;
+  if (!mini) {
+    logger.warn(
+      "Voyager /me probe: could not find a mini-profile in response envelope",
+      {
+        data_keys: Object.keys(data),
+        included_count: included.length,
+        included_types: included
+          .slice(0, 10)
+          .map((e: any) => e?.$type ?? "<no-type>"),
+      }
+    );
+    return null;
+  }
 
   // Normalize the URN to the modern `urn:li:fsd_profile:<id>` form.
   const rawUrn: string | undefined = mini.entityUrn ?? mini.dashEntityUrn;
-  if (!rawUrn) return null;
+  if (!rawUrn) {
+    logger.warn("Voyager /me probe: mini-profile lacks entityUrn", {
+      mini_keys: Object.keys(mini),
+    });
+    return null;
+  }
   const userId = rawUrn.replace(
     /^urn:li:fs_miniProfile:/,
     "urn:li:fsd_profile:"
@@ -181,7 +208,10 @@ export async function probeLinkedInProfile(
   const firstName: string = mini.firstName ?? "";
   const lastName: string = mini.lastName ?? "";
   const fullName = `${firstName} ${lastName}`.trim() || mini.publicIdentifier;
-  if (!fullName) return null;
+  if (!fullName) {
+    logger.warn("Voyager /me probe: mini-profile lacks first/last/public id");
+    return null;
+  }
 
   // `/me` does not return the user's email in modern responses; leaving null
   // is acceptable — the connector populates contacts from message
