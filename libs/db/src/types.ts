@@ -1899,8 +1899,9 @@ export type Database = {
         Row: {
           applied_default_channel_id: number | null
           archived_at: string | null
+          classify_at: string | null
           created_at: string
-          priority_id: string
+          priority_id: string | null
           seq: unknown
           thread_id: string
           updated_at: string
@@ -1910,8 +1911,9 @@ export type Database = {
         Insert: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
+          classify_at?: string | null
           created_at?: string
-          priority_id: string
+          priority_id?: string | null
           seq?: unknown
           thread_id: string
           updated_at?: string
@@ -1921,8 +1923,9 @@ export type Database = {
         Update: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
+          classify_at?: string | null
           created_at?: string
-          priority_id?: string
+          priority_id?: string | null
           seq?: unknown
           thread_id?: string
           updated_at?: string
@@ -3889,6 +3892,7 @@ export type Database = {
           stage: string
         }[]
       }
+      classify_visibility_window: { Args: never; Returns: string }
       count_not_null: { Args: { val: unknown }; Returns: number }
       create_group: {
         Args: {
@@ -3986,6 +3990,24 @@ export type Database = {
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
+      mark_channel_default_candidates: {
+        Args: { p_channel_id: number }
+        Returns: {
+          thread_id: string
+          user_id: string
+        }[]
+      }
+      mark_reclassify_candidates: {
+        Args: {
+          p_anchor_thread_id: string
+          p_max_candidates?: number
+          p_user_id: string
+        }
+        Returns: {
+          thread_id: string
+          user_id: string
+        }[]
+      }
       match_priority_for_user: {
         Args: {
           p_required_filters?: Json
@@ -4396,18 +4418,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
@@ -4576,18 +4586,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
@@ -4715,18 +4713,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
-          {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
@@ -4792,18 +4778,6 @@ export type Database = {
           user_id: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_expanded"
-            referencedColumns: ["priority_id"]
-          },
           {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
@@ -4942,6 +4916,7 @@ export type Database = {
         Args: { priority_id: string; user_id: string }
         Returns: boolean
       }
+      root_priority_id: { Args: { p_user_id: string }; Returns: string }
       sibling_contact_ids: { Args: { p_contact_id: string }; Returns: string[] }
       update_note_tags: {
         Args: {

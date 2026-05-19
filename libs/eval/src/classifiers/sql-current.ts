@@ -1,4 +1,9 @@
-import type { Candidate, ClassificationResult, Classifier, ClassifierContext } from "./types";
+import type {
+  Candidate,
+  ClassificationResult,
+  Classifier,
+  ClassifierContext,
+} from "@plotday/classifier";
 
 /**
  * Wraps the live `classify_thread_for_user_explain` SQL function in the
@@ -7,7 +12,10 @@ import type { Candidate, ClassificationResult, Classifier, ClassifierContext } f
 export const sqlCurrentClassifier: Classifier = {
   name: "sql:current",
 
-  async classify(ctx: ClassifierContext, candidate: Candidate): Promise<ClassificationResult> {
+  async classify(
+    ctx: ClassifierContext,
+    candidate: Candidate
+  ): Promise<ClassificationResult> {
     const start = performance.now();
     const result = await ctx.rawQuery(
       `SELECT priority_id, stage, scores
@@ -23,6 +31,8 @@ export const sqlCurrentClassifier: Classifier = {
       stage: row?.stage ?? "none",
       scores: row?.scores ?? {},
       durationMs,
+      llmCalls: 0,
+      cacheHits: 0,
     };
   },
 };

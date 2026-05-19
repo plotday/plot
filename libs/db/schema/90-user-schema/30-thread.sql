@@ -40,7 +40,10 @@ SELECT
     -- User-visible archived_at is the first of: global thread archive,
     -- per-user thread_priority archive, or per-user priority archive.
     COALESCE(a.archived_at, tp.archived_at, upe.archived_at) AS archived_at,
-    tp.priority_id,
+    -- Pending case-A rows (priority_id IS NULL, past the visibility
+    -- window) surface at the user's root via COALESCE. The visibility
+    -- filter below keeps fresh pending rows hidden entirely.
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
     upe.path AS priority_path,
     a.draft,
     a.contacts,
@@ -166,8 +169,14 @@ FROM
     thread a
     JOIN thread_priority tp ON tp.thread_id = a.id
     LEFT JOIN "user".priority_expanded upe
-        ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
-    JOIN priority p ON p.id = tp.priority_id
+        ON upe.user_id = tp.user_id
+        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+    -- Effective priority join: case-A pending rows (priority_id NULL)
+    -- fall back to the user's root priority for the team-firewall check
+    -- below. Root priorities are user-owned, so team_id IS NULL and the
+    -- check trivially passes — which matches the COALESCE-to-root
+    -- behavior of the priority_id column the view exposes.
+    JOIN priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
     LEFT JOIN thread_unread tu ON tu.user_id = tp.user_id
         AND tu.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
@@ -177,6 +186,16 @@ WHERE
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
     )
+    -- Pending-classification visibility:
+    --   priority_id NOT NULL                       → settled, visible at priority_id
+    --   priority_id NULL, classify_at past window  → fall back to root (COALESCE above)
+    --   priority_id NULL, classify_at fresh        → hidden (consumer is working on it)
+    AND (
+        tp.priority_id IS NOT NULL
+        OR tp.classify_at < now() - public.classify_visibility_window()
+    )
+    -- Team firewall: a thread filed under a team-scoped priority is only
+    -- visible to current members of that team.
     AND (
         p.team_id IS NULL
         OR EXISTS (

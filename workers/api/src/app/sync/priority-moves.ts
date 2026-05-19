@@ -3,7 +3,7 @@ import { createLogger } from "@plotday/worker-util";
 
 import { sql, withDb, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { rpc } from "../../rpc";
+import { enqueueJobs } from "../../state/classify-thread";
 import { notifyUserSyncByEnv } from "./notify";
 
 const priorityMoves = new Hono<{ Bindings: Bindings }>();
@@ -56,12 +56,18 @@ priorityMoves.post("/sync/priority-moves", async (c) => {
         // c.var.db is destroyed by dbMiddleware once the response returns, so
         // post-response work must spin up its own short-lived Kysely.
         await withDb(c.env, async (db) => {
-          await withUserDb(db, userId, async (trx) => {
-            await rpc(trx, "reclassify_user_threads", {
-              p_user_id: userId,
-              p_anchor_thread_id: threadId,
-            });
-          });
+          const marked = await sql<{ user_id: string; thread_id: string }>`
+            SELECT user_id::text AS user_id, thread_id::text AS thread_id
+              FROM public.mark_reclassify_candidates(
+                ${userId}::uuid, ${threadId}::uuid)
+          `.execute(db);
+          await enqueueJobs(
+            c.env,
+            marked.rows.map((r) => ({
+              userId: r.user_id,
+              threadId: r.thread_id,
+            }))
+          );
           await notifyUserSyncByEnv(c.env, userId);
         });
       } catch (error) {

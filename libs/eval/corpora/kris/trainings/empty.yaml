@@ -1,0 +1,7 @@
+name: empty
+description: |
+  No training threads. Exercises the classifier's behavior with zero
+  user_moved signals — priority_prefix, channel_default, and root_fallback
+  stages can still fire; topic_shortcircuit and scoring cannot.
+
+threads: []

@@ -1529,11 +1529,26 @@ export class Plot extends Tool implements IPlot {
         .where("user_id", "=", userId)
         .executeTakeFirstOrThrow();
 
+      // Pending case-A rows have priority_id NULL — fall back to the
+      // user's root priority for downstream contact-add logic.
+      let scheduleContactsPriorityId = threadPriority.priority_id;
+      if (scheduleContactsPriorityId == null) {
+        const root = await this.db
+          .selectFrom("priority")
+          .select("id")
+          .where("user_id", "=", userId)
+          .where(sql<number>`nlevel(path)`, "=", 1)
+          .where("archived_at", "is", null)
+          .orderBy("created_at", "asc")
+          .executeTakeFirstOrThrow();
+        scheduleContactsPriorityId = root.id;
+      }
+
       await processScheduleContacts(
         this,
         result.id,
         schedule.contacts,
-        threadPriority.priority_id
+        scheduleContactsPriorityId
       );
     }
 

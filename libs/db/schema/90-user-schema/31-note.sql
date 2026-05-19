@@ -31,6 +31,10 @@ FROM
     note n
     JOIN thread a ON a.id = n.thread_id
     JOIN thread_priority tp ON tp.thread_id = a.id
+        AND (
+            tp.priority_id IS NOT NULL
+            OR tp.classify_at < now() - public.classify_visibility_window()
+        )
 WHERE
     -- Note-level filtering
     (n.draft = FALSE OR n.created_by = tp.user_id)
@@ -77,6 +81,10 @@ FROM
     note n
     JOIN thread a ON a.id = n.thread_id
     JOIN thread_priority tp ON tp.thread_id = a.id
+        AND (
+            tp.priority_id IS NOT NULL
+            OR tp.classify_at < now() - public.classify_visibility_window()
+        )
 WHERE
     (n.draft = FALSE OR n.created_by = tp.user_id)
     AND (a.draft = FALSE OR a.created_by = tp.user_id)

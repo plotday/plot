@@ -55,6 +55,7 @@ import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
+import { runSweep as runClassifySweep } from "./state/classify-thread";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -343,6 +344,26 @@ async function scheduled(
     await finalizeEventSessions(env, _ctx);
   } catch (error) {
     logger.error("Error in event session finalizer", error as Error);
+  }
+
+  // Hourly: re-enqueue every thread_priority row where classify_at is
+  // past 1h ago (queue retries exhausted). Bounded at 1000 rows/run;
+  // larger backlogs drain over multiple ticks. Gated to the first
+  // 5 minutes of each hour because the cron runs every 5 min.
+  if (scheduledMinutes < 5) {
+    try {
+      await withDb(env, async (db) => {
+        const result = await runClassifySweep(db, env);
+        if (result.enqueued > 0) {
+          logger.info("classify sweep enqueued pending rows", {
+            enqueued: result.enqueued,
+            oldest_classify_at: result.oldestClassifyAt,
+          });
+        }
+      });
+    } catch (error) {
+      logger.error("Error in classify sweep", error as Error);
+    }
   }
 
   // Daily sweep: re-discover external channels for every active connection so

@@ -3,7 +3,11 @@ import { Hono } from "hono";
 import { sql, withDb, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpc, rpcUser } from "../../rpc";
-import { classifyThreadForUser } from "../../state/classify-thread";
+import {
+  classifyThreadForUser,
+  dispatchPendingForThread,
+  enqueueJobs,
+} from "../../state/classify-thread";
 import { checkAiLimit, recordAiUsage } from "../../utils/ai-limits";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai-provider";
 import { cleanTitle } from "../../twist/tools/plot/thread";
@@ -467,16 +471,18 @@ threads.post("/sync/threads", async (c) => {
           await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
                     WHERE id = ${sql.val(upsertResult.id)}`.execute(trx);
         }
-        const matched = await classifyThreadForUser(trx, {
+        const matched = await classifyThreadForUser(trx, c.env, {
           userId,
           threadId: upsertResult.id,
           embedding: queryEmbedding ?? null,
         });
-        if (matched && matched !== threadData.priority_id) {
-          await sql`UPDATE thread_priority SET priority_id = ${sql.val(matched)}
-                    WHERE thread_id = ${sql.val(upsertResult.id)}
-                      AND user_id = ${sql.val(userId)}
-                      AND user_moved = FALSE`.execute(trx);
+        if (matched.priorityId !== threadData.priority_id || matched.pending) {
+          await sql`UPDATE thread_priority
+                       SET priority_id = ${sql.val(matched.priorityId)},
+                           classify_at = ${matched.pending ? sql`now()` : sql`NULL`}
+                     WHERE thread_id = ${sql.val(upsertResult.id)}
+                       AND user_id = ${sql.val(userId)}
+                       AND user_moved = FALSE`.execute(trx);
         }
       } catch (error) {
         console.error("[sync/threads] Auto-classification failed:", error);
@@ -509,10 +515,30 @@ threads.post("/sync/threads", async (c) => {
     return upsertResult;
   });
 
-  // After a first-time explicit filing, retroactively re-file the user's
-  // other threads against the newly-expanded training set. Mirrors the
-  // waitUntil block in POST /sync/priority-moves. Bounded internally to 500
-  // candidates and guards user_moved = TRUE rows.
+  // Dispatch classify jobs for peer thread_priority rows the upsert
+  // triggers wrote as pending (and the author's row if foreground
+  // classify failed). Runs in waitUntil after the transaction commits;
+  // opens its own DB handle because the request-scoped one is destroyed
+  // by then.
+  if (result?.id) {
+    const threadId = result.id as string;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(c.env);
+        try {
+          await dispatchPendingForThread(db, c.env, threadId);
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
+  }
+
+  // After a first-time explicit filing, retroactively mark the user's
+  // other threads pending re-classification against the newly-expanded
+  // training set. Mirrors the waitUntil block in POST /sync/priority-moves.
+  // mark_reclassify_candidates returns (user_id, thread_id) rows that the
+  // consumer Worker drains via enqueueJobs.
   if (userMovedTransitioned && result) {
     const reclassifyThreadId = result.id;
     c.executionCtx.waitUntil(
@@ -520,12 +546,18 @@ threads.post("/sync/threads", async (c) => {
         const logger = createLogger({ component: "sync-threads-reclassify" });
         try {
           await withDb(c.env, async (db) => {
-            await withUserDb(db, userId, async (trx) => {
-              await rpc(trx, "reclassify_user_threads", {
-                p_user_id: userId,
-                p_anchor_thread_id: reclassifyThreadId,
-              });
-            });
+            const marked = await sql<{ user_id: string; thread_id: string }>`
+              SELECT user_id::text AS user_id, thread_id::text AS thread_id
+                FROM public.mark_reclassify_candidates(
+                  ${userId}::uuid, ${reclassifyThreadId}::uuid)
+            `.execute(db);
+            await enqueueJobs(
+              c.env,
+              marked.rows.map((r) => ({
+                userId: r.user_id,
+                threadId: r.thread_id,
+              }))
+            );
             await notifyUserSyncByEnv(c.env, userId);
           });
         } catch (error) {

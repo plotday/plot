@@ -78,6 +78,8 @@ type ThreadRow = {
   contacts: string[];
   groups: string[];
   embedding: number[] | null;
+  /** Author identity: first note's author_id, falling back to thread.created_by when no notes exist. */
+  author: string | null;
   filed_to_priority: string;
 };
 type CaseRow = ThreadRow & {
@@ -98,15 +100,25 @@ async function main() {
     console.log(`Found user ${opts.userEmail} → ${userId}`);
 
     const priorities = await loadPriorities(client, userId);
+    const activePriorityIds = new Set(priorities.map((p) => p.id));
     const contacts = await loadContacts(client, userId);
     const channels = await loadChannels(client, userId);
-    const trainingThreads = await loadTrainingThreads(client, userId);
+    const allTrainingThreads = await loadTrainingThreads(client, userId);
+    const trainingThreads = allTrainingThreads.filter((t) =>
+      activePriorityIds.has(t.filed_to_priority)
+    );
+    const droppedTrainings = allTrainingThreads.length - trainingThreads.length;
+    if (droppedTrainings > 0) {
+      console.log(
+        `  dropped ${droppedTrainings} training threads filed in archived priorities`
+      );
+    }
     const cases = await loadSampledCases(
       client,
       userId,
       opts.caseCount,
       new Set(trainingThreads.map((t) => t.id)),
-      new Set(priorities.map((p) => p.id))
+      activePriorityIds
     );
     const referencedGroups = new Set<string>();
     for (const t of [...trainingThreads, ...cases]) {
@@ -216,6 +228,11 @@ async function loadTrainingThreads(
   client: pg.Client,
   userId: string
 ): Promise<ThreadRow[]> {
+  // Pull each user_moved thread plus a fallback embedding from the earliest
+  // non-archived note (when t.embedding itself is NULL — common for threads
+  // created before auto-classify was rolled out). Author is the first note's
+  // author_id (the contact-level identity for matching), with thread.created_by
+  // as fallback for threads with no notes.
   const { rows } = await client.query<{
     id: string;
     title: string | null;
@@ -223,6 +240,9 @@ async function loadTrainingThreads(
     contacts: string[];
     groups: string[];
     embedding_text: string | null;
+    note_embedding_text: string | null;
+    note_author_id: string | null;
+    created_by: string;
     filed_to_priority: string;
   }>(
     `SELECT t.id,
@@ -231,6 +251,24 @@ async function loadTrainingThreads(
             t.contacts,
             t.groups,
             t.embedding::text AS embedding_text,
+            (
+              SELECT n.embedding::text
+                FROM public.note n
+               WHERE n.thread_id = t.id
+                 AND n.archived_at IS NULL
+                 AND n.embedding IS NOT NULL
+               ORDER BY n.created_at ASC
+               LIMIT 1
+            ) AS note_embedding_text,
+            (
+              SELECT n.author_id
+                FROM public.note n
+               WHERE n.thread_id = t.id
+                 AND n.archived_at IS NULL
+               ORDER BY n.created_at ASC
+               LIMIT 1
+            ) AS note_author_id,
+            t.created_by,
             tp.priority_id AS filed_to_priority
        FROM public.thread_priority tp
        JOIN public.thread t ON t.id = tp.thread_id
@@ -241,8 +279,15 @@ async function loadTrainingThreads(
     [userId]
   );
   return rows.map((r) => ({
-    ...r,
-    embedding: parseHalfvec(r.embedding_text),
+    id: r.id,
+    title: r.title,
+    topic: r.topic,
+    contacts: r.contacts,
+    groups: r.groups,
+    embedding:
+      parseHalfvec(r.embedding_text) ?? parseHalfvec(r.note_embedding_text),
+    author: r.note_author_id ?? r.created_by,
+    filed_to_priority: r.filed_to_priority,
   }));
 }
 
@@ -274,6 +319,9 @@ async function loadSampledCases(
       contacts: string[];
       groups: string[];
       embedding_text: string | null;
+      note_embedding_text: string | null;
+      note_author_id: string | null;
+      created_by: string;
       filed_to_priority: string;
     }>(
       `SELECT t.id,
@@ -282,6 +330,24 @@ async function loadSampledCases(
               t.contacts,
               t.groups,
               t.embedding::text AS embedding_text,
+              (
+                SELECT n.embedding::text
+                  FROM public.note n
+                 WHERE n.thread_id = t.id
+                   AND n.archived_at IS NULL
+                   AND n.embedding IS NOT NULL
+                 ORDER BY n.created_at ASC
+                 LIMIT 1
+              ) AS note_embedding_text,
+              (
+                SELECT n.author_id
+                  FROM public.note n
+                 WHERE n.thread_id = t.id
+                   AND n.archived_at IS NULL
+                 ORDER BY n.created_at ASC
+                 LIMIT 1
+              ) AS note_author_id,
+              t.created_by,
               tp.priority_id AS filed_to_priority
          FROM public.thread_priority tp
          JOIN public.thread t ON t.id = tp.thread_id
@@ -310,7 +376,17 @@ async function loadSampledCases(
     const stride = Math.max(1, Math.floor(filtered.length / targetPer));
     for (let i = 0; i < filtered.length && out.length < caseCount; i += stride) {
       const r = filtered[i]!;
-      out.push({ ...r, embedding: parseHalfvec(r.embedding_text) });
+      out.push({
+        id: r.id,
+        title: r.title,
+        topic: r.topic,
+        contacts: r.contacts,
+        groups: r.groups,
+        embedding:
+          parseHalfvec(r.embedding_text) ?? parseHalfvec(r.note_embedding_text),
+        author: r.note_author_id ?? r.created_by,
+        filed_to_priority: r.filed_to_priority,
+      });
     }
   }
   return out.slice(0, caseCount);
@@ -448,6 +524,7 @@ async function writeCorpus(
       groups: t.groups.map((id) => groupSlug.get(id) ?? id),
       embedding_ref: embRefOf.get(t.id) ?? null,
       filed_to_priority: prioritySlug.get(t.filed_to_priority) ?? t.filed_to_priority,
+      author: t.author ? (contactSlug.get(t.author) ?? t.author) : null,
     })),
   };
   await writeFile(
@@ -467,6 +544,7 @@ async function writeCorpus(
         contacts: c.contacts.map((id) => contactSlug.get(id) ?? id),
         groups: c.groups.map((id) => groupSlug.get(id) ?? id),
         embedding_ref: embRefOf.get(c.id) ?? null,
+        author: c.author ? (contactSlug.get(c.author) ?? c.author) : null,
       },
       labels: {
         gold: null,

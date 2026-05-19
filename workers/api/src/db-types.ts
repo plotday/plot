@@ -740,8 +740,15 @@ export interface ThreadAssociation {
 export interface ThreadPriority {
   applied_default_channel_id: Int8 | null;
   archived_at: Timestamp | null;
+  /**
+   * Timestamp when classification was last requested. NULL once classification has succeeded. NOT NULL signals the consumer Worker (workers/classify) to (re-)classify this row.
+   */
+  classify_at: Timestamp | null;
   created_at: Generated<Timestamp>;
-  priority_id: string;
+  /**
+   * User's priority filing. NULL means classification is pending (see classify_at). Views must use COALESCE(priority_id, root_priority_id(user_id)) gated by the visibility filter (priority_id IS NOT NULL OR classify_at < now() - classify_visibility_window()).
+   */
+  priority_id: string | null;
   seq: Generated<string>;
   thread_id: string;
   updated_at: Generated<Timestamp>;

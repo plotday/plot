@@ -10,7 +10,7 @@ import { createLogger } from "@plotday/worker-util";
 import type { DB } from "../db-types";
 import { withDb, withUserDb } from "../db";
 import type { Bindings } from "../env";
-import { rpc } from "../rpc";
+import { enqueueJobs, type ClassifyJob } from "./classify-thread";
 import { notifyUserSyncByEnv } from "../app/sync/notify";
 
 // Debounce window. Priority edits and channel enables arrive in clusters
@@ -284,7 +284,7 @@ async function runRouter(
     const priorityChanged = nextId !== currentId;
 
     try {
-      await withUserDb(db, userId, async (trx) => {
+      const jobs: ClassifyJob[] = await withUserDb(db, userId, async (trx) => {
         if (!priorityChanged) {
           await sql`
             UPDATE public.channel
@@ -292,7 +292,7 @@ async function runRouter(
             WHERE id = ${channelPk}::bigint
               AND (default_priority_reason IS DISTINCT FROM ${reason})
           `.execute(trx);
-          return;
+          return [];
         }
 
         await sql`
@@ -301,8 +301,20 @@ async function runRouter(
               default_priority_reason = ${reason}
           WHERE id = ${channelPk}::bigint
         `.execute(trx);
-        await rpc(trx, "apply_channel_default", { p_channel_id: channelPk });
+        // Returns (user_id, thread_id) for every row marked pending —
+        // the queue receives one ClassifyJob per row, batched at 100.
+        const marked = await sql<{ user_id: string; thread_id: string }>`
+          SELECT user_id::text AS user_id, thread_id::text AS thread_id
+            FROM public.mark_channel_default_candidates(${channelPk}::bigint)
+        `.execute(trx);
+        return marked.rows.map((r) => ({
+          userId: r.user_id,
+          threadId: r.thread_id,
+        }));
       });
+      // Enqueue OUTSIDE the per-channel transaction so the queue write
+      // never rolls back the marker UPDATEs. enqueueJobs chunks at 100.
+      await enqueueJobs(env, jobs);
       if (priorityChanged) changed++;
     } catch (error) {
       failedCount++;

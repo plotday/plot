@@ -15,8 +15,10 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export function uniqueSlugifier(): (input: string, fallback?: string) => string {
-  const used = new Set<string>();
+export function uniqueSlugifier(
+  preseed?: Iterable<string>
+): (input: string, fallback?: string) => string {
+  const used = new Set<string>(preseed);
   return (input, fallback) => {
     let base = slugify(input);
     if (!base && fallback) base = slugify(fallback);

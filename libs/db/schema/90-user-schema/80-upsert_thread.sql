@@ -513,85 +513,60 @@ BEGIN
     END IF;
 
     -- Promote pending contacts that the caller has now attested: create
-    -- thread_priority rows for each linked user whose contact was just
-    -- moved out of pending_contacts. Uses classify_thread_for_user to pick
-    -- each peer's priority. Idempotent via ON CONFLICT.
+    -- pending thread_priority rows for each linked user whose contact was
+    -- just moved out of pending_contacts. The consumer Worker picks each
+    -- peer's priority once the API enqueues the ClassifyJobs after the
+    -- transaction commits. applied_default_channel_id is left NULL here —
+    -- the consumer recomputes via channel_default_marker when it writes
+    -- the final priority.
     IF cardinality(v_promoted_contacts) > 0 THEN
-        DECLARE
-            r RECORD;
-            v_peer_priority uuid;
-        BEGIN
-            FOR r IN
-                SELECT DISTINCT uc.user_id AS peer_user_id
-                FROM unnest(v_promoted_contacts) AS arr(contact_id)
-                JOIN user_contact uc
-                  ON uc.contact_id = arr.contact_id
-                 AND uc.linked = TRUE
-                 AND uc.archived_at IS NULL
-                WHERE uc.user_id IS DISTINCT FROM upsert_thread.user_id
-            LOOP
-                v_peer_priority := public.classify_thread_for_user(r.peer_user_id, v_result.id);
-                IF v_peer_priority IS NOT NULL THEN
-                    INSERT INTO thread_priority (thread_id, user_id, priority_id, applied_default_channel_id)
-                    VALUES (
-                        v_result.id,
-                        r.peer_user_id,
-                        v_peer_priority,
-                        public.channel_default_marker (
-                            r.peer_user_id, v_result.id, v_peer_priority
-                        )
-                    )
-                    ON CONFLICT ON CONSTRAINT thread_priority_pkey
-                    DO UPDATE SET archived_at = NULL, updated_at = now();
+        INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
+        SELECT v_result.id, peer.user_id, NULL::uuid, now()
+        FROM (
+            SELECT DISTINCT uc.user_id
+            FROM unnest(v_promoted_contacts) AS arr(contact_id)
+            JOIN user_contact uc
+              ON uc.contact_id = arr.contact_id
+             AND uc.linked = TRUE
+             AND uc.archived_at IS NULL
+            WHERE uc.user_id IS DISTINCT FROM upsert_thread.user_id
+        ) peer
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey
+        DO UPDATE SET archived_at = NULL,
+                      -- Mark for re-classification on re-attestation.
+                      classify_at = COALESCE(thread_priority.classify_at, now()),
+                      updated_at = now();
 
-                    INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-                    VALUES (r.peer_user_id, v_result.id, 'inform-updates', 50)
-                    ON CONFLICT ON CONSTRAINT thread_unread_pkey DO NOTHING;
-                END IF;
-            END LOOP;
-        END;
+        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
+        SELECT peer.user_id, v_result.id, 'inform-updates', 50
+        FROM (
+            SELECT DISTINCT uc.user_id
+            FROM unnest(v_promoted_contacts) AS arr(contact_id)
+            JOIN user_contact uc
+              ON uc.contact_id = arr.contact_id
+             AND uc.linked = TRUE
+             AND uc.archived_at IS NULL
+            WHERE uc.user_id IS DISTINCT FROM upsert_thread.user_id
+        ) peer
+        ON CONFLICT ON CONSTRAINT thread_unread_pkey DO NOTHING;
     END IF;
 
-    -- Re-classify peer thread_priority rows on INITIAL creation. The
+    -- Re-mark peer thread_priority rows pending on INITIAL creation. The
     -- file_thread_priority_peers / file_thread_priority_for_group_members
-    -- AFTER triggers fire when INSERT INTO thread above completes — at that
-    -- point the caller's own thread_priority row has not been inserted yet
-    -- (that happens in the IF v_caller_attested block above). The
-    -- cross-user keyed priority match in classify_thread_for_user therefore
-    -- can't see the author's filing during the trigger pass. Re-run the
-    -- classifier here, now that the author's row exists, and update peers
-    -- whose computed priority changed. Skipped on UPDATE because the
-    -- triggers fire correctly on UPDATE OF contacts / groups (author is
-    -- already filed by then) and we don't want to override peers who have
-    -- been organizing the thread on their own side.
+    -- triggers wrote pending markers; this block additionally re-marks any
+    -- peer rows whose cross-user keyed-priority signal only becomes
+    -- available now that the author's row has been inserted. Skipped on
+    -- UPDATE because the triggers handle UPDATE OF contacts / groups
+    -- correctly and we don't want to disrupt peers who organized on their
+    -- own side.
     IF v_existing.id IS NULL THEN
-        DECLARE
-            r_peer RECORD;
-            v_new_priority uuid;
-        BEGIN
-            FOR r_peer IN
-                SELECT tp.user_id
-                FROM public.thread_priority tp
-                WHERE tp.thread_id = v_result.id
-                  AND tp.user_id IS DISTINCT FROM upsert_thread.user_id
-                  AND tp.user_moved IS NOT TRUE
-                  AND tp.archived_at IS NULL
-            LOOP
-                v_new_priority := public.classify_thread_for_user(
-                    r_peer.user_id, v_result.id
-                );
-                IF v_new_priority IS NOT NULL THEN
-                    UPDATE public.thread_priority tp
-                    SET priority_id = v_new_priority,
-                        updated_at = now()
-                    WHERE tp.thread_id = v_result.id
-                      AND tp.user_id = r_peer.user_id
-                      AND tp.priority_id IS DISTINCT FROM v_new_priority
-                      AND tp.user_moved IS NOT TRUE
-                      AND tp.archived_at IS NULL;
-                END IF;
-            END LOOP;
-        END;
+        UPDATE public.thread_priority tp
+        SET classify_at = COALESCE(tp.classify_at, now()),
+            updated_at = now()
+        WHERE tp.thread_id = v_result.id
+          AND tp.user_id IS DISTINCT FROM upsert_thread.user_id
+          AND tp.user_moved IS NOT TRUE
+          AND tp.archived_at IS NULL;
     END IF;
 
     -- Ensure the calling user has user_contact rows for all external

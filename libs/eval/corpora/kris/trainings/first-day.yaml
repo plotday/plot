@@ -1,0 +1,54 @@
+name: first-day
+description: |
+  Two user_moved threads, each in a distinct priority. Exercises the regime
+  where the scoring stage is sparse and an LLM-or-shortcut stage should
+  fill in.
+
+threads:
+  - id: 019e2c5b-11d7-78d2-b803-b8900a6ceba5
+    title: 100 Men Who Give a Damn
+    topic: channel:9718
+    contacts:
+      - c-77278cefba52
+      - c-c90cd3b7024c
+      - c-ca268f165e7b
+      - c-a06d31739263
+      - c-402115f2589e
+      - c-ddc58f507491
+      - c-ee41d6d3144f
+      - c-7fe654cd3339
+      - c-cfa7a443b43a
+      - c-9e68e440ea74
+      - c-fe016a095bd5
+      - c-b766439920c2
+      - c-e8f96302ede4
+      - c-79b9518ebe01
+      - c-c6a7d479eda0
+      - c-268f93522018
+      - c-1f27e3644236
+      - c-0c422f4befcd
+      - c-fc1fce5215fd
+      - c-576e1822a4f2
+      - c-9f148f90fbf9
+      - c-a6a25483f08c
+      - c-ac72a59b2fae
+      - c-0d1bcd307e82
+      - c-525ea53c59a7
+      - c-a4a578770eee
+      - c-0b1de77fad2d
+      - c-322182916ca3
+      - c-6394dce1e801
+      - c-6dad1b6b4bf1
+      - c-b9b2aa7eefbe
+    groups: []
+    embedding_ref: null
+    filed_to_priority: personal
+  - id: 019d3c7f-eb11-7314-b95b-313ed8944f64
+    title: "Superhuman: Docs, Mail, and AI That Work Everywhere"
+    topic: origin:019d3100-e1a6-7627-8cf1-585420e4a676
+    contacts:
+      - c-3f5cc8fd9fc9
+      - c-6864536f26df
+    groups: []
+    embedding_ref: null
+    filed_to_priority: market-and-competitors

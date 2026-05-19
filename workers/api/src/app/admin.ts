@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 
 import type { Bindings } from "../env";
+import { withDb } from "../db";
 import { refreshAllChannels } from "../scheduled/refresh-channels";
+import { runSweep } from "../state/classify-thread";
 import { createLogger } from "@plotday/worker-util";
 
 const admin = new Hono<{ Bindings: Bindings }>();
@@ -48,6 +50,38 @@ admin.post("/admin/refresh-channels", async (c) => {
     logger.error("admin refresh-channels failed", error as Error);
     c.var.tracker?.captureException(error as Error, {
       operation: "adminRefreshChannels",
+    });
+    return c.json(
+      {
+        ok: false,
+        error: (error as Error).message,
+        durationMs: Date.now() - startedAt,
+      },
+      500
+    );
+  }
+});
+
+// Manual trigger for the hourly classifier sweep — re-enqueues every
+// thread_priority row with classify_at past 1h ago so the consumer
+// Worker re-attempts. Use after deploying a classifier fix to drain
+// stuck rows without waiting for the next scheduled tick. Bounded at
+// 1000 rows per call; run repeatedly if the backlog is larger.
+admin.post("/admin/classify/sweep", async (c) => {
+  const logger = createLogger({ operation: "adminClassifySweep" });
+  const startedAt = Date.now();
+  try {
+    const result = await withDb(c.env, (db) => runSweep(db, c.env));
+    return c.json({
+      ok: true,
+      enqueued: result.enqueued,
+      oldestClassifyAt: result.oldestClassifyAt,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    logger.error("admin classify sweep failed", error as Error);
+    c.var.tracker?.captureException(error as Error, {
+      operation: "adminClassifySweep",
     });
     return c.json(
       {

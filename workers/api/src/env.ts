@@ -211,6 +211,12 @@ export type Bindings = {
 
   readonly TWIST_CONFIG: KVNamespace;
   readonly VOTES: KVNamespace;
+  // Shared between workers/api and workers/classify. Holds the LLM
+  // response cache (llm-classify:*) and per-user daily budget counters
+  // (llm-budget:*). See libs/classifier-runtime.
+  readonly LLM_CACHE: KVNamespace;
+  // Google Gemini API key used by the production classifier.
+  readonly GOOGLE_GENERATIVE_AI_API_KEY: string;
 
   // Rate Limiting Bindings
   readonly GENERAL_RATE_LIMITER: RateLimit;
@@ -234,6 +240,8 @@ export type Bindings = {
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly WEBHOOK_QUEUE: Queue<WebhookMessage>;
   readonly MAIL_QUEUE: Queue<MailRequest>;
+  // Producer side of the classify-thread queue; consumer is workers/classify.
+  readonly QUEUE_CLASSIFY: Queue<{ userId: string; threadId: string }>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
   readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;

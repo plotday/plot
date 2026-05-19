@@ -225,7 +225,7 @@ async function findTrialThread(
     .where("thread.archived_at", "is", null)
     .executeTakeFirst();
 
-  if (!row) return null;
+  if (!row || row.priority_id == null) return null;
 
   const plotTwistInstanceId = await getPlotTwistInstanceId(db, row.priority_id);
 

@@ -10,6 +10,20 @@ export type {
   ClassifierContext,
   ClassificationResult,
   Candidate,
-} from "./classifiers/types";
+  HybridParams,
+  SignalWeights,
+  Nonlinearity,
+  AggregationMode,
+  LlmParams,
+  LLMClient,
+  LLMInputs,
+  LLMOutput,
+} from "@plotday/classifier";
+export {
+  DEFAULTS,
+  DEFAULTS_LLM,
+  makeHybridClassifier,
+  makeHybridLlmClassifier,
+} from "@plotday/classifier";
 export type { RunResult, RunSummary } from "./runner/run";
 export { runEval } from "./runner/run";

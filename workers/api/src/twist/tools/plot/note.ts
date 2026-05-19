@@ -772,7 +772,20 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       throw new Error(`Activity not found: ${noteData.thread_id}`);
     }
 
-    const priorityId = activityPriority.priority_id;
+    // Pending case-A rows have priority_id NULL — fall back to the
+    // user's root priority so downstream tag/actor processing works.
+    let priorityId = activityPriority.priority_id;
+    if (priorityId == null) {
+      const root = await plot.db
+        .selectFrom("priority")
+        .select("id")
+        .where("user_id", "=", noteUserId)
+        .where(sql<number>`nlevel(path)`, "=", 1)
+        .where("archived_at", "is", null)
+        .orderBy("created_at", "asc")
+        .executeTakeFirstOrThrow();
+      priorityId = root.id;
+    }
 
     // Skip priority access validation for notes - activities may have been moved
     // after creation and the twist should still be able to update notes

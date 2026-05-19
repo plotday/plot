@@ -10,7 +10,7 @@ CREATE OR REPLACE VIEW "user"."priority_unread" --
 AS
 SELECT
     tp.user_id,
-    tp.priority_id,
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
     TRUE AS unread,
     MAX(tu.updated_at) AS updated_at
 FROM
@@ -23,7 +23,16 @@ FROM
             a.contacts && "user".user_contact_ids(tp.user_id)
             OR a.groups && "user".user_group_ids(tp.user_id)
         )
-    JOIN priority p ON p.id = tp.priority_id
+        -- Pending case-A rows past the visibility window fall back to root;
+        -- fresh pending rows are hidden so phantom unread dots don't appear.
+        AND (
+            tp.priority_id IS NOT NULL
+            OR tp.classify_at < now() - public.classify_visibility_window()
+        )
+    -- Effective priority for the team-firewall check. Case-A pending
+    -- rows surface at root via COALESCE, and root priorities are
+    -- user-owned (team_id IS NULL) so the team check passes trivially.
+    JOIN priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
         AND (
             p.team_id IS NULL
             OR EXISTS (
@@ -38,4 +47,4 @@ FROM
         AND tu.read_at IS NULL
 GROUP BY
     tp.user_id,
-    tp.priority_id;
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id));

@@ -15,4 +15,8 @@ SELECT
     ta."order"
 FROM
     thread_association ta
-    JOIN thread_priority tp ON tp.thread_id = ta.parent_thread_id;
+    JOIN thread_priority tp ON tp.thread_id = ta.parent_thread_id
+        AND (
+            tp.priority_id IS NOT NULL
+            OR tp.classify_at < now() - public.classify_visibility_window()
+        );

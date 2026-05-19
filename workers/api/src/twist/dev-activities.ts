@@ -144,34 +144,34 @@ async function ensureLogsThread(
     .returning("id")
     .executeTakeFirstOrThrow();
 
-  // File the thread for everyone who should see it. For personal env that's
-  // just the owner; for publisher env it's every group member. classify
-  // resolves the priority:@plot.twist-dev: topic prefix into each consumer's
-  // Twist Development priority.
+  // Dev seeders: file pending rows for every consumer. The consumer
+  // Worker resolves each user's priority asynchronously (priority:@plot.twist-dev:
+  // topic prefix → each user's Twist Development priority). Dev-only
+  // path; production threads use classifyThreadForUser directly.
   if (groupId) {
     await sql`
-      INSERT INTO thread_priority (thread_id, user_id, priority_id)
+      INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
       SELECT DISTINCT
         ${threadRow.id}::uuid,
         uc.user_id,
-        classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid)
+        NULL::uuid,
+        now()
       FROM group_member gm
       JOIN user_contact uc ON uc.contact_id = gm.contact_id
       WHERE gm.group_id = ${groupId}::uuid
         AND uc.linked = TRUE
         AND uc.archived_at IS NULL
-        AND classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid) IS NOT NULL
       ON CONFLICT (thread_id, user_id) DO NOTHING
     `.execute(db);
   } else {
-    // Personal: file for the single owner.
     await sql`
-      INSERT INTO thread_priority (thread_id, user_id, priority_id)
-      SELECT
+      INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
+      VALUES (
         ${threadRow.id}::uuid,
         ${threadOwnerUserId}::uuid,
-        classify_thread_for_user(${threadOwnerUserId}::uuid, ${threadRow.id}::uuid)
-      WHERE classify_thread_for_user(${threadOwnerUserId}::uuid, ${threadRow.id}::uuid) IS NOT NULL
+        NULL::uuid,
+        now()
+      )
       ON CONFLICT (thread_id, user_id) DO NOTHING
     `.execute(db);
   }

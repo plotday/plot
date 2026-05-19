@@ -204,7 +204,7 @@ export async function loadTrainingSet(
        VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7::halfvec)`,
       [
         t.id,
-        world.user.id,
+        t.author ?? world.user.id,
         t.title,
         t.topic,
         t.contacts,
@@ -242,6 +242,7 @@ export async function stageCandidate(
     contacts: string[];
     groups: string[];
     embedding: number[] | null;
+    author: string | null;
   }
 ): Promise<void> {
   const embLiteral = caseCandidate.embedding
@@ -253,7 +254,7 @@ export async function stageCandidate(
      VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7::halfvec)`,
     [
       caseCandidate.threadId,
-      corpus.world.user.id,
+      caseCandidate.author ?? corpus.world.user.id,
       caseCandidate.title,
       caseCandidate.topic,
       caseCandidate.contacts,

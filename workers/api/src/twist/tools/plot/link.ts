@@ -681,7 +681,7 @@ export async function updateLink(
       .where("thread_id", "=", existingLink.thread_id)
       .where("user_id", "=", userId)
       .executeTakeFirst();
-    if (currentThreadPriority) {
+    if (currentThreadPriority?.priority_id) {
       await plot.validatePriorityAccess(currentThreadPriority.priority_id);
     }
   }
@@ -699,7 +699,12 @@ export async function updateLink(
     if (!targetThread) {
       throw new Error(`Target thread not found: ${link.threadId}`);
     }
-    await plot.validatePriorityAccess(targetThread.priority_id);
+    // Pending case-A rows (priority_id NULL) skip the access check.
+    // The consumer Worker will fill priority_id shortly; meanwhile the
+    // link still attaches to the user's pending thread row.
+    if (targetThread.priority_id) {
+      await plot.validatePriorityAccess(targetThread.priority_id);
+    }
 
     await plot.db
       .updateTable("link")

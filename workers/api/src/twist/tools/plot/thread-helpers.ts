@@ -12,7 +12,7 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { createLogger } from "@plotday/worker-util";
-import { rpc } from "../../../rpc";
+import { classifyThreadForUser } from "../../../state/classify-thread";
 import { addContacts } from "./contacts";
 import type { Plot } from "./index";
 
@@ -1124,57 +1124,53 @@ export async function prepareThreadForDb(
   if ("priority" in activity && activity.priority?.id) {
     targetPriorityId = activity.priority.id;
   } else {
-    // Classify via user-defined priority rules.
+    // Classify via the production hybrid-LLM classifier. Pre-insert
+    // case: no threadId yet, only the embedding is available. On
+    // transient classifier failure, classifyThreadForUser files at
+    // root and reports `pending: true` — the twist-created thread is
+    // still inserted there, and the consumer Worker (driven by the
+    // dispatch enqueue path) re-files when classification recovers.
     const ownerUserId = await plot.getUserId();
-    const creatorTeamId = await plot.getTwistInstanceTeamId(plot.twistInstanceId);
-
-    const matched = await rpc(plot.db, "classify_thread_for_user", {
-      p_user_id: ownerUserId,
-      p_embedding: embeddingJson ?? null,
+    // Classify via the production hybrid-LLM cascade. Pre-insert: no
+    // threadId yet, only embedding is available. classifyThreadForUser
+    // always returns a non-null priorityId (root if the cascade has no
+    // better match) and a `pending` flag set on transient failure —
+    // currently dropped here per the twist-path acceptable-degradation
+    // note in the production-wiring spec §14 followups.
+    const matched = await classifyThreadForUser(plot.db, plot.env, {
+      userId: ownerUserId,
+      embedding: embeddingJson ?? null,
     });
 
-    const matchedPriorityId =
-      typeof matched === "string"
-        ? matched
-        : Array.isArray(matched)
-          ? (matched[0] as string | undefined)
-          : (matched as string | null | undefined);
-
-    // classify_thread_for_user can only derive team scope when given a
-    // p_thread_id, but the thread doesn't exist yet at this point. So for
-    // team-connector twists, validate the matched priority's team_id here.
-    // Without this, a team thread could land in a non-team priority via
-    // topic_shortcircuit / scoring / keyed_priority / channel_default /
-    // priority_prefix stages.
-    let validatedMatchedId: string | null = null;
-    if (matchedPriorityId != null) {
-      if (creatorTeamId != null) {
-        const matchedTeam = await plot.db
-          .selectFrom("priority")
-          .select("team_id")
-          .where("id", "=", matchedPriorityId)
-          .executeTakeFirst();
-        const matchedTeamId = (matchedTeam?.team_id as string | null) ?? null;
-        if (matchedTeamId != null && matchedTeamId === creatorTeamId) {
-          validatedMatchedId = matchedPriorityId;
-        }
+    // Team-connector validation: classifyThreadForUser doesn't know
+    // about per-twist team scoping. For team-connector twists, ensure
+    // the matched priority is on the same team; otherwise fall back to
+    // the user's first team priority (or skip filing for users not in
+    // the team). Without this, a team thread could land in a non-team
+    // priority via topic_shortcircuit / scoring / keyed_priority /
+    // channel_default / priority_prefix stages.
+    const creatorTeamId = await plot.getTwistInstanceTeamId(plot.twistInstanceId);
+    if (creatorTeamId != null) {
+      const matchedTeam = await plot.db
+        .selectFrom("priority")
+        .select("team_id")
+        .where("id", "=", matched.priorityId)
+        .executeTakeFirst();
+      const matchedTeamId = (matchedTeam?.team_id as string | null) ?? null;
+      if (matchedTeamId === creatorTeamId) {
+        targetPriorityId = matched.priorityId;
       } else {
-        validatedMatchedId = matchedPriorityId;
+        const teamPriorityId = await plot.getFirstTeamPriorityId(
+          ownerUserId,
+          creatorTeamId
+        );
+        if (teamPriorityId == null) {
+          return null; // User not in this team — don't file.
+        }
+        targetPriorityId = teamPriorityId;
       }
-    }
-
-    if (validatedMatchedId != null) {
-      targetPriorityId = validatedMatchedId;
-    } else if (creatorTeamId != null) {
-      // Team-connector authored: must file under a team priority. NULL means
-      // user is not in this team — don't file for them.
-      const teamPriorityId = await plot.getFirstTeamPriorityId(ownerUserId, creatorTeamId);
-      if (teamPriorityId == null) {
-        return null; // No filing for this user.
-      }
-      targetPriorityId = teamPriorityId;
     } else {
-      targetPriorityId = await plot.getRootPriorityId(ownerUserId);
+      targetPriorityId = matched.priorityId;
     }
   }
 

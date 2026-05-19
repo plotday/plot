@@ -24,6 +24,8 @@ export interface Candidate {
   groups: string[];
   /** 384-dim embedding, already converted to halfvec literal in the DB row. */
   embedding: number[] | null;
+  /** Resolved created_by for the candidate thread (UUID or null). */
+  author: string | null;
 }
 
 export interface ClassificationResult {
@@ -31,6 +33,10 @@ export interface ClassificationResult {
   stage: string;
   scores?: Record<string, unknown>;
   durationMs: number;
+  /** Number of LLM calls executed during this classification (default 0). */
+  llmCalls: number;
+  /** Number of LLM cache hits during this classification (default 0). */
+  cacheHits: number;
 }
 
 export interface Classifier {

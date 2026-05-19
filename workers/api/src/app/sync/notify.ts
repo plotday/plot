@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 import type { DB } from "../../db";
 import type { Bindings } from "../../env";
@@ -71,6 +71,18 @@ export async function getPriorityForThread(db: Kysely<DB>, threadId: string, use
     .where("thread_id", "=", threadId)
     .where("user_id", "=", userId)
     .executeTakeFirstOrThrow();
+  if (row.priority_id == null) {
+    // Pending case-A row — fall back to the user's root priority.
+    const root = await db
+      .selectFrom("priority")
+      .select("id")
+      .where("user_id", "=", userId)
+      .where(sql<number>`nlevel(path)`, "=", 1)
+      .where("archived_at", "is", null)
+      .orderBy("created_at", "asc")
+      .executeTakeFirstOrThrow();
+    return root.id;
+  }
   return row.priority_id;
 }
 
@@ -88,5 +100,16 @@ export async function getPriorityForNote(db: Kysely<DB>, noteId: string, userId:
     .where("note.id", "=", noteId)
     .where("thread_priority.user_id", "=", userId)
     .executeTakeFirstOrThrow();
+  if (row.priority_id == null) {
+    const root = await db
+      .selectFrom("priority")
+      .select("id")
+      .where("user_id", "=", userId)
+      .where(sql<number>`nlevel(path)`, "=", 1)
+      .where("archived_at", "is", null)
+      .orderBy("created_at", "asc")
+      .executeTakeFirstOrThrow();
+    return root.id;
+  }
   return row.priority_id;
 }

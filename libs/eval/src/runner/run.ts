@@ -1,5 +1,5 @@
 import { getClassifier } from "../classifiers/registry";
-import type { ClassifierContext } from "../classifiers/types";
+import type { ClassifierContext } from "@plotday/classifier";
 import type { Corpus, CorpusCase, CorpusTrainingSet } from "../corpus/schema";
 import { loadCorpus } from "../corpus/load";
 import {
@@ -19,6 +19,8 @@ export type RunResult = {
   stage: string;
   scores: Record<string, unknown>;
   durationMs: number;
+  llmCalls: number;
+  cacheHits: number;
   goldId: string | null;
   goldMatch: boolean | null;
   expectedId: string | null;
@@ -37,6 +39,8 @@ export type RunSummary = {
     expectedAccuracy: number | null;
     regressions: number;
     avgDurationMs: number;
+    llmCallsPerCase: number;
+    llmCacheHitRate: number | null;
   }[];
 };
 
@@ -114,6 +118,7 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
+      author: cs.candidate.author,
     });
 
     const ctx: ClassifierContext = {
@@ -131,6 +136,7 @@ async function runOneCase(
       contacts: cs.candidate.contacts,
       groups: cs.candidate.groups,
       embedding: emb?.vector ?? null,
+      author: cs.candidate.author,
     });
   });
 
@@ -147,12 +153,15 @@ async function runOneCase(
     stage: result.stage,
     scores: result.scores ?? {},
     durationMs: result.durationMs,
+    llmCalls: result.llmCalls,
+    cacheHits: result.cacheHits,
     goldId,
     goldMatch: goldId === null ? null : goldId === result.priorityId,
     expectedId,
     expectedMatch: expectedId === null ? null : expectedId === result.priorityId,
     expectedStage,
-    expectedStageMatch: expectedStage === null ? null : expectedStage === result.stage,
+    expectedStageMatch:
+      expectedStage === null ? null : expectedStage === result.stage,
   };
 }
 
@@ -171,6 +180,9 @@ function summarize(
       );
       const goldEval = rows.filter((r) => r.goldMatch !== null);
       const expectedEval = rows.filter((r) => r.expectedMatch !== null);
+      const totalLlm = rows.reduce((s, r) => s + r.llmCalls, 0);
+      const totalHits = rows.reduce((s, r) => s + r.cacheHits, 0);
+      const totalAttempts = totalLlm + totalHits;
       perClassifierTraining.push({
         classifier: c,
         trainingSet: ts.name,
@@ -180,13 +192,17 @@ function summarize(
             : null,
         expectedAccuracy:
           expectedEval.length > 0
-            ? expectedEval.filter((r) => r.expectedMatch).length / expectedEval.length
+            ? expectedEval.filter((r) => r.expectedMatch).length /
+              expectedEval.length
             : null,
-        regressions: expectedEval.filter((r) => r.expectedMatch === false).length,
+        regressions: expectedEval.filter((r) => r.expectedMatch === false)
+          .length,
         avgDurationMs:
           rows.length > 0
             ? rows.reduce((sum, r) => sum + r.durationMs, 0) / rows.length
             : 0,
+        llmCallsPerCase: rows.length > 0 ? totalLlm / rows.length : 0,
+        llmCacheHitRate: totalAttempts > 0 ? totalHits / totalAttempts : null,
       });
     }
   }

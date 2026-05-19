@@ -503,7 +503,11 @@ async function updateThreadsByMatch(
       .select("priority_id")
       .where("thread_id", "in", threadIds)
       .execute();
-    const affectedPriorityIds = new Set(tpRows.map((r) => r.priority_id));
+    const affectedPriorityIds = new Set(
+      tpRows
+        .map((r) => r.priority_id)
+        .filter((id): id is string => id != null)
+    );
     await plot.notifySyncDOs(affectedPriorityIds);
   }
 }
@@ -586,7 +590,7 @@ export async function updateThread(
         .where("thread_id", "=", activityId)
         .where("user_id", "=", userId)
         .executeTakeFirst();
-      oldPriorityId = current?.priority_id;
+      oldPriorityId = current?.priority_id ?? undefined;
 
       // Update thread_priority instead of thread.priority_id
       await plot.db
@@ -919,7 +923,9 @@ export async function getNote(
       throw new Error(`Activity not found for note`);
     }
 
-    await plot.validatePriorityAccess(tpData.priority_id);
+    if (tpData.priority_id) {
+      await plot.validatePriorityAccess(tpData.priority_id);
+    }
 
     // Fetch the full activity for the note
     const activity = await getThread(plot, { id: data.thread_id as Uuid });

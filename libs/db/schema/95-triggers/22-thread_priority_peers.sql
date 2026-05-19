@@ -9,16 +9,18 @@
 -- the admission hole where one user's rogue connector could silently admit
 -- peers by merely listing their contacts.
 --
--- Each peer's priority is resolved via classify_thread_for_user. Uses
--- ON CONFLICT DO NOTHING so a peer who has already filed the thread is not
--- overwritten.
+-- Pending-classification design: peers get pending rows
+-- (priority_id NULL, classify_at = now()). The API enqueues a
+-- ClassifyJob for each new row; the consumer Worker (workers/classify)
+-- runs the LLM-aware classifier and fills priority_id. Until then peer
+-- users see nothing for the thread; after classify_visibility_window()
+-- elapses the user.* views surface the thread at root as a fallback.
+-- See docs/superpowers/specs/2026-05-18-hybrid-classifier-production-wiring-design.md.
 CREATE OR REPLACE FUNCTION public.file_thread_priority_peers ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    r RECORD;
-    v_peer_priority_id uuid;
     v_author_user_id uuid;
     v_old_contacts uuid[];
 BEGIN
@@ -26,53 +28,40 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Only auto-file peers for user-authored threads. For twist-authored
-    -- threads, filing happens exclusively through each user's own
-    -- upsert_thread call (which promotes them from pending_contacts).
+    -- Only auto-file peers for user-authored threads.
     IF NOT EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
         RETURN NEW;
     END IF;
     v_author_user_id := NEW.created_by;
 
-    -- Compute old contacts for delta (empty on INSERT).
     IF TG_OP = 'UPDATE' THEN
         v_old_contacts := COALESCE(OLD.contacts, ARRAY[]::uuid[]);
     ELSE
         v_old_contacts := ARRAY[]::uuid[];
     END IF;
 
-    -- thread_priority for ALL contacts (idempotent via ON CONFLICT DO NOTHING).
-    -- Each peer classifies against their own channels — channel_default_marker
-    -- only stamps when the peer themselves owns the channel with this topic
-    -- and its default matches the chosen priority.
-    FOR r IN
-        SELECT DISTINCT uc.user_id AS peer_user_id
+    -- Mark every peer pending classification. applied_default_channel_id
+    -- is set by the consumer Worker once it knows the chosen priority.
+    INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
+    SELECT NEW.id, peer.user_id, NULL::uuid, now()
+    FROM (
+        SELECT DISTINCT uc.user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)
         JOIN public.user_contact uc
           ON uc.contact_id = arr.contact_id
          AND uc.linked = TRUE
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM v_author_user_id
-    LOOP
-        v_peer_priority_id := public.classify_thread_for_user(r.peer_user_id, NEW.id);
-        IF v_peer_priority_id IS NOT NULL THEN
-            INSERT INTO thread_priority (thread_id, user_id, priority_id, applied_default_channel_id)
-            VALUES (
-                NEW.id,
-                r.peer_user_id,
-                v_peer_priority_id,
-                public.channel_default_marker (
-                    r.peer_user_id, NEW.id, v_peer_priority_id
-                )
-            )
-            ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
-        END IF;
-    END LOOP;
+    ) peer
+    ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
 
-    -- thread_unread for NEWLY ADDED contacts only, so shared threads appear
-    -- as unread for peers. ON CONFLICT DO NOTHING preserves read state.
-    FOR r IN
-        SELECT DISTINCT uc.user_id AS peer_user_id
+    -- thread_unread for newly-added contacts only. Harmless while the
+    -- parent thread_priority row is hidden — only surfaces in user.*
+    -- views once the visibility filter admits the row.
+    INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
+    SELECT peer.user_id, NEW.id, 'inform-updates', 50
+    FROM (
+        SELECT DISTINCT uc.user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)
         JOIN public.user_contact uc
           ON uc.contact_id = arr.contact_id
@@ -80,11 +69,8 @@ BEGIN
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM v_author_user_id
           AND arr.contact_id != ALL(v_old_contacts)
-    LOOP
-        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-        VALUES (r.peer_user_id, NEW.id, 'inform-updates', 50)
-        ON CONFLICT (user_id, thread_id) DO NOTHING;
-    END LOOP;
+    ) peer
+    ON CONFLICT (user_id, thread_id) DO NOTHING;
 
     RETURN NEW;
 END;

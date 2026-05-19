@@ -37,8 +37,12 @@ function renderConsole(
   const lines: string[] = [];
   lines.push(`Corpus: ${summary.corpus} (${summary.totalCases} cases)`);
   lines.push("");
-  lines.push("Classifier           Training         Gold     Expected  Regress  AvgMs");
-  lines.push("-------------------- ---------------  -------  --------  -------  -----");
+  lines.push(
+    "Classifier           Training         Gold     Expected  Regress  LLM/case  Hit%   AvgMs"
+  );
+  lines.push(
+    "-------------------- ---------------  -------  --------  -------  --------  -----  -----"
+  );
   for (const c of summary.perClassifierTraining) {
     lines.push(
       [
@@ -47,6 +51,8 @@ function renderConsole(
         pct(c.goldAccuracy).padStart(7),
         pct(c.expectedAccuracy).padStart(8),
         String(c.regressions).padStart(7),
+        c.llmCallsPerCase.toFixed(2).padStart(8),
+        pct(c.llmCacheHitRate).padStart(5),
         c.avgDurationMs.toFixed(1).padStart(5),
       ].join("  ")
     );
@@ -116,12 +122,12 @@ function renderMarkdown(
   lines.push(`${summary.totalCases} cases evaluated.`);
   lines.push("");
   lines.push(
-    "| Classifier | Training set | Gold acc. | Expected acc. | Regressions | Avg ms |"
+    "| Classifier | Training set | Gold acc. | Expected acc. | Regressions | LLM calls / case | Cache hit rate | Avg ms |"
   );
-  lines.push("| --- | --- | --- | --- | --- | --- |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const c of summary.perClassifierTraining) {
     lines.push(
-      `| \`${c.classifier}\` | \`${c.trainingSet}\` | ${pct(c.goldAccuracy)} | ${pct(c.expectedAccuracy)} | ${c.regressions} | ${c.avgDurationMs.toFixed(1)} |`
+      `| \`${c.classifier}\` | \`${c.trainingSet}\` | ${pct(c.goldAccuracy)} | ${pct(c.expectedAccuracy)} | ${c.regressions} | ${c.llmCallsPerCase.toFixed(2)} | ${pct(c.llmCacheHitRate)} | ${c.avgDurationMs.toFixed(1)} |`
     );
   }
   lines.push("");

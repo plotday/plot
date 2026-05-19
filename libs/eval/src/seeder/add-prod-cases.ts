@@ -58,6 +58,9 @@ type ThreadRow = {
   contacts: string[];
   groups: string[];
   embedding_text: string | null;
+  note_embedding_text: string | null;
+  note_author_id: string | null;
+  created_by: string;
   filed_to_priority: string;
 };
 
@@ -116,6 +119,24 @@ async function main() {
       const { rows } = await client.query<ThreadRow>(
         `SELECT t.id, t.title, t.topic, t.contacts, t.groups,
                 t.embedding::text AS embedding_text,
+                (
+                  SELECT n.embedding::text
+                    FROM public.note n
+                   WHERE n.thread_id = t.id
+                     AND n.archived_at IS NULL
+                     AND n.embedding IS NOT NULL
+                   ORDER BY n.created_at ASC
+                   LIMIT 1
+                ) AS note_embedding_text,
+                (
+                  SELECT n.author_id
+                    FROM public.note n
+                   WHERE n.thread_id = t.id
+                     AND n.archived_at IS NULL
+                   ORDER BY n.created_at ASC
+                   LIMIT 1
+                ) AS note_author_id,
+                t.created_by,
                 tp.priority_id AS filed_to_priority
            FROM public.thread t
            JOIN public.thread_priority tp
@@ -161,9 +182,13 @@ async function main() {
         return slug;
       });
 
-      // Embedding: parse the halfvec text and add to world.embeddings if any.
+      // Embedding: parse the halfvec text. Fall back to the earliest note's
+      // embedding when the thread itself has none (common for threads created
+      // before auto-classify was rolled out).
       let embeddingRef: string | null = null;
-      const vec = parseHalfvec(row.embedding_text);
+      const vec =
+        parseHalfvec(row.embedding_text) ??
+        parseHalfvec(row.note_embedding_text);
       if (vec) {
         embeddingRef = `emb-${hashShort(row.id, 10)}`;
         if (!embRefs.has(embeddingRef)) {
@@ -171,6 +196,10 @@ async function main() {
           embRefs.add(embeddingRef);
         }
       }
+      // Author identity: first note's author_id (contact-level), falling
+      // back to thread.created_by when no notes exist.
+      const authorId = row.note_author_id ?? row.created_by;
+      const authorRef = contactSlugById.get(authorId) ?? authorId;
 
       // Build the case id. Use the next sequential index plus the 8-char prefix.
       let id = `${String(nextN).padStart(3, "0")}-${row.id.slice(0, 8)}`;
@@ -190,6 +219,7 @@ async function main() {
           contacts: contactSlugs,
           groups: groupSlugs,
           embedding_ref: embeddingRef,
+          author: authorRef,
         },
         labels: {
           gold: null,

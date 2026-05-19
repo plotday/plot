@@ -125,6 +125,50 @@ function resolveRef(
   return resolved;
 }
 
+function resolveAuthor(
+  author: string | null,
+  lookups: SlugLookups,
+  context: string
+): string | null {
+  if (author === null) return null;
+  if (UUID_RE.test(author)) return author;
+  if (author.startsWith("twist:")) {
+    // Twist authors are not represented in the eval sandbox. Hash the slug
+    // into a deterministic UUID so equality comparisons across neighbors and
+    // the candidate still work; the value will never match a real
+    // twist_instance row, which is fine — the twist-author shortcut
+    // gracefully no-ops when nothing matches.
+    return slugToUuid(author);
+  }
+  const contactId = lookups.contact.get(author);
+  if (!contactId) {
+    throw new Error(
+      `${context}: unknown author "${author}". Declare it as a contact slug in world.yaml, prefix with "twist:" for twist authors, or use a UUID.`
+    );
+  }
+  return contactId;
+}
+
+function slugToUuid(slug: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0xdeadbeef;
+  for (let i = 0; i < slug.length; i++) {
+    h1 = Math.imul(h1 ^ slug.charCodeAt(i), 16777619) >>> 0;
+    h2 = Math.imul(h2 ^ slug.charCodeAt(i), 2654435761) >>> 0;
+  }
+  const a = h1.toString(16).padStart(8, "0");
+  const b = (h2 >>> 16).toString(16).padStart(4, "0");
+  const c = ((h1 ^ h2) >>> 16).toString(16).padStart(4, "0");
+  const d = (h2 & 0xffff).toString(16).padStart(4, "0");
+  const e = (
+    (Math.imul(h1, h2) >>> 0).toString(16) +
+    (Math.imul(h1 ^ h2, 0x9e3779b1) >>> 0).toString(16)
+  )
+    .padStart(12, "0")
+    .slice(0, 12);
+  return `${a}-${b}-4${c.slice(1)}-8${d.slice(1)}-${e}`;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function resolveTrainingSetRefs(raw: any, lookups: SlugLookups, file: string): any {
   if (!raw || typeof raw !== "object") return raw;
@@ -152,6 +196,14 @@ function resolveTrainingSetRefs(raw: any, lookups: SlugLookups, file: string): a
                   `${file}#threads[${i}].filed_to_priority`
                 )
               : t.filed_to_priority,
+          author:
+            typeof t.author === "string"
+              ? resolveAuthor(
+                  t.author,
+                  lookups,
+                  `${file}#threads[${i}].author`
+                )
+              : (t.author ?? null),
         }))
       : raw.threads,
   };
@@ -180,6 +232,14 @@ function resolveCasesRefs(raw: any, lookups: SlugLookups, file: string): any {
                 resolveRef(g, "group", lookups, `${caseRef}.candidate.groups`)
               )
             : candidate.groups,
+          author:
+            typeof candidate.author === "string"
+              ? resolveAuthor(
+                  candidate.author,
+                  lookups,
+                  `${caseRef}.candidate.author`
+                )
+              : (candidate.author ?? null),
         },
         labels: {
           ...labels,

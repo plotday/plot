@@ -1,0 +1,44 @@
+{
+  "name": "@plotday/classify-worker",
+  "main": "src/index.ts",
+  "type": "module",
+  "sideEffects": false,
+  "version": "0.0.0",
+  "private": true,
+  "config": {
+    "deploy_vars": "DATABASE_URL GOOGLE_GENERATIVE_AI_API_KEY POSTHOG_API_KEY POSTHOG_HOST"
+  },
+  "scripts": {
+    "get-env": "bash ../../scripts/get-env",
+    "set-env": "bash ../../scripts/set-env",
+    "dev": "wrangler dev --env development --test-scheduled",
+    "deploy": "bash ../../scripts/deploy-worker",
+    "deploy:vars": "bash ../../scripts/deploy-worker-vars",
+    "types": "wrangler types",
+    "lint": "tsc && eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@plotday/classifier": "workspace:^",
+    "@plotday/classifier-runtime": "workspace:^",
+    "@plotday/worker-util": "workspace:^",
+    "kysely": "^0.28.0",
+    "pg": "^8.18.0",
+    "posthog-node": "^5.18.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@plotday/eslint-config-custom": "workspace:*",
+    "@plotday/tsconfig": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.16.0",
+    "vitest": "^3.0.5",
+    "wrangler": "^4.0.0"
+  },
+  "nx": {
+    "tags": [
+      "worker"
+    ]
+  }
+}

@@ -41,6 +41,7 @@ const TrainingThreadSchema = z.object({
   groups: z.array(uuid).default([]),
   embedding_ref: z.string().nullable().default(null),
   filed_to_priority: uuid,
+  author: z.string().nullable().default(null),
 });
 
 const ChannelSchema = z.object({
@@ -90,6 +91,7 @@ export const CorpusCaseSchema = z.object({
     contacts: z.array(uuid).default([]),
     groups: z.array(uuid).default([]),
     embedding_ref: z.string().nullable().default(null),
+    author: z.string().nullable().default(null),
   }),
   labels: z.object({
     gold: uuid.nullable().default(null),

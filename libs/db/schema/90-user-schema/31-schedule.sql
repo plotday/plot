@@ -69,8 +69,14 @@ FROM
     LEFT JOIN link l ON l.id = s.link_id
     -- Resolve thread_id from either direct or via link
     JOIN thread_priority tp ON tp.thread_id = COALESCE(s.thread_id, l.thread_id)
-    -- Get priority path from the user's filing
-    LEFT JOIN "user".priority_expanded upe ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
+        AND (
+            tp.priority_id IS NOT NULL
+            OR tp.classify_at < now() - public.classify_visibility_window()
+        )
+    -- Get priority path from the user's filing (case-A → root via COALESCE)
+    LEFT JOIN "user".priority_expanded upe
+        ON upe.user_id = tp.user_id
+        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
 WHERE
     -- Shared schedules visible to all users with thread_priority
     (s.user_id IS NULL

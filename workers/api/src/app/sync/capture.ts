@@ -1,9 +1,12 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { createDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
-import { classifyThreadForUser } from "../../state/classify-thread";
+import {
+  classifyThreadForUser,
+  dispatchPendingForThread,
+} from "../../state/classify-thread";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
 import { notifySync } from "./notify";
@@ -110,17 +113,21 @@ capture.post("/sync/capture", async (c) => {
         await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
                   WHERE id = ${sql.val(threadId)}`.execute(trx);
       }
-      const matched = await classifyThreadForUser(trx, {
+      const matched = await classifyThreadForUser(trx, c.env, {
         userId,
         threadId,
         embedding: queryEmbedding ?? null,
       });
-      if (matched) {
-        await sql`UPDATE thread_priority SET priority_id = ${sql.val(matched)}
-                  WHERE thread_id = ${sql.val(threadId)}
-                    AND user_id = ${sql.val(userId)}
-                    AND user_moved = FALSE`.execute(trx);
-      }
+      // Always update the author's row: priorityId is non-null. When
+      // `matched.pending` is true the classifier hit a transient failure
+      // and we filed at root; mark classify_at so the consumer Worker
+      // (and the hourly sweep as a backstop) re-attempts.
+      await sql`UPDATE thread_priority
+                   SET priority_id = ${sql.val(matched.priorityId)},
+                       classify_at = ${matched.pending ? sql`now()` : sql`NULL`}
+                 WHERE thread_id = ${sql.val(threadId)}
+                   AND user_id = ${sql.val(userId)}
+                   AND user_moved = FALSE`.execute(trx);
     } catch (error) {
       console.error("[sync/capture] Auto-classification failed:", error);
       c.var.tracker.captureException(error as Error);
@@ -157,6 +164,25 @@ capture.post("/sync/capture", async (c) => {
 
   if (result.created && result.priority_id) {
     notifySync(c, result.priority_id);
+  }
+
+  // Dispatch classify jobs for any peer rows the upsert triggers wrote
+  // as pending (and the author row if classify failed). Runs after the
+  // transaction commits so the SELECT sees the new pending rows;
+  // opens its own DB handle because the request-scoped one is destroyed
+  // before waitUntil callbacks run.
+  if (result.created) {
+    const threadId = result.thread_id;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(c.env);
+        try {
+          await dispatchPendingForThread(db, c.env, threadId);
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
   }
 
   const { priority_id: _priorityId, ...response } = result;

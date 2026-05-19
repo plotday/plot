@@ -108,6 +108,10 @@
         {
           "binding": "VOTES",
           "id": "2ed0dab96df24f8184ce353b4ad39d91"
+        },
+        {
+          "binding": "LLM_CACHE",
+          "id": "c169930baecb4bd58c7edc727022a15e"
         }
       ],
       "ratelimits": [
@@ -197,6 +201,10 @@
           {
             "queue": "webhook-development",
             "binding": "WEBHOOK_QUEUE"
+          },
+          {
+            "queue": "classify-thread-development",
+            "binding": "QUEUE_CLASSIFY"
           }
         ],
         "consumers": [
@@ -346,6 +354,10 @@
         {
           "binding": "VOTES",
           "id": "2ed0dab96df24f8184ce353b4ad39d91"
+        },
+        {
+          "binding": "LLM_CACHE",
+          "id": "c413b23bb866493da4ee0596ade8b1e2"
         }
       ],
       "ratelimits": [
@@ -434,6 +446,10 @@
           {
             "queue": "webhook-production",
             "binding": "WEBHOOK_QUEUE"
+          },
+          {
+            "queue": "classify-thread-production",
+            "binding": "QUEUE_CLASSIFY"
           }
         ],
         "consumers": [

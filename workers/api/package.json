@@ -31,6 +31,8 @@
     "@cloudflare/containers": "^0.3.3",
     "@hono-rate-limiter/cloudflare": "^0.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
+    "@plotday/classifier": "workspace:^",
+    "@plotday/classifier-runtime": "workspace:^",
     "@plotday/db": "workspace:^",
     "@plotday/email": "workspace:^",
     "@plotday/twister": "workspace:*",

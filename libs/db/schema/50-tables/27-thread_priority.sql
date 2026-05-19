@@ -5,14 +5,23 @@
 -- they want the thread to appear under.
 --
 -- For human-authored threads the author gets an explicit row via the
--- upsert_thread RPC. Peer users are filed by the file_thread_priority_peers
--- trigger when a thread lists them in contacts. Priority selection is
--- driven by classify_thread_for_user which scores against the user's
--- explicitly-moved threads (rows where user_moved = TRUE).
+-- upsert_thread RPC with the resolved priority. Peer users are filed by
+-- the file_thread_priority_peers trigger; the trigger writes a pending
+-- marker (priority_id NULL, classify_at = now()) and the consumer Worker
+-- (workers/classify) runs the LLM-aware classifier and updates the row.
+--
+-- See docs/superpowers/specs/2026-05-18-hybrid-classifier-production-wiring-design.md.
 CREATE TABLE "public"."thread_priority" (
     "thread_id" uuid NOT NULL REFERENCES public.thread (id) ON DELETE CASCADE,
     "user_id" uuid NOT NULL REFERENCES public."user" (id) ON DELETE CASCADE,
-    "priority_id" uuid NOT NULL REFERENCES public.priority (id) ON DELETE CASCADE,
+    -- Settled priority filing. NULL marks the row as pending classification.
+    -- Views must use COALESCE(priority_id, root_priority_id(user_id)) gated
+    -- by (priority_id IS NOT NULL OR classify_at < now() - classify_visibility_window()).
+    "priority_id" uuid REFERENCES public.priority (id) ON DELETE CASCADE,
+    -- Pending-classification marker. NOT NULL means the consumer Worker
+    -- must (re-)classify this row. NULL means the placement is settled.
+    -- See classify_visibility_window() for the view-fallback timing.
+    "classify_at" timestamptz,
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),
     -- Per-user archive. A user's connector archive, or an explicit local
@@ -37,8 +46,20 @@ CREATE TABLE "public"."thread_priority" (
     -- is unreachable in practice.
     "applied_default_channel_id" bigint,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
-    PRIMARY KEY ("thread_id", "user_id")
+    PRIMARY KEY ("thread_id", "user_id"),
+    -- Both NULL is unrecoverable: the row would be invisible to user
+    -- views (no priority_id) and invisible to the sweep (no classify_at).
+    CONSTRAINT thread_priority_state_valid
+        CHECK (priority_id IS NOT NULL OR classify_at IS NOT NULL)
 );
+
+-- Pending-classification index: feeds the recovery sweep query
+--   WHERE classify_at < now() - interval '1 hour'
+-- and the per-thread dispatch query
+--   WHERE classify_at IS NOT NULL.
+CREATE INDEX thread_priority_classify_pending_idx
+    ON "public"."thread_priority" ("classify_at")
+    WHERE classify_at IS NOT NULL;
 
 -- Support queries that count active (non-archived) filings, used by the
 -- last-holder trigger and the user.thread view.
@@ -84,3 +105,5 @@ CREATE TRIGGER set_thread_priority_created_at
     EXECUTE FUNCTION set_created_at ();
 
 COMMENT ON TABLE "public"."thread_priority" IS 'Per-user filing of a thread into the user''s priority hierarchy. Each user gets one row per visible thread, pointing at their chosen priority.';
+COMMENT ON COLUMN "public"."thread_priority"."priority_id" IS 'User''s priority filing. NULL means classification is pending (see classify_at). Views must use COALESCE(priority_id, root_priority_id(user_id)) gated by the visibility filter (priority_id IS NOT NULL OR classify_at < now() - classify_visibility_window()).';
+COMMENT ON COLUMN "public"."thread_priority"."classify_at" IS 'Timestamp when classification was last requested. NULL once classification has succeeded. NOT NULL signals the consumer Worker (workers/classify) to (re-)classify this row.';
