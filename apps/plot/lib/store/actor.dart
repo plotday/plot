@@ -705,7 +705,7 @@ class Actor extends ActorRow {
     Iterable<ActorId> ids,
   ) async {
     final idList = ids.toList(growable: false);
-    if (idList.isEmpty) return const [];
+    if (idList.isEmpty) return [];
     final a = Store.get.actors;
     final typeStrings = [ActorType.user, ActorType.contact]
         .map((t) => t.name.toSnakeCase())
