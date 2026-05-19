@@ -466,9 +466,25 @@ export class TwistSync extends DurableObject<Bindings> {
         ...scheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
       ];
 
-      // Loop detection: if we keep fetching the same items, skip processing to break the loop
+      // Loop detection: if we keep fetching the same items, skip processing to break the loop.
+      // Each view exposes its primary identifier under a different column name, so pick the
+      // right one per array — using a generic `.id` collapses every item from thread_read /
+      // thread_schedule / schedule_contact to `undefined`, producing false-positive matches.
+      const fingerprintId = (t: TaggedItem): string => {
+        const item = t.item as Record<string, unknown>;
+        switch (t.array) {
+          case "threadReads":
+            return `${item.thread_id ?? ""}:${item.user_id ?? ""}`;
+          case "threadSchedules":
+            return String(item.schedule_id ?? "");
+          case "scheduleContacts":
+            return String(item.schedule_contact_id ?? "");
+          default:
+            return String(item.id ?? "");
+        }
+      };
       const itemFingerprint = taggedItems.length > 0
-        ? taggedItems.map((t) => `${t.array}:${(t.item as any).id}`).sort().join(",")
+        ? taggedItems.map((t) => `${t.array}:${fingerprintId(t)}`).sort().join(",")
         : "";
       if (itemFingerprint && itemFingerprint === this.lastFingerprint) {
         this.repeatCount++;
