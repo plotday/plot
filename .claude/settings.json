@@ -37,7 +37,16 @@
   },
   "permissions": {
     "allow": [
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(sed -n:*)",
+      "Bash(shasum:*)",
+      "Bash(xxd:*)",
+      "Bash(base64:*)",
+      "Bash(source .worktree-db)",
+      "Bash(source .env)",
+      "Bash(source .env.local)",
+      "Bash(source .env.development)",
+      "Bash(source .env.development.local)"
     ]
   },
   "enabledPlugins": {}
