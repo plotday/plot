@@ -906,7 +906,16 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.copyWith(todo: !thread.todo));
+    await saveOptimistically(
+      context,
+      thread.copyWith(
+        todo: !thread.todo,
+        unread: false,
+        readAt: thread.unread
+            ? Value(thread.contentTimestamp)
+            : const Value.absent(),
+      ),
+    );
     return const CommandDone();
   }
 }
@@ -924,7 +933,16 @@ class StartThread extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.copyWith(todo: true));
+    await saveOptimistically(
+      context,
+      thread.copyWith(
+        todo: true,
+        unread: false,
+        readAt: thread.unread
+            ? Value(thread.contentTimestamp)
+            : const Value.absent(),
+      ),
+    );
     return const CommandDone();
   }
 }
@@ -1028,7 +1046,14 @@ class FinishThread extends _UpdateThreadCommand {
 
     if (!context.mounted) return const CommandDone();
     HapticFeedback.mediumImpact();
-    final finished = thread.copyWith(todo: false, bump: bump);
+    final finished = thread.copyWith(
+      todo: false,
+      bump: bump,
+      unread: false,
+      readAt: thread.unread
+          ? Value(thread.contentTimestamp)
+          : const Value.absent(),
+    );
     // Optimistically flip ThreadBloc's thread (when present) so the Finish
     // button on the open ThreadPage swaps to To-do instantly instead of
     // waiting for the SQLite save → Thread.watchOne stream to tick.

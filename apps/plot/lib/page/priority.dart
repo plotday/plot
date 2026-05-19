@@ -1469,7 +1469,6 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
           focusNode: widget.focusNode,
           context: widget.priorityContext,
           showSubPriority: true,
-          bump: false,
           showEventTiming: rep != null,
           isAssociated: widget.isAssociated,
         );

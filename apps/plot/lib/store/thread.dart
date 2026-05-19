@@ -362,6 +362,18 @@ class ThreadsBase extends BaseTable {
         }
       }
 
+      // Preserve a locally-bumped `bumpedAt` that the server hasn't echoed
+      // back yet. Without this, a pull that races our push (which happens
+      // on the next sync tick via `/sync/thread-unread`) replaces the
+      // local NOW value with the server's older one and the finished
+      // thread drops from the top of Done to its prior activity position.
+      if (local != null && local.bumpedAt != null) {
+        final serverBumped = activityRow.bumpedAt;
+        if (serverBumped == null || local.bumpedAt!.isAfter(serverBumped)) {
+          merged = merged.copyWith(bumpedAt: Value(local.bumpedAt));
+        }
+      }
+
       result.add(merged);
     }
     return result;
