@@ -285,6 +285,7 @@ class MentionItem {
     required this.name,
     this.isTwist = false,
     this.isContact = false,
+    this.isInThread = false,
   });
 
   /// Create from a TwistInstance
@@ -299,16 +300,22 @@ class MentionItem {
   );
 
   /// Create from an Actor
-  factory MentionItem.fromActor(Actor actor) => MentionItem(
-    id: actor.id.toString(),
-    name: actor.nameOrEmail,
-    isContact: actor.type == ActorType.contact,
-  );
+  factory MentionItem.fromActor(Actor actor, {bool isInThread = false}) =>
+      MentionItem(
+        id: actor.id.toString(),
+        name: actor.nameOrEmail,
+        isContact: actor.type == ActorType.contact,
+        isInThread: isInThread,
+      );
 
   final String id;
   final String name;
   final bool isTwist;
   final bool isContact;
+
+  /// Whether this contact already participates in the current thread.
+  /// Drives the suggestion ranking in the mention popover.
+  final bool isInThread;
 }
 
 class Editor extends StatefulWidget {
@@ -323,6 +330,7 @@ class Editor extends StatefulWidget {
     this.focusNode,
     this.twists = const [],
     this.actors = const [],
+    this.threadContactIds = const <String>{},
     this.shrinkWrap = true,
     this.initialContent,
     super.key,
@@ -345,6 +353,11 @@ class Editor extends StatefulWidget {
   final FocusNode? focusNode;
   final List<TwistInstance> twists;
   final List<Actor> actors;
+
+  /// Actor IDs (as strings) of contacts currently associated with the thread
+  /// where this editor is composing. Used to rank in-thread contacts ahead of
+  /// twists and other contacts in the @-mention suggestions.
+  final Set<String> threadContactIds;
   final bool shrinkWrap;
   final String? initialContent;
 
@@ -1310,14 +1323,15 @@ class EditorState extends State<Editor> {
     }
   }
 
-  /// Build the combined mention items list from twists and actors
+  /// Build the combined mention items list from twists and actors.
+  ///
+  /// Connectors (source twists) are excluded entirely — only true twists are
+  /// surfaced. Contacts that already participate in the thread are flagged so
+  /// the popover can rank them first.
   List<MentionItem> _buildMentionItems() {
-    // Filter out connectors that don't handle replies or aren't connected
-    final mentionableTwists = widget.twists.where(
-      (t) => !t.isSource || (t.defaultMentionCreated && t.userConnected),
-    );
-    // Twists first, then actors (excluding actors that are already represented by twists)
+    final mentionableTwists = widget.twists.where((t) => !t.isSource);
     final twistActorIds = mentionableTwists.map((t) => t.id.toString()).toSet();
+    final threadContactIds = widget.threadContactIds;
     return [
       ...mentionableTwists.map(
         (twist) => MentionItem.fromTwist(
@@ -1328,7 +1342,12 @@ class EditorState extends State<Editor> {
       ),
       ...widget.actors
           .where((actor) => !twistActorIds.contains(actor.id.toString()))
-          .map(MentionItem.fromActor),
+          .map(
+            (actor) => MentionItem.fromActor(
+              actor,
+              isInThread: threadContactIds.contains(actor.id.toString()),
+            ),
+          ),
     ];
   }
 
@@ -1368,13 +1387,22 @@ class EditorState extends State<Editor> {
       return const SizedBox.shrink();
     }
 
-    // Sort items by most-recently-used
+    // Group order: in-thread contacts → twists → other contacts.
+    // MRU sorting is applied within each group so frequently-mentioned items
+    // surface first inside their tier.
     final localPrefs = context.read<LocalPreferencesBloc>();
-    final sortedItems = localPrefs.sortByMentionMru(
-      mentionItems,
-      (item) => item.id,
-      isLowPriority: (item) => item.isContact,
-    );
+    final inThreadContacts = mentionItems
+        .where((item) => item.isContact && item.isInThread)
+        .toList();
+    final twists = mentionItems.where((item) => item.isTwist).toList();
+    final otherContacts = mentionItems
+        .where((item) => item.isContact && !item.isInThread)
+        .toList();
+    final sortedItems = [
+      ...localPrefs.sortByMentionMru(inThreadContacts, (item) => item.id),
+      ...localPrefs.sortByMentionMru(twists, (item) => item.id),
+      ...localPrefs.sortByMentionMru(otherContacts, (item) => item.id),
+    ];
 
     return EditorMentionPopover(
       key: _mentionPopoverKey,

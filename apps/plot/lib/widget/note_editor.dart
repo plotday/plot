@@ -499,6 +499,21 @@ class NoteEditorState extends State<NoteEditor> {
           hint = isEditing ? 'Edit note' : 'Add a note';
         }
 
+        // Contacts already on this thread are surfaced first in @-mention
+        // suggestions. In new-thread mode the draft thread is the source; in
+        // note mode it's the live thread from ThreadBloc. `thread.contacts`
+        // can include non-primary aliases for the same person, so collapse
+        // each to its canonical actor id before matching against `actors`
+        // (which is loaded with `primary: true`).
+        final Thread? mentionThread = widget.isNewThreadMode
+            ? widget.thread
+            : context.read<ThreadBloc>().state.thread;
+        final Set<String> threadContactIds = mentionThread == null
+            ? const <String>{}
+            : mentionThread.contacts
+                  .map((u) => Actor.canonicalId(ActorId.fromUuid(u)).toString())
+                  .toSet();
+
         final editor = Editor(
           key: _editorKey,
           hint: hint,
@@ -508,6 +523,7 @@ class NoteEditorState extends State<NoteEditor> {
           focusNode: focusNode,
           twists: twists,
           actors: actors,
+          threadContactIds: threadContactIds,
           shrinkWrap: true,
           initialContent: widget.draft.content,
           onIsEmptyChanged: (isEmpty) {
