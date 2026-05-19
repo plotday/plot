@@ -253,13 +253,15 @@ class _SwipeableState extends State<Swipeable> with TickerProviderStateMixin {
       await context.run(command);
     }
 
-    // Reset state
-    setState(() {
-      _dragOffset = 0;
-      _startDragX = 0;
-      _zone = _SwipeZone.idle;
-      _isDragging = false;
-    });
+    // Reset state (widget may be disposed by now via command execution)
+    if (mounted) {
+      setState(() {
+        _dragOffset = 0;
+        _startDragX = 0;
+        _zone = _SwipeZone.idle;
+        _isDragging = false;
+      });
+    }
   }
 
   void _onHorizontalDragCancel() {
