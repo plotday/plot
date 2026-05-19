@@ -170,8 +170,17 @@ class NoteTagsBase extends BaseTable {
       if (local != null &&
           local.tagsUpdated != null &&
           local.tagsUpdated!.isNotEmpty) {
-        // Check which pending changes are not yet reflected on server
-        final serverTags = noteTagsRow.tags ?? {};
+        // Apply still-pending tag changes on top of the server's tags so the
+        // optimistic local state survives a pull that arrives before the
+        // server has processed our push. Without this, the user sees their
+        // checkmark flash to nothing and back to the circle while the push
+        // is in flight — e.g. clicking Done on a self-assigned task: the
+        // pre-push server view still has Tag.todo (and no Tag.done), and a
+        // bare server-tags write erases the optimistic Tag.done.
+        final mergedTags = <Tag, List<ActorId>>{
+          for (final entry in (noteTagsRow.tags ?? const {}).entries)
+            entry.key: List<ActorId>.from(entry.value),
+        };
         final pendingChanges = <String, bool>{};
 
         for (final entry in local.tagsUpdated!.entries) {
@@ -187,18 +196,40 @@ class NoteTagsBase extends BaseTable {
           final tag = Tag.get(id: tagId);
           if (tag == null) continue; // Unknown tag, skip
 
-          // Check if the specific actor has this tag on the server
-          final actorList = serverTags[tag] ?? [];
-          final tagPresentOnServer = actorList.contains(targetActorId);
+          final canonical = Actor.canonicalId(targetActorId);
+          final actorList = mergedTags[tag] ?? const <ActorId>[];
+          final tagPresentOnServer = actorList.any(
+            (id) => Actor.canonicalId(id) == canonical,
+          );
 
-          // Only keep pending changes where server doesn't match desired state
-          if (tagPresentOnServer != wantTagPresent) {
-            pendingChanges[key] = wantTagPresent;
+          if (tagPresentOnServer == wantTagPresent) {
+            // Server already reflects the desired state — nothing to apply
+            // and nothing to keep pending.
+            continue;
+          }
+
+          // Keep this change pending until the push completes AND apply it
+          // optimistically to mergedTags so the watch sees the desired state.
+          pendingChanges[key] = wantTagPresent;
+          if (wantTagPresent) {
+            final list = mergedTags.putIfAbsent(tag, () => <ActorId>[]);
+            if (!list.any((id) => Actor.canonicalId(id) == canonical)) {
+              list.add(canonical);
+            }
+          } else {
+            final list = mergedTags[tag];
+            if (list != null) {
+              list.removeWhere((id) => Actor.canonicalId(id) == canonical);
+              if (list.isEmpty) mergedTags.remove(tag);
+            }
           }
         }
 
         if (pendingChanges.isNotEmpty) {
-          result.add(noteTagsRow.copyWith(tagsUpdated: Value(pendingChanges)));
+          result.add(noteTagsRow.copyWith(
+            tags: Value(mergedTags.isEmpty ? null : mergedTags),
+            tagsUpdated: Value(pendingChanges),
+          ));
         } else {
           result.add(row);
         }
