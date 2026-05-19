@@ -359,6 +359,12 @@ class EditorState extends State<Editor> {
   /// Cleared only on dispose or when a different editor gains focus.
   static EditorState? activeInstance;
 
+  // SuperEditor requires a unique inputRole per concurrently-mounted editor,
+  // otherwise its debug-mode duplicate-input check throws (e.g. during route
+  // transitions or in multi-panel layouts where two editors coexist briefly).
+  static int _nextInputRoleId = 0;
+  final String _inputRole = 'plot-note-editor-${_nextInputRoleId++}';
+
   final GlobalKey _docLayoutKey = GlobalKey();
   late FocusNode _editorFocusNode;
   late ScrollController _scrollController;
@@ -848,7 +854,7 @@ class EditorState extends State<Editor> {
               onTap: () => _editorFocusNode.requestFocus(),
               child: _wrapWithControlsScopes(
                 SuperEditor(
-                  inputRole: 'plot-note-editor',
+                  inputRole: _inputRole,
                   autofocus: widget.autofocus,
                   editor: _editor,
                   focusNode: _editorFocusNode,
