@@ -5,9 +5,12 @@
 # What it does:
 #   1. Verifies a signed-in source profile exists (default: dev). Without a
 #      cached Clerk session, the agent instance lands on the sign-in page.
-#   2. Copies that profile's Clerk session into clerk_profile_agent (only if
-#      missing — repeat invocations are no-ops).
-#   3. Releases any stale agent lock from a crashed previous run.
+#   2. Copies that profile's Clerk session into clerk_profile_agent. Always
+#      refreshes (overwrites) so an expired agent session gets renewed from
+#      the active dev session.
+#   3. Kills any orphan agent processes (flutter run daemons attached to the
+#      agent profile, plus Plot.app instances launched with --profile=agent).
+#   4. Releases any stale agent lock from a crashed previous run.
 #
 # Re-run safely. Idempotent.
 #
@@ -35,12 +38,47 @@ if [[ ! -f "$SOURCE_CLERK/clerk_sdk.json" ]]; then
   exit 1
 fi
 
-if [[ -f "$AGENT_CLERK/clerk_sdk.json" ]]; then
-  echo "agent profile already seeded ($AGENT_CLERK/clerk_sdk.json)"
-else
-  mkdir -p "$AGENT_CLERK"
-  cp "$SOURCE_CLERK/clerk_sdk.json" "$AGENT_CLERK/clerk_sdk.json"
-  echo "seeded agent profile from $SOURCE_PROFILE"
+# Always refresh the agent session from the source. If the agent session
+# expired but the dev session is fresh, this picks up the renewal. Skipping
+# the copy when the file exists (the previous behavior) left agents stranded
+# on the sign-in page after the cached token aged out.
+mkdir -p "$AGENT_CLERK"
+cp "$SOURCE_CLERK/clerk_sdk.json" "$AGENT_CLERK/clerk_sdk.json"
+echo "refreshed agent Clerk session from $SOURCE_PROFILE"
+
+# Kill any orphan agent processes from a prior run. Killing the flutter run
+# daemon (the `flutter_tools` invocation) does NOT terminate the spawned
+# Plot.app — it just orphans it, leaving the InstanceLock held and blocking
+# the next launch. Kill both halves explicitly here.
+#
+# Filter pgrep results to exclude our own pipeline so the script does not
+# match itself when run from a shell that puts the command line in argv.
+self_pid=$$
+orphan_pids=$(pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' 2>/dev/null \
+  | grep -v "^$self_pid\$" || true)
+if [[ -n "$orphan_pids" ]]; then
+  echo "killing orphan agent processes: $orphan_pids" | tr '\n' ' '
+  echo
+  # shellcheck disable=SC2086
+  kill $orphan_pids 2>/dev/null || true
+  # Give them a moment to exit cleanly before checking the lock.
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    still=$(pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' 2>/dev/null \
+      | grep -v "^$self_pid\$" || true)
+    [[ -z "$still" ]] && break
+  done
+  # If anything is still alive, force-kill it. Holding the InstanceLock is
+  # the failure mode we are guarding against.
+  remaining=$(pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' 2>/dev/null \
+    | grep -v "^$self_pid\$" || true)
+  if [[ -n "$remaining" ]]; then
+    echo "force-killing stubborn agent processes: $remaining" | tr '\n' ' '
+    echo
+    # shellcheck disable=SC2086
+    kill -9 $remaining 2>/dev/null || true
+    sleep 1
+  fi
 fi
 
 # Stale lock from a previous crashed run will block fresh launches. The lock
@@ -48,7 +86,8 @@ fi
 if [[ -f "$LOCK_FILE" ]]; then
   if /usr/sbin/lsof "$LOCK_FILE" >/dev/null 2>&1; then
     holder_pid=$(/usr/sbin/lsof -t "$LOCK_FILE" 2>/dev/null | head -1)
-    echo "agent lock held by PID $holder_pid (leaving in place)"
+    echo "agent lock still held by PID $holder_pid after kill (leaving in place)" >&2
+    exit 1
   else
     rm -f "$LOCK_FILE"
     echo "removed stale agent lock"

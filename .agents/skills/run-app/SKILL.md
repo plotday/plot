@@ -13,82 +13,50 @@ placeholder DTD URI immediately and does not forward `--profile`, `--user`,
 `--password`, or any other entrypoint args, so the launched process either
 collides with the user's instance or starts on the sign-in page.
 
-The reliable path is to launch `flutter run` yourself with a dedicated `agent`
-profile, then point dart-mcp at the DTD URI it actually emits.
+The reliable path is to launch via `apps/plot/scripts/agent-app-launch.sh`,
+which wraps `flutter run -d macos --machine --print-dtd` with bootstrap,
+orphan cleanup, and retry-on-transient-failure (see "Failure modes" below).
 
 ## Prerequisites (one-time per machine)
 
 The agent profile needs a cached Clerk session. If the developer has signed in
-to the dev profile at least once, seed it:
-
-```bash
-bash apps/plot/scripts/agent-app-bootstrap.sh
-```
-
-This copies `clerk_profile_dev/clerk_sdk.json` to `clerk_profile_agent/` and
-clears any stale agent lock. The script is idempotent — safe to re-run.
-
-If the developer has never signed in (no `clerk_profile_dev` exists), tell
-them to sign in once via their normal Debug Plot.app, then re-run.
+to the dev profile at least once, the launcher will copy it automatically.
+If they have NEVER signed in (no `clerk_profile_dev` exists), tell them to
+sign in once via their normal Debug Plot.app, then re-run.
 
 ## Launch flow
 
-1. **Stop any previous agent run** (avoid orphaned hot-reload servers).
-   macOS `pgrep -f` accepts alternation in parentheses (no `-E` flag — that
-   would error on macOS). Do NOT escape the `|` as `\|`:
+Run the launcher and read the DTD URI it writes out. The launcher is
+idempotent and handles its own cleanup, so you can re-run it freely.
 
-   ```bash
-   pgrep -f '(flutter_tools.*--profile=agent|Plot\.app.*--profile=agent)' \
-     | xargs -r kill
-   ```
+```bash
+bash apps/plot/scripts/agent-app-launch.sh
+```
 
-2. **Bootstrap** (idempotent):
+On success (exit 0) it prints the DTD URI and leaves three files:
 
-   ```bash
-   bash apps/plot/scripts/agent-app-bootstrap.sh
-   ```
+- `/tmp/plot-agent-run.log` — full `flutter run --machine` log
+- `/tmp/plot-agent-run.pid` — daemon PID (kept alive for hot reload)
+- `/tmp/plot-agent-dtd.uri` — the DTD URI to feed dart-mcp
 
-3. **Launch `flutter run` in the background** with the agent profile. The key
-   flags are `-a --profile=agent` (forwards to `main(args)` via Dart entrypoint
-   args, picked up by `CliArgs.init`), `--print-dtd`, and `--machine`:
+Connect dart-mcp:
 
-   ```bash
-   cd /Users/kris.braun/code/plot/apps/plot
-   nohup flutter run -d macos -a --profile=agent --print-dtd --machine \
-     > /tmp/plot-agent-run.log 2>&1 &
-   echo $! > /tmp/plot-agent-run.pid
-   ```
+```bash
+DTD_URI=$(cat /tmp/plot-agent-dtd.uri)
+```
 
-4. **Wait for `app.started`** in the log. Budget at least 90 seconds — a fresh
-   incremental macOS build takes ~30-60s. Use Bash with `run_in_background`
-   plus an `until` loop:
-
-   ```bash
-   until grep -qE '"event":"app.started"|"event":"app.stop"' /tmp/plot-agent-run.log; do
-     sleep 2
-     kill -0 "$(cat /tmp/plot-agent-run.pid)" 2>/dev/null || { echo "DIED"; break; }
-   done
-   ```
-
-5. **Extract the DTD URI** from the `app.dtd` event (do NOT use the URI
-   returned by `mcp__dart-mcp__launch_app` — it is a placeholder):
-
-   ```bash
-   grep -oE '"event":"app\.dtd"[^}]*"uri":"[^"]+"' /tmp/plot-agent-run.log \
-     | tail -1 | sed -E 's/.*"uri":"([^"]+)".*/\1/'
-   ```
-
-6. **Connect dart-mcp** to that URI via `mcp__dart-mcp__connect_dart_tooling_daemon`.
-
-7. **Verify** with `mcp__dart-mcp__get_runtime_errors` (should be empty) before
-   driving the app. If the app landed on the sign-in page, the Clerk session
-   in `clerk_profile_agent/clerk_sdk.json` is missing or expired — re-run the
-   bootstrap script (it copies a fresh session from `clerk_profile_dev`).
+Then call `mcp__dart-mcp__connect_dart_tooling_daemon` with `uri=$DTD_URI`.
 
 After connect succeeds you can use any dart-mcp tool: `hot_reload`,
 `get_widget_tree`, `flutter_driver`, etc. The Mac window opens on top of the
 developer's running Plot instances; it will NOT steal keyboard focus (see
-`apps/plot/lib/widget/window.dart` — `windowManager.show(inactive: true)`).
+`apps/plot/macos/Runner/AppDelegate.swift` — Debug builds yield activation
+back to the launcher on first `applicationDidBecomeActive`).
+
+Verify with `mcp__dart-mcp__get_runtime_errors` (should be empty) before
+driving the app. If the app landed on the sign-in page, the dev profile's
+Clerk session is itself expired — sign in once via the developer's Debug
+Plot.app and re-run the launcher (it always refreshes from `dev`).
 
 ## Verifying a code change
 
@@ -104,15 +72,47 @@ overflow — the full tree is ~1M tokens for Plot).
 
 ## Cleanup
 
-When done, kill the flutter run so the next agent starts clean:
+When done, kill the flutter run daemon AND the spawned Plot.app. Killing
+the daemon alone leaves Plot.app holding the `agent` profile InstanceLock,
+which blocks the next launch — the launcher will clean that up on the
+next run, but doing it now is tidier:
 
 ```bash
 kill -INT "$(cat /tmp/plot-agent-run.pid)" 2>/dev/null
+sleep 1
+pgrep -f 'Plot\.app.*--profile=agent' | xargs -r kill
 ```
 
-The InstanceLock releases on process exit. The cached Clerk session and
-`plot-*-agent.sqlite` DB persist, so subsequent runs reuse the same signed-in
-state without re-bootstrap.
+The cached Clerk session and `plot-*-agent.sqlite` DB persist, so subsequent
+runs reuse the same signed-in state.
+
+## Failure modes the launcher handles
+
+1. **Orphan Plot.app from a prior agent run.** Killing the flutter run
+   daemon does not propagate to the spawned `Plot.app --profile=agent`, so
+   the InstanceLock stays held and the next `flutter run` collides. The
+   bootstrap step kills orphans before starting, then re-verifies the lock
+   is releasable.
+
+2. **mDNS-discovery timeout (the original "no `app.dtd` ever" bug).**
+   `flutter run --machine` on macOS discovers the VM service via Bonjour.
+   Occasionally the daemon's discovery times out before the engine
+   publishes — it then emits `app.stop` with no preceding `app.debugPort`
+   or `app.dtd`, and the daemon process exits. The launched binary stays
+   alive but unattached. The launcher detects this (app.stop OR daemon
+   death OR 120s without app.dtd), cleans up, and retries up to 3 times.
+
+3. **Stale lock file pointing at a dead PID.** The bootstrap removes lock
+   files whose holder PID is no longer alive (`lsof` returns empty).
+
+## Tuning
+
+Environment variables (rarely needed):
+
+- `PLOT_AGENT_LAUNCH_RETRIES` — attempts before giving up (default 3).
+- `PLOT_AGENT_LAUNCH_TIMEOUT` — seconds to wait for `app.dtd` per
+  attempt (default 120). Raise for a fresh checkout where the first
+  `flutter run` does a full macOS Xcode build.
 
 ## Why this is the only reliable recipe
 
@@ -129,4 +129,5 @@ state without re-bootstrap.
   `-a --profile=agent` is the supported path.
 - **`-a --user=... -a --password=...`** also works (see
   `lib/auto_sign_in.dart`) if you need to bypass a stale Clerk cache, but
-  requires a real password — pre-seeding via bootstrap is simpler.
+  requires a real password — the launcher's auto-refresh of the cached
+  session from `dev` is simpler.
