@@ -8,3 +8,4 @@ export * from "./store";
 export * from "./tasks";
 export * from "./imap";
 export * from "./smtp";
+export * from "./linkedin";

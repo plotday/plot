@@ -381,6 +381,14 @@ export enum AuthProvider {
   Todoist = "todoist",
   /** Airtable OAuth provider for Airtable bases */
   Airtable = "airtable",
+  /**
+   * LinkedIn provider — uses a captured `li_at` session cookie rather than
+   * OAuth, because LinkedIn does not expose an OAuth scope for personal
+   * messaging. The cookie is captured by the Plot client (in-app webview) and
+   * the rest of the auth surface (`get(channelId)`, `actAs`, `markNeedsReauth`,
+   * the connection list UI) behaves identically to OAuth providers.
+   */
+  LinkedIn = "linkedin",
 }
 
 /**
