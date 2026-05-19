@@ -42,6 +42,7 @@ import 'editor_spelling_toolbar.dart';
 import 'plot_image_component.dart';
 import 'list_item_component.dart';
 import 'task_component.dart';
+import 'blockquote_component.dart';
 import 'logging.dart';
 
 /// Information about a mention extracted from markdown
@@ -914,6 +915,7 @@ class EditorState extends State<Editor> {
                     PlotTaskComponentBuilder(_editor),
                     const PlotImageComponentBuilder(),
                     const PlotListItemComponentBuilder(),
+                    const PlotBlockquoteComponentBuilder(),
                     ...defaultComponentBuilders,
                   ],
                   keyboardActions: [
@@ -1820,8 +1822,48 @@ class EditorState extends State<Editor> {
   /// Parses the markdown into a document, then inserts the nodes.
   void _pasteMarkdownContent(String markdown) {
     final parsedDoc = _deserializeMarkdownWithMentions(markdown);
-    final parsedNodes = parsedDoc.toList();
+    var parsedNodes = parsedDoc.toList();
     if (parsedNodes.isEmpty) return;
+
+    // Drop empty paragraphs so paragraph breaks are preserved but blank
+    // lines between paragraphs are not pasted as visible gaps.
+    parsedNodes = parsedNodes
+        .where(
+          (n) => n is! ParagraphNode || n.text.toPlainText().trim().isNotEmpty,
+        )
+        .toList();
+    if (parsedNodes.isEmpty) return;
+
+    // When pasting into a blockquote, keep the whole pasted content inside
+    // the quote: stamp blockquote metadata onto every text-bearing node so
+    // subsequent paragraphs stay quoted instead of breaking out of the block.
+    // Lists and tasks are flattened into blockquote paragraphs because
+    // super_editor's data model has no concept of a list nested inside a
+    // blockquote — each node is a sibling at the document root.
+    final selectionNodeId = _composer.selection?.extent.nodeId;
+    final cursorNodeNow = selectionNodeId != null
+        ? _document.getNodeById(selectionNodeId)
+        : null;
+    final pastingIntoBlockquote =
+        cursorNodeNow is ParagraphNode &&
+        cursorNodeNow.getMetadataValue('blockType') == blockquoteAttribution;
+    if (pastingIntoBlockquote) {
+      parsedNodes = parsedNodes.map((n) {
+        if (n is ParagraphNode) {
+          return n.copyParagraphWith(
+            metadata: {...n.metadata, 'blockType': blockquoteAttribution},
+          );
+        }
+        if (n is TextNode) {
+          return ParagraphNode(
+            id: n.id,
+            text: n.text,
+            metadata: const {'blockType': blockquoteAttribution},
+          );
+        }
+        return n;
+      }).toList();
+    }
 
     // Delete any selected content first
     if (_composer.selection != null && !_composer.selection!.isCollapsed) {
@@ -2495,7 +2537,7 @@ class ViewerState extends State<Viewer> {
             selectionColor: context.theme.colors.primaryForeground,
           ),
           componentBuilders: <ComponentBuilder>[
-            const BlockquoteComponentBuilder(),
+            const PlotBlockquoteComponentBuilder(),
             const PlotCodeBlockComponentBuilder(),
             const MarkdownTableComponentBuilder(fit: TableComponentFit.scroll),
             const ParagraphComponentBuilder(),
@@ -2635,6 +2677,12 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {
         return {Styles.padding: CascadingPadding.only(top: spacing.sm)};
+      }),
+      // Blockquotes manage their own vertical spacing inside the bordered
+      // container so consecutive quoted paragraphs render with a continuous
+      // left border instead of a gap from the default block top-margin.
+      StyleRule(const BlockSelector("blockquote"), (doc, docNode) {
+        return {Styles.padding: const CascadingPadding.only(top: 0)};
       }),
       // Code blocks with monospace font
       StyleRule(const BlockSelector("code"), (doc, docNode) {
