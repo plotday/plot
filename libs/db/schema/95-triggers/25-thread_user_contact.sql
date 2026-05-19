@@ -26,6 +26,10 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- ORDER BY (tp.user_id, arr.contact_id) locks rows in a stable order
+    -- across concurrent transactions. Without it, two parallel upserts of
+    -- threads with overlapping contacts/recipients can lock the same
+    -- (user_id, contact_id) rows in different orders and deadlock.
     INSERT INTO user_contact (user_id, contact_id, linked, source)
     SELECT tp.user_id, arr.contact_id, false, 'thread'
     FROM thread_priority tp
@@ -66,6 +70,7 @@ BEGIN
                 WHERE uc_grp.user_id = tp.user_id
             )
       )
+    ORDER BY tp.user_id, arr.contact_id
     ON CONFLICT (user_id, contact_id) DO NOTHING;
 
     RETURN NEW;
