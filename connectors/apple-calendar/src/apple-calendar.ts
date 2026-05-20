@@ -271,50 +271,67 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       return;
     }
 
-    // Store initial ctag for incremental sync
-    const client = this.getCalDAV();
-    const ctag = await client.getCalendarCtag(channelId);
-    if (ctag) await this.set(`ctag_${channelId}`, ctag);
+    try {
+      // Store initial ctag for incremental sync
+      const client = this.getCalDAV();
+      const ctag = await client.getCalendarCtag(channelId);
+      if (ctag) await this.set(`ctag_${channelId}`, ctag);
 
-    // Two-pass initial sync:
-    //  - Quick pass: `start = now → end = now + 1y`. Front-loads upcoming
-    //    meetings so they appear in the activity feed immediately. Skips
-    //    long-running recurring masters whose first instance is in the past
-    //    (those land in the full pass).
-    //  - Full pass: `start = 2y ago → end = now + 1y`. Walks the historical
-    //    backfill. Saves are idempotent by `source`, so the overlap with
-    //    the quick window is harmless.
-    // The transition queues a fresh syncBatch with phase "full" without
-    // releasing the lock; the full pass's terminal batch fires the
-    // pending_occ orphan flush, channelSyncCompleted, and lock release.
-    const now = new Date();
-    const quickStart = toCalDAVTimeString(now);
-    const quickEnd = toCalDAVTimeString(
-      new Date(now.getFullYear() + 1, 11, 31)
-    );
+      // Two-pass initial sync:
+      //  - Quick pass: `start = now → end = now + 1y`. Front-loads upcoming
+      //    meetings so they appear in the activity feed immediately. Skips
+      //    long-running recurring masters whose first instance is in the past
+      //    (those land in the full pass).
+      //  - Full pass: `start = 2y ago → end = now + 1y`. Walks the historical
+      //    backfill. Saves are idempotent by `source`, so the overlap with
+      //    the quick window is harmless.
+      // The transition queues a fresh syncBatch with phase "full" without
+      // releasing the lock; the full pass's terminal batch fires the
+      // pending_occ orphan flush, channelSyncCompleted, and lock release.
+      const now = new Date();
+      const quickStart = toCalDAVTimeString(now);
+      const quickEnd = toCalDAVTimeString(
+        new Date(now.getFullYear() + 1, 11, 31)
+      );
 
-    await this.set(`sync_state_${channelId}`, {
-      calendarHref: channelId,
-      initialSync: true,
-      batchNumber: 1,
-      phase: "quick",
-      timeRangeStart: quickStart,
-      timeRangeEnd: quickEnd,
-    } as SyncState);
+      await this.set(`sync_state_${channelId}`, {
+        calendarHref: channelId,
+        initialSync: true,
+        batchNumber: 1,
+        phase: "quick",
+        timeRangeStart: quickStart,
+        timeRangeEnd: quickEnd,
+      } as SyncState);
 
-    // Queue the first batch as a separate task instead of awaiting inline.
-    // This mirrors google-calendar's initCalendar pattern: the init task
-    // returns immediately after setup, freeing the runtime to schedule
-    // syncBatch (which does the heavy CalDAV multiget) on its own.
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      channelId,
-      true, // initialSync
-      1, // batchNumber
-      quickStart,
-      quickEnd
-    );
-    await this.runTask(syncCallback);
+      // Queue the first batch as a separate task instead of awaiting inline.
+      // This mirrors google-calendar's initCalendar pattern: the init task
+      // returns immediately after setup, freeing the runtime to schedule
+      // syncBatch (which does the heavy CalDAV multiget) on its own.
+      const syncCallback = await this.callback(
+        this.syncBatch,
+        channelId,
+        true, // initialSync
+        1, // batchNumber
+        quickStart,
+        quickEnd
+      );
+      await this.runTask(syncCallback);
+    } catch (error) {
+      // CalDAV throws here (bad credentials, network outage) would otherwise
+      // leave the just-acquired lock held for the full 2-hour TTL. Release
+      // it and schedule a poll so the next interval can retry init.
+      try {
+        await this.tools.store.releaseLock(`sync_${channelId}`);
+        await this.clear(`sync_state_${channelId}`);
+      } catch (cleanupError) {
+        console.error(
+          "Cleanup after initChannel failure also failed:",
+          cleanupError
+        );
+      }
+      await this.schedulePoll(channelId);
+      throw error;
+    }
   }
 
   /**
