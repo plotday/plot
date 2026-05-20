@@ -225,7 +225,12 @@ threads.get("/sync/threads/search", async (c) => {
     ? Math.min(Math.max(1, parseInt(limitRaw, 10) || 50), 200)
     : 50;
 
-  if (!q) {
+  // Require at least 2 characters before running the search. A 1-char query
+  // becomes `%a%` and forces sequential ILIKE scans across the user's entire
+  // thread/note/link/contact set, which reliably trips the Postgres statement
+  // timeout for users with substantial data. (Proper long-term fix is
+  // pg_trgm GIN indexes on the searched columns.)
+  if (q.length < 2) {
     return countOnly ? c.json({ count: 0 }) : c.json([]);
   }
 
