@@ -70,8 +70,9 @@ List<StaticCommandGroup> settingsCommandsFromState(
       prioritiesState.priorities.any((p) => p.teamId != null);
 
   final rootPriority = prioritiesState?.root;
-  final plotAppPriority = prioritiesState?.priorities
-      .firstWhereOrNull((p) => p.isPlotApp && p.archivedAt == null);
+  final plotAppPriority = prioritiesState?.priorities.firstWhereOrNull(
+    (p) => p.isPlotApp && p.archivedAt == null,
+  );
 
   return settingsCommands(
     hasTeams: hasTeams,
@@ -130,9 +131,9 @@ List<StaticCommandGroup> settingsCommands({
       CopyPageLink(),
       OpenCopiedPageLink(),
       FullResync(),
+      DeleteAccount(),
       CopyVersion(),
       SignOut(email: email),
-      DeleteAccount(),
     ],
   ),
 ];
@@ -153,8 +154,10 @@ class ShowSettings extends ShowCommands {
           final email = userState is UserReady
               ? userState.user.primaryEmail
               : null;
-          final showAllPriorities =
-              context.read<LocalPreferencesBloc>().state.showAllPriorities;
+          final showAllPriorities = context
+              .read<LocalPreferencesBloc>()
+              .state
+              .showAllPriorities;
 
           // Fetch orgs and subscription in parallel
           List<Map<String, dynamic>> adminOrgs = [];
@@ -317,8 +320,6 @@ class DeleteAccount extends Command {
   DeleteAccount()
     : super(
         title: 'Delete account',
-        description:
-            'Permanently delete your account and all your data.',
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.userXmark,
@@ -392,10 +393,7 @@ class ManageTeams extends Command {
       final selected = await SelectModal.open<Map<String, dynamic>>(
         context,
         items: (search) async => [
-          SelectGroup(
-            title: 'Teams',
-            items: orgs.cast<Map<String, dynamic>>(),
-          ),
+          SelectGroup(title: 'Teams', items: orgs.cast<Map<String, dynamic>>()),
         ],
         itemBuilder: (org, _) => Padding(
           padding: context.theme.spacing.paddingSm,
@@ -420,18 +418,13 @@ class ManageTeams extends Command {
       );
 
       if (context.mounted && selected.present) {
-        final url = Uri.parse(
-          '${Env.siteRoot}/team/${selected.value['id']}',
-        );
+        final url = Uri.parse('${Env.siteRoot}/team/${selected.value['id']}');
         await launchUrl(url, mode: LaunchMode.externalApplication);
       }
       return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to open team management', e, t);
-      return CommandMessage(
-        'Failed to open team management',
-        isError: true,
-      );
+      return CommandMessage('Failed to open team management', isError: true);
     }
   }
 }
@@ -455,10 +448,7 @@ class UpgradePlan extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await launchUrl(
-      _upgradeUri(context),
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(_upgradeUri(context), mode: LaunchMode.externalApplication);
     return const CommandDone();
   }
 }
@@ -474,10 +464,7 @@ class ManageSubscription extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await launchUrl(
-      _upgradeUri(context),
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(_upgradeUri(context), mode: LaunchMode.externalApplication);
     return const CommandDone();
   }
 }
@@ -645,11 +632,13 @@ class ChangeAiPreference extends ShowForm {
     for (final group in groups) {
       final items = await group.list();
       if (items.isNotEmpty) {
-        resolved.add(StaticFormGroup(
-          title: group.title,
-          subtitle: group.subtitle,
-          items: items,
-        ));
+        resolved.add(
+          StaticFormGroup(
+            title: group.title,
+            subtitle: group.subtitle,
+            items: items,
+          ),
+        );
       }
     }
     return resolved;
@@ -937,11 +926,13 @@ class OrgAiPreferences extends ShowForm {
     for (final group in groups) {
       final items = await group.list();
       if (items.isNotEmpty) {
-        resolved.add(StaticFormGroup(
-          title: group.title,
-          subtitle: group.subtitle,
-          items: items,
-        ));
+        resolved.add(
+          StaticFormGroup(
+            title: group.title,
+            subtitle: group.subtitle,
+            items: items,
+          ),
+        );
       }
     }
     return resolved;
@@ -1144,9 +1135,7 @@ class _SaveAiProvider extends Command {
     }
 
     try {
-      final basePath = orgId != null
-          ? '/team/$orgId/ai-keys'
-          : '/ai-keys';
+      final basePath = orgId != null ? '/team/$orgId/ai-keys' : '/ai-keys';
 
       final body = <String, dynamic>{
         'provider': provider,
