@@ -1,21 +1,5 @@
--- Apply an "Archive threads like this" rule for one user.
---
--- 1. Stamps the seed thread as the rule's anchor on the user's
---    thread_priority row (auto_archived_by_thread_id = seed, archived_at = now).
--- 2. Fans out to every candidate returned by find_auto_archive_candidates,
---    setting the same two fields per-user.
---
--- Idempotent: re-applying with the same seed re-archives anything the user
--- has un-archived since (matches the "rule keeps running" semantics).
--- Returns the number of rows that were newly archived (i.e. their
--- thread_priority.archived_at transitioned NULL -> now).
-CREATE OR REPLACE FUNCTION "user".apply_auto_archive (
-    p_user_id uuid,
-    p_seed_thread_id uuid
-)
-    RETURNS integer
-    LANGUAGE plpgsql
-    AS $$
+-- Modify "apply_auto_archive" function
+CREATE OR REPLACE FUNCTION "user"."apply_auto_archive" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
 DECLARE
     v_affected integer := 0;
     v_candidate_ids uuid[];
@@ -106,6 +90,45 @@ BEGIN
     RETURN v_affected;
 END;
 $$;
+-- Modify "clear_auto_archive" function
+CREATE OR REPLACE FUNCTION "user"."clear_auto_archive" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_affected integer;
+    v_target_ids uuid[];
+BEGIN
+    -- Materialize the target thread ids first so we can lock the parent
+    -- thread rows in deterministic order (matching upsert_thread's
+    -- thread → thread_priority order). Concurrent upsert_thread on one
+    -- of the target threads would otherwise see clear_auto_archive lock
+    -- thread_priority first; an AFTER UPDATE trigger could then need the
+    -- thread row already held by the other transaction and deadlock.
+    SELECT COALESCE(array_agg(tp.thread_id ORDER BY tp.thread_id), ARRAY[]::uuid[])
+    INTO v_target_ids
+    FROM public.thread_priority tp
+    WHERE tp.user_id = p_user_id
+      AND tp.auto_archived_by_thread_id = p_seed_thread_id;
 
-COMMENT ON FUNCTION "user".apply_auto_archive (uuid, uuid) IS
-    'Apply the "Archive threads like this" rule anchored at p_seed_thread_id for p_user_id. Stamps the seed and every candidate (per find_auto_archive_candidates) with archived_at=now() and auto_archived_by_thread_id=seed. Returns affected row count.';
+    IF cardinality(v_target_ids) = 0 THEN
+        RETURN 0;
+    END IF;
+
+    PERFORM 1
+    FROM public.thread t
+    WHERE t.id = ANY(v_target_ids)
+    ORDER BY t.id
+    FOR NO KEY UPDATE;
+
+    WITH updated AS (
+        UPDATE public.thread_priority tp
+        SET archived_at = NULL,
+            auto_archived_by_thread_id = NULL,
+            updated_at = now()
+        WHERE tp.user_id = p_user_id
+          AND tp.thread_id = ANY(v_target_ids)
+        RETURNING tp.thread_id
+    )
+    SELECT count(*)::int INTO v_affected FROM updated;
+
+    RETURN COALESCE(v_affected, 0);
+END;
+$$;
