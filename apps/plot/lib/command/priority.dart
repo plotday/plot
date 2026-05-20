@@ -93,7 +93,11 @@ class ChangeCurrentPriority extends PriorityCommand {
     );
 
     final targetPriorityIdString = priority!.id.toShortString();
-    final multi = context.read<LayoutBloc>().state.multiPanel;
+    // `context` here is the CommandModal's rootContext, which can be the
+    // global CommandScope from GlobalShortcuts — that scope sits above
+    // LayoutStateProvider, so `read<LayoutBloc>()` throws. `isMultiPanel`
+    // does a nullable read and falls back to MediaQuery.
+    final multi = context.isMultiPanel;
 
     // Same-priority fast path: when the priority the user tapped is
     // already on the Activity tab's stack, `root.navigate(PriorityRoute(
@@ -207,7 +211,7 @@ class OpenPriority extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final targetPriorityIdString = priorityId.toShortString();
-    final multi = context.read<LayoutBloc>().state.multiPanel;
+    final multi = context.isMultiPanel;
     final tabsRouter = _tabsRouterOrNull(context);
     PrioritiesShell.sourceTab = computeSourceTabAfterPriorityTap(
       activeTabIndex: tabsRouter?.activeIndex,
