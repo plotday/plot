@@ -605,28 +605,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     //   filtered view next time they return to the priority.
     // - Clear pending: if pending is set and we now have unread items,
     //   the spinner can come down and the timer is no longer needed.
-    bool? unreadFilterOverride;
-    bool? unreadFilterPendingOverride;
-    if (activityFeedItems != null &&
-        (state.unreadFilterActive || state.unreadFilterPending)) {
-      bool anyUnread = false;
-      for (final item in activityFeedItems) {
-        if (item is AgendaThreadItem && item.thread.unread) {
-          anyUnread = true;
-          break;
-        }
-      }
-      if (state.unreadFilterPending && anyUnread) {
-        unreadFilterPendingOverride = false;
-        _unreadFilterPendingTimer?.cancel();
-        _unreadFilterPendingTimer = null;
-      }
-      if (state.unreadFilterActive &&
-          !state.unreadFilterPending &&
-          !anyUnread) {
-        unreadFilterOverride = false;
-      }
-    }
+    final (
+      unreadFilterActive: unreadFilterOverride,
+      unreadFilterPending: unreadFilterPendingOverride,
+    ) = _computeUnreadFilterOverrides(activityFeedItems);
     emit(
       state.copyWith(
         thread: thread,
@@ -637,6 +619,46 @@ class PriorityBloc extends Cubit<PriorityState> {
         unreadFilterActive: unreadFilterOverride,
         unreadFilterPending: unreadFilterPendingOverride,
       ),
+    );
+  }
+
+  /// Decide whether to flip the unread filter off or clear the pending
+  /// flag based on the recomputed activity-feed items.
+  /// - Auto-off: if the filter is active and the recomputed feed has
+  ///   zero unread items AND we are NOT waiting for a notification
+  ///   arrival, drop the filter so the user does not land on an empty
+  ///   filtered view next time they return to the priority.
+  /// - Clear pending: if pending is set and we now have unread items,
+  ///   the spinner can come down and the timer is no longer needed.
+  /// Returns nullable overrides for `copyWith` — null means "no change".
+  ({bool? unreadFilterActive, bool? unreadFilterPending})
+      _computeUnreadFilterOverrides(List<AgendaItem>? activityFeedItems) {
+    if (activityFeedItems == null ||
+        (!state.unreadFilterActive && !state.unreadFilterPending)) {
+      return (unreadFilterActive: null, unreadFilterPending: null);
+    }
+    bool anyUnread = false;
+    for (final item in activityFeedItems) {
+      if (item is AgendaThreadItem && item.thread.unread) {
+        anyUnread = true;
+        break;
+      }
+    }
+    bool? unreadFilterOverride;
+    bool? unreadFilterPendingOverride;
+    if (state.unreadFilterPending && anyUnread) {
+      unreadFilterPendingOverride = false;
+      _unreadFilterPendingTimer?.cancel();
+      _unreadFilterPendingTimer = null;
+    }
+    if (state.unreadFilterActive &&
+        !state.unreadFilterPending &&
+        !anyUnread) {
+      unreadFilterOverride = false;
+    }
+    return (
+      unreadFilterActive: unreadFilterOverride,
+      unreadFilterPending: unreadFilterPendingOverride,
     );
   }
 
@@ -3306,12 +3328,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // new headers. Wait for an atomic swap.
     if (!_activityFeedFirstEmitted || !_todoThreadsFirstEmitted) return;
     final (:items, :nativesByDate) = _buildActivityFeedItems();
+    final (
+      unreadFilterActive: unreadFilterOverride,
+      unreadFilterPending: unreadFilterPendingOverride,
+    ) = _computeUnreadFilterOverrides(items);
     emit(
       state.copyWith(
         activityFeedItems: items,
         activityFeedNativesByDate: nativesByDate,
         activityFeedDoneEnd: _activityFeedDoneEnd,
         activityFeedLoaded: true,
+        unreadFilterActive: unreadFilterOverride,
+        unreadFilterPending: unreadFilterPendingOverride,
       ),
     );
   }
