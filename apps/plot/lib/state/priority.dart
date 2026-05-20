@@ -3101,12 +3101,16 @@ class PriorityBloc extends Cubit<PriorityState> {
     final scopeByPath = isSearching ||
         state.hideSubPriorities ||
         _currentEventForFeed != null;
+    // While searching, the root priority ("Everything") means global scope;
+    // selecting any other priority narrows the search to that subtree so
+    // matches are filtered to just that priority.
+    final searchGlobal = isSearching && priorityToLoad.root;
     _activityFeedSubscription =
         Thread.watch(
           order: ThreadOrder.reverse,
-          // Header search is global for now — drop the priority scope
-          // so results from every priority surface in the feed.
-          priorityPath: scopeByPath ? (isSearching ? null : priorityToLoad.path) : null,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
           priorityId: scopeByPath ? null : priorityToLoad.id,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
@@ -3222,12 +3226,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     final scopeByPath = isSearching ||
         state.hideSubPriorities ||
         _currentEventForFeed != null;
+    // Mirror _loadActivityFeed: searching from the root priority is
+    // global; searching from a non-root priority filters to that subtree.
+    final searchGlobal = isSearching && priorityToLoad.root;
     _todoThreadsSubscription =
         Thread.watch(
           order: ThreadOrder.sorted,
-          // Header search is global for now — drop the priority scope
-          // so results from every priority surface in the todo list.
-          priorityPath: scopeByPath ? (isSearching ? null : priorityToLoad.path) : null,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
           priorityId: scopeByPath ? null : priorityToLoad.id,
           archived: state.showArchived,
           // SQL-side todo filter: returns only threads whose user_schedule
