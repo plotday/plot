@@ -870,8 +870,12 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       // Per-uid archive is serial — fine for typical incremental drift
       // (≤handful of deletes per poll), but a bulk delete (user clearing
       // a multi-year backfill) could approach the ~1000-request runtime
-      // limit. If that becomes a real problem, extend archiveLinks to
-      // accept a uids[] filter and batch.
+      // limit.
+      //
+      // TODO: extend `integrations.archiveLinks` to accept a `uids[]`
+      // filter (or chunk this loop into batched callbacks via runTask)
+      // before this becomes a real-world cap. Deferred for now —
+      // typical deletion volume is well below the budget.
       for (const href of deletedHrefs) {
         const uid = storedUids[href];
         if (!uid) {
