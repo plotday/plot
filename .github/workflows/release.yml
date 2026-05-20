@@ -310,18 +310,17 @@ jobs:
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Pin Shorebird to v1.6.98
+      - name: Pin Shorebird to v1.6.102
         shell: bash
         run: |
-          # v1.6.99 introduced a "DD pass" check (PRs #3671, #3764) that
-          # aborts the macOS build with "could not find an analyze_snapshot
-          # binary whose --sdk_version matches gen_snapshot". Remove once
-          # Shorebird ships a fix.
+          # Pinned so a setup-shorebird@v1 upgrade can't silently change build
+          # behavior. Bump when the Shorebird server rejects this version as
+          # too old, or when adopting a needed fix/feature.
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$SHOREBIRD_DIR" checkout v1.6.98
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
+          git -C "$SHOREBIRD_DIR" checkout v1.6.102
           shorebird --version
 
       - name: Build iOS app (Shorebird release)
@@ -511,18 +510,17 @@ jobs:
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Pin Shorebird to v1.6.98
+      - name: Pin Shorebird to v1.6.102
         shell: bash
         run: |
-          # v1.6.99 introduced a "DD pass" check (PRs #3671, #3764) that
-          # aborts the macOS build with "could not find an analyze_snapshot
-          # binary whose --sdk_version matches gen_snapshot". Remove once
-          # Shorebird ships a fix.
+          # Pinned so a setup-shorebird@v1 upgrade can't silently change build
+          # behavior. Bump when the Shorebird server rejects this version as
+          # too old, or when adopting a needed fix/feature.
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$SHOREBIRD_DIR" checkout v1.6.98
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
+          git -C "$SHOREBIRD_DIR" checkout v1.6.102
           shorebird --version
 
       - name: Build Android app (Shorebird release)
@@ -741,18 +739,17 @@ jobs:
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Pin Shorebird to v1.6.98
+      - name: Pin Shorebird to v1.6.102
         shell: bash
         run: |
-          # v1.6.99 introduced a "DD pass" check (PRs #3671, #3764) that
-          # aborts the macOS build with "could not find an analyze_snapshot
-          # binary whose --sdk_version matches gen_snapshot". Remove once
-          # Shorebird ships a fix.
+          # Pinned so a setup-shorebird@v1 upgrade can't silently change build
+          # behavior. Bump when the Shorebird server rejects this version as
+          # too old, or when adopting a needed fix/feature.
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$SHOREBIRD_DIR" checkout v1.6.98
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
+          git -C "$SHOREBIRD_DIR" checkout v1.6.102
           shorebird --version
 
       - name: Build macOS app (Shorebird release)
@@ -976,18 +973,17 @@ jobs:
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Pin Shorebird to v1.6.98
+      - name: Pin Shorebird to v1.6.102
         shell: bash
         run: |
-          # v1.6.99 introduced a "DD pass" check (PRs #3671, #3764) that
-          # aborts the macOS build with "could not find an analyze_snapshot
-          # binary whose --sdk_version matches gen_snapshot". Remove once
-          # Shorebird ships a fix.
+          # Pinned so a setup-shorebird@v1 upgrade can't silently change build
+          # behavior. Bump when the Shorebird server rejects this version as
+          # too old, or when adopting a needed fix/feature.
           # Install dir varies per OS (macOS: ~/.shorebird, Linux:
           # $XDG_CONFIG_HOME/shorebird), so resolve it from `which shorebird`.
           SHOREBIRD_DIR="$(dirname "$(dirname "$(command -v shorebird)")")"
-          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.98:refs/tags/v1.6.98
-          git -C "$SHOREBIRD_DIR" checkout v1.6.98
+          git -C "$SHOREBIRD_DIR" fetch --tags --depth=1 origin refs/tags/v1.6.102:refs/tags/v1.6.102
+          git -C "$SHOREBIRD_DIR" checkout v1.6.102
           shorebird --version
 
       - name: Build Windows app (Shorebird release)
