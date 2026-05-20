@@ -1,5 +1,5 @@
 {
-  "name": "@plotday/classify-worker",
+  "name": "@plotday/classify",
   "main": "src/index.ts",
   "type": "module",
   "sideEffects": false,
