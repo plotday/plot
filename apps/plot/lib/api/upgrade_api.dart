@@ -1,17 +1,21 @@
 import 'dart:io' show Platform;
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'api.dart' as api;
 
 /// Centralizes platform rules for exposing upgrade UI.
 ///
 /// On iOS the app must not show calls-to-action that direct users to an
 /// external purchase flow (App Store guideline 3.1.1). Gate any "Upgrade",
-/// "Manage subscription", or pricing CTA on this flag.
+/// "Manage subscription", or pricing CTA on this flag. The rule only
+/// applies to the App Store-distributed iOS app — the web build (even when
+/// loaded in iOS Safari) is free to show upgrade UI, and must not touch
+/// `dart:io`'s `Platform` (which throws on web).
 class UpgradeUi {
   const UpgradeUi._();
 
-  static bool get canPromptUpgrade => !Platform.isIOS;
+  static bool get canPromptUpgrade => kIsWeb || !Platform.isIOS;
 }
 
 /// Usage counts for a single resource type (e.g. connections or twists)
