@@ -34,6 +34,7 @@ import {
   type SyncState,
   containsHtml,
   extractConferencingLinks,
+  hashContent,
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
@@ -307,6 +308,21 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
+  }
+
+  /**
+   * Stamp the first time the connector observes some opaque key, and
+   * reuse that timestamp on every subsequent observation. Used for note
+   * `created` timestamps where Google doesn't tell us when something
+   * actually happened (cancellation date, description-edit date) and we
+   * don't want re-syncs to bump the note forward in the activity feed.
+   */
+  private async firstSeenAt(storeKey: string): Promise<Date> {
+    const existing = await this.get<string>(storeKey);
+    if (existing) return new Date(existing);
+    const now = new Date();
+    await this.set(storeKey, now.toISOString());
+    return now;
   }
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
@@ -966,16 +982,18 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             // so using it converges cross-user threads for the same event.
             const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
-            // Create cancellation note
-            const cancelledBy =
-              event.organizer?.displayName || event.organizer?.email;
+            // Google doesn't tell us who cancelled or when, so stamp the
+            // note with the time we first noticed the cancellation and
+            // reuse that on every subsequent sync (instead of letting
+            // event.updated drag the note forward on unrelated edits).
+            const cancelFirstSeen = await this.firstSeenAt(
+              `cancel_seen:${canonicalUrl}`
+            );
             const cancelNote = {
               key: "cancellation" as const,
-              content: cancelledBy
-                ? `${cancelledBy} cancelled this event.`
-                : "This event was cancelled.",
+              content: "This event was cancelled.",
               contentType: "text" as const,
-              created: event.updated ? new Date(event.updated) : new Date(),
+              created: cancelFirstSeen,
             };
 
             // Convert to link with cancellation note
@@ -1100,19 +1118,37 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // so using it converges cross-user threads for the same event.
           const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
-          // Build description note if available
-          const descriptionNote = hasDescription
-            ? {
-                key: "description",
-                content: description,
-                contentType:
-                  description && containsHtml(description)
-                    ? ("html" as const)
-                    : ("text" as const),
-                created: event.created ? new Date(event.created) : undefined,
-                ...(authorContact ? { author: authorContact } : {}),
-              }
+          // Build description note if available. The key embeds a hash of
+          // the description content so each distinct version produces a
+          // separate note: re-syncing the same description is an
+          // idempotent no-op upsert (same key + same content), while an
+          // edited description gets a new key and a fresh note —
+          // preserving the prior versions as history on the thread.
+          // Stamp `created` with the first time we observed each hash
+          // and reuse that timestamp on subsequent syncs, so an
+          // unrelated event update (which bumps event.updated) doesn't
+          // drag the description note forward in the activity feed.
+          const descHash = hasDescription
+            ? await hashContent(description)
             : null;
+          const descFirstSeen = descHash
+            ? await this.firstSeenAt(
+                `desc_seen:${canonicalUrl}:${descHash}`
+              )
+            : undefined;
+          const descriptionNote =
+            hasDescription && descHash
+              ? {
+                  key: `description-${descHash}`,
+                  content: description,
+                  contentType:
+                    description && containsHtml(description)
+                      ? ("html" as const)
+                      : ("text" as const),
+                  created: descFirstSeen,
+                  ...(authorContact ? { author: authorContact } : {}),
+                }
+              : null;
 
           // Build attendee contacts for link-level access control
           const attendeeMentions: NewContact[] = [];
@@ -1328,8 +1364,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         return null;
       }
 
-      const cancelledBy =
-        event.organizer?.displayName || event.organizer?.email;
       const isAllDay = !event.originalStartTime?.dateTime;
       const formattedDate = new Date(originalStartTime).toLocaleDateString(
         "en-US",
@@ -1338,15 +1372,25 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           ...(isAllDay ? { timeZone: "UTC" } : {}),
         }
       );
+      // Google doesn't tell us when (or by whom) an occurrence was
+      // cancelled — event.created is the series creation time and
+      // event.updated drifts forward on unrelated edits (e.g. a "this
+      // and future occurrences" change re-emits old cancellations with
+      // a fresh updated timestamp, which would bump the thread to the
+      // top of activity). Instead, stamp the note with the time we
+      // first noticed the cancellation, persist that in connector
+      // storage, and reuse it on every subsequent sync.
+      const occurrenceIso = new Date(originalStartTime).toISOString();
+      const cancelFirstSeen = await this.firstSeenAt(
+        `cancel_seen:${masterCanonicalUrl}:${occurrenceIso}`
+      );
       const cancelNote = {
         // Unique key per occurrence so multiple instance cancellations on the
         // same recurring event don't overwrite each other's notes.
-        key: `cancellation-${new Date(originalStartTime).toISOString()}`,
-        content: cancelledBy
-          ? `${cancelledBy} cancelled the ${formattedDate} occurrence.`
-          : `The ${formattedDate} occurrence was cancelled.`,
+        key: `cancellation-${occurrenceIso}`,
+        content: `The ${formattedDate} occurrence was cancelled.`,
         contentType: "text" as const,
-        created: event.updated ? new Date(event.updated) : new Date(),
+        created: cancelFirstSeen,
       };
 
       return {
