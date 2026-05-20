@@ -233,6 +233,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       AppleCalendar.SYNC_LOCK_TTL_MS
     );
     if (!acquired) {
+      // Another sync holds the lock (e.g. an in-flight init from a previous
+      // enable attempt that hasn't drained, or a stuck TTL'd run). Schedule
+      // a poll so the next interval can retry init — otherwise this channel
+      // would be stuck with no scheduled work until the user re-enables.
+      await this.schedulePoll(channelId);
       return;
     }
 
@@ -320,17 +325,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           end: timeRangeEnd,
         });
 
-        // Store etags for incremental sync
-        const etagMap: Record<string, string> = {};
-        for (const event of events) {
-          etagMap[event.href] = event.etag;
-        }
-        await this.set(`etags_${calendarHref}`, etagMap);
-
-        // Process events in batches. processCalDAVEvents records each
-        // event's href→uid into event_uids_<calendarHref> so future
-        // selective per-event deletion (see startIncrementalSync) can
-        // resolve a deleted href back to its uid.
+        // Process events in batches. processCalDAVEvents persists the
+        // href→uid AND href→etag maps together at end-of-batch so the two
+        // stay consistent across worker crashes — see the comment on
+        // processCalDAVEvents for why we deliberately don't pre-write
+        // etags before processing.
         await this.processCalDAVEvents(
           events.slice(0, 50),
           calendarHref,
@@ -365,9 +364,23 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       );
 
       // Release lock and clear state so future syncs aren't permanently
-      // blocked. Even if this release fails, the lock's TTL will expire it.
-      await this.tools.store.releaseLock(`sync_${calendarHref}`);
-      await this.clear(`sync_state_${calendarHref}`);
+      // blocked. Wrap in its own try/catch so a release/clear failure
+      // doesn't mask the original error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`sync_state_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Schedule a poll so polling resumes — otherwise a failure here
+      // strands the channel (startIncrementalSync's lock-fail bail
+      // intentionally relies on the active holder, which is us, to
+      // reschedule).
+      await this.schedulePoll(calendarHref);
 
       // Re-throw to let the runtime handle it (PostHog capture, etc.).
       throw error;
@@ -421,9 +434,21 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       );
 
       // Release lock and clear state so future syncs aren't permanently
-      // blocked. Even if this release fails, the lock's TTL will expire it.
-      await this.tools.store.releaseLock(`sync_${calendarHref}`);
-      await this.clear(`sync_state_${calendarHref}`);
+      // blocked. Wrap cleanup so a release/clear failure doesn't mask the
+      // original error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`sync_state_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Schedule a poll so polling resumes — startIncrementalSync's
+      // lock-fail bail relies on the active holder (us) to reschedule.
+      await this.schedulePoll(calendarHref);
 
       throw error;
     }
@@ -571,6 +596,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       // channel without the data-loss risk above.
       let archivedCount = 0;
       let missingUidCount = 0;
+      // Per-uid archive is serial — fine for typical incremental drift
+      // (≤handful of deletes per poll), but a bulk delete (user clearing
+      // a multi-year backfill) could approach the ~1000-request runtime
+      // limit. If that becomes a real problem, extend archiveLinks to
+      // accept a uids[] filter and batch.
       for (const href of deletedHrefs) {
         const uid = storedUids[href];
         if (!uid) {
@@ -628,9 +658,17 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         error
       );
 
-      // Release lock so future syncs aren't permanently blocked. The TTL
-      // is the safety net if this release also fails.
-      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+      // Release lock so future syncs aren't permanently blocked. Wrap in
+      // its own try/catch so a release failure doesn't mask the real
+      // error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar incremental sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
 
       // Reschedule a poll so we recover on the next interval.
       await this.schedulePoll(calendarHref);
@@ -644,9 +682,16 @@ export class AppleCalendar extends Connector<AppleCalendar> {
   /**
    * Process CalDAV events (parse ICS and save as links).
    *
-   * Also maintains the `event_uids_<calendarHref>` map keyed by event href
-   * so future incremental syncs can archive deleted events selectively by
-   * uid instead of wiping the whole channel (see startIncrementalSync).
+   * Also maintains the `event_uids_<calendarHref>` and `etags_<calendarHref>`
+   * maps keyed by event href so future incremental syncs can archive deleted
+   * events selectively by uid (see startIncrementalSync). Both maps are
+   * updated together at end-of-batch as one logical commit per batch — if a
+   * worker crashes mid-batch and never reaches this point, neither map is
+   * advanced, keeping stored etags and stored uids consistent. Writing etags
+   * before this method ran would have stranded hrefs in the etag set with no
+   * uid mapping, so a future deletion would silently drop (logged as
+   * missingUid).
+   *
    * Recurrence-only entries (RECURRENCE-ID overrides) share the same uid
    * as their master, so the master entry already covers them — we record
    * uid once per href.
@@ -656,16 +701,28 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     calendarHref: string,
     initialSync: boolean
   ): Promise<void> {
-    // Load the persisted href→uid map once, merge new entries from this
-    // batch in memory, and write back once at the end. Avoids one
-    // read+write per event.
+    // Load persisted href→uid and href→etag maps once, merge new entries
+    // from this batch in memory, and write back together at the end. Avoids
+    // one read+write per event and ensures both maps advance atomically per
+    // batch.
     const uidMap =
       (await this.get<Record<string, string>>(
         `event_uids_${calendarHref}`
       )) || {};
+    const etagMap =
+      (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
     let uidMapDirty = false;
+    let etagMapDirty = false;
 
     for (const caldavEvent of events) {
+      // Record the etag up-front for every event in this batch so the
+      // stored set matches the uids we're about to record. Both maps are
+      // persisted together below.
+      if (etagMap[caldavEvent.href] !== caldavEvent.etag) {
+        etagMap[caldavEvent.href] = caldavEvent.etag;
+        etagMapDirty = true;
+      }
+
       try {
         const icsEvents = parseICSEvents(caldavEvent.icsData);
 
@@ -704,6 +761,9 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     if (uidMapDirty) {
       await this.set(`event_uids_${calendarHref}`, uidMap);
+    }
+    if (etagMapDirty) {
+      await this.set(`etags_${calendarHref}`, etagMap);
     }
   }
 
