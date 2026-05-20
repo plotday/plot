@@ -61,6 +61,22 @@ CREATE TRIGGER file_thread_priority_for_group_members
 
 -- When a contact is added to or removed from a group, cascade to
 -- thread_priority/thread_unread for all threads that reference the group.
+--
+-- On INSERT we classify the threads inline via classify_thread_for_user
+-- instead of leaving the rows pending for the async worker. The async
+-- pending-row design is right for new threads (the API enqueues a
+-- ClassifyJob right after upsert_thread commits) but wrong here: nothing
+-- enqueues jobs when a user is *added to a group* containing existing
+-- threads, so without inline classification the rows stay pending until
+-- the hourly sweep, hiding the threads for ~5 minutes (the visibility
+-- window) and then surfacing them at the user's root priority instead
+-- of the priority that their topic dictates. For new signups joining the
+-- "Everyone" group this means onboarding threads (topic
+-- 'priority:@plot.app:*') never appear under Using Plot until the sweep
+-- runs. classify_thread_for_user resolves them via the priority_prefix
+-- stage immediately. Rows that the SQL classifier can't resolve (team
+-- threads with no matching team priority) stay pending so the LLM-aware
+-- worker can still attempt them on the next sweep.
 CREATE OR REPLACE FUNCTION public.file_thread_priority_on_group_member_change ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -81,12 +97,19 @@ BEGIN
             RETURN NEW;
         END IF;
 
-        -- Mark every thread referencing the group pending for this peer.
+        WITH candidates AS (
+            SELECT t.id AS thread_id,
+                   public.classify_thread_for_user(v_peer_user_id, t.id) AS pid
+            FROM public.thread t
+            WHERE NEW.group_id = ANY(t.groups)
+              AND t.archived_at IS NULL
+        )
         INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
-        SELECT t.id, v_peer_user_id, NULL::uuid, now()
-        FROM public.thread t
-        WHERE NEW.group_id = ANY(t.groups)
-          AND t.archived_at IS NULL
+        SELECT c.thread_id,
+               v_peer_user_id,
+               c.pid,
+               CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
+        FROM candidates c
         ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
 
         INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
