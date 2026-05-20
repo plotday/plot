@@ -31,6 +31,7 @@ import appSync from "./app/sync";
 import notificationContent from "./app/notification-content";
 import notificationSummary from "./app/notification-summary";
 import testRoutes from "./app/test-routes";
+import testSignIn from "./app/test-signin";
 import summary from "./app/summary";
 import updates from "./app/updates";
 import unsubscribe from "./app/unsubscribe";
@@ -252,6 +253,11 @@ app.route("/", authBridgeRoutes);
 
 // Public Slack admin-install entry point (plot.day/slack button target).
 app.route("/", slackInstallRoutes);
+
+// Server-issued sign-in ticket for allowlisted shared test accounts. Public
+// because the caller isn't signed in yet; password is verified server-side
+// via the Clerk Backend API. See workers/api/src/app/test-signin.ts.
+app.route("/", testSignIn);
 
 // Scheduled handler for cron triggers
 async function scheduled(

@@ -1,13 +1,53 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:auto_route/auto_route.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/app_info.dart';
+import 'package:plot/env.dart';
 import 'package:plot/router.dart' show PasswordSetupRoute;
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
 import 'logging.dart';
+
+/// Shared test accounts whose external reviewers don't have inbox access,
+/// so the password-only sign-in must succeed without any email OTP step.
+/// Matches the server-side allowlist in `workers/api/src/app/test-signin.ts`.
+const _kTestSignInEmails = {'tester@plot.day'};
+
+/// Calls the server's `/auth/test-signin` endpoint, which verifies the
+/// password via Clerk's Backend API and returns a one-use sign-in ticket
+/// the SDK can redeem to bypass Clerk's first-factor flow entirely.
+///
+/// Returns `null` if the server rejects the credentials (e.g. wrong
+/// password or the address isn't on the server allowlist).
+Future<String?> _fetchTestSignInTicket({
+  required String email,
+  required String password,
+}) async {
+  final response = await http.post(
+    Uri.parse('${Env.apiRoot}/auth/test-signin'),
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Plot-Client':
+          '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
+      'X-Plot-API-Version': '3',
+    },
+    body: jsonEncode({'email': email, 'password': password}),
+  ).timeout(const Duration(seconds: 15));
+  if (response.statusCode == 401) return null;
+  if (response.statusCode != 200) {
+    throw HttpException(
+      'test-signin failed: ${response.statusCode} ${response.body}',
+    );
+  }
+  final json = jsonDecode(response.body) as Map<String, dynamic>;
+  return json['ticket'] as String;
+}
 
 @RoutePage()
 class EmailSignInPage extends StatefulWidget {
@@ -125,6 +165,25 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         // parameter). clerk_auth otherwise re-uses an existing SignIn when
         // the identifier matches.
         await Base.auth.resetClient();
+
+        // Fast path for shared test accounts whose external reviewers can't
+        // access the inbox. The server verifies the password via Clerk's
+        // Backend API and hands back a one-use sign-in ticket that bypasses
+        // Clerk's first-factor flow (including any email-OTP challenge).
+        if (_kTestSignInEmails.contains(email.toLowerCase())) {
+          final ticket = await _fetchTestSignInTicket(
+            email: email,
+            password: password,
+          );
+          if (ticket != null) {
+            await Base.auth.signInWithTicket(ticket: ticket);
+            await Base.resolveIdentity();
+            return;
+          }
+          // Server rejected the credentials (or address not allowlisted).
+          // Fall through to the normal flow so the user gets the standard
+          // "invalid password" feedback path.
+        }
 
         // Two-step sign-in flow:
         // 1. Identify with email

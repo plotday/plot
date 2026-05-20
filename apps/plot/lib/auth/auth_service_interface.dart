@@ -155,6 +155,11 @@ abstract class AuthService {
     String? password,
   });
 
+  /// Redeem a server-issued Clerk sign-in ticket. The ticket bypasses
+  /// Clerk's first-factor flow entirely, so the caller is responsible for
+  /// having verified credentials before requesting it.
+  Future<void> signInWithTicket({required String ticket});
+
   /// Prepare second-factor verification (sends email code).
   Future<void> prepareSecondFactor();
 
@@ -255,6 +260,12 @@ class FailedAuthService implements AuthService {
     String? identifier,
     String? password,
   }) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> signInWithTicket({required String ticket}) =>
       throw const AuthError(
         message: 'Authentication unavailable, please restart the app.',
       );

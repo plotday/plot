@@ -391,6 +391,18 @@ class ClerkJsAuthService implements AuthService {
       });
 
   @override
+  Future<void> signInWithTicket({required String ticket}) => _guard(() async {
+        final result = _asSignIn(await _clerk.client!.signIn!
+            .create(jsObj({
+              'strategy': 'ticket',
+              'ticket': ticket,
+            }))
+            .toDart);
+        _pendingSignIn = result;
+        await _activateIfComplete(result.status, result.createdSessionId);
+      });
+
+  @override
   Future<void> prepareSecondFactor() => _guard(() async {
         final si = _pendingSignIn;
         if (si == null) {

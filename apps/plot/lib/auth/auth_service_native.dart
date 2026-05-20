@@ -361,6 +361,22 @@ class ClerkDartAuthService implements AuthService {
           ));
 
   @override
+  Future<void> signInWithTicket({required String ticket}) => _guard(() async {
+        // Clerk's ticket strategy isn't exposed through `attemptSignIn` in the
+        // Dart SDK, so we drop down to the low-level API. The trailing
+        // `_housekeeping` (inside `fetchApiResponse`) creates the session on
+        // the Client when Clerk returns `status: 'complete'`.
+        await _auth.fetchApiResponse(
+          '/client/sign_ins',
+          method: clerk.HttpMethod.post,
+          params: {
+            'strategy': clerk.Strategy.ticket.name,
+            'ticket': ticket,
+          },
+        );
+      });
+
+  @override
   Future<void> prepareSecondFactor() =>
       _guard(() => _auth.attemptSignIn(strategy: clerk.Strategy.emailCode));
 
