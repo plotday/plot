@@ -556,6 +556,60 @@ class AddThreadWithLink extends Command {
   }
 }
 
+/// "Archive threads like this" — toggles an auto-archive rule for the
+/// thread's channel + author + similar-title cluster. On set, the seed
+/// thread archives immediately and the server fans out per-user to every
+/// matching thread (find_auto_archive_candidates); future matching threads
+/// are auto-archived on arrival. On clear, the rule reverses — every
+/// thread the rule had stamped (auto_archived_by_thread_id = seed) is
+/// un-archived in one shot, server-side.
+class ArchiveSimilarThreads extends Command {
+  ArchiveSimilarThreads(this._thread, {PriorityBloc? bloc})
+    : _bloc = bloc,
+      super(
+        title: _thread.autoArchivedByThreadId == null
+            ? 'Archive threads like this'
+            : 'Stop auto-archiving these',
+        eventObject: EventObject.activity,
+        eventAction: _thread.autoArchivedByThreadId == null
+            ? EventAction.archived
+            : EventAction.unarchived,
+        icon: PlotIcon.broom,
+      );
+
+  final Thread _thread;
+  final PriorityBloc? _bloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final priorityBloc = _bloc ?? context.read<PriorityBloc?>();
+    final wasActive = _thread.autoArchivedByThreadId != null;
+    if (wasActive) {
+      // Clear: un-archive the seed and clear the flag. The server's
+      // clear_auto_archive flips every peer with the same seed; clients
+      // pick those up on the next sync pull. The visible flip on the seed
+      // itself is immediate via optimisticallyUpdateThread.
+      final unarchived = _thread.copyWith(
+        archivedAt: const Value(null),
+        autoArchivedByThreadId: const Value(null),
+      );
+      priorityBloc?.optimisticallyUpdateThread(unarchived);
+      await unarchived.save();
+    } else {
+      // Set: archive the seed and stamp it as the rule anchor. Server-side
+      // apply_auto_archive fans out to matching peers; clients see the
+      // additional archives on the next sync pull.
+      final archived = _thread.copyWith(
+        archivedAt: Value(DateTime.now()),
+        autoArchivedByThreadId: Value(_thread.id),
+      );
+      priorityBloc?.optimisticallyArchiveThread(archived);
+      await archived.save();
+    }
+    return const CommandDone();
+  }
+}
+
 class ArchiveThread extends Command {
   ArchiveThread(Thread thread, {PriorityBloc? bloc})
     : _thread = Future.value(thread),
@@ -3377,6 +3431,7 @@ List<Command> threadCommands(
     return [
       if (open) ChangeCurrentThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
+      if (!skipInfrequent) ArchiveSimilarThreads(thread, bloc: priorityBloc),
       if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
   }
@@ -3407,6 +3462,8 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
+    if (!skipInfrequent && !hideArchive)
+      ArchiveSimilarThreads(thread, bloc: priorityBloc),
     if (!skipInfrequent && !hideArchive)
       ArchiveThread(thread, bloc: priorityBloc),
   ];

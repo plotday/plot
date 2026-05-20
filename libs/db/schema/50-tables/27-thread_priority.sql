@@ -45,6 +45,15 @@ CREATE TABLE "public"."thread_priority" (
     -- twist_instance → thread → thread_priority anyway, so a stale marker
     -- is unreachable in practice.
     "applied_default_channel_id" bigint,
+    -- "Archive threads like this": per-user auto-archive rule.
+    --   NULL                 — not auto-archived.
+    --   = thread_id (self)   — this is the seed (user invoked the command on it).
+    --   = some other id      — auto-archived because it matched the rule
+    --                          established by that seed thread.
+    -- Setting this also requires archived_at to be set; clearing it via the
+    -- broom-toggle path unarchives. ON DELETE SET NULL so deleting the seed
+    -- (rare — threads are archived, not deleted) cleanly orphans dependents.
+    "auto_archived_by_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("thread_id", "user_id"),
     -- Both NULL is unrecoverable: the row would be invisible to user

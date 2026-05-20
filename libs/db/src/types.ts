@@ -363,28 +363,37 @@ export type Database = {
       device: {
         Row: {
           app_version: string | null
+          capabilities: Json
           created_at: string
+          device_id: string | null
           id: string
+          last_seen_at: string
           platform: string
-          push_token: string
+          push_token: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform: string
-          push_token: string
+          push_token?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform?: string
-          push_token?: string
+          push_token?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -735,6 +744,64 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      local_sync_lease: {
+        Row: {
+          attempt_id: string
+          capability: string
+          created_at: string
+          device_id: string
+          fail_streak: number
+          last_completed_at: string | null
+          last_error: string | null
+          last_heartbeat_at: string
+          last_result: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id: string
+          capability: string
+          created_at?: string
+          device_id: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at: string
+          last_result?: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          capability?: string
+          created_at?: string
+          device_id?: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at?: string
+          last_result?: string | null
+          lease_token?: string
+          leased_until?: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "local_sync_lease_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1764,6 +1831,7 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[]
           preview: string | null
+          private_to_creator: boolean
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -1789,6 +1857,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -1814,6 +1883,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -1899,6 +1969,7 @@ export type Database = {
         Row: {
           applied_default_channel_id: number | null
           archived_at: string | null
+          auto_archived_by_thread_id: string | null
           classify_at: string | null
           created_at: string
           priority_id: string | null
@@ -1911,6 +1982,7 @@ export type Database = {
         Insert: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
+          auto_archived_by_thread_id?: string | null
           classify_at?: string | null
           created_at?: string
           priority_id?: string | null
@@ -1923,6 +1995,7 @@ export type Database = {
         Update: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
+          auto_archived_by_thread_id?: string | null
           classify_at?: string | null
           created_at?: string
           priority_id?: string | null
@@ -1933,6 +2006,18 @@ export type Database = {
           user_moved?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
+            columns: ["auto_archived_by_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
+            columns: ["auto_archived_by_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "thread_priority_priority_id_fkey"
             columns: ["priority_id"]
@@ -2980,6 +3065,7 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[] | null
           preview: string | null
+          private_to_creator: boolean | null
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -3005,6 +3091,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
+          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -3030,6 +3117,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
+          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -4023,6 +4111,7 @@ export type Database = {
         Args: { p_new_parent_path: unknown; p_priority_id: string }
         Returns: undefined
       }
+      normalize_title: { Args: { t: string }; Returns: string }
       order_first: { Args: never; Returns: number }
       parent_path: { Args: { p: unknown }; Returns: unknown }
       reclassify_user_threads: {
@@ -4675,6 +4764,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
+          auto_archived_by_thread_id: string | null
           bumped_at: string | null
           contacts: string[] | null
           created_at: string | null
@@ -4709,6 +4799,18 @@ export type Database = {
           {
             foreignKeyName: "thread_merged_into_thread_id_fkey"
             columns: ["merged_into_thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
+            columns: ["auto_archived_by_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
+            columns: ["auto_archived_by_thread_id"]
             referencedRelation: "thread_tags"
             referencedColumns: ["id"]
           },
@@ -4818,13 +4920,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -4890,11 +4992,23 @@ export type Database = {
       }
     }
     Functions: {
+      apply_auto_archive: {
+        Args: { p_seed_thread_id: string; p_user_id: string }
+        Returns: number
+      }
+      apply_auto_archive_for_new_thread: {
+        Args: { p_thread_id: string; p_user_id: string }
+        Returns: string
+      }
       assert_priority_access: {
         Args: { priority_id: string; user_id: string }
         Returns: undefined
       }
       canonical_contact_id: { Args: { p_contact_id: string }; Returns: string }
+      clear_auto_archive: {
+        Args: { p_seed_thread_id: string; p_user_id: string }
+        Returns: number
+      }
       clear_thread_unread: {
         Args: {
           p_bumped_at?: string
@@ -4907,6 +5021,10 @@ export type Database = {
       delete_thread_read: {
         Args: { p_thread_id: string; user_id: string }
         Returns: undefined
+      }
+      find_auto_archive_candidates: {
+        Args: { p_seed_thread_id: string; p_user_id: string }
+        Returns: string[]
       }
       get_effective_role: {
         Args: { p_priority_id: string; p_user_id: string }

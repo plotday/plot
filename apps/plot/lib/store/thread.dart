@@ -67,6 +67,15 @@ class Threads extends Table
   BoolColumn get hasEmbedding =>
       boolean().withDefault(const Constant(false))();
 
+  /// "Archive threads like this" anchor (per-user, mirrored from
+  /// `thread_priority.auto_archived_by_thread_id`). NULL when not part of an
+  /// auto-archive rule. Equal to this thread's own id when the user invoked
+  /// the command on this thread (the seed). Otherwise points to the seed
+  /// whose rule swept this thread. Toggling the broom off on any thread
+  /// carrying a non-null flag reverses the rule for every related thread.
+  BlobColumn get autoArchivedByThreadId =>
+      blob().nullable().map(const UuidConverter())();
+
   /// When set, this thread was merged into the referenced thread and is
   /// archived; its identity columns are preserved on this row so a Split
   /// can restore them.
@@ -3191,6 +3200,11 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   String? get icon => _thread.icon;
   bool get hasEmbedding => _thread.hasEmbedding;
 
+  /// Anchor for the "Archive threads like this" rule. Non-null on threads
+  /// the rule swept (and on the seed itself, where it equals the thread's
+  /// own id). Null when the thread is not part of any auto-archive rule.
+  ThreadId? get autoArchivedByThreadId => _thread.autoArchivedByThreadId;
+
   /// True if the current user only sees this thread via an announce-typed
   /// group they don't admin (i.e. not a direct contact, not a member of any
   /// non-announce group on the thread). Read-only viewers cannot edit
@@ -4105,6 +4119,10 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     Value<String?> title = const Value.absent(),
     Value<Duration?> duration = const Value.absent(),
     Value<DateTime?> archivedAt = const Value.absent(),
+    // "Archive threads like this" rule anchor. Equal to this thread's own
+    // id when the user invoked the command on this thread (the seed); equal
+    // to some other id when the rule swept this thread; null when cleared.
+    Value<ThreadId?> autoArchivedByThreadId = const Value.absent(),
 
     // These fields update the root activity
     Value<DateTimeRange?> recurrenceAt = const Value.absent(),
@@ -4145,6 +4163,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         icon.present ||
         mergedIntoThreadId.present ||
         archivedAt.present ||
+        autoArchivedByThreadId.present ||
         bumpedAt.present ||
         readAt.present ||
         title.present) {
@@ -4161,6 +4180,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           icon.present ||
           mergedIntoThreadId.present ||
           archivedAt.present ||
+          autoArchivedByThreadId.present ||
           title.present;
       activity = _thread.copyWith(
         priorityId: priority?.id,
@@ -4178,6 +4198,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         createdAt: draft == false && _thread.draft ? now : null,
         updatedAt: now,
         archivedAt: archivedAt,
+        autoArchivedByThreadId: autoArchivedByThreadId,
         bumpedAt: bumpedAt,
         readAt: readAt,
         title: !recurring ? title : const Value.absent(),

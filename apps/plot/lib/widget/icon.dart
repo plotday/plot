@@ -87,6 +87,7 @@ class PlotIcon {
   static const otherDone = FontAwesomeIcons.check;
   static const pinned = FontAwesomeIcons.thumbtackAngle;
   static const archived = FontAwesomeIcons.boxArchive;
+  static const broom = FontAwesomeIcons.broomWide;
   static const urgent = FontAwesomeIcons.sirenOn;
   static const goal = FontAwesomeIcons.bullseyePointer;
   static const decision = FontAwesomeIcons.signsPost;

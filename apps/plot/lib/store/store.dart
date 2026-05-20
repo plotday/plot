@@ -2300,7 +2300,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 332;
+  int get schemaVersion => 333;
 
   @override
   MigrationStrategy get migration {
@@ -3357,6 +3357,13 @@ class Store extends _$Store {
         // it was reassigned to the perf-index bump on main).
         if (!e.toString().toLowerCase().contains('already exists')) rethrow;
       }
+    }
+    if (from < 333) {
+      // "Archive threads like this": per-user flag mirrored from
+      // thread_priority.auto_archived_by_thread_id on the server. Shows the
+      // broom indicator on archived rows and lets the client filter the
+      // archived view down to auto-archived threads.
+      await _safeAddColumn(m, threads, threads.autoArchivedByThreadId);
     }
   }
 

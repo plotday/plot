@@ -1,37 +1,119 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Create "normalize_title" function
+CREATE FUNCTION "public"."normalize_title" ("t" text) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v text;
+BEGIN
+    IF t IS NULL THEN
+        RETURN NULL;
+    END IF;
+    v := lower(t);
+    -- Strip leading Re:/Fwd:/Fw: prefixes repeatedly (with optional brackets
+    -- like "Re[2]:"). Loop until nothing more to strip.
+    LOOP
+        v := regexp_replace(v, '^\s*(re|fwd|fw)\s*(\[\d+\])?\s*:\s*', '', 'i');
+        EXIT WHEN v = lower(t) OR v !~* '^\s*(re|fwd|fw)\s*(\[\d+\])?\s*:';
+    END LOOP;
+    -- Strip trailing counter suffixes: "(N)", "[N]", "#N", "- N", " N" where
+    -- N is a run of digits (with optional commas/decimals/dates won't strip).
+    v := regexp_replace(v, '\s*([\(\[]\s*\d+\s*[\)\]]|#\s*\d+|\s-\s*\d+)\s*$', '', 'g');
+    -- Collapse whitespace.
+    v := regexp_replace(v, '\s+', ' ', 'g');
+    v := btrim(v);
+    IF v = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN v;
+END;
+$$;
+-- Set comment to function: "normalize_title"
+COMMENT ON FUNCTION "public"."normalize_title" IS 'Canonicalize a thread title for similarity matching. Lowercases, strips Re:/Fwd:/Fw: prefixes and trailing (N)/[N]/#N counters, collapses whitespace. Returns NULL on empty input.';
+-- Create "find_auto_archive_candidates" function
+CREATE FUNCTION "user"."find_auto_archive_candidates" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS SETOF uuid LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_seed_channels text[];
+    v_seed_author uuid;
+    v_seed_topic text;
+    v_seed_title_norm text;
+    v_seed_embedding public.halfvec;
+    v_user_contacts uuid[];
+    v_user_groups uuid[];
+BEGIN
+    -- Collect distinct channel ids across all links on the seed thread.
+    SELECT array_agg(DISTINCT l.channel_id)
+    INTO v_seed_channels
+    FROM public.link l
+    WHERE l.thread_id = p_seed_thread_id
+      AND l.channel_id IS NOT NULL;
+
+    -- Seed must have at least one channel signal — otherwise we can't
+    -- bound the rule and a runaway match would surprise the user.
+    IF v_seed_channels IS NULL OR cardinality(v_seed_channels) = 0 THEN
+        RETURN;
+    END IF;
+
+    -- Pick the seed's link author (first non-null wins; usually only one).
+    SELECT l.author_id
+    INTO v_seed_author
+    FROM public.link l
+    WHERE l.thread_id = p_seed_thread_id
+      AND l.author_id IS NOT NULL
+    LIMIT 1;
+
+    SELECT t.topic, t.embedding, public.normalize_title(t.title)
+    INTO v_seed_topic, v_seed_embedding, v_seed_title_norm
+    FROM public.thread t
+    WHERE t.id = p_seed_thread_id;
+
+    -- Need either author (from a link) or topic to identify the sender side.
+    IF v_seed_author IS NULL AND v_seed_topic IS NULL THEN
+        RETURN;
+    END IF;
+
+    v_user_contacts := "user".user_contact_ids(p_user_id);
+    v_user_groups := "user".user_group_ids(p_user_id);
+
+    RETURN QUERY
+    SELECT t.id
+    FROM public.thread t
+    JOIN public.thread_priority tp
+        ON tp.thread_id = t.id
+       AND tp.user_id = p_user_id
+       AND tp.archived_at IS NULL
+    WHERE t.id <> p_seed_thread_id
+      AND t.archived_at IS NULL
+      AND (t.draft = FALSE OR t.created_by = p_user_id)
+      AND (t.contacts && v_user_contacts OR t.groups && v_user_groups)
+      -- Channel match (required).
+      AND EXISTS (
+          SELECT 1
+          FROM public.link l
+          WHERE l.thread_id = t.id
+            AND l.channel_id = ANY (v_seed_channels)
+      )
+      -- Author OR topic match.
+      AND (
+          (v_seed_author IS NOT NULL AND EXISTS (
+              SELECT 1
+              FROM public.link l
+              WHERE l.thread_id = t.id
+                AND l.author_id = v_seed_author
+          ))
+          OR (v_seed_author IS NULL AND v_seed_topic IS NOT NULL AND t.topic = v_seed_topic)
+      )
+      -- Content match: normalized title OR embedding similarity.
+      AND (
+          (v_seed_title_norm IS NOT NULL
+           AND public.normalize_title(t.title) = v_seed_title_norm)
+          OR (v_seed_embedding IS NOT NULL
+              AND t.embedding IS NOT NULL
+              AND (t.embedding <=> v_seed_embedding) <= 0.15)
+      );
+END;
+$$;
+-- Set comment to function: "find_auto_archive_candidates"
+COMMENT ON FUNCTION "user"."find_auto_archive_candidates" IS 'Returns thread ids the given user can see and that match the seed thread''s auto-archive rule (same channel + same link author (or topic when no link author) + similar title or embedding).';
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -614,4 +696,341 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+-- Create "apply_auto_archive" function
+CREATE FUNCTION "user"."apply_auto_archive" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_affected integer := 0;
+    v_seed_count integer := 0;
+BEGIN
+    -- Stamp the seed row. We use ON CONFLICT DO UPDATE rather than a bare
+    -- UPDATE so a user who somehow lacks a thread_priority row for the seed
+    -- still gets the rule recorded; that's unusual but cheap to handle.
+    --
+    -- A bare INSERT with no priority_id would violate
+    -- thread_priority_state_valid (priority_id IS NOT NULL OR
+    -- classify_at IS NOT NULL), so we fall back to root_priority_id.
+    INSERT INTO public.thread_priority (
+        thread_id, user_id, priority_id, archived_at, auto_archived_by_thread_id
+    )
+    VALUES (
+        p_seed_thread_id,
+        p_user_id,
+        "user".root_priority_id(p_user_id),
+        now(),
+        p_seed_thread_id
+    )
+    ON CONFLICT ON CONSTRAINT thread_priority_pkey
+    DO UPDATE SET
+        archived_at = COALESCE(thread_priority.archived_at, EXCLUDED.archived_at),
+        auto_archived_by_thread_id = p_seed_thread_id,
+        updated_at = now();
+
+    -- Fan out to candidates. We INSERT then ON CONFLICT update so candidates
+    -- without a thread_priority row (rare — typically every visible thread
+    -- has one) also pick up the flag.
+    WITH candidates AS (
+        SELECT cid AS thread_id
+        FROM "user".find_auto_archive_candidates(p_user_id, p_seed_thread_id) cid
+    ),
+    upserted AS (
+        INSERT INTO public.thread_priority (
+            thread_id, user_id, priority_id, archived_at, auto_archived_by_thread_id
+        )
+        SELECT c.thread_id,
+               p_user_id,
+               "user".root_priority_id(p_user_id),
+               now(),
+               p_seed_thread_id
+        FROM candidates c
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey
+        DO UPDATE SET
+            archived_at = COALESCE(thread_priority.archived_at, EXCLUDED.archived_at),
+            auto_archived_by_thread_id = p_seed_thread_id,
+            updated_at = now()
+        RETURNING thread_id
+    )
+    SELECT count(*)::int INTO v_affected FROM upserted;
+
+    RETURN v_affected;
+END;
+$$;
+-- Set comment to function: "apply_auto_archive"
+COMMENT ON FUNCTION "user"."apply_auto_archive" IS 'Apply the "Archive threads like this" rule anchored at p_seed_thread_id for p_user_id. Stamps the seed and every candidate (per find_auto_archive_candidates) with archived_at=now() and auto_archived_by_thread_id=seed. Returns affected row count.';
+-- Create "apply_auto_archive_for_new_thread" function
+CREATE FUNCTION "user"."apply_auto_archive_for_new_thread" ("p_user_id" uuid, "p_thread_id" uuid) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+    v_seed_id uuid;
+    v_match boolean;
+BEGIN
+    -- Skip if the thread is already archived (don't reapply on top of an
+    -- explicit user action) or if it's itself a seed.
+    IF EXISTS (
+        SELECT 1
+        FROM public.thread_priority tp
+        WHERE tp.thread_id = p_thread_id
+          AND tp.user_id = p_user_id
+          AND (tp.archived_at IS NOT NULL
+               OR tp.auto_archived_by_thread_id IS NOT NULL)
+    ) THEN
+        RETURN NULL;
+    END IF;
+
+    -- Iterate over the user's seed rows (self-referencing ones). Typically
+    -- a small set per user. Pick the most recently activated rule first so
+    -- newer seeds win when several would match.
+    FOR v_seed_id IN
+        SELECT tp.thread_id
+        FROM public.thread_priority tp
+        WHERE tp.user_id = p_user_id
+          AND tp.auto_archived_by_thread_id = tp.thread_id
+        ORDER BY tp.updated_at DESC
+    LOOP
+        -- Does the new thread match this seed's criteria?
+        SELECT EXISTS (
+            SELECT 1
+            FROM "user".find_auto_archive_candidates(p_user_id, v_seed_id) cid
+            WHERE cid = p_thread_id
+        )
+        INTO v_match;
+
+        IF v_match THEN
+            UPDATE public.thread_priority tp
+            SET archived_at = COALESCE(tp.archived_at, now()),
+                auto_archived_by_thread_id = v_seed_id,
+                updated_at = now()
+            WHERE tp.thread_id = p_thread_id
+              AND tp.user_id = p_user_id;
+            RETURN v_seed_id;
+        END IF;
+    END LOOP;
+
+    RETURN NULL;
+END;
+$$;
+-- Set comment to function: "apply_auto_archive_for_new_thread"
+COMMENT ON FUNCTION "user"."apply_auto_archive_for_new_thread" IS 'Check a newly synced thread against the user''s active auto-archive seeds. If it matches one, archive it and stamp the seed reference. Returns the matching seed id or NULL. No-ops on threads already archived/flagged.';
+-- Create "clear_auto_archive" function
+CREATE FUNCTION "user"."clear_auto_archive" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_affected integer;
+BEGIN
+    WITH updated AS (
+        UPDATE public.thread_priority tp
+        SET archived_at = NULL,
+            auto_archived_by_thread_id = NULL,
+            updated_at = now()
+        WHERE tp.user_id = p_user_id
+          AND tp.auto_archived_by_thread_id = p_seed_thread_id
+        RETURNING tp.thread_id
+    )
+    SELECT count(*)::int INTO v_affected FROM updated;
+
+    RETURN COALESCE(v_affected, 0);
+END;
+$$;
+-- Set comment to function: "clear_auto_archive"
+COMMENT ON FUNCTION "user"."clear_auto_archive" IS 'Reverse the "Archive threads like this" rule anchored at p_seed_thread_id for p_user_id. Clears archived_at and auto_archived_by_thread_id on every thread_priority row that was filed under the seed. Returns affected row count.';
+-- Drop "note_tags" view
+DROP VIEW "user"."note_tags";
+-- Drop "thread_tags" view
+DROP VIEW "user"."thread_tags";
+-- Drop "thread" view
+DROP VIEW "user"."thread";
+-- Modify "thread_priority" table
+ALTER TABLE "public"."thread_priority" ADD COLUMN "auto_archived_by_thread_id" uuid NULL, ADD CONSTRAINT "thread_priority_auto_archived_by_thread_id_fkey" FOREIGN KEY ("auto_archived_by_thread_id") REFERENCES "public"."thread" ("id") ON UPDATE NO ACTION ON DELETE SET NULL;
+-- Create "thread" view
+CREATE VIEW "user"."thread" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "seq",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "draft",
+  "contacts",
+  "groups",
+  "topic",
+  "title",
+  "preview",
+  "icon",
+  "merged_into_thread_id",
+  "has_embedding",
+  "auto_archived_by_thread_id",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "bumped_at",
+  "unread",
+  "importance",
+  "urgency",
+  "activity_at",
+  "agenda_at"
+) AS WITH link_agg AS (
+         SELECT link.thread_id,
+            max(link.source_created_at) AS source_created_at
+           FROM public.link
+          GROUP BY link.thread_id
+        )
+ SELECT tp.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone), tp.updated_at, COALESCE(tu.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    GREATEST(a.seq, a.last_note_seq, tp.seq, COALESCE(tu.seq, '0'::xid8)) AS seq,
+    a.updated_by,
+    COALESCE(a.archived_at, tp.archived_at, upe.archived_at) AS archived_at,
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.contacts,
+    a.groups,
+    a.topic,
+    a.title,
+    a.preview,
+    a.icon,
+    a.merged_into_thread_id,
+    a.embedding IS NOT NULL AS has_embedding,
+    tp.auto_archived_by_thread_id,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    tu.bumped_at,
+    COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, false) AS unread,
+    COALESCE(
+        CASE
+            WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.importance
+            ELSE NULL::smallint
+        END, 0::smallint) AS importance,
+    COALESCE(
+        CASE
+            WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.urgency
+            ELSE NULL::text
+        END, NULL::text) AS urgency,
+    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, tu.bumped_at, ( SELECT
+                CASE
+                    WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone) <= now() THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone)
+                    ELSE NULL::timestamp with time zone
+                END AS "case"
+           FROM public.schedule s_feed
+          WHERE s_feed.thread_id = a.id AND s_feed.user_id IS NULL AND s_feed.occurrence IS NULL AND s_feed.archived_at IS NULL
+         LIMIT 1)), a.created_at) AS activity_at,
+    ( SELECT tstzrange(bounds.lo, GREATEST(bounds.lo, bounds.hi), '[]'::text) AS tstzrange
+           FROM ( SELECT COALESCE(LEAST(( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                          WHERE s_lo.thread_id = a.id AND s_lo.user_id IS NULL AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1), ( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                          WHERE s_lo.thread_id = a.id AND s_lo.user_id = tp.user_id AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1), ( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                             JOIN public.link l_lo ON l_lo.id = s_lo.link_id
+                          WHERE l_lo.thread_id = a.id AND s_lo.user_id IS NULL AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1)), a.created_at) AS lo,
+                    COALESCE(
+                        CASE
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_rec
+                              WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL AND s_rec.recurrence_rule IS NOT NULL)) OR (EXISTS ( SELECT 1
+                               FROM public.schedule s_rec
+                                 JOIN public.link l_rec ON l_rec.id = s_rec.link_id
+                              WHERE l_rec.thread_id = a.id AND s_rec.archived_at IS NULL AND s_rec.recurrence_rule IS NOT NULL)) THEN 'infinity'::timestamp with time zone
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_ub
+                              WHERE s_ub.thread_id = a.id AND s_ub.archived_at IS NULL AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL) AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamp with time zone) IS NULL)) OR (EXISTS ( SELECT 1
+                               FROM public.schedule s_ub
+                                 JOIN public.link l_ub ON l_ub.id = s_ub.link_id
+                              WHERE l_ub.thread_id = a.id AND s_ub.archived_at IS NULL AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL) AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamp with time zone) IS NULL)) THEN 'infinity'::timestamp with time zone
+                            ELSE GREATEST(( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                              WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1), ( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                              WHERE s_hi.thread_id = a.id AND s_hi.user_id = tp.user_id AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1), ( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                                 JOIN public.link l_hi ON l_hi.id = s_hi.link_id
+                              WHERE l_hi.thread_id = a.id AND s_hi.user_id IS NULL AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1))
+                        END, a.created_at) AS hi) bounds) AS agenda_at
+   FROM public.thread a
+     JOIN public.thread_priority tp ON tp.thread_id = a.id
+     LEFT JOIN "user".priority_expanded upe ON upe.user_id = tp.user_id AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+     JOIN public.priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+     LEFT JOIN public.thread_unread tu ON tu.user_id = tp.user_id AND tu.thread_id = a.id
+     LEFT JOIN link_agg la ON la.thread_id = a.id
+  WHERE (a.draft = false OR a.created_by = tp.user_id) AND (a.contacts && "user".user_contact_ids(tp.user_id) OR a.groups && "user".user_group_ids(tp.user_id)) AND (tp.priority_id IS NOT NULL OR tp.classify_at < (now() - public.classify_visibility_window())) AND (p.team_id IS NULL OR (EXISTS ( SELECT 1
+           FROM public.team_user tu2
+          WHERE tu2.team_id = p.team_id AND tu2.user_id = tp.user_id AND tu2.archived_at IS NULL)));
+-- Create "note_tags" view
+CREATE VIEW "user"."note_tags" (
+  "user_id",
+  "id",
+  "updated_at",
+  "seq",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    n.id,
+    nt.updated_at,
+    nt.seq,
+    ua.archived_at,
+    ua.priority_id,
+    ua.priority_path,
+    nt.tags
+   FROM "user".thread ua
+     JOIN public.note n ON n.thread_id = ua.id
+     JOIN LATERAL ( SELECT jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
+            max(sq.updated_at) AS updated_at,
+            max(sq.seq) AS seq
+           FROM ( SELECT nt_1.tag_id,
+                    jsonb_agg(nt_1.actor_id ORDER BY nt_1.actor_id) FILTER (WHERE nt_1.archived_at IS NULL) AS actor_ids,
+                    max(COALESCE(nt_1.archived_at, nt_1.updated_at)) AS updated_at,
+                    max(nt_1.seq) AS seq
+                   FROM public.note_tag nt_1
+                  WHERE nt_1.note_id = n.id
+                  GROUP BY nt_1.tag_id) sq
+         HAVING count(*) > 0) nt ON true
+  WHERE (n.draft = false OR n.created_by = ua.user_id) AND (n.access_contacts IS NULL OR n.created_by = ua.user_id OR n.access_contacts && "user".user_contact_ids(ua.user_id));
+-- Create "thread_tags" view
+CREATE VIEW "user"."thread_tags" (
+  "user_id",
+  "id",
+  "archived_at",
+  "occurrence",
+  "updated_at",
+  "seq",
+  "priority_id",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    ua.id,
+    ua.archived_at,
+    tt.occurrence,
+    tt.updated_at,
+    tt.seq,
+    ua.priority_id,
+    ua.priority_path,
+    tt.tags
+   FROM "user".thread ua
+     JOIN LATERAL ( SELECT sq.occurrence,
+            jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
+            max(sq.updated_at) AS updated_at,
+            max(sq.seq) AS seq
+           FROM ( SELECT at.occurrence,
+                    at.tag_id,
+                    jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
+                    max(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
+                    max(at.seq) AS seq
+                   FROM public.thread_tag at
+                  WHERE at.thread_id = ua.id
+                  GROUP BY at.occurrence, at.tag_id) sq
+          GROUP BY sq.occurrence) tt ON true;

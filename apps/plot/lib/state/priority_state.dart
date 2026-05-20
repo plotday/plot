@@ -12,6 +12,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool showArchived = false,
+    bool autoArchiveOnly = false,
     AgendaModel agenda = AgendaModel.empty,
     List<AgendaItem>? agendaItems,
     bool agendaDoneEnd = false,
@@ -51,6 +52,7 @@ class PriorityState extends Equatable {
       agendaDoneEnd: agendaDoneEnd,
       agendaLoaded: agendaLoaded,
       showArchived: showArchived,
+      autoArchiveOnly: autoArchiveOnly,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
       search: search,
       twists: twists.isNotEmpty ? List.unmodifiable(twists) : twists,
@@ -98,6 +100,7 @@ class PriorityState extends Equatable {
     this.agendaDoneEnd = false,
     this.agendaLoaded = false,
     this.showArchived = false,
+    this.autoArchiveOnly = false,
     this.filter = const [],
     this.search = '',
     this.twists = const [],
@@ -125,6 +128,13 @@ class PriorityState extends Equatable {
   final Thread draft;
   final Note draftNote;
   final bool showArchived;
+
+  /// When true (and [showArchived] is also true), the archived view is
+  /// filtered down to threads carrying an `auto_archived_by_thread_id`
+  /// flag — i.e. only threads swept up by an "Archive threads like this"
+  /// rule. Lets users find and toggle the rule from the archive view.
+  /// In-memory only; resets to false on bloc rebuild.
+  final bool autoArchiveOnly;
 
   /// Block-aware view of the agenda. Source of truth going forward; the
   /// flat [agendaItems] is held alongside during the migration so legacy
@@ -217,7 +227,12 @@ class PriorityState extends Equatable {
   /// "sticky unread" behavior of the New section carries over here for
   /// free.
   List<AgendaItem> get activityFeedViewItems {
-    if (!unreadFilterActive) return activityFeedItems;
+    if (!unreadFilterActive && !autoArchiveOnly) return activityFeedItems;
+    bool keep(Thread t) {
+      if (unreadFilterActive && !t.unread) return false;
+      if (autoArchiveOnly && t.autoArchivedByThreadId == null) return false;
+      return true;
+    }
     final result = <AgendaItem>[];
     final pendingHeaders = <AgendaHeaderItem>[];
     for (final item in activityFeedItems) {
@@ -226,7 +241,7 @@ class PriorityState extends Equatable {
             ActivitySectionMarker.tryDecode(item.text!) != null;
         if (isSectionHeader) pendingHeaders.clear();
         pendingHeaders.add(item);
-      } else if (item is AgendaThreadItem && item.thread.unread) {
+      } else if (item is AgendaThreadItem && keep(item.thread)) {
         result.addAll(pendingHeaders);
         pendingHeaders.clear();
         result.add(item);
@@ -1200,6 +1215,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool? showArchived,
+    bool? autoArchiveOnly,
     AgendaModel? agenda,
     List<AgendaItem>? agendaItems,
     bool? agendaDoneEnd,
@@ -1231,6 +1247,7 @@ class PriorityState extends Equatable {
       draft: draft ?? this.draft,
       draftNote: draftNote ?? this.draftNote,
       showArchived: showArchived ?? this.showArchived,
+      autoArchiveOnly: autoArchiveOnly ?? this.autoArchiveOnly,
       agenda: agenda ?? this.agenda,
       agendaItems: agendaItems ?? this.agendaItems,
       agendaDoneEnd: agendaDoneEnd ?? this.agendaDoneEnd,
@@ -1290,6 +1307,7 @@ class PriorityState extends Equatable {
     draft,
     draftNote,
     showArchived,
+    autoArchiveOnly,
     agenda,
     agendaItems,
     agendaDoneEnd,

@@ -54,6 +54,7 @@ SELECT
     a.icon,
     a.merged_into_thread_id,
     a.embedding IS NOT NULL AS has_embedding,
+    tp.auto_archived_by_thread_id,
     a.last_note_created_at,
     a.last_note_source_created_at,
     tu.bumped_at,

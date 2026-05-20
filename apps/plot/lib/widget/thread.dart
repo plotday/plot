@@ -486,6 +486,31 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               ),
                               TextSpan(
                                 children: [
+                                  // Broom indicator for threads swept up by
+                                  // an "Archive threads like this" rule.
+                                  // Surfaced only on archived rows so it
+                                  // appears in the archived view where the
+                                  // user can act on the rule.
+                                  if (activity.archivedAt != null &&
+                                      activity.autoArchivedByThreadId != null)
+                                    WidgetSpan(
+                                      alignment:
+                                          PlaceholderAlignment.middle,
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          right: buildContext
+                                              .theme
+                                              .spacing
+                                              .xs,
+                                        ),
+                                        child: Icon(
+                                          PlotIcon.broom,
+                                          size: 12,
+                                          color:
+                                              buildContext.colour.muted,
+                                        ),
+                                      ),
+                                    ),
                                   TextSpan(
                                     text: activity.displayTitle,
                                     style: now
@@ -892,6 +917,11 @@ class ThreadCommands extends HookWidget {
               ...threadCommandButtons,
               ...tagSuggestionButtons,
             ].take((5 - loadedTagButtons.length).clamp(0, 5)),
+            // "Archive threads like this" sits immediately before the
+            // overflow menu so it's always reachable on hover. Title and
+            // event semantics flip based on whether the thread already
+            // carries the auto-archive flag.
+            Button.icon(ArchiveSimilarThreads(activity)),
             // Always add ShowThreadCommands as the 6th button
             Button.icon(
               CommandWrapper(
