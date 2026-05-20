@@ -225,6 +225,13 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         await this.cancelTask(pollTask);
         await this.clear(`poll_task_${channel.id}`);
       }
+
+      // Clear any `pending_occ:` / `seen_master:` markers left behind
+      // by the crashed pre-recovery sync. Stale markers from a half-done
+      // run can otherwise cause the next full-pass orphan flush to
+      // materialise empty Untitled threads (leftover `pending_occ`
+      // matching leftover `seen_master` whose link no longer exists).
+      await this.clearBuffers(channel.id);
     } else if (context?.syncHistoryMin) {
       // Store sync_history_min if provided and not already stored with an
       // equal/earlier value. Skipped on recovery so the recovery pass
@@ -356,14 +363,30 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // cleanly without waiting for the TTL.
     await this.tools.store.releaseLock(`sync_${channel.id}`);
 
-    // Clear pending occurrences for this calendar only. Keys are scoped
-    // per calendar (calendar href as prefix) so disabling one calendar
-    // doesn't wipe buffered occurrences for siblings on the same account
-    // that are still enabled.
+    // Clear pending occurrences AND seen-master markers for this
+    // calendar only. Keys are scoped per calendar (calendar href as
+    // prefix) so disabling one calendar doesn't wipe buffers for
+    // siblings on the same account that are still enabled.
+    await this.clearBuffers(channel.id);
+  }
+
+  /**
+   * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
+   * Used on recovery, disable, and sync-error paths so stale buffers from
+   * a crashed run can't combine with leftover seen-master markers to
+   * materialise empty Untitled threads on the next initial sync.
+   */
+  private async clearBuffers(channelHref: string): Promise<void> {
     const pendingKeys = await this.tools.store.list(
-      `pending_occ:${channel.id}:`
+      `pending_occ:${channelHref}:`
     );
     for (const key of pendingKeys) {
+      await this.clear(key);
+    }
+    const seenMasterKeys = await this.tools.store.list(
+      `seen_master:${channelHref}:`
+    );
+    for (const key of seenMasterKeys) {
       await this.clear(key);
     }
   }
@@ -449,6 +472,20 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         );
       }
 
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this initial-sync run. Otherwise the next initial sync would
+      // inherit them and the full-pass orphan flush could materialise
+      // empty Untitled threads from leftover-but-now-stale buffers.
+      // Incremental sync doesn't buffer, but the clear is idempotent.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
       // Schedule a poll so polling resumes — otherwise a failure here
       // strands the channel (startIncrementalSync's lock-fail bail
       // intentionally relies on the active holder, which is us, to
@@ -518,6 +555,17 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       } catch (cleanupError) {
         console.error(
           `Apple Calendar sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this initial-sync run — see syncBatch's catch for why.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarHref}:`,
           cleanupError
         );
       }
@@ -858,6 +906,19 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       } catch (cleanupError) {
         console.error(
           `Apple Calendar incremental sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Incremental sync doesn't buffer to `pending_occ:`, but the next
+      // initial sync (after a fresh enable) might inherit any markers
+      // sitting in storage. The clear is idempotent so it's safe to run
+      // here even on the incremental error path.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after incremental sync error for ${calendarHref}:`,
           cleanupError
         );
       }

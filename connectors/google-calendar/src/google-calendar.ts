@@ -223,6 +223,14 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       await this.clear(`last_sync_token_${channel.id}`);
       await this.clear(`sync_state_${resolvedCalendarId}`);
       await this.tools.store.releaseLock(`sync_${resolvedCalendarId}`);
+
+      // Clear any `pending_occ:` and `seen_master:` markers left over
+      // from the crashed pre-recovery sync. Stale markers from a half-
+      // done run can otherwise cause the next full-pass orphan flush
+      // to materialise empty Untitled threads (leftover `pending_occ`
+      // matching leftover `seen_master` whose actual link no longer
+      // exists in the DB).
+      await this.clearBuffers(resolvedCalendarId);
     } else if (context?.syncHistoryMin) {
       // Store sync_history_min if provided and not already stored with an
       // equal/earlier value. Skipped on recovery so the recovery pass
@@ -507,6 +515,32 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     await this.clear(`sync_state_${calendarId}`);
     await this.clear(`auth_token_${calendarId}`);
     await this.tools.store.releaseLock(`sync_${calendarId}`);
+
+    // 4. Clear any leftover `pending_occ:` / `seen_master:` markers so a
+    // future re-enable starts from a clean slate (no stale buffers from
+    // a crashed run sitting around to corrupt the next orphan flush).
+    await this.clearBuffers(calendarId);
+  }
+
+  /**
+   * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
+   * Used on recovery, stopSync, and sync-error paths so stale buffers
+   * from a crashed run can't combine with leftover seen-master markers
+   * to materialise empty Untitled threads on the next initial sync.
+   */
+  private async clearBuffers(calendarId: string): Promise<void> {
+    const pendingKeys = await this.tools.store.list(
+      `pending_occ:${calendarId}:`
+    );
+    for (const key of pendingKeys) {
+      await this.clear(key);
+    }
+    const seenMasterKeys = await this.tools.store.list(
+      `seen_master:${calendarId}:`
+    );
+    for (const key of seenMasterKeys) {
+      await this.clear(key);
+    }
   }
 
   /**
@@ -868,6 +902,19 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // blocked. Even if this release fails, the lock's TTL will expire it.
       await this.tools.store.releaseLock(`sync_${calendarId}`);
       await this.clear(`sync_state_${calendarId}`);
+
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this run. Otherwise a future initial sync would inherit them and
+      // the full-pass orphan flush could materialise empty Untitled
+      // threads from leftover-but-now-stale buffers.
+      try {
+        await this.clearBuffers(calendarId);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarId}:`,
+          cleanupError
+        );
+      }
 
       throw error;
     }
