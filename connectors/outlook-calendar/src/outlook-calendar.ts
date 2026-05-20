@@ -210,6 +210,45 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     if (context?.recovering) {
+      // Stop the existing MS Graph subscription and cancel any pending
+      // renewal task BEFORE initCalendar runs. setupOutlookWatch
+      // unconditionally creates a fresh subscription and overwrites
+      // `outlook_watch_${calendarId}`; without this cleanup the old
+      // subscription is orphaned on Microsoft's side (firing webhooks
+      // until expiry to a connector that no longer recognises them)
+      // and the old renewal-task token is overwritten in storage
+      // (the old task still fires when scheduled, wasting a slot).
+      const oldRenewalTask = await this.get<string>(
+        `outlook_watch_renewal_task_${channel.id}`
+      );
+      if (oldRenewalTask) {
+        await this.cancelTask(oldRenewalTask);
+        await this.clear(`outlook_watch_renewal_task_${channel.id}`);
+      }
+      const oldWatchData = await this.get<WatchState>(
+        `outlook_watch_${channel.id}`
+      );
+      if (oldWatchData?.subscriptionId) {
+        // tryGetApi handles the token-missing case cleanly — recovery
+        // is precisely the path where a stale or invalid token is
+        // plausible, so don't throw if the auth state isn't usable.
+        const api = await this.tryGetApi(
+          channel.id,
+          "onChannelEnabled (recovery cleanup)"
+        );
+        if (api) {
+          try {
+            await api.deleteSubscription(oldWatchData.subscriptionId);
+          } catch (error) {
+            console.warn(
+              "Failed to delete stale Outlook subscription on recovery:",
+              error instanceof Error ? error.message : error
+            );
+          }
+        }
+        await this.clear(`outlook_watch_${channel.id}`);
+      }
+
       // Wipe persisted sync state (including the Graph delta token in
       // `state.state`) so the next pass re-walks history. Clearing is
       // idempotent and cheap. Release any TTL-stuck lock from the
