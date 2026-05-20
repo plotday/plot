@@ -3,12 +3,14 @@ import { PostHog } from "posthog-node";
 import { type RunMessage, Tasks } from "../twist/tools/tasks";
 import {
   type Bindings,
+  type ExtractMessage,
   type LogMessage,
   type QueueMessage,
   type TwistBatchMessage,
   type WebhookMessage,
 } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import { processExtractions } from "./extract";
 import { processLogs } from "./logs";
 import { processMail } from "./mail";
 import { processUpdates } from "./updates";
@@ -78,6 +80,16 @@ export async function queue(
       case "webhook-production":
         await processWebhooks(
           batch as MessageBatch<WebhookMessage>,
+          env,
+          ctx,
+          postHog
+        );
+        break;
+
+      case "extract-development":
+      case "extract-production":
+        await processExtractions(
+          batch as MessageBatch<ExtractMessage>,
           env,
           ctx,
           postHog

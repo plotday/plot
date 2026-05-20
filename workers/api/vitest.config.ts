@@ -18,6 +18,13 @@ export default defineConfig({
         "./src/twist/__tests__/utils/cloudflare-workers-mock.ts",
         import.meta.url
       ).pathname,
+      // Mirror the wrangler alias — defuddle's `exports` map doesn't include
+      // ./markdown, so Vite (like esbuild without the alias) rejects the
+      // deep import unless we redirect it explicitly.
+      "defuddle/markdown": new URL(
+        "./node_modules/defuddle/dist/markdown.js",
+        import.meta.url
+      ).pathname,
     },
   },
 });

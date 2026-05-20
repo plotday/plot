@@ -132,12 +132,26 @@ export type WebhookMessage = {
   rawBody?: string;
 };
 
+/**
+ * Article-extraction job dispatched to the EXTRACT_QUEUE. The producer
+ * (`requestExtraction`) inserts a pending `extracted_url` row and queues this
+ * message; the consumer fetches the URL, runs defuddle, writes Markdown to
+ * R2, and updates the row.
+ */
+export type ExtractMessage = {
+  type: "extract";
+  id: number;
+  url: string;
+  urlHash: string;
+};
+
 // Queue message type union for proper type handling
 export type QueueMessage =
   | RunMessage
   | TwistBatchMessage
   | LogMessage
-  | WebhookMessage;
+  | WebhookMessage
+  | ExtractMessage;
 
 export type MailRequest = {
   to: string[];
@@ -251,6 +265,7 @@ export type Bindings = {
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly WEBHOOK_QUEUE: Queue<WebhookMessage>;
   readonly MAIL_QUEUE: Queue<MailRequest>;
+  readonly EXTRACT_QUEUE: Queue<ExtractMessage>;
   // Producer side of the classify-thread queue; consumer is workers/classify.
   readonly QUEUE_CLASSIFY: Queue<{ userId: string; threadId: string }>;
   readonly AI: Ai;
@@ -272,4 +287,7 @@ export type Bindings = {
   readonly CHANNEL_ROUTER: DurableObjectNamespace<ChannelRouter>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
   readonly FILES_BUCKET: R2Bucket;
+  // Global cache of extracted article markdown, keyed by url_hash. Backs the
+  // `extracted_url` Postgres table.
+  readonly ARTICLES_BUCKET: R2Bucket;
 };

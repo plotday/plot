@@ -295,6 +295,26 @@ export interface ExtensionsTapFunky {
   volatility: string | null;
 }
 
+export interface ExtractedUrl {
+  attempts: Generated<number>;
+  author: string | null;
+  byte_size: number | null;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  extracted_at: Timestamp | null;
+  extractor_version: Generated<number>;
+  id: Generated<Int8>;
+  last_attempt_at: Timestamp | null;
+  r2_key: string | null;
+  status: Generated<string>;
+  title: string | null;
+  updated_at: Generated<Timestamp>;
+  url: string;
+  url_hash: string;
+}
+
 export interface Group {
   archived_at: Timestamp | null;
   /**
@@ -1597,6 +1617,7 @@ export interface DB {
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
   "extensions.tap_funky": ExtensionsTapFunky;
+  extracted_url: ExtractedUrl;
   group: Group;
   group_admin: GroupAdmin;
   group_member: GroupMember;

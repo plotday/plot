@@ -5,6 +5,12 @@
   "compatibility_date": "2025-10-01",
   "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
   "upload_source_maps": true,
+  // `defuddle/markdown` isn't in defuddle's package.json exports map (per
+  // docs/read-later-extraction.md). The bundler needs an explicit alias to
+  // resolve the deep import.
+  "alias": {
+    "defuddle/markdown": "./node_modules/defuddle/dist/markdown.js"
+  },
   "migrations": [
     {
       "tag": "v3",
@@ -205,6 +211,10 @@
           {
             "queue": "classify-thread-development",
             "binding": "QUEUE_CLASSIFY"
+          },
+          {
+            "queue": "extract-development",
+            "binding": "EXTRACT_QUEUE"
           }
         ],
         "consumers": [
@@ -234,6 +244,12 @@
             "max_batch_timeout": 1,
             "max_concurrency": 25,
             "retry_delay": 10
+          },
+          {
+            "queue": "extract-development",
+            "max_batch_size": 5,
+            "max_batch_timeout": 1,
+            "max_concurrency": 10
           }
         ]
       },
@@ -321,6 +337,10 @@
         {
           "binding": "FILES_BUCKET",
           "bucket_name": "plot-files-development"
+        },
+        {
+          "binding": "ARTICLES_BUCKET",
+          "bucket_name": "plot-articles-development"
         }
       ],
       "triggers": {
@@ -450,6 +470,10 @@
           {
             "queue": "classify-thread-production",
             "binding": "QUEUE_CLASSIFY"
+          },
+          {
+            "queue": "extract-production",
+            "binding": "EXTRACT_QUEUE"
           }
         ],
         "consumers": [
@@ -474,6 +498,12 @@
             "max_batch_timeout": 1,
             "max_concurrency": 25,
             "retry_delay": 10
+          },
+          {
+            "queue": "extract-production",
+            "max_batch_size": 5,
+            "max_batch_timeout": 1,
+            "max_concurrency": 10
           }
         ]
       },
@@ -560,6 +590,10 @@
         {
           "binding": "FILES_BUCKET",
           "bucket_name": "plot-files-production"
+        },
+        {
+          "binding": "ARTICLES_BUCKET",
+          "bucket_name": "plot-articles-production"
         }
       ],
       "triggers": {

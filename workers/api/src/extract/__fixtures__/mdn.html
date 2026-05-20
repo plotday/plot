@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Array.prototype.map() - JavaScript | MDN</title>
+<meta name="description" content="The map() method creates a new array populated with the results of calling a provided function on every element in the calling array.">
+<meta name="author" content="MDN Contributors">
+</head>
+<body>
+<header>
+  <nav><a href="#main">Skip to content</a></nav>
+</header>
+<main id="main">
+  <article>
+    <h1>Array.prototype.map()</h1>
+    <p>The <code>map()</code> method of <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array"><code>Array</code></a> instances creates a new array populated with the results of calling a provided function on every element in the calling array.</p>
+
+    <h2 id="try_it">Try it</h2>
+    <pre><code class="language-js">const array1 = [1, 4, 9, 16];
+
+// Pass a function to map
+const map1 = array1.map((x) =&gt; x * 2);
+
+console.log(map1);
+// Expected output: Array [2, 8, 18, 32]</code></pre>
+
+    <h2 id="syntax">Syntax</h2>
+    <pre><code class="language-js">map(callbackFn)
+map(callbackFn, thisArg)</code></pre>
+
+    <h2 id="parameters">Parameters</h2>
+    <dl>
+      <dt><code>callbackFn</code></dt>
+      <dd>
+        <p>A function to execute for each element in the array. Its return value is added as a single element in the new array. The function is called with the following arguments:</p>
+      </dd>
+    </dl>
+
+    <h2 id="return_value">Return value</h2>
+    <p>A new array with each element being the result of the callback function.</p>
+
+    <h2 id="description">Description</h2>
+    <p>The <code>map()</code> method is an <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#iterative_methods">iterative method</a>. It calls a provided <code>callbackFn</code> function once for each element in an array and constructs a new array from the results.</p>
+
+    <p><code>callbackFn</code> is invoked only for array elements which have assigned values. It is not invoked for empty slots in sparse arrays.</p>
+
+    <h3 id="example">A more involved example</h3>
+    <pre><code class="language-js">const numbers = [1, 4, 9];
+const doubles = numbers.map((num) =&gt; num * 2);
+
+// doubles is now [2, 8, 18]
+// numbers is still [1, 4, 9]</code></pre>
+
+    <p>This shows the basic mechanic of <code>map</code>. It does not mutate the original array.</p>
+
+    <p>When working with arrays of objects, the callback receives each object and can return a transformed version, which is collected into the new array. This pattern is widely used in functional code.</p>
+
+    <p>If you only need iteration without producing a new array, prefer <code>forEach()</code> or a <code>for...of</code> loop. <code>map()</code> is wasteful when its return value is unused.</p>
+  </article>
+</main>
+<footer>
+  <p>© 2026 MDN contributors. Content available under CC-BY-SA 2.5.</p>
+</footer>
+</body>
+</html>
