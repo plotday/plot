@@ -132,10 +132,28 @@ fi
 # Inject 1Password references (skip if none present, so CI works without 1Password
 # for env files that contain only plain values).
 if printf "%s" "$result" | grep -q "op://"; then
-  printf "%s" "$result" | op --account plotco inject
+  injected=$(printf "%s" "$result" | op --account plotco inject)
 else
-  printf "%s" "$result"
+  injected="$result"
 fi
+
+# Normalize multi-line values (e.g. .p8 file attachments) into single-line
+# key=value pairs with literal "\n" escapes. Required because dotenv parsers
+# (.dev.vars loaders, env-to-json piped to wrangler secret bulk) treat each
+# physical line as a new key=value. Without this, a multi-line PEM gets
+# truncated after the BEGIN line and every subsequent line of the key is
+# misread as its own secret name. Runtime code can unescape with
+# .replace(/\\n/g, "\n"); JSON consumers (env-to-json) get correct newlines
+# automatically since JSON itself interprets "\n" as a real newline.
+printf "%s" "$injected" | awk '
+  /^[A-Z_][A-Z0-9_]*=/ {
+    if (NR > 1) print acc
+    acc = $0
+    next
+  }
+  { acc = acc "\\n" $0 }
+  END { if (acc != "") print acc }
+'
 
 # Generate key.properties for Android production builds
 if [ "$ENV" = "production" ]; then

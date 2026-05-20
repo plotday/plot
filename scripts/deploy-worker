@@ -13,8 +13,8 @@ else
   VARS="--keep-vars"
 fi
 
-export POSTHOG_CLI_ENV_ID=$POSTHOG_PROJECT
-export POSTHOG_CLI_TOKEN=$POSTHOG_CLI_KEY
+export POSTHOG_CLI_ENV_ID=${POSTHOG_PROJECT:-}
+export POSTHOG_CLI_TOKEN=${POSTHOG_CLI_KEY:-}
 
 wrangler deploy --dry-run --outdir build --define $definitions --env $ENV
 if [[ -v POSTHOG_CLI_KEY ]]; then
