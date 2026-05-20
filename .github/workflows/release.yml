@@ -326,7 +326,8 @@ jobs:
       - name: Build iOS app (Shorebird release)
         run: |
           cd apps/plot
-          shorebird release ios -- --export-options-plist=ios/ExportOptions.plist
+          FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
+          shorebird release ios --flutter-version="$FLUTTER_VERSION" -- --export-options-plist=ios/ExportOptions.plist
 
       - name: Verify app.env in IPA
         run: |
@@ -526,7 +527,8 @@ jobs:
       - name: Build Android app (Shorebird release)
         run: |
           cd apps/plot
-          shorebird release android
+          FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
+          shorebird release android --flutter-version="$FLUTTER_VERSION"
 
       - name: Verify app.env in AAB
         run: |
@@ -755,7 +757,8 @@ jobs:
       - name: Build macOS app (Shorebird release)
         run: |
           cd apps/plot
-          shorebird release macos
+          FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
+          shorebird release macos --flutter-version="$FLUTTER_VERSION"
 
       - name: Verify app.env in macOS app bundle
         run: |
@@ -990,7 +993,8 @@ jobs:
         shell: bash
         run: |
           cd apps/plot
-          shorebird release windows --verbose
+          FLUTTER_VERSION=$(jq -r .flutter ../../.fvmrc)
+          shorebird release windows --flutter-version="$FLUTTER_VERSION" --verbose
 
       - name: Build MSIX files
         shell: bash
