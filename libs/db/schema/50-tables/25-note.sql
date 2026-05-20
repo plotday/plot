@@ -98,6 +98,12 @@ WHERE
 
 CREATE INDEX ON note USING hnsw (embedding halfvec_cosine_ops);
 
+-- Trigram index for ILIKE substring search in /sync/threads/search.
+-- Partial: search only scans non-archived, non-draft notes, so we can
+-- restrict the index to the same rows and keep it dramatically smaller.
+CREATE INDEX idx_note_content_trgm ON "public"."note" USING gin ("content" extensions.gin_trgm_ops)
+WHERE archived_at IS NULL AND draft = FALSE AND content IS NOT NULL;
+
 CREATE TRIGGER set_note_updated_at
     BEFORE INSERT OR UPDATE ON "public"."note"
     FOR EACH ROW

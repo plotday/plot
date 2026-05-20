@@ -105,6 +105,10 @@ CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" h
 CREATE INDEX idx_thread_merged_into ON "public"."thread" ("merged_into_thread_id")
 WHERE merged_into_thread_id IS NOT NULL;
 
+-- Trigram index for ILIKE substring search in /sync/threads/search.
+CREATE INDEX idx_thread_title_trgm ON "public"."thread" USING gin ("title" extensions.gin_trgm_ops)
+WHERE title IS NOT NULL;
+
 COMMENT ON COLUMN "public"."thread"."embedding" IS 'Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.';
 
 COMMENT ON COLUMN "public"."thread"."groups" IS 'Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.';

@@ -18,6 +18,13 @@ CREATE INDEX idx_contact_seq ON "public"."contact" ("seq");
 
 CREATE UNIQUE INDEX contact_user_primary_unique ON contact (user_id) WHERE "primary" = true;
 
+-- Trigram indexes for ILIKE substring search in /sync/threads/search.
+CREATE INDEX idx_contact_name_trgm ON "public"."contact" USING gin ("name" extensions.gin_trgm_ops)
+WHERE archived_at IS NULL AND name IS NOT NULL;
+
+CREATE INDEX idx_contact_email_trgm ON "public"."contact" USING gin ("email" extensions.gin_trgm_ops)
+WHERE archived_at IS NULL AND email IS NOT NULL;
+
 CREATE TRIGGER set_contact_updated_at
     BEFORE INSERT OR UPDATE ON "public"."contact"
     FOR EACH ROW

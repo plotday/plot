@@ -1,2 +1,3 @@
 CREATE EXTENSION IF NOT EXISTS "btree_gist" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA "extensions";
 

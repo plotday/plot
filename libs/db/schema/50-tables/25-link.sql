@@ -104,6 +104,16 @@ CREATE INDEX idx_link_seq ON "public"."link" ("seq");
 -- Support twist sync views that filter links by created_by (twist_instance_id)
 CREATE INDEX idx_link_created_by ON "public"."link" ("created_by");
 
+-- Trigram indexes for ILIKE substring search in /sync/threads/search.
+CREATE INDEX idx_link_title_trgm ON "public"."link" USING gin ("title" extensions.gin_trgm_ops)
+WHERE title IS NOT NULL;
+
+CREATE INDEX idx_link_source_url_trgm ON "public"."link" USING gin ("source_url" extensions.gin_trgm_ops)
+WHERE source_url IS NOT NULL;
+
+CREATE INDEX idx_link_preview_trgm ON "public"."link" USING gin ("preview" extensions.gin_trgm_ops)
+WHERE preview IS NOT NULL;
+
 CREATE TRIGGER set_link_updated_at
     BEFORE INSERT OR UPDATE ON "public"."link"
     FOR EACH ROW
