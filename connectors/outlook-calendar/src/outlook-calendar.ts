@@ -883,6 +883,23 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         );
       }
 
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws. Without an explicit signal here, the indicator stays on
+      // indefinitely after a mid-sync crash until the user disables and
+      // re-enables. Inner try/catch so a signal failure doesn't mask
+      // the original error.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarId);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
+      }
+
       // Re-throw to let the caller handle it
       throw error;
     }

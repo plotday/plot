@@ -486,6 +486,23 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         );
       }
 
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws. Without an explicit signal here, the indicator stays on
+      // indefinitely after a mid-sync crash until the user disables and
+      // re-enables. Inner try/catch so a signal failure doesn't mask
+      // the original error.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarHref);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
+      }
+
       // Schedule a poll so polling resumes — otherwise a failure here
       // strands the channel (startIncrementalSync's lock-fail bail
       // intentionally relies on the active holder, which is us, to
@@ -568,6 +585,20 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           `Failed to clear pending buffers after sync error for ${calendarHref}:`,
           cleanupError
         );
+      }
+
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws — see syncBatch's catch for the full rationale.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarHref);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
       }
 
       // Schedule a poll so polling resumes — startIncrementalSync's
