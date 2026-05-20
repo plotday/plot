@@ -777,13 +777,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // with no schedule, no title, no notes — the cancellation
           // exdate has no master schedule to attach to. Drop those
           // orphans silently instead.
+          // Scope the lookup to this calendar so concurrent syncs of
+          // other calendars in the same account aren't affected.
+          const seenMasterPrefix = `seen_master:${calendarId}:`;
+          const pendingPrefix = `pending_occ:${calendarId}:`;
           const seenMasterKeys = await this.tools.store.list(
-            "seen_master:"
+            seenMasterPrefix
           );
           const seenMasters = new Set(
-            seenMasterKeys.map((k) => k.slice("seen_master:".length))
+            seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
           );
-          const pendingKeys = await this.tools.store.list("pending_occ:");
+          const pendingKeys = await this.tools.store.list(pendingPrefix);
           const flushLinks: NewLinkWithNotes[] = [];
           let droppedOrphans = 0;
           for (const key of pendingKeys) {
@@ -798,7 +802,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                 : new Date(pending.occurrence);
             const suffix = `:${occurrenceDate.toISOString()}`;
             if (
-              !key.startsWith("pending_occ:") ||
+              !key.startsWith(pendingPrefix) ||
               !key.endsWith(suffix)
             ) {
               // Malformed key — drop it.
@@ -806,7 +810,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               continue;
             }
             const canonical = key.slice(
-              "pending_occ:".length,
+              pendingPrefix.length,
               key.length - suffix.length
             );
             if (!seenMasters.has(canonical)) {
@@ -1226,7 +1230,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // events.list response).
     let drainedTotal = 0;
     for (const [source, link] of linksBySource.entries()) {
-      const pendingPrefix = `pending_occ:${source}:`;
+      // Keys are scoped per calendar so concurrent syncs on other
+      // calendars in the same account don't have their buffers drained
+      // here.
+      const pendingPrefix = `pending_occ:${calendarId}:${source}:`;
       const pendingKeys = await this.tools.store.list(pendingPrefix);
       if (pendingKeys.length === 0) continue;
       const merged: NewScheduleOccurrence[] = [
@@ -1259,8 +1266,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // upserts onto the existing master link) from orphans whose
       // master never came through (master deleted upstream → flushing
       // would create a useless empty Untitled thread).
+      //
+      // Scoped with the calendar ID so multi-calendar accounts don't
+      // share the seen-master set — without scoping, Calendar A's
+      // orphan flush would treat B's buffered occurrences as flushable
+      // (and write standalone empty threads).
       for (const source of linksBySource.keys()) {
-        await this.set(`seen_master:${source}`, true);
+        await this.set(`seen_master:${calendarId}:${source}`, true);
       }
     }
 
@@ -1350,8 +1362,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // O(1); appending to a single shared list was O(N²) across batches
       // (re-serializing a growing array every instance) and blew the CF
       // worker CPU limit on calendars with many recurring exceptions.
+      //
+      // The key is scoped with the calendar ID so multi-calendar accounts
+      // (e.g. primary + holidays + shared) don't share `pending_occ:`
+      // namespace. iCalUID is shared across attendees' copies AND across
+      // one user's calendars when the same meeting lands on more than
+      // one, so an un-scoped key would cause Calendar A's full-pass
+      // orphan flush to misclassify B's buffered occurrences as orphans
+      // and silently drop them.
       if (initialSync) {
-        const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+        const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
           originalStartTime
         ).toISOString()}`;
         await this.set(pendingKey, cancelledOccurrence);
@@ -1455,9 +1475,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
     // During initial sync, buffer the occurrence under a unique key for
     // later merging with its master. See the cancelled branch above for why
-    // per-occurrence keys replaced the single-list-append pattern.
+    // per-occurrence keys replaced the single-list-append pattern, and why
+    // the key is prefixed with the calendar ID.
     if (initialSync) {
-      const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+      const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
         originalStartTime
       ).toISOString()}`;
       await this.set(pendingKey, occurrence);

@@ -356,9 +356,12 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // cleanly without waiting for the TTL.
     await this.tools.store.releaseLock(`sync_${channel.id}`);
 
-    // Clear pending occurrences
+    // Clear pending occurrences for this calendar only. Keys are scoped
+    // per calendar (calendar href as prefix) so disabling one calendar
+    // doesn't wipe buffered occurrences for siblings on the same account
+    // that are still enabled.
     const pendingKeys = await this.tools.store.list(
-      "pending_occ:apple-calendar:"
+      `pending_occ:${channel.id}:`
     );
     for (const key of pendingKeys) {
       await this.clear(key);
@@ -587,13 +590,15 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // never came through (master deleted upstream → flushing would
     // create a useless empty Untitled thread, so drop silently).
     if (initialSync) {
-      const seenMasterKeys = await this.tools.store.list("seen_master:");
+      // Scope lookups to this calendar so concurrent syncs of other
+      // calendars in the same account aren't affected.
+      const seenMasterPrefix = `seen_master:${calendarHref}:`;
+      const pendingPrefix = `pending_occ:${calendarHref}:`;
+      const seenMasterKeys = await this.tools.store.list(seenMasterPrefix);
       const seenMasters = new Set(
-        seenMasterKeys.map((k) => k.slice("seen_master:".length))
+        seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
       );
-      const pendingKeys = await this.tools.store.list(
-        "pending_occ:apple-calendar:"
-      );
+      const pendingKeys = await this.tools.store.list(pendingPrefix);
       const flushLinks: NewLinkWithNotes[] = [];
       let droppedOrphans = 0;
       for (const key of pendingKeys) {
@@ -607,13 +612,13 @@ export class AppleCalendar extends Connector<AppleCalendar> {
             ? pending.occurrence
             : new Date(pending.occurrence as unknown as string);
         const suffix = `:${occurrenceDate.toISOString()}`;
-        if (!key.startsWith("pending_occ:") || !key.endsWith(suffix)) {
+        if (!key.startsWith(pendingPrefix) || !key.endsWith(suffix)) {
           // Malformed key — drop it.
           await this.clear(key);
           continue;
         }
         const canonical = key.slice(
-          "pending_occ:".length,
+          pendingPrefix.length,
           key.length - suffix.length
         );
         if (!seenMasters.has(canonical)) {
@@ -1002,7 +1007,9 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // CalDAV response).
     let drainedTotal = 0;
     for (const [source, link] of linksBySource.entries()) {
-      const pendingPrefix = `pending_occ:${source}:`;
+      // Keys are scoped per calendar so concurrent syncs of other
+      // calendars in the same account aren't affected.
+      const pendingPrefix = `pending_occ:${calendarHref}:${source}:`;
       const pendingKeys = await this.tools.store.list(pendingPrefix);
       if (pendingKeys.length === 0) continue;
       const merged: NewScheduleOccurrence[] = [
@@ -1031,9 +1038,13 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // correct, upserts onto the existing master link) from orphans whose
     // master never came through (master deleted upstream → flushing
     // would create a useless empty Untitled thread, so drop silently).
+    //
+    // Scoped with the calendar href so multi-calendar accounts don't
+    // share the seen-master set — without scoping, Calendar A's orphan
+    // flush would treat B's buffered occurrences as flushable.
     if (initialSync) {
       for (const source of linksBySource.keys()) {
-        await this.set(`seen_master:${source}`, true);
+        await this.set(`seen_master:${calendarHref}:${source}`, true);
       }
     }
 
@@ -1312,12 +1323,20 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       // O(1); appending to a single shared list was O(N²) across batches
       // and blew the CF worker CPU limit on calendars with many recurring
       // exceptions.
+      //
+      // The key is scoped with the calendar href so multi-calendar accounts
+      // (e.g. iCloud Home + Work + Family) don't share `pending_occ:`
+      // namespace. UIDs are globally unique per iCal spec, but they are
+      // shared across one user's calendars whenever a meeting was filed
+      // on more than one, so an un-scoped key would cause Calendar A's
+      // orphan flush to misclassify B's buffered occurrences and silently
+      // drop them.
       if (initialSync) {
         const occurrenceTs =
           originalStart instanceof Date
             ? originalStart.toISOString()
             : new Date(originalStart).toISOString();
-        const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+        const pendingKey = `pending_occ:${calendarHref}:${masterSource}:${occurrenceTs}`;
         await this.set(pendingKey, cancelledOccurrence);
         return null;
       }
@@ -1374,13 +1393,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     // During initial sync, buffer under a unique key for merging with
     // master. See the cancelled branch above for why per-occurrence keys
-    // replaced the single-list-append pattern.
+    // replaced the single-list-append pattern, and why the key is
+    // prefixed with the calendar href.
     if (initialSync) {
       const occurrenceTs =
         originalStart instanceof Date
           ? originalStart.toISOString()
           : new Date(originalStart).toISOString();
-      const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+      const pendingKey = `pending_occ:${calendarHref}:${masterSource}:${occurrenceTs}`;
       await this.set(pendingKey, occurrence);
       return null;
     }
