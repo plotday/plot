@@ -125,7 +125,10 @@ export type WebhookMessage = {
   method: string;
   headers: Record<string, string>;
   params: Record<string, string>;
-  body: any;
+  // Optional because the generic /hook/:token producer omits it to avoid
+  // duplicating rawBody (Cloudflare Queues caps messages at 128 KB). The
+  // consumer re-parses body from rawBody + Content-Type when absent.
+  body?: any;
   rawBody?: string;
 };
 

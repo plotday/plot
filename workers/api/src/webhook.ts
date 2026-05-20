@@ -19,6 +19,7 @@ import {
   type CallbackErrorType,
 } from "./errors";
 import { captureServerError } from "./utils/error-capture";
+import { disposeRpc } from "./utils/rpc";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
@@ -667,27 +668,39 @@ async function parseWebhookRequest(
 
   let rawBody: string | undefined = undefined;
   let body: any = null;
-  const contentType = c.req.header("content-type");
 
   if (method !== "GET" && method !== "HEAD") {
-    try {
-      const raw: string = await c.req.text();
-      rawBody = raw;
-      if (contentType?.includes("application/json")) {
-        body = JSON.parse(raw);
-      } else if (contentType?.includes("application/x-www-form-urlencoded")) {
-        const formData = new URLSearchParams(raw);
-        body = Object.fromEntries(formData.entries());
-      } else {
-        body = raw;
-      }
-    } catch (error) {
-      logger.warn("Failed to parse callback request body", error as Error);
-      body = rawBody;
-    }
+    rawBody = await c.req.text();
+    body = parseBodyFromRaw(rawBody, headers["content-type"], logger);
   }
 
   return { method, headers, params, body, rawBody };
+}
+
+/**
+ * Re-parse a webhook body from its raw string + Content-Type. Used by both
+ * `parseWebhookRequest` and the WEBHOOK_QUEUE consumer (the generic /hook
+ * producer omits the parsed `body` from queue messages to avoid duplicating
+ * `rawBody` and tripping Cloudflare Queues' 128 KB message limit).
+ */
+export function parseBodyFromRaw(
+  rawBody: string | undefined,
+  contentType: string | undefined,
+  logger: ReturnType<typeof createLogger>
+): any {
+  if (rawBody === undefined) return null;
+  try {
+    if (contentType?.includes("application/json")) {
+      return JSON.parse(rawBody);
+    }
+    if (contentType?.includes("application/x-www-form-urlencoded")) {
+      return Object.fromEntries(new URLSearchParams(rawBody).entries());
+    }
+    return rawBody;
+  } catch (error) {
+    logger.warn("Failed to parse callback request body", error as Error);
+    return rawBody;
+  }
 }
 
 /**
@@ -779,17 +792,55 @@ const enqueueWebhookHandler = async (c: any) => {
     const { method, headers, params, body, rawBody } =
       await parseWebhookRequest(c, logger);
 
-    await c.env.WEBHOOK_QUEUE.send({
-      type: "webhook",
-      token,
-      method,
-      headers,
-      params,
-      body,
-      rawBody,
-    });
-
-    return c.json({ queued: true });
+    // Send only rawBody (needed verbatim for signature verification by
+    // connectors) — the consumer re-parses body from rawBody + headers.
+    // Including both fields effectively halves the per-message budget,
+    // pushing ~64 KB+ webhooks over Cloudflare Queues' 128 KB limit and
+    // surfacing as "Queue send failed: Payload Too Large".
+    try {
+      await c.env.WEBHOOK_QUEUE.send({
+        type: "webhook",
+        token,
+        method,
+        headers,
+        params,
+        rawBody,
+      });
+      return c.json({ queued: true });
+    } catch (sendError) {
+      const sendMsg = (sendError as Error)?.message ?? "";
+      if (!sendMsg.includes("Payload Too Large")) {
+        throw sendError;
+      }
+      // Fallback: webhook payload is too large even after dropping the
+      // parsed body. Dispatch inline so the callback isn't dropped. This
+      // path bypasses the queue's bounded concurrency, but it's reached
+      // only when no other option exists (drop the webhook entirely).
+      logger.warn("Webhook payload too large for queue, dispatching inline", {
+        rawBodyBytes: rawBody?.length ?? 0,
+      });
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const result = await invokeWebhookCallback(c.env, c.executionCtx, token, {
+              method,
+              headers,
+              params,
+              body,
+              rawBody,
+            });
+            // invokeWebhookCallback may return an RPC stub; dispose it.
+            disposeRpc(result);
+          } catch (inlineError) {
+            logger.error(
+              "Inline webhook dispatch failed after queue overflow",
+              inlineError as Error
+            );
+          }
+        })()
+      );
+      return c.json({ queued: false, dispatched: "inline" });
+    }
   } catch (error) {
     return captureServerError(c, error, "Error enqueueing webhook");
   }

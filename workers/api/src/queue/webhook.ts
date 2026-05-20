@@ -7,6 +7,7 @@ import { isCallbackError, getCallbackErrorType } from "../errors";
 import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { disposeRpc } from "../utils/rpc";
 import { isTransientError } from "../utils/transient-error";
+import { parseBodyFromRaw } from "../webhook";
 
 // Cloudflare resets a Durable Object when an in-flight call holds its
 // storage gate past the platform's watchdog. The new helper runs the
@@ -48,7 +49,14 @@ export async function processWebhooks(
   const handleMessage = async (
     message: Message<WebhookMessage>
   ): Promise<void> => {
-    const { token, method, headers, params, body, rawBody } = message.body;
+    const { token, method, headers, params, rawBody } = message.body;
+    // The /hook/:token producer omits the parsed `body` to halve the queue
+    // payload (Cloudflare Queues caps messages at 128 KB). Reconstruct it
+    // here so the downstream `invokeWebhookCallback` contract is unchanged.
+    const body =
+      message.body.body !== undefined
+        ? message.body.body
+        : parseBodyFromRaw(rawBody, headers?.["content-type"], logger);
     try {
       const result = await invokeWebhookCallback(env, ctx, token, {
         method,
