@@ -15,6 +15,7 @@ import {
 } from "../stripe/utils";
 import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
+import { revokeAppleTokenForAnyClient } from "../utils/apple-auth";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { classifyInviteable } from "../state/contact-classifier";
@@ -804,7 +805,66 @@ account.delete("/account", async (c) => {
       }
     }
 
-    // Step 3: Ban the user in Clerk for 14 days
+    // Step 3a: Revoke Sign in with Apple tokens (App Store guideline 5.1.1(v)).
+    // Apple requires that token revocation happen when the user requests
+    // account deletion — Clerk's banUser does not do this. Without this step,
+    // the app keeps showing up under Settings → Apple ID → Apps Using Apple ID,
+    // which has historically been grounds for App Store rejection.
+    try {
+      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+      const clerkUser = await clerk.users.getUser(user.clerkId);
+      const hasAppleAccount = clerkUser.externalAccounts.some(
+        (a) => a.provider === "oauth_apple" || a.provider === "apple"
+      );
+      if (hasAppleAccount) {
+        const tokens = await clerk.users.getUserOauthAccessToken(
+          user.clerkId,
+          "apple"
+        );
+        const appleAuthEnv = {
+          AUTH_APPLE_TEAM_ID: c.env.AUTH_APPLE_TEAM_ID,
+          AUTH_APPLE_KEY_ID: c.env.AUTH_APPLE_KEY_ID,
+          AUTH_APPLE_PRIVATE_KEY: c.env.AUTH_APPLE_PRIVATE_KEY,
+        };
+        const clientIds = {
+          native: c.env.AUTH_APPLE_NATIVE_CLIENT_ID,
+          web: c.env.AUTH_APPLE_WEB_CLIENT_ID,
+        };
+        for (const t of tokens.data) {
+          try {
+            const clientIdUsed = await revokeAppleTokenForAnyClient(
+              t.token,
+              clientIds,
+              appleAuthEnv
+            );
+            const ctxAppleOk = extractRequestContext(c);
+            createLogger(ctxAppleOk).info("Revoked Apple OAuth token", {
+              user_id: user.id,
+              client_id: clientIdUsed,
+            });
+          } catch (revokeError) {
+            const ctxAppleErr = extractRequestContext(c);
+            createLogger(ctxAppleErr).error(
+              "Failed to revoke Apple OAuth token",
+              revokeError as Error,
+              { user_id: user.id }
+            );
+            // Continue with deletion — we still meet the account-deletion
+            // requirement; the user can manually revoke via Apple if needed.
+          }
+        }
+      }
+    } catch (appleError) {
+      const ctxAppleLookup = extractRequestContext(c);
+      createLogger(ctxAppleLookup).error(
+        "Failed to look up Apple OAuth account for revocation",
+        appleError as Error,
+        { user_id: user.id }
+      );
+      // Continue — token lookup failure should not block deletion.
+    }
+
+    // Step 3b: Ban the user in Clerk for 14 days
     const bannedUntil = new Date();
     bannedUntil.setDate(bannedUntil.getDate() + 14);
 

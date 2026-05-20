@@ -183,6 +183,14 @@ export type Bindings = {
   readonly AUTH_AIRTABLE_ID: string;
   readonly AUTH_AIRTABLE_SECRET: string;
 
+  // Sign in with Apple — used to revoke OAuth tokens on account deletion
+  // (App Store guideline 5.1.1(v)).
+  readonly AUTH_APPLE_NATIVE_CLIENT_ID: string;
+  readonly AUTH_APPLE_WEB_CLIENT_ID: string;
+  readonly AUTH_APPLE_TEAM_ID: string;
+  readonly AUTH_APPLE_KEY_ID: string;
+  readonly AUTH_APPLE_PRIVATE_KEY: string;
+
   readonly GCP_PROJECT_ID: string;
   readonly GCP_PROJECT_NUMBER: string;
   readonly GCP_SERVICE_ACCOUNT_EMAIL: string;
