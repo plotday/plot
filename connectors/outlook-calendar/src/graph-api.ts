@@ -122,6 +122,14 @@ export type SyncState = {
   min?: Date;
   max?: Date;
   sequence?: number;
+  /**
+   * Two-pass initial sync phase. `"quick"` walks `timeMin = now` to
+   * front-load upcoming meetings; `"full"` walks the 2-year historical
+   * backfill afterwards. Both phases share one sync lock; the
+   * quick→full transition swaps state without releasing. Absent for
+   * incremental syncs.
+   */
+  phase?: "quick" | "full";
 };
 
 /**

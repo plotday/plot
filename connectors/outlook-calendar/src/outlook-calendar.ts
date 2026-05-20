@@ -100,6 +100,23 @@ type WatchState = {
 };
 
 /**
+ * Short stable hash of a string for use in note keys. Same content
+ * produces the same key (idempotent upsert on re-sync); edited content
+ * produces a different key (new note, prior versions preserved as
+ * history on the thread).
+ */
+async function hashContent(content: string): Promise<string> {
+  const data = new TextEncoder().encode(content);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  const bytes = new Uint8Array(buf);
+  let hex = "";
+  for (let i = 0; i < 8; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+/**
  * Microsoft Outlook Calendar integration tool.
  *
  * Provides integration with Microsoft Outlook Calendar and Exchange Online,
@@ -249,15 +266,21 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     // Setup webhook for this calendar
     await this.setupOutlookWatch(calendarId);
 
-    // Determine default sync range (2 years into the past)
-    const now = new Date();
-    const min = new Date(now.getFullYear() - 2, 0, 1);
-
-    await this.set(`outlook_sync_state_${calendarId}`, {
+    // Two-pass initial sync:
+    // - Quick pass (`phase: "quick"`) walks `timeMin = now` so upcoming
+    //   meetings surface in the activity feed immediately.
+    // - Full pass (`phase: "full"`, queued at the terminal batch of the
+    //   quick pass) walks the 2-year historical backfill.
+    // Both passes share the sync lock acquired above. The quick→full
+    // transition happens inside syncOutlookBatch without releasing.
+    const initialState: SyncState = {
       calendarId,
-      min,
+      min: new Date(),
       sequence: 1,
-    } as SyncState);
+      phase: "quick",
+    };
+
+    await this.set(`outlook_sync_state_${calendarId}`, initialState);
 
     // Start first sync batch
     const syncCallback = await this.callback(
@@ -276,6 +299,23 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
     await this.clear(`sync_enabled_${channel.id}`);
+  }
+
+  /**
+   * Stamp the first time the connector observes some opaque key, and
+   * reuse that timestamp on every subsequent observation. Used for
+   * description note `created` timestamps: Outlook's
+   * `lastModifiedDateTime` bumps on any edit (e.g. attendee changes),
+   * so re-using it as `created` would drag the description note
+   * forward in the activity feed on unrelated updates. `firstSeenAt`
+   * anchors `created` to the first observation per content hash.
+   */
+  private async firstSeenAt(storeKey: string): Promise<Date> {
+    const existing = await this.get<string>(storeKey);
+    if (existing) return new Date(existing);
+    const now = new Date();
+    await this.set(storeKey, now.toISOString());
+    return now;
   }
 
   private async getApi(calendarId: string): Promise<GraphApi> {
@@ -628,8 +668,20 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         sequence: 1,
       };
 
+      // Restore Date objects from JSON (Date is serialized to string)
+      if (syncState.min && typeof syncState.min === "string") {
+        syncState.min = new Date(syncState.min);
+      }
+      if (syncState.max && typeof syncState.max === "string") {
+        syncState.max = new Date(syncState.max);
+      }
+
       // Process ONE batch (single API page) instead of while loop
       const result = await syncOutlookCalendar(api, calendarId, syncState);
+
+      // Preserve phase across pagination (syncOutlookCalendar in
+      // graph-api.ts doesn't propagate it).
+      result.state.phase = syncState.phase;
 
       // Process events
       await this.processOutlookEvents(
@@ -655,14 +707,114 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         );
         await this.runTask(syncCallback);
       } else {
+        // Quick pass done: transition to full pass without releasing
+        // the lock. The full pass walks the historical range
+        // (timeMin = 2y ago) and picks up long-running recurring
+        // masters that timeMin = now excluded. Any exception
+        // instances the quick pass buffered into pending_occ: are
+        // carried across; they're only cleared when the full pass
+        // completes below.
+        if (syncState.phase === "quick") {
+          const historyMin = new Date();
+          historyMin.setFullYear(historyMin.getFullYear() - 2);
+          historyMin.setMonth(0, 1);
+          historyMin.setHours(0, 0, 0, 0);
+          const fullState: SyncState = {
+            calendarId,
+            min: historyMin,
+            sequence: 1,
+            phase: "full",
+          };
+          await this.set(`outlook_sync_state_${calendarId}`, fullState);
+          const fullCallback = await this.callback(
+            this.syncOutlookBatch,
+            calendarId,
+            initialSync,
+            1
+          );
+          await this.runTask(fullCallback);
+          return;
+        }
+
         console.log(
           `Outlook Calendar sync completed after ${batchNumber} batches for calendar ${calendarId}`
         );
 
+        // Full pass terminal: flush leftover pending_occ buffers as
+        // standalone occurrence-only links — but ONLY when their
+        // master was actually processed during this initial sync
+        // (and is therefore in the DB by now). seen_master:<canonical>
+        // markers track which canonicals showed up in any batch.
+        //
+        // When a leftover's master never appeared, the master is gone
+        // from Outlook (deleted upstream). Flushing in that case would
+        // INSERT a brand-new link/thread with no schedule, no title,
+        // no notes. Drop those orphans silently instead.
+        if (initialSync) {
+          const seenMasterKeys = await this.tools.store.list("seen_master:");
+          const seenMasters = new Set(
+            seenMasterKeys.map((k) => k.slice("seen_master:".length))
+          );
+          const pendingKeys = await this.tools.store.list("pending_occ:");
+          const flushLinks: NewLinkWithNotes[] = [];
+          let droppedOrphans = 0;
+          for (const key of pendingKeys) {
+            const pending = await this.get<NewScheduleOccurrence>(key);
+            if (!pending) {
+              await this.clear(key);
+              continue;
+            }
+            const occurrenceDate =
+              pending.occurrence instanceof Date
+                ? pending.occurrence
+                : new Date(pending.occurrence as unknown as string);
+            const suffix = `:${occurrenceDate.toISOString()}`;
+            if (!key.startsWith("pending_occ:") || !key.endsWith(suffix)) {
+              // Malformed key — drop it.
+              await this.clear(key);
+              continue;
+            }
+            const canonical = key.slice(
+              "pending_occ:".length,
+              key.length - suffix.length
+            );
+            if (!seenMasters.has(canonical)) {
+              droppedOrphans += 1;
+              await this.clear(key);
+              continue;
+            }
+            flushLinks.push({
+              type: "event",
+              title: "",
+              source: canonical,
+              channelId: calendarId,
+              meta: { syncProvider: "microsoft", syncableId: calendarId },
+              scheduleOccurrences: [pending],
+              notes: [],
+            });
+            await this.clear(key);
+          }
+          if (flushLinks.length > 0 || droppedOrphans > 0) {
+            console.log(
+              `[OutlookCalendar] full-pass flush: calendar=${calendarId} ` +
+                `flushedLinks=${flushLinks.length} ` +
+                `droppedOrphans=${droppedOrphans}`
+            );
+          }
+          if (flushLinks.length > 0) {
+            await this.tools.integrations.saveLinks(flushLinks);
+          }
+
+          // Clear master markers for the next initial sync.
+          for (const key of seenMasterKeys) {
+            await this.clear(key);
+          }
+        }
+
         // Initial sync is fully complete — clear the "syncing…" indicator
-        // on the connection. Gated on initialSync (not mode), so a
-        // corrupted state still signals completion instead of leaving
-        // the UI stuck on "Syncing".
+        // on the connection. Gated on initialSync (not phase), so a
+        // corrupted state that bypassed the quick→full transition still
+        // signals completion instead of leaving the UI stuck on "Syncing".
         if (initialSync) {
           await this.tools.integrations.channelSyncCompleted(calendarId);
         }
@@ -688,12 +840,56 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
   /**
    * Process Outlook events from a sync batch.
+   *
+   * Coalesces all events keyed by canonical `source` so a master and
+   * any number of its exception instances collapse into a single
+   * NewLinkWithNotes. The final saveLinks call makes one cross-runtime
+   * RPC for the entire page. Heavy recurring meetings with many
+   * exceptions used to fire N+1 saveLink calls; now they fire one.
    */
   private async processOutlookEvents(
     events: import("./graph-api").OutlookEvent[],
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
+    const linksBySource = new Map<string, NewLinkWithNotes>();
+    type LinkWithSource = NewLinkWithNotes & { source: string };
+    const addLink = (link: LinkWithSource) => {
+      const existing = linksBySource.get(link.source) as
+        | LinkWithSource
+        | undefined;
+      if (!existing) {
+        linksBySource.set(link.source, link);
+        return;
+      }
+      // Merge occurrences and notes. Prefer the fuller entry (master)
+      // when only one side carries the series-level fields (schedules,
+      // title, ...).
+      existing.scheduleOccurrences = [
+        ...(existing.scheduleOccurrences || []),
+        ...(link.scheduleOccurrences || []),
+      ];
+      if (link.notes?.length) {
+        existing.notes = [...(existing.notes || []), ...link.notes];
+      }
+      if (link.schedules && !existing.schedules) {
+        existing.schedules = link.schedules;
+        existing.title = link.title ?? existing.title;
+        existing.type = link.type ?? existing.type;
+        existing.actions = link.actions ?? existing.actions;
+        existing.sourceUrl = link.sourceUrl ?? existing.sourceUrl;
+        existing.preview = link.preview ?? existing.preview;
+        existing.access = link.access ?? existing.access;
+        existing.accessContacts =
+          link.accessContacts ?? existing.accessContacts;
+        existing.author = link.author ?? existing.author;
+        existing.created = link.created ?? existing.created;
+        existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
+        if (link.unread !== undefined) existing.unread = link.unread;
+        if (link.archived !== undefined) existing.archived = link.archived;
+      }
+    };
+
     for (const outlookEvent of events) {
       try {
         // Handle deleted events
@@ -706,7 +902,9 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           // to keep source globally unique across users.
           const source = `outlook-calendar:${calendarId}:${outlookEvent.id}`;
 
-          // Create cancellation note
+          // Create cancellation note. We don't apply firstSeenAt here
+          // because cancelled events aren't typically edited further,
+          // so lastModifiedDateTime is stable.
           const cancelNote = {
             key: "cancellation" as const,
             content: "This event was cancelled.",
@@ -737,8 +935,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
             ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
           };
 
-          // Send link update
-          await this.tools.integrations.saveLink(link);
+          addLink(link as LinkWithSource);
           continue;
         }
 
@@ -769,11 +966,12 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           outlookEvent.seriesMasterId &&
           outlookEvent.originalStart
         ) {
-          await this.processEventInstance(
+          const instanceLink = await this.prepareEventInstance(
             outlookEvent,
             calendarId,
             initialSync
           );
+          if (instanceLink) addLink(instanceLink as LinkWithSource);
           continue;
         }
 
@@ -832,20 +1030,40 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           });
         }
 
-        // Build description note if available
+        const canonicalUrl = `outlook-calendar:${calendarId}:${outlookEvent.id}`;
+
+        // Build description note if available. The key embeds a hash
+        // of the description content so each distinct version produces
+        // a separate note: re-syncing the same description is an
+        // idempotent no-op upsert (same key + same content), while an
+        // edited description gets a new key and a fresh note —
+        // preserving prior versions as history on the thread. Stamp
+        // `created` with the first time we observed each hash and
+        // reuse on subsequent syncs, so an unrelated event update
+        // (which bumps lastModifiedDateTime on Outlook, e.g. an
+        // attendee change) doesn't drag the note forward in the feed.
+        const descriptionContent = outlookEvent.body?.content ?? "";
         const hasDescription =
-          outlookEvent.body?.content &&
-          outlookEvent.body.content.trim().length > 0;
+          descriptionContent && descriptionContent.trim().length > 0;
         const hasActions = actions.length > 0;
 
-        const descriptionNote = hasDescription ? {
-          key: "description",
-          content: outlookEvent.body!.content!,
-          contentType: (outlookEvent.body?.contentType === "html"
-            ? "html"
-            : "text") as ContentType,
-          created: threadData.created,
-        } : null;
+        const descHash = hasDescription
+          ? await hashContent(descriptionContent)
+          : null;
+        const descFirstSeen = descHash
+          ? await this.firstSeenAt(`desc_seen:${canonicalUrl}:${descHash}`)
+          : undefined;
+        const descriptionNote =
+          hasDescription && descHash
+            ? {
+                key: `description-${descHash}`,
+                content: descriptionContent,
+                contentType: (outlookEvent.body?.contentType === "html"
+                  ? "html"
+                  : "text") as ContentType,
+                created: descFirstSeen,
+              }
+            : null;
 
         // Build attendee contacts for link-level access control
         const attendeeMentions: NewContact[] = [];
@@ -863,7 +1081,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
         // Build NewLinkWithNotes from the transformed thread data
         const linkWithNotes: NewLinkWithNotes = {
-          source: `outlook-calendar:${calendarId}:${outlookEvent.id}`,
+          source: canonicalUrl,
           sources: buildEventSources({
             calendarId,
             eventId: outlookEvent.id,
@@ -884,41 +1102,101 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           sourceUrl: outlookEvent.webLink ?? null,
           actions: hasActions ? actions : undefined,
           notes,
-          preview: hasDescription ? outlookEvent.body!.content! : null,
+          preview: hasDescription ? descriptionContent : null,
           schedules: threadData.schedules,
           scheduleOccurrences: threadData.scheduleOccurrences,
           ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
           ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
         };
 
-        // Save link - database handles upsert automatically
-        await this.tools.integrations.saveLink(linkWithNotes);
+        // Coalesce into the batch instead of saving immediately.
+        // The end-of-batch drain merges any buffered exception
+        // occurrences (pending_occ:) into this master before saveLinks.
+        addLink(linkWithNotes as LinkWithSource);
       } catch (error) {
         console.error(`Error processing event ${outlookEvent.id}:`, error);
         // Continue processing other events
       }
     }
+
+    // Drain pending_occ buffers for any masters present in this batch.
+    // Done here (after the events loop) so the merge is order-
+    // independent within a batch: instances arriving before the master
+    // are caught, and instances arriving after the master are caught
+    // too (the latter case is what inline merging would miss — it
+    // silently lost cancellations whose master happened to come first
+    // in the API response).
+    let drainedTotal = 0;
+    for (const [source, link] of linksBySource.entries()) {
+      const pendingPrefix = `pending_occ:${source}:`;
+      const pendingKeys = await this.tools.store.list(pendingPrefix);
+      if (pendingKeys.length === 0) continue;
+      const merged: NewScheduleOccurrence[] = [
+        ...(link.scheduleOccurrences || []),
+      ];
+      for (const key of pendingKeys) {
+        const pending = await this.get<NewScheduleOccurrence>(key);
+        if (pending) {
+          merged.push(pending);
+          drainedTotal += 1;
+        }
+        await this.clear(key);
+      }
+      link.scheduleOccurrences = merged;
+      console.log(
+        `[OutlookCalendar] drain: master=${source} ` +
+          `merged=${pendingKeys.length} (calendar=${calendarId})`
+      );
+    }
+    if (initialSync) {
+      console.log(
+        `[OutlookCalendar] processOutlookEvents end: calendar=${calendarId} ` +
+          `events=${events.length} masters=${linksBySource.size} ` +
+          `drained=${drainedTotal}`
+      );
+
+      // Record every master/regular event saved this batch so the
+      // full-pass cleanup can distinguish legitimate cross-batch
+      // leftovers (master-in-batch-A, instance-in-batch-B → flush is
+      // correct, upserts onto the existing master link) from orphans
+      // whose master never came through (master deleted upstream →
+      // flushing would create a useless empty Untitled thread).
+      for (const source of linksBySource.keys()) {
+        await this.set(`seen_master:${source}`, true);
+      }
+    }
+
+    // Single batched save for the whole page. Collapses what used to
+    // be one saveLink RPC per event (and one per exception instance
+    // on heavy recurring meetings) into a single cross-runtime call.
+    const batch = Array.from(linksBySource.values());
+    if (batch.length > 0) {
+      await this.tools.integrations.saveLinks(batch);
+    }
   }
 
   /**
-   * Process a recurring event instance (occurrence or exception) from Outlook Calendar.
-   * This updates the master recurring thread with occurrence-specific data.
+   * Transform a recurring event instance (occurrence or exception)
+   * into either an occurrence-only {@link NewLinkWithNotes} (for the
+   * caller's batched saveLinks), or `null` when the occurrence is
+   * instead buffered to `pending_occ:` storage for cross-batch
+   * merging during initial sync. Never saves directly.
    */
-  private async processEventInstance(
+  private async prepareEventInstance(
     event: import("./graph-api").OutlookEvent,
     calendarId: string,
     initialSync: boolean
-  ): Promise<void> {
+  ): Promise<NewLinkWithNotes | null> {
     const originalStart = event.originalStart;
     if (!originalStart) {
       console.warn(`No original start time for instance: ${event.id}`);
-      return;
+      return null;
     }
 
     // The seriesMasterId points to the master thread
     if (!event.seriesMasterId) {
       console.warn(`No series master ID for instance: ${event.id}`);
-      return;
+      return null;
     }
 
     // Canonical URL for the master recurring event
@@ -928,7 +1206,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     const instanceData = transformOutlookEvent(event, calendarId);
 
     if (!instanceData) {
-      return; // Skip deleted events
+      return null; // Skip deleted events
     }
 
     // Handle cancelled recurring instances by archiving the occurrence
@@ -939,7 +1217,26 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         cancelled: true,
       };
 
-      const occurrenceUpdate: NewLinkWithNotes = {
+      // During initial sync, buffer the occurrence under a unique key
+      // for later merging with its master. Per-occurrence keys keep
+      // each write O(1); appending to a shared list would be O(N²)
+      // across batches and could blow the worker CPU budget on
+      // calendars with many recurring exceptions.
+      if (initialSync) {
+        const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+          originalStart
+        ).toISOString()}`;
+        await this.set(pendingKey, cancelledOccurrence);
+        console.log(
+          `[OutlookCalendar] buffered cancelled instance: ` +
+            `master=${masterCanonicalUrl} ` +
+            `originalStart=${new Date(originalStart).toISOString()} ` +
+            `(calendar=${calendarId})`
+        );
+        return null;
+      }
+
+      return {
         type: "event",
         title: "",
         source: masterCanonicalUrl,
@@ -953,9 +1250,6 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
       };
-
-      await this.tools.integrations.saveLink(occurrenceUpdate);
-      return;
     }
 
     // Build contacts from attendees for this occurrence
@@ -999,9 +1293,29 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       occurrence.end = instanceSchedule.end;
     }
 
-    // Send occurrence data via saveLink
-    // Build a minimal link with source and scheduleOccurrences
-    const occurrenceUpdate: NewLinkWithNotes = {
+    // During initial sync, buffer the occurrence under a unique key
+    // for later merging with its master. See the cancelled branch
+    // above for why per-occurrence keys replaced the single-list
+    // pattern.
+    if (initialSync) {
+      const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+        originalStart
+      ).toISOString()}`;
+      await this.set(pendingKey, occurrence);
+      console.log(
+        `[OutlookCalendar] buffered exception instance: ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStart).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
+      return null;
+    }
+
+    // Incremental sync: return an occurrence-only link. The caller
+    // merges it with the master (if the master is in the same batch)
+    // or saves it standalone (master already exists in the DB from a
+    // prior sync).
+    return {
       type: "event",
       title: "",
       source: masterCanonicalUrl,
@@ -1015,8 +1329,6 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       scheduleOccurrences: [occurrence],
       notes: [],
     };
-
-    await this.tools.integrations.saveLink(occurrenceUpdate);
   }
 
   async onOutlookWebhook(
