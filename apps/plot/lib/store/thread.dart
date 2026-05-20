@@ -837,6 +837,14 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   static Future<bool> push() async {
+    // Bail out if the Store has already been removed from the Injector.
+    // Fire-and-forget callers (bare `Thread.push();` and
+    // `_deferIdle(Thread.push, ...)`) can fire after sign-out / account
+    // switch / shutdown drain, when `Store.get` would throw
+    // NotDefinedException. The sync orchestrator already guards before
+    // calling pushFn, so this is the load-bearing check for those paths.
+    if (!Store.isAvailable) return false;
+
     // Run all five sub-pushes in parallel. They write to independent
     // tables and share no ordering requirements (the per-table push
     // already serialises against itself via _pushCompleters), so
