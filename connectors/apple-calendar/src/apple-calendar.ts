@@ -73,6 +73,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     },
   ];
 
+  // Lock TTL covering the worst-case full backfill. The framework releases
+  // the lock automatically after this window even if a worker crashes, so
+  // no stuck-sync recovery is needed.
+  private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
@@ -156,13 +161,47 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
   /**
    * Called when a calendar channel is enabled for syncing.
+   *
+   * Three cases (see SyncContext docs):
+   *  - Initial enable: full backfill from scratch.
+   *  - Already-enabled history-min refresh: skips when stored window is
+   *    already at least as wide.
+   *  - Recovery (`context.recovering = true`): the user re-entered their
+   *    Apple ID / app-specific password after a credentials change. Drop
+   *    the persisted ctag, etag/uid maps, sync state, and any scheduled
+   *    poll so the next pass re-walks every event and picks up changes
+   *    that landed during the auth gap.
+   *
+   * Keep this method thin: it must return quickly so the HTTP response
+   * boundary doesn't hold the sync lock. All real init work (lock,
+   * starting ctag, first batch) is deferred to initChannel which runs
+   * inside a queued task.
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Store sync_history_min if provided and not already stored with an equal/earlier value
-    if (context?.syncHistoryMin) {
+    if (context?.recovering) {
+      // Wipe persisted cursors and per-event state so the next pass
+      // re-walks history. Each clear is idempotent. Release any TTL-stuck
+      // lock from the pre-recovery outage so initChannel can acquire fresh.
+      await this.clear(`ctag_${channel.id}`);
+      await this.clear(`etags_${channel.id}`);
+      await this.clear(`event_uids_${channel.id}`);
+      await this.clear(`sync_state_${channel.id}`);
+      await this.tools.store.releaseLock(`sync_${channel.id}`);
+
+      // Cancel any scheduled poll so the post-recovery sync starts cleanly
+      // (a stale poll firing concurrently would race against initChannel).
+      const pollTask = await this.get<string>(`poll_task_${channel.id}`);
+      if (pollTask) {
+        await this.cancelTask(pollTask);
+        await this.clear(`poll_task_${channel.id}`);
+      }
+    } else if (context?.syncHistoryMin) {
+      // Store sync_history_min if provided and not already stored with an
+      // equal/earlier value. Skipped on recovery so the recovery pass
+      // re-walks even when the window hasn't widened.
       const key = `sync_history_min_${channel.id}`;
       const stored = await this.get<string>(key);
-      if (stored && new Date(stored) <= context.syncHistoryMin && !context?.recovering) {
+      if (stored && new Date(stored) <= context.syncHistoryMin) {
         return; // Already synced with equal or earlier history min
       }
       await this.set(key, context.syncHistoryMin.toISOString());
@@ -171,16 +210,32 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Queue all initialization work as a task so the HTTP response returns
-    // quickly. initChannel makes a CalDAV request for the starting ctag.
+    // quickly. initChannel acquires the sync lock, fetches the starting
+    // ctag, and queues the first batch.
     const initCallback = await this.callback(this.initChannel, channel.id);
     await this.runTask(initCallback);
   }
 
   /**
-   * Initializes a calendar channel: fetches the starting ctag and kicks off
-   * the initial sync batch. Runs as a task to keep onChannelEnabled fast.
+   * Initializes a calendar channel: acquires the sync lock, fetches the
+   * starting ctag, initializes sync state, and queues the first sync batch.
+   * Runs as a queued task so the lock acquisition doesn't straddle the
+   * HTTP-response boundary (where a dropped task could leave the lock held
+   * until the TTL expires) and so the first batch's CalDAV multiget runs
+   * in its own task.
    */
   async initChannel(channelId: string): Promise<void> {
+    // Acquire sync lock. Self-expires after SYNC_LOCK_TTL_MS so a crashed
+    // worker can't wedge sync forever. Bails if another sync is in flight
+    // (e.g. an in-flight poll or a previous initChannel that hasn't drained).
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${channelId}`,
+      AppleCalendar.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
+      return;
+    }
+
     // Store initial ctag for incremental sync
     const client = this.getCalDAV();
     const ctag = await client.getCalendarCtag(channelId);
@@ -197,13 +252,19 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       batchNumber: 1,
     } as SyncState);
 
-    await this.syncBatch(
+    // Queue the first batch as a separate task instead of awaiting inline.
+    // This mirrors google-calendar's initCalendar pattern: the init task
+    // returns immediately after setup, freeing the runtime to schedule
+    // syncBatch (which does the heavy CalDAV multiget) on its own.
+    const syncCallback = await this.callback(
+      this.syncBatch,
       channelId,
       true, // initialSync
       1, // batchNumber
       toCalDAVTimeString(min),
       toCalDAVTimeString(end)
     );
+    await this.runTask(syncCallback);
   }
 
   /**
@@ -222,6 +283,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`ctag_${channel.id}`);
     await this.clear(`etags_${channel.id}`);
+    await this.clear(`event_uids_${channel.id}`);
+
+    // Release the framework-managed sync lock so a re-enable can acquire
+    // cleanly without waiting for the TTL.
+    await this.tools.store.releaseLock(`sync_${channel.id}`);
 
     // Clear pending occurrences
     const pendingKeys = await this.tools.store.list(
@@ -244,37 +310,98 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     timeRangeStart?: string,
     timeRangeEnd?: string
   ): Promise<void> {
-    const client = this.getCalDAV();
+    try {
+      const client = this.getCalDAV();
 
-    if (batchNumber === 1 && timeRangeStart && timeRangeEnd) {
-      // First batch: fetch all events in the time range
-      const events = await client.fetchEvents(calendarHref, {
-        start: timeRangeStart,
-        end: timeRangeEnd,
-      });
+      if (batchNumber === 1 && timeRangeStart && timeRangeEnd) {
+        // First batch: fetch all events in the time range
+        const events = await client.fetchEvents(calendarHref, {
+          start: timeRangeStart,
+          end: timeRangeEnd,
+        });
 
-      // Store etags for incremental sync
-      const etagMap: Record<string, string> = {};
-      for (const event of events) {
-        etagMap[event.href] = event.etag;
+        // Store etags for incremental sync
+        const etagMap: Record<string, string> = {};
+        for (const event of events) {
+          etagMap[event.href] = event.etag;
+        }
+        await this.set(`etags_${calendarHref}`, etagMap);
+
+        // Process events in batches. processCalDAVEvents records each
+        // event's href→uid into event_uids_<calendarHref> so future
+        // selective per-event deletion (see startIncrementalSync) can
+        // resolve a deleted href back to its uid.
+        await this.processCalDAVEvents(
+          events.slice(0, 50),
+          calendarHref,
+          initialSync
+        );
+
+        if (events.length > 50) {
+          // Store remaining hrefs for next batches
+          const remainingHrefs = events.slice(50).map((e) => e.href);
+          await this.set(`sync_state_${calendarHref}`, {
+            calendarHref,
+            initialSync,
+            batchNumber: batchNumber + 1,
+            pendingHrefs: remainingHrefs,
+          } as SyncState);
+
+          const nextBatch = await this.callback(
+            this.syncBatchContinue,
+            calendarHref,
+            initialSync,
+            batchNumber + 1
+          );
+          await this.runTask(nextBatch);
+        } else {
+          await this.finishSync(calendarHref, initialSync);
+        }
       }
-      await this.set(`etags_${calendarHref}`, etagMap);
-
-      // Process events in batches
-      await this.processCalDAVEvents(
-        events.slice(0, 50),
-        calendarHref,
-        initialSync
+    } catch (error) {
+      console.error(
+        `Apple Calendar sync failed for ${calendarHref} in batch ${batchNumber}:`,
+        error
       );
 
-      if (events.length > 50) {
-        // Store remaining hrefs for next batches
-        const remainingHrefs = events.slice(50).map((e) => e.href);
+      // Release lock and clear state so future syncs aren't permanently
+      // blocked. Even if this release fails, the lock's TTL will expire it.
+      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+      await this.clear(`sync_state_${calendarHref}`);
+
+      // Re-throw to let the runtime handle it (PostHog capture, etc.).
+      throw error;
+    }
+  }
+
+  /**
+   * Continue processing remaining events using multiget.
+   */
+  async syncBatchContinue(
+    calendarHref: string,
+    initialSync: boolean,
+    batchNumber: number
+  ): Promise<void> {
+    try {
+      const state = await this.get<SyncState>(`sync_state_${calendarHref}`);
+      if (!state?.pendingHrefs?.length) {
+        await this.finishSync(calendarHref, initialSync);
+        return;
+      }
+
+      const client = this.getCalDAV();
+      const batch = state.pendingHrefs.slice(0, 50);
+      const remaining = state.pendingHrefs.slice(50);
+
+      const events = await client.fetchEventsByHref(calendarHref, batch);
+      await this.processCalDAVEvents(events, calendarHref, initialSync);
+
+      if (remaining.length > 0) {
         await this.set(`sync_state_${calendarHref}`, {
           calendarHref,
           initialSync,
           batchNumber: batchNumber + 1,
-          pendingHrefs: remainingHrefs,
+          pendingHrefs: remaining,
         } as SyncState);
 
         const nextBatch = await this.callback(
@@ -287,47 +414,18 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       } else {
         await this.finishSync(calendarHref, initialSync);
       }
-    }
-  }
-
-  /**
-   * Continue processing remaining events using multiget.
-   */
-  async syncBatchContinue(
-    calendarHref: string,
-    initialSync: boolean,
-    batchNumber: number
-  ): Promise<void> {
-    const state = await this.get<SyncState>(`sync_state_${calendarHref}`);
-    if (!state?.pendingHrefs?.length) {
-      await this.finishSync(calendarHref, initialSync);
-      return;
-    }
-
-    const client = this.getCalDAV();
-    const batch = state.pendingHrefs.slice(0, 50);
-    const remaining = state.pendingHrefs.slice(50);
-
-    const events = await client.fetchEventsByHref(calendarHref, batch);
-    await this.processCalDAVEvents(events, calendarHref, initialSync);
-
-    if (remaining.length > 0) {
-      await this.set(`sync_state_${calendarHref}`, {
-        calendarHref,
-        initialSync,
-        batchNumber: batchNumber + 1,
-        pendingHrefs: remaining,
-      } as SyncState);
-
-      const nextBatch = await this.callback(
-        this.syncBatchContinue,
-        calendarHref,
-        initialSync,
-        batchNumber + 1
+    } catch (error) {
+      console.error(
+        `Apple Calendar sync continue failed for ${calendarHref} in batch ${batchNumber}:`,
+        error
       );
-      await this.runTask(nextBatch);
-    } else {
-      await this.finishSync(calendarHref, initialSync);
+
+      // Release lock and clear state so future syncs aren't permanently
+      // blocked. Even if this release fails, the lock's TTL will expire it.
+      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+      await this.clear(`sync_state_${calendarHref}`);
+
+      throw error;
     }
   }
 
@@ -354,6 +452,17 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
 
     await this.clear(`sync_state_${calendarHref}`);
+
+    // Initial sync is fully complete — clear the "syncing…" indicator on
+    // the connection. Gated on initialSync so incremental polls don't
+    // re-fire the signal.
+    if (initialSync) {
+      await this.tools.integrations.channelSyncCompleted(calendarHref);
+    }
+
+    // Release the framework-managed sync lock so the next poll (or a
+    // manual re-trigger) can acquire it.
+    await this.tools.store.releaseLock(`sync_${calendarHref}`);
 
     // Schedule next poll in 15 minutes
     await this.schedulePoll(calendarHref);
@@ -405,72 +514,170 @@ export class AppleCalendar extends Connector<AppleCalendar> {
    * Incremental sync: compare etags to find changed/new/deleted events.
    */
   private async startIncrementalSync(calendarHref: string): Promise<void> {
-    const client = this.getCalDAV();
+    // Acquire sync lock to prevent the 15-min poll from racing an
+    // in-progress initial sync, or two polls overlapping if a previous
+    // run is still draining batches.
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${calendarHref}`,
+      AppleCalendar.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
+      // Another sync is in flight. Don't reschedule a poll either — the
+      // running sync's finishSync will schedule the next one.
+      return;
+    }
 
-    // Get current etags
-    const currentEtags = await client.getEventEtags(calendarHref);
-    const storedEtags =
-      (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+    try {
+      const client = this.getCalDAV();
 
-    // Find new/changed events
-    const changedHrefs: string[] = [];
-    const newEtagMap: Record<string, string> = {};
+      // Get current etags
+      const currentEtags = await client.getEventEtags(calendarHref);
+      const storedEtags =
+        (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+      const storedUids =
+        (await this.get<Record<string, string>>(
+          `event_uids_${calendarHref}`
+        )) || {};
 
-    for (const [href, etag] of currentEtags) {
-      newEtagMap[href] = etag;
-      if (!storedEtags[href] || storedEtags[href] !== etag) {
-        changedHrefs.push(href);
+      // Find new/changed events
+      const changedHrefs: string[] = [];
+      const newEtagMap: Record<string, string> = {};
+
+      for (const [href, etag] of currentEtags) {
+        newEtagMap[href] = etag;
+        if (!storedEtags[href] || storedEtags[href] !== etag) {
+          changedHrefs.push(href);
+        }
       }
-    }
 
-    // Find deleted events
-    const deletedHrefs: string[] = [];
-    for (const href of Object.keys(storedEtags)) {
-      if (!currentEtags.has(href)) {
-        deletedHrefs.push(href);
+      // Find deleted events (present in stored, absent from current)
+      const deletedHrefs: string[] = [];
+      for (const href of Object.keys(storedEtags)) {
+        if (!currentEtags.has(href)) {
+          deletedHrefs.push(href);
+        }
       }
+
+      // Archive deleted events selectively, per-uid. Previously this code
+      // called archiveLinks with only the channel-level meta — a
+      // containment filter that matches every Apple event on the channel.
+      // One deleted event would wipe the whole calendar. The href→uid map
+      // built in processEvent/processEventInstance lets us resolve each
+      // deleted href back to its uid and archive precisely.
+      //
+      // Hrefs missing from the uid map are skipped (logged): they were
+      // synced before this map existed, will be rebuilt on the next batch
+      // that touches them, but on this one run we can't safely archive by
+      // channel without the data-loss risk above.
+      let archivedCount = 0;
+      let missingUidCount = 0;
+      for (const href of deletedHrefs) {
+        const uid = storedUids[href];
+        if (!uid) {
+          missingUidCount += 1;
+          continue;
+        }
+        await this.tools.integrations.archiveLinks({
+          channelId: calendarHref,
+          meta: { syncProvider: "apple", syncableId: calendarHref, uid },
+        });
+        archivedCount += 1;
+      }
+      if (deletedHrefs.length > 0) {
+        console.log(
+          `[AppleCalendar] incremental sync: calendar=${calendarHref} ` +
+            `deleted=${deletedHrefs.length} archived=${archivedCount} ` +
+            `missingUid=${missingUidCount}`
+        );
+      }
+
+      // Fetch and process changed events. processCalDAVEvents updates
+      // event_uids_<calendarHref> from each event's uid so future
+      // incremental syncs can archive them precisely.
+      if (changedHrefs.length > 0) {
+        const events = await client.fetchEventsByHref(
+          calendarHref,
+          changedHrefs
+        );
+        await this.processCalDAVEvents(events, calendarHref, false);
+      }
+
+      // Prune the uid map: drop entries whose href is no longer present in
+      // the current etag set. Keeps the map bounded as events are deleted.
+      const newUidMap: Record<string, string> = {};
+      for (const href of Object.keys(newEtagMap)) {
+        const uid = storedUids[href];
+        if (uid) newUidMap[href] = uid;
+      }
+      await this.set(`event_uids_${calendarHref}`, newUidMap);
+
+      // Update stored etags and ctag
+      await this.set(`etags_${calendarHref}`, newEtagMap);
+      const ctag = await client.getCalendarCtag(calendarHref);
+      if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
+
+      // Release lock before scheduling the next poll so the poll can
+      // re-acquire cleanly.
+      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+
+      // Schedule next poll
+      await this.schedulePoll(calendarHref);
+    } catch (error) {
+      console.error(
+        `Apple Calendar incremental sync failed for ${calendarHref}:`,
+        error
+      );
+
+      // Release lock so future syncs aren't permanently blocked. The TTL
+      // is the safety net if this release also fails.
+      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+
+      // Reschedule a poll so we recover on the next interval.
+      await this.schedulePoll(calendarHref);
+
+      throw error;
     }
-
-    // Archive deleted events
-    if (deletedHrefs.length > 0) {
-      // We need to find the UIDs for deleted events from stored state
-      // Since we don't store href→UID mapping, archive by channel
-      await this.tools.integrations.archiveLinks({
-        channelId: calendarHref,
-        meta: { syncProvider: "apple", syncableId: calendarHref },
-      });
-    }
-
-    // Fetch and process changed events
-    if (changedHrefs.length > 0) {
-      const events = await client.fetchEventsByHref(calendarHref, changedHrefs);
-      await this.processCalDAVEvents(events, calendarHref, false);
-    }
-
-    // Update stored etags and ctag
-    await this.set(`etags_${calendarHref}`, newEtagMap);
-    const ctag = await client.getCalendarCtag(calendarHref);
-    if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
-
-    // Schedule next poll
-    await this.schedulePoll(calendarHref);
   }
 
   // ---- Event Processing ----
 
   /**
    * Process CalDAV events (parse ICS and save as links).
+   *
+   * Also maintains the `event_uids_<calendarHref>` map keyed by event href
+   * so future incremental syncs can archive deleted events selectively by
+   * uid instead of wiping the whole channel (see startIncrementalSync).
+   * Recurrence-only entries (RECURRENCE-ID overrides) share the same uid
+   * as their master, so the master entry already covers them — we record
+   * uid once per href.
    */
   private async processCalDAVEvents(
     events: CalDAVEvent[],
     calendarHref: string,
     initialSync: boolean
   ): Promise<void> {
+    // Load the persisted href→uid map once, merge new entries from this
+    // batch in memory, and write back once at the end. Avoids one
+    // read+write per event.
+    const uidMap =
+      (await this.get<Record<string, string>>(
+        `event_uids_${calendarHref}`
+      )) || {};
+    let uidMapDirty = false;
+
     for (const caldavEvent of events) {
       try {
         const icsEvents = parseICSEvents(caldavEvent.icsData);
 
         for (const icsEvent of icsEvents) {
+          // Record href→uid mapping. Apple ICS UID is stable per event
+          // (RECURRENCE-ID overrides share the master's uid) so writing
+          // it once per href is sufficient.
+          if (icsEvent.uid && uidMap[caldavEvent.href] !== icsEvent.uid) {
+            uidMap[caldavEvent.href] = icsEvent.uid;
+            uidMapDirty = true;
+          }
+
           if (icsEvent.recurrenceId) {
             await this.processEventInstance(
               icsEvent,
@@ -493,6 +700,10 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           error
         );
       }
+    }
+
+    if (uidMapDirty) {
+      await this.set(`event_uids_${calendarHref}`, uidMap);
     }
   }
 
