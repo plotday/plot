@@ -37,6 +37,8 @@ type SyncState = {
 export class Fellow extends Connector<Fellow> {
   // No provider or scopes — uses API key auth via Options
 
+  readonly singleChannel = true;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),

@@ -31,6 +31,8 @@ export default class GoogleContacts
   readonly provider = AuthProvider.Google;
   readonly scopes = GoogleContacts.SCOPES;
 
+  readonly singleChannel = true;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
