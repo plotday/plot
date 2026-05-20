@@ -758,7 +758,7 @@ account.post("/activate", async (c) => {
 });
 
 // DELETE /account - Delete user account
-account.delete("/", async (c) => {
+account.delete("/account", async (c) => {
   const user = c.var.user;
 
   if (!user) {

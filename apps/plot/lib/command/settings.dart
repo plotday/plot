@@ -17,6 +17,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/account_api.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
@@ -24,6 +25,7 @@ import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/env.dart';
+import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/select_modal.dart';
@@ -130,6 +132,7 @@ List<StaticCommandGroup> settingsCommands({
       FullResync(),
       CopyVersion(),
       SignOut(email: email),
+      DeleteAccount(),
     ],
   ),
 ];
@@ -303,6 +306,59 @@ class SignOut extends Command {
       log.warning("Sign out failed", e, t);
       return CommandMessage('Sign out failed: $e', isError: true);
     }
+  }
+}
+
+/// Permanently deletes the user's account. The server cancels Stripe billing,
+/// bans the Clerk user for 14 days (preventing re-login during the grace
+/// period), and schedules manual data purge. After the API succeeds the user
+/// is signed out locally.
+class DeleteAccount extends Command {
+  DeleteAccount()
+    : super(
+        title: 'Delete account',
+        description:
+            'Permanently delete your account and all your data.',
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+        icon: FontAwesomeIcons.userXmark,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final confirmed = await ConfirmModal(
+      title: 'Delete account?',
+      message:
+          'Your account will be deactivated immediately and all your data '
+          'will be permanently deleted within 14 days. This cannot be undone.',
+      confirmLabel: 'Delete account',
+      destructive: true,
+    ).run(context);
+    if (!confirmed) return const CommandSkipped();
+
+    try {
+      await AccountApi.deleteAccount();
+    } catch (e, t) {
+      log.warning('Account deletion failed', e, t);
+      Tracker.captureException(e, t);
+      return CommandMessage(
+        'Could not delete account. Please try again or contact support.',
+        isError: true,
+      );
+    }
+
+    try {
+      await Base.signOut();
+    } catch (e, t) {
+      log.warning('Sign out after deletion failed', e, t);
+      // Deletion already succeeded server-side; surface success regardless.
+    }
+
+    return const CommandDone(
+      message:
+          'Account deactivated. Your data will be permanently deleted within '
+          '14 days.',
+    );
   }
 }
 
