@@ -715,14 +715,6 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     let etagMapDirty = false;
 
     for (const caldavEvent of events) {
-      // Record the etag up-front for every event in this batch so the
-      // stored set matches the uids we're about to record. Both maps are
-      // persisted together below.
-      if (etagMap[caldavEvent.href] !== caldavEvent.etag) {
-        etagMap[caldavEvent.href] = caldavEvent.etag;
-        etagMapDirty = true;
-      }
-
       try {
         const icsEvents = parseICSEvents(caldavEvent.icsData);
 
@@ -750,6 +742,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
               caldavEvent.href
             );
           }
+        }
+
+        // Record etag only after the per-event work succeeds so a parse
+        // failure can't leave an etag without a uid (which would later
+        // surface as a `missingUid` skip on deletion).
+        if (etagMap[caldavEvent.href] !== caldavEvent.etag) {
+          etagMap[caldavEvent.href] = caldavEvent.etag;
+          etagMapDirty = true;
         }
       } catch (error) {
         console.error(
