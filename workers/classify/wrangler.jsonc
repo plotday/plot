@@ -36,6 +36,19 @@
         "RELEASE": "\"prod\"",
         "PACKAGE": "\"classify\""
       },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "831ea7d10ef54346b084baaa1a46dfa6",
+          "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "LLM_CACHE",
+          "id": "c413b23bb866493da4ee0596ade8b1e2"
+        }
+      ],
       "queues": {
         "consumers": [
           {
