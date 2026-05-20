@@ -1586,66 +1586,6 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   }
 
   /**
-   * Look up the instance ID for a specific occurrence using a pre-authenticated GraphApi.
-   */
-  private async getEventInstanceIdWithApi(
-    api: GraphApi,
-    calendarId: string,
-    seriesMasterId: string,
-    occurrenceDate: Date
-  ): Promise<string | null> {
-    // Query instances for the series master
-    const resource =
-      calendarId === "primary"
-        ? `/me/events/${seriesMasterId}/instances`
-        : `/me/calendars/${calendarId}/events/${seriesMasterId}/instances`;
-
-    // Format occurrence date as ISO string for comparison
-    const occurrenceDateStr = occurrenceDate.toISOString();
-
-    try {
-      // Query instances from the API
-      const response = await api.call(
-        "GET",
-        `https://graph.microsoft.com/v1.0${resource}`
-      );
-
-      if (!response || !Array.isArray(response.value)) {
-        console.warn("Invalid response from instances endpoint");
-        return null;
-      }
-
-      const instances = response.value as import("./graph-api").OutlookEvent[];
-
-      // Find the instance that matches this occurrence
-      // Match by originalStart (for exceptions) or start (for regular occurrences)
-      for (const instance of instances) {
-        const instanceStart =
-          instance.originalStart || instance.start?.dateTime;
-        if (instanceStart) {
-          const instanceDate = new Date(instanceStart);
-          // Compare with a tolerance of 1 second to account for rounding
-          const diff = Math.abs(
-            instanceDate.getTime() - occurrenceDate.getTime()
-          );
-          if (diff < 1000) {
-            return instance.id;
-          }
-        }
-      }
-
-      // If no exact match, log for debugging
-      console.warn(
-        `No instance found matching occurrence ${occurrenceDateStr}. Found ${instances.length} instances.`
-      );
-      return null;
-    } catch (error) {
-      console.error(`Failed to query instances for ${seriesMasterId}:`, error);
-      return null;
-    }
-  }
-
-  /**
    * Update RSVP status for the authenticated user on an Outlook Calendar event.
    * Looks up the actor's email from the Graph API to find the correct attendee.
    */
