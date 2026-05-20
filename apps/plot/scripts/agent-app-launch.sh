@@ -87,7 +87,15 @@ while (( attempt < MAX_ATTEMPTS )); do
     cd "$APP_DIR"
     # nohup detaches from this script's stdout so the daemon survives if we
     # exit (e.g. parent shell SIGHUPs). We do still own it via $PID_FILE.
-    nohup flutter run -d macos -a --profile=agent --print-dtd --machine \
+    # --enable-driver-extension registers the flutter_driver VM service
+    # extension so dart-mcp's flutter_driver tool can drive the app. The
+    # call is debug-only (gated by kDebugMode in main.dart) and a no-op
+    # without this flag, so it is safe to pass unconditionally for the
+    # agent profile.
+    nohup flutter run -d macos \
+      -a --profile=agent \
+      -a --enable-driver-extension \
+      --print-dtd --machine \
       > "$LOG" 2>&1 &
     echo $! > "$PID_FILE"
   )

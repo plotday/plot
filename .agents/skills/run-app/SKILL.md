@@ -70,6 +70,117 @@ Then `get_runtime_errors` to check for new failures. For widget-level
 assertions use `get_widget_tree` (pass `summaryOnly: true` to avoid context
 overflow — the full tree is ~1M tokens for Plot).
 
+## Driving the app with flutter_driver
+
+The launcher passes `-a --enable-driver-extension`, so the app installs a
+custom `DriverBinding` (`apps/plot/lib/driver_binding.dart`) that registers
+the flutter_driver VM service extension AND disables frame sync. This lets
+`mcp__dart-mcp__flutter_driver` issue taps, text entry, scroll, screenshot,
+and waitFor commands against the live app over the same DTD connection.
+
+### Why a custom binding (not `enableFlutterDriverExtension`)
+
+Plot has continuous transient animations (super_editor cursor blink, etc.).
+With stock frame sync on, every finder-based command first waits for
+`SchedulerBinding.transientCallbackCount == 0` before AND after running the
+finder, and that condition is essentially never true while animations are
+active — every command times out with `TimeoutException: Future not
+completed`. The custom binding dispatches `set_frame_sync=false` against
+the extension in its first post-frame callback. dart-mcp's `flutter_driver`
+tool can't send `set_frame_sync` itself (its `command` field is a closed
+enum that does not include it).
+
+### Workflow
+
+1. **Find the widget.** Call `get_widget_tree` (with `summaryOnly: true`)
+   first to discover the actual widget runtimeTypes, text, and tooltips on
+   screen. The full tree is ~1M tokens; the summary fits but is still
+   large, so search it for the label or type you expect.
+2. **Pick a finder.**
+   - `ByText` — matches `Text` and `RichText` widgets by exact string. Use
+     for buttons, labels, and menu items.
+   - `ByType` — match by `widget.runtimeType.toString()` (e.g.
+     `MultiBlocProvider`, `App`, `FTextField`).
+   - `ByTooltipMessage` — icon-only buttons that expose a tooltip.
+   - `ByValueKey` — only works when the widget has a `Key(...)`; most Plot
+     widgets do not, so prefer `ByText`/`ByTooltipMessage`.
+   - `BySemanticsLabel` — accessibility-label fallback.
+   - `Descendant` / `Ancestor` — disambiguate when multiple matches exist;
+     pass nested finders via `of` and `matching`.
+3. **`ByText` does not see super_editor content.** Thread titles and notes
+   are rendered through `super_editor`'s document layout, not `Text` /
+   `RichText`. `ByText="Welcome to Plot!"` will time out even though the
+   string is on screen. For super_editor content, screenshot to confirm
+   what's visible, then drive surrounding chrome (`ByType="SuperReader"`,
+   tooltips, etc.) instead of the document text.
+4. **Wait, then act.** For taps, `waitForTappable` + `tap` is more
+   reliable than a bare `tap` when the target has just appeared.
+5. **Verify with screenshot.** After every state-changing command, take a
+   screenshot to confirm the actual effect — finders that "succeed" can
+   still target the wrong element when multiple match.
+
+### Examples (verified working against the live agent app)
+
+Tap a sidebar entry (real `Text` widget):
+
+```
+mcp__dart-mcp__flutter_driver
+  command: tap
+  finderType: ByText
+  text: Add connection
+```
+
+Type into the currently focused field (e.g. a search input after tap):
+
+```
+mcp__dart-mcp__flutter_driver
+  command: enter_text
+  text: Linear
+```
+
+`enter_text` does NOT take a finder — Flutter targets the currently
+focused text field. Tap the field first.
+
+Scroll a list entry into view:
+
+```
+mcp__dart-mcp__flutter_driver
+  command: scrollIntoView
+  finderType: ByText
+  text: Inbox
+  alignment: "0.0"
+```
+
+Take a screenshot (returned inline by dart-mcp):
+
+```
+mcp__dart-mcp__flutter_driver
+  command: screenshot
+```
+
+### Troubleshooting
+
+- **"The flutter driver extension is not enabled."** The app was launched
+  without `--enable-driver-extension`, or in release mode, or the
+  DriverBinding never ran. Re-launch via
+  `bash apps/plot/scripts/agent-app-launch.sh` and confirm
+  `lib/driver_binding.dart` exists.
+- **All finder commands time out, `get_health` succeeds.** Frame sync was
+  not disabled. The launcher writes the flutter run log to
+  `/tmp/plot-agent-run.log`; grep it for `set_frame_sync` errors. The
+  `DriverBinding.initServiceExtensions` dispatches `set_frame_sync=false`
+  in its first `addPostFrameCallback`, so the disable only takes effect
+  after the root widget mounts — if you launched the agent app on the
+  sign-in page (no root content), let it advance first.
+- **`enter_text` does nothing.** The driver's text emulation only works
+  when a Flutter `TextField` / `FTextField` has focus. Tap the field
+  first; verify focus via screenshot before typing.
+- **Hot restart drops the flag.** `mcp__dart-mcp__hot_restart` re-runs
+  `main([])` with empty args, so `CliArgs.enableDriverExtension` becomes
+  false on restart and the driver extension is gone. After hot restart,
+  re-launch via the script. Hot reload preserves the binding and is
+  safe.
+
 ## Cleanup
 
 When done, kill the flutter run daemon AND the spawned Plot.app. Killing

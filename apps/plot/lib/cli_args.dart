@@ -14,6 +14,9 @@ import 'package:logging/logging.dart';
 /// - --no-profile: Force the unsuffixed (release) database in a debug build,
 ///   overriding the default `dev` profile assignment. Use to attach a debug
 ///   build to the same data the released app uses.
+/// - --enable-driver-extension: Register the flutter_driver VM service
+///   extension so agents can drive the app via dart-mcp's flutter_driver
+///   tool. Debug builds only — the call is a no-op in release.
 class CliArgs {
   CliArgs._();
 
@@ -28,6 +31,7 @@ class CliArgs {
   static DateTime? _frozenTime;
   static String? _profile;
   static bool _noProfile = false;
+  static bool _enableDriverExtension = false;
 
   /// Initializes the CLI argument parser.
   ///
@@ -81,6 +85,9 @@ class CliArgs {
       } else if (arg == '--no-profile') {
         _noProfile = true;
         _log.info('--no-profile: using unsuffixed (release) database');
+      } else if (arg == '--enable-driver-extension') {
+        _enableDriverExtension = true;
+        _log.info('--enable-driver-extension: flutter_driver extension enabled');
       }
     }
 
@@ -129,4 +136,7 @@ class CliArgs {
 
   /// Returns true if theme mode was overridden via CLI.
   static bool get hasThemeOverride => _darkMode || _lightMode;
+
+  /// Returns true if --enable-driver-extension was specified.
+  static bool get enableDriverExtension => _enableDriverExtension;
 }

@@ -144,6 +144,15 @@ dependency_overrides:
   super_editor:
     path: third_party/super_editor
 
+  # flutter_driver is imported from lib/main.dart to register the VM service
+  # driver extension when the app is launched with --enable-driver-extension
+  # (debug builds only). This lets agents drive the running app via dart-mcp's
+  # flutter_driver tool. Listed as a regular dependency (not dev) because pub
+  # blocks imports of dev_dependencies from lib/. The extension call is gated
+  # by kDebugMode so release builds incur no behavior change.
+  flutter_driver:
+    sdk: flutter
+
 dev_dependencies:
   analyzer: ^10.0.1
   code_assets: ^1.0.0

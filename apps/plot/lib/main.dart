@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'driver_binding.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logging/logging.dart';
@@ -83,7 +86,30 @@ void setNavigatorKey(GlobalKey<NavigatorState> key) {
 }
 
 Future<void> run(List<String> args) async {
-  // Initialize bindings first - required for platform channels used by Env.init()
+  // Parse CLI args first so we know whether to register the flutter_driver
+  // VM service extension. DriverBinding subclasses WidgetsFlutterBinding —
+  // its constructor MUST run before WidgetsFlutterBinding.ensureInitialized()
+  // or the stock binding gets installed first and our subclass never takes
+  // effect. CliArgs.init only parses strings, so it is safe to run before
+  // bindings.
+  CliArgs.init(args);
+  if (kDebugMode && CliArgs.enableDriverExtension) {
+    DriverBinding.ensureInitialized();
+    // Force frames to keep pumping while the driver extension is active.
+    // flutter_driver's element-finding commands re-evaluate their finder
+    // inside `addPostFrameCallback`, which only fires on actual frame draws.
+    // Plot becomes idle after initial render — no animations means no frames
+    // means callbacks never fire. A ~60Hz forced frame keeps the driver loop
+    // responsive at the cost of a small constant CPU draw, which is fine for
+    // the debug-only agent profile.
+    Timer.periodic(const Duration(milliseconds: 16), (_) {
+      SchedulerBinding.instance.scheduleFrame();
+    });
+  }
+
+  // Initialize bindings - required for platform channels used by Env.init().
+  // If DriverBinding ran above it already installed itself as the binding;
+  // this call is then a no-op.
   WidgetsFlutterBinding.ensureInitialized();
 
   // During hot restart or startup, Flutter may receive duplicate KeyDownEvents
@@ -325,8 +351,10 @@ Future<void> run(List<String> args) async {
   }
 
   try {
-    // Parse command-line arguments early
-    CliArgs.init(args);
+    // CliArgs.init and the optional enableFlutterDriverExtension() call ran
+    // at the very top of run() (above the WidgetsFlutterBinding init) so the
+    // driver binding could be installed in time. Past this point CliArgs is
+    // populated for the rest of startup.
 
     // Check for single-instance lock (desktop/mobile only)
     if (!kIsWeb) {
