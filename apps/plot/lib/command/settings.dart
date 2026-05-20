@@ -110,7 +110,9 @@ List<StaticCommandGroup> settingsCommands({
           ),
       // Only show Enter Behavior setting on devices with physical keyboards
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-      if (subscription != null && subscription.hasPaidPlan)
+      if (UpgradeUi.canPromptUpgrade &&
+          subscription != null &&
+          subscription.hasPaidPlan)
         ManageSubscription(),
       if (hasTeams) ManageTeams(),
     ],
@@ -118,7 +120,10 @@ List<StaticCommandGroup> settingsCommands({
   StaticCommandGroup(
     title: 'App',
     commands: [
-      if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
+      if (UpgradeUi.canPromptUpgrade &&
+          subscription != null &&
+          !subscription.canBuildTwists)
+        UpgradePlan(),
       if (plotAppPriority != null) HelpAndFeedback(plotAppPriority),
       CopyPageLink(),
       OpenCopiedPageLink(),

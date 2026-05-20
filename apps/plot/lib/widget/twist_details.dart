@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/string.dart';
@@ -41,8 +42,11 @@ class TwistDetails extends StatelessWidget {
     if (hasAiKeys == true) {
       return 'AI will use your API keys.';
     }
-    // Subscribed, no keys
-    return 'AI usage will be billed to your subscription.';
+    // Subscribed, no keys. On iOS, avoid referencing the externally-purchased
+    // subscription (App Store guideline 3.1.1 anti-steering).
+    return UpgradeUi.canPromptUpgrade
+        ? 'AI usage will be billed to your subscription.'
+        : 'AI usage is included with your plan.';
   }
 
   @override

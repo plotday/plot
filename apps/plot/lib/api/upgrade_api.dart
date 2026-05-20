@@ -1,5 +1,18 @@
+import 'dart:io' show Platform;
+
 import 'package:equatable/equatable.dart';
 import 'api.dart' as api;
+
+/// Centralizes platform rules for exposing upgrade UI.
+///
+/// On iOS the app must not show calls-to-action that direct users to an
+/// external purchase flow (App Store guideline 3.1.1). Gate any "Upgrade",
+/// "Manage subscription", or pricing CTA on this flag.
+class UpgradeUi {
+  const UpgradeUi._();
+
+  static bool get canPromptUpgrade => !Platform.isIOS;
+}
 
 /// Usage counts for a single resource type (e.g. connections or twists)
 class ResourceUsage extends Equatable {

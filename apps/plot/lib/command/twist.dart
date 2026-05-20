@@ -878,6 +878,85 @@ class _UpgradeCommand extends Command {
   }
 }
 
+/// A no-op command that surfaces the at-limit state via a toast. Used on iOS,
+/// where we cannot direct users to the external upgrade flow.
+class _AtLimitInfoCommand extends Command {
+  _AtLimitInfoCommand(this._message)
+    : super(
+        title: 'Limit reached',
+        icon: PlotIcon.connection,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.opened,
+      );
+
+  final String _message;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.showToast(message: _message, isError: true);
+    return const CommandSkipped();
+  }
+}
+
+/// Returns the at-limit command for a connection-limit case: either an upgrade
+/// CTA (non-iOS) or a no-op info command that just shows a toast (iOS).
+Command _connectionAtLimitCommand() => UpgradeUi.canPromptUpgrade
+    ? _UpgradeCommand('Upgrade to add more connections')
+    : _AtLimitInfoCommand(
+        "You've reached the connection limit for your current plan.",
+      );
+
+/// Returns the at-limit command for a twist-limit case.
+Command _twistAtLimitCommand() => UpgradeUi.canPromptUpgrade
+    ? _UpgradeCommand('Upgrade to add more twists')
+    : _AtLimitInfoCommand(
+        "You've reached the twist limit for your current plan.",
+      );
+
+/// Message shown when the server returns plan_limit_exceeded for a connection.
+/// On iOS the message omits any "Upgrade" call-to-action.
+String _planLimitConnectionMessage({
+  required bool isTeam,
+  required bool isAdmin,
+}) {
+  if (!UpgradeUi.canPromptUpgrade) {
+    if (isTeam) {
+      return isAdmin
+          ? 'Your team has reached its connection limit.'
+          : 'Your team has reached its connection limit. Contact your team admin.';
+    }
+    return "You've reached your connection limit.";
+  }
+  if (isTeam) {
+    return isAdmin
+        ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
+        : 'Your team has reached its connection limit. Contact an admin to upgrade.';
+  }
+  return "You've reached your connection limit. Upgrade for unlimited connections.";
+}
+
+/// Message shown when the server returns plan_limit_exceeded for a twist.
+/// On iOS the message omits any "Upgrade" call-to-action.
+String _planLimitTwistMessage({
+  required bool isTeam,
+  required bool isAdmin,
+}) {
+  if (!UpgradeUi.canPromptUpgrade) {
+    if (isTeam) {
+      return isAdmin
+          ? 'Your team has reached its twist limit.'
+          : 'Your team has reached its twist limit. Contact your team admin.';
+    }
+    return "You've reached your twist limit.";
+  }
+  if (isTeam) {
+    return isAdmin
+        ? 'Your team has reached its twist limit. Upgrade your plan.'
+        : 'Your team has reached its twist limit. Contact an admin to upgrade.';
+  }
+  return "You've reached your twist limit. Upgrade for unlimited twists.";
+}
+
 /// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
 String _usageSuffix(UsageData usage, _ResourceType resourceType) {
   final parts = <String>[];
@@ -1161,9 +1240,7 @@ class EditSource extends ShowForm {
                       ? team.connections.isAtLimit
                       : usage.personal.connections.isAtLimit;
                   if (atLimit) {
-                    return _UpgradeCommand(
-                      'Upgrade to add more connections',
-                    );
+                    return _connectionAtLimitCommand();
                   }
                 }
 
@@ -1647,11 +1724,17 @@ class AddSourceDetail extends ShowForm {
                   teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
-                return FormButton(
-                  key: 'upgrade_${provider.provider.name}',
-                  isPrimary: true,
-                  buildCommand: (_) =>
-                      _UpgradeCommand('Upgrade to add more connections'),
+                if (UpgradeUi.canPromptUpgrade) {
+                  return FormButton(
+                    key: 'upgrade_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => _connectionAtLimitCommand(),
+                  );
+                }
+                return FormInfo(
+                  key: 'limit_${provider.provider.name}',
+                  text:
+                      "You've reached the connection limit for your current plan.",
                 );
               }
 
@@ -1700,7 +1783,7 @@ class AddSourceDetail extends ShowForm {
                       : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
-                    return _UpgradeCommand('Upgrade to add more connections');
+                    return _connectionAtLimitCommand();
                   }
 
                   return ConnectNoProviderCommand(
@@ -1768,11 +1851,17 @@ class AddSourceDetail extends ShowForm {
                   teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
-                return FormButton(
-                  key: 'upgrade_${provider.provider.name}',
-                  isPrimary: true,
-                  buildCommand: (_) =>
-                      _UpgradeCommand('Upgrade to add more connections'),
+                if (UpgradeUi.canPromptUpgrade) {
+                  return FormButton(
+                    key: 'upgrade_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => _connectionAtLimitCommand(),
+                  );
+                }
+                return FormInfo(
+                  key: 'limit_${provider.provider.name}',
+                  text:
+                      "You've reached the connection limit for your current plan.",
                 );
               }
 
@@ -1822,7 +1911,7 @@ class AddSourceDetail extends ShowForm {
                       : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
-                    return _UpgradeCommand('Upgrade to add more connections');
+                    return _connectionAtLimitCommand();
                   }
 
                   return ConnectNoProviderCommand(
@@ -1956,12 +2045,13 @@ class AddSourceDetail extends ShowForm {
       log.warning('Failed to activate source', e, t);
       if (context.mounted) {
         if (e.isPlanLimitExceeded) {
-          final message = e.isTeam == true
-              ? (e.isAdmin == true
-                    ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
-                    : 'Your team has reached its connection limit. Contact an admin to upgrade.')
-              : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
-          context.showToast(message: message, isError: true);
+          context.showToast(
+            message: _planLimitConnectionMessage(
+              isTeam: e.isTeam == true,
+              isAdmin: e.isAdmin == true,
+            ),
+            isError: true,
+          );
         } else {
           context.showToast(
             message: 'Failed to add connection. Please try again.',
@@ -2309,7 +2399,7 @@ class EditTwist extends ShowForm {
                     // Check personal limits
                     if (owner == 'personal' &&
                         usage.personal.twists.isAtLimit) {
-                      return _UpgradeCommand('Upgrade to add more twists');
+                      return _twistAtLimitCommand();
                     }
                     // Note: team twist limits are not yet tracked in UsageData (UI side),
                     // but backend will enforce them (0 for free team plan).
@@ -2522,7 +2612,7 @@ class ShowTwistInfo extends ShowForm {
                 key: 'add',
                 isPrimary: true,
                 buildCommand: (_) => atTwistLimit
-                    ? _UpgradeCommand('Upgrade to add more twists')
+                    ? _twistAtLimitCommand()
                     : SetupTwist(twist),
               ),
           ],
@@ -2731,7 +2821,7 @@ class SetupTwist extends ShowForm {
                       : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
-                    return _UpgradeCommand('Upgrade to add more connections');
+                    return _connectionAtLimitCommand();
                   }
 
                   return ConnectNoProviderCommand(
@@ -2769,7 +2859,7 @@ class SetupTwist extends ShowForm {
                   final atLimit =
                       owner == 'personal' && usage.personal.twists.isAtLimit;
                   if (atLimit) {
-                    return _UpgradeCommand('Upgrade to add more twists');
+                    return _twistAtLimitCommand();
                   }
                 }
 
@@ -2874,11 +2964,10 @@ class ActivateTwist extends Command {
       log.warning('Failed to activate twist', e, t);
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
-          e.isTeam == true
-              ? (e.isAdmin == true
-                    ? 'Your team has reached its twist limit. Upgrade your plan.'
-                    : 'Your team has reached its twist limit. Contact an admin to upgrade.')
-              : 'You\'ve reached your twist limit. Upgrade for unlimited twists.',
+          _planLimitTwistMessage(
+            isTeam: e.isTeam == true,
+            isAdmin: e.isAdmin == true,
+          ),
           isError: true,
         );
       }
@@ -3130,12 +3219,13 @@ class _ActivateNoProviderSource extends Command {
       return const CommandDone();
     } on ApiException catch (e) {
       if (e.isPlanLimitExceeded) {
-        final message = e.isTeam == true
-            ? (e.isAdmin == true
-                  ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
-                  : 'Your team has reached its connection limit. Contact an admin to upgrade.')
-            : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
-        return CommandMessage(message, isError: true);
+        return CommandMessage(
+          _planLimitConnectionMessage(
+            isTeam: e.isTeam == true,
+            isAdmin: e.isAdmin == true,
+          ),
+          isError: true,
+        );
       }
       return CommandMessage(e.description, title: e.title, isError: true);
     } on NetworkException catch (e) {
@@ -3448,9 +3538,7 @@ class SaveSource extends Command {
       // dead-end error toast.
       if (e.isPlanLimitExceeded) {
         if (context.mounted) {
-          await _UpgradeCommand(
-            'Upgrade to add more connections',
-          ).run(context);
+          await _connectionAtLimitCommand().run(context);
         }
         return const CommandSkipped();
       }
