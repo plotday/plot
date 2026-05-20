@@ -6,6 +6,13 @@
 // `Failed to start Plot.` ErrorApp renders (failure). A timeout with neither
 // condition met is also treated as failure.
 //
+// Boot-detection alone is not enough — Flutter removes `#splash` before any
+// user widget builds, so an exception thrown during the first frame leaves
+// the splash gone but the app visibly broken (e.g. a stray `Platform.isIOS`
+// from `dart:io`, which throws `Unsupported operation` on web). After splash
+// removal we therefore also fail on any uncaught page errors and on console
+// errors matching FATAL_PATTERNS below.
+//
 // Usage:
 //   node smoke-test-web.mjs --dir build/web              # serve a build dir
 //   node smoke-test-web.mjs --url https://app.plot.day   # test a deployed URL
@@ -23,6 +30,25 @@ const APP_ROOT = resolve(SCRIPT_DIR, "..");
 
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 60_000);
 const FAILURE_TEXT = "Failed to start Plot.";
+
+// After splash removal, wait briefly for any first-frame errors to surface in
+// the page's error/console streams before we declare success.
+const POST_BOOT_SETTLE_MS = Number(process.env.SMOKE_POST_BOOT_SETTLE_MS ?? 1500);
+
+// Console-error substrings that indicate a real Dart/Flutter exception leaked
+// past the framework. Page errors (uncaught JS exceptions) always fail; this
+// list only governs `console.error` output, where Flutter's Tracker prints
+// recovered-but-broken errors. Keep tight to avoid false positives.
+const FATAL_PATTERNS = [
+  "Uncaught Flutter error",
+  "Unhandled Exception",
+  "Another exception was thrown",
+  "Unsupported operation:",
+];
+
+function isFatalConsoleError(text) {
+  return FATAL_PATTERNS.some((p) => text.includes(p));
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -184,17 +210,44 @@ async function runTest({ targetUrl, label }) {
   const elapsedMs = Date.now() - navStart;
 
   if (outcome === "started") {
-    console.log(`[smoke] ${label}: started OK in ${elapsedMs}ms`);
-    if (consoleErrors.length > 0) {
-      console.warn(
-        `[smoke] ${label}: app started but had ${consoleErrors.length} console error(s):`
-      );
-      for (const e of consoleErrors.slice(0, 10)) {
-        console.warn(`  - ${e.text}`);
+    // Give the first few frames a moment to throw before we declare success.
+    // The splash is removed before user widgets build, so errors from the
+    // initial build cycle land here, not before `splashGone` resolves.
+    await page.waitForTimeout(POST_BOOT_SETTLE_MS);
+
+    const fatalConsole = consoleErrors.filter((e) => isFatalConsoleError(e.text));
+    if (pageErrors.length === 0 && fatalConsole.length === 0) {
+      console.log(`[smoke] ${label}: started OK in ${elapsedMs}ms`);
+      if (consoleErrors.length > 0) {
+        console.warn(
+          `[smoke] ${label}: app started but had ${consoleErrors.length} non-fatal console error(s):`
+        );
+        for (const e of consoleErrors.slice(0, 10)) {
+          console.warn(`  - ${e.text}`);
+        }
       }
+      await browser.close();
+      return true;
     }
+
+    const parts = [];
+    if (pageErrors.length > 0) {
+      parts.push(`${pageErrors.length} uncaught page error(s)`);
+    }
+    if (fatalConsole.length > 0) {
+      parts.push(`${fatalConsole.length} fatal console error(s)`);
+    }
+    await dumpFailure({
+      page,
+      label,
+      reason: `app booted but ${parts.join(" and ")} surfaced within ${POST_BOOT_SETTLE_MS}ms of mount`,
+      consoleErrors,
+      pageErrors,
+      failedRequests,
+      allConsole,
+    });
     await browser.close();
-    return true;
+    return false;
   }
 
   let reason;
