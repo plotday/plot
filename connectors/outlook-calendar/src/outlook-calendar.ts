@@ -152,6 +152,15 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   // no stuck-sync recovery is needed.
   private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
 
+  // Renew subscription this far before expiry. MS Graph caps calendar
+  // subscriptions at ~3 days; without renewal every connection's webhook
+  // silently dies after 72 hours.
+  private static readonly RENEWAL_LEAD_MS = 24 * 60 * 60 * 1000;
+
+  // Maximum subscription lifetime allowed by MS Graph for calendar
+  // resources. Used when creating/renewing subscriptions.
+  private static readonly SUBSCRIPTION_DURATION_DAYS = 3;
+
   /**
    * Returns available Outlook calendars as channel resources.
    */
@@ -176,14 +185,18 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
    *    previously-broken connection. Drop the persisted delta token and
    *    sync lock so the next pass re-walks history and picks up events
    *    that changed during the auth gap.
+   *
+   * Keep this method thin: it must return quickly so the HTTP response
+   * boundary doesn't hold the sync lock. All real init work (lock,
+   * webhook setup, sync state, first batch) is deferred to initCalendar
+   * which runs inside a queued task.
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     if (context?.recovering) {
       // Wipe persisted sync state (including the Graph delta token in
-      // `state.state`) so the next pass re-walks history. The lock is
-      // owned by the framework now and self-expires; we explicitly
-      // release here so a stale lock from the pre-recovery sync doesn't
-      // block this pass.
+      // `state.state`) so the next pass re-walks history. Clearing is
+      // idempotent and cheap. Release any TTL-stuck lock from the
+      // pre-recovery outage so initCalendar can acquire fresh.
       await this.clear(`outlook_sync_state_${channel.id}`);
       await this.tools.store.releaseLock(`sync_${channel.id}`);
     } else if (context?.syncHistoryMin) {
@@ -200,40 +213,60 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
     await this.set(`sync_enabled_${channel.id}`, true);
 
+    // Queue all initialization as a task to avoid blocking the HTTP
+    // response. initCalendar acquires the sync lock, sets up the webhook,
+    // initializes sync state, and starts the first batch.
+    const initCallback = await this.callback(this.initCalendar, channel.id);
+    await this.runTask(initCallback);
+  }
+
+  /**
+   * Initializes an Outlook calendar channel: acquires the sync lock, sets
+   * up the webhook subscription, initializes sync state, and queues the
+   * first sync batch. Runs as a queued task so the lock acquisition
+   * doesn't straddle the HTTP-response boundary (where a dropped task
+   * could leave the lock held until the TTL expires).
+   */
+  async initCalendar(calendarId: string): Promise<void> {
+    // Auth-token presence check up front: getApi() throws if the token
+    // was cleared, and as a queued task that throw becomes a retry loop.
+    // Skip cleanly instead.
+    const api = await this.tryGetApi(calendarId, "initCalendar");
+    if (!api) {
+      return;
+    }
+
     // Acquire sync lock. Self-expires after SYNC_LOCK_TTL_MS so a crashed
     // worker can't wedge sync forever. Bails if another sync is in flight.
     const acquired = await this.tools.store.acquireLock(
-      `sync_${channel.id}`,
+      `sync_${calendarId}`,
       OutlookCalendar.SYNC_LOCK_TTL_MS
     );
     if (!acquired) {
       return;
     }
 
+    // Setup webhook for this calendar
+    await this.setupOutlookWatch(calendarId);
+
     // Determine default sync range (2 years into the past)
     const now = new Date();
     const min = new Date(now.getFullYear() - 2, 0, 1);
 
-    await this.set(`outlook_sync_state_${channel.id}`, {
-      calendarId: channel.id,
+    await this.set(`outlook_sync_state_${calendarId}`, {
+      calendarId,
       min,
       sequence: 1,
     } as SyncState);
 
+    // Start first sync batch
     const syncCallback = await this.callback(
       this.syncOutlookBatch,
-      channel.id,
+      calendarId,
       true, // initialSync
       1 // batchNumber
     );
     await this.runTask(syncCallback);
-
-    // Queue webhook setup as a separate task to avoid blocking the HTTP response
-    const webhookCallback = await this.callback(
-      this.setupOutlookWatch,
-      channel.id
-    );
-    await this.runTask(webhookCallback);
   }
 
   /**
@@ -249,6 +282,27 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     const token = await this.tools.integrations.get(calendarId);
     if (!token) {
       throw new Error("No Microsoft authentication token available");
+    }
+    return new GraphApi(token.token);
+  }
+
+  /**
+   * Non-throwing variant of getApi(): logs a warning and returns null
+   * when the auth token is missing. Used by queued tasks so a cleared
+   * token doesn't turn into an infinite retry loop. Callers remain
+   * responsible for releasing any held lock and clearing sync state on
+   * null (cleanup varies per call site).
+   */
+  private async tryGetApi(
+    calendarId: string,
+    label: string
+  ): Promise<GraphApi | null> {
+    const token = await this.tools.integrations.get(calendarId);
+    if (!token) {
+      console.warn(
+        `Auth token missing for calendar ${calendarId} during ${label}, skipping`
+      );
+      return null;
     }
     return new GraphApi(token.token);
   }
@@ -383,12 +437,14 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       return;
     }
 
-    // Calculate renewal time: 24 hours before expiry
+    // Calculate renewal time: RENEWAL_LEAD_MS before expiry
     const expiry =
       watchData.expiry instanceof Date
         ? watchData.expiry
         : new Date(watchData.expiry);
-    const renewalTime = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
+    const renewalTime = new Date(
+      expiry.getTime() - OutlookCalendar.RENEWAL_LEAD_MS
+    );
 
     // Don't schedule if already past renewal time (edge case)
     if (renewalTime <= new Date()) {
@@ -432,22 +488,18 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         return;
       }
 
-      // Guard auth token before calling getApi() — same retry-loop concern
-      // as syncOutlookBatch/initCalendar.
-      const token = await this.tools.integrations.get(calendarId);
-      if (!token) {
-        console.warn(
-          `Auth token missing for calendar ${calendarId} during renewal, skipping`
-        );
+      const api = await this.tryGetApi(calendarId, "renewOutlookWatch");
+      if (!api) {
         return;
       }
-      const api = new GraphApi(token.token);
 
       // PATCH the subscription to extend the expiry. Keeps the
       // subscription id stable, so we don't have to re-create the watch
       // state or invalidate any client validation that already happened.
       const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 3);
+      newExpiry.setDate(
+        newExpiry.getDate() + OutlookCalendar.SUBSCRIPTION_DURATION_DAYS
+      );
 
       try {
         await api.renewSubscription(oldWatchData.subscriptionId, newExpiry);
@@ -486,18 +538,13 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   }
 
   async setupOutlookWatch(calendarId: string): Promise<void> {
-    // Auth-token presence check up front: getApi() throws "No Microsoft
-    // authentication token available" if the token was cleared. As a
-    // queued task, that throw makes the runtime retry forever and floods
-    // error tracking. Skip cleanly instead.
-    const token = await this.tools.integrations.get(calendarId);
-    if (!token) {
-      console.warn(
-        `Auth token missing for calendar ${calendarId} during setupOutlookWatch, skipping`
-      );
+    // Auth-token presence check up front: getApi() throws if the token
+    // was cleared, and as a queued task that throw becomes a retry loop.
+    // Skip cleanly instead.
+    const api = await this.tryGetApi(calendarId, "setupOutlookWatch");
+    if (!api) {
       return;
     }
-    const api = new GraphApi(token.token);
 
     // Microsoft Graph validates subscription endpoints by POSTing with a
     // `validationToken` query parameter and expects the token echoed back
@@ -515,9 +562,12 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       return;
     }
 
-    // Microsoft Graph subscriptions expire, so we set expiry for 3 days from now
+    // Microsoft Graph subscriptions expire — set expiry to the maximum
+    // allowed lifetime for calendar resources.
     const expirationDate = new Date();
-    expirationDate.setDate(expirationDate.getDate() + 3);
+    expirationDate.setDate(
+      expirationDate.getDate() + OutlookCalendar.SUBSCRIPTION_DURATION_DAYS
+    );
 
     try {
       const subscription = await api.createSubscription(
@@ -550,16 +600,14 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     batchNumber: number = 1
   ): Promise<void> {
     try {
-      // Auth-token presence check must run before ensureUserIdentity (which
-      // calls getApi() and throws if the token was cleared). As a queued
-      // task, that throw makes the runtime retry forever and floods error
-      // tracking. Release any held lock and clear sync state so the next
-      // re-auth can start fresh.
-      const token = await this.tools.integrations.get(calendarId);
-      if (!token) {
-        console.warn(
-          `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
-        );
+      // Auth-token presence check up front: getApi() throws if the token
+      // was cleared, and as a queued task that throw becomes a retry loop.
+      // Skip cleanly instead.
+      const api = await this.tryGetApi(
+        calendarId,
+        `syncOutlookBatch (batch ${batchNumber})`
+      );
+      if (!api) {
         await this.clear(`outlook_sync_state_${calendarId}`);
         await this.tools.store.releaseLock(`sync_${calendarId}`);
         return;
@@ -579,8 +627,6 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         calendarId,
         sequence: 1,
       };
-
-      const api = new GraphApi(token.token);
 
       // Process ONE batch (single API page) instead of while loop
       const result = await syncOutlookCalendar(api, calendarId, syncState);
@@ -1007,9 +1053,8 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
         watchData.expiry instanceof Date
           ? watchData.expiry
           : new Date(watchData.expiry);
-      const hoursUntilExpiry =
-        (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
-      if (hoursUntilExpiry < 24) {
+      const msUntilExpiry = expiry.getTime() - Date.now();
+      if (msUntilExpiry < OutlookCalendar.RENEWAL_LEAD_MS) {
         this.renewOutlookWatch(calendarId).catch((error) => {
           console.error(
             `Failed to reactively renew Outlook subscription for ${calendarId}:`,
@@ -1041,11 +1086,8 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
     // Auth-token presence check up front — same retry-loop concern as
     // syncOutlookBatch. Release the lock if we bail.
-    const token = await this.tools.integrations.get(calendarId);
-    if (!token) {
-      console.warn(
-        `Auth token missing for calendar ${calendarId} during startIncrementalSync, skipping`
-      );
+    const api = await this.tryGetApi(calendarId, "startIncrementalSync");
+    if (!api) {
       await this.tools.store.releaseLock(`sync_${calendarId}`);
       return;
     }
