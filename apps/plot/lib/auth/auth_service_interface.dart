@@ -194,6 +194,13 @@ abstract class AuthService {
   /// Update the signed-in user's profile.
   Future<void> updateUser({String? firstName, String? lastName});
 
+  /// Set the signed-in user's password without requiring the current one.
+  /// Used when finishing a sign-up where Clerk's instance treated the email
+  /// code as sufficient to create the session — the user has no password
+  /// yet, so the standard "change password" API (which demands the current
+  /// password) doesn't apply.
+  Future<void> setUserPassword({required String password});
+
   // -- Client management -----------------------------------------------------
 
   /// Refresh the Clerk client state (re-fetches from API).
@@ -314,6 +321,12 @@ class FailedAuthService implements AuthService {
 
   @override
   Future<void> updateUser({String? firstName, String? lastName}) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> setUserPassword({required String password}) =>
       throw const AuthError(
         message: 'Authentication unavailable, please restart the app.',
       );

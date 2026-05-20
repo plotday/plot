@@ -434,6 +434,24 @@ class ClerkDartAuthService implements AuthService {
           ));
 
   @override
+  Future<void> setUserPassword({required String password}) => _guard(() async {
+        // Clerk refuses `password` on PATCH /me ("Password is not a valid
+        // parameter and can only be updated via /v1/me/change_password"),
+        // so we use that endpoint. The SDK's `updateUserPassword` requires
+        // a current password; users that just verified their email don't
+        // have one yet, so we POST directly and omit `current_password`.
+        await _auth.fetchApiResponse(
+          '/me/change_password',
+          method: clerk.HttpMethod.post,
+          withSession: true,
+          params: {
+            'new_password': password,
+            'sign_out_of_other_sessions': false,
+          },
+        );
+      });
+
+  @override
   Future<void> refreshClient() => _guard(() => _auth.refreshClient());
 
   @override

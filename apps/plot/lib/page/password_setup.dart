@@ -75,12 +75,14 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
       final lastName = parts.length > 1 ? parts.sublist(1).join(' ') : null;
 
       if (Base.auth.isSignedIn) {
-        // Already signed in (e.g. from a previous attempt). Just update the
-        // user's name and proceed to activation.
+        // Clerk's instance treated the email code alone as sufficient to
+        // create the session, so the user is signed in but has no name or
+        // password set. Apply both directly to the existing user.
         await Base.auth.updateUser(
           firstName: firstName,
           lastName: lastName,
         );
+        await Base.auth.setUserPassword(password: password);
       } else {
         // Update the pending sign-up with password and name.
         // Once all requirements are met, Clerk creates a session.

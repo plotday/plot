@@ -75,6 +75,7 @@ extension type SessionJS._(JSObject _) implements JSObject {
 /// Clerk User.
 extension type UserJS._(JSObject _) implements JSObject {
   external JSPromise<JSAny?> update(JSObject params);
+  external JSPromise<JSAny?> updatePassword(JSObject params);
 }
 
 // ---------------------------------------------------------------------------

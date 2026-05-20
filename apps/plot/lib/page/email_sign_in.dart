@@ -468,17 +468,14 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
           code: token,
         );
 
-        if (Base.auth.isSignedIn) {
-          // Sign-up complete — call /activate to get user identity
-          await Base.resolveIdentity();
-          // UserBloc will pick up the emission and transition to UserReady
-        } else {
-          // Sign-up has missing requirements (e.g. password) —
-          // navigate to password setup to complete it.
-          if (!mounted) return;
-          context.router.replace(PasswordSetupRoute());
-          return;
-        }
+        // Always collect name + password before activating, even if the Clerk
+        // instance is configured to consider sign-up complete after just the
+        // email code. PasswordSetupPage handles both cases: completing a
+        // still-pending SignUp, and setting password/name on a user that
+        // Clerk has already signed in.
+        if (!mounted) return;
+        context.router.replace(PasswordSetupRoute());
+        return;
       }).timeout(const Duration(seconds: 15));
     } on TimeoutException {
       if (!mounted) return;

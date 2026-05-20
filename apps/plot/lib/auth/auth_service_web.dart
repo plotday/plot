@@ -563,6 +563,20 @@ class ClerkJsAuthService implements AuthService {
             .toDart;
       });
 
+  @override
+  Future<void> setUserPassword({required String password}) =>
+      _guard(() async {
+        final user = _clerk.user;
+        if (user == null) {
+          throw AuthError(message: 'No signed-in user to update');
+        }
+        // Clerk JS's `user.updatePassword({newPassword})` accepts no
+        // `currentPassword` when the user doesn't have one yet — the case
+        // here, where Clerk's instance treated the email code alone as
+        // sufficient to create the session.
+        await user.updatePassword(jsObj({'newPassword': password})).toDart;
+      });
+
   // -- Client management -----------------------------------------------------
 
   @override
