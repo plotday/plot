@@ -355,14 +355,25 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       return KeyEventResult.ignored;
                     }
                     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                      // Reversed list: moving up visually means higher index
-                      listController.moveFocus(1);
+                      // Reversed list: moving up visually means higher index.
+                      // From no-focus, jump to the bottom-most note (index 0)
+                      // rather than letting moveFocus fall back to a stale
+                      // lastFocusedIndex left over from a prior selection.
+                      if (listController.focusedIndex == null) {
+                        listController.requestFocus(0);
+                      } else {
+                        listController.moveFocus(1);
+                      }
                       return KeyEventResult.handled;
                     }
                     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                      // Reversed list: moving down visually means lower index
-                      // If already at first item (index 0), focus the NoteEditor
-                      if (listController.focusedIndex == 0) {
+                      // Reversed list: moving down visually means lower index.
+                      // From no-focus (e.g. inside the editor), down stays
+                      // in the editor instead of pulling focus into the list.
+                      final focusedIndex = listController.focusedIndex;
+                      if (focusedIndex == null) {
+                        _noteEditorKey.currentState?.focus();
+                      } else if (focusedIndex == 0) {
                         listController.clearFocus();
                         _noteEditorKey.currentState?.focus();
                       } else {

@@ -553,30 +553,6 @@ class CommandScopeState extends State<CommandScope> {
     return widget.commands ?? widget.commandsBuilder!();
   }
 
-  /// Identity-based comparison: checks group titles and command titles/types.
-  static bool _commandsEqual(
-    List<StaticCommandGroup> a,
-    List<StaticCommandGroup> b,
-  ) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (!identical(a[i], b[i])) {
-        if (a[i].title != b[i].title) return false;
-        if (a[i].commands.length != b[i].commands.length) return false;
-        for (int j = 0; j < a[i].commands.length; j++) {
-          if (!identical(a[i].commands[j], b[i].commands[j])) {
-            if (a[i].commands[j].title != b[i].commands[j].title ||
-                a[i].commands[j].runtimeType != b[i].commands[j].runtimeType) {
-              return false;
-            }
-          }
-        }
-      }
-    }
-    return true;
-  }
-
   void _doRegister() {
     if (!_routeActive) return;
     _register ??= CommandRegistry.of(context).register();
@@ -584,15 +560,17 @@ class CommandScopeState extends State<CommandScope> {
   }
 
   void _onListenableChanged() {
-    final newCommands = _resolveCommands();
-    if (!_commandsEqual(_resolvedCommands, newCommands)) {
-      setState(() {
-        _resolvedCommands = newCommands;
-        if (_register != null) {
-          _doRegister();
-        }
-      });
-    }
+    // Always re-resolve and re-register: commandsBuilder closures commonly
+    // capture state (e.g. EditNote(note)) that title/runtimeType comparison
+    // can't detect, so any cheap equality check would silently keep stale
+    // bindings — Cmd+K → Edit then runs against the previously focused note
+    // instead of the currently focused one.
+    setState(() {
+      _resolvedCommands = _resolveCommands();
+      if (_register != null) {
+        _doRegister();
+      }
+    });
   }
 
   @override
@@ -637,12 +615,9 @@ class CommandScopeState extends State<CommandScope> {
       widget.listenable?.addListener(_onListenableChanged);
     }
 
-    final newCommands = _resolveCommands();
-    if (!_commandsEqual(_resolvedCommands, newCommands)) {
-      _resolvedCommands = newCommands;
-      if (_register != null) {
-        _doRegister();
-      }
+    _resolvedCommands = _resolveCommands();
+    if (_register != null) {
+      _doRegister();
     }
   }
 
