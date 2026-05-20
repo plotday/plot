@@ -1,70 +1,5 @@
--- When thread.groups changes, create pending thread_priority +
--- thread_unread rows for all members of the referenced groups. The
--- consumer Worker resolves each peer's priority via the LLM-aware
--- classifier; see 22-thread_priority_peers.sql for the pending-row
--- pattern and 24-thread_priority_bump_parent.sql for the parent-seq
--- bump on resolution.
-CREATE OR REPLACE FUNCTION public.file_thread_priority_for_group_members ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    v_author_user_id uuid;
-BEGIN
-    IF NEW.groups IS NULL OR cardinality(NEW.groups) = 0 THEN
-        RETURN NEW;
-    END IF;
-
-    IF EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
-        v_author_user_id := NEW.created_by;
-    ELSE
-        v_author_user_id := NULL;
-    END IF;
-
-    INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
-    SELECT NEW.id, peer.user_id, NULL::uuid, now()
-    FROM (
-        SELECT DISTINCT uc.user_id
-        FROM unnest(NEW.groups) AS arr(group_id)
-        JOIN public.group_member gm ON gm.group_id = arr.group_id
-        JOIN public.user_contact uc
-          ON uc.contact_id = gm.contact_id
-         AND uc.linked = TRUE
-         AND uc.archived_at IS NULL
-        WHERE uc.user_id IS DISTINCT FROM v_author_user_id
-    ) peer
-    ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
-
-    INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-    SELECT peer.user_id, NEW.id, 'inform-updates', 50
-    FROM (
-        SELECT DISTINCT uc.user_id
-        FROM unnest(NEW.groups) AS arr(group_id)
-        JOIN public.group_member gm ON gm.group_id = arr.group_id
-        JOIN public.user_contact uc
-          ON uc.contact_id = gm.contact_id
-         AND uc.linked = TRUE
-         AND uc.archived_at IS NULL
-        WHERE uc.user_id IS DISTINCT FROM v_author_user_id
-    ) peer
-    ON CONFLICT (user_id, thread_id) DO NOTHING;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER file_thread_priority_for_group_members
-    AFTER INSERT OR UPDATE OF groups
-    ON public.thread
-    FOR EACH ROW
-    EXECUTE FUNCTION public.file_thread_priority_for_group_members ();
-
--- When a contact is added to or removed from a group, cascade to
--- thread_priority/thread_unread for all threads that reference the group.
-CREATE OR REPLACE FUNCTION public.file_thread_priority_on_group_member_change ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    AS $$
+-- Modify "file_thread_priority_on_group_member_change" function
+CREATE OR REPLACE FUNCTION "public"."file_thread_priority_on_group_member_change" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     r_thread RECORD;
     v_peer_user_id uuid;
@@ -145,8 +80,3 @@ BEGIN
     END IF;
 END;
 $$;
-
-CREATE TRIGGER file_thread_priority_on_group_member_change
-    AFTER INSERT OR DELETE ON public.group_member
-    FOR EACH ROW
-    EXECUTE FUNCTION public.file_thread_priority_on_group_member_change ();

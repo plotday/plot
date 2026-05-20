@@ -193,7 +193,19 @@ account.post("/activate", async (c) => {
         name: row.name,
       };
     } catch (err) {
-      return captureServerError(c, err as Error, `Failed to create user: ${(err as Error).message}`);
+      // upsert_user_contact (called from the activate_invited_user trigger)
+      // raises this when an OAuth sign-in (e.g. Apple) presents an email that
+      // is already linked to another Plot account. Surface a clear 409 so the
+      // client can show "this email is already in use" without us logging the
+      // expected user-facing case as an unhandled server error.
+      const message = (err as Error).message ?? "";
+      if (message.includes("email_already_linked")) {
+        return c.json(
+          { message: "This email is already associated with another Plot account." },
+          409
+        );
+      }
+      return captureServerError(c, err as Error, `Failed to create user: ${message}`);
     }
 
     // Create primary contact for the user (if not exists)
