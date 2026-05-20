@@ -527,3 +527,20 @@ export function containsHtml(text: string | null | undefined): boolean {
   if (!text) return false;
   return /<[a-z][\s\S]*>/i.test(text);
 }
+
+/**
+ * Short stable hash of a string for use in note keys. Used to detect
+ * description-content changes across syncs: same content -> same key
+ * (idempotent upsert), different content -> different key (new note,
+ * preserving the prior version as history).
+ */
+export async function hashContent(content: string): Promise<string> {
+  const data = new TextEncoder().encode(content);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  const bytes = new Uint8Array(buf);
+  let hex = "";
+  for (let i = 0; i < 8; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
