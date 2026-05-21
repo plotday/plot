@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' as io;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/services.dart' show MethodChannel;
@@ -266,11 +267,52 @@ class WindowState extends State<Window> with WindowListener {
   Future<AppExitResponse> _onExitRequested() async {
     _saveDebounce?.cancel();
     await Window._saveWindowState();
-    await Store.stop();
-    if (instanceLock != null) {
-      await instanceLock!.release();
-    }
+    // Hide the window before the (potentially slow) shutdown work so the
+    // user perceives an instant quit. `Store.stop()` can take up to ~5s
+    // draining in-flight sync operations before closing SQLite; without
+    // this, the window stays on screen the whole time.
+    await _hideWindowForShutdown();
+    await _runShutdownWithWatchdog();
     return AppExitResponse.exit;
+  }
+
+  // Best-effort hide. Failures here must not block shutdown — if hiding
+  // fails (e.g. on a platform where it's a no-op), we still want to
+  // continue closing the store and exiting.
+  Future<void> _hideWindowForShutdown() async {
+    if (!Platform.instance.isMacOS && !Platform.instance.isWindows) return;
+    try {
+      await windowManager.hide();
+    } catch (e, t) {
+      log.warning('Failed to hide window during shutdown', e, t);
+    }
+  }
+
+  // Runs `Store.stop()` + instance-lock release with a hard deadline.
+  // `_drainActiveOperations` inside Store.stop has its own 5s cap, but
+  // the surrounding steps (Drift's SQLite close, file-lock release) are
+  // unbounded — a wedged FFI call could hang the await forever and
+  // leave the process running invisibly after the window is hidden.
+  // The watchdog force-exits via `io.exit(0)` if shutdown takes too
+  // long. Budget = drain cap (5s) + comfortable slack for close/release.
+  Future<void> _runShutdownWithWatchdog() async {
+    const watchdog = Duration(seconds: 8);
+    try {
+      await Future.any([
+        () async {
+          await Store.stop();
+          if (instanceLock != null) {
+            await instanceLock!.release();
+          }
+        }(),
+        Future<void>.delayed(watchdog).then((_) {
+          throw TimeoutException('Shutdown exceeded ${watchdog.inSeconds}s');
+        }),
+      ]);
+    } catch (e, t) {
+      log.warning('Forcing exit: shutdown work did not finish in time', e, t);
+      io.exit(0);
+    }
   }
 
   // Use `onWindowResize` (no -d) for resize: it maps to `windowDidResize`,
@@ -303,14 +345,14 @@ class WindowState extends State<Window> with WindowListener {
     _saveDebounce?.cancel();
     await Window._saveWindowState();
 
-    // Close the database before the process exits to prevent FFI crashes
-    // in the Drift isolate worker during VM shutdown
-    await Store.stop();
+    // Hide the window immediately so the user perceives an instant close
+    // while the (potentially slow) store shutdown runs in the background.
+    await _hideWindowForShutdown();
 
-    // Release instance lock on window close
-    if (instanceLock != null) {
-      await instanceLock!.release();
-    }
+    // Close the database before the process exits to prevent FFI crashes
+    // in the Drift isolate worker during VM shutdown. Watchdog force-exits
+    // if shutdown work hangs — otherwise the process lingers invisibly.
+    await _runShutdownWithWatchdog();
 
     await windowManager.destroy();
   }
