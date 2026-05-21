@@ -317,47 +317,57 @@ threads.get("/sync/threads/search", async (c) => {
     ? sql<boolean>`ut.priority_id IN (SELECT child_id FROM public.priority_child WHERE priority_id = ${priorityId}::uuid)`
     : sql<boolean>`true`;
 
-  // Build the optional contact branch. Skipped when no usable words remain
-  // after the length filter so we don't return every thread that has any
-  // contact on it.
-  let contactBranch: ReturnType<typeof sql<boolean>> | null = null;
+  // Candidate-id subquery: union of trgm-indexed table scans. Each branch
+  // uses an existing GIN trgm index on the base table so the planner can
+  // resolve it with an index scan, instead of trapping the ILIKE inside an
+  // OR-EXISTS over the expensive user.thread view (which forces per-row
+  // recomputation of activity_at / agenda_at and reliably trips the
+  // statement timeout for users with substantial data).
+  const titleBranch = sql`
+    SELECT id FROM public.thread WHERE title ILIKE ${pattern}
+  `;
+  const noteBranch = sql`
+    SELECT thread_id AS id FROM public.note
+    WHERE archived_at IS NULL AND draft = false AND content ILIKE ${pattern}
+  `;
+  const linkBranch = sql`
+    SELECT thread_id AS id FROM public.link
+    WHERE title ILIKE ${pattern} OR source_url ILIKE ${pattern} OR preview ILIKE ${pattern}
+  `;
+
+  // Contact-name branch: each word must match at least one (possibly
+  // different) contact on the thread. Per-word, we find threads whose
+  // contacts array intersects the set of matching contacts (uses
+  // contact.name / contact.email trgm indexes + thread.contacts gin
+  // index), then INTERSECT across words.
+  let contactBranchCandidates: ReturnType<typeof sql> | null = null;
   if (contactWords.length > 0) {
-    const wordClauses = contactWords.map((word) => {
+    const perWord = contactWords.map((word) => {
       const e = escapeIlike(word);
       const startPattern = `${e}%`;
       const innerPattern = `% ${e}%`;
-      return sql<boolean>`EXISTS (
-        SELECT 1 FROM public.contact c
-        WHERE c.archived_at IS NULL
-          AND c.id = ANY(ut.contacts)
-          AND (
-            c.name ILIKE ${startPattern}
-            OR c.name ILIKE ${innerPattern}
-            OR c.email ILIKE ${startPattern}
-          )
-      )`;
+      return sql`
+        SELECT t.id FROM public.thread t
+        WHERE t.contacts && (
+          SELECT COALESCE(array_agg(c.id), ARRAY[]::uuid[])
+          FROM public.contact c
+          WHERE c.archived_at IS NULL
+            AND (
+              c.name ILIKE ${startPattern}
+              OR c.name ILIKE ${innerPattern}
+              OR c.email ILIKE ${startPattern}
+            )
+        )
+      `;
     });
-    contactBranch = wordClauses.reduce(
-      (acc, clause) => sql<boolean>`${acc} AND ${clause}`,
+    contactBranchCandidates = perWord.reduce(
+      (acc, q) => sql`${acc} INTERSECT ${q}`,
     );
   }
 
-  const matchExpr = sql<boolean>`(
-    ut.title ILIKE ${pattern}
-    OR EXISTS (
-      SELECT 1 FROM public.note n
-      WHERE n.thread_id = ut.id
-        AND n.archived_at IS NULL
-        AND n.draft = false
-        AND n.content ILIKE ${pattern}
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.link l
-      WHERE l.thread_id = ut.id
-        AND (l.title ILIKE ${pattern} OR l.source_url ILIKE ${pattern} OR l.preview ILIKE ${pattern})
-    )
-    ${contactBranch ? sql`OR (${contactBranch})` : sql``}
-  )`;
+  const candidateIds = contactBranchCandidates
+    ? sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch}) UNION (${contactBranchCandidates})`
+    : sql`(${titleBranch}) UNION (${noteBranch}) UNION (${linkBranch})`;
 
   if (countOnly) {
     const count = await withUserDb(c.var.db, userId, async (trx) => {
@@ -365,9 +375,9 @@ threads.get("/sync/threads/search", async (c) => {
         SELECT count(*)::text AS count
         FROM "user".thread ut
         WHERE ut.user_id = ${userId}::uuid
+          AND ut.id IN (${candidateIds})
           AND ${archivedExpr}
           AND ${priorityExpr}
-          AND ${matchExpr}
       `.execute(trx);
       return parseInt(result.rows[0]?.count ?? "0", 10) || 0;
     });
@@ -379,9 +389,9 @@ threads.get("/sync/threads/search", async (c) => {
       SELECT ut.*
       FROM "user".thread ut
       WHERE ut.user_id = ${userId}::uuid
+        AND ut.id IN (${candidateIds})
         AND ${archivedExpr}
         AND ${priorityExpr}
-        AND ${matchExpr}
       ORDER BY ut.activity_at DESC
       LIMIT ${limit}
     `.execute(trx);
