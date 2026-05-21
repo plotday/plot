@@ -1325,15 +1325,17 @@ class Store extends _$Store {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
           rowParseFailed = true;
-          // Severe (not warning) so the failure ships to PostHog via the
-          // root-logger forward in main.dart. We can't call Tracker
-          // directly here — the store layer must stay tracker-agnostic
-          // for tests — but warning+ flows through the existing pipeline.
           log.severe(
             "Error parsing row from ${baseTable.table} — aborting cursor advance for this pull. Row: ${jsonEncode(r, toEncodable: (o) => o.toString())}",
             e,
             stackTrace,
           );
+          // The root-logger forward in main.dart ships warning+ as
+          // PostHog *events*; captureException is what lands them in
+          // PostHog error tracking (grouped, with a stack analysis).
+          // Repeat-parse failures across pulls would otherwise blend
+          // into the event stream and be easy to miss.
+          Tracker.captureException(e, stackTrace);
           return [];
         }
       });
@@ -1512,6 +1514,7 @@ class Store extends _$Store {
             e,
             stackTrace,
           );
+          Tracker.captureException(e, stackTrace);
           return [];
         }
       });
@@ -1814,6 +1817,7 @@ class Store extends _$Store {
             e,
             stackTrace,
           );
+          Tracker.captureException(e, stackTrace);
           return [];
         }
       });
