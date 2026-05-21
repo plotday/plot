@@ -49,6 +49,12 @@ class CustomSerializer extends ValueSerializer {
   @override
   T fromJson<T>(dynamic json) {
     if (json == null) {
+      // Non-nullable primitives can't take a null cast. When the API omits a
+      // newer column (deploy window where the server is on an older schema
+      // than the client), default to the type's zero value rather than
+      // crashing the entire row — `T == bool` distinguishes `bool` from
+      // `bool?`, so genuinely nullable fields still parse as null.
+      if (T == bool) return false as T;
       return null as T;
     }
     // Handle BigInt conversion from int/String
