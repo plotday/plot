@@ -10,6 +10,7 @@ on:
       - "public/twister/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/deploy-workers.yml"
+      - "scripts/deploy-worker*"
   workflow_dispatch:
     inputs:
       api:
