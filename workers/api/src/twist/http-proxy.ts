@@ -48,33 +48,127 @@ export class HttpProxy extends WorkerEntrypoint<
    * For example, "https://api.example.com/*" covers "https://api.example.com/v1/*"
    */
   private patternCovers(general: string, specific: string): boolean {
-    // Convert pattern to regex
-    const regex = this.patternToRegex(general);
-    return regex.test(specific.replace(/\*/g, "anything"));
+    // Replace wildcards in the specific pattern with a safe placeholder host
+    // and path so it parses as a valid URL, then run the standard match.
+    const specificAsUrl = specific
+      .replace(/^(\w+):\/\/\*/, "$1://wildcard-host")
+      .replace(/\*/g, "anything");
+    return this.urlMatchesPattern(specificAsUrl, general);
   }
 
   /**
-   * Converts a URL pattern with wildcards to a RegExp.
+   * Parse a wildcard URL pattern into its scheme, hostname, and pathname
+   * components so that matching can compare each against `URL` fields rather
+   * than the raw URL string.
+   *
    * Supports:
-   * - * as a standalone pattern (matches everything)
-   * - * in hostname for subdomain matching (e.g., https://*.example.com)
-   * - * in path for prefix matching (e.g., https://api.example.com/*)
+   * - "*"                                    -> match anything
+   * - "<scheme>://*"                          -> any host (path "*" implicit)
+   * - "<scheme>://*.example.com[/path...]"   -> subdomain of example.com
+   * - "<scheme>://example.com[/path...]"     -> exact host
+   * - Path may end in "/*" (or be just "*") for prefix matching.
    */
-  private patternToRegex(pattern: string): RegExp {
-    if (pattern === "*") {
-      return /.*/;
+  private parsePattern(pattern: string):
+    | { kind: "any" }
+    | {
+        kind: "match";
+        protocol: string; // "https:" / "http:"
+        hostMode: "any" | "suffix" | "exact";
+        hostValue: string; // for suffix/exact
+        pathPrefix: string; // path must startWith this (empty string matches all)
+      } {
+    if (pattern === "*") return { kind: "any" };
+
+    // Pull off the scheme.
+    const schemeMatch = pattern.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/(.*)$/);
+    if (!schemeMatch) {
+      // Treat as never-matching to be conservative.
+      return {
+        kind: "match",
+        protocol: "__none__:",
+        hostMode: "exact",
+        hostValue: "__never__",
+        pathPrefix: "",
+      };
+    }
+    const protocol = `${schemeMatch[1].toLowerCase()}:`;
+    const rest = schemeMatch[2];
+
+    // Split host from path on the first "/".
+    const slashIdx = rest.indexOf("/");
+    const hostPart = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+    const pathPart = slashIdx === -1 ? "" : rest.slice(slashIdx);
+
+    let hostMode: "any" | "suffix" | "exact";
+    let hostValue = "";
+    if (hostPart === "*") {
+      hostMode = "any";
+    } else if (hostPart.startsWith("*.")) {
+      hostMode = "suffix";
+      hostValue = hostPart.slice(2).toLowerCase();
+    } else {
+      hostMode = "exact";
+      hostValue = hostPart.toLowerCase();
     }
 
-    // Escape special regex characters except *
-    let regexStr = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+    // Path: "/*" or "" or no leading "/" -> match any. Otherwise require the
+    // request path to start with the literal portion up to the first "*".
+    let pathPrefix = "";
+    if (pathPart === "" || pathPart === "/*") {
+      pathPrefix = "";
+    } else {
+      const wildcardIdx = pathPart.indexOf("*");
+      pathPrefix =
+        wildcardIdx === -1 ? pathPart : pathPart.slice(0, wildcardIdx);
+    }
 
-    // Replace * with appropriate regex patterns
-    // Handle protocol wildcards
-    regexStr = regexStr.replace(/^(\w+):\/\/\*/, "$1://[^/]+");
-    // Handle path wildcards (after the domain)
-    regexStr = regexStr.replace(/\*/g, ".*");
+    return { kind: "match", protocol, hostMode, hostValue, pathPrefix };
+  }
 
-    return new RegExp(`^${regexStr}$`);
+  /**
+   * Match a fully-formed URL against a single pattern.
+   *
+   * Parses the URL with `new URL()` and compares hostname / pathname / scheme
+   * as structured fields. This avoids the regex-on-raw-URL class of bug where
+   * an attacker can hide the real host inside a query string or fragment
+   * (e.g. `https://attacker.com?x=.example.com/exfil` matched a pattern of
+   * `https://*.example.com/*` because `[^/]+` happily ate the `?x=` chars).
+   */
+  private urlMatchesPattern(url: string, pattern: string): boolean {
+    const parsed = this.parsePattern(pattern);
+    if (parsed.kind === "any") return true;
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return false;
+    }
+
+    // Reject embedded credentials in the URL - easy way for a twist to smuggle
+    // tokens to an attacker-controlled host that "looks like" an allowed one.
+    if (parsedUrl.username || parsedUrl.password) return false;
+
+    if (parsedUrl.protocol.toLowerCase() !== parsed.protocol) return false;
+
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (parsed.hostMode === "exact") {
+      if (hostname !== parsed.hostValue) return false;
+    } else if (parsed.hostMode === "suffix") {
+      if (
+        hostname !== parsed.hostValue &&
+        !hostname.endsWith(`.${parsed.hostValue}`)
+      ) {
+        return false;
+      }
+    }
+    // hostMode === "any": always passes the host check.
+
+    if (parsed.pathPrefix && !parsedUrl.pathname.startsWith(parsed.pathPrefix)) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -96,10 +190,9 @@ export class HttpProxy extends WorkerEntrypoint<
       return false;
     }
 
-    return allowedPatterns.some((pattern) => {
-      const regex = this.patternToRegex(pattern);
-      return regex.test(url);
-    });
+    return allowedPatterns.some((pattern) =>
+      this.urlMatchesPattern(url, pattern)
+    );
   }
 
   /**
