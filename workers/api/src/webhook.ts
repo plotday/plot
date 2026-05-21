@@ -24,6 +24,30 @@ import { disposeRpc } from "./utils/rpc";
 const webhook = new Hono<{ Bindings: Bindings }>();
 
 /**
+ * Constant-time string compare for HMAC outputs.
+ *
+ * JS `===` short-circuits on the first differing byte, leaking byte-by-byte
+ * timing about the expected HMAC. Web Crypto on Cloudflare Workers doesn't
+ * expose `crypto.subtle.timingSafeEqual`, so do it ourselves: encode both
+ * sides to UTF-8 bytes, XOR each byte position, OR into an accumulator,
+ * compare the accumulator to zero. The length-mismatch short-circuit is
+ * safe — it leaks only the candidate signature's length, which is public
+ * (the header value is attacker-controlled).
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
+
+/**
  * Verifies Svix webhook signature (used by Clerk).
  * https://docs.svix.com/receiving/verifying-payloads/how-manual
  */
@@ -68,9 +92,16 @@ async function verifySvixSignature(
     "v1," +
     btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
 
-  // svix-signature header may contain multiple space-separated signatures
+  // svix-signature header may contain multiple space-separated signatures.
+  // Compare every candidate (don't short-circuit on the first match) so the
+  // overall time is constant in the number of candidates as well as in the
+  // signature contents.
   const signatures = svixSignature.split(" ");
-  return signatures.some((sig) => sig === expectedSignature);
+  let matched = false;
+  for (const sig of signatures) {
+    if (timingSafeEqual(sig, expectedSignature)) matched = true;
+  }
+  return matched;
 }
 
 /** Map Clerk email template slugs to our email types and subjects */
@@ -311,8 +342,9 @@ async function verifySlackSignature(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-  // Constant-time comparison
-  return signature === expectedSignature;
+  // Constant-time comparison (the prior `===` was not — JS string equality
+  // short-circuits on the first differing byte).
+  return timingSafeEqual(signature, expectedSignature);
 }
 
 // Slack webhook endpoint - handles Events API webhooks with team-based routing
