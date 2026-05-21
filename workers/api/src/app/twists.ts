@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import type { Kysely } from "kysely";
 import { z } from "zod";
 
 import type { OptionsSchema } from "@plotday/twister/options";
 import { createLogger } from "@plotday/worker-util";
 
+import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import {
@@ -69,6 +71,46 @@ const ActivateDraftSchema = z.object({
     )
     .optional(),
 });
+
+/**
+ * Verify the caller has access to a twist_instance.
+ *
+ * - "read": owner or any team member (when team-scoped).
+ * - "write": owner or team admin (when team-scoped).
+ *
+ * Returns `{ ok: true }` on success or `{ ok: false }` for missing /
+ * unauthorized. Routes should return 404 on `ok: false` to avoid leaking
+ * twist existence to unrelated users.
+ */
+async function checkTwistAccess(
+  db: Kysely<DB>,
+  twistInstanceId: string,
+  userId: string,
+  level: "read" | "write"
+): Promise<{ ok: true } | { ok: false }> {
+  const row = await db
+    .selectFrom("twist_instance")
+    .select(["owner_id", "team_id"])
+    .where("id", "=", twistInstanceId)
+    .executeTakeFirst();
+  if (!row) return { ok: false };
+  if (row.owner_id === userId) return { ok: true };
+  if (row.team_id != null) {
+    const membership = await db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", row.team_id)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
+    if (membership) {
+      if (level === "read") return { ok: true };
+      if (membership.role === "admin") return { ok: true };
+    }
+  }
+  return { ok: false };
+}
+
+const notFoundResponse = { message: "Twist not found" } as const;
 
 // GET /sources - List user's connected sources
 twists.get("/sources", async (c) => {
@@ -228,6 +270,13 @@ twists.get("/twists", async (c) => {
 // GET /twist/:id - Get twist by ID
 twists.get("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistId,
+    c.var.user.id,
+    "read"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   const twists = await getTwistById(c.var.db, twistId);
   return c.json(twists);
 });
@@ -333,6 +382,13 @@ twists.post("/twist/draft", async (c) => {
 // POST /twist/draft/:id/activate - Activate a draft twist
 twists.post("/twist/draft/:id/activate", async (c) => {
   const draftId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    draftId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   const rawBody = await c.req.json();
   const parseResult = ActivateDraftSchema.safeParse(rawBody);
   if (!parseResult.success) {
@@ -384,6 +440,13 @@ twists.post("/twist/draft/:id/activate", async (c) => {
 // DELETE /twist/draft/:id - Delete a draft twist
 twists.delete("/twist/draft/:id", async (c) => {
   const draftId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    draftId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   try {
     await deleteDraft(c.var.db, draftId);
     return c.json({ success: true });
@@ -401,6 +464,13 @@ twists.delete("/twist/draft/:id", async (c) => {
 // PATCH /twist/:id - Update twist
 twists.patch("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   const rawBody = await c.req.json();
   const parseResult = TwistUpdateRequestSchema.safeParse(rawBody);
   if (!parseResult.success) {
@@ -538,6 +608,13 @@ twists.patch("/twist/:id", async (c) => {
 // DELETE /twist/:id - Delete twist
 twists.delete("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   await c.var.db.transaction().execute(async (trx) => {
     await deleteTwist(trx, twistId);
   });
@@ -548,6 +625,13 @@ twists.delete("/twist/:id", async (c) => {
 // user that this twist could observe.
 twists.get("/twist/:id/available-link-channels", async (c) => {
   const twistInstanceId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "read"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   try {
     // Resolve the twist's owner so we only show channels from the same user
     const twist = await c.var.db
@@ -604,6 +688,13 @@ twists.get("/twist/:id/available-link-channels", async (c) => {
 // GET /twist/:id/link-channels - List connected source channels for a twist
 twists.get("/twist/:id/link-channels", async (c) => {
   const twistInstanceId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "read"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   try {
     const channels = await c.var.db
       .selectFrom("twist_instance_channel")
@@ -653,6 +744,13 @@ twists.get("/twist/:id/link-channels", async (c) => {
 // PUT /twist/:id/link-channels - Batch upsert connected source channels
 twists.put("/twist/:id/link-channels", async (c) => {
   const twistInstanceId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   const rawBody = await c.req.json();
 
   const schema = z.array(
@@ -718,6 +816,13 @@ twists.put("/twist/:id/link-channels", async (c) => {
 // DELETE /twist/:id/archive-activities - Archive activities and delete twist
 twists.delete("/twist/:id/archive-activities", async (c) => {
   const twistId = c.req.param("id");
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(notFoundResponse, 404);
   const result = await archiveAndDeleteTwist(c.var.db, twistId);
 
   if (result?.owner_id) {
