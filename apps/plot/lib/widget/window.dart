@@ -288,13 +288,23 @@ class WindowState extends State<Window> with WindowListener {
     }
   }
 
-  // Runs `Store.stop()` + instance-lock release with a hard deadline.
-  // `_drainActiveOperations` inside Store.stop has its own 5s cap, but
-  // the surrounding steps (Drift's SQLite close, file-lock release) are
-  // unbounded — a wedged FFI call could hang the await forever and
-  // leave the process running invisibly after the window is hidden.
-  // The watchdog force-exits via `io.exit(0)` if shutdown takes too
-  // long. Budget = drain cap (5s) + comfortable slack for close/release.
+  // Runs `Store.stop()` + instance-lock release with a hard deadline, then
+  // force-exits the process. `_drainActiveOperations` inside Store.stop has
+  // its own 5s cap, but the surrounding steps (Drift's SQLite close,
+  // file-lock release) are unbounded — a wedged FFI call could hang the
+  // await forever and leave the process running invisibly after the window
+  // is hidden. Budget = drain cap (5s) + comfortable slack for close/release.
+  //
+  // `io.exit(0)` is unconditional (not just on timeout) because returning to
+  // AppKit's natural shutdown triggers `FlutterEngine shutDownEngine` →
+  // `Dart::Cleanup`, which calls `Dart_ShutdownIsolate` on the still-living
+  // Drift background isolate. `RunAndCleanupFinalizersOnShutdown` then fires
+  // every pending NativeFinalizer in that isolate — including statement
+  // finalizers in `package:sqlite3`'s statement cache whose `sqlite3_stmt*`
+  // belongs to a connection that `sqlite3_close_v2` has already freed (no
+  // ordering guarantee between sibling finalizers). The resulting
+  // sqlite3_finalize on a stale pointer crashes the process. Exiting before
+  // VM teardown skips the finalizer pass entirely.
   Future<void> _runShutdownWithWatchdog() async {
     const watchdog = Duration(seconds: 8);
     try {
@@ -310,9 +320,9 @@ class WindowState extends State<Window> with WindowListener {
         }),
       ]);
     } catch (e, t) {
-      log.warning('Forcing exit: shutdown work did not finish in time', e, t);
-      io.exit(0);
+      log.warning('Shutdown work did not finish in time', e, t);
     }
+    io.exit(0);
   }
 
   // Use `onWindowResize` (no -d) for resize: it maps to `windowDidResize`,
@@ -349,9 +359,10 @@ class WindowState extends State<Window> with WindowListener {
     // while the (potentially slow) store shutdown runs in the background.
     await _hideWindowForShutdown();
 
-    // Close the database before the process exits to prevent FFI crashes
-    // in the Drift isolate worker during VM shutdown. Watchdog force-exits
-    // if shutdown work hangs — otherwise the process lingers invisibly.
+    // Closes the database, releases the instance lock, then `io.exit(0)`s
+    // (see method doc for why we exit eagerly). `windowManager.destroy()`
+    // below is unreachable on success, but kept as a fallback in case the
+    // platform somehow returns from the force-exit.
     await _runShutdownWithWatchdog();
 
     await windowManager.destroy();
