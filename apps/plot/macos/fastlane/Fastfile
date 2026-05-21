@@ -47,9 +47,13 @@ platform :mac do
       podfile: "./Podfile"
     )
 
-    # Build the Flutter macOS app for Mac App Store
+    # Build the Flutter macOS app for Mac App Store.
+    # APP_STORE_BUILD compile-time flag hides upgrade / billing CTAs that are
+    # disallowed under App Store guideline 3.1.1. The DMG build (lane :build)
+    # omits this flag so the direct-distribution app continues to surface
+    # upgrade UI.
     # Note: Requires proper provisioning profile for Mac App Store distribution
-    sh("cd ../.. && flutter build macos --release")
+    sh("cd ../.. && flutter build macos --release --dart-define=APP_STORE_BUILD=true")
 
     # Create archive for Mac App Store
     gym(

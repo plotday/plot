@@ -6,16 +6,33 @@ import 'api.dart' as api;
 
 /// Centralizes platform rules for exposing upgrade UI.
 ///
-/// On iOS the app must not show calls-to-action that direct users to an
-/// external purchase flow (App Store guideline 3.1.1). Gate any "Upgrade",
-/// "Manage subscription", or pricing CTA on this flag. The rule only
-/// applies to the App Store-distributed iOS app — the web build (even when
-/// loaded in iOS Safari) is free to show upgrade UI, and must not touch
-/// `dart:io`'s `Platform` (which throws on web).
+/// Apple's App Store guideline 3.1.1 forbids in-app calls-to-action that
+/// direct users to an external purchase flow. Gate any "Upgrade", "Manage
+/// subscription", or pricing CTA on this flag.
+///
+/// The rule applies to:
+///   - iOS (always — there is no non-store iOS distribution).
+///   - The Mac App Store build of the macOS app. The DMG / direct-
+///     distribution build is unaffected, so we use a compile-time flag
+///     (`--dart-define=APP_STORE_BUILD=true`, set in
+///     `apps/plot/macos/fastlane/Fastfile` `build_mas`) to differentiate.
+///
+/// The web build — even when loaded in iOS Safari — is free to show
+/// upgrade UI and must not touch `dart:io`'s `Platform` (which throws
+/// on web).
 class UpgradeUi {
   const UpgradeUi._();
 
-  static bool get canPromptUpgrade => kIsWeb || !Platform.isIOS;
+  /// True only for the macOS Mac App Store build. The DMG / direct-
+  /// distribution build leaves this false.
+  static const _isMacAppStoreBuild = bool.fromEnvironment("APP_STORE_BUILD");
+
+  static bool get canPromptUpgrade {
+    if (kIsWeb) return true;
+    if (Platform.isIOS) return false;
+    if (Platform.isMacOS && _isMacAppStoreBuild) return false;
+    return true;
+  }
 }
 
 /// Usage counts for a single resource type (e.g. connections or twists)
