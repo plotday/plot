@@ -135,7 +135,10 @@ class OklchColours {
           themeColor.index == 7 ? 0.93 : 0.96,
           accentChroma * 0.25,
         ),
-        highlight: neutral(0.94, 0.03, null, 0.9),
+        // Row hover/focus highlight. L=0.91 against a near-white L=0.98
+        // surface gives a ~0.07 lightness step — visible at a glance but
+        // still reads as a tinted band rather than a coloured panel.
+        highlight: neutral(0.91, 0.04, null, 1.0),
         foreground: neutral(0.25, 0.01),
         muted: neutral(0.48, 0.01),
         veryMuted: neutral(0.58, 0.01),
@@ -154,7 +157,12 @@ class OklchColours {
         editableBackground: neutral(0.30, 0.006),
         accent: lch(accentLightness, accentChroma),
         accentBackground: lch(0.24, accentChroma * 0.31),
-        highlight: neutral(0.5, 0.010, null, 0.14),
+        // Row hover/focus highlight. The dark squircle interior sits at
+        // L≈0.26, so a low-alpha veil disappears; alpha 0.30 over a
+        // brighter L=0.58 stop lifts the row by ~0.09 effective lightness
+        // — enough to track keyboard focus, especially when an adjacent
+        // row already carries the same tint.
+        highlight: neutral(0.58, 0.015, null, 0.30),
         foreground: neutral(0.88, 0.004),
         muted: neutral(0.65, 0.006),
         veryMuted: neutral(0.48, 0.005),

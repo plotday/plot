@@ -211,6 +211,21 @@ aiKeys.post("/ai-preference", async (c) => {
     builtinAiDisabled?: boolean;
   }>();
 
+  // Verify any referenced ai_key belongs to the caller. Without this a user
+  // could point their preference at any other user's key id and route AI
+  // calls through (and bill) the victim's key.
+  for (const keyId of [body.builtinAiKeyId, body.twistAiKeyId]) {
+    if (keyId == null) continue;
+    const row = await c.var.db
+      .selectFrom("ai_key")
+      .select(["user_id"])
+      .where("id", "=", Number(keyId) as any)
+      .executeTakeFirst();
+    if (!row || row.user_id !== user.id) {
+      return c.json({ error: "ai_key not found" }, 404);
+    }
+  }
+
   try {
     const values: any = {
       user_id: user.id,
@@ -469,6 +484,20 @@ aiKeys.post("/team/:id/ai-preference", async (c) => {
     twistAiDisabled?: boolean;
     builtinAiDisabled?: boolean;
   }>();
+
+  // Verify any referenced ai_key belongs to this team. Without this an admin
+  // of team A could route team-A AI calls through team B's key id.
+  for (const keyId of [body.builtinAiKeyId, body.twistAiKeyId]) {
+    if (keyId == null) continue;
+    const row = await c.var.db
+      .selectFrom("ai_key")
+      .select(["team_id"])
+      .where("id", "=", Number(keyId) as any)
+      .executeTakeFirst();
+    if (!row || row.team_id == null || String(row.team_id) !== orgId) {
+      return c.json({ error: "ai_key not found" }, 404);
+    }
+  }
 
   try {
     const values: any = {
