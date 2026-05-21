@@ -25,6 +25,7 @@ import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/env.dart';
+import 'package:plot/page/loading.dart';
 import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
@@ -329,11 +330,41 @@ class DeleteAccount extends Command {
     ).run(context);
     if (!confirmed) return const CommandSkipped();
 
+    // Close the settings modal stack so the LoadingPage overlay covers the
+    // app surface instead of layering on top of the menu the user just left.
+    if (context.mounted) await Modal.popAll(context);
+
+    // Insert a full-screen LoadingPage overlay at the root so the deletion
+    // feels like a deliberate operation rather than a frozen menu.
+    final rootCtx = navigatorKey?.currentContext;
+    OverlayEntry? overlayEntry;
+    if (rootCtx != null && rootCtx.mounted) {
+      overlayEntry = OverlayEntry(
+        builder: (_) => const Positioned.fill(
+          child: LoadingPage(message: 'Deleting your account'),
+        ),
+      );
+      Overlay.of(rootCtx, rootOverlay: true).insert(overlayEntry);
+    }
+
+    Object? deletionError;
+    StackTrace? deletionStack;
     try {
-      await AccountApi.deleteAccount();
+      // Pair the API call with a 3-second floor so users see the loading
+      // state instead of a flicker on fast networks.
+      await Future.wait<void>([
+        AccountApi.deleteAccount(),
+        Future<void>.delayed(const Duration(seconds: 3)),
+      ]);
     } catch (e, t) {
-      log.warning('Account deletion failed', e, t);
-      Tracker.captureException(e, t);
+      deletionError = e;
+      deletionStack = t;
+    }
+
+    if (deletionError != null) {
+      overlayEntry?.remove();
+      log.warning('Account deletion failed', deletionError, deletionStack);
+      Tracker.captureException(deletionError, deletionStack);
       return CommandMessage(
         'Could not delete account. Please try again or contact support.',
         isError: true,
@@ -347,11 +378,18 @@ class DeleteAccount extends Command {
       // Deletion already succeeded server-side; surface success regardless.
     }
 
-    return const CommandDone(
-      message:
-          'Account deactivated. Your data will be permanently deleted within '
-          '14 days.',
-    );
+    // Give RootProvider's BlocListener a frame to route to SignInRoute so
+    // the toast lands on the sign-in page instead of the about-to-be-torn-
+    // down signed-in shell.
+    await WidgetsBinding.instance.endOfFrame;
+    overlayEntry?.remove();
+
+    final toastCtx = navigatorKey?.currentContext;
+    if (toastCtx != null && toastCtx.mounted) {
+      toastCtx.showToast(message: 'Account deleted');
+    }
+
+    return const CommandDone();
   }
 }
 
