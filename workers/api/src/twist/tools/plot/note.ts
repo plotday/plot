@@ -759,6 +759,13 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       throw new Error(`Note not found: ${noteId}`);
     }
 
+    // Enforce per-twist permission level on the parent thread. A twist
+    // holding only ThreadAccess.Respond (or installed with requireApproval)
+    // must not be able to update notes on arbitrary threads it merely
+    // observed; the validator checks created_by / mentions / approval-gate
+    // for the parent activity, same as the create path does.
+    await plot.validateActivityUpdateAccess(noteData.thread_id);
+
     // Validate access to the activity's priority
     const noteUserId = await plot.getUserId();
     const activityPriority = await plot.db

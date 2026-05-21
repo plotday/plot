@@ -547,6 +547,13 @@ export async function updateThread(
       throw new Error("Activity update must provide either id or source");
     }
 
+    // Enforce per-twist permission level. A twist holding only
+    // ThreadAccess.Respond (or installed with requireApproval) must not be
+    // able to update arbitrary threads it merely observed; the validator
+    // checks created_by / mentions / approval-gate just like the create
+    // path does.
+    await plot.validateActivityUpdateAccess(activityId);
+
     // Build update object
     const dbUpdate: Omit<Database["public"]["Tables"]["thread"]["Update"], "seq" | "last_note_seq"> = {
       updated_by: plot.getUpdatedBy(),
