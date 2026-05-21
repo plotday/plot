@@ -17,6 +17,8 @@ import 'package:plot/store/store.dart' as store show PriorityBlock;
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'loading.dart';
 
 final _log = Logger('AgendaPage');
@@ -197,6 +199,34 @@ class _CenteredAgendaSpinnerState extends State<_CenteredAgendaSpinner> {
   }
 }
 
+/// Empty-state body shown when the agenda has loaded but produced zero
+/// items. Replaces [InfiniteList]'s default "loading" spinner so the
+/// caller doesn't mistake a genuinely empty agenda for one that's still
+/// fetching forever.
+class _AgendaEmptyState extends StatelessWidget {
+  const _AgendaEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.contentPaddingH,
+        vertical: context.theme.spacing.xl,
+      ),
+      child: Center(
+        child: Text(
+          'Nothing scheduled.\nCreate a thread or add a connection to fill your agenda.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: context.theme.plotColors.veryMuted,
+            fontSize: context.theme.typography.sm.fontSize,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Renders the agenda body as a vertical list of block headers with
 /// matching dividers and drag-to-reorder support.
 ///
@@ -286,12 +316,18 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         _buildBlockDragPreview(items, payload, currentPriorityId);
 
     final bloc = context.read<PriorityBloc>();
+    // The parent only mounts [AgendaList] once `state.agendaLoaded` is
+    // true. Reaching here with an empty list means the user genuinely
+    // has no agenda items, not that data is still loading — show the
+    // empty state widget instead of [InfiniteList]'s default fetch
+    // spinner.
     final list = InfiniteList(
       controller: _listController,
       count: items.length,
       doneEnd: bloc.state.agendaDoneEnd,
       fetcher: (first, count) => bloc.fetchMoreAgendaItems(first, count),
       initialScrollOffset: bloc.agendaScrollOffset,
+      emptyPlaceholder: const _AgendaEmptyState(),
       onScrollOffsetChanged: (offset) => bloc.agendaScrollOffset = offset,
       itemKey: (i) =>
           i >= 0 && i < items.length ? items[i].stableKey : 'empty_$i',

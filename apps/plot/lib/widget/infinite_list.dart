@@ -321,6 +321,14 @@ class InfiniteList extends StatefulWidget {
   /// Ignored when [scrollController] is provided externally.
   final double initialScrollOffset;
 
+  /// Widget shown in place of the trailing fetch-spinner when the list is
+  /// empty (`count == 0`). Without this, an empty list with `!doneEnd`
+  /// fills the viewport with a centered spinner — fine while data is
+  /// loading, but misleading when the caller already knows the result
+  /// set is genuinely empty. Pass an empty-state widget here once the
+  /// caller's own "loaded" gate has fired.
+  final Widget? emptyPlaceholder;
+
   /// Called when the scroll offset changes, allowing callers to persist it.
   final ValueChanged<double>? onScrollOffsetChanged;
 
@@ -352,6 +360,7 @@ class InfiniteList extends StatefulWidget {
     this.initialScrollOffset = 0.0,
     this.onScrollOffsetChanged,
     this.keyboardDismissBehavior = ScrollViewKeyboardDismissBehavior.manual,
+    this.emptyPlaceholder,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -847,7 +856,12 @@ class InfiniteListState extends State<InfiniteList> {
                 SliverToBoxAdapter(
                   child: widget.separatorBuilder!(context, widget.count),
                 ),
-              if (!widget.doneEnd)
+              if (widget.count == 0 && widget.emptyPlaceholder != null)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: widget.emptyPlaceholder!,
+                )
+              else if (!widget.doneEnd)
                 widget.count == 0
                     ? const SliverFillRemaining(
                         hasScrollBody: false,
