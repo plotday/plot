@@ -28,8 +28,16 @@ import {
   type LinkedInProfile,
 } from "@plotday/twister/tools/linkedin";
 
-const CHANNEL_ID = "linkedin";
-const CHANNEL_TITLE = "LinkedIn";
+/**
+ * LinkedIn surfaces two distinct streams that users may want to enable
+ * independently: direct messages (high-volume, real conversations) and
+ * inbound connection requests (lower-volume, usually higher-noise). Each
+ * is its own Plot channel so users can opt into one without the other,
+ * and so the framework can track sync state, polling cadence, and
+ * read/unread separately.
+ */
+const CHANNEL_MESSAGES = "messages";
+const CHANNEL_INVITATIONS = "invitations";
 
 const TYPE_MESSAGE = "message";
 const TYPE_INVITATION = "invitation";
@@ -98,7 +106,9 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
 
   readonly provider = AuthProvider.LinkedIn;
   readonly scopes = LinkedInMessaging.SCOPES;
-  readonly singleChannel = true;
+  // Two channels: "messages" and "invitations". Users can enable either
+  // independently — connection-request triage and conversation triage are
+  // very different workflows and shouldn't share an on/off toggle.
   readonly linkTypes = [
     {
       type: TYPE_MESSAGE,
@@ -139,14 +149,19 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
     _auth: Authorization | null,
     _token: AuthToken | null
   ): Promise<Channel[]> {
-    // Single implicit channel — the user's LinkedIn account is the channel.
-    // Splitting messages vs. invitations across multiple channels would
-    // expose a toggle that nobody actually wants to flip; keep it simple
-    // and bundle both into one stream.
-    return [{ id: CHANNEL_ID, title: CHANNEL_TITLE }];
+    return [
+      { id: CHANNEL_MESSAGES, title: "Direct messages" },
+      { id: CHANNEL_INVITATIONS, title: "Connection requests" },
+    ];
   }
 
   async onChannelEnabled(channel: Channel): Promise<void> {
+    if (
+      channel.id !== CHANNEL_MESSAGES &&
+      channel.id !== CHANNEL_INVITATIONS
+    ) {
+      return;
+    }
     // Seed the sync state and queue the first batch as a task. Initial
     // sync runs with the `initialSync` flag so the runtime suppresses
     // notifications during the backfill.
@@ -182,14 +197,15 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
   // ---------------------------------------------------------------------------
 
   /**
-   * One adaptive-poll cycle. Runs in its own execution (queued via
-   * `runTask`) so each cycle gets a fresh ~1000-request budget.
+   * One adaptive-poll cycle for a channel. Runs in its own execution
+   * (queued via `runTask`) so each cycle gets a fresh ~1000-request
+   * budget.
    *
-   * 1. List conversations updated since `lastSyncedActivityAt`.
-   * 2. For each conversation, list its new messages and save the link +
-   *    notes.
-   * 3. Walk inbound connection invitations as a separate stream.
-   * 4. Schedule the next cycle based on activity recency.
+   * Branches on channel:
+   * - `messages`: list conversations updated since the cursor, fetch new
+   *   messages for each, and save one link per conversation.
+   * - `invitations`: list inbound connection requests and save one link
+   *   per invitation.
    */
   async syncBatch(channelId: string): Promise<void> {
     const state =
@@ -203,50 +219,15 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
       ? new Date(state.lastSyncedActivityAt)
       : undefined;
 
-    let cursor: string | null = null;
     let highWaterMark = state.lastSyncedActivityAt ?? 0;
-    const conversationLinks: NewLinkWithNotes[] = [];
 
-    // Conversations
-    for (let page = 0; page < 5; page++) {
-      const result = await this.tools.linkedin.listConversations({
-        channelId,
-        cursor,
-        since,
-        limit: 20,
-      });
-      for (const conv of result.conversations) {
-        const link = await this.buildConversationLink(
-          channelId,
-          conv,
-          state.initialSync,
-          since
-        );
-        if (link) conversationLinks.push(link);
-        const ts = conv.lastActivityAt.getTime();
-        if (ts > highWaterMark) highWaterMark = ts;
-      }
-      if (!result.nextCursor || result.conversations.length === 0) break;
-      cursor = result.nextCursor;
-    }
-
-    if (conversationLinks.length > 0) {
-      await this.tools.integrations.saveLinks(conversationLinks);
-    }
-
-    // Invitations (one page per cycle is plenty — most users see a few per
-    // day at most).
-    if (state.initialSync || sinceWasRecent(since)) {
-      const invitations = await this.tools.linkedin.listConnectionInvitations({
-        channelId,
-        limit: 20,
-      });
-      const invitationLinks = invitations.invitations
-        .map((inv) => buildInvitationLink(channelId, inv, state.initialSync))
-        .filter((link): link is NewLinkWithNotes => link != null);
-      if (invitationLinks.length > 0) {
-        await this.tools.integrations.saveLinks(invitationLinks);
-      }
+    if (channelId === CHANNEL_MESSAGES) {
+      highWaterMark = await this.syncMessages(state, since, highWaterMark);
+    } else if (channelId === CHANNEL_INVITATIONS) {
+      highWaterMark = await this.syncInvitations(state, highWaterMark);
+    } else {
+      // Unknown channel id — ignore so a stale runTask doesn't loop on it.
+      return;
     }
 
     // Persist progress.
@@ -267,6 +248,73 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
       lastUserActivityAt: state.lastUserActivityAt,
       lastSyncedActivityAt: highWaterMark,
     });
+  }
+
+  /**
+   * Direct-messages sync. Walks conversations updated since the last
+   * `lastSyncedActivityAt` and saves one link per conversation, with the
+   * new messages attached as notes. Returns the updated high-water mark.
+   */
+  private async syncMessages(
+    state: SyncState,
+    since: Date | undefined,
+    highWaterMark: number
+  ): Promise<number> {
+    let cursor: string | null = null;
+    const conversationLinks: NewLinkWithNotes[] = [];
+
+    for (let page = 0; page < 5; page++) {
+      const result = await this.tools.linkedin.listConversations({
+        channelId: CHANNEL_MESSAGES,
+        cursor,
+        since,
+        limit: 20,
+      });
+      for (const conv of result.conversations) {
+        const link = await this.buildConversationLink(
+          conv,
+          state.initialSync,
+          since
+        );
+        if (link) conversationLinks.push(link);
+        const ts = conv.lastActivityAt.getTime();
+        if (ts > highWaterMark) highWaterMark = ts;
+      }
+      if (!result.nextCursor || result.conversations.length === 0) break;
+      cursor = result.nextCursor;
+    }
+
+    if (conversationLinks.length > 0) {
+      await this.tools.integrations.saveLinks(conversationLinks);
+    }
+
+    return highWaterMark;
+  }
+
+  /**
+   * Connection-requests sync. One page per cycle — most users see a few
+   * invitations per day at most, so a 20-item page is plenty. Each
+   * invitation becomes its own Plot link.
+   */
+  private async syncInvitations(
+    state: SyncState,
+    highWaterMark: number
+  ): Promise<number> {
+    const invitations = await this.tools.linkedin.listConnectionInvitations({
+      channelId: CHANNEL_INVITATIONS,
+      limit: 20,
+    });
+    const invitationLinks = invitations.invitations
+      .map((inv) => buildInvitationLink(inv, state.initialSync))
+      .filter((link): link is NewLinkWithNotes => link != null);
+    for (const inv of invitations.invitations) {
+      const ts = inv.sentAt.getTime();
+      if (ts > highWaterMark) highWaterMark = ts;
+    }
+    if (invitationLinks.length > 0) {
+      await this.tools.integrations.saveLinks(invitationLinks);
+    }
+    return highWaterMark;
   }
 
   private async scheduleNextSync(
@@ -300,7 +348,6 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
   // ---------------------------------------------------------------------------
 
   private async buildConversationLink(
-    channelId: string,
     conv: LinkedInConversation,
     initialSync: boolean,
     since: Date | undefined
@@ -308,7 +355,7 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
     // Pull the new messages for this conversation. On initial sync we
     // walk a single page (~20 messages) so the backfill stays bounded.
     const messagesResult = await this.tools.linkedin.getMessages({
-      channelId,
+      channelId: CHANNEL_MESSAGES,
       conversationUrn: conv.urn,
       since: initialSync ? undefined : since,
       limit: 20,
@@ -340,7 +387,7 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
       notes,
       meta: {
         syncProvider: PROVIDER_KEY,
-        channelId,
+        channelId: CHANNEL_MESSAGES,
         conversationUrn: conv.urn,
         isGroup: conv.isGroup,
       },
@@ -358,22 +405,19 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
   ): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const conversationUrn = meta.conversationUrn as string | undefined;
-    const channelId =
-      (meta.channelId as string | undefined) ?? CHANNEL_ID;
     if (!conversationUrn) return;
 
     const sent = await this.tools.linkedin.sendMessage({
-      channelId,
+      channelId: CHANNEL_MESSAGES,
       conversationUrn,
       text: note.content ?? "",
     });
 
     // Bias the next poll cycle to be fresh — the user just replied so a
     // response is likely incoming soon.
-    const state =
-      (await this.get<SyncState>(`sync_state_${channelId}`)) ?? null;
+    const state = await this.get<SyncState>(`sync_state_${CHANNEL_MESSAGES}`);
     if (state) {
-      await this.set(`sync_state_${channelId}`, {
+      await this.set(`sync_state_${CHANNEL_MESSAGES}`, {
         ...state,
         lastUserActivityAt: Date.now(),
       } satisfies SyncState);
@@ -392,13 +436,11 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const conversationUrn = meta.conversationUrn as string | undefined;
-    const channelId =
-      (meta.channelId as string | undefined) ?? CHANNEL_ID;
     if (!conversationUrn) return;
 
     try {
       await this.tools.linkedin.markConversationRead({
-        channelId,
+        channelId: CHANNEL_MESSAGES,
         conversationUrn,
         read: !unread,
       });
@@ -499,7 +541,6 @@ function joinParticipantNames(profiles: LinkedInProfile[]): string {
 }
 
 function buildInvitationLink(
-  channelId: string,
   inv: LinkedInInvitation,
   initialSync: boolean
 ): NewLinkWithNotes | null {
@@ -537,16 +578,11 @@ function buildInvitationLink(
     notes,
     meta: {
       syncProvider: PROVIDER_KEY,
-      channelId,
+      channelId: CHANNEL_INVITATIONS,
       invitationUrn: inv.urn,
       sharedSecret: inv.sharedSecret,
       inviterUrn: inv.inviter.urn,
     },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } as NewLinkWithNotes;
-}
-
-function sinceWasRecent(since: Date | undefined): boolean {
-  if (!since) return true;
-  return Date.now() - since.getTime() < RECENT_WINDOW_MS;
 }
