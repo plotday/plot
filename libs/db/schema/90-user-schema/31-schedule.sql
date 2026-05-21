@@ -11,14 +11,13 @@ SELECT
     s.id,
     s.created_at,
     s.updated_at,
-    -- seq: GREATEST across schedule + its visible schedule_contact rows so
-    -- RSVP/role changes (which only touch schedule_contact) propagate
-    -- through the cursor for /sync/schedules. The subquery uses LEAST=0
-    -- when no contacts exist.
-    GREATEST(s.seq, COALESCE(
-        (SELECT MAX(sc.seq) FROM schedule_contact sc WHERE sc.schedule_id = s.id),
-        '0'::xid8
-    )) AS seq,
+    -- s.seq alone is sufficient: bump_schedule_updated_at (AFTER on
+    -- schedule_contact) bumps the parent schedule, which fires
+    -- update_seq_and_updated_at and advances s.seq to the current
+    -- transaction's xid. Computing GREATEST(s.seq, MAX(schedule_contact.seq))
+    -- here forced a seq scan + per-row subplan on /sync/schedules because
+    -- the filter on a computed expression couldn't use idx_schedule_seq.
+    s.seq,
     COALESCE(s.archived_at, upe.archived_at) AS archived_at,
     s.user_id AS schedule_user_id,
     s."order",
