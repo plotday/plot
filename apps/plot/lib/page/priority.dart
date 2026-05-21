@@ -749,8 +749,10 @@ class PriorityPage extends StatefulWidget {
 
 class _PriorityPageState extends State<PriorityPage>
     with TickerProviderStateMixin {
-  late final BlockDragController _activityFeedDragController =
-      BlockDragController(vsync: this);
+  BlockDragController? _activityFeedDragControllerInstance;
+  BlockDragController get _activityFeedDragController =>
+      _activityFeedDragControllerInstance ??=
+          BlockDragController(vsync: this);
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
@@ -783,7 +785,7 @@ class _PriorityPageState extends State<PriorityPage>
 
   @override
   void dispose() {
-    _activityFeedDragController.dispose();
+    _activityFeedDragControllerInstance?.dispose();
     super.dispose();
   }
 
