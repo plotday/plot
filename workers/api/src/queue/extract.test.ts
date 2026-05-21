@@ -13,6 +13,20 @@ vi.mock("../extract/extractor", () => ({
   MIN_MARKDOWN_LENGTH: 200,
 }));
 
+const renderHtmlWithBrowserMock = vi.fn();
+vi.mock("../extract/browser", () => ({
+  // Browser Rendering is treated as configured iff env.BROWSER is bound.
+  getBrowserBinding: (env: any) => env?.BROWSER ?? null,
+  renderHtmlWithBrowser: (...args: unknown[]) =>
+    renderHtmlWithBrowserMock(...args),
+  BrowserRenderingError: class extends Error {
+    constructor(msg: string) {
+      super(msg);
+      this.name = "BrowserRenderingError";
+    }
+  },
+}));
+
 type DbCall = { kind: string; args: unknown };
 let dbCalls: DbCall[];
 let claimableIds: Set<string>;
@@ -109,8 +123,18 @@ function makeMessage(body: Partial<ExtractMessage>): {
   };
 }
 
-function makeEnv(r2: ReturnType<typeof makeR2>) {
-  return { ARTICLES_BUCKET: { put: r2.put } } as any;
+function makeEnv(
+  r2: ReturnType<typeof makeR2>,
+  withBrowser = false
+): any {
+  const env: any = { ARTICLES_BUCKET: { put: r2.put } };
+  if (withBrowser) {
+    // Tests don't drive the binding themselves — renderHtmlWithBrowser is
+    // mocked above — but the `getBrowserBinding` shim only requires that
+    // env.BROWSER be truthy to claim the binding is configured.
+    env.BROWSER = { fetch: vi.fn() };
+  }
+  return env;
 }
 
 const fakeCtx = {} as any;
@@ -122,6 +146,8 @@ beforeEach(() => {
   dbCalls = [];
   claimableIds = new Set(["1"]);
   extractMarkdownMock.mockReset();
+  renderHtmlWithBrowserMock.mockReset();
+  fakePostHog.captureException.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -258,6 +284,136 @@ describe("processExtractions", () => {
       (c) => c.kind === "update" && (c.args as any).set?.status === "failed"
     );
     expect((failed!.args as any).set.error_code).toBe("partial_conversion");
+  });
+
+  it("falls back to browser rendering when raw HTML is too short and config is present", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html><body></body></html>", { status: 200 }))
+    );
+    // First call: raw HTML → too short. Second call: browser HTML → success.
+    extractMarkdownMock
+      .mockReturnValueOnce({ title: "", author: "", description: "", md: "tiny" })
+      .mockReturnValueOnce({
+        title: "Hello",
+        author: "",
+        description: "",
+        md: `# Hello\n\n${longBody}`,
+      });
+    renderHtmlWithBrowserMock.mockResolvedValue("<html>rendered</html>");
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1, urlHash: "abc" });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2, /* withBrowser */ true),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(renderHtmlWithBrowserMock).toHaveBeenCalledOnce();
+    expect(extractMarkdownMock).toHaveBeenCalledTimes(2);
+    expect(r2.objects).toHaveLength(1);
+    expect(r2.objects[0].customMetadata?.renderedWith).toBe("browser");
+
+    const completed = dbCalls.find(
+      (c) => c.kind === "update" && (c.args as any).set?.status === "completed"
+    );
+    expect(completed).toBeDefined();
+    expect((completed!.args as any).set.title).toBe("Hello");
+    expect(fakePostHog.captureException).not.toHaveBeenCalled();
+  });
+
+  it("records renderedWith: 'raw' on the happy path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html>hi</html>", { status: 200 }))
+    );
+    extractMarkdownMock.mockReturnValue({
+      title: "Hello",
+      author: "",
+      description: "",
+      md: `# Hello\n\n${longBody}`,
+    });
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1, urlHash: "abc" });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2, /* withBrowser */ true),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(r2.objects[0].customMetadata?.renderedWith).toBe("raw");
+    expect(renderHtmlWithBrowserMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the browser fallback when Browser Rendering is not configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html></html>", { status: 200 }))
+    );
+    extractMarkdownMock.mockReturnValue({
+      title: "",
+      author: "",
+      description: "",
+      md: "tiny",
+    });
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1 });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2, /* withBrowser */ false),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(renderHtmlWithBrowserMock).not.toHaveBeenCalled();
+    expect(r2.objects).toHaveLength(0);
+    const failed = dbCalls.find(
+      (c) => c.kind === "update" && (c.args as any).set?.status === "failed"
+    );
+    expect((failed!.args as any).set.error_code).toBe("content_too_short");
+  });
+
+  it("marks browser_render_failed when raw is short and the browser call throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html></html>", { status: 200 }))
+    );
+    extractMarkdownMock.mockReturnValue({
+      title: "",
+      author: "",
+      description: "",
+      md: "tiny",
+    });
+    renderHtmlWithBrowserMock.mockRejectedValue(
+      new Error("upstream Browser Rendering 502")
+    );
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1 });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2, /* withBrowser */ true),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(r2.objects).toHaveLength(0);
+    const failed = dbCalls.find(
+      (c) => c.kind === "update" && (c.args as any).set?.status === "failed"
+    );
+    expect((failed!.args as any).set.error_code).toBe("browser_render_failed");
+    expect((failed!.args as any).set.error_message).toMatch(/Browser Rendering/);
+    // ExtractionFailure → expected, not paged.
+    expect(fakePostHog.captureException).not.toHaveBeenCalled();
   });
 
   it("skips and does not write R2 when the row is not claimable", async () => {

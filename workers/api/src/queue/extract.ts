@@ -11,6 +11,11 @@ import {
   PARTIAL_CONVERSION_PREFIX,
   extractMarkdown,
 } from "../extract/extractor";
+import {
+  BrowserRenderingError,
+  getBrowserBinding,
+  renderHtmlWithBrowser,
+} from "../extract/browser";
 
 /** Cap on the raw HTML response we'll buffer in memory before parsing. */
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -25,7 +30,10 @@ type FailCode =
   | "response_too_large"
   | "content_too_short"
   | "partial_conversion"
-  | "parse_error";
+  | "parse_error"
+  | "browser_render_failed";
+
+export type RenderedWith = "raw" | "browser";
 
 class ExtractionFailure extends Error {
   constructor(readonly code: FailCode, message: string) {
@@ -65,6 +73,131 @@ async function readBodyCapped(
   return { ok: true, html: out };
 }
 
+async function fetchRawHtml(url: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" },
+      redirect: "follow",
+    });
+  } catch (e) {
+    throw new ExtractionFailure(
+      "fetch_failed",
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+  if (!res.ok) {
+    throw new ExtractionFailure(
+      "fetch_failed",
+      `fetch returned HTTP ${res.status}`
+    );
+  }
+  const read = await readBodyCapped(res, MAX_HTML_BYTES);
+  if (!read.ok) {
+    throw new ExtractionFailure(
+      "response_too_large",
+      `response exceeded ${MAX_HTML_BYTES} bytes`
+    );
+  }
+  return read.html;
+}
+
+/**
+ * Run defuddle on the given HTML and validate the resulting Markdown. Throws
+ * `ExtractionFailure` if the output is unusable. Pure — no I/O — so it's
+ * cheap to invoke twice (once for raw HTML, once for the browser-rendered
+ * fallback).
+ */
+function extractAndValidate(url: string, html: string): ExtractResult {
+  let result: ExtractResult;
+  try {
+    result = extractMarkdown(url, html);
+  } catch (e) {
+    throw new ExtractionFailure(
+      "parse_error",
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+  if (result.md.startsWith(PARTIAL_CONVERSION_PREFIX)) {
+    throw new ExtractionFailure(
+      "partial_conversion",
+      "defuddle reported a partial Turndown conversion"
+    );
+  }
+  if (result.md.length < MIN_MARKDOWN_LENGTH) {
+    throw new ExtractionFailure(
+      "content_too_short",
+      `markdown length ${result.md.length} < ${MIN_MARKDOWN_LENGTH} — likely JS-rendered or bot-blocked`
+    );
+  }
+  return result;
+}
+
+/**
+ * Try the raw-HTML extraction first. If that fails with `content_too_short` —
+ * the JS-rendered-page / bot-interstitial signal — and Browser Rendering is
+ * configured, retry against the browser-rendered HTML. Returns the successful
+ * `ExtractResult` along with the path that produced it, or re-throws the last
+ * `ExtractionFailure`.
+ */
+async function extractWithFallback(
+  env: Bindings,
+  url: string,
+  logger: ReturnType<typeof createLogger>
+): Promise<{ result: ExtractResult; renderedWith: RenderedWith }> {
+  let rawFailure: ExtractionFailure | undefined;
+  try {
+    const html = await fetchRawHtml(url);
+    return { result: extractAndValidate(url, html), renderedWith: "raw" };
+  } catch (e) {
+    if (!(e instanceof ExtractionFailure)) throw e;
+    rawFailure = e;
+  }
+
+  // Only `content_too_short` benefits from a browser render (the typical SPA
+  // / bot-interstitial signal). Hard fetch failures, oversized bodies, and
+  // defuddle crashes are unlikely to improve and would just burn a session.
+  if (rawFailure.code !== "content_too_short") throw rawFailure;
+
+  const browser = getBrowserBinding(env);
+  if (!browser) {
+    logger.info("extract: browser rendering not configured, skipping fallback", {
+      url,
+    });
+    throw rawFailure;
+  }
+
+  logger.info("extract: falling back to browser rendering", { url });
+  let renderedHtml: string;
+  try {
+    renderedHtml = await renderHtmlWithBrowser(browser, url);
+  } catch (e) {
+    const message =
+      e instanceof BrowserRenderingError || e instanceof Error
+        ? e.message
+        : String(e);
+    throw new ExtractionFailure(
+      "browser_render_failed",
+      `after content_too_short on raw HTML: ${message}`
+    );
+  }
+
+  try {
+    return {
+      result: extractAndValidate(url, renderedHtml),
+      renderedWith: "browser",
+    };
+  } catch (e) {
+    if (e instanceof ExtractionFailure) {
+      throw new ExtractionFailure(
+        e.code,
+        `via browser rendering: ${e.message}`
+      );
+    }
+    throw e;
+  }
+}
+
 async function runOne(
   env: Bindings,
   message: ExtractMessage,
@@ -92,62 +225,13 @@ async function runOne(
       return;
     }
 
-    let html: string;
-    try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": USER_AGENT, Accept: "text/html,*/*" },
-        redirect: "follow",
-      });
-      if (!res.ok) {
-        throw new ExtractionFailure(
-          "fetch_failed",
-          `fetch returned HTTP ${res.status}`
-        );
-      }
-      const read = await readBodyCapped(res, MAX_HTML_BYTES);
-      if (!read.ok) {
-        throw new ExtractionFailure(
-          "response_too_large",
-          `response exceeded ${MAX_HTML_BYTES} bytes`
-        );
-      }
-      html = read.html;
-    } catch (e) {
-      if (e instanceof ExtractionFailure) throw e;
-      throw new ExtractionFailure(
-        "fetch_failed",
-        e instanceof Error ? e.message : String(e)
-      );
-    }
-
-    let result: ExtractResult;
-    try {
-      result = extractMarkdown(url, html);
-    } catch (e) {
-      throw new ExtractionFailure(
-        "parse_error",
-        e instanceof Error ? e.message : String(e)
-      );
-    }
-
-    if (result.md.startsWith(PARTIAL_CONVERSION_PREFIX)) {
-      throw new ExtractionFailure(
-        "partial_conversion",
-        "defuddle reported a partial Turndown conversion"
-      );
-    }
-    if (result.md.length < MIN_MARKDOWN_LENGTH) {
-      throw new ExtractionFailure(
-        "content_too_short",
-        `markdown length ${result.md.length} < ${MIN_MARKDOWN_LENGTH} — likely JS-rendered or bot-blocked`
-      );
-    }
+    const { result, renderedWith } = await extractWithFallback(env, url, logger);
 
     const r2Key = `${urlHash}.md`;
     const bodyBytes = new TextEncoder().encode(result.md);
     await env.ARTICLES_BUCKET.put(r2Key, bodyBytes, {
       httpMetadata: { contentType: "text/markdown; charset=utf-8" },
-      customMetadata: { url, extractorVersion: "1" },
+      customMetadata: { url, extractorVersion: "1", renderedWith },
     });
 
     await db

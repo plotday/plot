@@ -290,4 +290,9 @@ export type Bindings = {
   // Global cache of extracted article markdown, keyed by url_hash. Backs the
   // `extracted_url` Postgres table.
   readonly ARTICLES_BUCKET: R2Bucket;
+  // Cloudflare Browser Rendering binding. Used by the article-extraction
+  // queue to retry JS-rendered pages with a real browser when the raw HTML
+  // fetch yields too-little content. Optional so the fallback degrades
+  // gracefully when the binding hasn't been configured for the environment.
+  readonly BROWSER?: Fetcher;
 };

@@ -29,6 +29,7 @@
     "@ai-sdk/openai": "^2.0.52",
     "@clerk/backend": "^2.31.0",
     "@cloudflare/containers": "^0.3.3",
+    "@cloudflare/puppeteer": "^1.0.4",
     "@hono-rate-limiter/cloudflare": "^0.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@plotday/classifier": "workspace:^",
