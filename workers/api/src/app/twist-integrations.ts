@@ -71,6 +71,45 @@ async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
 }
 
 /**
+ * Verify the caller has access to a twist_instance.
+ *
+ * - "read": owner or any team member (when team-scoped).
+ * - "write": owner or team admin (when team-scoped).
+ *
+ * Routes should return 404 on `ok: false` to avoid leaking twist
+ * existence to unrelated users.
+ */
+async function checkTwistAccess(
+  db: Kysely<DB>,
+  twistInstanceId: string,
+  userId: string,
+  level: "read" | "write"
+): Promise<{ ok: true } | { ok: false }> {
+  const row = await db
+    .selectFrom("twist_instance")
+    .select(["owner_id", "team_id"])
+    .where("id", "=", twistInstanceId)
+    .executeTakeFirst();
+  if (!row) return { ok: false };
+  if (row.owner_id === userId) return { ok: true };
+  if (row.team_id != null) {
+    const membership = await db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", row.team_id)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
+    if (membership) {
+      if (level === "read") return { ok: true };
+      if (membership.role === "admin") return { ok: true };
+    }
+  }
+  return { ok: false };
+}
+
+const twistNotFoundResponse = { message: "Twist not found" } as const;
+
+/**
  * Load twist KV config (providers, integrationsMap, etc.)
  */
 async function loadTwistConfig(
@@ -165,6 +204,14 @@ function createReadOnlyIntegrations(
 // Returns accounts, providers, and channels for the edit modal.
 twistIntegrations.get("/twist/:id/integrations", async (c) => {
   const twistInstanceId = c.req.param("id");
+
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "read"
+  );
+  if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
   const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
   if (!twistInfo) {
@@ -388,6 +435,14 @@ const AuthRequestSchema = z.object({
 twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   const twistInstanceId = c.req.param("id");
 
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(twistNotFoundResponse, 404);
+
   const rawBody = await c.req.json();
   const parseResult = AuthRequestSchema.safeParse(rawBody);
   if (!parseResult.success) {
@@ -500,6 +555,14 @@ twistIntegrations.post(
       provider: "linkedin",
       route: "linkedin/cookie",
     });
+
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
     const rawBody = await c.req.json();
     const parseResult = LinkedInCookieRequestSchema.safeParse(rawBody);
@@ -673,6 +736,14 @@ const ConnectRequestSchema = z.object({
 
 twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
   const twistInstanceId = c.req.param("id");
+
+  const access = await checkTwistAccess(
+    c.var.db,
+    twistInstanceId,
+    c.var.user.id,
+    "write"
+  );
+  if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
   const rawBody = await c.req.json();
   const parseResult = ConnectRequestSchema.safeParse(rawBody);
@@ -895,6 +966,14 @@ twistIntegrations.post(
 
     const logger = createLogger({ twist_instance_id: twistInstanceId });
 
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
+
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
@@ -1000,6 +1079,14 @@ twistIntegrations.post(
 
     const logger = createLogger({ twist_instance_id: twistInstanceId });
 
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
+
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
@@ -1074,6 +1161,14 @@ twistIntegrations.post(
   async (c) => {
     const twistInstanceId = c.req.param("id");
     const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
     const bodySchema = z.object({
       enable: z
@@ -1242,6 +1337,14 @@ twistIntegrations.post(
 twistIntegrations.patch(
   "/twist/:id/syncables/:provider/:syncableId",
   async (c) => {
+    const twistInstanceId = c.req.param("id");
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
     return c.json({ success: true });
   }
 );
@@ -1255,6 +1358,14 @@ twistIntegrations.post(
     const provider = c.req.param("provider");
 
     const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
@@ -1342,6 +1453,14 @@ twistIntegrations.post(
       return c.json({ message: "actorId is required" }, 400);
     }
 
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
+
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
@@ -1419,6 +1538,14 @@ twistIntegrations.delete(
     const actorId = c.req.param("actorId");
 
     const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    const access = await checkTwistAccess(
+      c.var.db,
+      twistInstanceId,
+      c.var.user.id,
+      "write"
+    );
+    if (!access.ok) return c.json(twistNotFoundResponse, 404);
 
     const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
