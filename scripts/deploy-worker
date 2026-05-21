@@ -21,6 +21,41 @@ if [[ -v POSTHOG_CLI_KEY ]]; then
   posthog-cli sourcemap inject --directory build --project $PACKAGE
 fi
 
+# Wrangler auto-provisions R2/KV/D1 but not Queues, so a first-time deploy
+# with a new queue binding fails with "Queue 'X' does not exist." Extract
+# every queue (producer + consumer) declared for this env from the wrangler
+# config and create any that are missing. Idempotent: `queues info` exits
+# non-zero only when the queue truly doesn't exist.
+CONFIG_FILE=""
+for f in wrangler.jsonc wrangler.json wrangler.toml; do
+  if [ -f "$f" ]; then CONFIG_FILE="$f"; break; fi
+done
+if [ -n "$CONFIG_FILE" ] && [[ "$CONFIG_FILE" == *.json* ]]; then
+  REQUIRED_QUEUES=$(node -e '
+    const fs = require("fs");
+    const env = process.env.ENV;
+    const text = fs.readFileSync(process.argv[1], "utf8");
+    const stripped = text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:"\x27])\/\/.*$/gm, "$1");
+    const cfg = JSON.parse(stripped);
+    const e = (cfg.env || {})[env] || {};
+    const q = e.queues || {};
+    const names = new Set();
+    for (const p of q.producers || []) if (p.queue) names.add(p.queue);
+    for (const c of q.consumers || []) if (c.queue) names.add(c.queue);
+    for (const n of names) console.log(n);
+  ' "$CONFIG_FILE")
+  for q in $REQUIRED_QUEUES; do
+    if wrangler queues info "$q" > /dev/null 2>&1; then
+      echo "Queue '$q' already exists"
+    else
+      echo "Creating queue '$q'..."
+      wrangler queues create "$q"
+    fi
+  done
+fi
+
 # Deploy with retry logic for transient Cloudflare API errors
 MAX_RETRIES=3
 RETRY_COUNT=0
