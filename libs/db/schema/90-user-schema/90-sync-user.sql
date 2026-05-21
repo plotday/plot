@@ -229,12 +229,18 @@ BEGIN
     IF v_max_updated_at IS NULL THEN
         v_max_updated_at := now();
     END IF;
+    -- Skip users that no longer exist. When `user` is deleted, CASCADE deletes
+    -- `thread_priority` rows in the same transaction; this DELETE trigger then
+    -- fires and would otherwise INSERT INTO user_sync for the just-deleted
+    -- user_id, violating user_sync_user_id_fkey.
     FOR v_user_id IN SELECT DISTINCT
-        user_id
+        n.user_id
     FROM
-        new_table
+        new_table n
+    WHERE
+        EXISTS (SELECT 1 FROM "user" u WHERE u.id = n.user_id)
     ORDER BY
-        user_id LOOP
+        n.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
                 VALUES (v_user_id, 'thread', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
@@ -527,12 +533,19 @@ BEGIN
     -- Notify each affected user directly. Bump both `twist_instance` (legacy
     -- consumer; user.twist surfaces user_connected) and `twist_connection`
     -- (new entity for needs_reauth / initial_syncing signals).
+    --
+    -- Skip users that no longer exist. When `user` is deleted, CASCADE deletes
+    -- `twist_instance_connection` rows in the same transaction; this DELETE
+    -- trigger then fires and would otherwise INSERT INTO user_sync for the
+    -- just-deleted user_id, violating user_sync_user_id_fkey.
     FOR v_user_id IN SELECT DISTINCT
-        user_id
+        n.user_id
     FROM
-        new_table
+        new_table n
+    WHERE
+        EXISTS (SELECT 1 FROM "user" u WHERE u.id = n.user_id)
     ORDER BY
-        user_id LOOP
+        n.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
                 VALUES (v_user_id, 'twist_instance', v_max_at, v_max_seq)
             ON CONFLICT (user_id, entity)
