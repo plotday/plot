@@ -31,12 +31,26 @@ type FailCode =
   | "content_too_short"
   | "partial_conversion"
   | "parse_error"
-  | "browser_render_failed";
+  | "browser_render_failed"
+  | "http_401"
+  | "http_403";
+
+/**
+ * What terminal status a thrown `ExtractionFailure` should land the row in.
+ * Defaults to `failed` for unexpected failures; access-restricted detections
+ * raise an `auth_required` terminal status so the UI knows it's a known
+ * gating outcome rather than an extractor bug.
+ */
+type TerminalStatus = "failed" | "auth_required";
 
 export type RenderedWith = "raw" | "browser";
 
 class ExtractionFailure extends Error {
-  constructor(readonly code: FailCode, message: string) {
+  constructor(
+    readonly code: FailCode,
+    message: string,
+    readonly terminalStatus: TerminalStatus = "failed"
+  ) {
     super(message);
     this.name = "ExtractionFailure";
   }
@@ -84,6 +98,13 @@ async function fetchRawHtml(url: string): Promise<string> {
     throw new ExtractionFailure(
       "fetch_failed",
       e instanceof Error ? e.message : String(e)
+    );
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new ExtractionFailure(
+      res.status === 401 ? "http_401" : "http_403",
+      `fetch returned HTTP ${res.status}`,
+      "auth_required"
     );
   }
   if (!res.ok) {
@@ -252,14 +273,21 @@ async function runOne(
   } catch (error) {
     const code: FailCode =
       error instanceof ExtractionFailure ? error.code : "parse_error";
+    const terminalStatus: TerminalStatus =
+      error instanceof ExtractionFailure ? error.terminalStatus : "failed";
     const message = error instanceof Error ? error.message : String(error);
     try {
       await db
         .updateTable("extracted_url")
         .set({
-          status: "failed",
+          status: terminalStatus,
           error_code: code,
           error_message: message.slice(0, 1000),
+          // Auth-restricted outcomes are terminal — stamp extracted_at so
+          // callers can treat them like any other completed row.
+          ...(terminalStatus !== "failed"
+            ? { extracted_at: sql`now()` }
+            : {}),
         })
         .where("id", "=", String(id))
         .execute();

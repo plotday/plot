@@ -416,6 +416,62 @@ describe("processExtractions", () => {
     expect(fakePostHog.captureException).not.toHaveBeenCalled();
   });
 
+  it("maps HTTP 401 to terminal status 'auth_required' (not 'failed')", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Sign in", { status: 401 }))
+    );
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1 });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2),
+      fakeCtx,
+      fakePostHog
+    );
+
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(r2.objects).toHaveLength(0);
+    expect(extractMarkdownMock).not.toHaveBeenCalled();
+
+    const update = dbCalls.find(
+      (c) =>
+        c.kind === "update" &&
+        (c.args as any).set?.status === "auth_required"
+    );
+    expect(update, "expected a status='auth_required' update").toBeDefined();
+    expect((update!.args as any).set.error_code).toBe("http_401");
+    // Auth-restricted is a known terminal outcome, not a bug — don't page.
+    expect(fakePostHog.captureException).not.toHaveBeenCalled();
+  });
+
+  it("maps HTTP 403 to terminal status 'auth_required'", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("forbidden", { status: 403 }))
+    );
+
+    const r2 = makeR2();
+    const msg = makeMessage({ id: 1 });
+
+    await processExtractions(
+      { queue: "extract-development", messages: [msg] } as any,
+      makeEnv(r2),
+      fakeCtx,
+      fakePostHog
+    );
+
+    const update = dbCalls.find(
+      (c) =>
+        c.kind === "update" &&
+        (c.args as any).set?.status === "auth_required"
+    );
+    expect(update).toBeDefined();
+    expect((update!.args as any).set.error_code).toBe("http_403");
+  });
+
   it("skips and does not write R2 when the row is not claimable", async () => {
     claimableIds = new Set(); // nothing is claimable
     const fetchMock = vi.fn();

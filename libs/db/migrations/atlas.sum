@@ -1,4 +1,4 @@
-h1:LtvsRMaqRl7+WWgeRkfp6B1Bmy7/w/MhkSfUdrjrcrU=
+h1:LdjPI/EB0rhkPUVR3Xw2cYp1KIhUhA/HHE4kYY6zqZI=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -391,4 +391,5 @@ h1:LtvsRMaqRl7+WWgeRkfp6B1Bmy7/w/MhkSfUdrjrcrU=
 20260520175735_fix_thread_unread_columns_in_group_member_change_trigger.sql h1:J78Cgr61vbQDlNFR/FLqlbrVPxdfy88bx5HVWD+445c=
 20260520210755_classify_inline_on_group_member_insert.sql h1:tkvVN4uUXMZIoHz/xDgLsTdHj2rsJJXQlYK99nP3nMY=
 20260520230215_add_extracted_url_table.sql h1:E3QID8ivGeK/ZVWKEte7bzC2cLnrtGD+hQQ8PZ19eAE=
-20260521131857_enforce_upsert_note_and_twist_instance_ownership.sql h1:17yKwb9Hy5Ozg6BnHXppBrmxwtW72F+SWQmHuNGR3V0=
+20260521004625_add_access_restriction_statuses.sql h1:CO/JMsfVH7O0vdMdiJVlQ3z6rLit1Ygt9BHzKoHw6JM=
+20260521131857_enforce_upsert_note_and_twist_instance_ownership.sql h1:MPwsq1szBK4p7RrO34UFF0mmD2SS2/KxkS+gWdWoau4=

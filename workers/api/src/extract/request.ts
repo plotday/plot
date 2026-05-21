@@ -1,9 +1,10 @@
-import { type Selectable } from "kysely";
+import { sql, type Selectable } from "kysely";
 
 import type { ExtractedUrl } from "../db-types";
 import type { Bindings } from "../env";
 
 import { withDb } from "../db";
+import { classifyUrlAccess } from "./access";
 import { hashUrl, normalizeUrl } from "./normalize";
 
 type ExtractedUrlRow = Selectable<ExtractedUrl>;
@@ -17,7 +18,13 @@ export type ExtractedUrlRecord = {
   id: number;
   url_hash: string;
   url: string;
-  status: "pending" | "extracting" | "completed" | "failed";
+  status:
+    | "pending"
+    | "extracting"
+    | "completed"
+    | "failed"
+    | "auth_required"
+    | "paywalled";
   extractor_version: number;
   r2_key: string | null;
   title: string | null;
@@ -55,6 +62,12 @@ export async function requestExtraction(
   const url = normalizeUrl(rawUrl);
   const urlHash = await hashUrl(url);
 
+  // Skip the fetch+defuddle pipeline entirely for URLs we know are gated.
+  // The row still lands in the DB so callers can surface "this is a Jira
+  // ticket" / "this is paywalled" in the UI; we just never spend a fetch
+  // (or a Browser Rendering session) on it.
+  const access = classifyUrlAccess(url);
+
   return withDb(env, async (db) => {
     const existing = await db
       .selectFrom("extracted_url")
@@ -67,7 +80,17 @@ export async function requestExtraction(
     // SELECT above; the loser falls through to the post-insert SELECT.
     const inserted = await db
       .insertInto("extracted_url")
-      .values({ url, url_hash: urlHash, status: "pending" })
+      .values(
+        access
+          ? {
+              url,
+              url_hash: urlHash,
+              status: access,
+              error_code: "classified_by_url",
+              extracted_at: sql`now()`,
+            }
+          : { url, url_hash: urlHash, status: "pending" }
+      )
       .onConflict((oc) => oc.column("url_hash").doNothing())
       .returningAll()
       .executeTakeFirst();
@@ -81,12 +104,14 @@ export async function requestExtraction(
       return asRecord(row);
     }
 
-    await env.EXTRACT_QUEUE.send({
-      type: "extract",
-      id: Number(inserted.id),
-      url: inserted.url,
-      urlHash: inserted.url_hash,
-    });
+    if (!access) {
+      await env.EXTRACT_QUEUE.send({
+        type: "extract",
+        id: Number(inserted.id),
+        url: inserted.url,
+        urlHash: inserted.url_hash,
+      });
+    }
 
     return asRecord(inserted);
   });

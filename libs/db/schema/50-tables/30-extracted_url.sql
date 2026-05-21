@@ -8,7 +8,8 @@ CREATE TABLE "public"."extracted_url" (
     "url_hash" text UNIQUE NOT NULL,
     "url" text NOT NULL,
     "status" text NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'extracting', 'completed', 'failed')),
+        CHECK (status IN ('pending', 'extracting', 'completed', 'failed',
+                          'auth_required', 'paywalled')),
     "extractor_version" integer NOT NULL DEFAULT 1,
     "r2_key" text,
     "title" text,
