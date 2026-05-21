@@ -25,6 +25,8 @@ testRoutes.post("/test/trigger-push", async (c) => {
       .selectFrom("device")
       .select(["id", "push_token"])
       .where("user_id", "=", userId)
+      .where("push_token", "is not", null)
+      .$narrowType<{ push_token: string }>()
       .execute();
 
     const config = {

@@ -26,6 +26,8 @@ export async function sendNotificationToUser(
     .selectFrom("device")
     .select(["id", "push_token"])
     .where("user_id", "=", userId)
+    .where("push_token", "is not", null)
+    .$narrowType<{ push_token: string }>()
     .execute();
 
   if (devices.length === 0) {
@@ -112,6 +114,8 @@ export async function sendDataNotificationToUser(
     .selectFrom("device")
     .select(["id", "push_token", "platform"])
     .where("user_id", "=", userId)
+    .where("push_token", "is not", null)
+    .$narrowType<{ push_token: string }>()
     .execute();
 
   if (devices.length === 0) {
