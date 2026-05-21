@@ -1,10 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/global.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/note_viewer.dart';
 import 'package:plot/widget/onboarding/onboarding_overlay.dart';
 import 'app_context.dart';
 import 'modal.dart';
@@ -40,9 +42,12 @@ class _AppShellState extends State<AppShell> {
           key: _contextKey,
           child: GlobalShortcuts(
             child: LayoutStateProvider(
-              child: OnboardingOverlay(
-                child: AutoRouter(
-                  placeholder: (context) => const LoadingPage(),
+              child: BlocProvider(
+                create: (_) => NoteViewerBloc(),
+                child: OnboardingOverlay(
+                  child: AutoRouter(
+                    placeholder: (context) => const LoadingPage(),
+                  ),
                 ),
               ),
             ),

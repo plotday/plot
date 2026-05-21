@@ -8,6 +8,7 @@ export 'alert.dart';
 export 'note.dart';
 export 'note_editor.dart';
 export 'note_action.dart';
+export 'note_viewer.dart';
 export 'badge.dart';
 export 'infinite_list.dart';
 export 'button.dart';

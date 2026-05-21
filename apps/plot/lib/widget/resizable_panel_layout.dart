@@ -1,13 +1,16 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/note_viewer.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
+import 'note_viewer.dart';
 import 'header.dart';
 import 'unified_header.dart';
 
@@ -116,10 +119,46 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _middlePanelRatio = 0.5;
   late final Future<void> _loadPreferencesFuture;
 
+  /// Key for the right (thread) panel wrap. Used to find its left edge so
+  /// the note-viewer overlay can cover everything to its left in
+  /// multi-panel mode.
+  final GlobalKey _rightPanelKey = GlobalKey();
+
+  /// Key on the panel-layout root so we can translate the right panel's
+  /// global position into a layout-local offset.
+  final GlobalKey _selfKey = GlobalKey();
+
+  /// Right panel's left edge in layout-local coordinates, or null if not
+  /// yet measured. Updated after each frame.
+  final ValueNotifier<double?> _rightPanelLeft = ValueNotifier(null);
+
   @override
   void initState() {
     super.initState();
     _loadPreferencesFuture = _loadFromPreferences();
+  }
+
+  @override
+  void dispose() {
+    _rightPanelLeft.dispose();
+    super.dispose();
+  }
+
+  void _scheduleMeasureRightPanel() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final selfBox = _selfKey.currentContext?.findRenderObject();
+      final rightBox = _rightPanelKey.currentContext?.findRenderObject();
+      if (selfBox is! RenderBox || rightBox is! RenderBox) {
+        if (_rightPanelLeft.value != null) _rightPanelLeft.value = null;
+        return;
+      }
+      if (!selfBox.attached || !rightBox.attached) return;
+      final offset = rightBox.localToGlobal(Offset.zero, ancestor: selfBox);
+      if (offset.dx != _rightPanelLeft.value) {
+        _rightPanelLeft.value = offset.dx;
+      }
+    });
   }
 
   Future<void> _loadFromPreferences() async {
@@ -259,7 +298,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       padding: EdgeInsets.fromLTRB(leftPad, 0, rightPad, _outerInset),
       child: _InnerHoverableResizable(
         middle: wrap(widget.middle, middleRadiusResolved),
-        right: wrap(widget.child, rightRadius),
+        right: KeyedSubtree(
+          key: _rightPanelKey,
+          child: wrap(widget.child, rightRadius),
+        ),
         middleRatio: _middlePanelRatio,
         onMiddleRatioChanged: (r) => _middlePanelRatio = r,
       ),
@@ -306,48 +348,128 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 
   @override
   Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: _selfKey,
+      child: BlocListener<NoteViewerBloc, NoteViewerState>(
+        // The inner divider can move without triggering this widget to
+        // rebuild, so the cached right-panel position can be stale by the
+        // time a note is viewed. Re-measure on every viewer state change.
+        listener: (context, state) => _scheduleMeasureRightPanel(),
+        child: _buildBody(context),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     return FutureBuilder<void>(
-      future: _loadPreferencesFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const LoadingPage();
+        future: _loadPreferencesFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const LoadingPage();
+          }
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return BlocBuilder<LayoutBloc, LayoutState>(
+                buildWhen: (previous, current) =>
+                    previous.multiPanel != current.multiPanel ||
+                    previous.leftPanelVisible != current.leftPanelVisible ||
+                    previous.middlePanelVisible != current.middlePanelVisible,
+                builder: (context, layoutState) {
+                  _scheduleMeasureRightPanel();
+                  final Widget layout;
+                  if (!layoutState.multiPanel) {
+                    // Single-panel: the page-level header is rendered above
+                    // this widget; here we just hand back the route content.
+                    layout = widget.child;
+                  } else {
+                    final totalWidth = constraints.maxWidth;
+                    final leftWidth = _getLeftPanelWidth(
+                      totalWidth,
+                      layoutState,
+                    );
+                    final leftVisible =
+                        layoutState.leftPanelVisible && leftWidth > 0;
+
+                    if (!leftVisible) {
+                      // 2-panel multi: no sidebar, just the main column with
+                      // middle + right inside one shared squircle.
+                      layout = _buildMainColumn(
+                        context,
+                        hasLeftSidebar: false,
+                      );
+                    } else {
+                      // 3-panel multi: A | B. Outer divider top-to-bottom.
+                      layout = _OuterHoverableResizable(
+                        leftWidth: leftWidth,
+                        totalWidth: totalWidth,
+                        layoutState: layoutState,
+                        onLeftWidthChanged: (width) =>
+                            _leftPanelWidth = width,
+                        left: _buildSidebarColumn(context),
+                        right: _buildMainColumn(
+                          context,
+                          hasLeftSidebar: true,
+                        ),
+                      );
+                    }
+                  }
+
+                  return Stack(
+                    children: [
+                      Positioned.fill(child: layout),
+                      _NoteViewerOverlay(
+                        isMultiPanel: layoutState.multiPanel,
+                        rightPanelLeft: _rightPanelLeft,
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          );
+        },
+      );
+  }
+}
+
+/// Mounts [NoteViewer] above the panel layout when [NoteViewerBloc] has a
+/// viewed note. In multi-panel mode the overlay covers everything to the
+/// left of the thread (right) panel — keeping the thread interactive so the
+/// user can scroll it and add new notes — by anchoring its right edge to
+/// [rightPanelLeft]. In single-panel mode it fills the whole layout.
+class _NoteViewerOverlay extends StatelessWidget {
+  const _NoteViewerOverlay({
+    required this.isMultiPanel,
+    required this.rightPanelLeft,
+  });
+
+  final bool isMultiPanel;
+  final ValueListenable<double?> rightPanelLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<NoteViewerBloc, NoteViewerState>(
+      builder: (context, state) {
+        final note = state.note;
+        if (note == null) return const SizedBox.shrink();
+        if (!isMultiPanel) {
+          return Positioned.fill(child: NoteViewer(note: note));
         }
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            return BlocBuilder<LayoutBloc, LayoutState>(
-              buildWhen: (previous, current) =>
-                  previous.multiPanel != current.multiPanel ||
-                  previous.leftPanelVisible != current.leftPanelVisible ||
-                  previous.middlePanelVisible != current.middlePanelVisible,
-              builder: (context, layoutState) {
-                if (!layoutState.multiPanel) {
-                  // Single-panel: the page-level header is rendered above
-                  // this widget; here we just hand back the route content.
-                  return widget.child;
-                }
-
-                final totalWidth = constraints.maxWidth;
-                final leftWidth = _getLeftPanelWidth(totalWidth, layoutState);
-                final leftVisible =
-                    layoutState.leftPanelVisible && leftWidth > 0;
-
-                if (!leftVisible) {
-                  // 2-panel multi: no sidebar, just the main column with
-                  // middle + right inside one shared squircle.
-                  return _buildMainColumn(context, hasLeftSidebar: false);
-                }
-
-                // 3-panel multi: A | B. Outer divider runs top-to-bottom.
-                return _OuterHoverableResizable(
-                  leftWidth: leftWidth,
-                  totalWidth: totalWidth,
-                  layoutState: layoutState,
-                  onLeftWidthChanged: (width) => _leftPanelWidth = width,
-                  left: _buildSidebarColumn(context),
-                  right: _buildMainColumn(context, hasLeftSidebar: true),
-                );
-              },
+        return ValueListenableBuilder<double?>(
+          valueListenable: rightPanelLeft,
+          builder: (context, leftEdge, _) {
+            if (leftEdge == null) {
+              // Position not measured yet; keep the overlay invisible for
+              // one frame rather than flashing a full-width cover.
+              return const SizedBox.shrink();
+            }
+            return Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: leftEdge,
+              child: NoteViewer(note: note),
             );
           },
         );

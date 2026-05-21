@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/state/note_viewer.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/util/platform.dart';
 
@@ -157,8 +159,8 @@ class _NoteWidgetState extends State<NoteWidget> {
           if (noteContent.isNotEmpty)
             Padding(
               padding: .symmetric(horizontal: 6),
-              child: Viewer(
-                markdown: noteContent,
+              child: _TruncatedNoteContent(
+                note: widget.note,
                 searchHighlight: widget.searchHighlight,
               ),
             ),
@@ -332,6 +334,254 @@ class _NoteWidgetState extends State<NoteWidget> {
       },
       child: result,
     );
+  }
+}
+
+/// Inline note content with a maximum height. When the rendered Viewer
+/// exceeds the cap, the bottom is faded out and a "View all" affordance
+/// appears on hover; tapping the fade or the affordance opens the full
+/// note in [NoteViewer] via [NoteViewerBloc].
+class _TruncatedNoteContent extends StatefulWidget {
+  const _TruncatedNoteContent({required this.note, this.searchHighlight});
+
+  final Note note;
+  final String? searchHighlight;
+
+  /// Maximum height of inline content before truncation kicks in. Long
+  /// notes get clipped to this and reveal the rest via the full viewer.
+  static const double maxHeight = 360.0;
+
+  /// Height of the bottom fade gradient overlaid on truncated content.
+  static const double fadeHeight = 80.0;
+
+  @override
+  State<_TruncatedNoteContent> createState() => _TruncatedNoteContentState();
+}
+
+class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
+  bool _overflow = false;
+  bool _hovered = false;
+
+  void _openViewer() {
+    context.read<NoteViewerBloc>().view(widget.note);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = widget.note.content ?? '';
+    final viewer = Viewer(
+      markdown: content,
+      searchHighlight: widget.searchHighlight,
+    );
+
+    final measured = _OverflowAwareBox(
+      maxHeight: _TruncatedNoteContent.maxHeight,
+      onOverflowChanged: (overflow) {
+        if (!mounted || overflow == _overflow) return;
+        setState(() => _overflow = overflow);
+      },
+      child: viewer,
+    );
+
+    if (!_overflow) return measured;
+
+    final bg = context.colour.background;
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: Stack(
+        children: [
+          measured,
+          // Bottom fade — also catches taps to open the viewer.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _TruncatedNoteContent.fadeHeight,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openViewer,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [bg.withValues(alpha: 0), bg],
+                  ),
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+          if (_hovered)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: const _ViewAllPill(),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewAllPill extends StatelessWidget {
+  const _ViewAllPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = context.theme.colors.foreground;
+    final bg = context.colour.background;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: context.theme.colors.border,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF000000).withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            FontAwesomeIcons.upRightAndDownLeftFromCenter,
+            size: 12,
+            color: fg,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'View all',
+            style: context.theme.typography.sm.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lays out [child] with unbounded vertical constraints, captures its
+/// natural height, and clamps its own height to [maxHeight]. Reports
+/// whether truncation was necessary via [onOverflowChanged].
+class _OverflowAwareBox extends SingleChildRenderObjectWidget {
+  const _OverflowAwareBox({
+    required this.maxHeight,
+    required this.onOverflowChanged,
+    required Widget super.child,
+  });
+
+  final double maxHeight;
+  final ValueChanged<bool> onOverflowChanged;
+
+  @override
+  _OverflowAwareRenderBox createRenderObject(BuildContext context) =>
+      _OverflowAwareRenderBox(
+        maxHeight: maxHeight,
+        onOverflowChanged: onOverflowChanged,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _OverflowAwareRenderBox renderObject,
+  ) {
+    renderObject
+      ..maxHeight = maxHeight
+      ..onOverflowChanged = onOverflowChanged;
+  }
+}
+
+class _OverflowAwareRenderBox extends RenderProxyBox {
+  _OverflowAwareRenderBox({
+    required double maxHeight,
+    required this.onOverflowChanged,
+  }) : _maxHeight = maxHeight;
+
+  double _maxHeight;
+  double get maxHeight => _maxHeight;
+  set maxHeight(double value) {
+    if (_maxHeight == value) return;
+    _maxHeight = value;
+    markNeedsLayout();
+  }
+
+  ValueChanged<bool> onOverflowChanged;
+
+  bool? _lastOverflow;
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    // Lay out the child with no vertical bound so its natural height can be
+    // observed; then size ourselves to min(natural, maxHeight).
+    final childConstraints = constraints.copyWith(
+      minHeight: 0,
+      maxHeight: double.infinity,
+    );
+    child.layout(childConstraints, parentUsesSize: true);
+    final natural = child.size.height;
+    final isOverflow = natural > _maxHeight + 0.5;
+    final h = isOverflow ? _maxHeight : natural;
+    size = constraints.constrain(Size(child.size.width, h));
+    if (_lastOverflow != isOverflow) {
+      _lastOverflow = isOverflow;
+      // Fire after this layout pass so the parent isn't rebuilding inside
+      // a layout phase.
+      final cb = onOverflowChanged;
+      scheduleMicrotask(() => cb(isOverflow));
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    final clip = Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height);
+    context.pushClipRect(needsCompositing, offset, clip.shift(-offset), (
+      ctx,
+      off,
+    ) {
+      ctx.paintChild(child, off);
+    });
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    // Only hit the visible (clipped) area. Without this, the unclipped child
+    // would absorb taps in the bottom fade zone before our gesture detector
+    // sees them.
+    if (position.dx < 0 ||
+        position.dy < 0 ||
+        position.dx > size.width ||
+        position.dy > size.height) {
+      return false;
+    }
+    return super.hitTest(result, position: position);
   }
 }
 
