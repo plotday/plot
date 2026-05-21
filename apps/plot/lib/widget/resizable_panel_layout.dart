@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/note_viewer.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
@@ -119,46 +119,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   double _middlePanelRatio = 0.5;
   late final Future<void> _loadPreferencesFuture;
 
-  /// Key for the right (thread) panel wrap. Used to find its left edge so
-  /// the note-viewer overlay can cover everything to its left in
-  /// multi-panel mode.
-  final GlobalKey _rightPanelKey = GlobalKey();
-
-  /// Key on the panel-layout root so we can translate the right panel's
-  /// global position into a layout-local offset.
-  final GlobalKey _selfKey = GlobalKey();
-
-  /// Right panel's left edge in layout-local coordinates, or null if not
-  /// yet measured. Updated after each frame.
-  final ValueNotifier<double?> _rightPanelLeft = ValueNotifier(null);
-
   @override
   void initState() {
     super.initState();
     _loadPreferencesFuture = _loadFromPreferences();
-  }
-
-  @override
-  void dispose() {
-    _rightPanelLeft.dispose();
-    super.dispose();
-  }
-
-  void _scheduleMeasureRightPanel() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final selfBox = _selfKey.currentContext?.findRenderObject();
-      final rightBox = _rightPanelKey.currentContext?.findRenderObject();
-      if (selfBox is! RenderBox || rightBox is! RenderBox) {
-        if (_rightPanelLeft.value != null) _rightPanelLeft.value = null;
-        return;
-      }
-      if (!selfBox.attached || !rightBox.attached) return;
-      final offset = rightBox.localToGlobal(Offset.zero, ancestor: selfBox);
-      if (offset.dx != _rightPanelLeft.value) {
-        _rightPanelLeft.value = offset.dx;
-      }
-    });
   }
 
   Future<void> _loadFromPreferences() async {
@@ -262,7 +226,11 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
 
   /// Body content of the main column (middle + right panels sharing one
   /// squircle, with an inner resize divider between them).
-  Widget _buildMainBody(BuildContext context, {required bool hasLeftSidebar}) {
+  Widget _buildMainBody(
+    BuildContext context, {
+    required bool hasLeftSidebar,
+    required Note? viewedNote,
+  }) {
     final radius = const Radius.circular(_panelRadius);
     // Middle panel: rounded outer-left corners (the sidebar floats with a
     // gap, not a shared seam, so the middle panel is the leftmost outer
@@ -294,14 +262,26 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       paintChrome: false,
     );
 
+    // The viewer is overlaid on top of the middle panel's content via a
+    // Stack inside the squircle. `widget.middle` is never removed from the
+    // tree, so the activity feed keeps its scroll position and any other
+    // local state. The Stack lives inside the FResizable's middle region,
+    // so resize tracking is automatic — no measurement, no overlay
+    // positioning math.
+    final Widget middleContent = viewedNote == null
+        ? widget.middle
+        : Stack(
+            children: [
+              Positioned.fill(child: widget.middle),
+              Positioned.fill(child: NoteViewer(note: viewedNote)),
+            ],
+          );
+
     return Padding(
       padding: EdgeInsets.fromLTRB(leftPad, 0, rightPad, _outerInset),
       child: _InnerHoverableResizable(
-        middle: wrap(widget.middle, middleRadiusResolved),
-        right: KeyedSubtree(
-          key: _rightPanelKey,
-          child: wrap(widget.child, rightRadius),
-        ),
+        middle: wrap(middleContent, middleRadiusResolved),
+        right: wrap(widget.child, rightRadius),
         middleRatio: _middlePanelRatio,
         onMiddleRatioChanged: (r) => _middlePanelRatio = r,
       ),
@@ -333,6 +313,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   Widget _buildMainColumn(
     BuildContext context, {
     required bool hasLeftSidebar,
+    required Note? viewedNote,
   }) {
     return Column(
       // Same reason as [_buildSidebarColumn]: stretch so the main header's
@@ -341,48 +322,55 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const UnifiedHeader(variant: HeaderVariant.main),
-        Expanded(child: _buildMainBody(context, hasLeftSidebar: hasLeftSidebar)),
+        Expanded(
+          child: _buildMainBody(
+            context,
+            hasLeftSidebar: hasLeftSidebar,
+            viewedNote: viewedNote,
+          ),
+        ),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return KeyedSubtree(
-      key: _selfKey,
-      child: BlocListener<NoteViewerBloc, NoteViewerState>(
-        // The inner divider can move without triggering this widget to
-        // rebuild, so the cached right-panel position can be stale by the
-        // time a note is viewed. Re-measure on every viewer state change.
-        listener: (context, state) => _scheduleMeasureRightPanel(),
-        child: _buildBody(context),
-      ),
-    );
-  }
+    return BlocBuilder<NoteViewerBloc, NoteViewerState>(
+      builder: (context, viewerState) {
+        final viewedNote = viewerState.note;
+        return FutureBuilder<void>(
+          future: _loadPreferencesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const LoadingPage();
+            }
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return BlocBuilder<LayoutBloc, LayoutState>(
+                  buildWhen: (previous, current) =>
+                      previous.multiPanel != current.multiPanel ||
+                      previous.leftPanelVisible != current.leftPanelVisible ||
+                      previous.middlePanelVisible !=
+                          current.middlePanelVisible,
+                  builder: (context, layoutState) {
+                    if (!layoutState.multiPanel) {
+                      // Single-panel: the page-level header is rendered
+                      // above this widget. Stack the viewer on top of the
+                      // route content (not replacing it) so the thread
+                      // route's state is preserved.
+                      if (viewedNote != null) {
+                        return Stack(
+                          children: [
+                            Positioned.fill(child: widget.child),
+                            Positioned.fill(
+                              child: NoteViewer(note: viewedNote),
+                            ),
+                          ],
+                        );
+                      }
+                      return widget.child;
+                    }
 
-  Widget _buildBody(BuildContext context) {
-    return FutureBuilder<void>(
-        future: _loadPreferencesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const LoadingPage();
-          }
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              return BlocBuilder<LayoutBloc, LayoutState>(
-                buildWhen: (previous, current) =>
-                    previous.multiPanel != current.multiPanel ||
-                    previous.leftPanelVisible != current.leftPanelVisible ||
-                    previous.middlePanelVisible != current.middlePanelVisible,
-                builder: (context, layoutState) {
-                  _scheduleMeasureRightPanel();
-                  final Widget layout;
-                  if (!layoutState.multiPanel) {
-                    // Single-panel: the page-level header is rendered above
-                    // this widget; here we just hand back the route content.
-                    layout = widget.child;
-                  } else {
                     final totalWidth = constraints.maxWidth;
                     final leftWidth = _getLeftPanelWidth(
                       totalWidth,
@@ -391,85 +379,38 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                     final leftVisible =
                         layoutState.leftPanelVisible && leftWidth > 0;
 
+                    // The viewer overlay lives inside the middle panel's
+                    // squircle (added in [_buildMainBody]); the sidebar is
+                    // never collapsed. Changing the tree shape between
+                    // 3-panel and 2-panel (e.g. by forcing the sidebar
+                    // hidden when viewing) causes the inner AutoRouter to
+                    // briefly fall back to its default route — which fires
+                    // `_PriorityOnlyPageState.initState` and navigates to
+                    // NewThreadRoute, wiping the open thread. Keeping the
+                    // tree shape stable preserves the thread panel's state.
                     if (!leftVisible) {
-                      // 2-panel multi: no sidebar, just the main column with
-                      // middle + right inside one shared squircle.
-                      layout = _buildMainColumn(
+                      return _buildMainColumn(
                         context,
                         hasLeftSidebar: false,
-                      );
-                    } else {
-                      // 3-panel multi: A | B. Outer divider top-to-bottom.
-                      layout = _OuterHoverableResizable(
-                        leftWidth: leftWidth,
-                        totalWidth: totalWidth,
-                        layoutState: layoutState,
-                        onLeftWidthChanged: (width) =>
-                            _leftPanelWidth = width,
-                        left: _buildSidebarColumn(context),
-                        right: _buildMainColumn(
-                          context,
-                          hasLeftSidebar: true,
-                        ),
+                        viewedNote: viewedNote,
                       );
                     }
-                  }
-
-                  return Stack(
-                    children: [
-                      Positioned.fill(child: layout),
-                      _NoteViewerOverlay(
-                        isMultiPanel: layoutState.multiPanel,
-                        rightPanelLeft: _rightPanelLeft,
+                    return _OuterHoverableResizable(
+                      leftWidth: leftWidth,
+                      totalWidth: totalWidth,
+                      layoutState: layoutState,
+                      onLeftWidthChanged: (width) =>
+                          _leftPanelWidth = width,
+                      left: _buildSidebarColumn(context),
+                      right: _buildMainColumn(
+                        context,
+                        hasLeftSidebar: true,
+                        viewedNote: viewedNote,
                       ),
-                    ],
-                  );
-                },
-              );
-            },
-          );
-        },
-      );
-  }
-}
-
-/// Mounts [NoteViewer] above the panel layout when [NoteViewerBloc] has a
-/// viewed note. In multi-panel mode the overlay covers everything to the
-/// left of the thread (right) panel — keeping the thread interactive so the
-/// user can scroll it and add new notes — by anchoring its right edge to
-/// [rightPanelLeft]. In single-panel mode it fills the whole layout.
-class _NoteViewerOverlay extends StatelessWidget {
-  const _NoteViewerOverlay({
-    required this.isMultiPanel,
-    required this.rightPanelLeft,
-  });
-
-  final bool isMultiPanel;
-  final ValueListenable<double?> rightPanelLeft;
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<NoteViewerBloc, NoteViewerState>(
-      builder: (context, state) {
-        final note = state.note;
-        if (note == null) return const SizedBox.shrink();
-        if (!isMultiPanel) {
-          return Positioned.fill(child: NoteViewer(note: note));
-        }
-        return ValueListenableBuilder<double?>(
-          valueListenable: rightPanelLeft,
-          builder: (context, leftEdge, _) {
-            if (leftEdge == null) {
-              // Position not measured yet; keep the overlay invisible for
-              // one frame rather than flashing a full-width cover.
-              return const SizedBox.shrink();
-            }
-            return Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: leftEdge,
-              child: NoteViewer(note: note),
+                    );
+                  },
+                );
+              },
             );
           },
         );
@@ -534,9 +475,21 @@ class _OuterHoverableResizableState extends State<_OuterHoverableResizable> {
   @override
   void didUpdateWidget(covariant _OuterHoverableResizable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.leftWidth != widget.leftWidth ||
-        oldWidget.totalWidth != widget.totalWidth) {
+    final dimsChanged = oldWidget.leftWidth != widget.leftWidth ||
+        oldWidget.totalWidth != widget.totalWidth;
+    final childrenChanged = !identical(oldWidget.left, widget.left) ||
+        !identical(oldWidget.right, widget.right);
+    if (dimsChanged) {
       _dividerOffset = widget.leftWidth;
+    }
+    if (dimsChanged || childrenChanged) {
+      // Rebuild regions when either dimensions or panel contents change.
+      // The cached `_regions` list keeps the FResizable's children stable
+      // during controller-driven rebuilds (drag), but when the parent
+      // hands us new `left`/`right` widgets the cached FResizableRegion
+      // instances no longer reach the latest closure values — FResizable
+      // never re-invokes the builders, so the new content never lands on
+      // screen.
       _regions = _buildRegions();
     }
   }
@@ -734,6 +687,25 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
     super.initState();
     _controller = FResizableController.cascade();
     _controller.addListener(_handleResize);
+  }
+
+  @override
+  void didUpdateWidget(_InnerHoverableResizable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The cached `_regions` keeps drag-time controller notifications from
+    // clobbering the FResizable's child list. When the content passed in
+    // for the middle or right slot actually changes (e.g. the viewer
+    // opens and replaces `widget.middle` with a Stack containing the
+    // reading area), the cache becomes stale — FResizable's children stay
+    // referentially equal and the new content never reaches the screen.
+    // Invalidate the cache so the next build rebuilds the regions with
+    // the current `widget.middle` and `widget.right`. `_buildRegions`
+    // reads the controller's current extent into `initialExtent`, so the
+    // post-reset divider position matches what the user had before.
+    if (!identical(oldWidget.middle, widget.middle) ||
+        !identical(oldWidget.right, widget.right)) {
+      _regions = null;
+    }
   }
 
   List<FResizableRegion> _buildRegions(double totalWidth) {

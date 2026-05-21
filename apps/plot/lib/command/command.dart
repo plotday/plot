@@ -12,6 +12,7 @@ export 'agenda.dart';
 export 'attention.dart';
 export 'thread.dart';
 export 'note.dart';
+export 'note_viewer.dart';
 export 'twist.dart';
 export 'provider.dart';
 export 'settings.dart';

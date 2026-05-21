@@ -162,6 +162,7 @@ class _NoteWidgetState extends State<NoteWidget> {
               child: _TruncatedNoteContent(
                 note: widget.note,
                 searchHighlight: widget.searchHighlight,
+                noteHovered: _hovered,
               ),
             ),
           if (noteLinks.isNotEmpty)
@@ -342,14 +343,30 @@ class _NoteWidgetState extends State<NoteWidget> {
 /// appears on hover; tapping the fade or the affordance opens the full
 /// note in [NoteViewer] via [NoteViewerBloc].
 class _TruncatedNoteContent extends StatefulWidget {
-  const _TruncatedNoteContent({required this.note, this.searchHighlight});
+  const _TruncatedNoteContent({
+    required this.note,
+    required this.noteHovered,
+    this.searchHighlight,
+  });
 
   final Note note;
   final String? searchHighlight;
 
-  /// Maximum height of inline content before truncation kicks in. Long
-  /// notes get clipped to this and reveal the rest via the full viewer.
+  /// Whether the parent note widget is currently hovered. The "View all"
+  /// signifier only renders while this is true; otherwise it stays hidden
+  /// so the inline view is uncluttered.
+  final bool noteHovered;
+
+  /// Height a long note collapses to. Medium-length notes (between
+  /// [maxHeight] and [truncateAtHeight]) render in full — only notes
+  /// taller than [truncateAtHeight] get clipped to [maxHeight] and reveal
+  /// the rest via the full viewer.
   static const double maxHeight = 360.0;
+
+  /// Trigger threshold for truncation. Content shorter than this renders
+  /// in full; content taller collapses to [maxHeight]. Doubling the
+  /// collapse height avoids hiding medium notes that read fine inline.
+  static const double truncateAtHeight = maxHeight * 2;
 
   /// Height of the bottom fade gradient overlaid on truncated content.
   static const double fadeHeight = 80.0;
@@ -360,7 +377,7 @@ class _TruncatedNoteContent extends StatefulWidget {
 
 class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
   bool _overflow = false;
-  bool _hovered = false;
+  bool _fadeHovered = false;
 
   void _openViewer() {
     context.read<NoteViewerBloc>().view(widget.note);
@@ -374,8 +391,18 @@ class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
       searchHighlight: widget.searchHighlight,
     );
 
+    final bg = context.colour.background;
+    // The fade gradient is painted by the render layer in
+    // [_OverflowAwareBox.paint] so it lands on the same frame as the
+    // truncation decision — avoiding the unfaded-then-faded flash that a
+    // build-time Flutter widget would produce (build runs before layout,
+    // so the widget tree on the first frame doesn't yet know overflow
+    // happened).
     final measured = _OverflowAwareBox(
       maxHeight: _TruncatedNoteContent.maxHeight,
+      truncateAt: _TruncatedNoteContent.truncateAtHeight,
+      fadeHeight: _TruncatedNoteContent.fadeHeight,
+      fadeColor: bg,
       onOverflowChanged: (overflow) {
         if (!mounted || overflow == _overflow) return;
         setState(() => _overflow = overflow);
@@ -385,79 +412,64 @@ class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
 
     if (!_overflow) return measured;
 
-    final bg = context.colour.background;
-    return MouseRegion(
-      onEnter: (_) {
-        if (!_hovered) setState(() => _hovered = true);
-      },
-      onExit: (_) {
-        if (_hovered) setState(() => _hovered = false);
-      },
-      child: Stack(
-        children: [
-          measured,
-          // Bottom fade — also catches taps to open the viewer.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: _TruncatedNoteContent.fadeHeight,
+    return Stack(
+      children: [
+        measured,
+        // Transparent click target covering the fade region. The visible
+        // gradient is painted by [_OverflowAwareBox] itself; this widget
+        // is purely a hit zone + hover tracker.
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: _TruncatedNoteContent.fadeHeight,
+          child: MouseRegion(
+            onEnter: (_) {
+              if (!_fadeHovered) setState(() => _fadeHovered = true);
+            },
+            onExit: (_) {
+              if (_fadeHovered) setState(() => _fadeHovered = false);
+            },
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openViewer,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [bg.withValues(alpha: 0), bg],
-                  ),
-                ),
-                child: const SizedBox.expand(),
-              ),
+              child: const SizedBox.expand(),
             ),
           ),
-          if (_hovered)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: const _ViewAllPill(),
-                  ),
-                ),
-              ),
+        ),
+        // "View all" signifier — only rendered while the note is hovered,
+        // sitting at the bottom of the fade gradient. Muted when the fade
+        // itself isn't being hovered, foreground when it is. IgnorePointer
+        // so it never intercepts taps; the fade itself is the click target.
+        if (widget.noteHovered)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 6,
+            child: IgnorePointer(
+              child: Center(child: _ViewAllPill(active: _fadeHovered)),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
 
 class _ViewAllPill extends StatelessWidget {
-  const _ViewAllPill();
+  const _ViewAllPill({required this.active});
+
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
-    final fg = context.theme.colors.foreground;
-    final bg = context.colour.background;
+    final color = active
+        ? context.theme.colors.foreground
+        : context.colour.muted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: bg,
+        color: context.colour.background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: context.theme.colors.border,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF000000).withValues(alpha: 0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -465,13 +477,13 @@ class _ViewAllPill extends StatelessWidget {
           Icon(
             FontAwesomeIcons.upRightAndDownLeftFromCenter,
             size: 12,
-            color: fg,
+            color: color,
           ),
           const SizedBox(width: 6),
           Text(
             'View all',
             style: context.theme.typography.sm.copyWith(
-              color: fg,
+              color: color,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -482,22 +494,36 @@ class _ViewAllPill extends StatelessWidget {
 }
 
 /// Lays out [child] with unbounded vertical constraints, captures its
-/// natural height, and clamps its own height to [maxHeight]. Reports
-/// whether truncation was necessary via [onOverflowChanged].
+/// natural height, and — only when natural > [truncateAt] — clamps its
+/// own height to [maxHeight]. Content between [maxHeight] and
+/// [truncateAt] renders in full so medium-length notes don't get clipped.
+/// When truncated, paints a [fadeHeight]-tall gradient from transparent to
+/// [fadeColor] at the bottom — done at the render layer so the fade
+/// arrives on the same frame as the truncation, with no build-time flash.
+/// Reports whether truncation kicked in via [onOverflowChanged].
 class _OverflowAwareBox extends SingleChildRenderObjectWidget {
   const _OverflowAwareBox({
     required this.maxHeight,
+    required this.truncateAt,
+    required this.fadeHeight,
+    required this.fadeColor,
     required this.onOverflowChanged,
     required Widget super.child,
   });
 
   final double maxHeight;
+  final double truncateAt;
+  final double fadeHeight;
+  final Color fadeColor;
   final ValueChanged<bool> onOverflowChanged;
 
   @override
   _OverflowAwareRenderBox createRenderObject(BuildContext context) =>
       _OverflowAwareRenderBox(
         maxHeight: maxHeight,
+        truncateAt: truncateAt,
+        fadeHeight: fadeHeight,
+        fadeColor: fadeColor,
         onOverflowChanged: onOverflowChanged,
       );
 
@@ -508,6 +534,9 @@ class _OverflowAwareBox extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..maxHeight = maxHeight
+      ..truncateAt = truncateAt
+      ..fadeHeight = fadeHeight
+      ..fadeColor = fadeColor
       ..onOverflowChanged = onOverflowChanged;
   }
 }
@@ -515,8 +544,14 @@ class _OverflowAwareBox extends SingleChildRenderObjectWidget {
 class _OverflowAwareRenderBox extends RenderProxyBox {
   _OverflowAwareRenderBox({
     required double maxHeight,
+    required double truncateAt,
+    required double fadeHeight,
+    required Color fadeColor,
     required this.onOverflowChanged,
-  }) : _maxHeight = maxHeight;
+  }) : _maxHeight = maxHeight,
+       _truncateAt = truncateAt,
+       _fadeHeight = fadeHeight,
+       _fadeColor = fadeColor;
 
   double _maxHeight;
   double get maxHeight => _maxHeight;
@@ -524,6 +559,30 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
     if (_maxHeight == value) return;
     _maxHeight = value;
     markNeedsLayout();
+  }
+
+  double _truncateAt;
+  double get truncateAt => _truncateAt;
+  set truncateAt(double value) {
+    if (_truncateAt == value) return;
+    _truncateAt = value;
+    markNeedsLayout();
+  }
+
+  double _fadeHeight;
+  double get fadeHeight => _fadeHeight;
+  set fadeHeight(double value) {
+    if (_fadeHeight == value) return;
+    _fadeHeight = value;
+    markNeedsPaint();
+  }
+
+  Color _fadeColor;
+  Color get fadeColor => _fadeColor;
+  set fadeColor(Color value) {
+    if (_fadeColor == value) return;
+    _fadeColor = value;
+    markNeedsPaint();
   }
 
   ValueChanged<bool> onOverflowChanged;
@@ -538,14 +597,14 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
       return;
     }
     // Lay out the child with no vertical bound so its natural height can be
-    // observed; then size ourselves to min(natural, maxHeight).
+    // observed; then collapse only when it exceeds the trigger threshold.
     final childConstraints = constraints.copyWith(
       minHeight: 0,
       maxHeight: double.infinity,
     );
     child.layout(childConstraints, parentUsesSize: true);
     final natural = child.size.height;
-    final isOverflow = natural > _maxHeight + 0.5;
+    final isOverflow = natural > _truncateAt + 0.5;
     final h = isOverflow ? _maxHeight : natural;
     size = constraints.constrain(Size(child.size.width, h));
     if (_lastOverflow != isOverflow) {
@@ -567,6 +626,24 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
       off,
     ) {
       ctx.paintChild(child, off);
+      if (_lastOverflow == true && _fadeHeight > 0) {
+        // Paint the fade gradient inside the clipped region — `off` is the
+        // top-left in the clip's local coordinates.
+        final fadeTop = size.height - _fadeHeight;
+        final fadeRect = Rect.fromLTWH(
+          off.dx,
+          off.dy + fadeTop,
+          size.width,
+          _fadeHeight,
+        );
+        final paint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_fadeColor.withValues(alpha: 0), _fadeColor],
+          ).createShader(fadeRect);
+        ctx.canvas.drawRect(fadeRect, paint);
+      }
     });
   }
 
