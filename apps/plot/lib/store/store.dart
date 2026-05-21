@@ -601,9 +601,20 @@ class Store extends _$Store {
         inst._setupConnectivityListener();
         inst._setupLifecycleListener();
       } else {
-        // New user or no local data - critical sync blocks, rest is deferred
+        // New user OR existing user signing in on a fresh client (new browser,
+        // reinstall, cleared local storage). Critical sync blocks the UI on
+        // a 30s budget; everything else is deferred to background.
+        //
+        // INVARIANT — keep this path fast. The "existing account, fresh
+        // client" case is the worst case: the entire critical pull runs
+        // from `seq=0` against a populated remote. If you're tempted to
+        // bump the 30s timeout, instead look at what the critical path is
+        // doing and move work to the deferred phase. See
+        // `SyncOrchestrator._criticalEntities` and
+        // `SyncOrchestrator.syncInitialCritical` for the constraints.
         log.info("New user sync: starting connectivity check and critical sync");
         onStartStatus?.call('Welcome to Plot');
+        var criticalTimedOut = false;
         try {
           await Future(() async {
             await inst._waitForNetworkConnectivity();
@@ -613,18 +624,30 @@ class Store extends _$Store {
             log.info("New user sync: critical sync complete");
           }).timeout(const Duration(seconds: 30));
         } on TimeoutException {
-          log.warning("New user critical sync timed out after 30s");
+          // Don't rethrow: the timeout is a soft deadline for first-render
+          // data, not an auth failure. The abandoned future keeps running
+          // (Dart .timeout() doesn't cancel), and the deferred sync below
+          // will cover anything the critical phase didn't finish. Letting
+          // this bubble up to the UserBloc would force a sign-out, which
+          // doesn't fix a slow network.
+          criticalTimedOut = true;
+          log.warning(
+            "New user critical sync exceeded 30s — proceeding with partial state; background sync will continue",
+          );
           Tracker.trackError(
             'auth',
             errorType: 'TimeoutException',
-            errorMessage: 'New user critical sync timed out after 30s',
+            errorMessage: 'New user critical sync exceeded 30s (non-fatal)',
             context: 'sign_in_sync_timeout',
           );
-          rethrow;
         }
 
-        // If no default priority exists after sync, sign out the user
-        if (!await Priority.hasDefault()) {
+        // If the critical pull finished but produced no priority, the account
+        // is truly empty (or sync was blocked by an auth/RLS error) — sign out
+        // so the user can re-authenticate. Skip this when we timed out: the
+        // abandoned future may still be paginating, and Priority.hasDefault()
+        // would race against it.
+        if (!criticalTimedOut && !await Priority.hasDefault()) {
           log.warning("No default priority after sync - signing out user");
           try {
             await Base.signOut();

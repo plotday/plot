@@ -123,6 +123,13 @@ class TwistInstance extends TwistInstanceRow {
 
   static Future<bool> push() => Store.get.push(table, TwistInstancesBase());
 
+  /// Bounded single-pass pull used by `_twistInstanceCritical` in the
+  /// critical initial-sync path. Keep this fast: a fresh-client sign-in for
+  /// an existing account runs this against `seq=0`, and the whole critical
+  /// phase must fit inside ~30s. If you need to do additional work for
+  /// twist instances on first sync, add it to `pullUpdates` (which runs in
+  /// `syncInitialDeferred`) rather than expanding this method. See
+  /// `SyncOrchestrator._criticalEntities` for the invariant.
   static Future<void> pullInitial() async {
     await Store.get.pull(table, TwistInstancesBase(), initial: true);
   }

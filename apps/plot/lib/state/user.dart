@@ -99,17 +99,23 @@ class UserBloc extends Cubit<UserState> {
         log.info('Post-auth setup completed in ${stopwatch.elapsedMilliseconds}ms');
       }).timeout(const Duration(seconds: 90));
     } on TimeoutException {
-      log.warning('Post-auth setup timed out after 90s — signing out');
+      // Soft deadline: Store.start or Actor.pullCritical didn't finish in 90s.
+      // Don't sign the user out — their session is valid; sync is just slow.
+      // The abandoned future keeps running (Dart .timeout() doesn't cancel),
+      // so background work continues and the UI fills in as data arrives.
+      // The inner 30s new-user critical-sync timeout is swallowed in
+      // Store.start, so reaching this handler means the whole post-auth
+      // setup genuinely exceeded 90s — not just the critical phase.
+      log.warning(
+        'Post-auth setup exceeded 90s — proceeding with partial state; background sync will continue',
+      );
       Tracker.trackError(
         'auth',
         errorType: 'TimeoutException',
-        errorMessage: 'Post-auth setup timed out after 90s',
+        errorMessage: 'Post-auth setup exceeded 90s (non-fatal)',
         context: 'sign_in_setup_timeout',
       );
-      statusNotifier.value = null;
-      try { await Base.signOut(); } catch (_) {}
-      emit(const UserSignedOut());
-      return;
+      // Fall through to emit UserReady below.
     } catch (e, stackTrace) {
       log.warning('Store.start failed — cannot proceed', e, stackTrace);
       Tracker.trackError(

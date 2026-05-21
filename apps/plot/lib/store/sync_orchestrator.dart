@@ -166,14 +166,19 @@ class SyncOrchestrator {
 
   /// Thread entity for critical initial sync — only pulls agenda + activity feed.
   /// Skips unread threads, schedules initial, and incremental pull.
+  ///
+  /// Deliberately does NOT do a full `links` pull here. `pullAgenda` /
+  /// `pullActivityFeed` each fetch the links for the threads they slice in
+  /// via bounded `pullTo` calls (thread.dart:812-834, 862-883), which is all
+  /// the UI needs to render. The full account-wide link pull happens later
+  /// in `syncInitialDeferred` via `Thread.pullInitial()` / `Thread.pull()`.
+  /// Doing it eagerly here used to dominate the 30s critical-sync budget
+  /// for accounts with large link histories.
   static final _threadCritical = SyncEntity(
     debugName: 'thread_critical',
     dependsOn: [priority, actor],
     pushFn: () async => true,
     pullFn: () async {
-      // Set pulledAt baseline for links so future incremental pulls work
-      await Store.get.pull(Store.get.links, LinksBase());
-      // Pull agenda and activity feed in parallel
       await Future.wait([
         Thread.pullAgenda(null, null),
         Thread.pullActivityFeed(null, null),
@@ -182,6 +187,10 @@ class SyncOrchestrator {
   );
 
   /// TwistInstance for critical initial sync — initial only, no updates.
+  /// Uses `pullInitial` (single bounded page) rather than `pull` (initial +
+  /// full incremental sweep) so the critical path stays inside its 30s
+  /// budget. Incremental updates are handled later by the regular
+  /// `twistInstance` entity in `syncInitialDeferred`.
   static final _twistInstanceCritical = SyncEntity(
     debugName: 'twist_instance_critical',
     dependsOn: [priority],
@@ -190,6 +199,26 @@ class SyncOrchestrator {
   );
 
   /// Entities needed for the critical initial sync (minimum to render UI).
+  ///
+  /// INVARIANT — keep this list tight. A common user flow is "sign in on a
+  /// fresh browser / new device with a long-lived account," which means
+  /// EVERY entity here pulls from `seq=0` against potentially huge tables.
+  /// `syncInitialCritical` runs under a 30s wall-clock budget (see
+  /// `Store._startSyncCritical` and the 30s timeout in `Store.start`); if
+  /// it exceeds that, the user sits on a loading screen and (until the
+  /// timeout was made non-fatal) used to get signed out.
+  ///
+  /// Before adding an entity here, ask:
+  ///   1. Is it required for the very first paint? If not, put it in
+  ///      `syncInitialDeferred` instead.
+  ///   2. Is the pull bounded (a single page / a `pullTo` slice) or does
+  ///      it paginate through the entire table? Critical entities must be
+  ///      bounded — see `_threadCritical` and `_twistInstanceCritical`
+  ///      for the pattern.
+  ///   3. Does its `pullFn` call any helper that itself does an unbounded
+  ///      `Store.pull(...)` on a high-volume table (e.g. links, threads,
+  ///      schedules, notes)? If yes, that helper is the wrong primitive
+  ///      for this list.
   static final _criticalEntities = [
     actor,
     userSettings,
@@ -286,8 +315,19 @@ class SyncOrchestrator {
     }
   }
 
-  /// Performs minimal sync for first-time users.
-  /// Pulls only the entities needed to render the initial UI.
+  /// Performs minimal sync for first-time users (and any user signing in on
+  /// a fresh client / new browser with an empty local DB).
+  ///
+  /// MUST complete inside ~30s for a real account, otherwise the user is
+  /// stuck on the "Setting things up…" screen. The 30s deadline is enforced
+  /// by `Store.start`'s new-user branch. The deadline is now non-fatal —
+  /// we proceed with whatever data is in place and let `syncInitialDeferred`
+  /// finish the rest — but the goal remains the same: have enough loaded
+  /// for the first paint to feel instant.
+  ///
+  /// "Fresh client with an existing account" is the most adversarial case:
+  /// every critical entity pulls from `seq=0` against a populated remote.
+  /// See `_criticalEntities` for what's allowed in this phase and why.
   /// No push phase (new users have nothing to push).
   Future<void> syncInitialCritical() async {
     await _waitForRateLimitCooldown();

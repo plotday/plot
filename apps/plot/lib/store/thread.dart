@@ -787,6 +787,13 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   /// Pull one page of activity feed (backward from now).
   /// Uses SyncState entity "activity-feed:{priorityPath}" to track position.
+  ///
+  /// This method is also called from `_threadCritical` in the initial sync
+  /// critical path (alongside `pullAgenda`), so it MUST remain bounded —
+  /// a single `pullTo` slice for threads plus parallel `pullTo` slices for
+  /// links/schedules/threadTags scoped to that slice. Do not add an
+  /// unbounded `Store.pull(...)` call here; that's what blew the 30s
+  /// critical budget for accounts with large link histories.
   static Future<void> pullActivityFeed(
     PriorityId? priorityId,
     Path? priorityPath, {
@@ -836,6 +843,10 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   /// Pull one page of agenda (forward from today).
   /// Uses SyncState entity "agenda:{priorityPath}" to track position.
+  ///
+  /// Also called from `_threadCritical` in the initial sync critical path.
+  /// See `pullActivityFeed` for the bounded-pull invariant — same rules
+  /// apply here.
   static Future<void> pullAgenda(
     PriorityId? priorityId,
     Path? priorityPath, {
