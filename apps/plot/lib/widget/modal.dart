@@ -87,7 +87,10 @@ class Modal extends StatelessWidget {
         );
       }
       if (onRefresh != null) {
-        await onRefresh();
+        // Fire-and-forget: the mutation already committed optimistically to
+        // local Drift, so the calling row's spinner shouldn't be pinned on
+        // the picker's re-fetch of contacts/actors.
+        unawaited(onRefresh());
       }
       return false;
     }
