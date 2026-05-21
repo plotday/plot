@@ -1275,6 +1275,16 @@ class Store extends _$Store {
     String? finalHorizon;
     var totalRows = 0;
     var more = false;
+    // When a row in this pull fails to deserialize, we cannot safely
+    // advance the seq cursor: doing so would skip the row forever (the
+    // server only re-emits rows with `seq >= last_horizon`). The May 2026
+    // `revoked` field bug — client expected non-null `bool revoked`, prod
+    // briefly served threads without it — silently dropped every thread
+    // row while letting the cursor sail past, stranding affected users
+    // with zero threads even after the parsing fix landed. Track parse
+    // failures here, suppress the horizon commit at the end, and let the
+    // next sync re-pull from the prior cursor.
+    var rowParseFailed = false;
 
     do {
       pages++;
@@ -1314,8 +1324,13 @@ class Store extends _$Store {
         try {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
-          log.warning(
-            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
+          rowParseFailed = true;
+          // Severe (not warning) so the failure ships to PostHog via the
+          // root-logger forward in main.dart. We can't call Tracker
+          // directly here — the store layer must stay tracker-agnostic
+          // for tests — but warning+ flows through the existing pipeline.
+          log.severe(
+            "Error parsing row from ${baseTable.table} — aborting cursor advance for this pull. Row: ${jsonEncode(r, toEncodable: (o) => o.toString())}",
             e,
             stackTrace,
           );
@@ -1344,6 +1359,12 @@ class Store extends _$Store {
       dbMs += writeSw.elapsedMilliseconds;
 
       totalRows += baseRows.length;
+      // If any row in this batch failed to parse, drop out of the
+      // pagination loop and skip the horizon commit below. Continuing
+      // would advance the cursor past further rows that may also be
+      // unparseable, compounding the data loss. The current `syncState`
+      // cursor stays put; the next sync re-fetches from the same place.
+      if (rowParseFailed) break;
     } while (more);
 
     if (totalRows > 0) {
@@ -1353,9 +1374,17 @@ class Store extends _$Store {
     // Persist the new horizon. Also stamp `pulledAt` to now() so legacy
     // code paths that check `pulledAt != null` to detect "entity is
     // initialized" continue to work during the expand-contract rollout.
+    //
+    // Skip the entire stamp when a row failed to parse: advancing
+    // `last_horizon` (or stamping `pulledAt` on initial sync, which also
+    // gates the "initialized" check on the next pull) would lock us past
+    // the unparseable rows. Leaving syncStates untouched lets the next
+    // sync attempt re-pull from the same cursor with — hopefully — a
+    // fixed deserializer.
     final shouldStamp =
-        finalHorizon != null ||
-        (initial && baseTable.filterName == null);
+        !rowParseFailed &&
+        (finalHorizon != null ||
+            (initial && baseTable.filterName == null));
     var stamped = false;
     if (shouldStamp) {
       final horizonInt = finalHorizon != null
@@ -1444,6 +1473,10 @@ class Store extends _$Store {
     String? lastId;
     var totalRows = 0;
     bool more;
+    // See `pull` above for the rationale. Skip the "pulled" stamp if a
+    // row failed to deserialize so the next attempt retries from scratch
+    // (this method short-circuits on `pulledAt != null`).
+    var rowParseFailed = false;
 
     do {
       var (
@@ -1473,8 +1506,9 @@ class Store extends _$Store {
         try {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
-          log.warning(
-            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
+          rowParseFailed = true;
+          log.severe(
+            "Error parsing archived row from ${baseTable.table} — aborting pullArchived. Row: ${jsonEncode(r, toEncodable: (o) => o.toString())}",
             e,
             stackTrace,
           );
@@ -1486,9 +1520,17 @@ class Store extends _$Store {
         batch.insertAll(table, storeRows, mode: InsertMode.insertOrReplace);
       });
       totalRows += baseRows.length;
+      if (rowParseFailed) break;
     } while (more);
 
-    // Mark as pulled
+    // Mark as pulled — unless a row failed to deserialize, in which case
+    // we want the next call to retry from scratch.
+    if (rowParseFailed) {
+      log.severe(
+        "pullArchived(${baseTable.table}) aborted with $totalRows rows; not stamping pulled_at so retry is possible",
+      );
+      return;
+    }
     final nowMicros =
         lastUpdated?.toUtc().microsecondsSinceEpoch ??
         DateTime.now().toUtc().microsecondsSinceEpoch;
@@ -1761,12 +1803,14 @@ class Store extends _$Store {
           ? baseRows.last['created_at'] as String?
           : null;
 
+      var pullToParseFailed = false;
       final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
         try {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
-          log.warning(
-            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
+          pullToParseFailed = true;
+          log.severe(
+            "Error parsing row from ${baseTable.table} — aborting pullTo cursor advance. Row: ${jsonEncode(r, toEncodable: (o) => o.toString())}",
             e,
             stackTrace,
           );
@@ -1787,6 +1831,16 @@ class Store extends _$Store {
       });
 
       totalRows += baseRows.length;
+
+      // Skip the cursor + noMore stamp when a row failed to deserialize.
+      // pullTo paginates by the `last` column derived from `baseRows.last`,
+      // which would advance past any unparseable rows in the batch and
+      // strand them. Leaving the sync state untouched lets the next pull
+      // retry from the same place.
+      if (pullToParseFailed) {
+        completer.complete(null);
+        return null;
+      }
 
       // Update sync state with pagination boundary and noMore flag
       if (baseRows.isNotEmpty && lastUpdated != null) {
