@@ -81,6 +81,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
     email: email,
     adminOrgs: adminOrgs,
     subscription: subscription,
+    showAllPriorities: showAllPriorities,
   );
 }
 
@@ -91,11 +92,13 @@ List<StaticCommandGroup> settingsCommands({
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
+  bool showAllPriorities = false,
 }) => [
   StaticCommandGroup(
     title: 'Settings',
     shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
     commands: [
+      ToggleArchivedPrioritiesFilter(showAllPriorities: showAllPriorities),
       ManageConnections(),
       ManageTwists(),
       ManageLinkedEmails(),
@@ -181,23 +184,12 @@ class ShowSettings extends ShowCommands {
           }
 
           final groups = [
-            // The single command that used to live in the Priorities-tab
-            // header kebab. Surfaced here so single-panel mobile users
-            // can still toggle archived priorities after the header was
-            // removed.
-            StaticCommandGroup(
-              title: 'View',
-              commands: [
-                ToggleArchivedPrioritiesFilter(
-                  showAllPriorities: showAllPriorities,
-                ),
-              ],
-            ),
             ...settingsCommandsFromState(
               prioritiesState,
               email: email,
               adminOrgs: adminOrgs,
               subscription: subscription,
+              showAllPriorities: showAllPriorities,
             ),
           ];
           final debugCmds = buildDebugCommands();
