@@ -78,7 +78,10 @@ class UserSettingsEntity {
   }
 
   static Future<void> save(UserSettingsCompanion data) async {
-    final userId = Base.userId;
+    // Matches the guard in [get] / [watch] — onboarding and settings callers
+    // can race with a forced sign-out that has already nulled `_userId`.
+    final userId = Base.userIdOrNull;
+    if (userId == null) return;
     await Store.get.save(
       table,
       data.copyWith(userId: Value(userId)),
