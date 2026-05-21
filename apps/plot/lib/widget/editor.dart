@@ -285,7 +285,6 @@ class MentionItem {
     required this.id,
     required this.name,
     this.isTwist = false,
-    this.isContact = false,
     this.isInThread = false,
   });
 
@@ -305,16 +304,14 @@ class MentionItem {
       MentionItem(
         id: actor.id.toString(),
         name: actor.nameOrEmail,
-        isContact: actor.type == ActorType.contact,
         isInThread: isInThread,
       );
 
   final String id;
   final String name;
   final bool isTwist;
-  final bool isContact;
 
-  /// Whether this contact already participates in the current thread.
+  /// Whether this person already participates in the current thread.
   /// Drives the suggestion ranking in the mention popover.
   final bool isInThread;
 }
@@ -1389,16 +1386,18 @@ class EditorState extends State<Editor> {
       return const SizedBox.shrink();
     }
 
-    // Group order: in-thread contacts → twists → other contacts.
+    // Group order: in-thread people → twists → other people.
     // MRU sorting is applied within each group so frequently-mentioned items
-    // surface first inside their tier.
+    // surface first inside their tier. "People" covers both external contacts
+    // and Plot users — the `user.actor` view types contacts linked to a user
+    // account as `user`, so a contact-only filter would drop every Plot user.
     final localPrefs = context.read<LocalPreferencesBloc>();
     final inThreadContacts = mentionItems
-        .where((item) => item.isContact && item.isInThread)
+        .where((item) => !item.isTwist && item.isInThread)
         .toList();
     final twists = mentionItems.where((item) => item.isTwist).toList();
     final otherContacts = mentionItems
-        .where((item) => item.isContact && !item.isInThread)
+        .where((item) => !item.isTwist && !item.isInThread)
         .toList();
     final sortedItems = [
       ...localPrefs.sortByMentionMru(inThreadContacts, (item) => item.id),
