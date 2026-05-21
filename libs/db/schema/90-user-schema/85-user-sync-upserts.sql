@@ -199,8 +199,30 @@ DECLARE
     v_priority_id uuid;
     v_created_by uuid;
     v_author_id uuid;
+    v_existing_thread_id uuid;
     v_row note;
 BEGIN
+    -- If p_id refers to an existing note, verify the caller has access to
+    -- its CURRENT thread before allowing the upsert. Without this, anyone
+    -- who learns a note's UUID (e.g. via user.note_redacted after losing
+    -- visibility) could move the note onto a thread they own and rewrite
+    -- its content / archived_at while bypassing the original thread's
+    -- access controls. The user.note_redacted view exposes note ids and
+    -- thread_ids for notes that became invisible, so this attack vector
+    -- is reachable from normal sync traffic.
+    IF p_id IS NOT NULL THEN
+        SELECT thread_id INTO v_existing_thread_id FROM note WHERE id = p_id;
+        IF v_existing_thread_id IS NOT NULL THEN
+            IF NOT EXISTS (
+                SELECT 1 FROM thread_priority tp
+                WHERE tp.thread_id = v_existing_thread_id
+                  AND tp.user_id = upsert_note.user_id
+            ) THEN
+                RAISE EXCEPTION 'Note not found';
+            END IF;
+        END IF;
+    END IF;
+
     SELECT
         tp.priority_id INTO v_priority_id
     FROM
@@ -326,6 +348,7 @@ CREATE OR REPLACE FUNCTION "user".upsert_twist_instance (
     SET search_path TO 'public', 'user'
     AS $function$
 DECLARE
+    v_existing_owner uuid;
     v_row twist_instance;
 BEGIN
     -- Twist instances are owned by a user and optionally billed to a team.
@@ -341,6 +364,22 @@ BEGIN
             WHERE team_id = p_team_id AND team_user.user_id = upsert_twist_instance.user_id
         ) THEN
             RAISE EXCEPTION 'User is not a member of team %', p_team_id;
+        END IF;
+    END IF;
+
+    -- If p_id refers to an existing row, the caller must own it. Without
+    -- this check the ON CONFLICT UPDATE branch happily clobbers another
+    -- user's twist_instance (rename, archive, swap team, replace options)
+    -- as long as p_owner_id == user_id — which the attacker trivially
+    -- satisfies. Twist instance UUIDs leak via user.link.created_by,
+    -- user.channel.twist_instance_id, and other peer-visible columns,
+    -- so this is reachable from normal sync traffic.
+    IF p_id IS NOT NULL THEN
+        SELECT owner_id INTO v_existing_owner FROM twist_instance WHERE id = p_id;
+        IF v_existing_owner IS NOT NULL
+           AND v_existing_owner IS DISTINCT FROM upsert_twist_instance.user_id
+        THEN
+            RAISE EXCEPTION 'Twist instance not found';
         END IF;
     END IF;
 
