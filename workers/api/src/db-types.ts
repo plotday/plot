@@ -174,10 +174,13 @@ export interface Cost {
 
 export interface Device {
   app_version: string | null;
+  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
+  device_id: string | null;
   id: Generated<string>;
+  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string;
+  push_token: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -434,6 +437,23 @@ export interface LinkX {
   type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
+}
+
+export interface LocalSyncLease {
+  attempt_id: string;
+  capability: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  fail_streak: Generated<number>;
+  last_completed_at: Timestamp | null;
+  last_error: string | null;
+  last_heartbeat_at: Timestamp;
+  last_result: string | null;
+  lease_token: string;
+  leased_until: Timestamp;
+  next_eligible_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface Note {
@@ -731,6 +751,7 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
+  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -760,6 +781,7 @@ export interface ThreadAssociation {
 export interface ThreadPriority {
   applied_default_channel_id: Int8 | null;
   archived_at: Timestamp | null;
+  auto_archived_by_thread_id: string | null;
   /**
    * Timestamp when classification was last requested. NULL once classification has succeeded. NOT NULL signals the consumer Worker (workers/classify) to (re-)classify this row.
    */
@@ -769,6 +791,7 @@ export interface ThreadPriority {
    * User's priority filing. NULL means classification is pending (see classify_at). Views must use COALESCE(priority_id, root_priority_id(user_id)) gated by the visibility filter (priority_id IS NOT NULL OR classify_at < now() - classify_visibility_window()).
    */
   priority_id: string | null;
+  revoked_at: Timestamp | null;
   seq: Generated<string>;
   thread_id: string;
   updated_at: Generated<Timestamp>;
@@ -838,6 +861,7 @@ export interface ThreadX {
   merged_into_thread_id: string | null;
   pending_contacts: string[] | null;
   preview: string | null;
+  private_to_creator: boolean | null;
   seq: string | null;
   sync_depth: number | null;
   title: string | null;
@@ -1509,6 +1533,7 @@ export interface UserThread {
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
+  auto_archived_by_thread_id: string | null;
   bumped_at: Timestamp | null;
   contacts: string[] | null;
   created_at: Timestamp | null;
@@ -1524,6 +1549,7 @@ export interface UserThread {
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
+  revoked: boolean | null;
   seq: string | null;
   title: string | null;
   topic: string | null;
@@ -1543,6 +1569,37 @@ export interface UserThreadAssociation {
   parent_thread_id: string | null;
   seq: string | null;
   updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface UserThreadRedacted {
+  activity_at: Timestamp | null;
+  agenda_at: string | null;
+  archived_at: Timestamp | null;
+  auto_archived_by_thread_id: string | null;
+  bumped_at: Timestamp | null;
+  contacts: string[] | null;
+  created_at: Timestamp | null;
+  draft: boolean | null;
+  groups: string[] | null;
+  has_embedding: boolean | null;
+  icon: string | null;
+  id: string | null;
+  importance: number | null;
+  last_note_created_at: Timestamp | null;
+  last_note_source_created_at: Timestamp | null;
+  merged_into_thread_id: string | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  revoked: boolean | null;
+  seq: string | null;
+  title: string | null;
+  topic: string | null;
+  unread: boolean | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+  urgency: string | null;
   user_id: string | null;
 }
 
@@ -1623,6 +1680,7 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
+  local_sync_lease: LocalSyncLease;
   note: Note;
   note_tag: NoteTag;
   note_tags: NoteTags;
@@ -1689,6 +1747,7 @@ export interface DB {
   "user.team_user": UserTeamUser;
   "user.thread": UserThread;
   "user.thread_association": UserThreadAssociation;
+  "user.thread_redacted": UserThreadRedacted;
   "user.thread_tags": UserThreadTags;
   "user.twist": UserTwist;
   "user.twist_connection": UserTwistConnection;

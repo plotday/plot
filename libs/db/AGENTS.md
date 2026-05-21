@@ -179,6 +179,62 @@ Applies to every table whose contents flow through `/sync/*` (anything readable 
 - `ON DELETE CASCADE` on a foreign key: still synced if the child table is on a sync endpoint. Either set `archived_at` on the parent first (and let triggers cascade `archived_at` to children), or accept that the cascade will strand client copies of the child rows.
 - "It's just internal bookkeeping": if the table is read by any `user.*` view, it is synced. Check.
 
+## Handling Access Loss to Synced Entities
+
+`archived_at` (above) handles the case where a row is *retired* but the user can still see it (e.g. user-initiated archive — reversible). A separate problem is **access loss**: the user is removed server-side from something that granted them visibility (group removal, team-leave, etc.), and the row is now *invisible* to them but their local copy must be cleaned up.
+
+A bare DELETE on the per-user mapping row strands the client (no row in the `user.*` view → seq cursor never re-emits). Setting only `archived_at` doesn't work either: the view's visibility filter (`contacts &&`, `groups &&`, team firewall) excludes the row entirely, so even with seq advanced the view emits nothing for that user.
+
+The pattern: separate access-loss timestamp + parallel "redacted" view + client hard-delete.
+
+### Schema
+
+Per-user mapping rows (e.g. `thread_priority`, future analogs) get a `revoked_at timestamptz` column distinct from `archived_at`:
+
+- `archived_at` — user's explicit archive action. Reversible by the user.
+- `revoked_at` — server-side access loss. Not reversible by the user; only by regaining access server-side (e.g. re-added to the group).
+
+The two are independent. A row can be both archived (user dismissed it earlier) and later revoked (user lost access), or revoked without ever being archived.
+
+### Views
+
+Pair the main `user.*` view with a `user.*_redacted` view:
+
+- **`user.thread`** (and analogs): add `AND tp.revoked_at IS NULL` to the WHERE clause. Add a `revoked` column hard-coded to `FALSE` so the schema shape matches across both views.
+- **`user.thread_redacted`** (and analogs): same column shape; emit only rows where `tp.revoked_at IS NOT NULL`.
+
+Redacted-view rules:
+
+1. **Frozen identity timestamps**: `archived_at = updated_at = tp.revoked_at`. Do NOT compose `GREATEST(a.updated_at, ...)` — that would leak post-revocation update timestamps.
+2. **Frozen seq**: `seq = tp.seq` only. Do NOT compose `a.seq` / `last_note_seq` / `tu.seq`. Once the client first picks up the stub, the seq doesn't advance again, so subsequent thread updates do not re-emit the stub and don't leak. This is the load-bearing leak-prevention mechanism.
+3. **Sensitive fields NULL**: `title`, `preview`, `icon`, `topic`, `contacts`, `groups`, `last_note_*`, `bumped_at`, `urgency`, content. `unread=false`, `importance=0`.
+4. **`revoked = TRUE`** column — the client flag for hard-delete.
+5. **Keep `priority_id`** (with root fallback). The row's about to be hard-deleted client-side, but during the sync→delete window it should sit under its prior priority rather than orphan to root.
+
+Other `user.*` views that join the per-user mapping (e.g. `user.note`, `user.link`, `user.schedule`, `user.thread_association`, `user.priority_unread`) must also add `AND tp.revoked_at IS NULL` so they stop emitting child entities after revocation. The client cascade-deletes children when it hard-deletes the revoked parent.
+
+### Triggers
+
+The trigger that revokes access (e.g. `file_thread_priority_on_group_member_change` DELETE branch, `team_user_archive_priorities`) sets `revoked_at = now() WHERE … AND revoked_at IS NULL`. Do NOT bare-DELETE the mapping row.
+
+The trigger that grants access back (e.g. `file_thread_priority_on_group_member_change` INSERT branch) un-revokes via `ON CONFLICT … DO UPDATE SET revoked_at = NULL WHERE thread_priority.revoked_at IS NOT NULL`. Prior priority filing is preserved — do NOT overwrite `priority_id` / `classify_at`.
+
+### Sync endpoint
+
+Mirror the `/sync/notes` pattern: query both `user.thread` and `user.thread_redacted` on incremental sync, merge, sort by seq/updated_at, slice to the limit. Skip the redacted query on initial sync (epoch / seq=0) — a fresh client has nothing to reconcile.
+
+### Client
+
+The Flutter table gains a `revoked` bool column (default false). On sync merge, rows where `revoked = TRUE` are diverted to a hard-delete path that removes the local row **and** its dependent rows (notes, links, schedules), then are filtered out of the upsert batch. The stub never lands in archives — it can't be unarchived by the user and contains no useful data, so it doesn't belong there.
+
+### Backwards compat
+
+Older clients that don't know about `revoked` see the row as just `archived_at` set and put it in archives. Sub-optimal (empty archived item) but functional — the strand bug is gone.
+
+### Don't lose this again
+
+This pattern was originally present (`user.thread`'s "redacted-stub UNION branch") and was removed in commit `74e42ef2e` (Apr 2026) during the rewrite to per-user `thread_priority`, on the rationale that "no thread_priority row means the thread doesn't exist as far as that user is concerned." That simplification broke the access-loss cleanup path. The leading comment on `user.thread` and the trigger comments now flag this; do not re-remove the redacted view without rebuilding an equivalent cleanup path.
+
 ## CRITICAL: Bump Parent `seq` on Child-Table Changes Used by Synced Views
 
 **When a `user.*` view's columns are computed by joining a child table to its parent, every write to the child table MUST bump the parent's `seq` (via an `UPDATE` on the parent that fires the existing `update_seq_and_updated_at` trigger).**

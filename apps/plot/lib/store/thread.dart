@@ -81,6 +81,16 @@ class Threads extends Table
   /// can restore them.
   BlobColumn get mergedIntoThreadId =>
       blob().nullable().map(const UuidConverter())();
+
+  /// Server-side access-loss tombstone marker. TRUE when the row arrived
+  /// from `user.thread_redacted` — the user lost access (removed from a
+  /// group, removed from a team) and the row carries no meaningful data.
+  /// The sync layer hard-deletes these rows locally (along with their
+  /// dependent notes/links/schedules) so they never reach the UI. Persisted
+  /// only as a transient state during the sync pass — a row that's still
+  /// `revoked = true` in the local DB means hard-delete didn't run.
+  BoolColumn get revoked =>
+      boolean().withDefault(const Constant(false))();
 }
 
 @DataClassName('ScheduleRow')
@@ -339,9 +349,20 @@ class ThreadsBase extends BaseTable {
     Store store,
     Iterable<Insertable<DataClass>> rows,
   ) async {
+    // Access-loss tombstones (user.thread_redacted). The server emits these
+    // rows with revoked=true when the user has lost access (group removal,
+    // team-leave). Hard-delete the local thread + dependent rows so they
+    // disappear entirely from the client — they can't be unarchived by the
+    // user and contain no useful data, so they don't belong in archives.
+    // See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
+    final revokedIds = <Uint8List>[];
     final result = <Insertable<DataClass>>[];
     for (final row in rows) {
       final activityRow = row as ThreadRow;
+      if (activityRow.revoked) {
+        revokedIds.add(activityRow.id.toBytes());
+        continue;
+      }
       final local = await (store.select(
         store.threads,
       )..where((t) => t.id.equals(activityRow.id.toBytes())))
@@ -385,7 +406,34 @@ class ThreadsBase extends BaseTable {
 
       result.add(merged);
     }
+
+    if (revokedIds.isNotEmpty) {
+      await _hardDeleteRevokedThreads(store, revokedIds);
+    }
+
     return result;
+  }
+
+  /// Hard-delete revoked threads and their dependent rows from the local DB.
+  /// Drift tables don't enforce FK cascade locally, so we do it manually.
+  static Future<void> _hardDeleteRevokedThreads(
+    Store store,
+    List<Uint8List> threadIds,
+  ) async {
+    await store.transaction(() async {
+      await (store.delete(store.notes)
+            ..where((n) => n.threadId.isIn(threadIds)))
+          .go();
+      await (store.delete(store.links)
+            ..where((l) => l.threadId.isIn(threadIds)))
+          .go();
+      await (store.delete(store.schedules)
+            ..where((s) => s.threadId.isIn(threadIds)))
+          .go();
+      await (store.delete(store.threads)
+            ..where((t) => t.id.isIn(threadIds)))
+          .go();
+    });
   }
 
   @override
@@ -3033,6 +3081,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       urgency: null,
       readAt: null,
       hasEmbedding: false,
+      revoked: false,
       // Seed topic + per-priority sharing defaults onto the draft thread so
       // it inherits the routing key, any auto-attached contacts/groups, and
       // pending email invites before the user types. When no explicit

@@ -29,6 +29,17 @@ CREATE TABLE "public"."thread_priority" (
     -- access is preserved. The thread is globally archived only when all
     -- thread_priority rows are archived and no active links remain.
     "archived_at" timestamptz,
+    -- Per-user access loss. Distinct from archived_at: set when the user
+    -- lost access to the thread server-side (e.g. removed from a group
+    -- that granted visibility, removed from a team that scoped the
+    -- thread's priority). archived_at is the user's own archive action
+    -- (reversible by the user); revoked_at is involuntary and not
+    -- reversible by the user — only by regaining access server-side.
+    --
+    -- Visible to clients via "user".thread_redacted (sensitive fields
+    -- redacted, archived_at / updated_at / seq frozen at revoked_at).
+    -- See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
+    "revoked_at" timestamptz,
     -- TRUE when the user has explicitly moved this thread into priority_id.
     -- Used by classify_thread_for_user as the training set for scoring other
     -- threads, and by reclassify_user_threads as a "sticky" guard — rows

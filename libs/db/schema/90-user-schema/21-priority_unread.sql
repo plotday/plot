@@ -18,6 +18,7 @@ FROM
     JOIN thread a ON a.id = tp.thread_id
         AND a.archived_at IS NULL
         AND tp.archived_at IS NULL
+        AND tp.revoked_at IS NULL
         AND (a.draft = FALSE OR a.created_by = tp.user_id)
         AND (
             a.contacts && "user".user_contact_ids(tp.user_id)

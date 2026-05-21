@@ -110,7 +110,14 @@ BEGIN
                c.pid,
                CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
         FROM candidates c
-        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
+        -- Re-join case: if a row already exists with revoked_at set
+        -- (the user previously lost access), un-revoke it. Prior priority
+        -- filing is preserved — we do not overwrite priority_id /
+        -- classify_at. Rows without revoked_at are left alone (the user
+        -- already had active access via another path).
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO UPDATE
+        SET revoked_at = NULL
+        WHERE thread_priority.revoked_at IS NOT NULL;
 
         INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
         SELECT v_peer_user_id, t.id, 'inform-updates', 50
@@ -121,6 +128,16 @@ BEGIN
 
         RETURN NEW;
 
+    -- DELETE: member removed from group. For every thread whose access
+    -- came solely through this group, mark the user's thread_priority
+    -- row as revoked so "user".thread_redacted emits a cleanup stub
+    -- (sensitive fields NULLed, archived_at = revoked_at, seq frozen)
+    -- and the client hard-deletes its local copy. See libs/db/AGENTS.md
+    -- "Handling Access Loss to Synced Entities".
+    --
+    -- Do NOT bare-DELETE thread_priority here — that would strand the
+    -- client (no seq bump, no row in user.thread*, local row lives
+    -- forever).
     ELSIF TG_OP = 'DELETE' THEN
         SELECT uc.user_id INTO v_peer_user_id
         FROM public.user_contact uc
@@ -154,10 +171,17 @@ BEGIN
                     )
                   )
             ) THEN
-                DELETE FROM thread_priority
+                UPDATE thread_priority
+                SET revoked_at = now()
                 WHERE thread_id = r_thread.thread_id
-                  AND user_id = v_peer_user_id;
+                  AND user_id = v_peer_user_id
+                  AND revoked_at IS NULL;
 
+                -- thread_unread is consumed via "user".thread's LEFT JOIN;
+                -- the redacted stub emits unread=false regardless, so the
+                -- row is now meaningless. Bare DELETE is safe because the
+                -- table is not directly synced — it feeds computed columns
+                -- on user.thread, which is now serving the redacted stub.
                 DELETE FROM thread_unread
                 WHERE thread_id = r_thread.thread_id
                   AND user_id = v_peer_user_id;

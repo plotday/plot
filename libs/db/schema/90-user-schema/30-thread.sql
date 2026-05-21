@@ -1,10 +1,17 @@
 -- user.thread — per-user thread feed.
 --
 -- Filing is driven by thread_priority (one row per visible user). Visibility
--- is enforced by the contacts array: a user sees a thread only if any of
--- their linked contacts appears in thread.contacts. No more redacted stub
--- branch — if you don't have a thread_priority row, the thread doesn't
--- exist as far as you're concerned.
+-- is enforced by the contacts/groups arrays: a user sees a thread only if
+-- any of their linked contacts appears in thread.contacts or any of their
+-- groups appears in thread.groups.
+--
+-- Access-loss handling: when a user loses server-side access (removed from
+-- a group, removed from a team), the trigger sets thread_priority.revoked_at
+-- and "user".thread_redacted (below) emits a redacted stub so the client
+-- can hard-delete its local copy. user.thread itself filters out revoked
+-- rows (AND tp.revoked_at IS NULL) — no more silent strand. See
+-- libs/db/AGENTS.md "Handling Access Loss to Synced Entities" and do not
+-- remove this pair again without rebuilding the cleanup path.
 --
 -- Transitional note (until Stage 4 lands): priority_expanded is still joined
 -- to recover the user-specific priority path + per-user archived_at. When
@@ -165,7 +172,11 @@ SELECT
             END,
             a.created_at
         ) AS hi
-    ) bounds) AS agenda_at
+    ) bounds) AS agenda_at,
+    -- revoked: FALSE in user.thread; TRUE in user.thread_redacted.
+    -- Lets the client distinguish a normal archive (reversible) from an
+    -- access-loss tombstone (hard-delete locally).
+    FALSE AS revoked
 FROM
     thread a
     JOIN thread_priority tp ON tp.thread_id = a.id
@@ -182,7 +193,9 @@ FROM
         AND tu.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
-    (a.draft = FALSE OR a.created_by = tp.user_id)
+    -- Access-loss rows flow through user.thread_redacted, not here.
+    tp.revoked_at IS NULL
+    AND (a.draft = FALSE OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
@@ -206,6 +219,74 @@ WHERE
               AND tu2.archived_at IS NULL
         )
     );
+
+
+-- user.thread_redacted — stub rows for threads the user has lost access to.
+--
+-- The trigger that revokes access (e.g. file_thread_priority_on_group_member_change
+-- on group_member DELETE, team_user_archive_priorities on team-leave) sets
+-- thread_priority.revoked_at = now(). user.thread filters those rows out;
+-- this view emits a redacted stub instead so the client receives the
+-- cleanup signal via the normal seq cursor and can hard-delete its local
+-- copy (revoked=TRUE column tells it apart from a normal archive).
+--
+-- Redaction rules:
+--   • archived_at = updated_at = tp.revoked_at — the time access was lost.
+--   • seq = tp.seq — frozen at revocation. Does NOT compose a.seq /
+--     last_note_seq / tu.seq, so subsequent thread updates do not bump
+--     the stub's seq and the cursor will not re-emit it after the client
+--     first picks it up. This is the leak-prevention mechanism.
+--   • Sensitive fields NULL: title, preview, icon, topic, contacts,
+--     groups, last_note_*, bumped_at, urgency. unread=false, importance=0.
+--   • priority_id kept (with root fallback) — the row's about to be
+--     hard-deleted client-side, but during the brief window it should
+--     sit under its prior priority rather than orphan to root unannounced.
+--   • revoked = TRUE — flag the client uses to hard-delete instead of
+--     archive.
+--
+-- Sync handler queries this view only on incremental sync (matches
+-- user.note_redacted pattern). See libs/db/AGENTS.md "Handling Access
+-- Loss to Synced Entities".
+CREATE OR REPLACE VIEW "user"."thread_redacted"
+--
+AS
+SELECT
+    tp.user_id,
+    a.id,
+    a.created_at,
+    tp.revoked_at AS updated_at,
+    tp.seq,
+    a.updated_by,
+    tp.revoked_at AS archived_at,
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    CAST(ARRAY[]::uuid[] AS uuid[]) AS contacts,
+    CAST(ARRAY[]::uuid[] AS uuid[]) AS groups,
+    NULL::text AS topic,
+    NULL::text AS title,
+    NULL::text AS preview,
+    NULL::text AS icon,
+    NULL::uuid AS merged_into_thread_id,
+    FALSE AS has_embedding,
+    NULL::uuid AS auto_archived_by_thread_id,
+    NULL::timestamptz AS last_note_created_at,
+    NULL::timestamptz AS last_note_source_created_at,
+    NULL::timestamptz AS bumped_at,
+    FALSE AS unread,
+    0::smallint AS importance,
+    NULL::text AS urgency,
+    a.created_at AS activity_at,
+    tstzrange(a.created_at, a.created_at, '[]') AS agenda_at,
+    TRUE AS revoked
+FROM
+    thread a
+    JOIN thread_priority tp ON tp.thread_id = a.id
+    LEFT JOIN "user".priority_expanded upe
+        ON upe.user_id = tp.user_id
+        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+WHERE
+    tp.revoked_at IS NOT NULL;
 
 
 CREATE OR REPLACE VIEW "user"."thread_tags"

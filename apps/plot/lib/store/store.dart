@@ -2300,7 +2300,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 333;
+  int get schemaVersion => 334;
 
   @override
   MigrationStrategy get migration {
@@ -3364,6 +3364,13 @@ class Store extends _$Store {
       // broom indicator on archived rows and lets the client filter the
       // archived view down to auto-archived threads.
       await _safeAddColumn(m, threads, threads.autoArchivedByThreadId);
+    }
+    if (from < 334) {
+      // Access-loss tombstone column: when the server emits a row from
+      // user.thread_redacted (user removed from group / team), it lands
+      // with revoked=true and the sync layer hard-deletes the local row.
+      // Default false for existing rows.
+      await _safeAddColumn(m, threads, threads.revoked);
     }
   }
 

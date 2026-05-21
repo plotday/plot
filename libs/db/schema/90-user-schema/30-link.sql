@@ -38,6 +38,7 @@ FROM
     -- user.thread (hidden when fresh, surfaced at root once the
     -- classify_visibility_window() elapses).
     LEFT JOIN thread_priority tp ON tp.thread_id = l.thread_id
+        AND tp.revoked_at IS NULL
         AND (
             tp.priority_id IS NOT NULL
             OR tp.classify_at < now() - public.classify_visibility_window()

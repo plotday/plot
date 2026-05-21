@@ -105,11 +105,26 @@ CREATE TRIGGER team_user_block_last_admin
 -- Here we're handling the team-leave path specifically: every priority
 -- the user has scoped to this team must be archived, since they no longer
 -- have access.
+--
+-- Threads filed under those priorities also become invisible — the
+-- user.thread team firewall excludes them once team_user is archived.
+-- Without a matching access-loss signal the client strands its local
+-- copies. Mark each affected thread_priority row as revoked so
+-- "user".thread_redacted emits a cleanup stub and the client hard-deletes.
+-- See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
 CREATE OR REPLACE FUNCTION public.team_user_archive_priorities ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $$
 BEGIN
+    UPDATE public.thread_priority tp
+    SET revoked_at = now()
+    FROM public.priority p
+    WHERE tp.priority_id = p.id
+      AND tp.user_id = NEW.user_id
+      AND p.team_id = NEW.team_id
+      AND tp.revoked_at IS NULL;
+
     UPDATE public.priority
     SET archived_at = COALESCE(archived_at, now())
     WHERE user_id = NEW.user_id

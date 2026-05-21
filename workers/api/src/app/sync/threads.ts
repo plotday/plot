@@ -51,93 +51,137 @@ threads.get("/sync/threads", async (c) => {
 
   const useSeqCursor = seqSince !== null;
 
+  // On initial sync (epoch or seq=0), the client has nothing to reconcile,
+  // so the access-loss redacted stubs from user.thread_redacted are useless
+  // noise. Skip that branch on initial pulls and only query it on incremental
+  // syncs, matching the user.note / user.note_redacted pattern.
+  const isInitialSync = useSeqCursor
+    ? seqSince === "0"
+    : !updatedSince || updatedSince === "1970-01-01T00:00:00.000Z";
+
   const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
-    let query = trx
-      .selectFrom("user.thread")
-      .selectAll()
-      .where("user_id", "=", userId);
+    const buildQuery = (view: "user.thread" | "user.thread_redacted") => {
+      let query = trx
+        .selectFrom(view)
+        .selectAll()
+        .where("user_id", "=", userId);
 
-    // Apply sort: use custom sort when not doing cursor pagination
-    if (useSeqCursor) {
-      query = query.orderBy("seq", "asc").orderBy("id", "asc");
-    } else if (updatedSince) {
-      query = query.orderBy("updated_at", "asc").orderBy("id", "asc");
-    } else {
-      // When sorting by agenda_at (a tstzrange), sort by its lower bound
-      const sortExpr = sortBy === 'agenda_at' ? sql`lower(agenda_at)` : sql.ref(sortBy);
-      query = query.orderBy(sortExpr, sortDir).orderBy("id", sortDir);
-    }
-
-    // Don't apply limit for initial pulls — except when seq-cursor is in use,
-    // where the envelope semantics rely on the limit signaling end-of-page.
-    // Seq-cursor clients paginate naturally from `seq=0` on first pull and
-    // can drain in multiple round-trips; old clients still get the
-    // unbounded initial response.
-    if (!initial || useSeqCursor) {
-      query = query.limit(limit);
-    }
-
-    // Single-row fetch by ID
-    if (id) {
-      query = query.where("id", "=", id);
-    }
-
-    // Cursor pagination
-    if (useSeqCursor) {
-      query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
-    } else if (updatedSince) {
-      // Legacy: uses date_trunc to match JS Date millisecond precision
-      query = query.where(updatedSinceCursor(updatedSince, cursorId));
-    }
-
-    // Initial pull: fetch unread non-archived threads
-    if (initial && archived !== true) {
-      query = query.where(
-        sql<boolean>`(archived_at IS NULL AND draft = false AND unread = true)`
-      );
-    } else {
-      // Archived filter (only when not initial)
-      if (archived === true) {
-        query = query.where("archived_at", "is not", null);
-      } else if (archived === false) {
-        query = query.where("archived_at", "is", null);
+      // Apply sort: use custom sort when not doing cursor pagination
+      if (useSeqCursor) {
+        query = query.orderBy("seq", "asc").orderBy("id", "asc");
+      } else if (updatedSince) {
+        query = query.orderBy("updated_at", "asc").orderBy("id", "asc");
+      } else {
+        // When sorting by agenda_at (a tstzrange), sort by its lower bound
+        const sortExpr = sortBy === 'agenda_at' ? sql`lower(agenda_at)` : sql.ref(sortBy);
+        query = query.orderBy(sortExpr, sortDir).orderBy("id", sortDir);
       }
-    }
 
-    // Priority filter: prefer ID-based lookup, fall back to path for backward compatibility
-    if (priorityId) {
-      query = query.where(
-        sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
-      );
-    } else if (priorityPath) {
-      query = query.where(
-        sql<boolean>`priority_path <@ ${priorityPath}::ltree`
-      );
-    }
+      // Don't apply limit for initial pulls — except when seq-cursor is in use,
+      // where the envelope semantics rely on the limit signaling end-of-page.
+      // Seq-cursor clients paginate naturally from `seq=0` on first pull and
+      // can drain in multiple round-trips; old clients still get the
+      // unbounded initial response.
+      if (!initial || useSeqCursor) {
+        query = query.limit(limit);
+      }
 
-    // Range filtering (for pullTo pagination by sortBy column)
-    if (sortBy === 'agenda_at') {
-      // agenda_at is a tstzrange — use overlap (&&) operator
-      if (rangeStart && rangeEnd) {
-        query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, ${rangeEnd}::timestamptz)`);
-      } else if (rangeStart) {
-        query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, NULL)`);
-      } else if (rangeEnd) {
-        query = query.where(sql<boolean>`agenda_at && tstzrange(NULL, ${rangeEnd}::timestamptz)`);
+      // Single-row fetch by ID
+      if (id) {
+        query = query.where("id", "=", id);
       }
-    } else {
-      // Scalar comparison for activity_at, created_at, updated_at
-      if (rangeStart) {
-        query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
-      }
-      if (rangeEnd) {
-        query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
-      }
-    }
 
-    const fetchedRows = await query.execute();
+      // Cursor pagination
+      if (useSeqCursor) {
+        query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
+      } else if (updatedSince) {
+        // Legacy: uses date_trunc to match JS Date millisecond precision
+        query = query.where(updatedSinceCursor(updatedSince, cursorId));
+      }
+
+      // Initial pull: fetch unread non-archived threads. Redacted stubs are
+      // archived by definition, so this branch naturally excludes them.
+      if (initial && archived !== true) {
+        query = query.where(
+          sql<boolean>`(archived_at IS NULL AND draft = false AND unread = true)`
+        );
+      } else {
+        // Archived filter (only when not initial)
+        if (archived === true) {
+          query = query.where("archived_at", "is not", null);
+        } else if (archived === false) {
+          query = query.where("archived_at", "is", null);
+        }
+      }
+
+      // Priority filter: prefer ID-based lookup, fall back to path for backward compatibility
+      if (priorityId) {
+        query = query.where(
+          sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
+        );
+      } else if (priorityPath) {
+        query = query.where(
+          sql<boolean>`priority_path <@ ${priorityPath}::ltree`
+        );
+      }
+
+      // Range filtering (for pullTo pagination by sortBy column)
+      if (sortBy === 'agenda_at') {
+        // agenda_at is a tstzrange — use overlap (&&) operator
+        if (rangeStart && rangeEnd) {
+          query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, ${rangeEnd}::timestamptz)`);
+        } else if (rangeStart) {
+          query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, NULL)`);
+        } else if (rangeEnd) {
+          query = query.where(sql<boolean>`agenda_at && tstzrange(NULL, ${rangeEnd}::timestamptz)`);
+        }
+      } else {
+        // Scalar comparison for activity_at, created_at, updated_at
+        if (rangeStart) {
+          query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
+        }
+        if (rangeEnd) {
+          query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
+        }
+      }
+
+      return query;
+    };
+
+    const visible = await buildQuery("user.thread").execute();
     const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
-    return { rows: fetchedRows, horizon: horizonValue };
+
+    if (isInitialSync) {
+      return { rows: visible, horizon: horizonValue };
+    }
+
+    const redacted = await buildQuery("user.thread_redacted").execute();
+
+    // Merge and re-sort across both sets, then slice to the requested limit.
+    // Each server-side query is already bounded by `limit`; the redacted set
+    // is typically tiny (only rows where the user lost access since last sync).
+    const merged = [...visible, ...redacted];
+    if (useSeqCursor) {
+      merged.sort((a, b) => {
+        const as = (a as any).seq ?? "0";
+        const bs = (b as any).seq ?? "0";
+        if (as !== bs) return as < bs ? -1 : 1;
+        const aid = (a as any).id ?? "";
+        const bid = (b as any).id ?? "";
+        return aid < bid ? -1 : aid > bid ? 1 : 0;
+      });
+    } else {
+      merged.sort((a, b) => {
+        const au = (a as any).updated_at ? (a as any).updated_at.getTime() : 0;
+        const bu = (b as any).updated_at ? (b as any).updated_at.getTime() : 0;
+        if (au !== bu) return au - bu;
+        const aid = (a as any).id ?? "";
+        const bid = (b as any).id ?? "";
+        return aid < bid ? -1 : aid > bid ? 1 : 0;
+      });
+    }
+    const limitToApply = !initial || useSeqCursor ? limit : merged.length;
+    return { rows: merged.slice(0, limitToApply), horizon: horizonValue };
   });
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
@@ -186,12 +230,25 @@ threads.get("/sync/threads/by-ids", async (c) => {
   }
 
   const rows = await withUserDb(c.var.db, userId, async (trx) => {
-    return await trx
+    const visible = await trx
       .selectFrom("user.thread")
       .selectAll()
       .where("user_id", "=", userId)
       .where("id", "in", validIds)
       .execute();
+    // Also fetch redacted stubs so tapping a notification for a thread the
+    // user has since lost access to still returns a row (the client can
+    // then hard-delete its local copy).
+    const seenIds = new Set(visible.map((r) => r.id));
+    const remainingIds = validIds.filter((id) => !seenIds.has(id));
+    if (remainingIds.length === 0) return visible;
+    const redacted = await trx
+      .selectFrom("user.thread_redacted")
+      .selectAll()
+      .where("user_id", "=", userId)
+      .where("id", "in", remainingIds)
+      .execute();
+    return [...visible, ...redacted];
   });
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
