@@ -4071,6 +4071,39 @@ export class Integrations extends Tool implements IAuth {
         env,
       });
 
+      // Scope-grant verification. Google (and other OAuth providers with
+      // granular consent screens) lets the user uncheck individual
+      // permissions on the consent page — the token exchange still
+      // succeeds, but the resulting token is missing the unchecked
+      // scopes. Without this check the connector's getChannels would
+      // fire next, hit a 403 on the missing scope, and surface as a
+      // PostHog error while the user sees a connection that silently
+      // produced no channels. Fail fast with a user-friendly message
+      // instead so the auth button can re-display.
+      const grantedScopes = Integrations.parseGrantedScopes(tokenResponse);
+      if (grantedScopes && authState.scopes?.length) {
+        const providerConfig = PROVIDER_CONFIGS[authState.provider];
+        const emailScopes = new Set(providerConfig?.emailScopes ?? []);
+        const requiredScopes = authState.scopes.filter(
+          (s) => !emailScopes.has(s)
+        );
+        const grantedSet = new Set(grantedScopes);
+        const missing = requiredScopes.filter((s) => !grantedSet.has(s));
+        if (missing.length > 0) {
+          const providerName =
+            providerConfig?.name ?? authState.provider;
+          return new Response(
+            JSON.stringify({
+              error: `${providerName} access wasn't fully granted. Please try again and leave all permission boxes checked so Plot can sync.`,
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+
       // Call the wrapped callback (onAuth) with token info. Routed
       // through invokeWebhookCallback so the connector's onAuth runs in
       // this worker context, not inside the CallbacksState DO.
@@ -4176,6 +4209,23 @@ export class Integrations extends Tool implements IAuth {
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=/g, "");
+  }
+
+  /**
+   * Extract the scopes the user actually granted from an OAuth token
+   * exchange response. OAuth 2.0 defines `scope` as a space-separated
+   * string of granted scopes (RFC 6749 §3.3); when present, it reflects
+   * the user's actual consent — including any scopes they unchecked on a
+   * granular consent screen (Google, Microsoft). Returns null when the
+   * provider didn't return a scope field, so the caller can skip
+   * enforcement instead of treating absence as "everything missing".
+   */
+  static parseGrantedScopes(tokenResponse: any): string[] | null {
+    const scope = tokenResponse?.scope;
+    if (typeof scope === "string" && scope.trim().length > 0) {
+      return scope.split(/\s+/).filter(Boolean);
+    }
+    return null;
   }
 
   private static async exchangeCodeForTokens({

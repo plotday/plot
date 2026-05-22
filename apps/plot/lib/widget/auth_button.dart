@@ -781,9 +781,9 @@ class _AuthButtonState extends State<AuthButton>
         await _startTwistNativeGoogle(authUrl);
       } else {
         final completed = await _startTwistBrowser(authUrl, redirectUri);
-        // User cancelled or the provider returned an error. The bridge page
-        // they returned from already surfaced the message, so don't pop a
-        // second toast or advance the caller's setup flow.
+        // User cancelled or the provider returned an error. When there's
+        // a message worth showing, _startTwistBrowser already popped the
+        // toast — skip the success path so the caller doesn't advance.
         if (!completed) return;
       }
 
@@ -905,9 +905,11 @@ class _AuthButtonState extends State<AuthButton>
 
   /// Returns true when the OAuth flow completed successfully. Returns false
   /// when the user cancelled or the provider redirected back with an error
-  /// (e.g. Slack's workspace install gate) — in that case the error was
-  /// already surfaced on the bridge page the user returned from, so the
-  /// caller must skip its post-success work.
+  /// (e.g. Slack's workspace install gate, or Google granular-consent where
+  /// the user unchecked a required permission). For Slack the bridge page
+  /// stays visible so the user reads the message there; for everything
+  /// else the bridge auto-redirects and the user only sees the flash, so
+  /// we re-surface the error as a toast in the app.
   ///
   /// Two success shapes are possible: bridge flows (requiresHttpsRedirect
   /// providers like Slack) return `?state=…&success=1` because the API
@@ -925,7 +927,15 @@ class _AuthButtonState extends State<AuthButton>
 
     final responseUri = Uri.parse(result);
     final params = responseUri.queryParameters;
-    if (params['error'] != null) return false;
+    if (params['error'] != null) {
+      final errorParam = params['error']!.trim();
+      if (mounted) {
+        _showTwistAuthError(
+          message: errorParam.isEmpty ? null : errorParam,
+        );
+      }
+      return false;
+    }
 
     final code = params['code'];
     if (code != null) {
