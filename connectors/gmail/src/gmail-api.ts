@@ -176,17 +176,34 @@ export class GmailApi {
     expiration: string;
   }> {
     const body: { topicName: string; labelIds?: string[] } = { topicName };
-    // Mailbox-wide watch when no labelId is provided. Gmail allows only ONE
-    // active watch per mailbox; calling watch() again replaces the previous.
-    // Omitting labelIds means Gmail notifies on every change — including
-    // replies in existing threads that don't inherit the thread's labels.
+    // Mailbox-wide watch when no labelId is provided. Gmail enforces one
+    // push-notification client per (mailbox, OAuth project); a watch() with a
+    // DIFFERENT topicName while a prior watch is active returns 400 with
+    // "Only one user push notification client allowed per developer (call
+    // /stop then try again)". A watch() with the SAME topicName is a no-op
+    // that renews the expiration.
     if (labelId) {
       body.labelIds = [labelId];
     }
-    const data = await this.call("/watch", {
-      method: "POST",
-      body,
-    });
+    let data: any;
+    try {
+      data = await this.call("/watch", { method: "POST", body });
+    } catch (error) {
+      // Honor Gmail's recovery hint: if a stale watch is blocking us, stop
+      // it and retry once. Hit when setupMailboxWebhook's best-effort
+      // stopWatch() failed (network blip, transient 5xx) and the next
+      // setupWatch is using a fresh topic name.
+      if (
+        error instanceof GmailApiError &&
+        error.status === 400 &&
+        error.message.includes("Only one user push notification client allowed")
+      ) {
+        await this.stopWatch();
+        data = await this.call("/watch", { method: "POST", body });
+      } else {
+        throw error;
+      }
+    }
 
     return {
       historyId: data.historyId,
