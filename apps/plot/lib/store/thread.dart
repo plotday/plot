@@ -3396,9 +3396,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
   String? get displayPreview {
     if (title != null) {
-      // Strip markdown so mentions like [Name](#@UUID) display as plain text.
-      // Keep in sync with stripMarkdown() in workers/api thread-helpers.ts.
-      return preview?.removeMarkdown(replaceLinksWithURL: false);
+      // Normalise to a single line so legacy multi-line previews (bullet
+      // lists, headings) render correctly inline beside the title.
+      return createPreviewFromMarkdown(preview);
     }
     if (preview == null) return null;
     final derivedTitle = _titleFromContent(preview);
@@ -3419,6 +3419,24 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       return '${firstLine.substring(0, lastSpace)}\u2026';
     }
     return '${firstLine.substring(0, 59)}\u2026';
+  }
+
+  /// Normalises markdown into a single-line preview string suitable for
+  /// inline display next to a title. Mirrors `createPreviewFromMarkdown`
+  /// in `workers/api/src/twist/tools/plot/thread-helpers.ts` — keep in
+  /// sync so client and server agree on what `thread.preview` contains.
+  static String? createPreviewFromMarkdown(String? markdown) {
+    if (markdown == null || markdown.isEmpty) return null;
+    var preview = markdown.removeMarkdown(replaceLinksWithURL: false);
+    preview = preview.replaceAll(RegExp(r'https?://[^\s)>\]]+'), '');
+    preview = preview.replaceAll(RegExp(r'\n+'), ' / ');
+    preview = preview.replaceAll(RegExp(r'\s+'), ' ');
+    preview = preview.replaceAll(RegExp(r'(\s+/\s*|\s*/\s+)+'), ' / ');
+    preview = preview.replaceAll(RegExp(r'^[\s/]+|[\s/]+$'), '');
+    if (preview.length > 100) {
+      preview = '${preview.substring(0, 100).trim()}…';
+    }
+    return preview.isEmpty ? null : preview;
   }
 
   /// Returns the portion of preview after the derived title.

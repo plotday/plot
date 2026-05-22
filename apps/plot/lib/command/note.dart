@@ -529,11 +529,11 @@ class SplitNoteToNewThread extends NoteCommand {
       final parentThread = await Thread.getOne(note.threadId);
 
       // Create a new thread — title null signals AI generation in save() and sync.
-      // Preview stores the note content for client-side display.
+      // Preview stores a normalised single-line summary of the note content.
       final newThread = Thread(
         priority: parentThread.priority,
         draft: false,
-        preview: note.content,
+        preview: Thread.createPreviewFromMarkdown(note.content),
       );
       await newThread.save();
 

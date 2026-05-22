@@ -1741,12 +1741,13 @@ class NoteEditorState extends State<NoteEditor> {
   }) async {
     _finalized = true;
 
-    // Store generous preview from body content for client-side display
-    // and server-side AI title generation. Title is left null when the user
-    // hasn't set one — the client derives displayTitle from preview, and the
-    // server generates an AI title on sync. If the user set a title via the
-    // title modal, preserve it and use the body as the preview.
-    final previewContent = body.trim().isEmpty ? null : body.trim();
+    // Store a normalised single-line preview from body content for
+    // client-side display and server-side AI title generation. Title is
+    // left null when the user hasn't set one — the client derives
+    // displayTitle from preview, and the server generates an AI title on
+    // sync. If the user set a title via the title modal, preserve it and
+    // use the body as the preview.
+    final previewContent = Thread.createPreviewFromMarkdown(body);
     final existingTitle = widget.thread!.title;
     log.info('Finalizing draft with preview-based title');
 
