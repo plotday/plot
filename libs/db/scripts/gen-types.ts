@@ -45,6 +45,21 @@ async function main() {
       console.error(
         "❌ Type definitions are out of date. Run `pnpm types` and commit."
       );
+      // Print a unified-style diff (first 100 differing lines) to help debug.
+      const existingLines = existing.split("\n");
+      const outputLines = output.split("\n");
+      const maxLines = Math.max(existingLines.length, outputLines.length);
+      let printed = 0;
+      for (let i = 0; i < maxLines && printed < 100; i++) {
+        const a = existingLines[i];
+        const b = outputLines[i];
+        if (a !== b) {
+          console.error(`Line ${i + 1}:`);
+          console.error(`  existing: ${a ?? "<EOF>"}`);
+          console.error(`  generated: ${b ?? "<EOF>"}`);
+          printed++;
+        }
+      }
       process.exit(1);
     }
     console.log("Types are up to date.");

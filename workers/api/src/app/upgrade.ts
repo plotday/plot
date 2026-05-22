@@ -7,6 +7,10 @@ import {
   createFreeTierBillingCycle,
   isCustomerDeletedError,
 } from "../stripe/utils";
+import {
+  applyAppleTransactionToUser,
+  verifyTransaction,
+} from "../apple/iap";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
@@ -28,7 +32,13 @@ upgrade.get("/upgrade", async (c) => {
 
   const subscription = await c.var.db
     .selectFrom("user_subscription")
-    .select(["plan", "status", "billing_cycle_end", "trial_ends_at"])
+    .select([
+      "plan",
+      "status",
+      "billing_cycle_end",
+      "trial_ends_at",
+      "origin",
+    ])
     .where("user_id", "=", user.id)
     .executeTakeFirst();
 
@@ -40,8 +50,18 @@ upgrade.get("/upgrade", async (c) => {
         status: subscription.status,
         billing_cycle_end: subscription.billing_cycle_end,
         trial_ends_at: subscription.trial_ends_at,
+        // Only surface origin to the client when the user has a paid
+        // plan — free users have origin='stripe' by default but the
+        // app cares about it for routing "Manage subscription".
+        origin: subscription.plan !== "free" ? subscription.origin : null,
       }
-    : { plan: "free", status: "active", billing_cycle_end: null, trial_ends_at: null };
+    : {
+        plan: "free",
+        status: "active",
+        billing_cycle_end: null,
+        trial_ends_at: null,
+        origin: null,
+      };
 
   // Fetch all orgs the user belongs to with subscription info
   const orgs = await c.var.db
@@ -464,6 +484,74 @@ upgrade.post("/upgrade/portal", async (c) => {
     });
     return c.json({ url: session.url });
   }
+});
+
+// POST /upgrade/iap/verify - Validate an Apple StoreKit transaction and
+// apply the resulting entitlement to the current user. Called from the
+// Flutter IAP service after StoreKit returns `purchased` or `restored`.
+//
+// Body: { product_id: string, source: string, purchase_id: string|null,
+//         transaction_data: string }
+// `transaction_data` is the StoreKit 2 signedTransaction JWS for iOS
+// 15+ / macOS 12+ devices. For StoreKit 1 fallback it's a base64 receipt;
+// not currently supported — clients must run on StoreKit 2.
+upgrade.post("/upgrade/iap/verify", async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+  const user = c.var.user;
+
+  const body = await c.req.json<{
+    product_id?: string;
+    source?: string;
+    purchase_id?: string | null;
+    transaction_data?: string;
+  }>();
+
+  if (body.source !== "app_store") {
+    return c.json({ error: "Unsupported IAP source" }, 400);
+  }
+  if (!body.transaction_data) {
+    return c.json({ error: "transaction_data is required" }, 400);
+  }
+
+  let txn;
+  try {
+    txn = await verifyTransaction(body.transaction_data);
+  } catch (e) {
+    logger.warn("IAP: failed to verify Apple transaction", {
+      error: (e as Error).message,
+      user_id: user.id,
+    });
+    return c.json({ error: "Invalid Apple transaction" }, 400);
+  }
+
+  // Cross-check: client-reported productId should match the JWS payload.
+  // The JWS is the source of truth — if they disagree, log and proceed
+  // with the JWS value.
+  if (body.product_id && body.product_id !== txn.productId) {
+    logger.warn(
+      "IAP: client productId disagrees with JWS payload",
+      {
+        client_product_id: body.product_id,
+        jws_product_id: txn.productId,
+        user_id: user.id,
+      }
+    );
+  }
+
+  const result = await applyAppleTransactionToUser(c.var.db, user.id, txn);
+
+  c.var.tracker.capture("[User] Subscription Created", {
+    plan: result.plan,
+    origin: "app_store",
+    apple_product_id: txn.productId,
+  });
+
+  return c.json({
+    plan: result.plan,
+    expires_at: result.expiresAt?.toISOString() ?? null,
+    origin: "app_store",
+  });
 });
 
 export default upgrade;

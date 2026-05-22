@@ -129,6 +129,12 @@ dependencies:
   # (macOS + Windows out of the box) and exposes a rich cookie API.
   flutter_inappwebview: ^6.1.5
 
+  # StoreKit IAP for iOS and Mac App Store distribution (App Store guideline
+  # 3.1.1). Used exclusively by lib/api/iap_api.dart, which is conditionally
+  # imported so non-Apple platforms never pull this in. See
+  # lib/api/upgrade_api.dart `UpgradeUi.isAppStoreBuild`.
+  in_app_purchase: ^3.2.0
+
 dependency_overrides:
   # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart
   # When upgrading sqlite3, copy the new version to third_party/sqlite3/ and

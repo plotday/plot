@@ -44,6 +44,8 @@ import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'command.dart';
 import 'page_link.dart';
+import 'upgrade.dart'
+    show ManageSubscriptionCommand, RestorePurchasesCommand, ShowUpgradeOptions;
 import 'logging.dart';
 
 final appearanceCommands = StaticCommandGroup(
@@ -117,20 +119,34 @@ List<StaticCommandGroup> settingsCommands({
           ),
       // Only show Enter Behavior setting on devices with physical keyboards
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-      if (UpgradeUi.canPromptUpgrade &&
-          subscription != null &&
-          subscription.hasPaidPlan)
-        ManageSubscription(),
+      // Surface "Manage subscription" only when we have a path that
+      // works for this user's purchase origin. On App Store builds we
+      // can only manage App-Store-origin subscriptions (via Apple's
+      // account URL). On DMG/web we route both web and App Store
+      // subscriptions to their respective management surfaces.
+      if (subscription != null &&
+          subscription.hasPaidPlan &&
+          (!UpgradeUi.isAppStoreBuild || subscription.isAppStoreOrigin))
+        ManageSubscriptionCommand(
+          appStoreOrigin: subscription.isAppStoreOrigin,
+        ),
       if (hasTeams) ManageTeams(),
     ],
   ),
   StaticCommandGroup(
     title: 'App',
     commands: [
-      if (UpgradeUi.canPromptUpgrade &&
-          subscription != null &&
-          !subscription.canBuildTwists)
-        UpgradePlan(),
+      // Only offer IAP/web upgrade when the user isn't already on a Pro/
+      // Team tier. On App Store builds we additionally avoid offering
+      // IAP to users with a Stripe-origin paid plan — they already pay
+      // through plot.day and the canonical path stays with Stripe.
+      if (subscription != null &&
+          !subscription.canBuildTwists &&
+          (!UpgradeUi.isAppStoreBuild ||
+              subscription.isFree ||
+              subscription.isAppStoreOrigin))
+        ShowUpgradeOptions(),
+      if (UpgradeUi.isAppStoreBuild) RestorePurchasesCommand(),
       if (plotAppPriority != null) HelpAndFeedback(plotAppPriority),
       CopyPageLink(),
       OpenCopiedPageLink(),
@@ -397,7 +413,13 @@ class ManageTeams extends Command {
   ManageTeams()
     : super(
         title: 'Teams',
-        description: 'Members, domains, and billing for your teams.',
+        // On App Store builds, omit the "billing" word to avoid linking
+        // an in-app entry to externally-priced content (guideline 3.1.1).
+        // The destination page is the same — Team admins navigate to
+        // billing from there.
+        description: UpgradeUi.isAppStoreBuild
+            ? 'Members and domains for your teams.'
+            : 'Members, domains, and billing for your teams.',
         icon: FontAwesomeIcons.building,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -459,45 +481,8 @@ class ManageTeams extends Command {
   }
 }
 
-Uri _upgradeUri(BuildContext context) {
-  final userState = context.read<UserBloc>().state;
-  final email = userState is UserReady ? userState.user.primaryEmail : null;
-  return Uri.parse(
-    '${Env.siteRoot}/upgrade',
-  ).replace(queryParameters: email != null ? {'email': email} : null);
-}
-
-class UpgradePlan extends Command {
-  UpgradePlan()
-    : super(
-        title: 'Upgrade your plan',
-        icon: FontAwesomeIcons.bolt,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.clicked,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await launchUrl(_upgradeUri(context), mode: LaunchMode.externalApplication);
-    return const CommandDone();
-  }
-}
-
-class ManageSubscription extends Command {
-  ManageSubscription()
-    : super(
-        title: 'Subscription',
-        icon: FontAwesomeIcons.creditCard,
-        eventObject: EventObject.settings,
-        eventAction: EventAction.opened,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await launchUrl(_upgradeUri(context), mode: LaunchMode.externalApplication);
-    return const CommandDone();
-  }
-}
+// Upgrade flow now lives in lib/command/upgrade.dart and uses StoreKit IAP
+// on App Store builds while keeping the web upgrade path for DMG / web.
 
 class ChangeTheme extends Command {
   ChangeTheme(this.themeMode)

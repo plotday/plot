@@ -21,8 +21,11 @@ platform :ios do
       podfile: "./Podfile"
     )
 
-    # Build the Flutter iOS app
-    sh("cd ../.. && flutter build ios --release --no-codesign")
+    # Build the Flutter iOS app. APP_STORE_BUILD=true ensures the upgrade /
+    # billing UI and Stripe checkout flow are stripped from the binary
+    # (guideline 3.1.1). The iOS Flutter target only ships through the App
+    # Store, so the flag is unconditional.
+    sh("cd ../.. && flutter build ios --release --no-codesign --dart-define=APP_STORE_BUILD=true")
 
     UI.success("iOS build completed successfully!")
   end
@@ -38,8 +41,9 @@ platform :ios do
       podfile: "./Podfile"
     )
 
-    # Build the Flutter iOS app with archive
-    sh("cd ../.. && flutter build ipa --release")
+    # Build the Flutter iOS app with archive. APP_STORE_BUILD=true strips
+    # web upgrade flows (guideline 3.1.1) — see :build lane comment.
+    sh("cd ../.. && flutter build ipa --release --dart-define=APP_STORE_BUILD=true")
 
     UI.success("iOS archive completed successfully!")
   end

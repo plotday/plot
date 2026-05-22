@@ -1,0 +1,228 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  APPLE_BUNDLE_ID,
+  IAP_PRODUCT_TO_PLAN,
+  decodeJws,
+  decodeTransaction,
+  verifyAppleJws,
+  type JwsTransactionPayload,
+} from "./iap";
+
+/** Build a JWS with a caller-supplied header so we can exercise the
+ *  verifier's structural checks without a real Apple chain. */
+function makeJwsWithHeader(
+  header: Record<string, unknown>,
+  payload: Record<string, unknown>
+): string {
+  const h = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const b = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${h}.${b}.signature`;
+}
+
+/**
+ * Constructs an unsigned JWS (header.payload.signature). Apple's
+ * StoreKit 2 transactions arrive signed by Apple, but our decoder
+ * verifies only that the structure is right and the payload's
+ * `bundleId` / `productId` match. The signature segment is therefore
+ * a placeholder.
+ */
+function makeFakeJws(payload: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: "ES256" })).toString(
+    "base64url"
+  );
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${body}.signature`;
+}
+
+describe("apple/iap", () => {
+  it("exposes the Plot product ID → plan mapping", () => {
+    expect(IAP_PRODUCT_TO_PLAN["day.plot.app.core_monthly"]).toBe("core");
+    expect(IAP_PRODUCT_TO_PLAN["day.plot.app.pro_monthly"]).toBe("pro");
+  });
+
+  it("decodes a well-formed JWS into the expected payload", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000123456789",
+      originalTransactionId: "2000000123456789",
+      bundleId: APPLE_BUNDLE_ID,
+      productId: "day.plot.app.pro_monthly",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+      expiresDate: 1702592000000,
+      environment: "Production",
+    };
+    const decoded = decodeJws<JwsTransactionPayload>(makeFakeJws(payload));
+    expect(decoded.productId).toBe("day.plot.app.pro_monthly");
+    expect(decoded.bundleId).toBe(APPLE_BUNDLE_ID);
+    expect(decoded.transactionId).toBe("2000000123456789");
+  });
+
+  it("rejects malformed JWS", () => {
+    expect(() => decodeJws("not.a.jws.extra")).toThrowError(/Invalid JWS/);
+    expect(() => decodeJws("missing-dots")).toThrowError(/Invalid JWS/);
+  });
+
+  it("rejects bundleId from a different app", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000111111111",
+      originalTransactionId: "2000000111111111",
+      bundleId: "com.someone.else",
+      productId: "day.plot.app.pro_monthly",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+    };
+    expect(() => decodeTransaction(makeFakeJws(payload))).toThrowError(
+      /bundleId mismatch/
+    );
+  });
+
+  it("rejects unknown productId", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000222222222",
+      originalTransactionId: "2000000222222222",
+      bundleId: APPLE_BUNDLE_ID,
+      productId: "day.plot.app.unknown_addon",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+    };
+    expect(() => decodeTransaction(makeFakeJws(payload))).toThrowError(
+      /Unknown Apple productId/
+    );
+  });
+
+  it("accepts a recognized productId for the Pro tier", () => {
+    const payload: Partial<JwsTransactionPayload> = {
+      transactionId: "2000000333333333",
+      originalTransactionId: "2000000333333333",
+      bundleId: APPLE_BUNDLE_ID,
+      productId: "day.plot.app.pro_monthly",
+      purchaseDate: 1700000000000,
+      originalPurchaseDate: 1700000000000,
+      expiresDate: 1702592000000,
+    };
+    const txn = decodeTransaction(makeFakeJws(payload));
+    expect(txn.productId).toBe("day.plot.app.pro_monthly");
+  });
+
+  // -----------------------------------------------------------------
+  // verifyAppleJws — structural checks that don't need a real Apple
+  // signed chain. End-to-end verification (real cert chain + real
+  // signature) is exercised against Apple's sandbox in manual QA.
+  // -----------------------------------------------------------------
+
+  it("verifyAppleJws rejects a malformed JWS", async () => {
+    await expect(verifyAppleJws("not-a-jws")).rejects.toThrowError(
+      /Invalid JWS/
+    );
+    await expect(verifyAppleJws("a.b")).rejects.toThrowError(/Invalid JWS/);
+  });
+
+  it("verifyAppleJws rejects a non-ES256 algorithm", async () => {
+    const jws = makeJwsWithHeader(
+      { alg: "HS256", x5c: ["AA"] },
+      { hello: "world" }
+    );
+    await expect(verifyAppleJws(jws)).rejects.toThrowError(
+      /Unsupported JWS alg/
+    );
+  });
+
+  it("verifyAppleJws rejects a JWS with no x5c chain", async () => {
+    const jws = makeJwsWithHeader({ alg: "ES256" }, { hello: "world" });
+    await expect(verifyAppleJws(jws)).rejects.toThrowError(/missing x5c/);
+  });
+
+  it("verifyAppleJws rejects a chain that doesn't anchor at Apple Root CA G3", async () => {
+    // A single self-signed cert ⇒ chain root is the cert itself, whose
+    // fingerprint won't match the pinned Apple Root CA G3 hash. We use
+    // a minimal but parseable X.509 v3 DER built by hand: just enough
+    // structure to get past the parser before the root-pin check fails.
+    const bogusCertDer = makeMinimalSelfSignedDer();
+    const x5c = Buffer.from(bogusCertDer).toString("base64");
+    const jws = makeJwsWithHeader(
+      { alg: "ES256", x5c: [x5c] },
+      { hello: "world" }
+    );
+    await expect(verifyAppleJws(jws)).rejects.toThrowError(
+      /does not anchor at Apple Root CA - G3/
+    );
+  });
+});
+
+/** Build a minimal X.509 v3 cert (DER) that's just well-formed enough
+ *  for the verifier to parse it before rejecting on the root pin. We
+ *  don't need a valid signature here — the chain anchor check fails
+ *  first. */
+function makeMinimalSelfSignedDer(): Uint8Array {
+  const concat = (...parts: Uint8Array[]): Uint8Array => {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) {
+      out.set(p, off);
+      off += p.length;
+    }
+    return out;
+  };
+  const bytes = (...vs: number[]) => Uint8Array.from(vs);
+  const encodeLen = (n: number): Uint8Array => {
+    if (n < 0x80) return bytes(n);
+    const out: number[] = [];
+    let v = n;
+    while (v > 0) {
+      out.unshift(v & 0xff);
+      v >>= 8;
+    }
+    return bytes(0x80 | out.length, ...out);
+  };
+  const tlv = (t: number, content: Uint8Array) =>
+    concat(bytes(t), encodeLen(content.length), content);
+
+  const version = tlv(0xa0, tlv(0x02, bytes(0x02))); // [0] EXPLICIT INTEGER 2
+  const serial = tlv(0x02, bytes(0x01)); // INTEGER 1
+  // ecdsa-with-SHA256 alg id (used in both inner & outer)
+  const sigAlg = tlv(
+    0x30,
+    tlv(0x06, bytes(0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02))
+  );
+  const emptyName = tlv(0x30, new Uint8Array(0));
+  const utcTime = (s: string) =>
+    tlv(0x17, new TextEncoder().encode(s));
+  // 2000-01-01 → 2099-01-01: always inside the validity window.
+  const validity = tlv(
+    0x30,
+    concat(utcTime("000101000000Z"), utcTime("990101000000Z"))
+  );
+  // Minimal EC SPKI for P-256, with an obviously-zero public key (we
+  // never use it). algorithm = SEQ { id-ecPublicKey, P-256 }, then a
+  // BIT STRING containing an uncompressed point of zeros.
+  const idEcPublicKey = tlv(
+    0x06,
+    bytes(0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01)
+  );
+  const p256Oid = tlv(
+    0x06,
+    bytes(0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07)
+  );
+  const algId = tlv(0x30, concat(idEcPublicKey, p256Oid));
+  const pubKeyBytes = concat(bytes(0x00, 0x04), new Uint8Array(64));
+  const subjectPubKey = tlv(0x03, pubKeyBytes);
+  const spki = tlv(0x30, concat(algId, subjectPubKey));
+
+  const tbs = tlv(
+    0x30,
+    concat(version, serial, sigAlg, emptyName, validity, emptyName, spki)
+  );
+
+  // Signature value: BIT STRING { 0x00, DER ECDSA-Sig-Value }. We
+  // never reach the chain-signature check, so a placeholder SEQUENCE
+  // is fine.
+  const innerSig = tlv(
+    0x30,
+    concat(tlv(0x02, bytes(0x01)), tlv(0x02, bytes(0x01)))
+  );
+  const sigValue = tlv(0x03, concat(bytes(0x00), innerSig));
+
+  return tlv(0x30, concat(tbs, sigAlg, sigValue));
+}

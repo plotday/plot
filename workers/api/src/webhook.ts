@@ -6,6 +6,15 @@ import { invokeWebhookCallback } from "./twist/invoke-webhook";
 import { sendEmail } from "./email/send";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
+import {
+  applyAppleTransactionToUser,
+  findUserByOriginalTransactionId,
+  verifyAppleJws,
+  type JwsNotificationPayload,
+  type JwsRenewalInfoPayload,
+  type JwsTransactionPayload,
+} from "./apple/iap";
+import { createDb } from "./db";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "./utils/log-context";
 import { dbMiddleware } from "./middleware/db";
@@ -913,5 +922,138 @@ webhook.all("/hook-sync/:token", webhookRateLimiter, async (c) => {
     return captureServerError(c, error, "Error processing callback");
   }
 });
+
+// ============================================================================
+// Apple App Store Server Notifications V2
+// ============================================================================
+//
+// Apple POSTs to this endpoint when a subscription renews, fails to renew,
+// is refunded, is revoked, expires, or otherwise changes state. The body is
+// `{ signedPayload }` — a JWS-encoded notification.
+//
+// We treat the signedPayload as authoritative. The notification carries
+// `signedTransactionInfo` (the same JWS shape clients send to /upgrade/iap/
+// verify) and `signedRenewalInfo` describing auto-renewal state.
+//
+// Configure in App Store Connect → App Information → App Store Server
+// Notifications → Production / Sandbox URL: `${API_ROOT}/hook/appstore`.
+//
+// Every JWS we ingest (outer signedPayload, signedTransactionInfo,
+// signedRenewalInfo) is verified against Apple Root CA - G3 by
+// `verifyAppleJws` in apple/iap.ts — a forged signedPayload won't reach
+// applyAppleTransactionToUser.
+webhook.post(
+  "/hook/appstore",
+  webhookAsyncRateLimiter,
+  async (c) => {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+
+    let body: { signedPayload?: string };
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      logger.warn("AppStore webhook: invalid JSON body", {
+        error: (e as Error).message,
+      });
+      return new Response("Invalid body", { status: 400 });
+    }
+
+    if (!body.signedPayload || typeof body.signedPayload !== "string") {
+      return new Response("Missing signedPayload", { status: 400 });
+    }
+
+    let notif: JwsNotificationPayload;
+    try {
+      notif = await verifyAppleJws<JwsNotificationPayload>(body.signedPayload);
+    } catch (e) {
+      logger.warn("AppStore webhook: failed to verify signedPayload", {
+        error: (e as Error).message,
+      });
+      return new Response("Invalid signedPayload", { status: 400 });
+    }
+
+    logger.info("AppStore webhook received", {
+      notification_type: notif.notificationType,
+      subtype: notif.subtype ?? null,
+      notification_uuid: notif.notificationUUID,
+      apple_environment: (notif.data?.environment as string | undefined) ?? null,
+    });
+
+    const signedTxn = notif.data?.signedTransactionInfo;
+    if (!signedTxn) {
+      // Some notification types (TEST, CONSUMPTION_REQUEST) have no
+      // transaction info. Ack and move on.
+      return c.json({ ok: true, ignored: true });
+    }
+
+    let txn: JwsTransactionPayload;
+    try {
+      txn = await verifyAppleJws<JwsTransactionPayload>(signedTxn);
+    } catch (e) {
+      logger.warn(
+        "AppStore webhook: failed to verify signedTransactionInfo",
+        { error: (e as Error).message }
+      );
+      return new Response("Invalid signedTransactionInfo", { status: 400 });
+    }
+
+    // Optionally verify renewal info for logging.
+    let renewal: JwsRenewalInfoPayload | null = null;
+    if (notif.data?.signedRenewalInfo) {
+      try {
+        renewal = await verifyAppleJws<JwsRenewalInfoPayload>(
+          notif.data.signedRenewalInfo
+        );
+      } catch (e) {
+        logger.warn(
+          "AppStore webhook: failed to verify signedRenewalInfo",
+          { error: (e as Error).message }
+        );
+      }
+    }
+
+    // The webhook fires outside any user session — map back to a Plot user
+    // via the originalTransactionId we stored during the initial purchase.
+    // Open a fresh DB connection because this isn't routed through the
+    // request-scoped middleware.
+    const db = createDb(c.env);
+    try {
+      const userId = await findUserByOriginalTransactionId(
+        db,
+        txn.originalTransactionId
+      );
+      if (!userId) {
+        // First-purchase notifications arrive in parallel with the
+        // client's /upgrade/iap/verify call. If the client hasn't yet
+        // landed, ack the notification — Apple's at-least-once delivery
+        // will redrive if we 5xx, but the verify endpoint is the
+        // primary path and a missing row here usually self-heals.
+        logger.warn(
+          "AppStore webhook: no user found for originalTransactionId",
+          {
+            original_transaction_id: txn.originalTransactionId,
+            notification_type: notif.notificationType,
+          }
+        );
+        return c.json({ ok: true, deferred: true });
+      }
+
+      await applyAppleTransactionToUser(db, userId, txn);
+
+      c.var.tracker.capture("[User] Subscription Updated", {
+        plan: txn.productId,
+        origin: "app_store",
+        notification_type: notif.notificationType,
+        subtype: notif.subtype ?? null,
+        auto_renew_status: renewal?.autoRenewStatus ?? null,
+      });
+
+      return c.json({ ok: true });
+    } finally {
+      await db.destroy();
+    }
+  }
+);
 
 export default webhook;

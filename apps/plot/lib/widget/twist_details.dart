@@ -3,7 +3,6 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/api/twist_api.dart';
-import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/string.dart';
@@ -14,7 +13,6 @@ class TwistDetails extends StatelessWidget {
     required this.twist,
     this.priority,
     this.hasAiKeys,
-    this.effectivePlan,
     super.key,
   });
 
@@ -24,29 +22,16 @@ class TwistDetails extends StatelessWidget {
   /// Whether the user has any AI API keys configured. Null = not fetched.
   final bool? hasAiKeys;
 
-  /// The user's effective plan (e.g. 'free', 'pro', 'team'). Null = not fetched.
-  final String? effectivePlan;
-
-  bool get _isFree => effectivePlan == 'free';
-
-  bool get _aiMessageIsWarning =>
-      _isFree && hasAiKeys == false;
+  bool get _aiMessageIsWarning => hasAiKeys == false;
 
   String? get _aiMessage {
-    if (hasAiKeys == null || effectivePlan == null) return null;
-    if (hasAiKeys == false && _isFree) {
+    if (hasAiKeys == null) return null;
+    if (hasAiKeys == false) {
       return twist.aiRequired
           ? 'Add API keys in settings to use this twist.'
           : 'Add API keys in settings to enable AI features.';
     }
-    if (hasAiKeys == true) {
-      return 'AI will use your API keys.';
-    }
-    // Subscribed, no keys. On iOS, avoid referencing the externally-purchased
-    // subscription (App Store guideline 3.1.1 anti-steering).
-    return UpgradeUi.canPromptUpgrade
-        ? 'AI usage will be billed to your subscription.'
-        : 'AI usage is included with your plan.';
+    return 'AI will use your API keys.';
   }
 
   @override

@@ -1,13 +1,10 @@
 import 'package:collection/collection.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import 'package:url_launcher/url_launcher.dart';
-
 import 'command.dart';
+import 'upgrade.dart' show ShowUpgradeOptions;
 
 import 'package:plot/analytics/tracker.dart';
-import 'package:plot/state/user.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/store/store.dart';
@@ -16,7 +13,6 @@ import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
-import 'package:plot/env.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -856,105 +852,47 @@ class _SourceLogo extends StatelessWidget {
 
 enum _ResourceType { connections, twists }
 
-/// A command that opens the upgrade page.
-class _UpgradeCommand extends Command {
-  _UpgradeCommand(String title)
-    : super(
-        title: title,
-        icon: PlotIcon.sparkles,
-        eventObject: EventObject.twist,
-        eventAction: EventAction.opened,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final userState = context.read<UserBloc>().state;
-    final email = userState is UserReady ? userState.user.primaryEmail : null;
-    final uri = Uri.parse(
-      '${Env.siteRoot}/upgrade',
-    ).replace(queryParameters: email != null ? {'email': email} : null);
-    launchUrl(uri);
-    return const CommandSkipped();
-  }
-}
-
-/// A no-op command that surfaces the at-limit state via a toast. Used on iOS,
-/// where we cannot direct users to the external upgrade flow.
-class _AtLimitInfoCommand extends Command {
-  _AtLimitInfoCommand(this._message)
-    : super(
-        title: 'Limit reached',
-        icon: PlotIcon.connection,
-        eventObject: EventObject.twist,
-        eventAction: EventAction.opened,
-      );
-
-  final String _message;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    context.showToast(message: _message, isError: true);
-    return const CommandSkipped();
-  }
-}
-
-/// Returns the at-limit command for a connection-limit case: either an upgrade
-/// CTA (non-iOS) or a no-op info command that just shows a toast (iOS).
-Command _connectionAtLimitCommand() => UpgradeUi.canPromptUpgrade
-    ? _UpgradeCommand('Upgrade to add more connections')
-    : _AtLimitInfoCommand(
-        "You've reached the connection limit for your current plan.",
-      );
+/// Returns the at-limit command for a connection-limit case. Opens the
+/// upgrade picker on every distribution channel — on App Store builds
+/// that picker triggers StoreKit IAP; on web/DMG it routes to
+/// `${Env.siteRoot}/upgrade`. Team limits route to a no-op toast since
+/// Team purchases are admin-only and not IAP-available.
+Command _connectionAtLimitCommand() => ShowUpgradeOptions(
+  title: 'Upgrade to add more connections',
+);
 
 /// Returns the at-limit command for a twist-limit case.
-Command _twistAtLimitCommand() => UpgradeUi.canPromptUpgrade
-    ? _UpgradeCommand('Upgrade to add more twists')
-    : _AtLimitInfoCommand(
-        "You've reached the twist limit for your current plan.",
-      );
+Command _twistAtLimitCommand() => ShowUpgradeOptions(
+  title: 'Upgrade to add more twists',
+);
 
 /// Message shown when the server returns plan_limit_exceeded for a connection.
-/// On iOS the message omits any "Upgrade" call-to-action.
+/// Team limits are admin-driven so we never reference "Upgrade" for
+/// non-admin members. On personal limits, the picker (triggered separately)
+/// handles the upgrade flow — this message just reports the state.
 String _planLimitConnectionMessage({
   required bool isTeam,
   required bool isAdmin,
 }) {
-  if (!UpgradeUi.canPromptUpgrade) {
-    if (isTeam) {
-      return isAdmin
-          ? 'Your team has reached its connection limit.'
-          : 'Your team has reached its connection limit. Contact your team admin.';
-    }
-    return "You've reached your connection limit.";
-  }
   if (isTeam) {
     return isAdmin
-        ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
-        : 'Your team has reached its connection limit. Contact an admin to upgrade.';
+        ? 'Your team has reached its connection limit.'
+        : 'Your team has reached its connection limit. Contact your team admin.';
   }
-  return "You've reached your connection limit. Upgrade for unlimited connections.";
+  return "You've reached your connection limit.";
 }
 
 /// Message shown when the server returns plan_limit_exceeded for a twist.
-/// On iOS the message omits any "Upgrade" call-to-action.
 String _planLimitTwistMessage({
   required bool isTeam,
   required bool isAdmin,
 }) {
-  if (!UpgradeUi.canPromptUpgrade) {
-    if (isTeam) {
-      return isAdmin
-          ? 'Your team has reached its twist limit.'
-          : 'Your team has reached its twist limit. Contact your team admin.';
-    }
-    return "You've reached your twist limit.";
-  }
   if (isTeam) {
     return isAdmin
-        ? 'Your team has reached its twist limit. Upgrade your plan.'
-        : 'Your team has reached its twist limit. Contact an admin to upgrade.';
+        ? 'Your team has reached its twist limit.'
+        : 'Your team has reached its twist limit. Contact your team admin.';
   }
-  return "You've reached your twist limit. Upgrade for unlimited twists.";
+  return "You've reached your twist limit.";
 }
 
 /// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
@@ -1724,17 +1662,10 @@ class AddSourceDetail extends ShowForm {
                   teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
-                if (UpgradeUi.canPromptUpgrade) {
-                  return FormButton(
-                    key: 'upgrade_${provider.provider.name}',
-                    isPrimary: true,
-                    buildCommand: (_) => _connectionAtLimitCommand(),
-                  );
-                }
-                return FormInfo(
-                  key: 'limit_${provider.provider.name}',
-                  text:
-                      "You've reached the connection limit for your current plan.",
+                return FormButton(
+                  key: 'upgrade_${provider.provider.name}',
+                  isPrimary: true,
+                  buildCommand: (_) => _connectionAtLimitCommand(),
                 );
               }
 
@@ -1851,17 +1782,10 @@ class AddSourceDetail extends ShowForm {
                   teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
-                if (UpgradeUi.canPromptUpgrade) {
-                  return FormButton(
-                    key: 'upgrade_${provider.provider.name}',
-                    isPrimary: true,
-                    buildCommand: (_) => _connectionAtLimitCommand(),
-                  );
-                }
-                return FormInfo(
-                  key: 'limit_${provider.provider.name}',
-                  text:
-                      "You've reached the connection limit for your current plan.",
+                return FormButton(
+                  key: 'upgrade_${provider.provider.name}',
+                  isPrimary: true,
+                  buildCommand: (_) => _connectionAtLimitCommand(),
                 );
               }
 
@@ -2484,18 +2408,11 @@ class ShowTwistDetails extends ShowForm {
   final Twist twist;
 
   static Future<FormData> _buildForm(Twist twist) async {
-    // Only fetch plan/keys info for twists that use AI
+    // Only fetch keys info for twists that use AI
     bool? hasAiKeys;
-    String? effectivePlan;
     if (twist.permissions?.forDomain('ai') != null) {
-      final results = await Future.wait([
-        UpgradeApi.getSubscription(),
-        UpgradeApi.getAiKeys(),
-      ]);
-      final subscription = results[0] as SubscriptionInfo;
-      final aiKeys = results[1] as List<String>;
+      final aiKeys = await UpgradeApi.getAiKeys();
       hasAiKeys = aiKeys.isNotEmpty;
-      effectivePlan = subscription.effectivePlan;
     }
 
     return FormData(
@@ -2509,7 +2426,6 @@ class ShowTwistDetails extends ShowForm {
               builder: (context) => TwistDetails(
                 twist: twist,
                 hasAiKeys: hasAiKeys,
-                effectivePlan: effectivePlan,
               ),
             ),
           ],
@@ -2573,19 +2489,20 @@ class ShowTwistInfo extends ShowForm {
   }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
-    // Fetch subscription, AI keys, and usage in parallel
+    // Fetch AI keys and usage in parallel. We no longer gate twists on plan
+    // tier — AI-required twists work for any user who has their own API
+    // keys, regardless of subscription state. Plan-only AI inclusion is
+    // returning in a future Premium AI add-on.
     final results = await Future.wait([
-      UpgradeApi.getSubscription(),
       UpgradeApi.getAiKeys(),
       UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ]);
-    final subscription = results[0] as SubscriptionInfo;
-    final aiKeys = results[1] as List<String>;
-    final usage = results[2] as UsageData?;
+    final aiKeys = results[0] as List<String>;
+    final usage = results[1] as UsageData?;
     final hasAiKeys = aiKeys.isNotEmpty;
 
-    // Block AI-required twists for free users without keys
-    final blocked = twist.aiRequired && subscription.isFree && !hasAiKeys;
+    // Block AI-required twists when the user has no API keys.
+    final blocked = twist.aiRequired && !hasAiKeys;
 
     // Only gate entry when the user has no team to fall back to. If they
     // have teams, let them reach the setup form and pick a scope — the
@@ -2604,7 +2521,6 @@ class ShowTwistInfo extends ShowForm {
               builder: (context) => TwistDetails(
                 twist: twist,
                 hasAiKeys: hasAiKeys,
-                effectivePlan: subscription.effectivePlan,
               ),
             ),
             if (!blocked)

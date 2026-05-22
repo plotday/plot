@@ -4,35 +4,42 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'api.dart' as api;
 
-/// Centralizes platform rules for exposing upgrade UI.
+/// Centralizes platform rules for the App Store distribution channels.
 ///
-/// Apple's App Store guideline 3.1.1 forbids in-app calls-to-action that
-/// direct users to an external purchase flow. Gate any "Upgrade", "Manage
-/// subscription", or pricing CTA on this flag.
+/// `isAppStoreBuild` is true when the binary is built for Apple's App
+/// Store (iOS App Store or Mac App Store) and subject to guideline 3.1.1.
+/// In those builds:
+///   - The web upgrade flow (`launchUrl(plot.day/upgrade)`,
+///     `/upgrade/checkout`, `/upgrade/portal`) MUST NOT be reachable.
+///   - Subscription purchase happens via StoreKit IAP.
+///   - The Premium AI add-on and Team plan must not be referenced.
 ///
-/// The rule applies to:
-///   - iOS (always — there is no non-store iOS distribution).
-///   - The Mac App Store build of the macOS app. The DMG / direct-
-///     distribution build is unaffected, so we use a compile-time flag
-///     (`--dart-define=APP_STORE_BUILD=true`, set in
-///     `apps/plot/macos/fastlane/Fastfile` `build_mas`) to differentiate.
+/// The flag is driven by:
+///   - `Platform.isIOS` at runtime (the Flutter iOS target is App-Store-
+///     only — there's no non-store iOS distribution channel).
+///   - `--dart-define=APP_STORE_BUILD=true` for macOS, set by Fastlane's
+///     `:build_mas` lane. The DMG / direct distribution build omits the
+///     flag so direct-distribution users keep the web purchase flow.
 ///
-/// The web build — even when loaded in iOS Safari — is free to show
-/// upgrade UI and must not touch `dart:io`'s `Platform` (which throws
-/// on web).
+/// Web is never an App Store build, and must not touch `dart:io`'s
+/// `Platform` (which throws on web).
 class UpgradeUi {
   const UpgradeUi._();
 
-  /// True only for the macOS Mac App Store build. The DMG / direct-
-  /// distribution build leaves this false.
-  static const _isMacAppStoreBuild = bool.fromEnvironment("APP_STORE_BUILD");
+  static const _appStoreDefine = bool.fromEnvironment("APP_STORE_BUILD");
 
-  static bool get canPromptUpgrade {
-    if (kIsWeb) return true;
-    if (Platform.isIOS) return false;
-    if (Platform.isMacOS && _isMacAppStoreBuild) return false;
-    return true;
+  /// True when running on an Apple App Store-distributed binary.
+  static bool get isAppStoreBuild {
+    if (kIsWeb) return false;
+    if (Platform.isIOS) return true;
+    if (Platform.isMacOS && _appStoreDefine) return true;
+    return false;
   }
+
+  /// Whether the app may open external upgrade flows or surface CTAs that
+  /// reference subscription purchases purchased elsewhere. False on App
+  /// Store builds — those use StoreKit IAP instead.
+  static bool get canPromptUpgrade => !isAppStoreBuild;
 }
 
 /// Usage counts for a single resource type (e.g. connections or twists)
@@ -145,10 +152,16 @@ class SubscriptionInfo extends Equatable {
   final String effectivePlan;
   final String effectiveSource;
 
+  /// 'stripe' or 'app_store' — where the active personal subscription
+  /// was purchased. Null when the user has no paid personal plan.
+  /// Used to route "Manage subscription" to the right destination.
+  final String? origin;
+
   const SubscriptionInfo({
     required this.plan,
     required this.effectivePlan,
     required this.effectiveSource,
+    this.origin,
   });
 
   factory SubscriptionInfo.fromJson(Map<String, dynamic> json) {
@@ -156,6 +169,7 @@ class SubscriptionInfo extends Equatable {
       plan: json['plan'] as String? ?? 'free',
       effectivePlan: json['effective_plan'] as String? ?? 'free',
       effectiveSource: json['effective_source'] as String? ?? 'personal',
+      origin: json['origin'] as String?,
     );
   }
 
@@ -164,8 +178,12 @@ class SubscriptionInfo extends Equatable {
   bool get canBuildTwists => effectivePlan == 'pro' || effectivePlan == 'team';
   bool get hasPaidPlan => effectivePlan != 'free';
 
+  /// True when the active personal subscription was purchased via App
+  /// Store IAP (so management goes through StoreKit, not Stripe portal).
+  bool get isAppStoreOrigin => origin == 'app_store';
+
   @override
-  List<Object?> get props => [plan, effectivePlan, effectiveSource];
+  List<Object?> get props => [plan, effectivePlan, effectiveSource, origin];
 }
 
 /// API methods for subscription and usage

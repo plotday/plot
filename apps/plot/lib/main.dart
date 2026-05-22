@@ -16,6 +16,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 
 import 'analytics/tracker.dart';
+import 'api/iap_api.dart';
 import 'app.dart';
 import 'app_info.dart';
 import 'env.dart';
@@ -410,6 +411,11 @@ Future<void> run(List<String> args) async {
     await Base.init();
     await AutoSignIn.init();
     await AuthButton.init();
+    // StoreKit IAP service. No-ops on non-App-Store builds — see
+    // lib/api/iap_api.dart `isSupported`. Initialized before the app
+    // mounts so the purchase stream is listening when the first
+    // restored / renewed transaction arrives.
+    await IapService.instance.init();
     usePathUrlStrategy();
 
     // Start watching for deep link requests from other instances

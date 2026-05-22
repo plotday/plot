@@ -1497,10 +1497,13 @@ export interface UserSettings {
 }
 
 export interface UserSubscription {
+  apple_original_transaction_id: string | null;
+  apple_product_id: string | null;
   billing_cycle_end: Timestamp;
   billing_cycle_start: Timestamp;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
+  origin: Generated<string>;
   plan: Generated<SubscriptionPlan>;
   status: Generated<SubscriptionStatus>;
   stripe_customer_id: string | null;
