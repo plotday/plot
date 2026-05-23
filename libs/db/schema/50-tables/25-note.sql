@@ -19,6 +19,7 @@ CREATE TABLE "public"."note" (
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
     "link_id" uuid REFERENCES public.link (id) ON DELETE SET NULL,
+    "canonical_source" text,
     "embedding" halfvec(384),
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
@@ -39,9 +40,11 @@ WHERE
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
 
-COMMENT ON COLUMN "public"."note"."link_id" IS 'The connector-created link this note belongs to. Scopes note.key uniqueness to (thread_id, link_id, key) so two links on the same thread (e.g. after a merge) can each carry a "description" note. NULL for user/Plot-tool authored notes.';
+COMMENT ON COLUMN "public"."note"."link_id" IS 'The connector-created link this note was first written through. Informational attribution — note visibility is thread-scoped, not link-scoped. Cross-connection dedup is keyed on canonical_source, not link_id. NULL for user/Plot-tool authored notes.';
 
 COMMENT ON COLUMN "public"."note"."external_content_hash" IS 'SHA-256 hash of the content the connector last saw in the external system, computed over (contentType + "\n" + content). Used by connector sync-in to distinguish "external unchanged" (preserve Plot''s content, which may be formatted markdown) from "external edited" (overwrite with incoming). NULL means no baseline yet. Only set by the twist runtime — clients must not write to this column.';
+
+COMMENT ON COLUMN "public"."note"."canonical_source" IS 'The link.source of the link this note was first written through (copied at note write time by createNote). Drives cross-connection dedup: when two users'' connections of the same external resource each write a note with the same key, the partial unique index on (thread_id, canonical_source, key) collapses them to one row. NULL when no link or the link has no source.';
 
 -- Ensure one keyed note per (thread, link). Partial: notes with no key
 -- (user-authored markdown) are unconstrained. NULL link_id rows coexist
@@ -50,6 +53,15 @@ COMMENT ON COLUMN "public"."note"."external_content_hash" IS 'SHA-256 hash of th
 CREATE UNIQUE INDEX note_thread_link_key_unique
     ON "public"."note" ("thread_id", "link_id", "key")
     WHERE key IS NOT NULL;
+
+-- Cross-connection dedup: one keyed note per (thread, canonical external resource).
+-- Two users'' connections of the same calendar event share link.source (e.g. an
+-- iCalUID-based identifier), so their description notes collide on this index
+-- and converge to one row. Notes whose link has no source fall through to the
+-- per-link index above.
+CREATE UNIQUE INDEX note_thread_canonical_key_unique
+    ON "public"."note" ("thread_id", "canonical_source", "key")
+    WHERE canonical_source IS NOT NULL AND key IS NOT NULL;
 
 -- Index for efficient key lookups
 CREATE INDEX idx_note_key ON "public"."note" ("key")

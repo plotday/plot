@@ -325,8 +325,44 @@ export async function createNote(
       );
     }
 
+    // Resolve canonical_source for cross-connection dedup. When two users'
+    // connections of the same external resource each write a note with the
+    // same key, both links have the same `link.source` (the connector
+    // canonical identifier, e.g. `google-calendar:<iCalUID>`). Copying that
+    // onto the note lets the partial unique index on
+    // (thread_id, canonical_source, key) collapse the writes to one row.
+    if (dbNote.link_id && dbNote.key) {
+      const linkRow = await plot.db
+        .selectFrom("link")
+        .select("source")
+        .where("id", "=", dbNote.link_id)
+        .executeTakeFirst();
+      if (linkRow?.source) {
+        dbNote.canonical_source = linkRow.source;
+      }
+    }
+
+    // Serialize concurrent same-resource writers (e.g. two users' connections
+    // syncing the same calendar event in parallel). Without the lock, both
+    // could read "no existing row" and both insert, racing through different
+    // ON CONFLICT targets. Precedent: update_thread_on_note_change in
+    // libs/db/schema/50-tables/25-note.sql takes a per-thread advisory lock.
+    if (dbNote.canonical_source && dbNote.key) {
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${
+        `${dbNote.thread_id}:${dbNote.canonical_source}:${dbNote.key}`
+      }))`.execute(plot.db);
+    }
+
     // Insert or upsert note based on whether key is provided.
     // When key is provided, use upsert to handle duplicate keys within same activity.
+    //
+    // Two ON CONFLICT targets:
+    //   - When canonical_source is set: dedup across links sharing the same
+    //     external resource (one note per (thread, canonical_source, key)).
+    //     `link_id` is omitted from the update so the first writer's link
+    //     attribution stays pinned.
+    //   - Otherwise: fall back to the per-link key index (one note per
+    //     (thread, link_id, key)).
     //
     // Sync-baseline preservation: `note.external_content_hash` records the
     // hash of the last external-provided content the runtime saw for this
@@ -341,58 +377,69 @@ export async function createNote(
     // The WHERE clause also gates on hash equality so a "same content"
     // re-sync doesn't fire UPDATE and wake the sync_twist_for_note trigger
     // (which would create a feedback loop).
+    const onConflictUpdateSet = (eb: any) => ({
+      author_id: eb.ref("excluded.author_id"),
+      created_by: eb.ref("excluded.created_by"),
+      source_created_at: eb.ref("excluded.source_created_at"),
+      draft: eb.ref("excluded.draft"),
+      access_contacts: eb.ref("excluded.access_contacts"),
+      content: sql<string | null>`CASE
+        WHEN excluded.external_content_hash IS NOT NULL
+          AND note.external_content_hash IS NOT NULL
+          AND excluded.external_content_hash = note.external_content_hash
+        THEN note.content
+        ELSE excluded.content
+      END` as any,
+      external_content_hash: sql<string | null>`COALESCE(excluded.external_content_hash, note.external_content_hash)` as any,
+      actions: eb.ref("excluded.actions"),
+      mentions: eb.ref("excluded.mentions"),
+      updated_by: eb.ref("excluded.updated_by"),
+      sync_depth: eb.ref("excluded.sync_depth"),
+      archived_at: eb.ref("excluded.archived_at"),
+      re_note_id: eb.ref("excluded.re_note_id"),
+      canonical_source: eb.ref("excluded.canonical_source"),
+    });
+
+    const onConflictWhere = (eb: any) =>
+      eb.or([
+        // Content-distinct check only matters when we lack a
+        // baseline on either side; otherwise the hash comparison
+        // is the authoritative "did external change" signal.
+        eb.and([
+          eb.or([
+            eb("excluded.external_content_hash", "is", null),
+            eb("note.external_content_hash", "is", null),
+          ]),
+          eb("note.content", "is distinct from", eb.ref("excluded.content")),
+        ]),
+        eb("note.external_content_hash", "is distinct from", eb.ref("excluded.external_content_hash")),
+        eb("note.author_id", "is distinct from", eb.ref("excluded.author_id")),
+        eb("note.source_created_at", "is distinct from", eb.ref("excluded.source_created_at")),
+        eb("note.archived_at", "is distinct from", eb.ref("excluded.archived_at")),
+        eb("note.re_note_id", "is distinct from", eb.ref("excluded.re_note_id")),
+        eb("note.mentions", "is distinct from", eb.ref("excluded.mentions")),
+        eb("note.actions", "is distinct from", eb.ref("excluded.actions")),
+        eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
+        eb("note.access_contacts", "is distinct from", eb.ref("excluded.access_contacts")),
+      ]);
+
     let dbResult = dbNote.key
       ? await plot.db
           .insertInto("note")
           .values(dbNote)
           .onConflict((oc) =>
-            oc
-              .columns(["thread_id", "link_id", "key"])
-              .where("key", "is not", null)
-              .doUpdateSet((eb) => ({
-                author_id: eb.ref("excluded.author_id"),
-                created_by: eb.ref("excluded.created_by"),
-                source_created_at: eb.ref("excluded.source_created_at"),
-                draft: eb.ref("excluded.draft"),
-                access_contacts: eb.ref("excluded.access_contacts"),
-                content: sql<string | null>`CASE
-                  WHEN excluded.external_content_hash IS NOT NULL
-                    AND note.external_content_hash IS NOT NULL
-                    AND excluded.external_content_hash = note.external_content_hash
-                  THEN note.content
-                  ELSE excluded.content
-                END` as any,
-                external_content_hash: sql<string | null>`COALESCE(excluded.external_content_hash, note.external_content_hash)` as any,
-                actions: eb.ref("excluded.actions"),
-                mentions: eb.ref("excluded.mentions"),
-                updated_by: eb.ref("excluded.updated_by"),
-                sync_depth: eb.ref("excluded.sync_depth"),
-                archived_at: eb.ref("excluded.archived_at"),
-                re_note_id: eb.ref("excluded.re_note_id"),
-              }))
-              .where((eb) =>
-                eb.or([
-                  // Content-distinct check only matters when we lack a
-                  // baseline on either side; otherwise the hash comparison
-                  // is the authoritative "did external change" signal.
-                  eb.and([
-                    eb.or([
-                      eb("excluded.external_content_hash", "is", null),
-                      eb("note.external_content_hash", "is", null),
-                    ]),
-                    eb("note.content", "is distinct from", eb.ref("excluded.content")),
-                  ]),
-                  eb("note.external_content_hash", "is distinct from", eb.ref("excluded.external_content_hash")),
-                  eb("note.author_id", "is distinct from", eb.ref("excluded.author_id")),
-                  eb("note.source_created_at", "is distinct from", eb.ref("excluded.source_created_at")),
-                  eb("note.archived_at", "is distinct from", eb.ref("excluded.archived_at")),
-                  eb("note.re_note_id", "is distinct from", eb.ref("excluded.re_note_id")),
-                  eb("note.mentions", "is distinct from", eb.ref("excluded.mentions")),
-                  eb("note.actions", "is distinct from", eb.ref("excluded.actions")),
-                  eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
-                  eb("note.access_contacts", "is distinct from", eb.ref("excluded.access_contacts")),
-                ])
-              )
+            dbNote.canonical_source
+              ? oc
+                  .columns(["thread_id", "canonical_source", "key"])
+                  .where("canonical_source", "is not", null)
+                  .where("key", "is not", null)
+                  .doUpdateSet(onConflictUpdateSet)
+                  .where(onConflictWhere)
+              : oc
+                  .columns(["thread_id", "link_id", "key"])
+                  .where("key", "is not", null)
+                  .doUpdateSet(onConflictUpdateSet)
+                  .where(onConflictWhere)
           )
           .returningAll()
           .executeTakeFirst() ?? null
@@ -403,16 +450,20 @@ export async function createNote(
           .executeTakeFirstOrThrow();
 
     // If upsert was a no-op (existing row with identical content), fetch the existing row.
-    // Match the partial unique index — link_id may be NULL.
+    // Match whichever partial unique index applies — link_id may be NULL.
     if (!dbResult) {
       let q = plot.db
         .selectFrom("note")
         .selectAll()
         .where("thread_id", "=", dbNote.thread_id)
         .where("key", "=", dbNote.key);
-      q = dbNote.link_id
-        ? q.where("link_id", "=", dbNote.link_id)
-        : q.where("link_id", "is", null);
+      if (dbNote.canonical_source) {
+        q = q.where("canonical_source", "=", dbNote.canonical_source);
+      } else if (dbNote.link_id) {
+        q = q.where("link_id", "=", dbNote.link_id);
+      } else {
+        q = q.where("link_id", "is", null);
+      }
       dbResult = await q.executeTakeFirstOrThrow();
     }
 

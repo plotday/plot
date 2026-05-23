@@ -805,6 +805,7 @@ export type Database = {
           actions: Json | null
           archived_at: string | null
           author_id: string
+          canonical_source: string | null
           content: string | null
           created_at: string
           created_by: string
@@ -829,6 +830,7 @@ export type Database = {
           actions?: Json | null
           archived_at?: string | null
           author_id: string
+          canonical_source?: string | null
           content?: string | null
           created_at?: string
           created_by: string
@@ -853,6 +855,7 @@ export type Database = {
           actions?: Json | null
           archived_at?: string | null
           author_id?: string
+          canonical_source?: string | null
           content?: string | null
           created_at?: string
           created_by?: string

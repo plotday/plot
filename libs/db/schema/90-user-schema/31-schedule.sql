@@ -1,8 +1,12 @@
 -- User-scoped schedule view
--- Shows shared schedules (user_id IS NULL) to all users with thread_priority
--- Shows per-user schedules (user_id IS NOT NULL) only to the owning user
--- Computes range_at/range_on for client-side time-based filtering
--- Handles both thread_id and link_id paths for priority access
+-- Shows shared schedules (user_id IS NULL) to users who can see the schedule's parent.
+--   - Link-attached schedules (link_id IS NOT NULL) follow the link's per-user
+--     visibility: connector-authored links are visible only to the twist_instance
+--     owner, so their schedules are too. This keeps two users' connections of the
+--     same calendar event from each showing as duplicate agenda entries.
+--   - Thread-scoped schedules (link_id IS NULL) stay shared across thread members.
+-- Shows per-user schedules (user_id IS NOT NULL) only to the owning user.
+-- Computes range_at/range_on for client-side time-based filtering.
 CREATE OR REPLACE VIEW "user"."schedule"
 --
 AS
@@ -66,6 +70,12 @@ FROM
     schedule s
     -- Join via link -> thread when link_id is set
     LEFT JOIN link l ON l.id = s.link_id
+    -- Resolve the link's owning twist_instance for per-user visibility.
+    -- When l.twist_id IS NOT NULL, link.created_by is a twist_instance_id.
+    LEFT JOIN twist_instance ti
+        ON ti.id = l.created_by
+        AND l.twist_id IS NOT NULL
+        AND ti.archived_at IS NULL
     -- Resolve thread_id from either direct or via link
     JOIN thread_priority tp ON tp.thread_id = COALESCE(s.thread_id, l.thread_id)
         AND tp.revoked_at IS NULL
@@ -73,12 +83,20 @@ FROM
             tp.priority_id IS NOT NULL
             OR tp.classify_at < now() - public.classify_visibility_window()
         )
+        -- Per-user gate for connector link schedules: only the twist_instance owner sees them.
+        -- Thread-scoped schedules (link_id IS NULL) and schedules on user-authored links
+        -- (l.twist_id IS NULL) stay shared across thread members.
+        AND (
+            s.link_id IS NULL
+            OR l.twist_id IS NULL
+            OR ti.owner_id = tp.user_id
+        )
     -- Get priority path from the user's filing (case-A → root via COALESCE)
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
         AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
 WHERE
-    -- Shared schedules visible to all users with thread_priority
+    -- Shared schedules visible to all users with thread_priority (link visibility gated above)
     (s.user_id IS NULL
     -- Per-user schedules visible only to the owning user
     OR s.user_id = tp.user_id);

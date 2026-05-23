@@ -1,4 +1,4 @@
-h1:O39sQyqIjI2rclzywJ002QfMNqY1T2aiCxUT5fsp5QI=
+h1:fgtp0jlUy4GWWlb9df+S1v5ybzeoLurHH/FUGCL77rE=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -397,3 +397,4 @@ h1:O39sQyqIjI2rclzywJ002QfMNqY1T2aiCxUT5fsp5QI=
 20260521195306_user_schedule_drop_max_seq_subquery.sql h1:T/jEKsDEZ7Yfug4kK3NM1I+JYiE8BsdCEASC6n1y1Cs=
 20260521233521_fix_user_sync_skip_deleted_users.sql h1:cJSMSferHxfnVpQ0B4OoOKu6p1nIAm8QOpu1Yjxoo0Y=
 20260522012242_add_user_subscription_app_store_columns.sql h1:C5E8vgXDdszMWQb6ii8WQuCfUgVuuLfYN9TFktlaqas=
+20260522210005_per_user_connector_visibility.sql h1:zW/xu+tBRmGzS1o+M5q6ng/HdJuiJlo1PNa6ZLkkFWs=

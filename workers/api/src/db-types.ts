@@ -467,6 +467,10 @@ export interface Note {
    * The actor to credit with creating this note. For notes created by users, this is the user's contact ID (never the user_id). For notes created by twists, this is the twist's twist_instance_id.
    */
   author_id: string;
+  /**
+   * The link.source of the link this note was first written through (copied at note write time by createNote). Drives cross-connection dedup: when two users' connections of the same external resource each write a note with the same key, the partial unique index on (thread_id, canonical_source, key) collapses them to one row. NULL when no link or the link has no source.
+   */
+  canonical_source: string | null;
   content: string | null;
   created_at: Generated<Timestamp>;
   /**
@@ -485,7 +489,7 @@ export interface Note {
    */
   key: string | null;
   /**
-   * The connector-created link this note belongs to. Scopes note.key uniqueness to (thread_id, link_id, key) so two links on the same thread (e.g. after a merge) can each carry a "description" note. NULL for user/Plot-tool authored notes.
+   * The connector-created link this note was first written through. Informational attribution — note visibility is thread-scoped, not link-scoped. Cross-connection dedup is keyed on canonical_source, not link_id. NULL for user/Plot-tool authored notes.
    */
   link_id: string | null;
   /**
