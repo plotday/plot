@@ -37,6 +37,7 @@
     "@plotday/db": "workspace:^",
     "@plotday/email": "workspace:^",
     "@plotday/twister": "workspace:*",
+    "@plotday/unipile": "workspace:^",
     "@plotday/worker-util": "workspace:^",
     "ai": "^5.0.76",
     "defuddle": "0.6.6",

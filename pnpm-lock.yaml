@@ -775,6 +775,9 @@ importers:
       '@plotday/twister':
         specifier: workspace:*
         version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:^
+        version: link:../../libs/unipile
       '@plotday/worker-util':
         specifier: workspace:^
         version: link:../../libs/worker-util
