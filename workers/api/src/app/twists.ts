@@ -368,25 +368,41 @@ twists.post("/twist/draft", async (c) => {
     // the package UUID first. Revert before merging.
     const LINKEDIN_TWIST_PACKAGE_ID =
       "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
+    const debug = createLogger({ route: "POST /twist/draft (TEMP)" });
+    debug.warn("incoming", {
+      body_twistId: body.twistId,
+      body_twistId_typeof: typeof body.twistId,
+      owner_id: c.var.user.id,
+    });
     const twistRow = await c.var.db
       .selectFrom("twist")
       .select(["id", "twist_package_id"])
       .where("id", "=", String(body.twistId) as never)
       .executeTakeFirst();
+    debug.warn("twistRow lookup", { twistRow });
     if (
       twistRow?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID
     ) {
       const existing = await c.var.db
         .selectFrom("twist_instance")
-        .select(["id"])
-        .where("owner_id", "=", c.var.user.id)
-        .where("twist_id", "=", String(body.twistId) as never)
-        .where("draft", "=", true)
-        .orderBy("created_at", "desc")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+        .select([
+          "twist_instance.id",
+          "twist_instance.twist_id",
+          "twist.twist_package_id",
+        ])
+        .where("twist_instance.owner_id", "=", c.var.user.id)
+        .where("twist.twist_package_id", "=", LINKEDIN_TWIST_PACKAGE_ID)
+        .where("twist_instance.draft", "=", true)
+        .orderBy("twist_instance.created_at", "desc")
         .executeTakeFirst();
+      debug.warn("existing draft lookup", { existing });
       if (existing) {
-        const logger = createLogger({ twist_instance_id: existing.id });
-        logger.warn("TEMP: reusing existing LinkedIn draft to preserve hosted-auth token");
+        debug.warn("TEMP: reusing existing LinkedIn draft to preserve hosted-auth token", {
+          existing_id: existing.id,
+          existing_twist_id: existing.twist_id,
+          existing_twist_package_id: existing.twist_package_id,
+        });
         return c.json({ id: existing.id });
       }
     }
@@ -482,20 +498,34 @@ twists.delete("/twist/draft/:id", async (c) => {
     // token in DO storage survives modal close/reopen and we can iterate
     // on the setup-modal UX without re-auth (LinkedIn rate-limits the
     // hosted-auth flow). Revert this branch before merging.
-    const draft = await c.var.db
+    const debug = createLogger({
+      twist_instance_id: draftId,
+      route: "DELETE /twist/draft (TEMP)",
+    });
+    const draftRow = await c.var.db
       .selectFrom("twist_instance")
-      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .select(["twist_instance.twist_id", "twist.twist_package_id"])
+      .leftJoin("twist", "twist.id", "twist_instance.twist_id")
+      .select([
+        "twist_instance.id as ti_id",
+        "twist_instance.twist_id as ti_twist_id",
+        "twist_instance.draft as ti_draft",
+        "twist_instance.archived_at as ti_archived_at",
+        "twist.id as t_id",
+        "twist.twist_package_id as t_package_id",
+        "twist.name as t_name",
+      ])
       .where("twist_instance.id", "=", draftId)
-      .where("twist_instance.draft", "=", true)
       .executeTakeFirst();
+    debug.warn("DELETE draft lookup", { draftRow });
     const LINKEDIN_TWIST_PACKAGE_ID =
       "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
-    if (draft?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID) {
-      const logger = createLogger({ twist_instance_id: draftId });
-      logger.warn(
+    if (draftRow?.t_package_id === LINKEDIN_TWIST_PACKAGE_ID) {
+      debug.warn(
         "TEMP: skipping draft deletion to preserve hosted-auth token",
-        { twist_id: draft.twist_id }
+        {
+          twist_id: draftRow.ti_twist_id,
+          twist_name: draftRow.t_name,
+        }
       );
       return c.json({ success: true });
     }
