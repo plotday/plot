@@ -49,6 +49,7 @@ enum _OverrideField {
   at,
   on,
   order,
+  scheduleAction,
 }
 
 /// A per-thread optimistic override applied to stream results until the
@@ -120,6 +121,8 @@ class _OptimisticOverride {
         return actual.on == expected.on;
       case _OverrideField.order:
         return actual.order.value == expected.order.value;
+      case _OverrideField.scheduleAction:
+        return actual.scheduleAction == expected.scheduleAction;
     }
   }
 }
@@ -1640,17 +1643,25 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// `order` the override settles on the very first stream emission while
   /// the schedule write is still pending, and the row visibly snaps back
   /// to its old position before the saved order arrives.
+  ///
+  /// [watchScheduleAction] adds [_OverrideField.scheduleAction] for the
+  /// same reason as [watchOrder] but for action-tab moves (To respond /
+  /// To do / To read). Without it the override settles before the
+  /// schedule write applies and the row briefly disappears from the
+  /// destination tab.
   void optimisticallyUpdateThread(
     Thread updatedThread, {
     bool watchOrder = false,
+    bool watchScheduleAction = false,
   }) {
     if (updatedThread.draft) return;
     // Record the expected post-update state. The default watched set covers
     // the visible-state fields any save() could flip (todo, archived,
     // priority, schedule, unread) while ignoring fields the server may
-    // rewrite on its own (e.g. AI-generated title). When [watchOrder] is
-    // set, also require the order to match before settling.
-    final fields = watchOrder
+    // rewrite on its own (e.g. AI-generated title). When [watchOrder] /
+    // [watchScheduleAction] are set, also require those fields to match
+    // before settling.
+    final fields = (watchOrder || watchScheduleAction)
         ? <_OverrideField>{
             _OverrideField.todo,
             _OverrideField.archived,
@@ -1658,7 +1669,8 @@ class PriorityBloc extends Cubit<PriorityState> {
             _OverrideField.unread,
             _OverrideField.at,
             _OverrideField.on,
-            _OverrideField.order,
+            if (watchOrder) _OverrideField.order,
+            if (watchScheduleAction) _OverrideField.scheduleAction,
           }
         : null;
     _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(

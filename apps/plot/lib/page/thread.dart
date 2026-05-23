@@ -291,7 +291,20 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
-                  // Handle Cmd+D / Ctrl+D to toggle start/finish the open thread
+                  // ⌘R / Ctrl+R — move thread to Respond tab
+                  if (event.logicalKey == LogicalKeyboardKey.keyR &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      MoveThreadToRespond(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
+                  // ⌘D / Ctrl+D — move thread to Do tab
                   if (event.logicalKey == LogicalKeyboardKey.keyD &&
                       (HardwareKeyboard.instance.isMetaPressed ||
                           HardwareKeyboard.instance.isControlPressed) &&
@@ -299,11 +312,34 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       !HardwareKeyboard.instance.isAltPressed) {
                     final thread = context.read<PriorityBloc>().state.thread;
                     if (thread != null) {
-                      if (thread.todo) {
-                        FinishThread(thread).run(context);
-                      } else {
-                        StartThread(thread).run(context);
-                      }
+                      MoveThreadToDo(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
+                  // ⌘E / Ctrl+E — move thread to Read tab
+                  if (event.logicalKey == LogicalKeyboardKey.keyE &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      MoveThreadToRead(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
+                  // ⌘⏎ / Ctrl+⏎ — finish the open thread (was ⌘D before
+                  // the move-to-tab commands took it).
+                  if (event.logicalKey == LogicalKeyboardKey.enter &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null && thread.todo) {
+                      FinishThread(thread).run(context);
                       return KeyEventResult.handled;
                     }
                   }
@@ -433,6 +469,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       ...threadCommandGroupsSync(
                         state.thread,
                         priorityBloc: priorityBloc,
+                        currentTab: priorityBloc?.state.activeTab,
                       ),
                     ];
                   },
@@ -1291,7 +1328,10 @@ class _ThreadActionsRow extends StatelessWidget {
     final Widget todoButton;
     if (!isTodo) {
       todoButton = Button.icon(
-        CommandWrapper(StartThread(thread), icon: Value(PlotIcon.addTodo)),
+        CommandWrapper(
+          MoveThreadToRespond(thread),
+          icon: Value(PlotIcon.comment),
+        ),
       );
     } else {
       todoButton = Button.icon(
@@ -1355,6 +1395,7 @@ class _ThreadActionsRow extends StatelessWidget {
         final groups = await threadCommandGroups(
           thread,
           priorityBloc: priorityBloc,
+          currentTab: priorityBloc?.state.activeTab,
         );
         return Commands(groups: groups);
       },

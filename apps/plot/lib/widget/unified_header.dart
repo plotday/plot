@@ -825,7 +825,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(StartThread(thread), icon: Value(PlotIcon.addTodo)),
+        CommandWrapper(
+          MoveThreadToRespond(thread),
+          icon: Value(PlotIcon.comment),
+        ),
       );
     } else {
       todoIcon = Button.icon(
@@ -906,7 +909,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           nowState: context.read<NowBloc?>()?.state,
         );
         final threadGroups = thread != null
-            ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
+            ? await threadCommandGroups(
+                thread,
+                priorityBloc: priorityBloc,
+                currentTab: priorityBloc?.state.activeTab,
+              )
             : <StaticCommandGroup>[];
         return Commands(
           groups: [...threadGroups, ...priorityGroups],

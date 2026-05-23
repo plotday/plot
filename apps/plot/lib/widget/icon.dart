@@ -77,6 +77,9 @@ class PlotIcon {
   static const todo = FontAwesomeIcons.play;
   static const todoFilled = FontAwesomeIcons.solidPlay;
   static const addTodo = FontAwesomeIcons.circlePlus;
+  static const comment = FontAwesomeIcons.comment;
+  static const clipboardCheck = FontAwesomeIcons.clipboardCheck;
+  static const bookOpenLines = FontAwesomeIcons.bookOpenLines;
   static const finish = FontAwesomeIcons.stop;
   static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;

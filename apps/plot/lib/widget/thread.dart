@@ -120,11 +120,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
   // Short right: Add to today. Universal "deal with this now" — works on
   // unscheduled threads (adds them to today), future-scheduled threads
-  // (bumps to today), and already-today threads (no-op re-save).
+  // (bumps to today), and already-today threads (no-op re-save). Routes
+  // through To respond since that's the default "make this actionable"
+  // affordance (was StartThread before the move-to-tab split).
   Command? _getSwipeRightShortCommand() {
     if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
-    return StartThread(activity);
+    return MoveThreadToRespond(activity);
   }
 
   // Long right: Schedule for another day.
@@ -271,7 +273,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         // surfaced as an X-icon at the trailing end on hover instead.
         final Command leadingCommand;
         if (!isTodo) {
-          leadingCommand = StartThread(activity);
+          leadingCommand = MoveThreadToRespond(activity);
         } else {
           leadingCommand = FinishThread(
             activity,
@@ -302,7 +304,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final String leadingTitle = !isTodo ? 'To do' : 'Finish';
+        final String leadingTitle = !isTodo ? 'To respond' : 'Finish';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
@@ -310,13 +312,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
-              outlineIcon: PlotIcon.addTodo,
+              outlineIcon: PlotIcon.comment,
               showEmpty: !activity.unread,
               dotColor: activity.unread
                   ? buildContext.colour.accent.withValues(alpha: 0.7)
                   : null,
               iconHoverColor: iconHoverColor,
-              hoverIcon: Value(PlotIcon.addTodo),
+              hoverIcon: Value(PlotIcon.comment),
               title: leadingTitle,
             ),
             forceHover: isHovered,
@@ -645,8 +647,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // optimistic update even when dispatched from a context that has
       // shed the priority page tree.
       final priorityBloc = buildContext.read<PriorityBloc?>();
+      final currentTab = priorityBloc?.state.activeTab;
       return ContextMenu(
-        items: (close) => threadCommands(activity, priorityBloc: priorityBloc)
+        items: (close) => threadCommands(
+          activity,
+          priorityBloc: priorityBloc,
+          currentTab: currentTab,
+        )
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
@@ -726,11 +733,13 @@ class ThreadCommands extends HookWidget {
     // share button after the more-commands menu so the affordance stays
     // visible without competing with tag buttons for the take() limit.
     final isShared = isThreadShared(activity);
+    final currentTab = context.watch<PriorityBloc?>()?.state.activeTab;
     final rawHoverCommands = threadCommands(
       activity,
       skipPrimary: true,
       skipInfrequent: true,
       showEventTiming: showEventTiming,
+      currentTab: currentTab,
     ).toList();
     // PickScheduleThread is surfaced via the thread-icon hover swap, so
     // exclude it from the trailing command row to avoid duplication.

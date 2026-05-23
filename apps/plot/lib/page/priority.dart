@@ -514,7 +514,7 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                           if (thread.todo) {
                             FinishThread(thread).run(context);
                           } else {
-                            StartThread(thread).run(context);
+                            MoveThreadToRespond(thread).run(context);
                           }
                         }
                         return null;
@@ -930,6 +930,7 @@ class _PriorityPageState extends State<PriorityPage>
                               // alive when the modal context can't resolve
                               // PriorityBloc.
                               final capturedBloc = priorityBloc;
+                              final activeTab = priorityBloc.state.activeTab;
                               context.run(
                                 OpenFocusedItemActions(listController, (
                                   index,
@@ -947,6 +948,7 @@ class _PriorityPageState extends State<PriorityPage>
                                             threadCommandGroups(
                                               agendaActivity.thread,
                                               priorityBloc: capturedBloc,
+                                              currentTab: activeTab,
                                             ),
                                         header: (_) async =>
                                             <StaticCommandGroup>[],
@@ -975,9 +977,13 @@ class _PriorityPageState extends State<PriorityPage>
                       final item = index >= 0 && index < items.length
                           ? items[index]
                           : null;
+                      final activeTab = state.activeTab;
                       return item?.when<List<StaticCommandGroup>>(
                             activity: (agendaActivity) =>
-                                threadCommandGroupsSync(agendaActivity.thread),
+                                threadCommandGroupsSync(
+                                  agendaActivity.thread,
+                                  currentTab: activeTab,
+                                ),
                             header: (_) => <StaticCommandGroup>[],
                           ) ??
                           <StaticCommandGroup>[];

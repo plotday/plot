@@ -3894,7 +3894,15 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// optimistic UI shows the thread back on the agenda the instant the
   /// user clicks "Remove from event" — instead of letting it vanish
   /// while the DB write resolves.
-  Thread withScheduleRestored({required Order order, Date? date}) {
+  ///
+  /// [action] writes the schedule's `action` field — the value the
+  /// Activity feed filters on to route a thread into the Respond / Do /
+  /// Read tabs. When omitted, the existing action is preserved.
+  Thread withScheduleRestored({
+    required Order order,
+    Date? date,
+    String? action,
+  }) {
     if (_userSchedule != null) {
       return _withUserSchedule(
         _userSchedule.copyWith(
@@ -3906,6 +3914,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           endAt: const Value(null),
           updatedAt: DateTime.now(),
           reason: Value(date != null ? 'schedule' : 'add'),
+          action: action != null ? Value(action) : const Value.absent(),
         ),
       );
     }
@@ -3919,6 +3928,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         order: order,
         outstandingTasks: false,
         reason: date != null ? 'schedule' : 'add',
+        action: action,
       ),
     );
   }

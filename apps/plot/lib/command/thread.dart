@@ -13,6 +13,7 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
@@ -894,10 +895,16 @@ abstract class _UpdateThreadCommand extends Command {
   /// Optimistically update the UI, then persist the thread.
   /// Commands that run inside modals must pass [priorityBloc] explicitly
   /// because the modal context doesn't have PriorityBloc in its tree.
+  ///
+  /// [watchScheduleAction] forwards to [PriorityBloc.optimisticallyUpdateThread]
+  /// so the override won't settle until the new `schedule.action` lands.
+  /// Pass `true` from commands that change which action tab the thread
+  /// belongs to (To respond / To do / To read).
   Future<void> saveOptimistically(
     BuildContext context,
-    Thread updatedThread,
-  ) async {
+    Thread updatedThread, {
+    bool watchScheduleAction = false,
+  }) async {
     PriorityBloc? bloc = priorityBloc;
     if (bloc == null) {
       try {
@@ -914,7 +921,10 @@ abstract class _UpdateThreadCommand extends Command {
       await bloc.updateDraft(updatedThread);
       return;
     }
-    bloc?.optimisticallyUpdateThread(updatedThread);
+    bloc?.optimisticallyUpdateThread(
+      updatedThread,
+      watchScheduleAction: watchScheduleAction,
+    );
     // Also push the optimistic update into ThreadBloc (when present) so the
     // open ThreadPage rebuilds immediately instead of waiting for the
     // SQLite save → Thread.watchOne stream to tick.
@@ -959,31 +969,88 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
   }
 }
 
-class StartThread extends _UpdateThreadCommand {
-  StartThread(super.thread, {super.onUpdate, bool stateIcon = false})
-    : super(
-        title: 'To do',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.started,
-        icon: stateIcon ? PlotIcon.note : PlotIcon.addTodo,
-        hoverIcon: stateIcon ? PlotIcon.addTodo : null,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
-      );
+/// Moves a thread into one of the action tabs (Respond / Do / Read) by
+/// making it a todo and writing the user schedule's `action` field. The
+/// three concrete subclasses below give each move-to-tab affordance its
+/// own title, icon, and shortcut.
+abstract class _MoveThreadToTab extends _UpdateThreadCommand {
+  _MoveThreadToTab(
+    super.thread,
+    this.action, {
+    super.onUpdate,
+    required super.title,
+    required super.icon,
+    super.shortcut,
+  }) : super(
+         eventObject: EventObject.activity,
+         eventAction: EventAction.started,
+       );
+
+  /// Schedule.action value the destination tab filters on.
+  final String action;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(
-      context,
-      thread.copyWith(
-        todo: true,
-        unread: false,
-        readAt: thread.unread
-            ? Value(thread.contentTimestamp)
-            : const Value.absent(),
-      ),
-    );
+    // Build the optimistic Thread with todo=true, read, AND the new
+    // schedule.action so the agenda re-classifies into the right tab on
+    // the next render. Without the action write the row would briefly
+    // pop into the Do tab (which is what bare todo+no-action implies in
+    // some legacy data) before settling.
+    final order = thread.order;
+    final restored = thread
+        .withScheduleRestored(order: order, action: action)
+        .copyWith(
+          todo: true,
+          unread: false,
+          readAt: thread.unread
+              ? Value(thread.contentTimestamp)
+              : const Value.absent(),
+        );
+    await saveOptimistically(context, restored, watchScheduleAction: true);
     return const CommandDone();
   }
+}
+
+class MoveThreadToRespond extends _MoveThreadToTab {
+  MoveThreadToRespond(
+    Thread thread, {
+    Future<void> Function(Thread)? onUpdate,
+  }) : super(
+         thread,
+         'respond',
+         onUpdate: onUpdate,
+         title: 'To respond',
+         icon: PlotIcon.comment,
+         shortcut: platformSingleActivator(LogicalKeyboardKey.keyR),
+       );
+}
+
+class MoveThreadToDo extends _MoveThreadToTab {
+  MoveThreadToDo(
+    Thread thread, {
+    Future<void> Function(Thread)? onUpdate,
+  }) : super(
+         thread,
+         'do',
+         onUpdate: onUpdate,
+         title: 'To do',
+         icon: PlotIcon.clipboardCheck,
+         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
+       );
+}
+
+class MoveThreadToRead extends _MoveThreadToTab {
+  MoveThreadToRead(
+    Thread thread, {
+    Future<void> Function(Thread)? onUpdate,
+  }) : super(
+         thread,
+         'read',
+         onUpdate: onUpdate,
+         title: 'To read',
+         icon: PlotIcon.bookOpenLines,
+         shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
+       );
 }
 
 class DisassociateThread extends Command {
@@ -1047,7 +1114,7 @@ class FinishThread extends _UpdateThreadCommand {
          hoverIcon: stateIcon && thread.todo
              ? FontAwesomeIcons.circleCheck
              : null,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
+         shortcut: platformSingleActivator(LogicalKeyboardKey.enter),
        );
 
   final bool bump;
@@ -2430,6 +2497,7 @@ class ShowThreadCommands extends ShowCommands {
               thread,
               open: open,
               priorityBloc: bloc,
+              currentTab: bloc?.state.activeTab,
             ),
           );
         },
@@ -3241,6 +3309,7 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
   PriorityBloc? priorityBloc,
+  ActivityTab? currentTab,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   return threadCommandGroupsSync(
@@ -3248,6 +3317,7 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
     open: open,
     showSplitThread: hasMerged,
     priorityBloc: priorityBloc,
+    currentTab: currentTab,
   );
 }
 
@@ -3258,17 +3328,31 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool open = true,
   bool showSplitThread = false,
   PriorityBloc? priorityBloc,
+  ActivityTab? currentTab,
 }) {
   final commands = threadCommands(
     thread,
     open: open,
     showSplitThread: showSplitThread,
     priorityBloc: priorityBloc,
+    currentTab: currentTab,
   );
 
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
+  ];
+}
+
+/// Returns the move-to-tab commands in tab order, omitting the one that
+/// matches [currentTab] (since the thread is already there). Called from
+/// both `threadCommands` (hover secondaries) and the leading-icon
+/// primary picker.
+List<Command> moveToTabCommands(Thread thread, ActivityTab? currentTab) {
+  return [
+    if (currentTab != ActivityTab.respond) MoveThreadToRespond(thread),
+    if (currentTab != ActivityTab.doIt) MoveThreadToDo(thread),
+    if (currentTab != ActivityTab.read) MoveThreadToRead(thread),
   ];
 }
 
@@ -3280,6 +3364,7 @@ List<Command> threadCommands(
   bool showSplitThread = false,
   bool showEventTiming = false,
   PriorityBloc? priorityBloc,
+  ActivityTab? currentTab,
 }) {
   // Viewers can only open threads, not modify them
   if (thread.priority.isViewer) {
@@ -3307,9 +3392,17 @@ List<Command> threadCommands(
     } else if (thread.on != null) {
       primary = PickScheduleThread(thread);
     } else {
-      primary = StartThread(thread, stateIcon: false);
+      primary = MoveThreadToRespond(thread);
     }
   }
+
+  // Move-to-tab affordances (To respond / To do / To read), minus the
+  // current tab's own command and minus whatever the primary already is
+  // (avoids "To respond" appearing both as primary and as a hover button
+  // on non-todo threads in the Catch up / All tabs).
+  final moveCommands = moveToTabCommands(thread, currentTab)
+      .where((cmd) => cmd.runtimeType != primary?.runtimeType)
+      .toList();
 
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;
@@ -3317,6 +3410,7 @@ List<Command> threadCommands(
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
+    ...moveCommands,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
     if (!skipInfrequent) EditThread(thread),
