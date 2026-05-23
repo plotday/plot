@@ -126,3 +126,20 @@ export type UnipileHostedAuthLink = {
   object: "HostedAuthURL";
   url: string;
 };
+
+export type UnipileWebhookSource =
+  | "messaging"
+  | "account_status"
+  | "users"
+  | "email_tracking"
+  | "mailing"
+  | "email";
+
+export type UnipileWebhook = {
+  object: "Webhook";
+  id: string;
+  source: UnipileWebhookSource;
+  request_url: string;
+  headers?: { key: string; value: string }[];
+  events?: string[] | null;
+};

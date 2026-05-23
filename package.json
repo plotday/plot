@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.18.3",
   "scripts": {
     "install": "[ -f Gemfile ] && bundle install --quiet || true",
+    "bootstrap-unipile-webhooks": "tsx scripts/bootstrap-unipile-webhooks.ts",
     "get-env": "nx run-many -t get-env --exclude plot --parallel=false && bash scripts/get-claude-env",
     "set-env": "nx run-many -t set-env --exclude plot --",
     "build": "nx run-many -t build --exclude plot",

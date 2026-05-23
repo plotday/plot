@@ -8,6 +8,8 @@ import type {
   UnipileInvitationList,
   UnipileMessage,
   UnipileMessageList,
+  UnipileWebhook,
+  UnipileWebhookSource,
 } from "./types";
 
 /** Thrown on non-2xx Unipile responses. */
@@ -73,6 +75,47 @@ export class UnipileClient {
 
   async deleteAccount(accountId: string): Promise<void> {
     await this.request(`/accounts/${encodeURIComponent(accountId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  // ---------- Webhooks ----------
+
+  /**
+   * Webhook `source` selects which event family fires:
+   *   - `messaging`       → messaging.new_message (and the rest of the chat events)
+   *   - `account_status`  → account.connected / .disconnected / .error / .credentials
+   *   - `users`           → users.invitation.received (LinkedIn connection requests)
+   */
+  listWebhooks(): Promise<{
+    object: "WebhookList";
+    items: UnipileWebhook[];
+  }> {
+    return this.get<{ object: "WebhookList"; items: UnipileWebhook[] }>(
+      "/webhooks"
+    );
+  }
+
+  createWebhook(input: {
+    source: UnipileWebhookSource;
+    requestUrl: string;
+    /** Custom request headers Unipile attaches to every delivery. The
+     * workspace bootstrap uses this to carry a shared token the receiver
+     * verifies (Unipile itself does not sign payloads). */
+    headers?: { key: string; value: string }[];
+    /** Optional event filter; omitted = all events for the source. */
+    events?: string[];
+  }): Promise<UnipileWebhook> {
+    return this.post<UnipileWebhook>("/webhooks", {
+      source: input.source,
+      request_url: input.requestUrl,
+      ...(input.headers ? { headers: input.headers } : {}),
+      ...(input.events ? { events: input.events } : {}),
+    });
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    await this.request(`/webhooks/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
   }
