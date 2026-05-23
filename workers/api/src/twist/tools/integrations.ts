@@ -2556,9 +2556,14 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     const config = PROVIDER_CONFIGS[tokenInfo.provider];
 
-    // Parse provider-specific data if handler exists (may be async)
-    const providerData =
+    // Parse provider-specific data if handler exists (may be async). For
+    // hosted-auth providers the caller already builds the providerData (we
+    // don't have an OAuth response to parse), so fall through to it when
+    // there's no parser or the parser returned null.
+    const parsedFromTokenInfo =
       (await config?.parseTokenResponse?.(tokenInfo)) ?? null;
+    const providerData =
+      parsedFromTokenInfo ?? (tokenInfo.providerData as ProviderData | null) ?? null;
 
     // Extract email from providerData and link to contact, building actor.
     // For providers that don't surface an email (e.g. Slack user-token-only
@@ -3672,15 +3677,15 @@ export class Integrations extends Tool implements IAuth {
       provider,
       actor_id: actorId,
     });
-    if (!tokenData?.providerData) {
-      logger.info("skip: no tokenData/providerData");
+    if (!tokenData) {
+      logger.info("skip: no tokenData");
       return null;
     }
     if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") {
       logger.info("skip: provider not hosted-auth");
       return null;
     }
-    const hosted = tokenData.providerData as Partial<{
+    const hosted = (tokenData.providerData ?? {}) as Partial<{
       fullName: string | null;
       accountId: string;
     }>;
@@ -3711,15 +3716,19 @@ export class Integrations extends Tool implements IAuth {
         return null;
       }
 
+      const existing = (tokenData.providerData ?? {}) as Record<string, unknown>;
       const merged: StoredTokenData = {
         ...tokenData,
         providerData: {
-          ...(tokenData.providerData as object),
-          fullName: fullName ?? (hosted as { fullName?: string | null }).fullName ?? null,
+          ...existing,
+          accountId: accountId,
+          accountType:
+            (existing.accountType as string | undefined) ?? "LINKEDIN",
+          fullName: fullName ?? (existing.fullName as string | null) ?? null,
           email,
           userId:
             profile.provider_id ??
-            (tokenData.providerData as { userId?: string }).userId ??
+            (existing.userId as string | undefined) ??
             accountId,
         } as ProviderData,
       };
