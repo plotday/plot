@@ -105,7 +105,18 @@ authBridgeRoutes.get("/auth/bridge", async (c) => {
 // that deep-links back to the client's original redirectUri.
 authBridgeRoutes.get("/auth/hosted/success", async (c) => {
   const logger = createLogger({ route: "auth/hosted/success" });
-  const state = c.req.query("state");
+  const query = c.req.query();
+
+  // Log every query parameter Unipile sends so payload shape is visible
+  // without redeploying. account_id is the field we care about most.
+  logger.info("hosted/success: query received", {
+    keys: Object.keys(query),
+    state: query.state ?? null,
+    account_id: query.account_id ?? query.accountId ?? null,
+    status: query.status ?? null,
+  });
+
+  const state = query.state;
   if (!state) {
     logger.warn("hosted/success: missing state");
     return htmlBridgeResponse({ bridgeUri: null, state: undefined, error: "Missing state" });
@@ -145,18 +156,39 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
     });
   }
 
-  // Poll for the webhook result (written by handleAccountConnected in hook-messaging).
-  // Unipile usually delivers account.connected before the success-redirect lands,
-  // but the redirect can occasionally race the webhook. Retry for up to 15s.
-  const deadline = Date.now() + 15_000;
+  // Fast path: Unipile appends account_id to the redirect URL. Use it
+  // directly without waiting on a webhook. The notify_url callback isn't
+  // reliably delivered (and arrives in a different payload shape when it
+  // is), so the redirect's query is the canonical signal here.
+  const queryAccountId =
+    (query.account_id as string | undefined) ??
+    (query.accountId as string | undefined) ??
+    null;
+
   let resultJson: string | null = null;
-  while (Date.now() < deadline) {
-    resultJson = await storageObj.get(`hosted_auth_result:${state}`);
-    if (resultJson) break;
-    await new Promise((r) => setTimeout(r, 250));
+  if (queryAccountId) {
+    resultJson = JSON.stringify({
+      accountId: queryAccountId,
+      accountType:
+        (query.account_type as string | undefined) ??
+        (query.provider as string | undefined) ??
+        "LINKEDIN",
+      receivedAt: Date.now(),
+    });
+  } else {
+    // Fallback: poll for a webhook-delivered result for a few seconds.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      resultJson = await storageObj.get(`hosted_auth_result:${state}`);
+      if (resultJson) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
   }
   if (!resultJson) {
-    logger.warn("hosted/success: webhook result not received within timeout", { state });
+    logger.warn("hosted/success: no account_id in query and webhook result not received", {
+      state,
+      query_keys: Object.keys(query),
+    });
     return htmlBridgeResponse({
       bridgeUri,
       state,
