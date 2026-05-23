@@ -1,11 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@plotday/tsconfig/base.json",
+  "extends": "@plotday/tsconfig/lib.json",
   "compilerOptions": {
-    "module": "ESNext",
     "rootDir": "./src",
-    "outDir": "./dist",
-    "noEmit": true
+    "outDir": "./dist"
   },
   "include": ["src/**/*.ts"]
 }
