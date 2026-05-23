@@ -989,15 +989,26 @@ class _PriorityPageState extends State<PriorityPage>
                       childPad: false,
                       body: ThreadListSourceProvider(
                         source: ThreadListSource.activityFeed,
-                        child: _buildActivityFeed(
-                          context,
-                          state,
-                          items,
-                          listController,
-                          ScrollControllerContext.of(context),
-                          scrollStorageKey: PageStorageKey(
-                            'priority_feed_${widget.priorityId}',
-                          ),
+                        // Sticky tab header sits above the scrollable
+                        // list. The reschedule-all button (when the
+                        // active tab is an action tab) lives on the
+                        // right side of this header.
+                        child: Column(
+                          children: [
+                            _ActivityFeedTabHeader(state: state),
+                            Expanded(
+                              child: _buildActivityFeed(
+                                context,
+                                state,
+                                items,
+                                listController,
+                                ScrollControllerContext.of(context),
+                                scrollStorageKey: PageStorageKey(
+                                  'priority_feed_${widget.priorityId}',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1218,6 +1229,18 @@ class _PriorityPageState extends State<PriorityPage>
                     ? null
                     : ActivitySectionMarker.tryDecode(displayText);
                 if (marker != null) displayText = marker.label;
+
+                // The Today section header used to render the "Doing"
+                // label inline. That label moved to the sticky tab
+                // header at the top of the activity feed. The marker
+                // item itself is still emitted so drag-drop boundary
+                // computation has a target for "make active today" —
+                // but it renders zero-height so the visual is just
+                // [sticky tab header] → threads.
+                if (marker?.section == ActivitySection.today) {
+                  return const [SizedBox.shrink()];
+                }
+
                 // Activity-feed section headers (Today / New / Scheduled
                 // day buckets / Done) are all just text labels and must
                 // render through AgendaTile's text-only heading path so
@@ -1237,61 +1260,6 @@ class _PriorityPageState extends State<PriorityPage>
                   text: displayText,
                   scheduleAt: header.scheduleAt,
                 );
-
-                // "Reschedule all" affordance for the Today block and
-                // every future Scheduled-day block. Source the thread
-                // list from the bloc's native-by-date map so threads
-                // that were pushed forward by the per-priority per-day
-                // cap travel with their original day rather than the
-                // day they happen to be rendering on.
-                final canRescheduleAll =
-                    marker != null &&
-                    (marker.section == ActivitySection.today ||
-                        marker.section == ActivitySection.scheduled);
-                if (canRescheduleAll) {
-                  final sectionDate = marker.section == ActivitySection.today
-                      ? Date.today()
-                      : header.date;
-                  final natives = sectionDate == null
-                      ? const <Thread>[]
-                      : state.activityFeedNativesByDate[sectionDate] ??
-                            const <Thread>[];
-                  if (natives.isNotEmpty) {
-                    return [
-                      _SectionHeaderWithTrailingButton(
-                        tile: tile,
-                        button: Button.icon(
-                          RescheduleAllInBlock(
-                            natives,
-                            sectionLabel: marker.label,
-                          ),
-                        ),
-                      ),
-                    ];
-                  }
-                }
-
-                // "Mark all read" affordance for the New block. Gather
-                // the unread threads under this header from displayItems
-                // — they aren't pre-cached on state like the date-keyed
-                // natives map.
-                if (marker != null &&
-                    marker.section == ActivitySection.newSection) {
-                  final unread = <Thread>[];
-                  for (var i = index + 1; i < displayItems.length; i++) {
-                    final next = displayItems[i];
-                    if (next is AgendaHeaderItem) break;
-                    if (next is AgendaThreadItem) unread.add(next.thread);
-                  }
-                  if (unread.isNotEmpty) {
-                    return [
-                      _SectionHeaderWithTrailingButton(
-                        tile: tile,
-                        button: Button.icon(MarkAllReadInNewSection(unread)),
-                      ),
-                    ];
-                  }
-                }
 
                 return [tile];
               },
@@ -1484,42 +1452,139 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
 /// The underlying [AgendaTile] keeps its centered text and dark band; the
 /// button is laid out in a Row with an invisible mirror on the left so the
 /// centered title stays at the row's true horizontal midpoint.
-class _SectionHeaderWithTrailingButton extends StatelessWidget {
-  const _SectionHeaderWithTrailingButton({
-    required this.tile,
-    required this.button,
-  });
+/// Sticky tab header for the activity feed. Renders five tab labels —
+/// Catch up | Respond | Do | Read | All — centred and separated by
+/// `veryMuted` pipes. The active tab is in the foreground colour;
+/// inactive tabs hover to foreground. The reschedule-all button on
+/// the right is shown only for action tabs (Respond / Do / Read) and
+/// applies to every thread in the active tab's natives across all
+/// dates.
+class _ActivityFeedTabHeader extends StatelessWidget {
+  const _ActivityFeedTabHeader({required this.state});
 
-  final Widget tile;
-  final Widget button;
+  final PriorityState state;
 
   @override
   Widget build(BuildContext context) {
-    // Using a Row instead of a Stack overlay makes vertical alignment
-    // deterministic (CrossAxisAlignment.center, applied by a single
-    // layout primitive) and avoids the Stack-with-different-sized-
-    // children ambiguity that rendered the icon below the label on iOS
-    // while looking centered on macOS.
-    final padded = Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.sm),
-      child: button,
-    );
+    final spacing = context.theme.spacing;
+    final fontSize = context.theme.typography.sm.fontSize;
+    final muted = context.theme.plotColors.veryMuted;
+
+    // Reschedule-all applies to every thread currently in the active
+    // tab's natives. Only action tabs populate natives — Catch up and
+    // All are passive (no reorder, no reschedule).
+    final natives = <Thread>[];
+    if (state.activeTab.isActionTab) {
+      for (final list in state.activityFeedNativesByDate.values) {
+        natives.addAll(list);
+      }
+    }
+    final Widget? rescheduleButton = natives.isNotEmpty
+        ? Padding(
+            padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+            child: Button.icon(
+              RescheduleAllInBlock(
+                natives,
+                sectionLabel: state.activeTab.label,
+              ),
+            ),
+          )
+        : null;
+
+    // Build the centred row of tab labels separated by pipes.
+    final tabsRow = <Widget>[];
+    for (var i = 0; i < ActivityTab.values.length; i++) {
+      if (i > 0) {
+        tabsRow.add(
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+            child: Text(
+              '|',
+              style: TextStyle(color: muted, fontSize: fontSize),
+            ),
+          ),
+        );
+      }
+      tabsRow.add(
+        _ActivityTabLabel(
+          tab: ActivityTab.values[i],
+          isActive: ActivityTab.values[i] == state.activeTab,
+          fontSize: fontSize,
+        ),
+      );
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(color: context.colour.headerBackground),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Visibility(
-            visible: false,
-            maintainSize: true,
-            maintainAnimation: true,
-            maintainState: true,
-            child: padded,
-          ),
-          Expanded(child: tile),
-          padded,
-        ],
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: spacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Invisible mirror on the left preserves horizontal
+            // centring of the tab row even when the button is on the
+            // right.
+            if (rescheduleButton != null)
+              Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: rescheduleButton,
+              ),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: tabsRow,
+              ),
+            ),
+            if (rescheduleButton != null) rescheduleButton,
+          ],
+        ),
       ),
     );
   }
 }
+
+/// A single tab label inside [_ActivityFeedTabHeader]. Inactive tabs
+/// render in `veryMuted`; active and hovered tabs render in the
+/// foreground colour. Tap dispatches `selectActivityTab` on the bloc.
+class _ActivityTabLabel extends StatefulWidget {
+  const _ActivityTabLabel({
+    required this.tab,
+    required this.isActive,
+    required this.fontSize,
+  });
+
+  final ActivityTab tab;
+  final bool isActive;
+  final double? fontSize;
+
+  @override
+  State<_ActivityTabLabel> createState() => _ActivityTabLabelState();
+}
+
+class _ActivityTabLabelState extends State<_ActivityTabLabel> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = context.theme.colors.foreground;
+    final muted = context.theme.plotColors.veryMuted;
+    final color = widget.isActive || _hovering ? fg : muted;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () =>
+            context.read<PriorityBloc>().selectActivityTab(widget.tab),
+        child: Text(
+          widget.tab.label,
+          style: TextStyle(color: color, fontSize: widget.fontSize),
+        ),
+      ),
+    );
+  }
+}
+

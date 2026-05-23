@@ -34,6 +34,7 @@ SELECT
     s.thread_id,
     s.link_id,
     s.reason,
+    s.action,
     s.outstanding_tasks,
     upe.path AS priority_path,
     -- range_at: for timestamp-based schedules

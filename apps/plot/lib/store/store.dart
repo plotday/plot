@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 334;
+  int get schemaVersion => 335;
 
   @override
   MigrationStrategy get migration {
@@ -3452,6 +3452,14 @@ class Store extends _$Store {
       // with revoked=true and the sync layer hard-deletes the local row.
       // Default false for existing rows.
       await _safeAddColumn(m, threads, threads.revoked);
+    }
+    if (from < 335) {
+      await _safeAddColumn(m, schedules, schedules.action);
+      // Reset schedule sync cursor so existing schedules re-pull with the
+      // new action field populated from the server.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'schedules'",
+      );
     }
   }
 

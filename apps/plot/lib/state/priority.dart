@@ -587,8 +587,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// feed, cleared selected thread) are layered onto the same emit.
   void _rebuildAgendaModel({
     Value<Thread?> thread = const Value.absent(),
-    List<AgendaItem>? activityFeedItems,
-    Map<Date, List<Thread>>? activityFeedNativesByDate,
+    Map<ActivityTab, ActivityFeedTabData>? activityFeedByTab,
   }) {
     final agenda = AgendaBuilder.build(
       threads: _lastAgendaThreads,
@@ -608,14 +607,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     final (
       unreadFilterActive: unreadFilterOverride,
       unreadFilterPending: unreadFilterPendingOverride,
-    ) = _computeUnreadFilterOverrides(activityFeedItems);
+    ) = _computeUnreadFilterOverrides(activityFeedByTab);
     emit(
       state.copyWith(
         thread: thread,
         agenda: agenda,
         agendaItems: agenda.flatItems(),
-        activityFeedItems: activityFeedItems,
-        activityFeedNativesByDate: activityFeedNativesByDate,
+        activityFeedByTab: activityFeedByTab,
         unreadFilterActive: unreadFilterOverride,
         unreadFilterPending: unreadFilterPendingOverride,
       ),
@@ -632,16 +630,23 @@ class PriorityBloc extends Cubit<PriorityState> {
   ///   the spinner can come down and the timer is no longer needed.
   /// Returns nullable overrides for `copyWith` — null means "no change".
   ({bool? unreadFilterActive, bool? unreadFilterPending})
-      _computeUnreadFilterOverrides(List<AgendaItem>? activityFeedItems) {
-    if (activityFeedItems == null ||
+      _computeUnreadFilterOverrides(
+    Map<ActivityTab, ActivityFeedTabData>? activityFeedByTab,
+  ) {
+    if (activityFeedByTab == null ||
         (!state.unreadFilterActive && !state.unreadFilterPending)) {
       return (unreadFilterActive: null, unreadFilterPending: null);
     }
+    // Catch up holds every unread thread for this priority — checking
+    // its items alone is sufficient to know whether anything is unread.
     bool anyUnread = false;
-    for (final item in activityFeedItems) {
-      if (item is AgendaThreadItem && item.thread.unread) {
-        anyUnread = true;
-        break;
+    final catchUp = activityFeedByTab[ActivityTab.catchUp];
+    if (catchUp != null) {
+      for (final item in catchUp.items) {
+        if (item is AgendaThreadItem && item.thread.unread) {
+          anyUnread = true;
+          break;
+        }
       }
     }
     bool? unreadFilterOverride;
@@ -1556,11 +1561,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    final feed = _buildActivityFeedItems();
-    _rebuildAgendaModel(
-      activityFeedItems: feed.items,
-      activityFeedNativesByDate: feed.nativesByDate,
-    );
+    _rebuildAgendaModel(activityFeedByTab: _buildActivityFeedItems());
   }
 
   /// Optimistically remove an archived thread from the agenda and the
@@ -1591,13 +1592,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       drop: !state.showArchived,
     );
 
-    final feed = _buildActivityFeedItems();
     _rebuildAgendaModel(
       thread: state.thread?.id == id
           ? Value(archivedThread)
           : const Value.absent(),
-      activityFeedItems: feed.items,
-      activityFeedNativesByDate: feed.nativesByDate,
+      activityFeedByTab: _buildActivityFeedItems(),
     );
   }
 
@@ -1744,13 +1743,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     // when the user clicked To do) until the DB stream landed.
     _patchActivityFeedSourcesForOptimisticUpdate(updatedThread);
 
-    final feed = _buildActivityFeedItems();
     _rebuildAgendaModel(
       thread: state.thread?.id == updatedThread.id
           ? Value(updatedThread)
           : const Value.absent(),
-      activityFeedItems: feed.items,
-      activityFeedNativesByDate: feed.nativesByDate,
+      activityFeedByTab: _buildActivityFeedItems(),
     );
   }
 
@@ -1908,7 +1905,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         context: newPriority,
         agenda: newAgenda,
         agendaItems: newAgenda.flatItems(),
-        activityFeedItems: const [],
+        activityFeedByTab: const {},
         unreadFilterActive: false,
         unreadFilterPending: false,
         activityFeedDoneEnd: false,
@@ -3334,15 +3331,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     // either flash old threads with new headers, or partial threads under
     // new headers. Wait for an atomic swap.
     if (!_activityFeedFirstEmitted || !_todoThreadsFirstEmitted) return;
-    final (:items, :nativesByDate) = _buildActivityFeedItems();
+    final byTab = _buildActivityFeedItems();
     final (
       unreadFilterActive: unreadFilterOverride,
       unreadFilterPending: unreadFilterPendingOverride,
-    ) = _computeUnreadFilterOverrides(items);
+    ) = _computeUnreadFilterOverrides(byTab);
     emit(
       state.copyWith(
-        activityFeedItems: items,
-        activityFeedNativesByDate: nativesByDate,
+        activityFeedByTab: byTab,
         activityFeedDoneEnd: _activityFeedDoneEnd,
         activityFeedLoaded: true,
         unreadFilterActive: unreadFilterOverride,
@@ -3351,107 +3347,45 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  /// Compose the activity-feed item list from `_todoThreads` and
-  /// `_activityFeedRawThreads`. Pure with respect to bloc state — callers
-  /// that need an emit should use [_rebuildActivityFeedSections] or pass
-  /// the returned list to [_rebuildAgendaModel]. Optimistic update paths
-  /// use this to re-section the feed after patching the source lists, so
-  /// a thread that transitioned (e.g. todo flipped) lands in the correct
-  /// section in the same frame as the click.
+  /// Switch which activity-feed tab the user is viewing. Pure view
+  /// operation — no rebuild, just toggling [PriorityState.activeTab].
+  void selectActivityTab(ActivityTab tab) {
+    if (state.activeTab == tab) return;
+    emit(state.copyWith(activeTab: tab));
+  }
+
+  /// Compose the activity-feed item lists from `_todoThreads` and
+  /// `_activityFeedRawThreads`, one per [ActivityTab]. Pure with respect
+  /// to bloc state — callers that need an emit should use
+  /// [_rebuildActivityFeedSections] or pass the returned map to
+  /// [_rebuildAgendaModel]. Optimistic update paths use this to re-bin
+  /// the feed after patching the source lists, so a thread that
+  /// transitioned (e.g. todo flipped) lands in the correct tab in the
+  /// same frame as the click.
   ///
-  /// Returns the rendered [AgendaItem] list together with a
-  /// `nativesByDate` map describing, for each date represented in the
-  /// activity feed, the full set of threads that natively belong to that
-  /// date — before the per-priority per-day cap pushes overflow forward.
-  /// Reschedule All reads from this map so a day's full native set
-  /// moves together even when some of its threads are currently
-  /// rendering on a later day because the cap was exceeded.
-  ({List<AgendaItem> items, Map<Date, List<Thread>> nativesByDate})
-      _buildActivityFeedItems() {
-    final todoIds = _todoThreads.map((t) => t.id).toSet();
-    final feedNonTodo = _activityFeedRawThreads
-        .where((t) => !todoIds.contains(t.id))
-        .toList();
+  /// Every tab is rebuilt together because they share underlying thread
+  /// pools. Tab switching is a pure re-render — no recompute needed.
+  Map<ActivityTab, ActivityFeedTabData> _buildActivityFeedItems() {
+    // Build the Event Agenda prefix once and prepend it to every tab.
+    final eventPrefix = _buildEventAgendaItems();
 
-    final active = <Thread>[];
-    final scheduledByDate = <Date, List<Thread>>{};
-    for (final t in _todoThreads) {
-      if (t.isActiveThread) {
-        active.add(t);
-      } else if (t.isScheduledThread) {
-        final date =
-            t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
-        scheduledByDate.putIfAbsent(date, () => []).add(t);
-      }
-    }
-
-    // Use [Thread.activityCompareTo] (order-only) rather than
-    // `todoCompareTo` (date-then-order). See the doc comment on
-    // [Thread.activityCompareTo] for the full rationale; the short
-    // version is that Today flattens 1970-sentinel, past-overdue, and
-    // today's-elapsed rows into one section, so the hidden date bucket
-    // in `todoCompareTo` breaks drag-drop placement.
-    active.sort((a, b) => a.activityCompareTo(b));
-    final scheduledDates = scheduledByDate.keys.toList()..sort();
-    for (final d in scheduledDates) {
-      // Within a single Scheduled day all rows share the same
-      // `todoSortDate`, so `todoCompareTo` collapses to the same key as
-      // `activityCompareTo`. Use the activity comparator for parity with
-      // Today and to make the intent explicit.
-      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
-    }
-
-    // Snapshot the native-by-date assignment *before* the cap pushes
-    // overflow forward, so Reschedule All can move a date's full
-    // membership together (visible-here + spilled-to-later-day).
-    final today = Date.today();
-    final nativesByDate = <Date, List<Thread>>{
-      today: List<Thread>.from(active),
-      for (final d in scheduledDates)
-        d: List<Thread>.from(scheduledByDate[d]!),
-    };
-
-    // Apply the per-priority per-day cap. Each priority's threads are
-    // capped independently on each day; overflow cascades onto the
-    // following day under the same priority, sorted into that day's
-    // existing block by order. New trailing scheduled-day sections are
-    // synthesized when the cascade reaches past every native bucket.
-    final cascaded = cascadeActivityFeedByPriority(
-      today: today,
-      active: active,
-      scheduledByDate: scheduledByDate,
-    );
-    active
-      ..clear()
-      ..addAll(cascaded.active);
-    scheduledByDate
-      ..clear()
-      ..addAll(cascaded.scheduledByDate);
-    // Re-sort each bucket so cascaded-in threads merge with natives by
-    // activityCompareTo (Order ASC). With the post-flip Order semantics,
-    // newer-on-top arises naturally and cascaded-in (older) threads
-    // settle to the bottom.
-    active.sort((a, b) => a.activityCompareTo(b));
-    final cascadedDates = scheduledByDate.keys.toList()..sort();
-    for (final d in cascadedDates) {
-      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
-    }
-
+    // Unread pool feeds the Catch up tab. Pulled from both todos and
+    // non-todos (a todo can be unread too) and sorted by urgency.
     final unread = <Thread>[];
-    final done = <Thread>[];
-    for (final t in feedNonTodo) {
-      if (t.isUnreadOnly || _stickyUnreadIds.containsKey(t.id)) {
+    final unreadIds = <ThreadId>{};
+    for (final t in _todoThreads) {
+      if (t.unread || _stickyUnreadIds.containsKey(t.id)) {
         unread.add(t);
-      } else {
-        done.add(t);
+        unreadIds.add(t.id);
       }
     }
-    // Sort Done by activityAt DESC. Matches the SQL feed-sort
-    // (MAX(lastNoteSourceCreatedAt, bumpedAt, schedEnd) DESC) so the
-    // optimistic patch — which substitutes a bumped thread in place
-    // inside `_activityFeedRawThreads` — still renders at the top
-    // before the next Drift emission re-orders the underlying list.
-    done.sort((a, b) => b.activityAt.compareTo(a.activityAt));
+    for (final t in _activityFeedRawThreads) {
+      if (unreadIds.contains(t.id)) continue;
+      if (t.unread || _stickyUnreadIds.containsKey(t.id)) {
+        unread.add(t);
+        unreadIds.add(t.id);
+      }
+    }
     unread.sort((a, b) {
       final aSticky = _stickyUnreadIds[a.id];
       final bSticky = _stickyUnreadIds[b.id];
@@ -3468,85 +3402,162 @@ class PriorityBloc extends Cubit<PriorityState> {
       return bAt.compareTo(aAt);
     });
 
-    final items = <AgendaItem>[];
+    // All pool feeds the All tab. Every visible thread, sorted by
+    // activityAt DESC (matches the Done section's prior behaviour and
+    // the SQL feed-sort).
+    final allThreads = <Thread>[];
+    final allIds = <ThreadId>{};
+    for (final t in _todoThreads) {
+      if (allIds.add(t.id)) allThreads.add(t);
+    }
+    for (final t in _activityFeedRawThreads) {
+      if (allIds.add(t.id)) allThreads.add(t);
+    }
+    allThreads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
 
-    // Event Agenda section (only when an event is currently selected).
-    // Composition: header → pinned event thread → associated threads.
-    // Pinned event row cannot be dragged or reordered. Associated rows
-    // wear `isAssociated: true` so [ThreadWidget] shows the hover-X to
-    // remove the association.
+    final result = <ActivityTab, ActivityFeedTabData>{};
+
+    // Catch up: flat sorted-by-urgency list of unread threads. No
+    // section headers, no Today/Scheduled split.
+    result[ActivityTab.catchUp] = ActivityFeedTabData(
+      items: <AgendaItem>[
+        ...eventPrefix,
+        for (final t in unread) AgendaThreadItem(t),
+      ],
+    );
+
+    // Action tabs: build a Today + Scheduled-day view scoped to each
+    // action value. Only todos contribute (action lives on the user
+    // schedule). Each action tab cascades independently so per-priority
+    // per-day caps don't bleed across actions.
+    for (final tab in ActivityTab.values) {
+      final action = tab.actionFilter;
+      if (action == null) continue;
+      result[tab] = _buildActionTabData(action, eventPrefix);
+    }
+
+    // All: flat list of every thread, sorted by activityAt DESC.
+    result[ActivityTab.all] = ActivityFeedTabData(
+      items: <AgendaItem>[
+        ...eventPrefix,
+        for (final t in allThreads) AgendaThreadItem(t),
+      ],
+    );
+
+    return result;
+  }
+
+  /// Build the Event Agenda prefix items — pinned event thread plus its
+  /// associated threads. Returns an empty list when no event is selected.
+  List<AgendaItem> _buildEventAgendaItems() {
     final currentEvent = _currentEventForFeed;
-    if (currentEvent != null) {
+    if (currentEvent == null) return const <AgendaItem>[];
+    final items = <AgendaItem>[
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.eventAgenda),
+      ),
+      AgendaThreadItem(currentEvent, pinned: true),
+    ];
+    final eventAssocs = _associations?[currentEvent.id] ?? const [];
+    if (eventAssocs.isEmpty) return items;
+    final lookup = <ThreadId, Thread>{};
+    for (final t in _activityFeedRawThreads) {
+      lookup.putIfAbsent(t.id, () => t);
+    }
+    for (final t in _todoThreads) {
+      lookup.putIfAbsent(t.id, () => t);
+    }
+    for (final t in _lastAgendaThreads) {
+      lookup.putIfAbsent(t.id, () => t);
+    }
+    final ordered = List<ThreadAssociationRow>.from(eventAssocs)
+      ..sort((a, b) => a.order.compareTo(b.order));
+    final parentKey =
+        '${currentEvent.id}${currentEvent.occurrence != null ? '_${currentEvent.occurrence}' : ''}';
+    for (final assoc in ordered) {
+      final child = lookup[assoc.childThreadId];
+      if (child == null) continue;
       items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.eventAgenda),
+        AgendaThreadItem(
+          child,
+          isAssociated: true,
+          associationParentId: parentKey,
+          associationOrder: assoc.order,
         ),
       );
-      items.add(AgendaThreadItem(currentEvent, pinned: true));
+    }
+    return items;
+  }
 
-      final eventAssocs = _associations?[currentEvent.id] ?? const [];
-      if (eventAssocs.isNotEmpty) {
-        final lookup = <ThreadId, Thread>{};
-        for (final t in _activityFeedRawThreads) {
-          lookup.putIfAbsent(t.id, () => t);
-        }
-        for (final t in _todoThreads) {
-          lookup.putIfAbsent(t.id, () => t);
-        }
-        for (final t in _lastAgendaThreads) {
-          lookup.putIfAbsent(t.id, () => t);
-        }
-        final ordered = List<ThreadAssociationRow>.from(eventAssocs)
-          ..sort((a, b) => a.order.compareTo(b.order));
-        final parentKey =
-            '${currentEvent.id}${currentEvent.occurrence != null ? '_${currentEvent.occurrence}' : ''}';
-        for (final assoc in ordered) {
-          final child = lookup[assoc.childThreadId];
-          if (child == null) continue;
-          items.add(
-            AgendaThreadItem(
-              child,
-              isAssociated: true,
-              associationParentId: parentKey,
-              associationOrder: assoc.order,
-            ),
-          );
-        }
+  /// Build the tab data for one of the action tabs (Respond / Do /
+  /// Read). Filters `_todoThreads` to the matching `schedule.action`,
+  /// partitions into Today (active) + per-day Scheduled, cascades the
+  /// per-priority per-day cap, and emits a Today header + day headers.
+  ///
+  /// Returns the rendered items together with the pre-cascade
+  /// `nativesByDate` snapshot so Reschedule All can move a day's full
+  /// native set together (including threads pushed forward by the cap).
+  ActivityFeedTabData _buildActionTabData(
+    String action,
+    List<AgendaItem> eventPrefix,
+  ) {
+    final active = <Thread>[];
+    final scheduledByDate = <Date, List<Thread>>{};
+    for (final t in _todoThreads) {
+      if (t.scheduleAction != action) continue;
+      if (t.isActiveThread) {
+        active.add(t);
+      } else if (t.isScheduledThread) {
+        final date =
+            t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+        scheduledByDate.putIfAbsent(date, () => []).add(t);
       }
     }
 
-    // Section order, per the Activity-tab spec:
-    //   1. Today (active)
-    //   2. New (unread)
-    //   3. Scheduled (one section per future day)
-    //   4. Done (inactive)
-    //
-    // Today and Done headers are always emitted — even when empty — so
-    // they remain valid drag-and-drop targets. The New header is omitted
-    // when there are no unread threads (it has no equivalent drag action).
-    // Scheduled headers stay dynamic (one per future day with threads);
-    // to schedule for a day not yet represented, drag onto an existing
-    // day or use the per-thread schedule picker.
+    // Use activityCompareTo (order-only) for parity with the original
+    // Today section logic — see the comment that preceded the refactor.
+    active.sort((a, b) => a.activityCompareTo(b));
+    final scheduledDates = scheduledByDate.keys.toList()..sort();
+    for (final d in scheduledDates) {
+      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
+    }
 
-    items.add(
+    // Snapshot natives before cascade — Reschedule All moves a date's
+    // full membership including threads pushed to a later day by the
+    // per-priority per-day cap.
+    final today = Date.today();
+    final nativesByDate = <Date, List<Thread>>{
+      today: List<Thread>.from(active),
+      for (final d in scheduledDates)
+        d: List<Thread>.from(scheduledByDate[d]!),
+    };
+
+    final cascaded = cascadeActivityFeedByPriority(
+      today: today,
+      active: active,
+      scheduledByDate: scheduledByDate,
+    );
+    active
+      ..clear()
+      ..addAll(cascaded.active);
+    scheduledByDate
+      ..clear()
+      ..addAll(cascaded.scheduledByDate);
+    active.sort((a, b) => a.activityCompareTo(b));
+    final cascadedDates = scheduledByDate.keys.toList()..sort();
+    for (final d in cascadedDates) {
+      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
+    }
+
+    final items = <AgendaItem>[
+      ...eventPrefix,
+      // Today header is always emitted (even when empty) so it remains
+      // a valid drag-and-drop target for "make active".
       AgendaHeaderItem(
         text: ActivitySectionMarker.encode(ActivitySection.today),
       ),
-    );
-    for (final t in active) {
-      items.add(AgendaThreadItem(t));
-    }
-
-    if (unread.isNotEmpty) {
-      items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.newSection),
-        ),
-      );
-      for (final t in unread) {
-        items.add(AgendaThreadItem(t));
-      }
-    }
+      for (final t in active) AgendaThreadItem(t),
+    ];
 
     for (final d in cascadedDates) {
       final dayThreads = scheduledByDate[d];
@@ -3565,16 +3576,10 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    items.add(
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.done),
-      ),
+    return ActivityFeedTabData(
+      items: items,
+      nativesByDate: nativesByDate,
     );
-    for (final t in done) {
-      items.add(AgendaThreadItem(t));
-    }
-
-    return (items: items, nativesByDate: nativesByDate);
   }
 
 

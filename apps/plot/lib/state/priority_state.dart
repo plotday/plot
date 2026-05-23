@@ -23,8 +23,8 @@ class PriorityState extends Equatable {
     List<Actor> actors = const [],
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
-    List<AgendaItem> activityFeedItems = const [],
-    Map<Date, List<Thread>> activityFeedNativesByDate = const {},
+    Map<ActivityTab, ActivityFeedTabData> activityFeedByTab = const {},
+    ActivityTab activeTab = ActivityTab.catchUp,
     bool activityFeedDoneEnd = false,
     bool activityFeedLoaded = false,
     List<AgendaItem>? reorderViewItems,
@@ -61,12 +61,10 @@ class PriorityState extends Equatable {
       tagSuggestions: tagSuggestions.isNotEmpty
           ? List.unmodifiable(tagSuggestions)
           : tagSuggestions,
-      activityFeedItems: activityFeedItems.isNotEmpty
-          ? List.unmodifiable(activityFeedItems)
-          : activityFeedItems,
-      activityFeedNativesByDate: activityFeedNativesByDate.isNotEmpty
-          ? Map.unmodifiable(activityFeedNativesByDate)
-          : activityFeedNativesByDate,
+      activityFeedByTab: activityFeedByTab.isNotEmpty
+          ? Map.unmodifiable(activityFeedByTab)
+          : activityFeedByTab,
+      activeTab: activeTab,
       activityFeedDoneEnd: activityFeedDoneEnd,
       activityFeedLoaded: activityFeedLoaded,
       reorderViewItems: reorderViewItems != null
@@ -107,8 +105,8 @@ class PriorityState extends Equatable {
     this.actors = const [],
     this.tags = const [],
     this.tagSuggestions = const [],
-    this.activityFeedItems = const [],
-    this.activityFeedNativesByDate = const {},
+    this.activityFeedByTab = const {},
+    this.activeTab = ActivityTab.catchUp,
     this.activityFeedDoneEnd = false,
     this.activityFeedLoaded = false,
     this.reorderViewItems,
@@ -149,15 +147,31 @@ class PriorityState extends Equatable {
   final List<Actor> actors;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
-  final List<AgendaItem> activityFeedItems;
+  /// Per-tab build output for the activity feed. Each tab's data carries
+  /// the flat `AgendaItem` list the widget renders for it, plus the
+  /// pre-cascade native-by-date map used by Reschedule All (only
+  /// populated for action tabs — Respond / Do / Read).
+  final Map<ActivityTab, ActivityFeedTabData> activityFeedByTab;
 
-  /// For each date represented in the activity feed (today + each scheduled
-  /// day), the full set of threads that **natively** belong to that date —
-  /// before the per-priority per-day cap pushes overflow forward. Reschedule
-  /// All uses this so a day's full native set moves together, including
-  /// threads currently rendering on a later day because today's cap was
-  /// exceeded.
-  final Map<Date, List<Thread>> activityFeedNativesByDate;
+  /// Which of the activity-feed tabs the user is currently viewing.
+  /// Changing this is purely a view operation — the bloc rebuilds every
+  /// tab's items together on each underlying thread change, so switching
+  /// tabs is just a re-render.
+  final ActivityTab activeTab;
+
+  /// The flat `AgendaItem` list for the active tab. Backwards-compatible
+  /// shim over [activityFeedByTab] so widgets can keep reading
+  /// `state.activityFeedItems` without knowing about tabs.
+  List<AgendaItem> get activityFeedItems =>
+      activityFeedByTab[activeTab]?.items ?? const [];
+
+  /// For each date represented in the active tab (when it's an action
+  /// tab), the full set of threads that **natively** belong to that
+  /// date — before the per-priority per-day cap pushes overflow forward.
+  /// Reschedule All uses this so a day's full native set moves
+  /// together. Empty for [ActivityTab.catchUp] and [ActivityTab.all].
+  Map<Date, List<Thread>> get activityFeedNativesByDate =>
+      activityFeedByTab[activeTab]?.nativesByDate ?? const {};
 
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
@@ -1226,8 +1240,8 @@ class PriorityState extends Equatable {
     List<Actor>? actors,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
-    List<AgendaItem>? activityFeedItems,
-    Map<Date, List<Thread>>? activityFeedNativesByDate,
+    Map<ActivityTab, ActivityFeedTabData>? activityFeedByTab,
+    ActivityTab? activeTab,
     bool? activityFeedDoneEnd,
     bool? activityFeedLoaded,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
@@ -1271,16 +1285,12 @@ class PriorityState extends Equatable {
                 ? List.unmodifiable(tagSuggestions)
                 : tagSuggestions)
           : this.tagSuggestions,
-      activityFeedItems: activityFeedItems != null
-          ? (activityFeedItems.isNotEmpty
-                ? List.unmodifiable(activityFeedItems)
-                : activityFeedItems)
-          : this.activityFeedItems,
-      activityFeedNativesByDate: activityFeedNativesByDate != null
-          ? (activityFeedNativesByDate.isNotEmpty
-                ? Map.unmodifiable(activityFeedNativesByDate)
-                : activityFeedNativesByDate)
-          : this.activityFeedNativesByDate,
+      activityFeedByTab: activityFeedByTab != null
+          ? (activityFeedByTab.isNotEmpty
+                ? Map.unmodifiable(activityFeedByTab)
+                : activityFeedByTab)
+          : this.activityFeedByTab,
+      activeTab: activeTab ?? this.activeTab,
       activityFeedDoneEnd: activityFeedDoneEnd ?? this.activityFeedDoneEnd,
       activityFeedLoaded: activityFeedLoaded ?? this.activityFeedLoaded,
       iconFilter: iconFilter != null
@@ -1318,8 +1328,8 @@ class PriorityState extends Equatable {
     actors,
     tags,
     tagSuggestions,
-    activityFeedItems,
-    activityFeedNativesByDate,
+    activityFeedByTab,
+    activeTab,
     activityFeedDoneEnd,
     activityFeedLoaded,
     reorderViewItems,

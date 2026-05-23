@@ -151,6 +151,7 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get contacts => text().nullable()();
   TextColumn get currentUserStatus => text().nullable()();
   TextColumn get reason => text().nullable()();
+  TextColumn get action => text().nullable()();
   BoolColumn get outstandingTasks =>
       boolean().withDefault(const Constant(false))();
 }
@@ -3705,6 +3706,10 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// "Done" section. Includes threads with no user schedule and read
   /// non-todo threads.
   bool get isInactiveThread => !todo && !unread;
+
+  /// The user-schedule's `action` value — one of `respond`, `do`, `read`,
+  /// or null. Drives which action tab the thread appears in.
+  String? get scheduleAction => _userSchedule?.action;
   bool get outstandingTasks => _userSchedule?.outstandingTasks ?? false;
   DateTime? get bumpedAt => _thread.bumpedAt;
   bool get hasUserSchedule => _userSchedule != null;

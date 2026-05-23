@@ -12,6 +12,7 @@ CREATE TABLE "public"."schedule" (
     "recurrence_exdates" timestamptz[],
     "occurrence" text,
     "reason" text,
+    "action" text,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
     "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE,
     "outstanding_tasks" boolean NOT NULL DEFAULT FALSE,
@@ -48,6 +49,11 @@ ALTER TABLE "public"."schedule"
 -- Schedule reason tracks why item is on agenda (null = legacy/unknown)
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_reason_check CHECK (reason IS NULL OR reason IN ('unread', 'task', 'add', 'schedule'));
+
+-- Schedule action partitions a thread's schedule into one of the action tabs
+-- in the activity feed (null = no action, shown only in Catch up / All).
+ALTER TABLE "public"."schedule"
+    ADD CONSTRAINT schedule_action_check CHECK (action IS NULL OR action IN ('respond', 'do', 'read'));
 
 -- Cannot have both recurrence_rule and occurrence (occurrence is an exception to a recurrence)
 ALTER TABLE "public"."schedule"

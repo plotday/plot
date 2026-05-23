@@ -43,7 +43,13 @@ PriorityState _stateWith({
     context: priority,
     draft: draft,
     draftNote: draftNote,
-    activityFeedItems: activityFeedItems,
+    // The unread-filter getter operates on whichever tab is active.
+    // Tests express their items as a single flat list, so stash them
+    // in the All tab and surface that as the active view.
+    activeTab: ActivityTab.all,
+    activityFeedByTab: {
+      ActivityTab.all: ActivityFeedTabData(items: activityFeedItems),
+    },
     unreadFilterActive: unreadFilterActive,
     unreadFilterPending: unreadFilterPending,
     activityFeedDoneEnd: activityFeedDoneEnd,

@@ -1,3 +1,4 @@
+import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart';
 
 /// Cross-component signal: when the user taps a multi-thread
@@ -22,6 +23,60 @@ class PendingActivityFeedView {
 /// - [newSection] — Unread, not active or scheduled.
 /// - [done]       — Inactive (everything else).
 enum ActivitySection { eventAgenda, today, scheduled, newSection, done }
+
+/// The top-level tabs that split the activity feed.
+///
+/// - [catchUp] — Every unread thread (sorted by urgency). No reorder.
+/// - [respond] — Threads whose schedule.action == 'respond'. Reorderable,
+///   organised into Today + per-day Scheduled sub-sections.
+/// - [doIt]    — Threads whose schedule.action == 'do'. Same shape as
+///   [respond]. (Named `doIt` because `do` is a Dart keyword.)
+/// - [read]    — Threads whose schedule.action == 'read'. Same shape.
+/// - [all]     — Everything visible to the user in this priority,
+///   sorted by activityAt DESC. No reorder.
+///
+/// Unread threads with a non-null schedule.action appear in both
+/// [catchUp] and their action tab.
+enum ActivityTab {
+  catchUp('Catch up'),
+  respond('Respond'),
+  doIt('Do'),
+  read('Read'),
+  all('All');
+
+  const ActivityTab(this.label);
+  final String label;
+
+  /// The `schedule.action` value a thread must have to appear in this
+  /// tab, or null if the tab is not action-filtered.
+  String? get actionFilter => switch (this) {
+    ActivityTab.respond => 'respond',
+    ActivityTab.doIt => 'do',
+    ActivityTab.read => 'read',
+    _ => null,
+  };
+
+  /// True for [respond] / [doIt] / [read] — the tabs that organise
+  /// threads by Today + Scheduled-day sub-sections and allow drag
+  /// reorder + reschedule.
+  bool get isActionTab => actionFilter != null;
+}
+
+/// The per-tab build output: the flat list of [AgendaItem]s the widget
+/// renders for the tab, plus the pre-cascade native-by-date map
+/// (relevant only for action tabs — empty for [ActivityTab.catchUp] and
+/// [ActivityTab.all]).
+class ActivityFeedTabData {
+  const ActivityFeedTabData({
+    required this.items,
+    this.nativesByDate = const {},
+  });
+
+  final List<AgendaItem> items;
+  final Map<Date, List<Thread>> nativesByDate;
+
+  static const empty = ActivityFeedTabData(items: [], nativesByDate: {});
+}
 
 /// Classify a thread into its Activity-tab section. Mirrors the four
 /// boolean getters on Thread; centralized here so callers can switch on
