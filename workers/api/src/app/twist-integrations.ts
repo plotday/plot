@@ -434,6 +434,33 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     optionsConfig = masked;
   }
 
+  // TEMP(linkedin-unipile): debug logging for the integrations modal so we
+  // can pin down singleChannel/name/icon discrepancies without round-tripping
+  // through Flutter. Revert before merging.
+  const debugLogger = createLogger({
+    twist_instance_id: twistInstanceId,
+    route: "GET /twist/:id/integrations",
+  });
+  debugLogger.info("integrations response built", {
+    config_singleChannel: config.singleChannel,
+    config_connectorLinkTypes_count: config.connectorLinkTypes?.length ?? 0,
+    optionsSchema_keys: optionsSchema ? Object.keys(optionsSchema) : [],
+    accounts_count: allAccounts.length,
+    accounts_summary: allAccounts.map((a) => ({
+      provider: a.provider,
+      actorId: a.actorId,
+      name: a.name,
+      email: a.email,
+    })),
+    syncables_count: allChannels.length,
+    syncables_summary: allChannels.map((s) => ({
+      provider: s.provider,
+      id: s.id,
+      title: s.title,
+      enabled: s.enabled,
+    })),
+  });
+
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
