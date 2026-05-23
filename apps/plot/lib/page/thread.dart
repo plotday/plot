@@ -1316,24 +1316,7 @@ class _ThreadActionsRow extends StatelessWidget {
       selectedColor: threadColor,
     );
 
-    // Surface up to three active addable tag toggles (Reply is included
-    // only when the current actor already replied — same logic as the
-    // unified header's previous in-place tags row).
-    final activeTagButtons = thread.tags.keys
-        .where((tag) {
-          if (tag == Tag.todo) return false;
-          if (!tag.addable) return false;
-          if (tag == Tag.reply) {
-            return thread.tags[tag]?.contains(Base.actorId) ?? false;
-          }
-          return true;
-        })
-        .take(3)
-        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
-        .toList();
-
     final startGroup = <Widget>[
-      ...activeTagButtons,
       todoButton,
       scheduleButton,
     ];

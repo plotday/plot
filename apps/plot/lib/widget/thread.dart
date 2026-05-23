@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
@@ -161,10 +162,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
-    // Get tag suggestions from PriorityBloc if available
-    final tagSuggestions =
-        buildContext.watch<PriorityBloc?>()?.state.tagSuggestions ?? [];
-
     final hasSubPriorityLabel =
         showSubPriority &&
         priorityContext != null &&
@@ -593,7 +590,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                 color: tileBg,
                                 child: ThreadCommands(
                                   activity: activity,
-                                  tagSuggestions: tagSuggestions,
                                   showCommands: isHighlighted,
                                   showEventTiming: showEventTiming,
                                   bump: bump,
@@ -698,7 +694,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 class ThreadCommands extends HookWidget {
   const ThreadCommands({
     required this.activity,
-    this.tagSuggestions = const [],
     this.showCommands = false,
     this.showEventTiming = false,
     this.bump = true,
@@ -709,7 +704,6 @@ class ThreadCommands extends HookWidget {
   });
 
   final Thread activity;
-  final List<Tag> tagSuggestions;
   final bool showCommands;
   final bool showEventTiming;
   final bool bump;
@@ -725,73 +719,6 @@ class ThreadCommands extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Compute thread color for selected buttons
-    final threadColor = context.colour.colours.fromTheme(
-      activity.priority.displayColor,
-    );
-
-    // Get tags that this thread has
-    // Exclude Tag.todo since it's shown as leading command
-    // Exclude Tag.done for done threads since it's shown as leading icon
-    final threadTags = useMemoized(
-      () => Tag.getAll(
-        onlyAddable: true,
-      ).where((tag) => activity.hasTag(tag) && tag != Tag.todo).toList(),
-      [activity.tags, activity.todo, activity.done],
-    );
-
-    // Create futures to load actor names for tooltips - memoized to avoid recreating on every build
-    final tagFutures = useMemoized(
-      () => threadTags.map((tag) async {
-        final key = ValueKey(Object.hash(activity.id, tag.id));
-
-        // Use FinishThread when clicking Tag.todo on a "todo" thread
-        final command = tag == Tag.todo
-            ? FinishThread(
-                activity,
-                stateIcon: true,
-                bump: bump,
-                onBeforeRun: activity.isLinkScheduleInstance
-                    ? null
-                    : onMobileFinish != null
-                    ? (_) => onMobileFinish!()
-                    : onDesktopFinish != null
-                    ? (_) => onDesktopFinish!()
-                    : null,
-              )
-            : ToggleThreadTag(activity, tag);
-
-        // Get actor names for tooltip
-        final actorNames = await activity.getTagActorNames(tag);
-
-        // Wrap command with subtitle showing actor names
-        final wrappedCommand = actorNames.isNotEmpty
-            ? CommandWrapper(command, subtitle: Value(actorNames))
-            : command;
-
-        final count = TagActors.countOf(activity.tags[tag]);
-
-        // Twist tags are display-only (not interactive)
-        if (tag == Tag.twist) {
-          return CountBadge(
-            count: count,
-            child: PulsingColorButton(key: key, primaryColor: threadColor),
-          );
-        }
-
-        return CountBadge(
-          count: count,
-          child: Button.icon(
-            wrappedCommand,
-            key: key,
-            selected: true,
-            selectedColor: threadColor,
-          ),
-        );
-      }).toList(),
-      [activity.id, activity.tags],
-    );
-
     // Get commands (only if showCommands is true).
     // Share affordance lives in the trailing slot (as an [AvatarGroup]) when
     // the thread is shared, so we drop it from the hover-command pool to
@@ -853,115 +780,52 @@ class ThreadCommands extends HookWidget {
         ? Button.icon(ToggleRsvp(activity))
         : null;
 
-    final tagSuggestionButtons = showCommands
-        ? topThreadTags(
-            activity,
-            tagSuggestions,
-          ).map((cmd) => Button.icon(cmd)).toList()
-        : <Widget>[];
+    final List<Widget> allButtons;
+    if (showCommands) {
+      allButtons = [
+        ...threadCommandButtons.take(5),
+        // "Archive threads like this" sits immediately before the
+        // overflow menu so it's always reachable on hover. Title and
+        // event semantics flip based on whether the thread already
+        // carries the auto-archive flag.
+        Button.icon(ArchiveSimilarThreads(activity)),
+        // Always add ShowThreadCommands as the 6th button
+        Button.icon(
+          CommandWrapper(
+            ShowThreadCommands(activity),
+            icon: Value(PlotIcon.more),
+          ),
+        ),
+        // When the thread isn't shared, the share affordance sits to
+        // the right of the more-commands menu so it's always visible.
+        if (trailingShareButton != null) trailingShareButton,
+      ];
+    } else {
+      allButtons = const <Widget>[];
+    }
 
-    // Build the final row with tags and commands
-    return FutureBuilder<List<Widget>>(
-      future: Future.wait(tagFutures),
-      builder: (context, snapshot) {
-        // While loading or on error, show buttons without subtitles
-        final loadedTagButtons =
-            snapshot.hasData && snapshot.connectionState == ConnectionState.done
-            ? snapshot.data!
-            : threadTags
-                  .map((tag) {
-                    final key = ValueKey(Object.hash(activity.id, tag.id));
-                    final command = tag == Tag.todo
-                        ? FinishThread(
-                            activity,
-                            stateIcon: true,
-                            bump: bump,
-                            onBeforeRun: activity.isLinkScheduleInstance
-                                ? null
-                                : onMobileFinish != null
-                                ? (_) => onMobileFinish!()
-                                : onDesktopFinish != null
-                                ? (_) => onDesktopFinish!()
-                                : null,
-                          )
-                        : ToggleThreadTag(activity, tag);
-                    final count = TagActors.countOf(activity.tags[tag]);
-                    // Twist tags are display-only (not interactive)
-                    if (tag == Tag.twist) {
-                      return CountBadge(
-                        count: count,
-                        child: PulsingColorButton(
-                          key: key,
-                          primaryColor: threadColor,
-                        ),
-                      );
-                    }
-                    return CountBadge(
-                      count: count,
-                      child: Button.icon(
-                        command,
-                        key: key,
-                        selected: true,
-                        selectedColor: threadColor,
-                      ),
-                    );
-                  })
-                  .take(5)
-                  .toList();
-
-        // Combine tags and commands with 6 button limit
-        final List<Widget> allButtons;
-        if (showCommands) {
-          allButtons = [
-            ...[
-              ...threadCommandButtons,
-              ...tagSuggestionButtons,
-            ].take((5 - loadedTagButtons.length).clamp(0, 5)),
-            // "Archive threads like this" sits immediately before the
-            // overflow menu so it's always reachable on hover. Title and
-            // event semantics flip based on whether the thread already
-            // carries the auto-archive flag.
-            Button.icon(ArchiveSimilarThreads(activity)),
-            // Always add ShowThreadCommands as the 6th button
-            Button.icon(
-              CommandWrapper(
-                ShowThreadCommands(activity),
-                icon: Value(PlotIcon.more),
-              ),
-            ),
-            // When the thread isn't shared, the share affordance sits to
-            // the right of the more-commands menu so it's always visible.
-            if (trailingShareButton != null) trailingShareButton,
-            ...loadedTagButtons.take(5),
-          ];
-        } else {
-          allButtons = loadedTagButtons;
-        }
-
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ...allButtons,
-            for (final action in conferencingActions)
-              _ConferencingIconButton(action: action),
-            if (attendButton != null) attendButton,
-            if (skipButton != null) skipButton,
-            if (rsvpButton != null) rsvpButton,
-            // Trailing AvatarGroup slot — only present when the thread is
-            // actually shared. When not shared we leave the slot empty (no
-            // padding, no tooltip); the share command is reachable via the
-            // hover commands list instead.
-            if (isShared) SharedCommandButton(thread: activity),
-            // Trailing-most "Remove from event" X-icon for associated
-            // threads, surfaced only on hover. The row is positioned at
-            // the right edge with mainAxisSize.min, so adding this as
-            // the last child pushes existing trailing items (tags,
-            // avatars) to the left.
-            if (isAssociated && showCommands)
-              Button.icon(DisassociateThread(activity)),
-          ],
-        );
-      },
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...allButtons,
+        for (final action in conferencingActions)
+          _ConferencingIconButton(action: action),
+        if (attendButton != null) attendButton,
+        if (skipButton != null) skipButton,
+        if (rsvpButton != null) rsvpButton,
+        // Trailing AvatarGroup slot — only present when the thread is
+        // actually shared. When not shared we leave the slot empty (no
+        // padding, no tooltip); the share command is reachable via the
+        // hover commands list instead.
+        if (isShared) SharedCommandButton(thread: activity),
+        // Trailing-most "Remove from event" X-icon for associated
+        // threads, surfaced only on hover. The row is positioned at
+        // the right edge with mainAxisSize.min, so adding this as
+        // the last child pushes existing trailing items (tags,
+        // avatars) to the left.
+        if (isAssociated && showCommands)
+          Button.icon(DisassociateThread(activity)),
+      ],
     );
   }
 }
@@ -1176,38 +1040,45 @@ class _ThreadLogo extends StatelessWidget {
 
   final Thread activity;
 
-  bool get _isTappable =>
-      ThreadSubType.fromIcon(activity.icon) != null || activity.icon == null;
-
   @override
   Widget build(BuildContext context) {
     final brightness = context.colour.brightness;
+
+    // Plot threads (system priorities like @plot.app) show the Plot mark
+    // unless the thread has its own source icon (twist, connector, URL).
+    if (activity.priority.isPlot && _hasNoExplicitSource) {
+      return SvgPicture.asset(
+        'assets/p.svg',
+        width: 16,
+        height: 16,
+      );
+    }
+
     final resolved = Thread.resolveIcon(activity.icon);
     final logoUrl = brightness == Brightness.dark
         ? (resolved.logoDarkUrl ?? resolved.logoUrl)
         : resolved.logoUrl;
 
-    Widget icon;
     if (logoUrl != null && !LogoCache.isFailed(logoUrl)) {
-      icon = Opacity(
+      return Opacity(
         opacity: brightness == Brightness.dark ? 0.7 : 0.9,
         child: LogoImage(url: logoUrl),
       );
-    } else {
-      icon = Icon(
-        resolved.fallbackIcon,
-        size: 16,
-        color: context.theme.plotColors.veryMuted,
-      );
     }
+    return Icon(
+      resolved.fallbackIcon,
+      size: 16,
+      color: context.theme.plotColors.veryMuted,
+    );
+  }
 
-    if (_isTappable && !activity.priority.isViewer) {
-      return GestureDetector(
-        onTap: () => context.run(ChangeThreadSubType(activity)),
-        child: icon,
-      );
-    }
-    return icon;
+  bool get _hasNoExplicitSource {
+    final icon = activity.icon;
+    if (icon == null) return true;
+    if (icon.startsWith('twist:')) return false;
+    if (icon.startsWith('connector:')) return false;
+    if (icon.startsWith('http')) return false;
+    return true;
   }
 }
 

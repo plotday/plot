@@ -448,7 +448,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     // Single-panel: thread actions live in the header (no squircle).
     final trailing = <Widget>[
-      if (thread != null) ..._buildActiveTagToggles(context, thread),
       if (thread != null) _buildTodoToggle(context, thread),
       if (thread != null && !thread.isReadOnly) Button.icon(EditThread(thread)),
       if (thread != null && !thread.isReadOnly)
@@ -845,21 +844,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       mainAxisSize: MainAxisSize.min,
       children: [todoIcon, calendarIcon],
     );
-  }
-
-  List<Widget> _buildActiveTagToggles(BuildContext context, Thread thread) {
-    return thread.tags.keys
-        .where((tag) {
-          if (tag == Tag.todo) return false;
-          if (!tag.addable) return false;
-          if (tag == Tag.reply) {
-            return thread.tags[tag]?.contains(Base.actorId) ?? false;
-          }
-          return true;
-        })
-        .take(3)
-        .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
-        .toList();
   }
 
   // ---------------------------------------------------------------------------

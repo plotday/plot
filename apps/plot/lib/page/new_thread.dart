@@ -695,9 +695,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Row showing the draft's thread type (with a chevron to change it) and
-  /// either "Auto title" (sparkles → pencil on hover) or the title the user
-  /// set (with an X to clear).
+  /// Row showing either "Auto title" (sparkles → pencil on hover) or the
+  /// title the user set (with an X to clear).
   Widget _buildAutoOrganizeLine(BuildContext context, PriorityState state) {
     final draft = state.draft;
     return Padding(
@@ -707,42 +706,10 @@ class NewThreadPageState extends State<NewThreadPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildTypeChip(context, draft),
             _buildTitleChip(context, draft),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTypeChip(BuildContext context, Thread draft) {
-    final subType =
-        ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
-    final button = FButton(
-      onPress: () => _openTypeModal(context, draft, subType),
-      variant: FButtonVariant.ghost,
-      style: ghostSizedStyleDelta(
-        context,
-        textStyle: context.theme.typography.sm,
-      ),
-      mainAxisSize: MainAxisSize.min,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 4,
-        children: [
-          FaIcon(subType.icon, size: context.theme.iconSizes.base),
-          Icon(PlotIcon.verticalExpand, size: context.theme.iconSizes.xs),
-        ],
-      ),
-    );
-    if (!hasPhysicalKeyboard()) return button;
-    return FTooltip(
-      tipBuilder: (context, controller) => _buildChipTooltip(
-        context: context,
-        label: subType.label,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyI, shift: true),
-      ),
-      child: button,
     );
   }
 
@@ -834,31 +801,6 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _clearTitle(Thread draft) async {
     final bloc = context.read<PriorityBloc>();
     await bloc.updateDraft(draft.copyWith(title: const Value(null)));
-  }
-
-  Future<void> _openTypeModal(
-    BuildContext context,
-    Thread draft,
-    ThreadSubType current,
-  ) async {
-    final bloc = context.read<PriorityBloc>();
-    final result = await SelectModal.open<ThreadSubType>(
-      context,
-      items: (_) async => [
-        SelectGroup(title: null, items: ThreadSubType.values),
-      ],
-      itemBuilder: (subType, _) => ListTile(
-        icon: subType.icon,
-        body: Text(subType.label),
-        selected: current == subType,
-      ),
-      selectedValue: current,
-      prompt: 'Select type',
-    );
-    if (!result.present) return;
-    await bloc.updateDraft(
-      bloc.state.draft.copyWith(icon: Value(result.value.value)),
-    );
   }
 
   Future<void> _openTitleModal(BuildContext context, Thread draft) async {
@@ -1521,9 +1463,8 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Builds keyboard shortcut bindings for thread-level actions on the
   /// NewThreadPage: share (contacts). Note-level shortcuts are handled
-  /// inside NoteEditor. Priority, title, type, and schedule are set via
-  /// the priority chip / type chip / title chip or after the thread is
-  /// created.
+  /// inside NoteEditor. Priority, title, and schedule are set via the
+  /// priority chip / title chip or after the thread is created.
   Map<ShortcutActivator, VoidCallback> _buildThreadShortcuts(
     BuildContext context,
     PriorityState state,
@@ -1547,13 +1488,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       // ⌘⇧H — change title (heading)
       platformSingleActivator(LogicalKeyboardKey.keyH, shift: true): () {
         _openTitleModal(context, state.draft);
-      },
-      // ⌘⇧I — change icon / type
-      platformSingleActivator(LogicalKeyboardKey.keyI, shift: true): () {
-        final draft = state.draft;
-        final subType =
-            ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
-        _openTypeModal(context, draft, subType);
       },
     };
   }

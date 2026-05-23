@@ -820,28 +820,16 @@ class EditThread extends ShowForm {
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,
                   ),
-                  FormSelect<ThreadSubType>(
-                    key: 'type',
-                    label: 'Type',
-                    initialValue:
-                        ThreadSubType.fromIcon(thread.icon) ??
-                        ThreadSubType.defaultFor(),
-                    items: (_) async => ThreadSubType.values,
-                    titleBuilder: (t) => t.label,
-                    leadingBuilder: (t) => Icon(t.icon, size: 16),
-                  ),
                   FormButton(
                     key: 'save',
                     isPrimary: true,
                     buildCommand: (values) {
                       final title = values['title'] as String;
                       final priority = values['priority'] as Priority;
-                      final type = values['type'] as ThreadSubType?;
                       return _SaveThreadEdit(
                         thread,
                         title,
                         priority,
-                        type,
                         onSaved: onSaved,
                         priorityBloc: priorityBloc,
                       );
@@ -859,8 +847,7 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
   _SaveThreadEdit(
     super.thread,
     this.newTitle,
-    this.newPriority,
-    this.newType, {
+    this.newPriority, {
     this.onSaved,
     super.priorityBloc,
   }) : super(
@@ -871,7 +858,6 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
 
   final String newTitle;
   final Priority newPriority;
-  final ThreadSubType? newType;
   final VoidCallback? onSaved;
 
   @override
@@ -881,7 +867,6 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
       thread.copyWith(
         title: Value(newTitle.isEmpty ? null : newTitle),
         priority: newPriority,
-        icon: Value(newType?.value),
       ),
     );
     onSaved?.call();
@@ -2451,47 +2436,6 @@ class ShowThreadCommands extends ShowCommands {
       );
 }
 
-class ChangeThreadSubType extends ShowCommands {
-  ChangeThreadSubType(Thread thread)
-    : super(
-        title: 'Change type',
-        icon: PlotIcon.notes,
-        commandsBuilder: (context) async {
-          final types = ThreadSubType.values;
-          return Commands(
-            groups: [
-              StaticCommandGroup(
-                title: null,
-                commands: types
-                    .map((t) => SetThreadSubType(thread, t))
-                    .toList(),
-              ),
-            ],
-          );
-        },
-      );
-}
-
-class SetThreadSubType extends Command {
-  SetThreadSubType(this.thread, this.subType)
-    : super(
-        title: subType.label,
-        icon: subType.icon,
-        on: thread.icon == subType.value ? true : null,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-      );
-
-  final Thread thread;
-  final ThreadSubType subType;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await thread.copyWith(icon: Value(subType.value)).save();
-    return const CommandDone();
-  }
-}
-
 // Thread sharing commands
 
 class PickThreadShared extends ShowCommands {
@@ -3315,98 +3259,16 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool showSplitThread = false,
   PriorityBloc? priorityBloc,
 }) {
-  final isViewer = thread.priority.isViewer;
-  final tags = Tag.getAll()
-      .where((tag) => !isViewer || tag.type == TagType.count)
-      .map((tag) => ToggleThreadTag(thread, tag))
-      .toList();
   final commands = threadCommands(
     thread,
     open: open,
     showSplitThread: showSplitThread,
     priorityBloc: priorityBloc,
   );
-  final remove = tags
-      .where((cmd) => cmd.tag.type != TagType.compute && thread.hasTag(cmd.tag))
-      .toList();
-  final add = tags
-      .where(
-        (cmd) =>
-            cmd.tag.addable == true &&
-            cmd.tag.type != TagType.compute &&
-            !thread.hasTag(cmd.tag),
-      )
-      .toList();
-
-  final activeTags = remove.map((cmd) => cmd.tag).toList();
-  final suggestedTags = add.map((cmd) => cmd.tag).toList();
-  final activeTagCounts = {
-    for (final tag in activeTags) tag: TagActors.countOf(thread.tags[tag]),
-  };
-
-  ShowCommands makeShowAll() => ShowCommands(
-    title: 'All tags',
-    icon: PlotIcon.more,
-    commandsBuilder: (_) async {
-      // Fetch fresh tag state when opened
-      final freshThread = await Thread.getOne(thread.id);
-      final freshTags = Tag.getAll()
-          .where((tag) => !isViewer || tag.type == TagType.count)
-          .map((tag) => ToggleThreadTag(freshThread, tag))
-          .toList();
-      final freshRemove = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.type != TagType.compute && freshThread.hasTag(cmd.tag),
-          )
-          .toList();
-      final freshAdd = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.addable == true &&
-                cmd.tag.type != TagType.compute &&
-                !freshThread.hasTag(cmd.tag),
-          )
-          .toList();
-      return Commands(
-        groups: [
-          if (freshRemove.isNotEmpty)
-            StaticCommandGroup(title: 'Remove tag', commands: freshRemove),
-          if (freshAdd.isNotEmpty)
-            StaticCommandGroup(title: 'Add tag', commands: freshAdd),
-        ],
-      );
-    },
-  );
 
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
-    StaticCommandGroup(
-      title: 'Thread: ${thread.title}',
-      commands: [],
-      infoBuilder: (context, search) {
-        final hasSearch = search != null && search.isNotEmpty;
-        final filteredActive = hasSearch
-            ? activeTags.where((t) => t.matchesSearch(search)).toList()
-            : activeTags;
-        final filteredSuggested = hasSearch
-            ? suggestedTags.where((t) => t.matchesSearch(search)).toList()
-            : suggestedTags;
-        if (hasSearch && filteredActive.isEmpty && filteredSuggested.isEmpty) {
-          return null;
-        }
-        return TagRow(
-          activeTags: filteredActive,
-          suggestedTags: filteredSuggested,
-          activeTagCounts: activeTagCounts,
-          commandBuilder: (tag) => ToggleThreadTag(thread, tag),
-          showAllBuilder: makeShowAll,
-          showMore: !hasSearch,
-        );
-      },
-      onActivate: (ctx) => makeShowAll().run(ctx),
-    ),
   ];
 }
 
