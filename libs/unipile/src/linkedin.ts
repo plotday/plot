@@ -3,7 +3,6 @@ import { ITool } from "@plotday/twister";
 import type {
   LinkedInChat,
   LinkedInChatPage,
-  LinkedInInvitation,
   LinkedInInvitationPage,
   LinkedInMessage,
   LinkedInMessagePage,
