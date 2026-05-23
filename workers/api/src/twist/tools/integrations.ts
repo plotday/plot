@@ -39,6 +39,7 @@ import {
 } from "../../provider";
 import { hashExternalContent } from "./hash-external-content";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
+import { UnipileClient } from "./unipile/client";
 import type { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
 import { invokeWebhookCallback } from "../invoke-webhook";
@@ -4320,6 +4321,15 @@ export class Integrations extends Tool implements IAuth {
       logger.error("Provider not supported", { provider });
       throw new Error(`Provider ${provider} not supported`);
     }
+    if (config.authMode === "hosted") {
+      return await Integrations.GenerateHostedAuthUrl({
+        provider,
+        callback,
+        redirectUri,
+        env,
+        storage,
+      });
+    }
     if (!config.authUrl) {
       // Non-OAuth provider (e.g. LinkedIn cookie auth). The client must use
       // that provider's dedicated auth endpoint instead of the OAuth flow.
@@ -4431,6 +4441,59 @@ export class Integrations extends Tool implements IAuth {
     const url = `${config.authUrl}?${params.toString()}`;
 
     return { url, clientId, state };
+  }
+
+  static async GenerateHostedAuthUrl({
+    provider,
+    callback,
+    redirectUri,
+    env,
+    storage,
+  }: {
+    provider: AuthProvider;
+    callback?: Callback;
+    redirectUri: string;
+    env: Bindings;
+    storage: DurableObjectNamespace<Storage>;
+  }): Promise<{ url: string; clientId: string; state: string }> {
+    const state = crypto.randomUUID();
+
+    // Stash the in-flight auth so the webhook handler and the /auth completion
+    // path can pair the inbound account_id with this state token.
+    const storageStub = storage.idFromName("auth");
+    const storageObj = storage.get(storageStub);
+    await storageObj.set(
+      `hosted_auth:${state}`,
+      superjson.stringify({
+        provider,
+        callback: callback ? String(callback) : null,
+        redirectUri,
+        createdAt: Date.now(),
+      })
+    );
+
+    // Map the API provider name to Unipile's source enum.
+    const sourceMap: Record<string, "LINKEDIN" | "WHATSAPP" | "INSTAGRAM"> = {
+      linkedin: "LINKEDIN",
+      whatsapp: "WHATSAPP",
+      instagram: "INSTAGRAM",
+    };
+    const source = sourceMap[provider];
+    if (!source) {
+      throw new Error(`Provider ${provider} not supported for hosted auth`);
+    }
+
+    const client = new UnipileClient(env);
+    const { url } = await client.createHostedAuthLink({
+      providers: [source],
+      name: state,
+      successRedirectUrl: `${env.API_ROOT}/auth/hosted/success?state=${state}`,
+      failureRedirectUrl: `${env.API_ROOT}/auth/hosted/failure?state=${state}`,
+      notifyUrl: `${env.API_ROOT}/hook/messaging`,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    });
+
+    return { url, clientId: "hosted", state };
   }
 
   private static ALL_PLATFORMS: (undefined | "ios" | "android" | "desktop")[] =
