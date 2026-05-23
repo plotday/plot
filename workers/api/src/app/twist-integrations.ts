@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { DB } from "../db";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
+import { PROVIDER_CONFIGS } from "../provider";
 import { Integrations } from "../twist/tools/integrations";
 import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
@@ -400,9 +401,72 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       twistInfo.environment
     );
 
-    const data = await integrations.getIntegrationData(
+    let data = await integrations.getIntegrationData(
       currentActorId as any
     );
+
+    // Self-heal: hosted-auth providers can cache an empty channel list when
+    // the token wasn't yet stored during activation. If we see a hosted-auth
+    // account but zero channels, trigger refreshChannels for each connected
+    // actor and re-read. Single-channel connectors are the obvious case
+    // (getChannels should always return exactly one), but the same pattern
+    // helps any hosted-auth provider that lands here with a stale cache.
+    const hostedProviders = providers.filter(
+      (p) =>
+        PROVIDER_CONFIGS[p.provider as keyof typeof PROVIDER_CONFIGS]
+          ?.authMode === "hosted"
+    );
+    if (
+      hostedProviders.length > 0 &&
+      data.accounts.length > 0 &&
+      data.syncables.length === 0
+    ) {
+      try {
+        const twistWrapper = await twistFactory({
+          env: c.env,
+          ctx: c.executionCtx as ExecutionContext,
+          db: c.var.db,
+        })({ twistInstanceId });
+        for (const account of data.accounts) {
+          if (!hostedProviders.some((p) => p.provider === account.provider)) {
+            continue;
+          }
+          try {
+            const r = await twistWrapper.callCallback(
+              pathStr.split(":"),
+              "refreshChannels",
+              account.provider,
+              account.actorId
+            );
+            disposeRpc(r);
+          } catch (refreshErr) {
+            const refreshLogger = createLogger({
+              twist_instance_id: twistInstanceId,
+              route: "GET /twist/:id/integrations",
+              provider: account.provider,
+              actor_id: account.actorId,
+            });
+            refreshLogger.warn(
+              "auto-refresh channels failed",
+              refreshErr instanceof Error
+                ? { error: refreshErr.message }
+                : { error: String(refreshErr) }
+            );
+          }
+        }
+        // Re-read after refresh attempts.
+        data = await integrations.getIntegrationData(currentActorId as any);
+      } catch (e) {
+        const refreshLogger = createLogger({
+          twist_instance_id: twistInstanceId,
+          route: "GET /twist/:id/integrations",
+        });
+        refreshLogger.warn(
+          "auto-refresh setup failed",
+          e instanceof Error ? { error: e.message } : { error: String(e) }
+        );
+      }
+    }
 
     allProviders.push(...data.providers);
     allAccounts.push(...data.accounts);
