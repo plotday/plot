@@ -38,16 +38,28 @@ hookMessaging.post("/hook/messaging", async (c) => {
     return c.json({ ok: false, error: "invalid json" }, 400);
   }
 
+  // Log every incoming payload's top-level keys + the dispatch hints we
+  // care about. Unipile mixes two payload shapes on this endpoint (the
+  // hosted-auth notify_url callback uses `status`, while regular
+  // workspace webhooks use `event_type`), and the field set has changed
+  // across their API revisions, so visibility into what actually arrives
+  // beats guessing.
+  logger.info("hook/messaging received", {
+    keys: Object.keys(event),
+    event_type: event.event_type ?? null,
+    status: event.status ?? null,
+    account_id: event.account_id ?? event.AccountId ?? null,
+  });
+
+  const dispatch = classifyEvent(event);
   const ctx = c.executionCtx as unknown as { exports: ExecutionContext["exports"] };
 
   try {
-    switch (event.event_type) {
+    switch (dispatch) {
       case "account.connected":
         await handleAccountConnected(c.env, event, logger);
         break;
-      case "account.disconnected":
-      case "account.error":
-      case "account.credentials":
+      case "account.needs_reauth":
         await handleAccountNeedsReauth(c.env, event, logger);
         break;
       case "messaging.new_message":
@@ -57,8 +69,9 @@ hookMessaging.post("/hook/messaging", async (c) => {
         await handleInvitationReceived(c.env, ctx, event, logger);
         break;
       default:
-        logger.info("Unhandled hosted-auth event type", {
-          event_type: event.event_type,
+        logger.info("Unhandled hosted-auth event", {
+          event_type: event.event_type ?? null,
+          status: event.status ?? null,
         });
     }
   } catch (error) {
@@ -71,11 +84,58 @@ hookMessaging.post("/hook/messaging", async (c) => {
 });
 
 type HostedWebhookEvent = {
-  event_type: string;
+  event_type?: string;
+  /** Hosted-auth notify_url shape: "CREATION_SUCCESS" / "CREATION_ERROR" /
+   * "RECONNECTED" / "CHECKPOINT" / "CREDENTIALS". */
+  status?: string;
+  /** Some Unipile shapes use snake_case, others use PascalCase. */
   account_id?: string;
+  AccountId?: string;
+  /** Hosted-auth notify_url echoes the `name` we set when creating the link
+   * — we use this as our state token. */
+  name?: string;
   payload?: Record<string, unknown>;
   [k: string]: unknown;
 };
+
+/**
+ * Map an inbound payload to one of our dispatch kinds. Tolerates both the
+ * hosted-auth notify_url shape (`status`-driven) and the regular workspace
+ * webhook shape (`event_type`-driven).
+ */
+function classifyEvent(
+  event: HostedWebhookEvent
+):
+  | "account.connected"
+  | "account.needs_reauth"
+  | "messaging.new_message"
+  | "users.invitation.received"
+  | null {
+  if (event.event_type === "account.connected") return "account.connected";
+  if (
+    event.event_type === "account.disconnected" ||
+    event.event_type === "account.error" ||
+    event.event_type === "account.credentials"
+  ) {
+    return "account.needs_reauth";
+  }
+  if (event.event_type === "messaging.new_message") return "messaging.new_message";
+  if (event.event_type === "users.invitation.received") {
+    return "users.invitation.received";
+  }
+  // Hosted-auth notify_url shape:
+  if (event.status === "CREATION_SUCCESS" || event.status === "RECONNECTED") {
+    return "account.connected";
+  }
+  if (
+    event.status === "CREATION_ERROR" ||
+    event.status === "CHECKPOINT" ||
+    event.status === "CREDENTIALS"
+  ) {
+    return "account.needs_reauth";
+  }
+  return null;
+}
 
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -92,11 +152,17 @@ async function handleAccountConnected(
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
   // The hosted-auth-link `name` parameter carries our state token (set by
-  // GenerateHostedAuthUrl). Unipile echoes it on account.connected.
+  // GenerateHostedAuthUrl). Unipile echoes it on the notify_url callback.
   const state = (event.name as string | undefined) ?? null;
-  const accountId = event.account_id;
+  const accountId =
+    (event.account_id as string | undefined) ??
+    (event.AccountId as string | undefined) ??
+    null;
   if (!state || !accountId) {
-    logger.warn("account.connected event missing state or account_id");
+    logger.warn("account.connected event missing state or account_id", {
+      have_state: !!state,
+      have_account_id: !!accountId,
+    });
     return;
   }
   const storageObj = env.STORAGE.get(env.STORAGE.idFromName("auth"));
@@ -119,7 +185,7 @@ async function handleAccountNeedsReauth(
   event: HostedWebhookEvent,
   logger: ReturnType<typeof createLogger>
 ): Promise<void> {
-  const accountId = event.account_id;
+  const accountId = event.account_id ?? event.AccountId ?? null;
   if (!accountId) return;
   logger.info("account needs reauth", {
     account_id: accountId,
