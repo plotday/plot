@@ -686,6 +686,18 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     channels: Channel[]
   ): Promise<any> {
+    createLogger({
+      twist_instance_id: this.twistInstanceId,
+      step: "setChannels",
+      provider,
+      actor_id: actorId,
+    }).warn("TEMP: setChannels called", {
+      channels_count: Array.isArray(channels) ? channels.length : -1,
+      channels_summary: Array.isArray(channels)
+        ? channels.map((c) => ({ id: c.id, title: c.title }))
+        : null,
+      channels_raw_type: typeof channels,
+    });
     // Snapshot the set of channels we already know about before mirroring so
     // we can identify newly-discovered ones for auto-enable.
     const flat = this.flattenChannels(channels);
