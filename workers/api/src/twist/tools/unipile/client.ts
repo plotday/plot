@@ -42,7 +42,9 @@ export class UnipileClient {
   private readonly base: string;
 
   constructor(private readonly env: Env) {
-    this.base = `https://${env.UNIPILE_DSN}.unipile.com:13441/api/v1`;
+    // Unipile assigns a per-workspace DSN as a full `host:port`
+    // (e.g. `api40.unipile.com:17020`). Use it verbatim.
+    this.base = `https://${env.UNIPILE_DSN}/api/v1`;
   }
 
   // ---------- Account lifecycle ----------

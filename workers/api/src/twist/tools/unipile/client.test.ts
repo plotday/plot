@@ -3,7 +3,7 @@ import { UnipileClient, UnipileApiError } from "./client";
 
 const env = {
   UNIPILE_API_KEY: "test-key",
-  UNIPILE_DSN: "api7",
+  UNIPILE_DSN: "api7.unipile.com:13441",
   UNIPILE_WEBHOOK_SECRET: "test-secret",
 };
 
@@ -32,6 +32,7 @@ describe("UnipileClient", () => {
     expect(String(url)).toBe(
       "https://api7.unipile.com:13441/api/v1/chats?account_id=acct-1"
     );
+    // (DSN is used verbatim — full host:port — not a region shortcode.)
     expect((init?.headers as Record<string, string>)["X-API-KEY"]).toBe(
       "test-key"
     );
