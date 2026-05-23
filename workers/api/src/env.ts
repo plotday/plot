@@ -234,6 +234,11 @@ export type Bindings = {
   readonly SYNC_TIMING_ENABLED?: string;
   readonly NOTIFICATION_DELAY_MULTIPLIER?: string;
 
+  // Unipile API configuration for LinkedIn messaging
+  readonly UNIPILE_API_KEY: string;
+  readonly UNIPILE_DSN: string;
+  readonly UNIPILE_WEBHOOK_SECRET: string;
+
   readonly TWIST_CONFIG: KVNamespace;
   readonly VOTES: KVNamespace;
   // Shared between workers/api and workers/classify. Holds the LLM
