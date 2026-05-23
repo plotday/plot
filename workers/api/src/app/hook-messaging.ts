@@ -20,13 +20,14 @@ const hookMessaging = new Hono<{ Bindings: Bindings }>();
 hookMessaging.post("/hook/messaging", async (c) => {
   const logger = createLogger({ route: "hook/messaging" });
 
-  const signature = c.req.header("x-unipile-signature");
+  // Unipile does not sign webhook payloads. Our auth model: when the webhook
+  // is registered with Unipile, we attach a custom request header
+  // `X-Plot-Webhook-Token: <UNIPILE_WEBHOOK_SECRET>`. Receivers compare the
+  // header to the configured secret in constant time.
+  const presented = c.req.header("x-plot-webhook-token");
   const bodyText = await c.req.text();
-  if (
-    !signature ||
-    !(await verifySignature(bodyText, signature, c.env.UNIPILE_WEBHOOK_SECRET))
-  ) {
-    logger.warn("Hosted-auth webhook signature mismatch");
+  if (!presented || !constantTimeEquals(presented, c.env.UNIPILE_WEBHOOK_SECRET)) {
+    logger.warn("Hosted-auth webhook token mismatch");
     return c.json({ ok: false }, 401);
   }
 
@@ -76,30 +77,11 @@ type HostedWebhookEvent = {
   [k: string]: unknown;
 };
 
-async function verifySignature(
-  body: string,
-  signatureHeader: string,
-  secret: string
-): Promise<boolean> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(body)
-  );
-  const expected = Array.from(new Uint8Array(mac))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  if (expected.length !== signatureHeader.length) return false;
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= expected.charCodeAt(i) ^ signatureHeader.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
 }
