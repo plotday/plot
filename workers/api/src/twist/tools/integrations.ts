@@ -3240,7 +3240,23 @@ export class Integrations extends Tool implements IAuth {
           this.getChannelAccess(provider, actorId as ActorId),
         ]);
 
-        const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
+        // Self-heal: hosted-auth providers (LinkedIn, future WhatsApp/Instagram)
+        // can land here with an empty providerData.fullName when the initial
+        // /users/me probe at auth time failed (rate limit, transient). Re-try
+        // the probe lazily here so the modal eventually shows the right label
+        // without forcing the user to re-auth — important because the auth
+        // hop itself is rate-limited by the provider and risks an account
+        // ban under repeated attempts.
+        const refreshedTokenData = await this.maybeRefreshHostedProviderData(
+          provider,
+          actorId,
+          tokenData
+        );
+        const effectiveTokenData = refreshedTokenData ?? tokenData;
+
+        const email = effectiveTokenData
+          ? this.extractEmail(effectiveTokenData.providerData)
+          : null;
 
         // contact.name is intentionally NOT used as the account label — it's
         // the connected person's display name, not the workspace/account
@@ -3253,9 +3269,9 @@ export class Integrations extends Tool implements IAuth {
         // email (Google, Microsoft) the email is surfaced separately below.
         // For providers whose `extractAccountLabel` returns the email we also
         // reuse it as the label so the UI shows something.
-        const name: string | null = tokenData?.providerData
+        const name: string | null = effectiveTokenData?.providerData
           ? (PROVIDER_CONFIGS[provider]?.extractAccountLabel?.(
-              tokenData.providerData
+              effectiveTokenData.providerData
             ) ?? null)
           : null;
 
@@ -3636,6 +3652,56 @@ export class Integrations extends Tool implements IAuth {
     }
 
     return null;
+  }
+
+  /**
+   * For hosted-auth providers, lazily refill `providerData.fullName` /
+   * `email` from the vendor when the values landed empty at auth time.
+   * Returns the updated tokenData if a refresh happened, null otherwise.
+   *
+   * Failure is non-fatal: this is best-effort backfill for UI labels.
+   */
+  private async maybeRefreshHostedProviderData(
+    provider: AuthProvider,
+    actorId: string,
+    tokenData: StoredTokenData | null
+  ): Promise<StoredTokenData | null> {
+    if (!tokenData?.providerData) return null;
+    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") return null;
+    const hosted = tokenData.providerData as Partial<{
+      fullName: string | null;
+      accountId: string;
+    }>;
+    if (hosted.fullName) return null;
+    const accountId = hosted.accountId ?? tokenData.access_token;
+    if (!accountId) return null;
+
+    try {
+      const { UnipileClient } = await import("./unipile/client");
+      const client = new UnipileClient(this.env);
+      const profile = await client.getOwnProfile({ accountId });
+      const fullName = profile.name && profile.name.trim() ? profile.name : null;
+      const email = profile.specifics?.email ?? null;
+      if (!fullName && !email) return null;
+
+      const merged: StoredTokenData = {
+        ...tokenData,
+        providerData: {
+          ...(tokenData.providerData as object),
+          fullName: fullName ?? (hosted as { fullName?: string | null }).fullName ?? null,
+          email,
+          userId:
+            profile.provider_id ??
+            (tokenData.providerData as { userId?: string }).userId ??
+            accountId,
+        } as ProviderData,
+      };
+      await this.store.set(`auth_token:${provider}:${actorId}`, merged);
+      return merged;
+    } catch {
+      // Vendor probe failed — accept the stale data, try again next modal open.
+      return null;
+    }
   }
 
   /**
