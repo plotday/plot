@@ -4,6 +4,7 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
+import { Options, type OptionsSchema } from "@plotday/twister/options";
 import type {
   Actor,
   NewContact,
@@ -11,22 +12,21 @@ import type {
   Note,
   Thread,
 } from "@plotday/twister/plot";
+import { Callbacks } from "@plotday/twister/tools/callbacks";
 import {
   AuthProvider,
-  Integrations,
-  type Authorization,
   type AuthToken,
+  type Authorization,
   type Channel,
+  Integrations,
 } from "@plotday/twister/tools/integrations";
-import { Callbacks } from "@plotday/twister/tools/callbacks";
-import { Tasks } from "@plotday/twister/tools/tasks";
 import { Network } from "@plotday/twister/tools/network";
-import { Options, type OptionsSchema } from "@plotday/twister/options";
+import { Tasks } from "@plotday/twister/tools/tasks";
 import {
-  LinkedInMessaging,
   type LinkedInChat,
   type LinkedInInvitation,
   type LinkedInMessage,
+  LinkedInMessaging,
   type LinkedInProfile,
 } from "@plotday/unipile";
 
@@ -40,14 +40,12 @@ const PROVIDER_KEY = "linkedin";
 const OPTIONS_SCHEMA = {
   importMessages: {
     type: "boolean",
-    label: "Import direct messages",
-    description: "Sync your LinkedIn DMs into Plot.",
+    label: "Sync direct messages",
     default: true,
   },
   importInvitations: {
     type: "boolean",
-    label: "Import connection requests",
-    description: "Sync inbound LinkedIn connection requests into Plot.",
+    label: "Sync connection requests",
     default: true,
   },
 } as const satisfies OptionsSchema;
@@ -65,6 +63,7 @@ export class LinkedIn extends Connector<LinkedIn> {
 
   readonly provider = AuthProvider.LinkedIn;
   readonly scopes = LinkedIn.SCOPES;
+  readonly singleChannel = true;
   readonly linkTypes = [
     {
       type: TYPE_MESSAGE,
@@ -97,6 +96,13 @@ export class LinkedIn extends Connector<LinkedIn> {
       callbacks: build(Callbacks),
       tasks: build(Tasks),
     };
+  }
+
+  override async getAccountName(
+    auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string | null> {
+    return auth?.actor.name ?? null;
   }
 
   async getChannels(
@@ -220,7 +226,9 @@ export class LinkedIn extends Connector<LinkedIn> {
         channelId,
         limit: 1,
       });
-      const target = result.invitations.find((i) => i.id === event.invitationId);
+      const target = result.invitations.find(
+        (i) => i.id === event.invitationId
+      );
       if (!target) return;
       const link = buildInvitationLink(target, false);
       if (link) await this.tools.integrations.saveLinks([link]);
@@ -372,7 +380,9 @@ function joinParticipantNames(profiles: LinkedInProfile[]): string {
   if (profiles.length === 1) return profiles[0]!.fullName;
   if (profiles.length === 2)
     return `${profiles[0]!.fullName}, ${profiles[1]!.fullName}`;
-  return `${profiles[0]!.fullName}, ${profiles[1]!.fullName} +${profiles.length - 2}`;
+  return `${profiles[0]!.fullName}, ${profiles[1]!.fullName} +${
+    profiles.length - 2
+  }`;
 }
 
 function buildInvitationLink(

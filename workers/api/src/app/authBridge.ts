@@ -202,29 +202,42 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
     receivedAt: number;
   };
 
-  // Fetch the Unipile account profile for label / userId.
-  let accountName: string | null = null;
+  // Fetch the connected user's PROVIDER-SIDE profile (LinkedIn member name,
+  // email, URN) — not the Unipile account label, which is just "Personal" or
+  // similar. The connector's onAuth uses `providerData.fullName` to label the
+  // connection in the integrations modal, so we want the real name.
+  let fullName: string | null = null;
+  let email: string | null = null;
   let userId: string = result.accountId;
   try {
     const client = new UnipileClient(c.env);
-    const account = await client.getAccount(result.accountId);
-    accountName = account.name ?? null;
-    userId = account.connection_params?.im?.id ?? result.accountId;
+    const profile = await client.getOwnProfile({ accountId: result.accountId });
+    fullName = profile.name && profile.name.trim() ? profile.name : null;
+    email = profile.specifics?.email ?? null;
+    userId = profile.provider_id ?? result.accountId;
   } catch (e) {
-    // Non-fatal: we can proceed without the profile. The connector's onAuth
-    // will store whatever we have; the label can be updated on next sync.
-    logger.warn("hosted/success: getAccount failed", {
+    // Non-fatal: fall back to whatever the account record says. The label can
+    // be updated by the connector's later getAccountName() override.
+    logger.warn("hosted/success: getOwnProfile failed", {
       error: e instanceof Error ? e.message : String(e),
       account_id: result.accountId,
     });
+    try {
+      const client = new UnipileClient(c.env);
+      const account = await client.getAccount(result.accountId);
+      fullName = account.name ?? null;
+      userId = account.connection_params?.im?.id ?? result.accountId;
+    } catch {
+      // Both calls failed — accept the placeholder.
+    }
   }
 
   const providerData: HostedAccountProviderData = {
     accountId: result.accountId,
     accountType: result.accountType,
     userId,
-    fullName: accountName,
-    email: null,
+    fullName,
+    email,
   };
 
   // Build a StoredTokenData-shaped object. The connector's onAuth receives

@@ -180,6 +180,15 @@ export class UnipileClient {
     });
   }
 
+  /** Fetch the profile of the user the account belongs to (LinkedIn member,
+   * WhatsApp number owner, etc.). Used at auth-completion time to populate
+   * the connection's display name. */
+  getOwnProfile(input: { accountId: string }): Promise<UnipileAttendee> {
+    return this.get<UnipileAttendee>(`/users/me`, {
+      account_id: input.accountId,
+    });
+  }
+
   // ---------- LinkedIn invitations ----------
 
   listReceivedInvitations(input: {
