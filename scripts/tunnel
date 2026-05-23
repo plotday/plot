@@ -6,33 +6,62 @@
 set -euo pipefail
 
 WORKSPACE_PATH="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_PATH="$WORKSPACE_PATH/.cloudflared/config.yml"
 
-start() {
+# When invoked from a git worktree, resolve to the main checkout so every
+# worktree shares one config, PID file, and log. Only one tunnel can run
+# anyway (single tunnel ID, single localhost:8787 origin).
+if GIT_COMMON_DIR=$(git -C "$WORKSPACE_PATH" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  WORKSPACE_PATH="$(dirname "$GIT_COMMON_DIR")"
+fi
+
+CONFIG_PATH="$WORKSPACE_PATH/.cloudflared/config.yml"
+PID_PATH="$WORKSPACE_PATH/.tunnel.pid"
+LOG_PATH="$WORKSPACE_PATH/.tunnel.log"
+
+require_config() {
   if [ ! -f "$CONFIG_PATH" ]; then
     echo "Error: Tunnel config not found at $CONFIG_PATH"
     echo "Run: pnpm tunnel:setup"
     exit 1
   fi
+}
 
+start() {
+  require_config
   echo "Starting Cloudflare Tunnel (api.kris.plot.day → localhost:8787)"
   cloudflared tunnel --config "$CONFIG_PATH" run
 }
 
 start_bg() {
-  if [ -f "$WORKSPACE_PATH/.tunnel.pid" ]; then
-    PID=$(cat "$WORKSPACE_PATH/.tunnel.pid")
+  if [ -f "$PID_PATH" ]; then
+    PID=$(cat "$PID_PATH")
     if ps -p "$PID" > /dev/null 2>&1; then
       echo "Tunnel already running (PID $PID)"
       return 0
     fi
   fi
 
+  require_config
+
   echo "Starting Cloudflare Tunnel in background..."
-  nohup cloudflared tunnel --config "$CONFIG_PATH" run > "$WORKSPACE_PATH/.tunnel.log" 2>&1 &
-  echo $! > "$WORKSPACE_PATH/.tunnel.pid"
-  echo "✓ Tunnel started (PID $(cat "$WORKSPACE_PATH/.tunnel.pid"))"
-  echo "  View logs: tail -f .tunnel.log"
+  nohup cloudflared tunnel --config "$CONFIG_PATH" run > "$LOG_PATH" 2>&1 &
+  PID=$!
+  echo "$PID" > "$PID_PATH"
+
+  # cloudflared can die immediately (bad credentials, port conflict, etc).
+  # Verify it's still running before claiming success.
+  sleep 1
+  if ! ps -p "$PID" > /dev/null 2>&1; then
+    rm -f "$PID_PATH"
+    echo "Error: Tunnel exited immediately. Last 20 log lines:"
+    tail -n 20 "$LOG_PATH" 2>/dev/null | sed 's/^/  /'
+    echo ""
+    echo "Full log: $LOG_PATH"
+    exit 1
+  fi
+
+  echo "✓ Tunnel started (PID $PID)"
+  echo "  View logs: tail -f $LOG_PATH"
 }
 
 stop() {
