@@ -416,6 +416,20 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
         PROVIDER_CONFIGS[p.provider as keyof typeof PROVIDER_CONFIGS]
           ?.authMode === "hosted"
     );
+    const refreshLogger = createLogger({
+      twist_instance_id: twistInstanceId,
+      route: "GET /twist/:id/integrations",
+      step: "auto-refresh",
+    });
+    refreshLogger.info("auto-refresh decision", {
+      hosted_providers: hostedProviders.map((p) => p.provider),
+      accounts_count: data.accounts.length,
+      syncables_count: data.syncables.length,
+      will_refresh:
+        hostedProviders.length > 0 &&
+        data.accounts.length > 0 &&
+        data.syncables.length === 0,
+    });
     if (
       hostedProviders.length > 0 &&
       data.accounts.length > 0 &&
@@ -432,6 +446,11 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
             continue;
           }
           try {
+            refreshLogger.info("refreshChannels call", {
+              path: pathStr,
+              provider: account.provider,
+              actor_id: account.actorId,
+            });
             const r = await twistWrapper.callCallback(
               pathStr.split(":"),
               "refreshChannels",
@@ -439,28 +458,33 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
               account.actorId
             );
             disposeRpc(r);
-          } catch (refreshErr) {
-            const refreshLogger = createLogger({
-              twist_instance_id: twistInstanceId,
-              route: "GET /twist/:id/integrations",
+            refreshLogger.info("refreshChannels returned", {
               provider: account.provider,
-              actor_id: account.actorId,
             });
+          } catch (refreshErr) {
             refreshLogger.warn(
               "auto-refresh channels failed",
               refreshErr instanceof Error
-                ? { error: refreshErr.message }
-                : { error: String(refreshErr) }
+                ? {
+                    provider: account.provider,
+                    actor_id: account.actorId,
+                    error: refreshErr.message,
+                  }
+                : {
+                    provider: account.provider,
+                    actor_id: account.actorId,
+                    error: String(refreshErr),
+                  }
             );
           }
         }
         // Re-read after refresh attempts.
         data = await integrations.getIntegrationData(currentActorId as any);
-      } catch (e) {
-        const refreshLogger = createLogger({
-          twist_instance_id: twistInstanceId,
-          route: "GET /twist/:id/integrations",
+        refreshLogger.info("auto-refresh post-read", {
+          syncables_count_after: data.syncables.length,
+          accounts_count_after: data.accounts.length,
         });
+      } catch (e) {
         refreshLogger.warn(
           "auto-refresh setup failed",
           e instanceof Error ? { error: e.message } : { error: String(e) }

@@ -3666,23 +3666,50 @@ export class Integrations extends Tool implements IAuth {
     actorId: string,
     tokenData: StoredTokenData | null
   ): Promise<StoredTokenData | null> {
-    if (!tokenData?.providerData) return null;
-    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") return null;
+    const logger = createLogger({
+      twist_instance_id: this.twistInstanceId,
+      step: "maybeRefreshHostedProviderData",
+      provider,
+      actor_id: actorId,
+    });
+    if (!tokenData?.providerData) {
+      logger.info("skip: no tokenData/providerData");
+      return null;
+    }
+    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") {
+      logger.info("skip: provider not hosted-auth");
+      return null;
+    }
     const hosted = tokenData.providerData as Partial<{
       fullName: string | null;
       accountId: string;
     }>;
-    if (hosted.fullName) return null;
+    if (hosted.fullName) {
+      logger.info("skip: fullName already populated");
+      return null;
+    }
     const accountId = hosted.accountId ?? tokenData.access_token;
-    if (!accountId) return null;
+    if (!accountId) {
+      logger.warn("skip: no accountId or access_token");
+      return null;
+    }
 
     try {
       const { UnipileClient } = await import("./unipile/client");
       const client = new UnipileClient(this.env);
+      logger.info("calling Unipile getOwnProfile", { account_id: accountId });
       const profile = await client.getOwnProfile({ accountId });
       const fullName = profile.name && profile.name.trim() ? profile.name : null;
       const email = profile.specifics?.email ?? null;
-      if (!fullName && !email) return null;
+      logger.info("Unipile getOwnProfile returned", {
+        has_name: !!fullName,
+        has_email: !!email,
+        provider_id: profile.provider_id ?? null,
+      });
+      if (!fullName && !email) {
+        logger.warn("Unipile profile lacked both name and email");
+        return null;
+      }
 
       const merged: StoredTokenData = {
         ...tokenData,
@@ -3697,9 +3724,12 @@ export class Integrations extends Tool implements IAuth {
         } as ProviderData,
       };
       await this.store.set(`auth_token:${provider}:${actorId}`, merged);
+      logger.info("providerData refreshed and persisted");
       return merged;
-    } catch {
-      // Vendor probe failed — accept the stale data, try again next modal open.
+    } catch (e) {
+      logger.warn("Unipile getOwnProfile threw", {
+        error: e instanceof Error ? e.message : String(e),
+      });
       return null;
     }
   }
