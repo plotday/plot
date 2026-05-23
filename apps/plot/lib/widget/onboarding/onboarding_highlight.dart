@@ -243,10 +243,10 @@ Rect _computeCutoutRect(
   final isRightPanel = target is ThreadTarget ||
       target is NamedThreadTarget ||
       panelTarget == PanelTarget.newThread;
-  // Agenda now lives in the left panel above priorities in multi-panel mode
-  // (see `PriorityPage`'s `ResizablePanelLayout(leftTop: …)`), so we cut out
-  // the whole left panel for both agenda and priorities steps and rely on
-  // the step's content alignment to anchor next to the relevant section.
+  // Agenda lives in the left panel below priorities in multi-panel mode
+  // (see `PriorityPage`'s `ResizablePanelLayout(leftBottom: …)`), so we cut
+  // out the whole left panel for both agenda and priorities steps and rely
+  // on the step's content alignment to anchor next to the relevant section.
   final isLeftPanel = panelTarget == PanelTarget.priorities ||
       panelTarget == PanelTarget.agenda;
   final isMiddlePanel = panelTarget == PanelTarget.feed;

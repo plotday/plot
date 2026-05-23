@@ -162,13 +162,13 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
               builder: (context, layoutState) {
                 // In single-panel mode UnifiedHeader sits above the panel
                 // layout. In multi-panel mode the panel layout splits the
-                // window into A (sidebar header + agenda + priorities) and
+                // window into A (sidebar header + priorities + agenda) and
                 // B (main header + shared squircle containing middle +
                 // right). The outer A|B divider runs top-to-bottom; the
                 // inner middle|right divider stays inside the squircle.
                 final panelLayout = ResizablePanelLayout(
-                  leftTop: const LeftPanelAgendaView(),
                   left: PrioritiesPanelContent(),
+                  leftBottom: const LeftPanelAgendaView(),
                   middle: PriorityPage(priorityId: priorityId),
                   child: BlocSelector<PriorityBloc, PriorityState, int>(
                     selector: (state) =>

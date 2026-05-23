@@ -88,20 +88,22 @@ Color _squircleBorderColor(BuildContext context) {
 class ResizablePanelLayout extends StatefulWidget {
   const ResizablePanelLayout({
     required this.left,
-    this.leftTop,
+    this.leftBottom,
     required this.middle,
     required this.child,
     super.key,
   });
 
-  /// Left panel (bottom of the vertical split when [leftTop] is provided).
+  /// Left panel (top of the vertical split when [leftBottom] is provided).
+  /// Rendered plain — no squircle chrome — and capped at 50% of the column
+  /// height when paired with [leftBottom].
   final Widget left;
 
-  /// Optional top section of the left panel. When provided, the left panel
-  /// is split vertically with [leftTop] on top and [left] on the bottom,
-  /// separated by a draggable horizontal divider whose position is
-  /// persisted across sessions.
-  final Widget? leftTop;
+  /// Optional bottom section of the left panel. When provided, the left
+  /// column is split vertically with [left] on top (plain, capped) and
+  /// [leftBottom] below (wrapped in a squircle card, fills remaining
+  /// space).
+  final Widget? leftBottom;
 
   /// Middle panel when all three are shown.
   /// When only two are shown, child is in the middle
@@ -188,11 +190,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
     );
   }
 
-  /// Body content of the left column (agenda squircle + priorities list).
-  /// The sidebar header sits above this in the column.
+  /// Body content of the left column (priorities list on top + agenda
+  /// squircle below). The sidebar header sits above this in the column.
   Widget _buildSidebarBody(BuildContext context) {
-    final bottom = widget.left;
-    if (widget.leftTop == null) {
+    if (widget.leftBottom == null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(
           _outerInset,
@@ -200,28 +201,28 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
           _halfGap,
           _outerInset,
         ),
-        child: bottom,
+        child: widget.left,
       );
     }
-    const agendaRadius = BorderRadius.all(Radius.circular(_panelRadius));
+    const bottomRadius = BorderRadius.all(Radius.circular(_panelRadius));
     final top = Padding(
       padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
-      child: _squircleCard(
-        context,
-        widget.leftTop!,
-        borderRadius: agendaRadius,
-      ),
+      child: widget.left,
     );
-    final priorities = Padding(
+    final bottom = Padding(
       padding: const EdgeInsets.fromLTRB(
         _outerInset,
         _outerInset / 2,
         _halfGap,
         _outerInset,
       ),
-      child: bottom,
+      child: _squircleCard(
+        context,
+        widget.leftBottom!,
+        borderRadius: bottomRadius,
+      ),
     );
-    return _LeftPanelVerticalSplit(top: top, bottom: priorities);
+    return _LeftPanelVerticalSplit(top: top, bottom: bottom);
   }
 
   /// Body content of the main column (middle + right panels sharing one
@@ -626,7 +627,7 @@ class _OuterHoverableResizableState extends State<_OuterHoverableResizable> {
                           height: overlayHeight,
                           color: (_hovered || _dragging)
                               ? colorScheme.accent
-                              // The gap between the agenda and main
+                              // The gap between the sidebar and main
                               // squircles is the visual divider — stay
                               // transparent at rest.
                               : const Color(0x00000000),
@@ -911,9 +912,9 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
   }
 }
 
-/// Vertically stacks the left panel: agenda on top fills available space,
-/// priorities on the bottom sizes to its content with a 50% height cap and
-/// scrolls when it would exceed that cap.
+/// Vertically stacks the left panel: priorities on top sizes to its
+/// content with a 50% height cap (scrolls when it would exceed that cap),
+/// agenda on the bottom fills the remaining space.
 class _LeftPanelVerticalSplit extends StatelessWidget {
   const _LeftPanelVerticalSplit({required this.top, required this.bottom});
 
@@ -924,14 +925,14 @@ class _LeftPanelVerticalSplit extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxBottomHeight = constraints.maxHeight * 0.5;
+        final maxTopHeight = constraints.maxHeight * 0.5;
         return Column(
           children: [
-            Expanded(child: top),
             ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxBottomHeight),
-              child: bottom,
+              constraints: BoxConstraints(maxHeight: maxTopHeight),
+              child: top,
             ),
+            Expanded(child: bottom),
           ],
         );
       },
