@@ -626,5 +626,9 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     authMode: "hosted",
     // parseTokenResponse is unused for hosted-auth providers; the webhook
     // handler builds HostedAccountProviderData directly from Unipile responses.
+    extractAccountLabel: (d) => {
+      const hosted = d as HostedAccountProviderData;
+      return hosted.fullName || hosted.email || null;
+    },
   },
 };

@@ -225,19 +225,23 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     return c.json({ message: "Twist config not found" }, 404);
   }
 
+  // Read twist_instance options once — both branches surface them in the
+  // integrations modal so connector-level boolean toggles render in either
+  // path.
+  const pt = await c.var.db
+    .selectFrom("twist_instance")
+    .select("options")
+    .where("id", "=", twistInstanceId)
+    .executeTakeFirst();
+  const ptConfig: Record<string, unknown> = pt?.options
+    ? typeof pt.options === "string"
+      ? JSON.parse(pt.options)
+      : pt.options
+    : {};
+  const hasConfig = Object.keys(ptConfig).length > 0;
+
   if (config.providers.length === 0) {
     // No-provider connector: check if options have been configured (via /connect)
-    const pt = await c.var.db
-      .selectFrom("twist_instance")
-      .select("options")
-      .where("id", "=", twistInstanceId)
-      .executeTakeFirst();
-    const ptConfig = pt?.options
-      ? typeof pt.options === "string"
-        ? JSON.parse(pt.options)
-        : pt.options
-      : {};
-    const hasConfig = Object.keys(ptConfig).length > 0;
 
     if (!hasConfig) {
       // Include options schema and twist metadata for the connect form
@@ -407,11 +411,36 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
 
   const teamDomains = await getTeamDomains(c.var.db);
 
+  // Surface connector-level Options to the integrations modal the same way
+  // the no-provider branch does — connectors with a provider (LinkedIn,
+  // WhatsApp, Instagram on Unipile, but also any future OAuth connector
+  // with toggles) should be able to expose user-configurable booleans.
+  let optionsSchema = config.optionsSchema ?? null;
+  if (!optionsSchema && twistInfo.twistOptions) {
+    try {
+      optionsSchema = typeof twistInfo.twistOptions === "string"
+        ? JSON.parse(twistInfo.twistOptions)
+        : twistInfo.twistOptions;
+    } catch { /* ignore parse errors */ }
+  }
+  let optionsConfig: Record<string, unknown> | null = null;
+  if (optionsSchema && hasConfig) {
+    const masked = { ...ptConfig };
+    for (const [key, def] of Object.entries(optionsSchema)) {
+      if (def.type === "text" && "secure" in def && (def as any).secure) {
+        if (key in masked) masked[key] = true;
+      }
+    }
+    optionsConfig = masked;
+  }
+
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
     syncables: allChannels,
     singleChannel: config.singleChannel,
+    optionsSchema,
+    optionsConfig,
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
     teamDomains,
