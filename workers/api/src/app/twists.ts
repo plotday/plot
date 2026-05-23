@@ -360,6 +360,26 @@ twists.post("/twist/draft", async (c) => {
   }
   const body = parseResult.data;
   try {
+    // TEMP(linkedin-unipile): reuse an existing LinkedIn draft for this
+    // user/twist pair instead of creating a new one. New drafts get fresh
+    // twist_instance_ids, which orphans the hosted-auth token already
+    // captured in DO storage (and forces another rate-limited re-auth).
+    // Revert before merging.
+    const LINKEDIN_TWIST_ID = "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
+    if (String(body.twistId) === LINKEDIN_TWIST_ID) {
+      const existing = await c.var.db
+        .selectFrom("twist_instance")
+        .select(["id"])
+        .where("owner_id", "=", c.var.user.id)
+        .where("twist_id", "=", String(body.twistId) as never)
+        .where("draft", "=", true)
+        .executeTakeFirst();
+      if (existing) {
+        const logger = createLogger({ twist_instance_id: existing.id });
+        logger.warn("TEMP: reusing existing LinkedIn draft to preserve hosted-auth token");
+        return c.json({ id: existing.id });
+      }
+    }
     const draft = await createDraft(
       c.var.db,
       c.var.user.id,
@@ -448,6 +468,25 @@ twists.delete("/twist/draft/:id", async (c) => {
   );
   if (!access.ok) return c.json(notFoundResponse, 404);
   try {
+    // TEMP(linkedin-unipile): skip deletion so the captured hosted-auth
+    // token in DO storage survives modal close/reopen and we can iterate
+    // on the setup-modal UX without re-auth (LinkedIn rate-limits the
+    // hosted-auth flow). Revert this branch before merging.
+    const draft = await c.var.db
+      .selectFrom("twist_instance")
+      .select(["twist_id"])
+      .where("id", "=", draftId)
+      .where("draft", "=", true)
+      .executeTakeFirst();
+    const LINKEDIN_TWIST_ID = "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
+    if (draft?.twist_id === LINKEDIN_TWIST_ID) {
+      const logger = createLogger({ twist_instance_id: draftId });
+      logger.warn(
+        "TEMP: skipping draft deletion to preserve hosted-auth token",
+        { twist_id: draft.twist_id }
+      );
+      return c.json({ success: true });
+    }
     await deleteDraft(c.var.db, draftId);
     return c.json({ success: true });
   } catch (error) {
