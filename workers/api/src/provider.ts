@@ -84,6 +84,21 @@ export type LinkedInProviderData = {
   email: string | null;
 };
 
+// Hosted-account provider data for Unipile-backed connections (LinkedIn,
+// WhatsApp, Instagram, etc.).  The `accountId` doubles as the access_token
+// because every Unipile API call needs it.
+export type HostedAccountProviderData = {
+  /** Vendor-issued account id (Unipile account_id). Stored as the user's
+   * access_token because every Unipile call needs it. */
+  accountId: string;
+  /** Vendor's source type, e.g. "LINKEDIN" — the impl uses this to route. */
+  accountType: string;
+  /** Provider-side user id (e.g. LinkedIn member URN). */
+  userId: string;
+  fullName: string | null;
+  email: string | null;
+};
+
 // Union of all provider-specific data types
 export type ProviderData =
   | SlackProviderData
@@ -96,7 +111,8 @@ export type ProviderData =
   | AsanaProviderData
   | TodoistProviderData
   | AirtableProviderData
-  | LinkedInProviderData;
+  | LinkedInProviderData
+  | HostedAccountProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
@@ -397,6 +413,11 @@ const parseLinearTokenResponse = async (
 
 type ProviderConfig = {
   name: string;
+  /** Defaults to "oauth" when omitted. Hosted-auth providers (Unipile-backed
+   * LinkedIn, WhatsApp, Instagram) generate the redirect URL via a third-party
+   * hosted link API and complete via webhook + polling rather than a code
+   * exchange. */
+  authMode?: "oauth" | "hosted";
   // Omitted for non-OAuth providers (e.g. LinkedIn cookie auth). When absent,
   // GenerateAuthUrl / HandleOauthCallback refuse to handle this provider —
   // the client must use the provider's dedicated auth endpoint instead.
@@ -451,7 +472,7 @@ export function extractUserId(provider: AuthProvider, providerData: ProviderData
     case "slack":
       return (providerData as SlackProviderData).authed_user?.id ?? null;
     case "linkedin":
-      return (providerData as LinkedInProviderData).userId ?? null;
+      return (providerData as HostedAccountProviderData).userId ?? null;
     default:
       return null;
   }
@@ -622,39 +643,8 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
   },
   linkedin: {
     name: "LinkedIn",
-    // Cookie-based auth: no OAuth endpoints. The client posts the captured
-    // li_at cookie to POST /twist/:id/integrations/linkedin/cookie instead
-    // of going through GenerateAuthUrl / HandleOauthCallback. The endpoint
-    // assembles a synthetic OAuth-shaped tokenInfo and invokes the
-    // connector's `onAuth` callback; this parser then lifts the
-    // LinkedIn-specific fields out of that tokenInfo.
-    parseTokenResponse: (response: any): LinkedInProviderData | undefined => {
-      if (
-        !response?.access_token ||
-        !response?.jsessionid ||
-        !response?.userAgent ||
-        !response?.userId
-      ) {
-        return undefined;
-      }
-      const platform = response.platform as
-        | "ios"
-        | "android"
-        | "desktop"
-        | "web"
-        | undefined;
-      return {
-        jsessionid: response.jsessionid,
-        userAgent: response.userAgent,
-        platform: platform ?? "web",
-        userId: response.userId,
-        fullName: response.fullName ?? "",
-        email: response.email ?? null,
-      };
-    },
-    extractAccountLabel: (d) => {
-      const li = d as LinkedInProviderData;
-      return li.fullName || li.email || null;
-    },
+    authMode: "hosted",
+    // parseTokenResponse is unused for hosted-auth providers; the webhook
+    // handler builds HostedAccountProviderData directly from Unipile responses.
   },
 };
