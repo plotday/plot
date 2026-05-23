@@ -383,25 +383,42 @@ twists.post("/twist/draft", async (c) => {
     if (
       twistRow?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID
     ) {
+      // Pick the most recent LinkedIn instance for this user, regardless
+      // of draft status. Activated instances (`draft=false`) still own
+      // their DO storage where the auth_token lives; flipping draft back
+      // to true lets Flutter's setup flow resume on that exact instance
+      // instead of creating a fresh empty draft.
       const existing = await c.var.db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .select([
           "twist_instance.id",
           "twist_instance.twist_id",
+          "twist_instance.draft",
           "twist.twist_package_id",
+          "twist_instance.created_at",
         ])
         .where("twist_instance.owner_id", "=", c.var.user.id)
         .where("twist.twist_package_id", "=", LINKEDIN_TWIST_PACKAGE_ID)
-        .where("twist_instance.draft", "=", true)
+        .where("twist_instance.archived_at", "is", null)
         .orderBy("twist_instance.created_at", "desc")
         .executeTakeFirst();
-      debug.warn("existing draft lookup", { existing });
+      debug.warn("existing LinkedIn instance lookup", { existing });
       if (existing) {
-        debug.warn("TEMP: reusing existing LinkedIn draft to preserve hosted-auth token", {
+        if (!existing.draft) {
+          await c.var.db
+            .updateTable("twist_instance")
+            .set({ draft: true } as never)
+            .where("id", "=", existing.id)
+            .execute();
+          debug.warn("TEMP: flipped activated instance back to draft", {
+            id: existing.id,
+          });
+        }
+        debug.warn("TEMP: reusing existing LinkedIn instance to preserve hosted-auth token", {
           existing_id: existing.id,
           existing_twist_id: existing.twist_id,
-          existing_twist_package_id: existing.twist_package_id,
+          existing_was_draft: existing.draft,
         });
         return c.json({ id: existing.id });
       }
