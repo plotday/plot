@@ -23,7 +23,7 @@
     "gen-seed": "pnpm --filter @plotday/db run gen-seed",
     "pre-commit": "nx run-many -t pre-commit --exclude plot",
     "lint": "pnpm lint:pnpm-installed && nx run-many -t lint --exclude plot",
-    "lint:pnpm-installed": "pnpm install --silent --frozen-lockfile",
+    "lint:pnpm-installed": "if [ \"$CI\" = \"true\" ]; then echo 'CI=true; skipping pnpm install (already run by workflow)'; else pnpm install --silent --frozen-lockfile; fi",
     "test": "nx run-many -t test --exclude plot",
     "test:watch": "pnpm -r run test:watch",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

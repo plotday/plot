@@ -21,6 +21,8 @@ pnpm --filter @plotday/<package> lint
 pnpm lint
 ```
 
+**Schema/migration changes**: if `git status` shows changes under `libs/db/schema/` or `libs/db/migrations/`, you MUST also have a matching change to `libs/db/src/types.ts`. The CI `db:lint` step runs `tsx scripts/gen-types.ts --check` and fails if the committed types are out of sync with the DB. `pnpm apply-migrations` regenerates `types.ts` automatically (skipped only when `$CI=true`), so the normal workflow handles it — but if you edited a migration without running apply, run `pnpm --filter @plotday/db run types` manually and stage the diff. Don't skip this: a stale `types.ts` is the single most common cause of red CI on schema PRs.
+
 ### 2. Backwards Compatibility
 
 Review all changed APIs (REST endpoints, database schemas, RPC functions, Twister SDK types) and verify:
