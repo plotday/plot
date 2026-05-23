@@ -152,6 +152,22 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
 
+  connectors/linkedin:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:*
+        version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:*
+        version: link:../../libs/unipile
+    devDependencies:
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   libs/classifier:
     dependencies:
       kysely:
