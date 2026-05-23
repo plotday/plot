@@ -5,6 +5,11 @@ import type { Bindings } from "../env";
 import { authRateLimiter } from "../middleware/rate-limit";
 import { Integrations } from "../twist/tools/integrations";
 import { completeSlackInstall } from "./slackInstall";
+import { invokeWebhookCallback } from "../twist/invoke-webhook";
+import { disposeRpc } from "../utils/rpc";
+import { createLogger } from "@plotday/worker-util";
+import { UnipileClient } from "../twist/tools/unipile/client";
+import type { HostedAccountProviderData } from "../provider";
 
 const authBridgeRoutes = new Hono<{ Bindings: Bindings }>();
 
@@ -91,6 +96,198 @@ authBridgeRoutes.get("/auth/bridge", async (c) => {
       e instanceof Error ? e.message : "Authentication failed",
     );
   }
+});
+
+// GET /auth/hosted/success - Unipile hosted-auth success redirect.
+// Unipile redirects the WebView here after the user completes hosted auth.
+// We poll for the `hosted_auth_result:${state}` written by the /hook/messaging
+// webhook handler, invoke the connector's onAuth callback, then return HTML
+// that deep-links back to the client's original redirectUri.
+authBridgeRoutes.get("/auth/hosted/success", async (c) => {
+  const logger = createLogger({ route: "auth/hosted/success" });
+  const state = c.req.query("state");
+  if (!state) {
+    logger.warn("hosted/success: missing state");
+    return htmlBridgeResponse({ bridgeUri: null, state: undefined, error: "Missing state" });
+  }
+
+  const storageObj = c.env.STORAGE.get(c.env.STORAGE.idFromName("auth"));
+
+  // Retrieve the in-flight auth state written by GenerateHostedAuthUrl.
+  let bridgeUri: string | null = null;
+  let callbackToken: string | null = null;
+  let provider: string | null = null;
+  try {
+    const raw = await storageObj.get(`hosted_auth:${state}`);
+    if (raw) {
+      const parsed = superjson.parse<{
+        provider: string;
+        callback: string | null;
+        redirectUri: string;
+        createdAt: number;
+      }>(raw);
+      bridgeUri = parsed.redirectUri ?? null;
+      callbackToken = parsed.callback ?? null;
+      provider = parsed.provider ?? null;
+    }
+  } catch (e) {
+    logger.warn("hosted/success: failed to parse hosted_auth state", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
+  if (!callbackToken || !provider) {
+    logger.warn("hosted/success: missing callback or provider in stored state", { state });
+    return htmlBridgeResponse({
+      bridgeUri,
+      state,
+      error: "Auth session not found or expired. Please try again.",
+    });
+  }
+
+  // Poll for the webhook result (written by handleAccountConnected in hook-messaging).
+  // Unipile usually delivers account.connected before the success-redirect lands,
+  // but the redirect can occasionally race the webhook. Retry for up to 15s.
+  const deadline = Date.now() + 15_000;
+  let resultJson: string | null = null;
+  while (Date.now() < deadline) {
+    resultJson = await storageObj.get(`hosted_auth_result:${state}`);
+    if (resultJson) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!resultJson) {
+    logger.warn("hosted/success: webhook result not received within timeout", { state });
+    return htmlBridgeResponse({
+      bridgeUri,
+      state,
+      error: "Connection timed out. Please try again.",
+    });
+  }
+
+  const result = JSON.parse(resultJson) as {
+    accountId: string;
+    accountType: string;
+    receivedAt: number;
+  };
+
+  // Fetch the Unipile account profile for label / userId.
+  let accountName: string | null = null;
+  let userId: string = result.accountId;
+  try {
+    const client = new UnipileClient(c.env);
+    const account = await client.getAccount(result.accountId);
+    accountName = account.name ?? null;
+    userId = account.connection_params?.im?.id ?? result.accountId;
+  } catch (e) {
+    // Non-fatal: we can proceed without the profile. The connector's onAuth
+    // will store whatever we have; the label can be updated on next sync.
+    logger.warn("hosted/success: getAccount failed", {
+      error: e instanceof Error ? e.message : String(e),
+      account_id: result.accountId,
+    });
+  }
+
+  const providerData: HostedAccountProviderData = {
+    accountId: result.accountId,
+    accountType: result.accountType,
+    userId,
+    fullName: accountName,
+    email: null,
+  };
+
+  // Build a StoredTokenData-shaped object. The connector's onAuth receives
+  // this as its tokenInfo argument, exactly as the LinkedIn cookie handler does.
+  const tokenInfo = {
+    access_token: result.accountId,
+    refresh_token: null as string | null,
+    expires_at: null as number | null,
+    scopes: [] as string[],
+    client_id: "hosted",
+    providerData,
+    provider,
+  };
+
+  // Invoke the connector's onAuth callback — the same path used by every
+  // OAuth provider and the LinkedIn cookie handler.
+  try {
+    const cbResult = await invokeWebhookCallback(
+      c.env,
+      c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
+      callbackToken,
+      tokenInfo
+    );
+    disposeRpc(cbResult);
+    logger.info("hosted/success: onAuth completed", {
+      state,
+      account_id: result.accountId,
+    });
+  } catch (error) {
+    logger.error(
+      "hosted/success: onAuth invocation failed",
+      error as Error,
+      { state, account_id: result.accountId }
+    );
+    try {
+      c.var.tracker?.captureException(error as Error, {
+        state,
+        account_id: result.accountId,
+        route: "auth/hosted/success",
+      });
+    } catch {
+      // Tracker not available — already logged above.
+    }
+    // Clean up state even on error so stale keys don't accumulate.
+    await Promise.all([
+      storageObj.clear(`hosted_auth:${state}`),
+      storageObj.clear(`hosted_auth_result:${state}`),
+    ]);
+    return htmlBridgeResponse({
+      bridgeUri,
+      state,
+      error: "Sign-in failed. Please try again.",
+    });
+  }
+
+  // Clean up state keys.
+  await Promise.all([
+    storageObj.clear(`hosted_auth:${state}`),
+    storageObj.clear(`hosted_auth_result:${state}`),
+  ]);
+
+  return htmlBridgeResponse({ bridgeUri, state });
+});
+
+// GET /auth/hosted/failure - Unipile hosted-auth failure redirect.
+// Renders a failure page and deep-links back to the client's redirectUri.
+authBridgeRoutes.get("/auth/hosted/failure", async (c) => {
+  const logger = createLogger({ route: "auth/hosted/failure" });
+  const state = c.req.query("state");
+
+  // Best-effort: recover bridgeUri so we can deep-link back to the app.
+  let bridgeUri: string | null = null;
+  if (state) {
+    try {
+      const storageObj = c.env.STORAGE.get(c.env.STORAGE.idFromName("auth"));
+      const raw = await storageObj.get(`hosted_auth:${state}`);
+      if (raw) {
+        const parsed = superjson.parse<{ redirectUri?: string }>(raw);
+        bridgeUri = parsed.redirectUri ?? null;
+      }
+      // Clean up — the user will need to restart the flow.
+      await storageObj.clear(`hosted_auth:${state}`);
+    } catch (e) {
+      logger.warn("hosted/failure: error reading stored state", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  logger.info("hosted/failure: auth did not complete", { state });
+  return htmlBridgeResponse({
+    bridgeUri,
+    state,
+    error: "LinkedIn sign-in was not completed. Please try again.",
+  });
 });
 
 // Slack returns these error codes when workspace install policy blocks the
