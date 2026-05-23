@@ -65,25 +65,6 @@ export type AirtableProviderData = {
   email: string | null;
 };
 
-// LinkedIn uses a captured `li_at` session cookie (not OAuth), plus a few
-// extras the Voyager API needs on every request:
-//  - `jsessionid` doubles as the CSRF token (sent as the `csrf-token` header)
-//  - `userAgent` is pinned to the device that captured the cookie so the
-//    server-side fingerprint matches the client's
-//  - the profile triple identifies the connected account and gives the
-//    Connections UI a label without an extra round-trip
-//
-// Uses `email` and `userId` to match the conventions extractEmail /
-// extractUserId expect.
-export type LinkedInProviderData = {
-  jsessionid: string;
-  userAgent: string;
-  platform: "ios" | "android" | "desktop" | "web";
-  userId: string;     // urn:li:fsd_profile:<id>
-  fullName: string;
-  email: string | null;
-};
-
 // Hosted-account provider data for Unipile-backed connections (LinkedIn,
 // WhatsApp, Instagram, etc.).  The `accountId` doubles as the access_token
 // because every Unipile API call needs it.
@@ -111,7 +92,6 @@ export type ProviderData =
   | AsanaProviderData
   | TodoistProviderData
   | AirtableProviderData
-  | LinkedInProviderData
   | HostedAccountProviderData;
 
 // Combined storage type

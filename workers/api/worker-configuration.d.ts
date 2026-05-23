@@ -29,7 +29,6 @@ declare namespace Cloudflare {
 		APP_SYNC_RATE_LIMITER: RateLimit;
 		SDK_RATE_LIMITER: RateLimit;
 		WEBHOOK_ASYNC_RATE_LIMITER: RateLimit;
-		LINKEDIN_RATE_LIMITER: RateLimit;
 		LOADER: WorkerLoader;
 		BROWSER: Fetcher;
 		AI: Ai;
@@ -121,7 +120,6 @@ declare namespace Cloudflare {
 		APP_SYNC_RATE_LIMITER: RateLimit;
 		SDK_RATE_LIMITER: RateLimit;
 		WEBHOOK_ASYNC_RATE_LIMITER: RateLimit;
-		LINKEDIN_RATE_LIMITER: RateLimit;
 		LOADER: WorkerLoader;
 		BROWSER: Fetcher;
 		AI: Ai;
@@ -212,7 +210,6 @@ declare namespace Cloudflare {
 		APP_SYNC_RATE_LIMITER?: RateLimit;
 		SDK_RATE_LIMITER?: RateLimit;
 		WEBHOOK_ASYNC_RATE_LIMITER?: RateLimit;
-		LINKEDIN_RATE_LIMITER?: RateLimit;
 		LOADER?: WorkerLoader;
 		BROWSER?: Fetcher;
 		AI?: Ai;

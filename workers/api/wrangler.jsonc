@@ -165,11 +165,6 @@
           "name": "WEBHOOK_ASYNC_RATE_LIMITER",
           "namespace_id": "1009",
           "simple": { "limit": 3000, "period": 60 }
-        },
-        {
-          "name": "LINKEDIN_RATE_LIMITER",
-          "namespace_id": "1010",
-          "simple": { "limit": 6, "period": 10 }
         }
       ],
       "worker_loaders": [
@@ -430,11 +425,6 @@
           "name": "WEBHOOK_ASYNC_RATE_LIMITER",
           "namespace_id": "1009",
           "simple": { "limit": 3000, "period": 60 }
-        },
-        {
-          "name": "LINKEDIN_RATE_LIMITER",
-          "namespace_id": "1010",
-          "simple": { "limit": 6, "period": 10 }
         }
       ],
       "worker_loaders": [
