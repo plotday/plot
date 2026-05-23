@@ -3702,20 +3702,60 @@ export class Integrations extends Tool implements IAuth {
     try {
       const { UnipileClient } = await import("./unipile/client");
       const client = new UnipileClient(this.env);
+
+      // Three-stage probe to maximise the chance of getting a friendly name:
+      //   1. /users/me?account_id=X — minimal, returns provider_id always
+      //   2. /users/{provider_id}?account_id=X — rich profile (the LinkedIn
+      //      /users/me endpoint omits `name` for the calling member)
+      //   3. /accounts/{id} — Unipile's stored account label as fallback
       logger.info("calling Unipile getOwnProfile", { account_id: accountId });
-      const profile = await client.getOwnProfile({ accountId });
-      const fullName = profile.name && profile.name.trim() ? profile.name : null;
-      const email = profile.specifics?.email ?? null;
+      const me = await client.getOwnProfile({ accountId });
       logger.info("Unipile getOwnProfile returned", {
-        has_name: !!fullName,
-        has_email: !!email,
-        provider_id: profile.provider_id ?? null,
+        has_name: !!me.name,
+        has_email: !!me.specifics?.email,
+        provider_id: me.provider_id ?? null,
+        specifics_keys: Object.keys(me.specifics ?? {}),
       });
-      if (!fullName && !email) {
-        logger.warn("Unipile profile lacked both name and email");
-        return null;
+
+      let fullName = me.name && me.name.trim() ? me.name : null;
+      let email = me.specifics?.email ?? null;
+      let publicIdentifier = me.specifics?.public_identifier ?? null;
+      const userId = me.provider_id ?? null;
+
+      if ((!fullName || !email) && userId) {
+        try {
+          const rich = await client.getAttendee({ providerId: userId });
+          logger.info("Unipile getAttendee returned", {
+            has_name: !!rich.name,
+            has_email: !!rich.specifics?.email,
+          });
+          if (!fullName && rich.name && rich.name.trim()) fullName = rich.name;
+          if (!email && rich.specifics?.email) email = rich.specifics.email;
+          if (!publicIdentifier && rich.specifics?.public_identifier) {
+            publicIdentifier = rich.specifics.public_identifier;
+          }
+        } catch (e) {
+          logger.info("Unipile getAttendee threw (continuing)", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
       }
 
+      if (!fullName) {
+        try {
+          const account = await client.getAccount(accountId);
+          logger.info("Unipile getAccount returned", {
+            has_name: !!account.name,
+          });
+          if (account.name && account.name.trim()) fullName = account.name;
+        } catch (e) {
+          logger.info("Unipile getAccount threw (continuing)", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
+      // Even if we don't get a name, persist the userId / accountId we know.
       const existing = (tokenData.providerData ?? {}) as Record<string, unknown>;
       const merged: StoredTokenData = {
         ...tokenData,
@@ -3725,15 +3765,19 @@ export class Integrations extends Tool implements IAuth {
           accountType:
             (existing.accountType as string | undefined) ?? "LINKEDIN",
           fullName: fullName ?? (existing.fullName as string | null) ?? null,
-          email,
+          email: email ?? (existing.email as string | null) ?? null,
           userId:
-            profile.provider_id ??
+            userId ??
             (existing.userId as string | undefined) ??
             accountId,
         } as ProviderData,
       };
       await this.store.set(`auth_token:${provider}:${actorId}`, merged);
-      logger.info("providerData refreshed and persisted");
+      logger.info("providerData refreshed and persisted", {
+        fullName_persisted: !!fullName,
+        email_persisted: !!email,
+        public_identifier: publicIdentifier,
+      });
       return merged;
     } catch (e) {
       logger.warn("Unipile getOwnProfile threw", {
