@@ -364,15 +364,25 @@ twists.post("/twist/draft", async (c) => {
     // user/twist pair instead of creating a new one. New drafts get fresh
     // twist_instance_ids, which orphans the hosted-auth token already
     // captured in DO storage (and forces another rate-limited re-auth).
-    // Revert before merging.
-    const LINKEDIN_TWIST_ID = "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
-    if (String(body.twistId) === LINKEDIN_TWIST_ID) {
+    // twist_id on twist_instance is the bigint twist.id, so resolve through
+    // the package UUID first. Revert before merging.
+    const LINKEDIN_TWIST_PACKAGE_ID =
+      "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
+    const twistRow = await c.var.db
+      .selectFrom("twist")
+      .select(["id", "twist_package_id"])
+      .where("id", "=", String(body.twistId) as never)
+      .executeTakeFirst();
+    if (
+      twistRow?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID
+    ) {
       const existing = await c.var.db
         .selectFrom("twist_instance")
         .select(["id"])
         .where("owner_id", "=", c.var.user.id)
         .where("twist_id", "=", String(body.twistId) as never)
         .where("draft", "=", true)
+        .orderBy("created_at", "desc")
         .executeTakeFirst();
       if (existing) {
         const logger = createLogger({ twist_instance_id: existing.id });
@@ -474,12 +484,14 @@ twists.delete("/twist/draft/:id", async (c) => {
     // hosted-auth flow). Revert this branch before merging.
     const draft = await c.var.db
       .selectFrom("twist_instance")
-      .select(["twist_id"])
-      .where("id", "=", draftId)
-      .where("draft", "=", true)
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+      .select(["twist_instance.twist_id", "twist.twist_package_id"])
+      .where("twist_instance.id", "=", draftId)
+      .where("twist_instance.draft", "=", true)
       .executeTakeFirst();
-    const LINKEDIN_TWIST_ID = "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
-    if (draft?.twist_id === LINKEDIN_TWIST_ID) {
+    const LINKEDIN_TWIST_PACKAGE_ID =
+      "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
+    if (draft?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID) {
       const logger = createLogger({ twist_instance_id: draftId });
       logger.warn(
         "TEMP: skipping draft deletion to preserve hosted-auth token",
