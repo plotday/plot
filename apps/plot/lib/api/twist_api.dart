@@ -289,34 +289,6 @@ class TwistApi {
     return TwistAuthUrl.fromJson(response);
   }
 
-  /// Post a captured LinkedIn session cookie to validate it server-side
-  /// and create the integration record.
-  ///
-  /// LinkedIn does not expose an OAuth scope for personal messaging, so the
-  /// app captures the `li_at` cookie via an in-app webview pointed at
-  /// linkedin.com/login and posts it here. The server probes LinkedIn's
-  /// Voyager API to validate the cookie + discover the user's profile, then
-  /// invokes the connector's `onAuth` callback exactly like the OAuth path.
-  /// On success returns the connected account's display name.
-  static Future<TwistLinkedInCookieResult> postLinkedInCookie({
-    required String twistInstanceId,
-    required String liAt,
-    required String jsessionid,
-    required String userAgent,
-    required String platform,
-  }) async {
-    final response = await api.post<Map<String, dynamic>>(
-      '/twist/$twistInstanceId/integrations/linkedin/cookie',
-      body: {
-        'liAt': liAt,
-        'jsessionid': jsessionid,
-        'userAgent': userAgent,
-        'platform': platform,
-      },
-    );
-    return TwistLinkedInCookieResult.fromJson(response);
-  }
-
   /// Remove an integration account
   static Future<void> removeIntegration({
     required String twistInstanceId,
@@ -679,24 +651,6 @@ class TwistAuthUrl {
       clientId: json['clientId'] as String,
       state: json['state'] as String,
       callback: json['callback'] as String,
-    );
-  }
-}
-
-/// Result of POST /twist/:id/integrations/linkedin/cookie.
-class TwistLinkedInCookieResult {
-  final String accountLabel;
-  final String userId;
-
-  const TwistLinkedInCookieResult({
-    required this.accountLabel,
-    required this.userId,
-  });
-
-  factory TwistLinkedInCookieResult.fromJson(Map<String, dynamic> json) {
-    return TwistLinkedInCookieResult(
-      accountLabel: (json['accountLabel'] as String?) ?? '',
-      userId: (json['userId'] as String?) ?? '',
     );
   }
 }
