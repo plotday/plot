@@ -305,6 +305,14 @@ class WindowState extends State<Window> with WindowListener {
   // ordering guarantee between sibling finalizers). The resulting
   // sqlite3_finalize on a stale pointer crashes the process. Exiting before
   // VM teardown skips the finalizer pass entirely.
+  //
+  // The companion guard lives in `AppDelegate.swift`:
+  // `applicationShouldTerminateAfterLastWindowClosed` returns `false`. Without
+  // it, `_hideWindowForShutdown()` below would order the window out, AppKit
+  // would schedule its terminate-after-last-window timer on the next runloop
+  // tick, and that timer would call `[NSApplication terminate:]` long before
+  // we reach `io.exit(0)` — racing us straight into the crash described
+  // above.
   Future<void> _runShutdownWithWatchdog() async {
     const watchdog = Duration(seconds: 8);
     try {

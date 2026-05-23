@@ -3,8 +3,25 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  // Return false so AppKit does NOT schedule its
+  // `_scheduleCheckForTerminateAfterLastWindowClosed` timer when the last
+  // visible window goes away. Dart-side shutdown (window.dart's
+  // `onWindowClose` / `onExitRequested`) hides the window before draining
+  // Store.stop, so a `true` here lets AppKit's timer fire on the next runloop
+  // tick — long before the 8s watchdog's `io.exit(0)` can run — racing it
+  // into `[NSApplication terminate:]` → `FlutterEngine shutDownEngine` →
+  // `Dart_ShutdownIsolate`, where `package:sqlite3`'s NativeFinalizer pass
+  // calls `sqlite3_finalize` on a stmt whose connection's arena was already
+  // freed by `sqlite3_close_v2` (no ordering between sibling finalizers).
+  // Crash. See `_runShutdownWithWatchdog` in window.dart for the full story.
+  //
+  // With `false`, the Dart shutdown path is the only thing that terminates
+  // the process, via its explicit `io.exit(0)`. Cmd+Q / Apple-menu Quit /
+  // MenuBarController's quit item still call `NSApp.terminate(nil)`, which
+  // routes through `applicationShouldTerminate:` → Dart's `onExitRequested`
+  // → same `io.exit(0)`.
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    return true
+    return false
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
