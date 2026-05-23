@@ -48,8 +48,11 @@ describe("UnipileClient", () => {
       })
     );
     const client = new UnipileClient(env);
-    await expect(
-      client.listChats({ accountId: "acct-1" })
-    ).rejects.toMatchObject({ name: "UnipileApiError", status: 401 });
+    const err = await client
+      .listChats({ accountId: "acct-1" })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnipileApiError);
+    expect((err as UnipileApiError).status).toBe(401);
   });
 });
