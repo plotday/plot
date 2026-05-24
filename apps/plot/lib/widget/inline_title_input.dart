@@ -36,7 +36,6 @@ class InlineTitleInputState extends State<InlineTitleInput> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.title ?? '');
-    _controller.addListener(_handleTextChange);
     _focusNode = FocusNode();
     _focusNode.addListener(_handleFocusChange);
   }
@@ -53,7 +52,6 @@ class InlineTitleInputState extends State<InlineTitleInput> {
   void dispose() {
     _focusNode.removeListener(_handleFocusChange);
     _focusNode.dispose();
-    _controller.removeListener(_handleTextChange);
     _controller.dispose();
     super.dispose();
   }
@@ -72,10 +70,6 @@ class InlineTitleInputState extends State<InlineTitleInput> {
     });
   }
 
-  void _handleTextChange() {
-    if (_expanded && mounted) setState(() {});
-  }
-
   void _handleFocusChange() {
     if (!_focusNode.hasFocus && _expanded) {
       _commit(_controller.text);
@@ -83,18 +77,20 @@ class InlineTitleInputState extends State<InlineTitleInput> {
   }
 
   Future<void> _commit(String value) async {
+    if (!_expanded) return; // Already committing; ignore re-entry.
+    setState(() => _expanded = false);
     final trimmed = value.trim();
     final next = trimmed.isEmpty ? null : trimmed;
     if (next != widget.title) {
       await widget.onChanged(next);
     }
-    if (mounted) setState(() => _expanded = false);
   }
 
   Future<void> _clearAndCollapse() async {
+    if (!_expanded) return;
+    setState(() => _expanded = false);
     _controller.clear();
     if (widget.title != null) await widget.onChanged(null);
-    if (mounted) setState(() => _expanded = false);
   }
 
   void _cancel() {
@@ -172,7 +168,6 @@ class InlineTitleInputState extends State<InlineTitleInput> {
   }
 
   Widget _buildExpanded(BuildContext context) {
-    final hasText = _controller.text.trim().isNotEmpty;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): _cancel,
@@ -181,10 +176,16 @@ class InlineTitleInputState extends State<InlineTitleInput> {
         mainAxisSize: MainAxisSize.min,
         spacing: 6,
         children: [
-          FaIcon(
-            hasText ? FontAwesomeIcons.pen : PlotIcon.sparkles,
-            size: context.theme.iconSizes.base,
-            color: context.theme.plotColors.muted,
+          ListenableBuilder(
+            listenable: _controller,
+            builder: (context, _) {
+              final hasText = _controller.text.trim().isNotEmpty;
+              return FaIcon(
+                hasText ? FontAwesomeIcons.pen : PlotIcon.sparkles,
+                size: context.theme.iconSizes.base,
+                color: context.theme.plotColors.muted,
+              );
+            },
           ),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360, minWidth: 200),
