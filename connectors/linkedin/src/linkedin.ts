@@ -46,6 +46,21 @@ type SyncState = {
   lastInvitationHighWaterMs: number | null;
 };
 
+type RelationsSyncState = {
+  cursor: string | null;
+  completed: boolean;
+  lastCompletedAt: number | null;
+  lastPageAt: number;
+};
+
+const RELATIONS_PAGE_LIMIT = 100;
+const RELATIONS_PAGE_MIN_DELAY_MS = 2 * 60 * 60 * 1000;
+const RELATIONS_PAGE_MAX_DELAY_MS = 4 * 60 * 60 * 1000;
+const RELATIONS_PAGE_ERROR_MIN_DELAY_MS = 4 * 60 * 60 * 1000;
+const RELATIONS_PAGE_ERROR_MAX_DELAY_MS = 8 * 60 * 60 * 1000;
+const RELATIONS_REFRESH_MIN_DELAY_MS = 18 * 60 * 60 * 1000;
+const RELATIONS_REFRESH_MAX_DELAY_MS = 30 * 60 * 60 * 1000;
+
 export class LinkedIn extends Connector<LinkedIn> {
   static readonly PROVIDER = AuthProvider.LinkedIn;
   static readonly SCOPES: string[] = [];
@@ -120,11 +135,28 @@ export class LinkedIn extends Connector<LinkedIn> {
 
     const batch = await this.callback(this.syncBatch, channel.id, true);
     await this.runTask(batch);
+
+    // Relations backfill — populates Plot contacts so compose can offer
+    // every LinkedIn 1st-degree connection as a recipient. First page runs
+    // immediately; subsequent pages jittered 2–4h apart. See
+    // syncRelationsPage for the rationale.
+    await this.set(`relations_state_${channel.id}`, {
+      cursor: null,
+      completed: false,
+      lastCompletedAt: null,
+      lastPageAt: 0,
+    } satisfies RelationsSyncState);
+    const firstRelationsPage = await this.callback(
+      this.syncRelationsPage,
+      channel.id
+    );
+    await this.runTask(firstRelationsPage);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`webhook_callback_${channel.id}`);
+    await this.clear(`relations_state_${channel.id}`);
   }
 
   async syncBatch(channelId: string, initialSync: boolean): Promise<void> {
@@ -199,6 +231,124 @@ export class LinkedIn extends Connector<LinkedIn> {
     await this.runTask(next, {
       runAt: new Date(Date.now() + 30 * 60 * 1000),
     });
+  }
+
+  /**
+   * Conservative paginated backfill of the connected LinkedIn account's
+   * 1st-degree relations into Plot's contact table. Each call fetches one
+   * page (~100 relations), saves them as contacts, and reschedules itself
+   * with a 2–4h jittered delay. Stops rescheduling once Unipile returns
+   * `nextCursor === null`. The refresh task (refreshRelationsList) rearms
+   * this loop ~once per day to pick up new connections.
+   *
+   * Pacing is deliberate. Unipile's docs explicitly warn against
+   * fixed-interval polling of the relations list; the 2–4h randomized
+   * window matches their "first page only a few times a day at random
+   * intervals" guidance and keeps the connector well under the documented
+   * ~100/day profile-retrieval ceiling (this endpoint is the list, not
+   * a per-relation profile fetch).
+   */
+  async syncRelationsPage(channelId: string): Promise<void> {
+    const state = (await this.get<RelationsSyncState>(
+      `relations_state_${channelId}`
+    )) ?? {
+      cursor: null,
+      completed: false,
+      lastCompletedAt: null,
+      lastPageAt: 0,
+    };
+
+    if (state.completed) {
+      // Refresh task is what un-completes us. Don't reschedule.
+      return;
+    }
+
+    let nextCursor: string | null;
+    try {
+      const page = await this.tools.linkedin.listRelations({
+        channelId,
+        cursor: state.cursor,
+        limit: RELATIONS_PAGE_LIMIT,
+      });
+
+      const contacts: NewContact[] = page.relations
+        .map(profileToContact)
+        .filter((c): c is NewContact => c != null);
+
+      if (contacts.length > 0) {
+        await this.tools.integrations.saveContacts(contacts);
+      }
+
+      nextCursor = page.nextCursor;
+
+      const completed = nextCursor === null;
+      await this.set(`relations_state_${channelId}`, {
+        cursor: nextCursor,
+        completed,
+        lastCompletedAt: completed ? Date.now() : state.lastCompletedAt,
+        lastPageAt: Date.now(),
+      } satisfies RelationsSyncState);
+
+      if (completed) {
+        const refreshDelay =
+          RELATIONS_REFRESH_MIN_DELAY_MS +
+          Math.random() *
+            (RELATIONS_REFRESH_MAX_DELAY_MS - RELATIONS_REFRESH_MIN_DELAY_MS);
+        const refresh = await this.callback(
+          this.refreshRelationsList,
+          channelId
+        );
+        await this.runTask(refresh, {
+          runAt: new Date(Date.now() + refreshDelay),
+        });
+        return;
+      }
+    } catch (error) {
+      console.warn(
+        `LinkedIn relations backfill page failed for channel ${channelId}`,
+        error
+      );
+      // Cursor stays put. Retry on a longer backoff so we don't immediately
+      // re-enter a rate-limited window.
+      const errorDelay =
+        RELATIONS_PAGE_ERROR_MIN_DELAY_MS +
+        Math.random() *
+          (RELATIONS_PAGE_ERROR_MAX_DELAY_MS -
+            RELATIONS_PAGE_ERROR_MIN_DELAY_MS);
+      const retry = await this.callback(this.syncRelationsPage, channelId);
+      await this.runTask(retry, {
+        runAt: new Date(Date.now() + errorDelay),
+      });
+      return;
+    }
+
+    const delayMs =
+      RELATIONS_PAGE_MIN_DELAY_MS +
+      Math.random() *
+        (RELATIONS_PAGE_MAX_DELAY_MS - RELATIONS_PAGE_MIN_DELAY_MS);
+    const next = await this.callback(this.syncRelationsPage, channelId);
+    await this.runTask(next, { runAt: new Date(Date.now() + delayMs) });
+  }
+
+  /**
+   * Rearm the relations backfill loop after a completed pass. Resets the
+   * cursor to null and immediately schedules `syncRelationsPage`. Catches
+   * relations added/removed since the last full pass without needing a
+   * fixed-cadence polling loop.
+   */
+  async refreshRelationsList(channelId: string): Promise<void> {
+    const state = await this.get<RelationsSyncState>(
+      `relations_state_${channelId}`
+    );
+    await this.set(`relations_state_${channelId}`, {
+      cursor: null,
+      completed: false,
+      lastCompletedAt: state?.lastCompletedAt ?? null,
+      lastPageAt: state?.lastPageAt ?? 0,
+    } satisfies RelationsSyncState);
+
+    const next = await this.callback(this.syncRelationsPage, channelId);
+    await this.runTask(next, { runAt: new Date() });
   }
 
   async onWebhookEvent(
