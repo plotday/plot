@@ -1509,7 +1509,6 @@ class _ActivityFeedTabHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
     final fontSize = context.theme.typography.sm.fontSize;
-    final muted = context.theme.plotColors.veryMuted;
 
     // Reschedule-all applies to every thread currently in the active
     // tab's natives. Only action tabs populate natives — Catch up and
@@ -1536,19 +1535,11 @@ class _ActivityFeedTabHeader extends StatelessWidget {
     final showRescheduleButton = !atBottom && natives.isNotEmpty;
     final reserveButtonSpace = !atBottom;
 
-    // Build the centred row of tab labels separated by pipes.
+    // Build the centred row of tab labels with `lg` gaps between them.
     final tabsRow = <Widget>[];
     for (var i = 0; i < ActivityTab.values.length; i++) {
       if (i > 0) {
-        tabsRow.add(
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: spacing.sm),
-            child: Text(
-              '|',
-              style: TextStyle(color: muted, fontSize: fontSize),
-            ),
-          ),
-        );
+        tabsRow.add(SizedBox(width: spacing.lg));
       }
       tabsRow.add(
         _ActivityTabLabel(
@@ -1631,20 +1622,38 @@ class _ActivityTabLabel extends StatefulWidget {
 class _ActivityTabLabelState extends State<_ActivityTabLabel> {
   bool _hovering = false;
 
+  IconData? get _icon => switch (widget.tab) {
+    ActivityTab.respond => PlotIcon.send,
+    ActivityTab.doIt => PlotIcon.clipboardCheck,
+    ActivityTab.read => PlotIcon.bookOpenLines,
+    _ => null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final fg = context.theme.colors.foreground;
     final muted = context.theme.plotColors.veryMuted;
     final color = widget.isActive || _hovering ? fg : muted;
+    final icon = _icon;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => context.read<PriorityBloc>().selectActivityTab(widget.tab),
-        child: Text(
-          widget.tab.label,
-          style: TextStyle(color: color, fontSize: widget.fontSize),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: widget.fontSize, color: color),
+              SizedBox(width: context.theme.spacing.sm),
+            ],
+            Text(
+              widget.tab.label,
+              style: TextStyle(color: color, fontSize: widget.fontSize),
+            ),
+          ],
         ),
       ),
     );

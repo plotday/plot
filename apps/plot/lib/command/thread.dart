@@ -1019,7 +1019,7 @@ class MoveThreadToRespond extends _MoveThreadToTab {
          'respond',
          onUpdate: onUpdate,
          title: 'To respond',
-         icon: PlotIcon.comment,
+         icon: PlotIcon.send,
          shortcut: platformSingleActivator(LogicalKeyboardKey.keyR),
        );
 }
