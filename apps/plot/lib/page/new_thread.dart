@@ -942,12 +942,15 @@ class NewThreadPageState extends State<NewThreadPage> {
         selectedIds.length > _pinnedActors.length ||
         pendingEmails.length > _pinnedEmails.length ||
         groupIds.length > _pinnedGroups.length;
+    final isPrivate =
+        selectedIds.isEmpty && groupIds.isEmpty && pendingEmails.isEmpty;
 
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 8,
       runSpacing: 8,
       children: [
+        _buildLockChip(context, isPrivate: isPrivate),
         for (final group in _pinnedGroups)
           _buildGroupChip(
             context,
@@ -1039,6 +1042,65 @@ class NewThreadPageState extends State<NewThreadPage> {
         groups: Value(current.isEmpty ? null : current),
       ),
     );
+  }
+
+  Widget _buildLockChip(BuildContext context, {required bool isPrivate}) {
+    const chipRadius = BorderRadius.all(Radius.circular(24));
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: isMobilePlatform() ? 10 : 5,
+    );
+    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+
+    Widget buildChip(bool hovered) {
+      return FButton(
+        onPress: isPrivate ? null : _clearShareTargets,
+        variant: isPrivate ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(borderRadius: chipRadius),
+            ),
+          ]),
+          contentStyle: FButtonContentStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.value(chipPadding),
+          ),
+        ),
+        mainAxisSize: MainAxisSize.min,
+        child: Opacity(
+          opacity: isPrivate || hovered ? 1.0 : (isDark ? 0.5 : 0.9),
+          child: FaIcon(
+            FontAwesomeIcons.lock,
+            size: context.theme.iconSizes.sm,
+            color: isPrivate ? null : context.theme.plotColors.veryMuted,
+          ),
+        ),
+      );
+    }
+
+    final chip = isPrivate
+        ? buildChip(false)
+        : _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
+
+    if (!hasPhysicalKeyboard()) return chip;
+    return FTooltip(
+      tipBuilder: (context, controller) =>
+          Text(isPrivate ? 'Private' : 'Make private'),
+      child: chip,
+    );
+  }
+
+  Future<void> _clearShareTargets() async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    await bloc.updateDraft(
+      bloc.state.draft.copyWith(
+        contacts: const Value(null),
+        groups: const Value(null),
+        inviteEmails: const Value(null),
+      ),
+    );
+    if (mounted) _refreshPinnedChips();
   }
 
   Widget _buildContactChip(
