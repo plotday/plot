@@ -206,31 +206,37 @@ class NewThreadPageState extends State<NewThreadPage> {
     try {
       final targets = await loadCreateTargets();
       if (!mounted) return;
-      setState(() => _allConnectionTargets = targets);
-      _refreshPinnedConnections();
+      setState(() {
+        _allConnectionTargets = targets;
+        _pinnedConnections = _rankConnections(targets);
+      });
     } catch (e, t) {
       log.warning('[NewThreadPage._loadConnections] failed', e, t);
+      Tracker.captureException(e, t);
     }
   }
 
   void _refreshPinnedConnections() {
-    if (_allConnectionTargets.isEmpty) {
-      setState(() => _pinnedConnections = const []);
-      return;
-    }
+    setState(() {
+      _pinnedConnections = _rankConnections(_allConnectionTargets);
+    });
+  }
+
+  /// Pure helper that ranks [targets] using the per-priority MRU and returns
+  /// the top 3 chips to pin. Returns an empty list if [targets] is empty so
+  /// the chip row collapses cleanly.
+  List<CreateTarget> _rankConnections(List<CreateTarget> targets) {
+    if (targets.isEmpty) return const [];
     final bloc = context.read<PriorityBloc>();
     final priorityId = bloc.state.draft.priority.id.toString();
     final prefs = context.read<LocalPreferencesBloc>();
-    final keys = _allConnectionTargets.map((t) => t.key).toList();
+    final keys = targets.map((t) => t.key).toList();
     final ranked = prefs.rankConnectionsByMru(
       keys: keys,
       priorityId: priorityId,
     );
-    final byKey = {for (final t in _allConnectionTargets) t.key: t};
-    setState(() {
-      _pinnedConnections =
-          ranked.take(3).map((k) => byKey[k]!).toList(growable: false);
-    });
+    final byKey = {for (final t in targets) t.key: t};
+    return ranked.take(3).map((k) => byKey[k]!).toList(growable: false);
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -1148,8 +1154,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   CreateLinkUserAction? get _activeCreateAction {
-    final note = context.read<PriorityBloc>().state.draftNote;
-    return note.actions?.whereType<CreateLinkUserAction>().firstOrNull;
+    final note = _priorityBloc?.state.draftNote;
+    return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
   }
 
   bool _isConnectionActive(CreateTarget target) {
@@ -1161,7 +1167,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Future<void> _toggleConnection(CreateTarget target) async {
-    final bloc = context.read<PriorityBloc>();
+    // Use the cached bloc: _openConnectionPicker awaits the modal before
+    // calling us, so context.read could read from a stale tree.
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
     final note = bloc.state.draftNote;
     final actions = List<UserAction>.from(note.actions ?? const []);
     final wasActive = _isConnectionActive(target);
