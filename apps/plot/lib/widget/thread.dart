@@ -647,12 +647,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // optimistic update even when dispatched from a context that has
       // shed the priority page tree.
       final priorityBloc = buildContext.read<PriorityBloc?>();
-      final currentTab = priorityBloc?.state.activeTab;
       return ContextMenu(
         items: (close) => threadCommands(
           activity,
           priorityBloc: priorityBloc,
-          currentTab: currentTab,
         )
             .map(
               (cmd) => FItem(
@@ -733,13 +731,11 @@ class ThreadCommands extends HookWidget {
     // share button after the more-commands menu so the affordance stays
     // visible without competing with tag buttons for the take() limit.
     final isShared = isThreadShared(activity);
-    final currentTab = context.watch<PriorityBloc?>()?.state.activeTab;
     final rawHoverCommands = threadCommands(
       activity,
       skipPrimary: true,
       skipInfrequent: true,
       showEventTiming: showEventTiming,
-      currentTab: currentTab,
     ).toList();
     // PickScheduleThread is surfaced via the thread-icon hover swap, so
     // exclude it from the trailing command row to avoid duplication.

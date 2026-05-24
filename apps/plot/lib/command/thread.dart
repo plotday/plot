@@ -13,7 +13,6 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
-import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
@@ -2497,7 +2496,6 @@ class ShowThreadCommands extends ShowCommands {
               thread,
               open: open,
               priorityBloc: bloc,
-              currentTab: bloc?.state.activeTab,
             ),
           );
         },
@@ -3309,7 +3307,6 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
   PriorityBloc? priorityBloc,
-  ActivityTab? currentTab,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   return threadCommandGroupsSync(
@@ -3317,7 +3314,6 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
     open: open,
     showSplitThread: hasMerged,
     priorityBloc: priorityBloc,
-    currentTab: currentTab,
   );
 }
 
@@ -3328,14 +3324,12 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool open = true,
   bool showSplitThread = false,
   PriorityBloc? priorityBloc,
-  ActivityTab? currentTab,
 }) {
   final commands = threadCommands(
     thread,
     open: open,
     showSplitThread: showSplitThread,
     priorityBloc: priorityBloc,
-    currentTab: currentTab,
   );
 
   return [
@@ -3344,15 +3338,19 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   ];
 }
 
-/// Returns the move-to-tab commands in tab order, omitting the one that
-/// matches [currentTab] (since the thread is already there). Called from
-/// both `threadCommands` (hover secondaries) and the leading-icon
-/// primary picker.
-List<Command> moveToTabCommands(Thread thread, ActivityTab? currentTab) {
+/// Returns the move-to-tab commands in tab order, omitting the one
+/// matching the thread's current state — that command is already
+/// represented elsewhere in the row. For non-todo threads the leading
+/// icon button is [MoveThreadToRespond] (regardless of which tab is
+/// active), so "To respond" would otherwise duplicate it in the hover
+/// secondaries. For todo threads the move command matching
+/// [Thread.scheduleAction] is the no-op for the row's current tab.
+List<Command> moveToTabCommands(Thread thread) {
+  final String? currentAction = thread.todo ? thread.scheduleAction : 'respond';
   return [
-    if (currentTab != ActivityTab.respond) MoveThreadToRespond(thread),
-    if (currentTab != ActivityTab.doIt) MoveThreadToDo(thread),
-    if (currentTab != ActivityTab.read) MoveThreadToRead(thread),
+    if (currentAction != 'respond') MoveThreadToRespond(thread),
+    if (currentAction != 'do') MoveThreadToDo(thread),
+    if (currentAction != 'read') MoveThreadToRead(thread),
   ];
 }
 
@@ -3364,7 +3362,6 @@ List<Command> threadCommands(
   bool showSplitThread = false,
   bool showEventTiming = false,
   PriorityBloc? priorityBloc,
-  ActivityTab? currentTab,
 }) {
   // Viewers can only open threads, not modify them
   if (thread.priority.isViewer) {
@@ -3397,12 +3394,10 @@ List<Command> threadCommands(
   }
 
   // Move-to-tab affordances (To respond / To do / To read), minus the
-  // current tab's own command and minus whatever the primary already is
-  // (avoids "To respond" appearing both as primary and as a hover button
-  // on non-todo threads in the Catch up / All tabs).
-  final moveCommands = moveToTabCommands(thread, currentTab)
-      .where((cmd) => cmd.runtimeType != primary?.runtimeType)
-      .toList();
+  // one matching the thread's current state — that command is already
+  // represented by the leading icon button (e.g. "To respond" on non-todo
+  // threads) or the action tab the thread already lives in.
+  final moveCommands = moveToTabCommands(thread);
 
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;

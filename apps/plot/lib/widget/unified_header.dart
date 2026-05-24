@@ -896,7 +896,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             ? await threadCommandGroups(
                 thread,
                 priorityBloc: priorityBloc,
-                currentTab: priorityBloc?.state.activeTab,
               )
             : <StaticCommandGroup>[];
         return Commands(
