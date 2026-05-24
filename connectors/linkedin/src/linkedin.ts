@@ -249,6 +249,12 @@ export class LinkedIn extends Connector<LinkedIn> {
    * a per-relation profile fetch).
    */
   async syncRelationsPage(channelId: string): Promise<void> {
+    // Channel was disabled mid-loop: bail without rescheduling.
+    const webhookCallback = await this.get<string>(
+      `webhook_callback_${channelId}`
+    );
+    if (!webhookCallback) return;
+
     const state = (await this.get<RelationsSyncState>(
       `relations_state_${channelId}`
     )) ?? {
@@ -348,6 +354,12 @@ export class LinkedIn extends Connector<LinkedIn> {
    * fixed-cadence polling loop.
    */
   async refreshRelationsList(channelId: string): Promise<void> {
+    // Channel was disabled mid-loop: bail without rescheduling.
+    const webhookCallback = await this.get<string>(
+      `webhook_callback_${channelId}`
+    );
+    if (!webhookCallback) return;
+
     const state = await this.get<RelationsSyncState>(
       `relations_state_${channelId}`
     );
