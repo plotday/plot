@@ -4,6 +4,7 @@ import {
   normalizeMessage,
   normalizeInvitation,
   normalizeProfile,
+  normalizeRelation,
 } from "./normalize";
 
 describe("normalize", () => {
@@ -139,5 +140,47 @@ describe("normalize", () => {
       specifics: { public_identifier: "ghost" },
     });
     expect(profile.fullName).toBe("ghost");
+  });
+
+  it("normalizeRelation maps the flat relation shape to LinkedInProfile", () => {
+    const profile = normalizeRelation({
+      object: "UserRelation",
+      member_id: "ACoAA111",
+      member_urn: "urn:li:member:111",
+      connection_urn: "urn:li:fs_miniProfile:111",
+      first_name: "Grace",
+      last_name: "Hopper",
+      headline: "Rear Admiral, COBOL pioneer",
+      public_identifier: "ghopper",
+      public_profile_url: "https://www.linkedin.com/in/ghopper",
+      profile_picture_url: "https://media.licdn.com/g.jpg",
+      created_at: 1700000000,
+    });
+    expect(profile.id).toBe("ACoAA111");
+    expect(profile.fullName).toBe("Grace Hopper");
+    expect(profile.publicIdentifier).toBe("ghopper");
+    expect(profile.headline).toBe("Rear Admiral, COBOL pioneer");
+    expect(profile.pictureUrl).toBe("https://media.licdn.com/g.jpg");
+    expect(profile.url).toBe("https://www.linkedin.com/in/ghopper");
+    expect(profile.email).toBeNull();
+    expect(profile.isSelf).toBe(false);
+  });
+
+  it("normalizeRelation falls back to publicIdentifier when names are empty", () => {
+    const profile = normalizeRelation({
+      object: "UserRelation",
+      member_id: "ACoAA222",
+      member_urn: "urn:li:member:222",
+      connection_urn: "urn:li:fs_miniProfile:222",
+      first_name: "",
+      last_name: "",
+      headline: "",
+      public_identifier: "anon",
+      public_profile_url: "https://www.linkedin.com/in/anon",
+      created_at: 1700000000,
+    });
+    expect(profile.fullName).toBe("anon");
+    expect(profile.headline).toBeNull();
+    expect(profile.pictureUrl).toBeNull();
   });
 });

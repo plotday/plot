@@ -12,6 +12,7 @@ import type {
   UnipileChat,
   UnipileInvitation,
   UnipileMessage,
+  UnipileRelation,
 } from "./types";
 
 export function normalizeProfile(att: UnipileAttendee): LinkedInProfile {
@@ -109,5 +110,35 @@ export function normalizeInvitation(
     },
     message: inv.invitation_text,
     sentAt: new Date(inv.parsed_datetime),
+  };
+}
+
+/**
+ * Normalize a Unipile `UserRelation` (from GET /users/relations) into Plot's
+ * `LinkedInProfile` shape. Relations are 1st-degree connections; they never
+ * represent the connected account itself, so `isSelf` is always false.
+ * Email is never present in this endpoint's payload — separate profile
+ * fetches would be needed, but those count toward LinkedIn's ~100/day
+ * profile-retrieval ceiling and are intentionally avoided.
+ */
+export function normalizeRelation(rel: UnipileRelation): LinkedInProfile {
+  const first = rel.first_name?.trim() ?? "";
+  const last = rel.last_name?.trim() ?? "";
+  const joined = [first, last].filter(Boolean).join(" ");
+  const fullName = joined || rel.public_identifier || "Unknown";
+  const headlineTrimmed = rel.headline?.trim() ?? "";
+  return {
+    id: rel.member_id,
+    isSelf: false,
+    publicIdentifier: rel.public_identifier || null,
+    fullName,
+    headline: headlineTrimmed || null,
+    email: null,
+    pictureUrl: rel.profile_picture_url ?? null,
+    url:
+      rel.public_profile_url ||
+      (rel.public_identifier
+        ? `https://www.linkedin.com/in/${rel.public_identifier}`
+        : null),
   };
 }
