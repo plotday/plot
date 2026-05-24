@@ -481,14 +481,12 @@ class NewThreadPageState extends State<NewThreadPage> {
       children: [
         _buildPriorityChipRow(context, state),
         if (connectionRow != null) ...[
-          SizedBox(height: context.theme.spacing.md),
+          SizedBox(height: context.theme.spacing.lg),
           connectionRow,
         ],
-        SizedBox(height: context.theme.spacing.md),
+        SizedBox(height: context.theme.spacing.lg),
         _buildWithSelector(context, state),
-        // No explicit gap before the title row — the 44px InlineTitleInput
-        // centers the chip vertically, and the ~14px of padding above it
-        // visually matches `spacing.md`.
+        SizedBox(height: context.theme.spacing.lg),
         _buildTitleRow(context, state),
       ],
     );
