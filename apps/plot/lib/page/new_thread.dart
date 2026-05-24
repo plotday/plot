@@ -429,9 +429,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildPriorityChipRow(context, state),
-        const SizedBox(height: 8),
-        _buildWithLabel(context, state),
-        const SizedBox(height: 8),
+        SizedBox(height: context.theme.spacing.md),
         _buildWithSelector(context, state),
       ],
     );
@@ -444,17 +442,14 @@ class NewThreadPageState extends State<NewThreadPage> {
     final draftIdStr = state.draft.id.toString();
     final auto = ThreadsBase.autoFileIds.contains(draftIdStr);
     final showLeadingSparkles = !state.context.root && !auto;
-    return Center(
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 4,
-        runSpacing: 8,
-        children: [
-          if (showLeadingSparkles) _buildAutoSparklesToggle(context),
-          _buildPriorityChip(context, state, auto: auto),
-        ],
-      ),
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      runSpacing: 8,
+      children: [
+        if (showLeadingSparkles) _buildAutoSparklesToggle(context),
+        _buildPriorityChip(context, state, auto: auto),
+      ],
     );
   }
 
@@ -837,45 +832,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Renders the "with" label between the priority chip and the contact
-  /// chips. When the draft has no contacts, groups, or pending email
-  /// invites, shows a "Private" chip with a lock icon instead. Layout
-  /// height is locked to the chip's height so toggling between modes
-  /// does not shift the rest of the page.
-  Widget _buildWithLabel(BuildContext context, PriorityState state) {
-    final draft = state.draft;
-    final isPrivate =
-        draft.contacts.isEmpty &&
-        draft.groups.isEmpty &&
-        draft.inviteEmails.isEmpty;
-
-    final labelStyle = context.theme.typography.sm.copyWith(
-      color: isPrivate
-          ? context.theme.plotColors.muted
-          : context.theme.plotColors.veryMuted,
-    );
-
-    return Padding(
-      padding: .only(top: context.theme.spacing.md),
-      child: Center(
-        child: isPrivate
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FaIcon(
-                    FontAwesomeIcons.lock,
-                    size: labelStyle.fontSize,
-                    color: context.theme.plotColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text('Private', style: labelStyle),
-                ],
-              )
-            : Text('with', style: labelStyle),
-      ),
-    );
-  }
-
   /// Build the "With" chip row: the current user can tap recent contacts
   /// to add or remove them from the thread, or tap the `+` button to open
   /// a searchable picker modal. Selected contacts flow into
@@ -903,55 +859,44 @@ class NewThreadPageState extends State<NewThreadPage> {
         pendingEmails.length > _pinnedEmails.length ||
         groupIds.length > _pinnedGroups.length;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 500),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final group in _pinnedGroups)
-                  _buildGroupChip(
-                    context,
-                    group,
-                    selected: groupIds.contains(group.id),
-                  ),
-                for (final actor in _pinnedActors)
-                  _buildContactChip(
-                    context,
-                    actor,
-                    selected: selectedIds.contains(actor.id.toUuid()),
-                  ),
-                for (final email in _pinnedEmails)
-                  _buildEmailChip(
-                    context,
-                    email,
-                    selected: pendingEmails.contains(email),
-                  ),
-                for (final suggestion in _pinnedSuggestions)
-                  switch (suggestion) {
-                    ActorShareCandidate(:final actor) => _buildContactChip(
-                      context,
-                      actor,
-                      selected: selectedIds.contains(actor.id.toUuid()),
-                    ),
-                    GroupShareCandidate(:final group) => _buildGroupChip(
-                      context,
-                      group,
-                      selected: groupIds.contains(group.id),
-                    ),
-                  },
-                _buildAddContactChip(context, state, hasMore: hasMore),
-              ],
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final group in _pinnedGroups)
+          _buildGroupChip(
+            context,
+            group,
+            selected: groupIds.contains(group.id),
+          ),
+        for (final actor in _pinnedActors)
+          _buildContactChip(
+            context,
+            actor,
+            selected: selectedIds.contains(actor.id.toUuid()),
+          ),
+        for (final email in _pinnedEmails)
+          _buildEmailChip(
+            context,
+            email,
+            selected: pendingEmails.contains(email),
+          ),
+        for (final suggestion in _pinnedSuggestions)
+          switch (suggestion) {
+            ActorShareCandidate(:final actor) => _buildContactChip(
+              context,
+              actor,
+              selected: selectedIds.contains(actor.id.toUuid()),
             ),
-          ],
-        ),
-      ),
+            GroupShareCandidate(:final group) => _buildGroupChip(
+              context,
+              group,
+              selected: groupIds.contains(group.id),
+            ),
+          },
+        _buildAddContactChip(context, state, hasMore: hasMore),
+      ],
     );
   }
 
