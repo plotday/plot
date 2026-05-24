@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -39,7 +40,11 @@ class _ConnectionChipState extends State<ConnectionChip> {
         : widget.target.linkType.logo;
 
     final button = FButton(
-      onPress: widget.onTap,
+      onPress: () {
+        widget.onTap().catchError((Object e, StackTrace s) {
+          Tracker.captureException(e, s);
+        });
+      },
       variant: widget.selected
           ? FButtonVariant.primary
           : FButtonVariant.secondary,
@@ -79,11 +84,13 @@ class _ConnectionChipState extends State<ConnectionChip> {
       ),
     );
 
-    final hoverable = MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: button,
-    );
+    final hoverable = widget.selected
+        ? button
+        : MouseRegion(
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
+            child: button,
+          );
 
     if (widget.target.accountName == null) return hoverable;
     return FTooltip(
