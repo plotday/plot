@@ -486,7 +486,9 @@ class NewThreadPageState extends State<NewThreadPage> {
         ],
         SizedBox(height: context.theme.spacing.md),
         _buildWithSelector(context, state),
-        SizedBox(height: context.theme.spacing.md),
+        // No explicit gap before the title row — the 44px InlineTitleInput
+        // centers the chip vertically, and the ~14px of padding above it
+        // visually matches `spacing.md`.
         _buildTitleRow(context, state),
       ],
     );
@@ -1357,7 +1359,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                     state,
                                   ),
                                 ),
-                                const SizedBox(height: 16),
                               ],
 
                               Flexible(
@@ -1397,11 +1398,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 ),
                               ),
 
-                              if (!isViewerMode) ...[
+                              if (!isViewerMode)
                                 _buildThreadTypeSelector(context, state),
-
-                                SizedBox(height: 16),
-                              ],
 
                               Flexible(
                                 flex: 2,

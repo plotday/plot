@@ -92,15 +92,15 @@ class InlineTitleInputState extends State<InlineTitleInput> {
 
   @override
   Widget build(BuildContext context) {
-    // Reserve a constant height equal to the expanded input's natural height
+    // Reserve a constant height matching the expanded input's natural size
     // so toggling between chip and input never shifts the editor below. The
-    // chip is top-aligned so the visible gap above it matches the spacing
-    // between every other row; the extra space below the chip is consumed
-    // by the input when expanded.
+    // chip is vertically centered; the ~14px of padding above and below it
+    // serves as the visual gap above/below the title row, replacing the
+    // explicit row spacers used by every other row.
     return SizedBox(
       height: 44,
       child: Align(
-        alignment: Alignment.topLeft,
+        alignment: Alignment.centerLeft,
         child: _expanded ? _buildExpanded(context) : _buildChip(context),
       ),
     );
