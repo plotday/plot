@@ -1,12 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (p_user_id uuid)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
@@ -203,5 +196,143 @@ We''d love to know what brought you to Plot and what you''re hoping to make prog
     -- then picks that priority up automatically for similar future threads.
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
+-- Modify "file_onboarding_schedules" function
+CREATE OR REPLACE FUNCTION "public"."file_onboarding_schedules" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_thread_key text;
+    v_date_offset integer;
+    v_order integer;
+    v_action text;
+    v_importance smallint;
+BEGIN
+    -- Skip if explicitly requested (e.g. during repair migrations for existing users)
+    IF current_setting('plot.skip_onboarding_schedules', true) = 'true' THEN
+        RETURN NEW;
+    END IF;
 
+    SELECT key INTO v_thread_key FROM public.thread WHERE id = NEW.thread_id;
+
+    IF v_thread_key IN ('welcome', 'priorities', 'connections', 'getting-around', 'invest-your-time', 'twists', 'notifications', 'clean-up') THEN
+        -- action partitions each thread into the Activity feed action tab:
+        --   'do'   — threads that ask the user to take a concrete action
+        --            (matches the keys handled by file_onboarding_todos).
+        --   'read' — informational threads with no actionable todo.
+        -- importance controls Catch up ordering (higher = nearer the top).
+        -- Values descend in the natural reading order; 'welcome-user'
+        -- (importance 100, handled in activate_invited_user) sits above
+        -- the global 'welcome' here.
+        CASE v_thread_key
+            WHEN 'welcome'           THEN v_date_offset := 0; v_order := 100; v_action := 'read'; v_importance := 95;
+            WHEN 'priorities'        THEN v_date_offset := 0; v_order := 200; v_action := 'do';   v_importance := 90;
+            WHEN 'connections'       THEN v_date_offset := 0; v_order := 300; v_action := 'do';   v_importance := 85;
+            WHEN 'getting-around'    THEN v_date_offset := 0; v_order := 400; v_action := 'read'; v_importance := 80;
+            WHEN 'invest-your-time'  THEN v_date_offset := 1; v_order := 50;  v_action := 'read'; v_importance := 75;
+            WHEN 'twists'            THEN v_date_offset := 1; v_order := 100; v_action := 'do';   v_importance := 70;
+            WHEN 'notifications'     THEN v_date_offset := 2; v_order := 100; v_action := 'do';   v_importance := 65;
+            WHEN 'clean-up'          THEN v_date_offset := 3; v_order := 100; v_action := 'read'; v_importance := 60;
+        END CASE;
+
+        IF v_date_offset = 0 THEN
+            -- "Started" status (epoch sentinel)
+            INSERT INTO public.schedule (thread_id, user_id, "order", reason, action, "on")
+            VALUES (NEW.thread_id, NEW.user_id, v_order, 'add', v_action, daterange('1970-01-01', NULL))
+            ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL DO NOTHING;
+        ELSE
+            -- Scheduled for a future date relative to join time
+            INSERT INTO public.schedule (thread_id, user_id, "order", reason, action, "on")
+            VALUES (NEW.thread_id, NEW.user_id, v_order, 'add', v_action, daterange((CURRENT_DATE + v_date_offset), NULL))
+            ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL DO NOTHING;
+        END IF;
+
+        -- Pre-seed the unread row with the desired importance. The bulk
+        -- insert in file_thread_priority_on_group_member_change runs after
+        -- this per-row trigger and uses ON CONFLICT DO NOTHING, so this
+        -- value wins for onboarding threads while non-onboarding threads
+        -- keep the default importance of 50.
+        INSERT INTO public.thread_unread (user_id, thread_id, urgency, importance)
+        VALUES (NEW.user_id, NEW.thread_id, 'inform-updates', v_importance)
+        ON CONFLICT (user_id, thread_id) DO NOTHING;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- Backfill: apply the new action + importance values to existing onboarding
+-- threads so the change is visible to users who signed up before this
+-- migration ran. Joins thread by (key, twist_id) to scope to the system
+-- Plot twist's onboarding set; welcome-user is scoped by key alone since
+-- its twist_id is intentionally NULL.
+DO $$
+DECLARE
+    c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
+    v_plot_twist_id bigint;
+BEGIN
+    SELECT id INTO v_plot_twist_id
+    FROM public.twist
+    WHERE twist_package_id = c_twist_package_id
+      AND environment = 'public'
+    LIMIT 1;
+
+    -- Per-user welcome thread from activate_invited_user.
+    UPDATE public.schedule s
+    SET action = 'read'
+    FROM public.thread t
+    WHERE s.thread_id = t.id
+      AND t.key = 'welcome-user'
+      AND s.user_id IS NOT NULL
+      AND s.occurrence IS NULL
+      AND s.action IS DISTINCT FROM 'read';
+
+    UPDATE public.thread_unread tu
+    SET importance = 100
+    FROM public.thread t
+    WHERE tu.thread_id = t.id
+      AND t.key = 'welcome-user'
+      AND tu.importance IS DISTINCT FROM 100;
+
+    -- Global onboarding threads — only proceed when the Plot twist exists
+    -- (skipped on ephemeral databases that haven't bootstrapped it).
+    IF v_plot_twist_id IS NOT NULL THEN
+        WITH mapping (key, action, importance) AS (
+            VALUES
+                ('welcome'::text,          'read'::text, 95::smallint),
+                ('priorities',             'do',         90),
+                ('connections',            'do',         85),
+                ('getting-around',         'read',       80),
+                ('invest-your-time',       'read',       75),
+                ('twists',                 'do',         70),
+                ('notifications',          'do',         65),
+                ('clean-up',               'read',       60)
+        )
+        UPDATE public.schedule s
+        SET action = m.action
+        FROM public.thread t
+        JOIN mapping m ON m.key = t.key
+        WHERE s.thread_id = t.id
+          AND t.twist_id = v_plot_twist_id
+          AND s.user_id IS NOT NULL
+          AND s.occurrence IS NULL
+          AND s.action IS DISTINCT FROM m.action;
+
+        WITH mapping (key, importance) AS (
+            VALUES
+                ('welcome'::text,        95::smallint),
+                ('priorities',           90),
+                ('connections',          85),
+                ('getting-around',       80),
+                ('invest-your-time',     75),
+                ('twists',               70),
+                ('notifications',        65),
+                ('clean-up',             60)
+        )
+        UPDATE public.thread_unread tu
+        SET importance = m.importance
+        FROM public.thread t
+        JOIN mapping m ON m.key = t.key
+        WHERE tu.thread_id = t.id
+          AND t.twist_id = v_plot_twist_id
+          AND tu.importance IS DISTINCT FROM m.importance;
+    END IF;
+END $$;
