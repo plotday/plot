@@ -8,6 +8,7 @@ import type {
   UnipileInvitationList,
   UnipileMessage,
   UnipileMessageList,
+  UnipileRelationList,
   UnipileWebhook,
   UnipileWebhookSource,
 } from "./types";
@@ -197,6 +198,18 @@ export class UnipileClient {
     limit?: number;
   }): Promise<UnipileInvitationList> {
     return this.get<UnipileInvitationList>("/users/invite/received", {
+      account_id: input.accountId,
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      ...(input.limit ? { limit: String(input.limit) } : {}),
+    });
+  }
+
+  listRelations(input: {
+    accountId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<UnipileRelationList> {
+    return this.get<UnipileRelationList>("/users/relations", {
       account_id: input.accountId,
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.limit ? { limit: String(input.limit) } : {}),

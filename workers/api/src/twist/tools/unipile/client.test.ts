@@ -56,4 +56,47 @@ describe("UnipileClient", () => {
     expect(err).toBeInstanceOf(UnipileApiError);
     expect((err as UnipileApiError).status).toBe(401);
   });
+
+  it("listRelations sends account_id and parses the relations list", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          object: "UserRelationsList",
+          items: [
+            {
+              object: "UserRelation",
+              member_id: "ACoAA123",
+              member_urn: "urn:li:member:123",
+              connection_urn: "urn:li:fs_miniProfile:123",
+              first_name: "Ada",
+              last_name: "Lovelace",
+              headline: "Computing pioneer",
+              public_identifier: "adalovelace",
+              public_profile_url: "https://www.linkedin.com/in/adalovelace",
+              profile_picture_url: "https://media.licdn.com/ada.jpg",
+              created_at: 1700000000,
+            },
+          ],
+          cursor: "next-page-token",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const client = new UnipileClient(env);
+    const result = await client.listRelations({
+      accountId: "acct-1",
+      cursor: "prev-cursor",
+      limit: 50,
+    });
+
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(String(url)).toBe(
+      "https://api7.unipile.com:13441/api/v1/users/relations?account_id=acct-1&cursor=prev-cursor&limit=50"
+    );
+    expect(result.object).toBe("UserRelationsList");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]!.member_id).toBe("ACoAA123");
+    expect(result.cursor).toBe("next-page-token");
+  });
 });
