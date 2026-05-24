@@ -2441,6 +2441,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activityFeedNextCursor = null;
     _activityFeedHeadSaturated = false;
     _activityFeedHeadTailCursor = null;
+    _activityFeedAppendsExhausted = false;
     _activityFeedAppendGeneration++;
   }
 
@@ -3599,7 +3600,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final isSearching = state.search.isNotEmpty;
     final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
     final localExhausted = _activityFeedAppendedThreads.isEmpty
-        ? !_activityFeedHeadSaturated
+        ? (!_activityFeedHeadSaturated || _activityFeedAppendsExhausted)
         : _activityFeedNextCursor == null;
     return localExhausted && exhaustedRemote;
   }
@@ -3627,8 +3628,20 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
 
-    // Already loaded enough? Nothing to do.
-    if (_activityFeedRawThreads.length >= needed) return;
+    // Even when `needed` is already satisfied by the head, we still owe a
+    // single probe past the head when it came back saturated but no append
+    // page has run — without it, [_activityFeedAppendsExhausted] never flips
+    // and the trailing spinner spins forever for priorities whose total
+    // local count equals exactly [_activityFeedLimit].
+    bool needsProbeBeyondHead() =>
+        _activityFeedHeadSaturated &&
+        _activityFeedAppendedThreads.isEmpty &&
+        !_activityFeedAppendsExhausted;
+
+    // Already loaded enough AND nothing left to probe? Nothing to do.
+    if (_activityFeedRawThreads.length >= needed && !needsProbeBeyondHead()) {
+      return;
+    }
 
     // Coalesce concurrent callers — InfiniteList can fire fetchMore on
     // every scroll tick during fast scrolls; without this they spawn
@@ -3638,15 +3651,23 @@ class PriorityBloc extends Cubit<PriorityState> {
         await _activityFeedAppendInFlight;
       } catch (_) {}
       if (isClosed) return;
-      if (_activityFeedRawThreads.length >= needed) return;
+      if (_activityFeedRawThreads.length >= needed && !needsProbeBeyondHead()) {
+        return;
+      }
     }
 
-    while (_activityFeedRawThreads.length < needed &&
-        !_activityFeedDoneEnd) {
+    while (!_activityFeedDoneEnd &&
+        (_activityFeedRawThreads.length < needed || needsProbeBeyondHead())) {
       final cursor = _computeActivityFeedTailCursor();
       if (cursor == null) {
         // No more pages available locally; head not saturated or last
-        // appended page was non-saturated.
+        // appended page was non-saturated. Mark appends exhausted so the
+        // probe loop above won't keep re-entering.
+        if (needsProbeBeyondHead()) {
+          _activityFeedAppendsExhausted = true;
+          _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
+          _scheduleActivityFeedRebuild();
+        }
         break;
       }
 
@@ -3688,9 +3709,14 @@ class PriorityBloc extends Cubit<PriorityState> {
         ...page.threads,
       ];
       // Saturated → there may be more; remember the cursor.
-      // Non-saturated → exhausted locally; null cursor stops further appends.
+      // Non-saturated → exhausted locally; null cursor stops further appends,
+      // and the exhausted flag breaks the "saturated head + empty appends"
+      // doneEnd stall when this page came back empty.
       _activityFeedNextCursor =
           page.saturated ? page.nextCursor : null;
+      if (!page.saturated) {
+        _activityFeedAppendsExhausted = true;
+      }
 
       // Recompute the displayed list. Head emission's dedup logic runs
       // on the next watcher fire; for now just append optimistically.
@@ -3798,6 +3824,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// threads (i.e. there may be more local content beyond the head).
   /// Gates the first append.
   bool _activityFeedHeadSaturated = false;
+
+  /// True once a cursor-paginated append fetch has confirmed there are no
+  /// more local rows beyond the head — set when [fetchActivityFeedPage]
+  /// returns a non-saturated page. Without this, the
+  /// "head saturated AND no appends yet" branch of
+  /// [_computeActivityFeedDoneEnd] returns false forever when the head holds
+  /// exactly [_activityFeedLimit] rows (= the total local count): the
+  /// cursor fetcher runs once and gets 0 rows back, but
+  /// [_activityFeedAppendedThreads] stays empty so the doneEnd check keeps
+  /// falling back to `!_activityFeedHeadSaturated = false` and the trailing
+  /// spinner spins forever.
+  bool _activityFeedAppendsExhausted = false;
 
   /// True while a [fetchMoreActivityFeedItems] page is being fetched, so
   /// concurrent callers coalesce instead of racing.
