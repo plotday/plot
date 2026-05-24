@@ -6,6 +6,7 @@ import type {
   LinkedInInvitationPage,
   LinkedInMessage,
   LinkedInMessagePage,
+  LinkedInProfile,
   LinkedInRelationPage,
 } from "./types";
 
@@ -71,6 +72,12 @@ export abstract class LinkedInMessaging extends ITool {
     cursor?: string | null;
     limit?: number;
   }): Promise<LinkedInRelationPage>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getProfile(params: {
+    channelId: string;
+    profileId: string;
+  }): Promise<LinkedInProfile>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract acceptInvitation(params: {

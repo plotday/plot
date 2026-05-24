@@ -7,6 +7,7 @@ import type {
   LinkedInInvitationPage,
   LinkedInMessage,
   LinkedInMessagePage,
+  LinkedInProfile,
   LinkedInRelationPage,
 } from "@plotday/unipile";
 
@@ -158,6 +159,15 @@ export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
       relations: result.items.map(normalizeRelation),
       nextCursor: result.cursor,
     };
+  }
+
+  async getProfile(params: {
+    channelId: string;
+    profileId: string;
+  }): Promise<LinkedInProfile> {
+    await this.assertAccount(params.channelId);
+    const raw = await this.client.getAttendee({ providerId: params.profileId });
+    return normalizeProfile(raw);
   }
 
   async acceptInvitation(params: {
