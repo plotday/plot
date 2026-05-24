@@ -40,25 +40,5 @@ List<Uuid>? splitAudienceSubtract({
   return result.isEmpty ? null : result;
 }
 
-/// Lower rank = more urgent. Mirrors notification_service._urgencyRank
-/// so urgency rules stay consistent across merge and notification paths.
-int _urgencyRank(String? urgency) => switch (urgency) {
-      'interrupt' => 0,
-      'inform-requests' => 1,
-      'inform-updates' => 2,
-      'passive' => 3,
-      _ => 4,
-    };
-
-/// Returns the more urgent of [a] and [b]. Null/unknown values are least
-/// urgent and lose to any recognized urgency.
-String? mergeUrgencyMostUrgent(String? a, String? b) {
-  final ra = _urgencyRank(a);
-  final rb = _urgencyRank(b);
-  if (ra <= rb) return ra == 4 ? null : a;
-  return rb == 4 ? null : b;
-}
-
-/// Returns the larger of two importance values. Defined here so merge code
-/// reads symmetrically with the urgency helper.
+/// Returns the larger of two importance values.
 int mergeImportanceMax(int a, int b) => a >= b ? a : b;

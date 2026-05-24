@@ -49,7 +49,7 @@ enum _OverrideField {
   at,
   on,
   order,
-  scheduleAction,
+  actionType,
 }
 
 /// A per-thread optimistic override applied to stream results until the
@@ -121,8 +121,8 @@ class _OptimisticOverride {
         return actual.on == expected.on;
       case _OverrideField.order:
         return actual.order.value == expected.order.value;
-      case _OverrideField.scheduleAction:
-        return actual.scheduleAction == expected.scheduleAction;
+      case _OverrideField.actionType:
+        return actual.actionType == expected.actionType;
     }
   }
 }
@@ -189,7 +189,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// row limit), the cached thread can be injected into the feed results.
   final Map<
     ThreadId,
-    ({int urgencyRank, int importance, DateTime activityAt, Thread thread})
+    ({bool urgent, int importance, DateTime activityAt, Thread thread})
   >
   _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
@@ -1559,7 +1559,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             _OverrideField.at,
             _OverrideField.on,
             if (watchOrder) _OverrideField.order,
-            if (watchScheduleAction) _OverrideField.scheduleAction,
+            if (watchScheduleAction) _OverrideField.actionType,
           }
         : null;
     _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(
@@ -1576,7 +1576,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       } else {
         final old = _stickyUnreadIds[updatedThread.id]!;
         _stickyUnreadIds[updatedThread.id] = (
-          urgencyRank: old.urgencyRank,
+          urgent: old.urgent,
           importance: old.importance,
           activityAt: old.activityAt,
           thread: updatedThread,
@@ -2021,7 +2021,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     if (thread != null && thread.unread) {
       _stickyUnreadIds[thread.id] = (
-        urgencyRank: thread.urgencyRank,
+        urgent: thread.urgent,
         importance: thread.importance,
         activityAt: thread.activityAt,
         thread: thread,
@@ -3067,7 +3067,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           for (final entry in _stickyUnreadIds.entries.toList()) {
             if (headIds.contains(entry.key)) {
               _stickyUnreadIds[entry.key] = (
-                urgencyRank: entry.value.urgencyRank,
+                urgent: entry.value.urgent,
                 importance: entry.value.importance,
                 activityAt: entry.value.activityAt,
                 thread: patchedHead.firstWhere((t) => t.id == entry.key),
@@ -3280,10 +3280,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     unread.sort((a, b) {
       final aSticky = _stickyUnreadIds[a.id];
       final bSticky = _stickyUnreadIds[b.id];
-      final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
-      final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
-      final urgencyCmp = aRank.compareTo(bRank);
-      if (urgencyCmp != 0) return urgencyCmp;
+      // Sort by urgent DESC (true first), then importance DESC, then
+      // activityAt DESC. Replaces the old four-level urgencyRank scheme.
+      final aUrgent = aSticky?.urgent ?? a.urgent;
+      final bUrgent = bSticky?.urgent ?? b.urgent;
+      if (aUrgent != bUrgent) return aUrgent ? -1 : 1;
       final aImp = aSticky?.importance ?? a.importance;
       final bImp = bSticky?.importance ?? b.importance;
       final importanceCmp = bImp.compareTo(aImp);
@@ -3395,7 +3396,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final active = <Thread>[];
     final scheduledByDate = <Date, List<Thread>>{};
     for (final t in _todoThreads) {
-      if (t.scheduleAction != action) continue;
+      if (t.actionType != action) continue;
       if (t.isActiveThread) {
         active.add(t);
       } else if (t.isScheduledThread) {

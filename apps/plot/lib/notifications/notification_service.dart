@@ -770,8 +770,10 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     final Map<String, NotificationBatch> batchMap = {};
 
     for (final thread in unreadRows) {
-      // passive threads show unread in-app but don't generate push notifications
-      if (thread.urgency == 'passive') continue;
+      // Threads below the importance gate stay in-app only unless flagged
+      // urgent (urgent bypasses the gate).
+      final isUrgent = thread.urgent ?? false;
+      if (!isUrgent && thread.importance < 50) continue;
 
       final priorityIdStr = thread.priorityId.value.toString();
       final priority = priorityById[priorityIdStr];
@@ -791,7 +793,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
           firstLevelPriorityId: firstLevelIdStr,
           priorityTitle: firstLevel.title,
           threads: [],
-          highestUrgency: 'inform-updates',
+          highestUrgent: false,
           attentionWindow: firstLevel.attentionWindow != null
               ? AttentionWindow.fromJsonString(firstLevel.attentionWindow)
               : null,
@@ -802,14 +804,12 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
         id: thread.id.value.toString(),
         title: thread.title,
         preview: thread.preview,
-        urgency: thread.urgency ?? 'inform-updates',
+        urgent: isUrgent,
         priorityId: priorityIdStr,
       ));
 
-      // Track highest urgency in batch
-      if (_urgencyRank(thread.urgency) < _urgencyRank(batch.highestUrgency)) {
-        batch.highestUrgency = thread.urgency ?? 'inform-updates';
-      }
+      // Track whether any thread in this batch is urgent.
+      if (isUrgent) batch.highestUrgent = true;
     }
 
     // For each batch, compute the target priority (lowest common ancestor)
@@ -959,7 +959,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
           priorityId: displayId,
           threadIds: orderedThreadIds,
         ).encode(),
-        urgency: batch.highestUrgency,
+        urgent: batch.highestUrgent,
       );
       _shownNotifications[displayId] = (id: notifId, threadIds: newThreadIds);
     }
@@ -1016,14 +1016,6 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       log.warning('Failed to load persisted notification thread IDs', e);
     }
   }
-
-  int _urgencyRank(String? urgency) => switch (urgency) {
-    'interrupt' => 0,
-    'inform-requests' => 1,
-    'inform-updates' => 2,
-    'passive' => 3,
-    _ => 4,
-  };
 
   void _handleNotificationTap(RemoteMessage message) {
     final targetPriorityId = message.data['target_priority_id'] as String?;
@@ -1085,7 +1077,7 @@ class NotificationBatch {
   final String firstLevelPriorityId;
   final String? priorityTitle;
   final List<NotificationThread> threads;
-  String highestUrgency;
+  bool highestUrgent;
   String? targetPriorityId;
   final List<AttentionWindow>? attentionWindow;
 
@@ -1093,7 +1085,7 @@ class NotificationBatch {
     required this.firstLevelPriorityId,
     required this.priorityTitle,
     required this.threads,
-    required this.highestUrgency,
+    required this.highestUrgent,
     this.targetPriorityId,
     this.attentionWindow,
   });
@@ -1104,14 +1096,14 @@ class NotificationThread {
   final String id;
   final String? title;
   final String? preview;
-  final String urgency;
+  final bool urgent;
   final String priorityId;
 
   NotificationThread({
     required this.id,
     required this.title,
     required this.preview,
-    required this.urgency,
+    required this.urgent,
     required this.priorityId,
   });
 }
@@ -1167,7 +1159,7 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
     final title = summary['title'] as String? ?? 'Updates';
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
-    final urgency = summary['urgency'] as String?;
+    final urgent = summary['urgent'] as bool? ?? false;
     final orderedThreadIds =
         (summary['thread_ids'] as List?)?.cast<String>() ?? const <String>[];
     final threadIds = orderedThreadIds.toSet();
@@ -1191,7 +1183,7 @@ Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
         priorityId: targetPriorityId,
         threadIds: orderedThreadIds,
       ).encode(),
-      urgency: urgency ?? 'inform-updates',
+      urgent: urgent,
     );
     if (targetPriorityId.isNotEmpty) {
       shown[targetPriorityId] = (id: notifId, threadIds: threadIds);

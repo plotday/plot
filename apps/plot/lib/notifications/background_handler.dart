@@ -109,7 +109,7 @@ Future<void> _maybeShowSignedOutNotification(SharedPreferences prefs) async {
       title: 'Plot signed out',
       body: 'Tap to sign in again and resume notifications.',
       targetPriorityId: '',
-      urgency: 'inform-requests',
+      urgent: false,
     );
     await prefs.setInt(_lastSignedOutNotifyKey, now);
   } catch (e) {
@@ -202,7 +202,7 @@ Future<void> _scheduleNotifications(
     final title = summary['title'] as String? ?? 'Updates';
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
-    final urgency = summary['urgency'] as String?;
+    final urgent = summary['urgent'] as bool? ?? false;
     final notifId = scheduledIdOffset +
         (targetPriorityId.hashCode.abs() % 100000);
 
@@ -212,7 +212,7 @@ Future<void> _scheduleNotifications(
       body: body,
       targetPriorityId: targetPriorityId,
       scheduleAt: scheduleAt,
-      urgency: urgency ?? 'inform-updates',
+      urgent: urgent,
     );
   }
 

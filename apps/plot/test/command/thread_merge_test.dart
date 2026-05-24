@@ -94,33 +94,9 @@ void main() {
     });
   });
 
-  group('mergeUrgencyMostUrgent', () {
-    test('returns more urgent of the two by rank', () {
-      expect(mergeUrgencyMostUrgent('interrupt', 'inform-updates'),
-          'interrupt');
-      expect(mergeUrgencyMostUrgent('inform-updates', 'interrupt'),
-          'interrupt');
-    });
-
-    test('null is least urgent', () {
-      expect(mergeUrgencyMostUrgent(null, 'passive'), 'passive');
-      expect(mergeUrgencyMostUrgent('inform-requests', null),
-          'inform-requests');
-    });
-
-    test('null + null = null', () {
-      expect(mergeUrgencyMostUrgent(null, null), null);
-    });
-
-    test('equal urgencies return that value', () {
-      expect(mergeUrgencyMostUrgent('interrupt', 'interrupt'), 'interrupt');
-    });
-
-    test('unknown urgency string is treated as least urgent', () {
-      expect(mergeUrgencyMostUrgent('garbage', 'inform-updates'),
-          'inform-updates');
-    });
-  });
+  // mergeUrgencyMostUrgent was removed with the urgency field; the
+  // merge path now ORs the new `urgent` bool directly (see
+  // command/thread.dart MergeThread).
 
   group('mergeImportanceMax', () {
     test('returns max', () {

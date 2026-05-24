@@ -571,24 +571,19 @@ class Note extends Equatable implements Comparable<Note> {
     // the note is published (draft → non-draft).
     if (!draft) {
       // Note todo → thread todo propagation:
-      // When Tag.todo is added to a note for the current user, ensure a per-user
-      // schedule exists on the thread (makes the thread appear on the user's todo list).
+      // When Tag.todo is added to a note for the current user, ensure
+      // per-user state exists on the thread (makes the thread appear on
+      // the user's todo list).
       if (hasTag(Tag.todo, Base.actorId)) {
-        await _ensureTodoForUser(threadId, Base.userId);
+        await _ensureTodoForUser(threadId);
       }
 
-      // Recompute outstandingTasks on the per-user schedule when todo/done tags change
-      if (_tags?.tagsUpdated != null) {
-        final todoId = Tag.todo.id.toString();
-        final doneId = Tag.done.id.toString();
-        final hasTodoChange = _tags!.tagsUpdated!.keys.any(
-          (k) => k == todoId || k.startsWith('$todoId:') ||
-                 k == doneId || k.startsWith('$doneId:'),
-        );
-        if (hasTodoChange) {
-          await _recomputeOutstandingTasks(threadId, Base.userId);
-        }
-      }
+      // TODO(thread-state-refactor): the "outstanding tasks" badge used
+      // to be recomputed here and stored on the per-user schedule. With
+      // the per-user schedule gone, we no longer persist this — the
+      // badge is derived on demand from the thread's loaded note-tag /
+      // link state (see `Thread.outstandingTasks`, currently stubbed
+      // to `false`).
 
       // Reply tag propagation: note → thread
       if (!skipReplyPropagation) {
@@ -624,42 +619,34 @@ class Note extends Equatable implements Comparable<Note> {
     }
   }
 
-  /// Ensures a per-user schedule exists on the thread for the given user.
-  /// Creates one if it doesn't exist, unarchives if it was archived.
-  static Future<void> _ensureTodoForUser(ThreadId threadId, Uuid userId) async {
-    final existing = await (Store.get.select(Store.get.schedules)
-      ..where((s) => s.threadId.equalsValue(threadId) &
-                     s.userId.equalsValue(userId) &
-                     s.occurrence.isNull()))
+  /// Ensures per-user thread-state exists on the thread for the current
+  /// user — sets action_type, state_on = todoNowDate, clears read_at —
+  /// then pushes via POST /sync/thread-state.
+  static Future<void> _ensureTodoForUser(ThreadId threadId) async {
+    final row = await (Store.get.select(Store.get.threads)
+          ..where((t) => t.id.equalsValue(threadId)))
         .getSingleOrNull();
-    if (existing == null) {
-      // Create per-user schedule (no at/on = current and ongoing todo)
-      final newSchedule = ScheduleRow(
-        id: Uuid.generate(),
-        updatedAt: DateTime.now(),
-        threadId: threadId,
-        userId: userId,
-        startOn: Thread.todoNowDate,
-        order: Order.first(),
-        outstandingTasks: true,
-      );
-      await Store.get.save(
-        Store.get.schedules,
-        newSchedule.toCompanion(false),
-        SchedulesBase(),
-      );
-    } else if (existing.archivedAt != null) {
-      // Unarchive existing schedule (re-add to todo)
-      await Store.get.save(
-        Store.get.schedules,
-        existing.copyWith(
-          archivedAt: const Value(null),
-          updatedAt: DateTime.now(),
-          startOn: existing.startOn == null ? Value(Thread.todoNowDate) : const Value.absent(),
-          outstandingTasks: true,
-        ).toCompanion(false),
-        SchedulesBase(),
-      );
+    if (row == null) return;
+    if (row.actionType != null && row.readAt == null) return;
+    final now = DateTime.now();
+    await (Store.get.update(Store.get.threads)
+          ..where((t) => t.id.equalsValue(threadId)))
+        .write(ThreadsCompanion(
+          actionType: Value(row.actionType ?? 'do'),
+          stateOrder: Value(row.stateOrder ?? Order.first()),
+          stateOn: Value(row.stateOn ?? Thread.todoNowDate),
+          readAt: const Value(null),
+          updatedAt: Value(now),
+        ));
+    try {
+      await api.post<Map<String, dynamic>>('/sync/thread-state', body: {
+        'thread_id': threadId.toString(),
+        'action_type': row.actionType ?? 'do',
+        'on': '[${row.stateOn ?? Thread.todoNowDate},)',
+        'read_at': null,
+      });
+    } catch (e, t) {
+      log.warning('Failed to push thread state for $threadId: $e\n$t');
     }
   }
 
@@ -687,43 +674,10 @@ class Note extends Equatable implements Comparable<Note> {
     }
   }
 
-  /// Recomputes the outstandingTasks flag on the per-user schedule for a thread.
-  static Future<void> _recomputeOutstandingTasks(ThreadId threadId, Uuid userId) async {
-    final hasOutstanding = await _checkOutstandingTasks(threadId);
-    final schedule = await (Store.get.select(Store.get.schedules)
-      ..where((s) => s.threadId.equalsValue(threadId) &
-                     s.userId.equalsValue(userId) &
-                     s.occurrence.isNull()))
-        .getSingleOrNull();
-    if (schedule != null && schedule.outstandingTasks != hasOutstanding) {
-      await Store.get.save(
-        Store.get.schedules,
-        schedule.copyWith(outstandingTasks: hasOutstanding, updatedAt: DateTime.now()).toCompanion(false),
-        SchedulesBase(),
-      );
-    }
-  }
-
-  /// Checks if a thread has outstanding tasks for the current user.
-  static Future<bool> _checkOutstandingTasks(ThreadId threadId) async {
-    final actorId = Base.actorId;
-    // Check notes with active todo tag
-    final notes = await Note.getForThread(threadId);
-    if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
-    // Check links assigned to user (or unassigned) with non-done status
-    final links = await Link.getForThread(threadId);
-    for (final link in links) {
-      if (link.assigneeId != null &&
-          !Actor.sameIdentity(link.assigneeId!, actorId)) {
-        continue;
-      }
-      final doneStatuses =
-          link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
-      if (doneStatuses.isEmpty) continue;
-      if (!doneStatuses.any((s) => s.status == link.status)) return true;
-    }
-    return false;
-  }
+  // _recomputeOutstandingTasks / _checkOutstandingTasks were removed
+  // with the per-user schedule. The "outstanding tasks" badge is now
+  // derived on demand from the thread's loaded note-tag / link state
+  // (see Thread.outstandingTasks).
 
   Future<void> archive() => copyWith(archivedAt: Value(DateTime.now())).save();
 

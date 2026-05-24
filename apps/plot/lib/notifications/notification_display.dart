@@ -9,11 +9,12 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'package:plot/logging.dart';
 
-/// Notification channel IDs for Android urgency levels.
+/// Notification channel IDs for Android. Just two now: a high-priority
+/// "urgent" channel for threads flagged `urgent`, and a default channel
+/// for everything else above the importance gate.
 class _Channels {
-  static const interrupt = 'interrupt';
-  static const informRequests = 'inform_requests';
-  static const informUpdates = 'inform_updates';
+  static const urgent = 'urgent';
+  static const updates = 'updates';
 }
 
 /// Manages local notification display via flutter_local_notifications.
@@ -93,13 +94,16 @@ class NotificationDisplay {
           _plugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
-        // Delete old channels from previous urgency scheme
+        // Delete old channels from previous urgency schemes
         await androidPlugin.deleteNotificationChannel('inform_fast');
         await androidPlugin.deleteNotificationChannel('inform_slow');
+        await androidPlugin.deleteNotificationChannel('interrupt');
+        await androidPlugin.deleteNotificationChannel('inform_requests');
+        await androidPlugin.deleteNotificationChannel('inform_updates');
 
         await androidPlugin.createNotificationChannel(
           const AndroidNotificationChannel(
-            _Channels.interrupt,
+            _Channels.urgent,
             'Urgent',
             description: 'Notifications that need immediate attention',
             importance: Importance.high,
@@ -107,15 +111,7 @@ class NotificationDisplay {
         );
         await androidPlugin.createNotificationChannel(
           const AndroidNotificationChannel(
-            _Channels.informRequests,
-            'Requests',
-            description: 'Someone is waiting on you',
-            importance: Importance.defaultImportance,
-          ),
-        );
-        await androidPlugin.createNotificationChannel(
-          const AndroidNotificationChannel(
-            _Channels.informUpdates,
+            _Channels.updates,
             'Updates',
             description: 'General updates worth reviewing',
             importance: Importance.defaultImportance,
@@ -181,33 +177,18 @@ class NotificationDisplay {
     required String title,
     required String body,
     required String targetPriorityId,
-    String urgency = 'inform-updates',
+    bool urgent = false,
   }) async {
     if (!_initialized) return;
 
-    final channelId = switch (urgency) {
-      'interrupt' => _Channels.interrupt,
-      'inform-requests' => _Channels.informRequests,
-      _ => _Channels.informUpdates,
-    };
-
-    final importance = switch (urgency) {
-      'interrupt' => Importance.high,
-      _ => Importance.defaultImportance,
-    };
-
-    final priority = switch (urgency) {
-      'interrupt' => Priority.high,
-      _ => Priority.defaultPriority,
-    };
+    final channelId = urgent ? _Channels.urgent : _Channels.updates;
+    final importance =
+        urgent ? Importance.high : Importance.defaultImportance;
+    final priority = urgent ? Priority.high : Priority.defaultPriority;
 
     final androidDetails = AndroidNotificationDetails(
       channelId,
-      channelId == _Channels.interrupt
-          ? 'Urgent'
-          : channelId == _Channels.informRequests
-              ? 'Requests'
-              : 'Updates',
+      urgent ? 'Urgent' : 'Updates',
       importance: importance,
       priority: priority,
       autoCancel: true,
@@ -248,33 +229,18 @@ class NotificationDisplay {
     required String body,
     required String targetPriorityId,
     required DateTime scheduleAt,
-    String urgency = 'inform-updates',
+    bool urgent = false,
   }) async {
     if (!_initialized) return;
 
-    final channelId = switch (urgency) {
-      'interrupt' => _Channels.interrupt,
-      'inform-requests' => _Channels.informRequests,
-      _ => _Channels.informUpdates,
-    };
-
-    final importance = switch (urgency) {
-      'interrupt' => Importance.high,
-      _ => Importance.defaultImportance,
-    };
-
-    final priority = switch (urgency) {
-      'interrupt' => Priority.high,
-      _ => Priority.defaultPriority,
-    };
+    final channelId = urgent ? _Channels.urgent : _Channels.updates;
+    final importance =
+        urgent ? Importance.high : Importance.defaultImportance;
+    final priority = urgent ? Priority.high : Priority.defaultPriority;
 
     final androidDetails = AndroidNotificationDetails(
       channelId,
-      channelId == _Channels.interrupt
-          ? 'Urgent'
-          : channelId == _Channels.informRequests
-              ? 'Requests'
-              : 'Updates',
+      urgent ? 'Urgent' : 'Updates',
       importance: importance,
       priority: priority,
       autoCancel: true,

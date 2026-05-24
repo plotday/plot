@@ -1401,8 +1401,6 @@ export interface UserNoteTags {
 
 export interface UserPriority {
   archived_at: Timestamp | null;
-  attention_window: Json | null;
-  attention_window_set: boolean | null;
   color: number | null;
   config: Json | null;
   created_at: Timestamp | null;
@@ -1410,13 +1408,23 @@ export interface UserPriority {
   default_contacts: string[] | null;
   default_groups: string[] | null;
   default_invite_emails: string[] | null;
+  early_notifications_enabled: boolean | null;
+  early_notifications_enabled_set: boolean | null;
   global_path: string | null;
   id: string | null;
   inherit_members: boolean | null;
   key: string | null;
+  notify_window: Json | null;
+  notify_window_set: boolean | null;
   order: number | null;
   path: string | null;
   pomodoro: number | null;
+  respond_schedule_enabled: boolean | null;
+  respond_schedule_enabled_set: boolean | null;
+  respond_window: Json | null;
+  respond_window_set: boolean | null;
+  respond_within: Json | null;
+  respond_within_set: boolean | null;
   role: string | null;
   root: boolean | null;
   see_within: Json | null;

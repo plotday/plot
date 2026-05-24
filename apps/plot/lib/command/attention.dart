@@ -62,11 +62,7 @@ class ShowAttentionSettings extends ShowForm {
     return t.displayLabel;
   }
 
-  static const _defaultSeeWithinRequests = SeeWithinTime(
-    value: 30,
-    unit: SeeWithinUnit.minutes,
-  );
-  static const _defaultSeeWithinUpdates = SeeWithinTime(
+  static const _defaultSeeWithin = SeeWithinTime(
     value: 1,
     unit: SeeWithinUnit.hours,
   );
@@ -193,19 +189,15 @@ class ShowAttentionSettings extends ShowForm {
   ) async {
     final isRoot = priority.root;
     final windows = priority.attentionWindows;
-    final seeWithinRequests = priority.seeWithinRequestsTime;
-    final seeWithinUpdates = priority.seeWithinUpdatesTime;
+    final seeWithin = priority.seeWithinTime;
 
     // Get inherited values for comparison on save
     final inheritedWindows = isRoot
         ? (windows ?? AttentionWindow.defaultQuietHours)
         : await _getInheritedWindows(priority);
-    final inheritedSeeWithinRequests = isRoot
-        ? _matchSeeWithin(seeWithinRequests, _defaultSeeWithinRequests)
-        : await _getInheritedSeeWithinRequests(priority);
-    final inheritedSeeWithinUpdates = isRoot
-        ? _matchSeeWithin(seeWithinUpdates, _defaultSeeWithinUpdates)
-        : await _getInheritedSeeWithinUpdates(priority);
+    final inheritedSeeWithin = isRoot
+        ? _matchSeeWithin(seeWithin, _defaultSeeWithin)
+        : await _getInheritedSeeWithin(priority);
 
     FormWindowList? windowListRef;
 
@@ -248,33 +240,13 @@ class ShowAttentionSettings extends ShowForm {
     );
     windowListRef = windowList;
 
-    // See within requests field
-    final seeWithinRequestsSelect = FormSelect<SeeWithinTime>(
-      key: 'see_within_requests',
-      label: 'See requests within',
-      initialValue: _matchSeeWithin(
-        seeWithinRequests ?? inheritedSeeWithinRequests,
-        _defaultSeeWithinRequests,
-      ),
-      hasInitialValue: true,
-      items: (search) async => _seeWithinOptions
-          .where(
-            (o) =>
-                search == null ||
-                o.label.toLowerCase().contains(search.toLowerCase()),
-          )
-          .map((o) => o.seeWithin)
-          .toList(),
-      titleBuilder: _seeWithinLabel,
-    );
-
-    // See within updates field
-    final seeWithinUpdatesSelect = FormSelect<SeeWithinTime>(
-      key: 'see_within_updates',
+    // See within field
+    final seeWithinSelect = FormSelect<SeeWithinTime>(
+      key: 'see_within',
       label: 'See updates within',
       initialValue: _matchSeeWithin(
-        seeWithinUpdates ?? inheritedSeeWithinUpdates,
-        _defaultSeeWithinUpdates,
+        seeWithin ?? inheritedSeeWithin,
+        _defaultSeeWithin,
       ),
       hasInitialValue: true,
       items: (search) async => _seeWithinOptions
@@ -291,9 +263,7 @@ class ShowAttentionSettings extends ShowForm {
     return FormData(
       title: 'Notifications',
       groups: [
-        StaticFormGroup(
-          items: [seeWithinRequestsSelect, seeWithinUpdatesSelect],
-        ),
+        StaticFormGroup(items: [seeWithinSelect]),
         StaticFormGroup(title: 'Quiet hours', items: [windowList]),
         StaticFormGroup(
           items: [
@@ -302,33 +272,25 @@ class ShowAttentionSettings extends ShowForm {
               isPrimary: true,
               buildCommand: (values) {
                 final windowValues = values['windows'] as List<AttentionWindow>;
-                final selectedSeeWithinRequests =
-                    values['see_within_requests'] as SeeWithinTime;
-                final selectedSeeWithinUpdates =
-                    values['see_within_updates'] as SeeWithinTime;
+                final selectedSeeWithin =
+                    values['see_within'] as SeeWithinTime;
 
                 // Compare with inherited to decide override vs clear
                 final windowsSame = _windowListEquals(
                   windowValues,
                   inheritedWindows,
                 );
-                final seeWithinRequestsSame =
-                    selectedSeeWithinRequests == inheritedSeeWithinRequests;
-                final seeWithinUpdatesSame =
-                    selectedSeeWithinUpdates == inheritedSeeWithinUpdates;
+                final seeWithinSame =
+                    selectedSeeWithin == inheritedSeeWithin;
 
                 return _SaveAttentionSettings(
                   priorityId: priority.id,
                   attentionWindow: isRoot || !windowsSame ? windowValues : null,
                   setAttentionWindow: isRoot || !windowsSame,
-                  seeWithinRequests: isRoot || !seeWithinRequestsSame
-                      ? selectedSeeWithinRequests
+                  seeWithin: isRoot || !seeWithinSame
+                      ? selectedSeeWithin
                       : null,
-                  setSeeWithinRequests: isRoot || !seeWithinRequestsSame,
-                  seeWithinUpdates: isRoot || !seeWithinUpdatesSame
-                      ? selectedSeeWithinUpdates
-                      : null,
-                  setSeeWithinUpdates: isRoot || !seeWithinUpdatesSame,
+                  setSeeWithin: isRoot || !seeWithinSame,
                 );
               },
             ),
@@ -362,47 +324,24 @@ class ShowAttentionSettings extends ShowForm {
     return parents.first.attentionWindows ?? AttentionWindow.defaultQuietHours;
   }
 
-  static Future<SeeWithinTime> _getInheritedSeeWithinRequests(
+  static Future<SeeWithinTime> _getInheritedSeeWithin(
     Priority priority,
   ) async {
-    if (!priority.seeWithinRequestsSet) {
+    if (!priority.seeWithinSet) {
       return _matchSeeWithin(
-        priority.seeWithinRequestsTime,
-        _defaultSeeWithinRequests,
+        priority.seeWithinTime,
+        _defaultSeeWithin,
       );
     }
     final parentId = priority.parentId;
     if (parentId == null) {
-      return _matchSeeWithin(null, _defaultSeeWithinRequests);
+      return _matchSeeWithin(null, _defaultSeeWithin);
     }
     final parents = await Priority.get(id: parentId, depth: 0);
-    if (parents.isEmpty) {
-      return _matchSeeWithin(null, _defaultSeeWithinRequests);
-    }
+    if (parents.isEmpty) return _matchSeeWithin(null, _defaultSeeWithin);
     return _matchSeeWithin(
-      parents.first.seeWithinRequestsTime,
-      _defaultSeeWithinRequests,
-    );
-  }
-
-  static Future<SeeWithinTime> _getInheritedSeeWithinUpdates(
-    Priority priority,
-  ) async {
-    if (!priority.seeWithinUpdatesSet) {
-      return _matchSeeWithin(
-        priority.seeWithinUpdatesTime,
-        _defaultSeeWithinUpdates,
-      );
-    }
-    final parentId = priority.parentId;
-    if (parentId == null) {
-      return _matchSeeWithin(null, _defaultSeeWithinUpdates);
-    }
-    final parents = await Priority.get(id: parentId, depth: 0);
-    if (parents.isEmpty) return _matchSeeWithin(null, _defaultSeeWithinUpdates);
-    return _matchSeeWithin(
-      parents.first.seeWithinUpdatesTime,
-      _defaultSeeWithinUpdates,
+      parents.first.seeWithinTime,
+      _defaultSeeWithin,
     );
   }
 }
@@ -482,10 +421,8 @@ class _SaveAttentionSettings extends Command {
     required this.priorityId,
     required this.attentionWindow,
     required this.setAttentionWindow,
-    required this.seeWithinRequests,
-    required this.setSeeWithinRequests,
-    required this.seeWithinUpdates,
-    required this.setSeeWithinUpdates,
+    required this.seeWithin,
+    required this.setSeeWithin,
   }) : super(
          title: 'Save',
          icon: PlotIcon.done,
@@ -496,10 +433,8 @@ class _SaveAttentionSettings extends Command {
   final PriorityId priorityId;
   final List<AttentionWindow>? attentionWindow;
   final bool setAttentionWindow;
-  final SeeWithinTime? seeWithinRequests;
-  final bool setSeeWithinRequests;
-  final SeeWithinTime? seeWithinUpdates;
-  final bool setSeeWithinUpdates;
+  final SeeWithinTime? seeWithin;
+  final bool setSeeWithin;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -514,16 +449,10 @@ class _SaveAttentionSettings extends Command {
         attentionWindowSet: setAttentionWindow
             ? const Value(true)
             : const Value.absent(),
-        seeWithinRequests: setSeeWithinRequests
-            ? Value(SeeWithinTime.toJsonString(seeWithinRequests))
+        seeWithin: setSeeWithin
+            ? Value(SeeWithinTime.toJsonString(seeWithin))
             : const Value.absent(),
-        seeWithinRequestsSet: setSeeWithinRequests
-            ? const Value(true)
-            : const Value.absent(),
-        seeWithinUpdates: setSeeWithinUpdates
-            ? Value(SeeWithinTime.toJsonString(seeWithinUpdates))
-            : const Value.absent(),
-        seeWithinUpdatesSet: setSeeWithinUpdates
+        seeWithinSet: setSeeWithin
             ? const Value(true)
             : const Value.absent(),
       ),
@@ -545,10 +474,8 @@ class _SaveAttentionSettings extends Command {
                   ?.map((w) => w.toJson())
                   .toList(),
               'set_attention_window': setAttentionWindow,
-              'see_within_requests': seeWithinRequests?.toJson(),
-              'set_see_within_requests': setSeeWithinRequests,
-              'see_within_updates': seeWithinUpdates?.toJson(),
-              'set_see_within_updates': setSeeWithinUpdates,
+              'see_within': seeWithin?.toJson(),
+              'set_see_within': setSeeWithin,
             },
           )
           .then((_) => Priority.pull())

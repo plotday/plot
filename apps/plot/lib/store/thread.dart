@@ -55,7 +55,31 @@ class Threads extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
-  TextColumn get urgency => text().nullable()();
+
+  /// AI/user classification of this thread for the current user: drives the
+  /// activity-feed tab. One of 'respond' / 'do' / 'read' / 'update' when a
+  /// thread_state row exists for the user; NULL otherwise (clearly passive
+  /// material that lives only in All).
+  TextColumn get actionType => text().nullable()();
+
+  /// True when the user should be notified immediately rather than waiting
+  /// for the next see_within window. Bypasses the importance >= 50 gate.
+  BoolColumn get urgent => boolean().nullable()();
+
+  /// Drag-to-reorder position within an action tab (Respond / Do / Read).
+  /// Previously stored on the per-user schedule row.
+  RealColumn get stateOrder =>
+      real().nullable().map(const OrderConverter())();
+
+  /// Per-user "do on this date" intent (daterange lower bound). Previously
+  /// stored on the per-user schedule row.
+  TextColumn get stateOn => text().nullable().map(const DateConverter())();
+
+  /// Per-user "do at this time" intent (tstzrange lower bound). Previously
+  /// stored on the per-user schedule row.
+  DateTimeColumn get stateAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+
   DateTimeColumn get readAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get bumpedAt =>
@@ -129,8 +153,6 @@ class Schedules extends Table with SyncableTable, UuidTable {
     return formatOccurrence(local, dateOnly: false);
   }
 
-  BlobColumn get userId => blob().nullable().map(const UuidConverter())();
-  RealColumn get order => real().nullable().map(const OrderConverter())();
   DateTimeColumn get startAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get endAt =>
@@ -151,9 +173,6 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get contacts => text().nullable()();
   TextColumn get currentUserStatus => text().nullable()();
   TextColumn get reason => text().nullable()();
-  TextColumn get action => text().nullable()();
-  BoolColumn get outstandingTasks =>
-      boolean().withDefault(const Constant(false))();
 }
 
 @DataClassName('ThreadAssociationRow')
@@ -387,7 +406,8 @@ class ThreadsBase extends BaseTable {
           merged = merged.copyWith(
             unread: false,
             importance: 0,
-            urgency: const Value(null),
+            actionType: const Value(null),
+            urgent: const Value(null),
             readAt: Value(local.readAt),
           );
         }
@@ -445,10 +465,16 @@ class ThreadsBase extends BaseTable {
     // The client sets this correctly to Base.actorId (contact ID)
     // Do NOT remove - the sync API needs it to set the correct author
 
-    // Remove unread fields - they are managed separately
+    // Remove per-user thread_state fields — they are managed separately via
+    // /sync/thread-state (action_type / urgent / importance / order / on / at
+    // / read_at all live there, not on the shared thread row).
     json.remove('unread');
     json.remove('importance');
-    json.remove('urgency');
+    json.remove('action_type');
+    json.remove('urgent');
+    json.remove('state_order');
+    json.remove('state_on');
+    json.remove('state_at');
     json.remove('read_at');
 
     // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
@@ -541,46 +567,22 @@ class SchedulesBase extends BaseTable {
       json['on'] = '[${startOn ?? ''},${endOn ?? ''})';
     }
 
-    // Add user_id for per-user schedules
-    if (json['user_id'] != null) {
-      json['user_id'] = json['user_id'].toString();
-    }
-
     // Remove local-only fields
     json.remove('contacts');
     json.remove('current_user_status');
 
     // Occurrence override rows must never carry the parent series'
     // recurrence_rule / recurrence_exdates — the DB enforces this via
-    // schedule_recurrence_xor_occurrence. Thread.generateOccurrences carries
-    // those fields onto the synthetic schedule so in-memory display logic
-    // can see the series rule, but they must be stripped before pushing or
-    // the server rejects the row with a 422 and the sync orchestrator marks
-    // the row permanently failed (also stranding any session that points at
-    // it via session_schedule_id_fkey).
+    // schedule_recurrence_xor_occurrence.
     if (json['occurrence'] != null) {
       json.remove('recurrence_rule');
       json.remove('recurrence_exdates');
     }
 
-    // Per-user schedules: always include at/on explicitly (even if null)
-    // to ensure the server's upsert_schedule clears these fields.
-    // Without this, absent keys are treated as "keep existing" and stale
-    // dates (e.g. from a previous todo toggle) persist on the server,
-    // causing the thread to flip back to "To Do" on next pull.
-    if (json['user_id'] != null &&
-        !json.containsKey('at') &&
-        !json.containsKey('on')) {
-      json['at'] = null;
-      json['on'] = null;
-    }
-
-    // Safety: DB constraint requires exactly one of at/on to be set,
-    // unless it's a per-user schedule (user_id IS NOT NULL) which can be undated.
-    // If neither is present and it's a shared schedule, default to today.
-    if (!json.containsKey('at') &&
-        !json.containsKey('on') &&
-        json['user_id'] == null) {
+    // DB constraint requires exactly one of at/on to be set on schedule (no
+    // more per-user undated rows — per-user "do on date" intent lives on
+    // thread_state). Default to today when neither is present.
+    if (!json.containsKey('at') && !json.containsKey('on')) {
       final today = Time.now();
       final dateStr =
           '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
@@ -593,12 +595,18 @@ class SchedulesBase extends BaseTable {
   @override
   Insertable<ScheduleRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
-    // Map schedule_user_id → user_id (view returns user_id as authenticated user,
-    // schedule_user_id as the actual schedule's user_id)
-    json['user_id'] = json.remove('schedule_user_id');
+    // user_id is the row owner from the user.schedule view; the schedule
+    // table itself no longer has a user_id column. Drop it on the way in.
+    json.remove('user_id');
+    json.remove('schedule_user_id');
     json.remove('priority_path');
     json.remove('range_at');
     json.remove('range_on');
+    // Retired schedule columns — still present in older sync payloads but no
+    // longer stored locally. They now live on thread_state.
+    json.remove('order');
+    json.remove('action');
+    json.remove('outstanding_tasks');
 
     // Store contacts as JSON string and extract current user's RSVP status
     final contacts = json.remove('contacts');
@@ -1240,7 +1248,6 @@ class Thread extends Equatable implements Comparable<Thread> {
   static Stream<List<Thread>> watchAssociatedThreads() {
     final a = Store.get.alias(Store.get.threads, 'a');
     final sched = Store.get.alias(Store.get.schedules, 'sched');
-    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
     final linkTable = Store.get.alias(Store.get.links, 'l');
     final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
     final tags = Store.get.alias(Store.get.threadTags, 'tags');
@@ -1252,22 +1259,16 @@ class Thread extends Equatable implements Comparable<Thread> {
         ta,
         ta.childThreadId.equalsExp(a.id) & ta.archivedAt.isNull(),
       ),
-      // Same joins as _getQuery so _mapResultsToThreads works
+      // Same joins as _getQuery so _mapResultsToThreads works. Per-user
+      // state (action_type, urgent, state_order, state_on, state_at,
+      // read_at) lives on the thread row itself, so no per-user schedule
+      // join is needed.
       leftOuterJoin(
         sched,
-        sched.threadId.equalsExp(a.id) & sched.userId.isNull(),
-      ),
-      leftOuterJoin(
-        userSched,
-        userSched.threadId.equalsExp(a.id) &
-            userSched.userId.equalsValue(Base.userId) &
-            userSched.occurrence.isNull(),
+        sched.threadId.equalsExp(a.id) & sched.linkId.isNull(),
       ),
       leftOuterJoin(linkTable, linkTable.threadId.equalsExp(a.id)),
-      leftOuterJoin(
-        linkSched,
-        linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
-      ),
+      leftOuterJoin(linkSched, linkSched.linkId.equalsExp(linkTable.id)),
       leftOuterJoin(
         tags,
         (tags.id.equalsExp(a.id) | (tags.id.isNull() & a.id.isNull())) &
@@ -1376,7 +1377,6 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // COUNT query for Tag.todo
     final s = Store.get.schedules;
-    final us = Store.get.alias(Store.get.schedules, 'us');
     final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     nowQuery.join([
       innerJoin(
@@ -1385,13 +1385,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             (p.path.equalsValue(priorityPath) |
                 p.path.likeExp(Constant(priorityPathLike))),
       ),
-      leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
-      leftOuterJoin(
-        us,
-        us.threadId.equalsExp(a.id) &
-            us.userId.equalsValue(Base.userId) &
-            us.occurrence.isNull(),
-      ),
+      leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
     nowQuery.where(
       a.archivedAt.isNull() &
@@ -1401,8 +1395,9 @@ class Thread extends Equatable implements Comparable<Thread> {
               // DateTime-based scheduling: startAt <= now AND endAt >= now
               (s.startAt.isSmallerOrEqualValue(now) &
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now))) |
-              // Per-user todo: non-archived per-user schedule exists
-              (us.id.isNotNull() & us.archivedAt.isNull())),
+              // Per-user todo: thread has an unread/unfinished per-user
+              // state (action_type set, not yet marked read).
+              (a.actionType.isNotNull() & a.readAt.isNull())),
     );
     final nowCountStream = nowQuery.watch().map(
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
@@ -1684,7 +1679,6 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     final a = Store.get.alias(Store.get.threads, 'a');
     final sched = Store.get.alias(Store.get.schedules, 'sched');
-    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
     final linkTable = Store.get.alias(Store.get.links, 'l');
     final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
     final startingQuery = Store.get.select(a);
@@ -1697,24 +1691,17 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     var query = startingQuery.join([
-      // Shared schedule (event timing, visible to all priority members)
+      // Shared schedule (event timing, visible to all priority members).
+      // Per-user state — action_type / urgent / state_order / state_on /
+      // state_at / read_at — now lives directly on the thread row (a.*),
+      // so no per-user schedule join is needed.
       leftOuterJoin(
         sched,
-        sched.threadId.equalsExp(a.id) & sched.userId.isNull(),
-      ),
-      // Per-user schedule (todo state, dates, and order for current user)
-      leftOuterJoin(
-        userSched,
-        userSched.threadId.equalsExp(a.id) &
-            userSched.userId.equalsValue(Base.userId) &
-            userSched.occurrence.isNull(),
+        sched.threadId.equalsExp(a.id) & sched.linkId.isNull(),
       ),
       // Links for this thread, then their shared schedules
       leftOuterJoin(linkTable, linkTable.threadId.equalsExp(a.id)),
-      leftOuterJoin(
-        linkSched,
-        linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
-      ),
+      leftOuterJoin(linkSched, linkSched.linkId.equalsExp(linkTable.id)),
     ]);
     final now = Time.now();
 
@@ -1740,10 +1727,12 @@ class Thread extends Equatable implements Comparable<Thread> {
           p.path.likeExp(Constant('$priorityPath%'));
 
       if (includeAllFutureEvents) {
+        // Per-user state has no end-at (no recurrence / end columns), so
+        // a future per-user todo with no shared schedule is matched by the
+        // active-todo branch in the range block below, not here.
         pathCondition =
             pathCondition |
             sched.endAt.isBiggerOrEqualValue(now) |
-            userSched.endAt.isBiggerOrEqualValue(now) |
             linkSched.endAt.isBiggerOrEqualValue(now);
       }
 
@@ -1763,8 +1752,9 @@ class Thread extends Equatable implements Comparable<Thread> {
             (sched.startAt.isSmallerOrEqualValue(now) &
                 (sched.endAt.isNull() |
                     sched.endAt.isBiggerOrEqualValue(now))) |
-            // Per-user todo: non-archived per-user schedule exists
-            (userSched.id.isNotNull() & userSched.archivedAt.isNull()) |
+            // Per-user todo: thread has an unfinished per-user state
+            // (action_type set, not yet marked read).
+            (a.actionType.isNotNull() & a.readAt.isNull()) |
             // Link schedule date-based: startOn <= today
             (linkSched.startOn.isSmallerOrEqualValue(Date.today().toString()) &
                 linkSched.startAt.isNull()) |
@@ -1781,19 +1771,14 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
     if (todoOnly) {
-      // SQL translation of [Thread.isTodoUserSchedule]:
-      //   userScheduleId != null
-      //   && archivedAt == null
-      //   && (startOn != null || startAt != null)
+      // SQL translation of [Thread.isTodo]:
+      //   actionType != null
+      //   && readAt == null
       //
-      // **Keep in lockstep with [Thread.isTodoUserSchedule] and the
-      // fixture matrix in `test/store/thread_todo_predicate_test.dart`.**
-      // Identical shape to the `activeTodo` sub-expression in the range
-      // branch.
+      // **Keep in lockstep with [Thread.isTodo] and the fixture matrix in
+      // `test/store/thread_todo_predicate_test.dart`.**
       query.where(
-        userSched.id.isNotNull() &
-            userSched.archivedAt.isNull() &
-            (userSched.startOn.isNotNull() | userSched.startAt.isNotNull()),
+        a.actionType.isNotNull() & a.readAt.isNull(),
       );
     }
     if (archived != null) {
@@ -1915,27 +1900,26 @@ class Thread extends Equatable implements Comparable<Thread> {
       Expression<bool> condition = Constant(false);
 
       // Unscheduled activities - included regardless of date range when requested.
-      // Must check both shared and per-user schedules have no dates.
+      // Must check both shared schedule and per-user state have no dates.
       // Excluded for agenda queries where unscheduled non-todo items would
       // consume the LIMIT and then be filtered out as past dates.
       if (includeUnscheduled && !eventsOnly) {
         Expression<bool> unscheduled =
             sched.startOn.isNull() &
             sched.startAt.isNull() &
-            userSched.startOn.isNull() &
-            userSched.startAt.isNull();
+            a.stateOn.isNull() &
+            a.stateAt.isNull();
         condition = condition | unscheduled;
       }
 
-      // Active todo: always include threads with an active user schedule (has dates).
-      // Skip for linkScheduledOnly — we only want threads by their link schedule,
-      // not by their user schedule (those belong to the priority-filtered query).
+      // Active todo: always include threads with an unfinished per-user
+      // state (action_type set, not yet read).
+      // Skip for linkScheduledOnly — we only want threads by their link
+      // schedule, not by their per-user state.
       // Skip for eventsOnly — caller is running a separate todoOnly watch.
       if (!linkScheduledOnly && !eventsOnly) {
         Expression<bool> activeTodo =
-            userSched.id.isNotNull() &
-            userSched.archivedAt.isNull() &
-            (userSched.startOn.isNotNull() | userSched.startAt.isNotNull());
+            a.actionType.isNotNull() & a.readAt.isNull();
         condition = condition | activeTodo;
       }
 
@@ -1962,30 +1946,24 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
         condition = condition | dateScheduled;
 
-        // Per-user schedule date-based. Skipped for eventsOnly so the
+        // Per-user state date-based. Skipped for eventsOnly so the
         // caller's sibling todoOnly watch is the sole source for these.
+        // Per-user state has no end_on column (no recurrence / end), so
+        // the open-range fallback in `strictRange == false` just matches
+        // on start.
         if (!eventsOnly) {
-          Expression<bool> userDateScheduled = userSched.startOn.isNotNull();
-          if (range.start != null) {
-            if (strictRange) {
-              userDateScheduled =
-                  userDateScheduled &
-                  userSched.startOn.isBiggerOrEqualValue(
-                    range.start!.toString(),
-                  );
-            } else {
-              userDateScheduled =
-                  userDateScheduled &
-                  (userSched.endOn.isNull() |
-                      userSched.endOn.isBiggerOrEqualValue(
-                        range.start!.toString(),
-                      ));
-            }
+          Expression<bool> userDateScheduled = a.stateOn.isNotNull();
+          if (range.start != null && strictRange) {
+            userDateScheduled =
+                userDateScheduled &
+                a.stateOn.isBiggerOrEqualValue(
+                  range.start!.toString(),
+                );
           }
           if (range.end != null) {
             userDateScheduled =
                 userDateScheduled &
-                userSched.startOn.isSmallerThanValue(range.end!.toString());
+                a.stateOn.isSmallerThanValue(range.end!.toString());
           }
           condition = condition | userDateScheduled;
         }
@@ -2013,26 +1991,21 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
       condition = condition | dateTimeScheduled;
 
-      // Per-user schedule datetime-based. Skipped for eventsOnly (see
-      // userDateScheduled).
+      // Per-user state datetime-based. Skipped for eventsOnly (see
+      // userDateScheduled). Per-user state has no end_at column, so the
+      // open-range fallback in `strictRange == false` just matches on
+      // start.
       if (!eventsOnly) {
-        Expression<bool> userDateTimeScheduled = userSched.startAt.isNotNull();
-        if (rangeStart != null) {
-          if (strictRange) {
-            userDateTimeScheduled =
-                userDateTimeScheduled &
-                userSched.startAt.isBiggerOrEqualValue(rangeStart);
-          } else {
-            userDateTimeScheduled =
-                userDateTimeScheduled &
-                (userSched.endAt.isNull() |
-                    userSched.endAt.isBiggerOrEqualValue(rangeStart));
-          }
+        Expression<bool> userDateTimeScheduled = a.stateAt.isNotNull();
+        if (rangeStart != null && strictRange) {
+          userDateTimeScheduled =
+              userDateTimeScheduled &
+              a.stateAt.isBiggerOrEqualValue(rangeStart);
         }
         if (rangeEnd != null) {
           userDateTimeScheduled =
               userDateTimeScheduled &
-              userSched.startAt.isSmallerThanValue(rangeEnd);
+              a.stateAt.isSmallerThanValue(rangeEnd);
         }
         condition = condition | userDateTimeScheduled;
       }
@@ -2083,13 +2056,13 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
       condition = condition | linkDateTimeScheduled;
 
-      // Exclude archived per-user schedules (done items).
-      // Only include threads where the user schedule is absent, not archived,
-      // or has a link schedule.
+      // Exclude read-and-done threads (done items). Only include threads
+      // where the per-user state is absent, not yet read, or where there
+      // is a link schedule to render.
       condition =
           condition &
-          (userSched.id.isNull() |
-              userSched.archivedAt.isNull() |
+          (a.actionType.isNull() |
+              a.readAt.isNull() |
               linkSched.id.isNotNull());
 
       query.where(condition);
@@ -2122,8 +2095,8 @@ class Thread extends Equatable implements Comparable<Thread> {
           cases: [
             CaseWhen(sched.startAt.isNotNull(), then: sched.startAt),
             CaseWhen(sched.startOn.isNotNull(), then: sched.startOn),
-            CaseWhen(userSched.startAt.isNotNull(), then: userSched.startAt),
-            CaseWhen(userSched.startOn.isNotNull(), then: userSched.startOn),
+            CaseWhen(a.stateAt.isNotNull(), then: a.stateAt),
+            CaseWhen(a.stateOn.isNotNull(), then: a.stateOn),
             CaseWhen(linkSched.startAt.isNotNull(), then: linkSched.startAt),
             CaseWhen(linkSched.startOn.isNotNull(), then: linkSched.startOn),
           ],
@@ -2132,7 +2105,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         query.orderBy([
           OrderingTerm.asc(hasHardSchedule),
           OrderingTerm.asc(todoSort),
-          OrderingTerm.asc(userSched.order),
+          OrderingTerm.asc(a.stateOrder),
         ]);
         break;
       case ThreadOrder.reverse:
@@ -2549,27 +2522,19 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     final a = Store.get.alias(Store.get.threads, 'a');
     final sched = Store.get.alias(Store.get.schedules, 'sched');
-    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
     final linkTable = Store.get.alias(Store.get.links, 'l');
     final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
     final tags = Store.get.alias(Store.get.threadTags, 'tags');
 
     final query = Store.get.select(a).join([
+      // Per-user state lives directly on the thread row, so no per-user
+      // schedule join is needed.
       leftOuterJoin(
         sched,
-        sched.threadId.equalsExp(a.id) & sched.userId.isNull(),
-      ),
-      leftOuterJoin(
-        userSched,
-        userSched.threadId.equalsExp(a.id) &
-            userSched.userId.equalsValue(Base.userId) &
-            userSched.occurrence.isNull(),
+        sched.threadId.equalsExp(a.id) & sched.linkId.isNull(),
       ),
       leftOuterJoin(linkTable, linkTable.threadId.equalsExp(a.id)),
-      leftOuterJoin(
-        linkSched,
-        linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
-      ),
+      leftOuterJoin(linkSched, linkSched.linkId.equalsExp(linkTable.id)),
       leftOuterJoin(
         tags,
         (tags.id.equalsExp(a.id) | (tags.id.isNull() & a.id.isNull())) &
@@ -2675,7 +2640,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final a = Store.get.alias(Store.get.threads, 'a');
     final tags = Store.get.alias(Store.get.threadTags, 'tags');
     final sched = Store.get.alias(Store.get.schedules, 'sched');
-    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
     final linkTable = Store.get.alias(Store.get.links, 'l');
     final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
 
@@ -2710,9 +2674,10 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         continue;
       }
 
-      // Read the base schedule (first row without an occurrence, or just the first)
+      // Read the base schedule (first row without an occurrence, or just the first).
+      // Per-user state lives on the thread row itself (activityRow), so we
+      // no longer read a separate user_schedule row.
       final baseScheduleRow = group.first.readTableOrNull(sched);
-      final userScheduleRow = group.first.readTableOrNull(userSched);
 
       // Extract max link source_created_at for activity_at computation
       DateTime? linkSourceCreatedAt;
@@ -2766,7 +2731,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         activity: activityRow,
         priority: priority,
         schedule: effectiveScheduleRow,
-        userSchedule: userScheduleRow,
         tags: tagsRow,
         active: activeIds.contains(activityRow.id),
         unreadComputed: unreadIds.contains(activityRow.id),
@@ -2840,7 +2804,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
                 priority: priority,
                 tags: result.readTableOrNull(tags),
                 schedule: scheduleRow,
-                userSchedule: userScheduleRow,
                 active: activeIds.contains(activityRow.id),
                 unreadComputed: unreadIds.contains(activityRow.id),
                 linkSourceCreatedAt: linkSourceCreatedAt,
@@ -2899,7 +2862,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
               activity: activityRow,
               priority: priority,
               schedule: baseRecurring,
-              userSchedule: userScheduleRow,
               tags: tagsRow,
               active: activeIds.contains(activityRow.id),
               unreadComputed: unreadIds.contains(activityRow.id),
@@ -2931,7 +2893,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
                   activity: activityRow,
                   priority: priority,
                   schedule: overrideRow,
-                  userSchedule: userScheduleRow,
                   tags: tagsRow,
                   active: activeIds.contains(activityRow.id),
                   unreadComputed: unreadIds.contains(activityRow.id),
@@ -2951,7 +2912,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
                 activity: activityRow,
                 priority: priority,
                 schedule: linkScheduleRow,
-                userSchedule: userScheduleRow,
                 tags: tagsRow,
                 active: activeIds.contains(activityRow.id),
                 unreadComputed: unreadIds.contains(activityRow.id),
@@ -3019,7 +2979,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
               threadList[i] = Thread._fromStore(
                 activity: thread._thread,
                 schedule: thread._schedule,
-                userSchedule: thread._userSchedule,
                 tags: tagRow,
                 priority: thread.priority,
                 isLinkScheduleInstance: thread.isLinkScheduleInstance,
@@ -3071,12 +3030,17 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
-    /// Optional per-user schedule. Production paths populate this via
-    /// the Drift query in [Thread.watch] (left-join onto `user_schedule`);
-    /// exposed here so tests can construct a [Thread] in a specific todo
-    /// or pinned-todo state without going through [copyWith] (which
-    /// requires a live [Base.userId]).
-    ScheduleRow? userSchedule,
+    /// Optional per-user thread-state fields. Production paths populate
+    /// these via the Drift query in [Thread.watch] (the columns live
+    /// directly on `threads`); exposed here so tests can construct a
+    /// [Thread] in a specific todo or pinned-todo state without going
+    /// through [copyWith].
+    String? actionType,
+    bool? urgent,
+    Order? stateOrder,
+    Date? stateOn,
+    DateTime? stateAt,
+    DateTime? readAt,
   }) {
     final now = Time.now();
     final threadId = Uuid.generate();
@@ -3090,8 +3054,12 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       preview: preview,
       unread: false,
       importance: 0,
-      urgency: null,
-      readAt: null,
+      actionType: actionType,
+      urgent: urgent,
+      stateOrder: stateOrder,
+      stateOn: stateOn,
+      stateAt: stateAt,
+      readAt: readAt,
       hasEmbedding: false,
       revoked: false,
       // Seed topic + per-priority sharing defaults onto the draft thread so
@@ -3124,14 +3092,12 @@ LEFT JOIN links l ON l.thread_id = a.id''');
             endAt: at?.end,
             startOn: at == null ? on?.start : null,
             endOn: at == null ? on?.end : null,
-            outstandingTasks: false,
           )
         : null;
     return Thread._fromStore(
       activity: activity,
       priority: priority,
       schedule: schedule,
-      userSchedule: userSchedule,
       notes: notes,
       activityDirty: true,
       activityRemoteDirty: true,
@@ -3143,7 +3109,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     required ThreadRow activity,
     required this.priority,
     ScheduleRow? schedule,
-    ScheduleRow? userSchedule,
     ThreadTagsRow? tags,
     List<Note>? notes,
     bool? active,
@@ -3154,9 +3119,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     bool activityDirty = false,
     bool activityRemoteDirty = false,
     bool scheduleDirty = false,
+    bool stateDirty = false,
   }) : _thread = activity,
        _schedule = schedule,
-       _userSchedule = userSchedule,
        _tags = tags,
        _notes = notes,
        _active = active,
@@ -3164,7 +3129,8 @@ LEFT JOIN links l ON l.thread_id = a.id''');
        _linkSourceCreatedAt = linkSourceCreatedAt,
        _activityDirty = activityDirty,
        _activityRemoteDirty = activityRemoteDirty,
-       _scheduleDirty = scheduleDirty {
+       _scheduleDirty = scheduleDirty,
+       _stateDirty = stateDirty {
     assert(
       priority.id == activity.priorityId,
       "Priority does not match activity",
@@ -3173,7 +3139,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
   final ThreadRow _thread;
   final ScheduleRow? _schedule;
-  final ScheduleRow? _userSchedule;
   final ThreadTagsRow? _tags;
   final List<Note>? _notes;
   final bool? _active;
@@ -3183,6 +3148,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// Whether the activity row needs a remote push (vs local-only read-state update).
   final bool _activityRemoteDirty;
   final bool _scheduleDirty;
+  /// Whether the per-user thread-state fields changed and need to be
+  /// pushed via POST /sync/thread-state.
+  final bool _stateDirty;
 
   /// Whether this instance represents a link schedule (event from a linked item).
   /// Link schedule instances appear at their event time and are not reorderable.
@@ -3200,9 +3168,8 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
   Uuid get id => _thread.id;
   bool get recurring =>
-      (_schedule?.recurrenceRule ?? _userSchedule?.recurrenceRule) != null &&
-      (_schedule?.occurrence ?? _userSchedule?.occurrence) == null;
-  Order get order => _userSchedule?.order ?? Order.first();
+      _schedule?.recurrenceRule != null && _schedule?.occurrence == null;
+  Order get order => _thread.stateOrder ?? Order.first();
   DateTime get createdAt => _thread.createdAt;
   DateTime get updatedAt => _thread.updatedAt;
   DateTime? get archivedAt => _thread.archivedAt;
@@ -3218,10 +3185,8 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   }
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
-  RecurrenceRule? get recurrenceRule =>
-      _schedule?.recurrenceRule ?? _userSchedule?.recurrenceRule;
-  List<DateTime>? get recurrenceExdates =>
-      _schedule?.recurrenceExdates ?? _userSchedule?.recurrenceExdates;
+  RecurrenceRule? get recurrenceRule => _schedule?.recurrenceRule;
+  List<DateTime>? get recurrenceExdates => _schedule?.recurrenceExdates;
   Map<Tag, List<ActorId>> get tags => {
     ...Map.fromEntries(
       [
@@ -3253,16 +3218,21 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// Used as the read_at value when the user reads this thread.
   DateTime get contentTimestamp =>
       lastNoteSourceCreatedAt ?? createdAt;
-  String? get urgency => _thread.urgency;
-  int get importance => _thread.importance;
+  /// AI/user classification of this thread for the current user: drives
+  /// the activity-feed action tab (Respond / Do / Read) when set. Null
+  /// for threads with no per-user state row.
+  String? get actionType => _thread.actionType;
 
-  int get urgencyRank => switch (urgency) {
-    'interrupt' => 0,
-    'inform-requests' => 1,
-    'inform-updates' => 2,
-    'passive' => 3,
-    _ => 4,
-  };
+  /// Backwards-compat alias used by older call sites that filtered the
+  /// activity tab on the schedule's `action` column. Equivalent to
+  /// [actionType].
+  String? get scheduleAction => _thread.actionType;
+
+  /// True when the user should be notified immediately rather than
+  /// waiting for the next see-within window.
+  bool get urgent => _thread.urgent ?? false;
+
+  int get importance => _thread.importance;
 
   String? get title => _thread.title;
   String? get preview => _thread.preview;
@@ -3470,8 +3440,8 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return (_schedule?.startAt != null
             ? DateTimeRange(_schedule!.startAt!, _schedule.endAt)
             : null) ??
-        (_userSchedule?.startAt != null && _userSchedule!.archivedAt == null
-            ? DateTimeRange(_userSchedule.startAt!, _userSchedule.endAt)
+        (_thread.stateAt != null && _thread.readAt == null
+            ? DateTimeRange(_thread.stateAt!, null)
             : null) ??
         on?.toDateTimeRange();
   }
@@ -3485,21 +3455,16 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return (_schedule?.startOn != null
             ? CustomDateRange(_schedule!.startOn!, _schedule.endOn)
             : null) ??
-        (_userSchedule?.startOn != null &&
-                _userSchedule!.archivedAt == null &&
-                _userSchedule.startOn != Thread.todoNowDate
-            ? CustomDateRange(_userSchedule.startOn!, _userSchedule.endOn)
+        (_thread.stateOn != null &&
+                _thread.readAt == null &&
+                _thread.stateOn != Thread.todoNowDate
+            ? CustomDateRange(_thread.stateOn!, null)
             : null);
   }
 
   Duration? get duration {
-    if (isLinkScheduleInstance) {
-      return _schedule?.duration ?? on?.duration ?? at?.duration;
-    }
-    return _schedule?.duration ??
-        _userSchedule?.duration ??
-        on?.duration ??
-        at?.duration;
+    // Per-user state has no duration; events on the shared schedule do.
+    return _schedule?.duration ?? on?.duration ?? at?.duration;
   }
 
   DateTime get agendaAt {
@@ -3508,9 +3473,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       return at?.start ?? on?.start?.toDateTime() ?? createdAt;
     }
     if (todo) {
-      // User schedule date takes priority (explicit user override via reorder).
+      // Per-user state date takes priority (explicit user override via reorder).
       final schedDate =
-          _userSchedule?.startOn?.toDateTime() ??
+          _thread.stateOn?.toDateTime() ??
           pinnedAfterTime ??
           at?.start ??
           on?.start?.toDateTime();
@@ -3529,7 +3494,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// past dates so that todos from different days maintain their relative order
   /// when they all appear as "current".
   DateTime get todoSortDate {
-    return _userSchedule?.startOn?.toDateTime() ??
+    return _thread.stateOn?.toDateTime() ??
         pinnedAfterTime ??
         at?.start ??
         on?.start?.toDateTime() ??
@@ -3635,26 +3600,30 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return null;
   }
 
-  bool get todo => isTodoUserSchedule(
-    userScheduleId: _userSchedule?.id,
-    archivedAt: _userSchedule?.archivedAt,
-    startOn: _userSchedule?.startOn,
-    startAt: _userSchedule?.startAt,
+  bool get todo => isTodo(
+    actionType: _thread.actionType,
+    readAt: _thread.readAt,
   );
 
-  /// Canonical "is this thread a user todo?" predicate, factored out so the
-  /// Dart [todo] getter and the SQL `todoOnly` clause in [_getQuery] both
-  /// reference a single source of truth.
+  /// Canonical "is this thread a user todo?" predicate, factored out so
+  /// the Dart [todo] getter and the SQL `todoOnly` clause in [_getQuery]
+  /// both reference a single source of truth.
   ///
-  /// A thread is a todo when the current user has a non-archived
-  /// `user_schedule` row with at least one date column set. Note that
-  /// [userScheduleId] standing in for "row exists" is intentional —
-  /// `LEFT JOIN user_schedule` returns NULL id when the user has no row.
+  /// A thread is a todo when the per-user state exists (action_type set)
+  /// and the user hasn't marked it read.
   ///
   /// **Keep this in lockstep with the SQL clause guarded by `todoOnly` in
   /// [_getQuery].** The SQL form is the same conjunction translated to
   /// Drift expressions; if you change one, change the other and the
   /// fixtures in `test/store/thread_todo_predicate_test.dart`.
+  static bool isTodo({
+    required String? actionType,
+    required DateTime? readAt,
+  }) {
+    return actionType != null && readAt == null;
+  }
+
+  /// Backwards-compat alias for older call sites. Equivalent to [isTodo].
   static bool isTodoUserSchedule({
     required Object? userScheduleId,
     required DateTime? archivedAt,
@@ -3667,23 +3636,22 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   }
 
   /// Returns the pinned-after time for a todo that was dragged after an event.
-  /// A todo is "pinned" when it has a userSchedule.startAt but no real startOn
+  /// A todo is "pinned" when it has a per-user state_at but no real state_on
   /// (null or epoch sentinel). Returns null for regular todos/events.
   DateTime? get pinnedAfterTime {
-    if (_userSchedule == null) return null;
-    final startAt = _userSchedule.startAt;
-    if (startAt == null) return null;
-    final startOn = _userSchedule.startOn;
-    if (startOn == null || startOn == Thread.todoNowDate) return startAt;
+    final stateAt = _thread.stateAt;
+    if (stateAt == null) return null;
+    final stateOn = _thread.stateOn;
+    if (stateOn == null || stateOn == Thread.todoNowDate) return stateAt;
     return null;
   }
 
   /// Whether this todo is pinned after a specific event.
   bool get isPinnedTodo => pinnedAfterTime != null;
 
-  /// A thread is "done" when it has no active per-user schedule (archived or absent)
-  /// and no dates set. Effectively: not a todo.
-  bool get done => _userSchedule != null && !todo;
+  /// A thread is "done" when it has per-user state but has been read.
+  /// Effectively: not a todo, but still touched by the user.
+  bool get done => _thread.actionType != null && !todo;
 
   /// Active = marked "To do" (user schedule with `todoNowDate` sentinel)
   /// or todo with a user-schedule date that is today or in the past.
@@ -3707,27 +3675,33 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// non-todo threads.
   bool get isInactiveThread => !todo && !unread;
 
-  /// The user-schedule's `action` value — one of `respond`, `do`, `read`,
-  /// or null. Drives which action tab the thread appears in.
-  String? get scheduleAction => _userSchedule?.action;
-  bool get outstandingTasks => _userSchedule?.outstandingTasks ?? false;
+  // TODO(thread-state-refactor): Derive `outstandingTasks` from the
+  // thread's note-tag / link state already loaded in memory. Stubbed to
+  // `false` so the "outstanding tasks" badge is inert until the
+  // derivation lands.
+  bool get outstandingTasks => false;
   DateTime? get bumpedAt => _thread.bumpedAt;
-  bool get hasUserSchedule => _userSchedule != null;
+
+  /// True when the current user has a per-user state row on this thread
+  /// (i.e. action_type is set).
+  bool get hasUserSchedule => _thread.actionType != null;
+
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
       on?.end?.isBefore(Date.today()) == true;
   bool get isFuture {
     if (isLinkScheduleInstance) {
-      // Icon based on user schedule state only, not the link schedule's date
-      if (_userSchedule?.startOn != null) {
-        return _userSchedule!.startOn!.isAfter(Date.today());
+      // Icon based on per-user state only, not the link schedule's date
+      if (_thread.stateOn != null) {
+        return _thread.stateOn!.isAfter(Date.today());
       }
       return false; // No user date = not future = shows todo icon
     }
-    // For todos, check the user schedule date first (matches agendaAt logic)
-    // so the icon is consistent with the date the thread appears under.
-    if (todo && _userSchedule?.startOn != null) {
-      return _userSchedule!.startOn!.isAfter(Date.today());
+    // For todos, check the per-user state date first (matches agendaAt
+    // logic) so the icon is consistent with the date the thread appears
+    // under.
+    if (todo && _thread.stateOn != null) {
+      return _thread.stateOn!.isAfter(Date.today());
     }
     if (todo && pinnedAfterTime != null) {
       return pinnedAfterTime!.toDate().isAfter(Date.today());
@@ -3847,7 +3821,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return Thread._fromStore(
       activity: _thread,
       schedule: updatedSchedule,
-      userSchedule: _userSchedule,
       tags: _tags,
       priority: priority,
       notes: _notes,
@@ -3859,108 +3832,96 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
   static const separator = ' › ';
 
-  /// Returns a new Thread with the given user schedule, preserving all other fields.
-  Thread _withUserSchedule(ScheduleRow userSchedule) {
+  /// Returns a new Thread with the given thread-state fields applied to
+  /// the thread row, preserving everything else. Marks the result as
+  /// state-dirty so [save] pushes via /sync/thread-state.
+  Thread _withThreadState(ThreadRow updated) {
     return Thread._fromStore(
-      activity: _thread,
+      activity: updated,
       schedule: _schedule,
-      userSchedule: userSchedule,
       tags: _tags,
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
       rsvpInheritedFromSeries: rsvpInheritedFromSeries,
+      activityDirty: true,
+      stateDirty: true,
     );
   }
 
-  /// Returns a copy with the user schedule marked archived. Used to
-  /// mirror what `associateWith` will write to the DB so the optimistic
-  /// agenda model treats this thread as no longer todo (no dual
-  /// appearance under both its scheduled spot AND the event header).
-  /// No-op when there's no user schedule to archive.
+  /// Returns a copy with the per-user state marked read (mirroring the
+  /// pre-refactor "archive the user schedule" behaviour). Used to mirror
+  /// what `associateWith` will write to the DB so the optimistic agenda
+  /// model treats this thread as no longer todo. No-op when there's no
+  /// per-user state to clear.
   Thread withScheduleArchived() {
-    if (_userSchedule == null) return this;
-    return _withUserSchedule(
-      _userSchedule.copyWith(
-        archivedAt: Value(DateTime.now()),
-        updatedAt: DateTime.now(),
+    if (_thread.actionType == null) return this;
+    final now = DateTime.now();
+    return _withThreadState(
+      _thread.copyWith(
+        readAt: Value(now),
+        updatedAt: now,
       ),
     );
   }
 
-  /// Returns a copy with the user schedule unarchived (or freshly
-  /// created) so the thread renders as a regular todo in the agenda.
-  /// Mirrors what `disassociate(order, date)` will persist so the
-  /// optimistic UI shows the thread back on the agenda the instant the
-  /// user clicks "Remove from event" — instead of letting it vanish
-  /// while the DB write resolves.
+  /// Returns a copy with the per-user state restored so the thread
+  /// renders as a regular todo in the agenda. Mirrors what
+  /// `disassociate(order, date)` will persist so the optimistic UI shows
+  /// the thread back on the agenda the instant the user clicks "Remove
+  /// from event" — instead of letting it vanish while the DB write
+  /// resolves.
   ///
-  /// [action] writes the schedule's `action` field — the value the
+  /// [action] writes the thread's `action_type` field — the value the
   /// Activity feed filters on to route a thread into the Respond / Do /
-  /// Read tabs. When omitted, the existing action is preserved.
+  /// Read tabs. When omitted, the existing action_type is preserved
+  /// (falling back to `'do'` for never-classified threads so the row
+  /// lands somewhere visible).
   Thread withScheduleRestored({
     required Order order,
     Date? date,
     String? action,
   }) {
-    if (_userSchedule != null) {
-      return _withUserSchedule(
-        _userSchedule.copyWith(
-          archivedAt: const Value(null),
-          order: Value(order),
-          startOn: Value(date ?? Thread.todoNowDate),
-          startAt: const Value(null),
-          endOn: const Value(null),
-          endAt: const Value(null),
-          updatedAt: DateTime.now(),
-          reason: Value(date != null ? 'schedule' : 'add'),
-          action: action != null ? Value(action) : const Value.absent(),
-        ),
-      );
-    }
-    return _withUserSchedule(
-      ScheduleRow(
-        id: Uuid.generate(),
-        updatedAt: DateTime.now(),
-        threadId: id,
-        userId: Base.userId,
-        startOn: date ?? Thread.todoNowDate,
-        order: order,
-        outstandingTasks: false,
-        reason: date != null ? 'schedule' : 'add',
-        action: action,
+    final now = DateTime.now();
+    final effectiveAction = action ?? _thread.actionType ?? 'do';
+    return _withThreadState(
+      _thread.copyWith(
+        actionType: Value(effectiveAction),
+        stateOrder: Value(order),
+        stateOn: Value(date ?? Thread.todoNowDate),
+        stateAt: const Value(null),
+        readAt: const Value(null),
+        updatedAt: now,
       ),
     );
   }
 
   /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
-  /// Preserves the existing user-schedule order if [order] is null.
-  /// Marks the thread read (acknowledged) since the user is committing to
-  /// work on it now. Used by the Activity-tab drag dispatcher when a
-  /// thread is dropped in the Today section.
+  /// Preserves the existing state_order if [order] is null. Marks the
+  /// thread read (acknowledged) since the user is committing to work on
+  /// it now. Used by the Activity-tab drag dispatcher when a thread is
+  /// dropped in the Today section.
   Thread asActiveToday({Order? order}) {
-    final effectiveOrder =
-        order ?? _userSchedule?.order ?? Order.first();
+    final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     return withScheduleRestored(order: effectiveOrder)
         .copyWith(unread: false);
   }
 
-  /// Returns a copy in the "scheduled" state for [date]. Sets the user
-  /// schedule's `startOn` to the given date, clears time fields, and
-  /// marks the thread read (acknowledged) since the user has committed
-  /// it to a future day.
+  /// Returns a copy in the "scheduled" state for [date]. Sets the
+  /// per-user state's `stateOn` to the given date, clears time fields,
+  /// and marks the thread read (acknowledged) since the user has
+  /// committed it to a future day.
   Thread asScheduled(Date date, {Order? order}) {
-    final effectiveOrder =
-        order ?? _userSchedule?.order ?? Order.first();
+    final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     return withScheduleRestored(order: effectiveOrder, date: date)
         .copyWith(unread: false);
   }
 
   /// Returns a copy in the "new (unread-only)" state — flips `unread` to
-  /// true and archives any user schedule so the thread isn't classed as
-  /// active or scheduled.
+  /// true and marks any per-user state as read so the thread isn't
+  /// classed as active or scheduled.
   Thread asUnread() {
-    final base = _userSchedule == null ? this : withScheduleArchived();
+    final base = _thread.actionType == null ? this : withScheduleArchived();
     return base.copyWith(unread: true, readAt: const Value(null));
   }
 
@@ -3977,7 +3938,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return Thread._fromStore(
       activity: _thread,
       schedule: _schedule,
-      userSchedule: _userSchedule,
       tags: _tags,
       priority: priority,
       notes: _notes,
@@ -3986,76 +3946,74 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     );
   }
 
-  /// Reorder this thread. Updates the per-user schedule order.
-  /// Shared schedules cannot have order (DB constraint: schedule_order_user).
+  /// Reorder this thread. Updates the per-user state_order on the thread row.
   Thread reorder(Order order) {
-    if (_userSchedule != null) {
-      final result = _withUserSchedule(
-        _userSchedule.copyWith(order: Value(order), updatedAt: DateTime.now()),
+    if (_thread.actionType == null) {
+      log.warning(
+        '[reorder] "$title" has no per-user state — cannot reorder',
       );
-      log.info(
-        '[reorder] "$title" order: ${_userSchedule.order?.value} -> $order '
-        '(schedId=${_userSchedule.id.toShortString()})',
-      );
-      return result;
+      return this;
     }
-    log.warning('[reorder] "$title" has no userSchedule — cannot reorder');
-    return this;
+    final previous = _thread.stateOrder?.value;
+    final result = _withThreadState(
+      _thread.copyWith(stateOrder: Value(order), updatedAt: DateTime.now()),
+    );
+    log.info('[reorder] "$title" order: $previous -> ${order.value}');
+    return result;
   }
 
-  /// Reorder this thread to a different day. Updates order AND schedule date.
+  /// Reorder this thread to a different day. Updates order AND the
+  /// per-user `stateOn` field.
   /// [date] null → sets epoch sentinel (Now/current todo).
   /// [date] someDate → schedules for that date, clears time fields.
   Thread reorderTo(Order order, {required Date? date}) {
-    if (_userSchedule != null) {
-      final result = _withUserSchedule(
-        _userSchedule.copyWith(
-          order: Value(order),
-          startOn: Value(date ?? Thread.todoNowDate),
-          endOn: const Value(null),
-          startAt: const Value(null),
-          endAt: const Value(null),
-          updatedAt: DateTime.now(),
-          reason: Value(date != null ? 'schedule' : _userSchedule.reason),
-        ),
+    if (_thread.actionType == null) {
+      log.warning(
+        '[reorderTo] "$title" has no per-user state — cannot reorder',
       );
-      log.info(
-        '[reorderTo] "$title" order: ${_userSchedule.order?.value} -> $order '
-        'date: ${_userSchedule.startOn} -> $date '
-        '(schedId=${_userSchedule.id.toShortString()})',
-      );
-      return result;
+      return this;
     }
-    log.warning('[reorderTo] "$title" has no userSchedule — cannot reorder');
-    return this;
+    final previousOrder = _thread.stateOrder?.value;
+    final previousOn = _thread.stateOn;
+    final result = _withThreadState(
+      _thread.copyWith(
+        stateOrder: Value(order),
+        stateOn: Value(date ?? Thread.todoNowDate),
+        stateAt: const Value(null),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    log.info(
+      '[reorderTo] "$title" order: $previousOrder -> ${order.value} '
+      'date: $previousOn -> $date',
+    );
+    return result;
   }
 
-  /// Pin this todo after a specific event. Sets startAt = event end time,
-  /// clears startOn/endOn/endAt so the todo appears after that event on today.
+  /// Pin this todo after a specific event. Sets stateAt = event end
+  /// time and clears stateOn so the todo appears after that event on
+  /// today.
   Thread reorderToAfterEvent(Order order, {required DateTime eventEndTime}) {
-    if (_userSchedule != null) {
-      final result = _withUserSchedule(
-        _userSchedule.copyWith(
-          order: Value(order),
-          startAt: Value(eventEndTime),
-          startOn: const Value(null),
-          endOn: const Value(null),
-          endAt: const Value(null),
-          updatedAt: DateTime.now(),
-          reason: const Value('schedule'),
-        ),
+    if (_thread.actionType == null) {
+      log.warning(
+        '[reorderToAfterEvent] "$title" has no per-user state — cannot reorder',
       );
-      log.info(
-        '[reorderToAfterEvent] "$title" order: ${_userSchedule.order?.value} -> $order '
-        'pinned after: $eventEndTime '
-        '(schedId=${_userSchedule.id.toShortString()})',
-      );
-      return result;
+      return this;
     }
-    log.warning(
-      '[reorderToAfterEvent] "$title" has no userSchedule — cannot reorder',
+    final previousOrder = _thread.stateOrder?.value;
+    final result = _withThreadState(
+      _thread.copyWith(
+        stateOrder: Value(order),
+        stateAt: Value(eventEndTime),
+        stateOn: const Value(null),
+        updatedAt: DateTime.now(),
+      ),
     );
-    return this;
+    log.info(
+      '[reorderToAfterEvent] "$title" order: $previousOrder -> ${order.value} '
+      'pinned after: $eventEndTime',
+    );
+    return result;
   }
 
   /// Associate this thread with a parent event thread.
@@ -4309,7 +4267,14 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     // Update schedule if scheduling fields are changing
     var schedule = _schedule;
-    var userSchedule = _userSchedule;
+    // Per-user thread-state field overrides applied to the thread row.
+    Value<String?> tsActionType = const Value.absent();
+    Value<bool?> tsUrgent = const Value.absent();
+    Value<Order?> tsStateOrder = const Value.absent();
+    Value<Date?> tsStateOn = const Value.absent();
+    Value<DateTime?> tsStateAt = const Value.absent();
+    Value<DateTime?> tsReadAt = readAt;
+    bool stateDirty = false;
 
     if (at.present ||
         on.present ||
@@ -4327,7 +4292,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         Value<Date?> schedStartOn = const Value.absent();
         Value<Date?> schedEndOn = const Value.absent();
         Value<Duration?> schedDuration = const Value.absent();
-        Value<Order?> schedOrder = const Value.absent();
 
         if (recurring) {
           // Recurrence fields update the base schedule
@@ -4360,8 +4324,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           }
           if (duration.present) schedDuration = duration;
         }
-        // Only set order on per-user schedules (DB constraint: schedule_order_user)
-        if (order != null && schedule.userId != null) schedOrder = Value(order);
 
         schedule = schedule.copyWith(
           startAt: schedStartAt,
@@ -4371,7 +4333,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           duration: schedDuration,
           recurrenceRule: recurrenceRule,
           recurrenceExdates: recurrenceExdates,
-          order: schedOrder,
           updatedAt: now,
         );
 
@@ -4398,114 +4359,50 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           }
         }
       } else if (at.present || on.present) {
-        // Create or update per-user schedule with date data (for to-dos)
-        if (userSchedule != null) {
-          // Update existing per-user schedule with new dates
-          userSchedule = userSchedule.copyWith(
-            startAt: at.present ? Value(at.value?.start) : const Value.absent(),
-            endAt: at.present ? Value(at.value?.end) : const Value.absent(),
-            startOn: on.present ? Value(on.value?.start) : const Value.absent(),
-            endOn: on.present ? Value(on.value?.end) : const Value.absent(),
-            duration: duration,
-            recurrenceRule: recurrenceRule,
-            recurrenceExdates: recurrenceExdates,
-            order: order != null ? Value(order) : const Value.absent(),
-            updatedAt: now,
-          );
-        } else {
-          // Create new per-user schedule with date data
-          userSchedule = ScheduleRow(
-            id: Uuid.generate(),
-            updatedAt: now,
-            threadId: _thread.id,
-            userId: Base.userId,
-            startAt: at.present ? at.value?.start : null,
-            endAt: at.present ? at.value?.end : null,
-            startOn: on.present ? on.value?.start : null,
-            endOn: on.present ? on.value?.end : null,
-            duration: duration.present ? duration.value : null,
-            recurrenceRule: recurrenceRule.present
-                ? recurrenceRule.value
-                : null,
-            recurrenceExdates: recurrenceExdates.present
-                ? recurrenceExdates.value
-                : null,
-            order: order ?? Order.first(),
-            outstandingTasks: false,
-          );
+        // Per-user "do at this date / time" intent moves onto thread_state.
+        // Per-user state has no end_on / end_at / duration / recurrence —
+        // only the start date or start datetime is captured.
+        if (at.present) tsStateAt = Value(at.value?.start);
+        if (on.present) tsStateOn = Value(on.value?.start);
+        if (order != null) tsStateOrder = Value(order);
+        if (_thread.actionType == null) {
+          tsActionType = const Value('do');
         }
+        stateDirty = true;
+      } else if (order != null) {
+        // Pure reorder on existing per-user state.
+        tsStateOrder = Value(order);
+        stateDirty = true;
       }
     }
 
-    // Clear dates on per-user schedule when shared schedule is intentionally removed
-    if (schedule == null && _schedule != null && userSchedule != null) {
-      userSchedule = userSchedule.copyWith(
-        startOn: const Value(null),
-        endOn: const Value(null),
-        startAt: const Value(null),
-        endAt: const Value(null),
-      );
+    // Clear per-user date intent when shared schedule is intentionally removed.
+    if (schedule == null && _schedule != null && _thread.actionType != null) {
+      tsStateOn = const Value(null);
+      tsStateAt = const Value(null);
+      stateDirty = true;
     }
 
-    // Handle personal to-do state
+    // Handle personal to-do state.
     if (todo == true) {
-      if (userSchedule != null) {
-        // Clearing startAt/endAt/endOn alongside startOn keeps the row valid
-        // under DB constraint schedule_at_xor_on (exactly one of at/on set);
-        // a re-add from a previously timed schedule could otherwise leave
-        // startAt populated and cause the push to fail.
-        userSchedule = userSchedule.copyWith(
-          startOn: Value(Thread.todoNowDate),
-          startAt: const Value(null),
-          endOn: const Value(null),
-          endAt: const Value(null),
-          order: Value(Order.first()),
-          archivedAt: const Value(null),
-          reason: const Value('add'),
-        );
-      } else {
-        userSchedule = ScheduleRow(
-          id: Uuid.generate(),
-          updatedAt: now,
-          threadId: _thread.id,
-          userId: Base.userId,
-          startOn: Thread.todoNowDate,
-          order: Order.first(),
-          reason: 'add',
-          outstandingTasks: false,
-        );
-      }
-    }
-
-    // Set reason='schedule' when user explicitly sets dates on a per-user schedule
-    if (userSchedule != null &&
-        (at.present || on.present) &&
-        todo != true &&
-        todo != false) {
-      userSchedule = userSchedule.copyWith(reason: const Value('schedule'));
+      tsActionType =
+          Value(_thread.actionType ?? 'do');
+      tsStateOn = Value(Thread.todoNowDate);
+      tsStateAt = const Value(null);
+      tsStateOrder = Value(Order.first());
+      tsReadAt = const Value(null);
+      stateDirty = true;
     }
 
     if (todo == false) {
-      // Mark done: archive the user schedule (clear dates, set archived_at)
-      if (userSchedule != null) {
-        userSchedule = userSchedule.copyWith(
-          archivedAt: Value(DateTime.now()),
-          startOn: const Value(null),
-          startAt: const Value(null),
-          endOn: const Value(null),
-          endAt: const Value(null),
-        );
-      } else {
-        userSchedule = ScheduleRow(
-          id: Uuid.generate(),
-          updatedAt: now,
-          threadId: _thread.id,
-          userId: Base.userId,
-          order: Order.first(),
-          archivedAt: DateTime.now(),
-          outstandingTasks: false,
-        );
-      }
+      // Mark done: clear per-user date intent and stamp read_at so the
+      // thread leaves the agenda.
+      tsReadAt = Value(DateTime.now());
+      tsStateOn = const Value(null);
+      tsStateAt = const Value(null);
+      // Keep actionType so the thread can still appear in the All tab
+      // and in per-action history; readAt is the "done" signal.
+      stateDirty = true;
     }
 
     // Set bumpedAt on the thread when bumping (agenda done)
@@ -4517,6 +4414,27 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         unread: false,
         readAt: Value(contentTimestamp),
       );
+    }
+
+    // Fold any thread-state field overrides into the activity row. Mark
+    // the activity dirty so save() persists the change; the state push
+    // path (POST /sync/thread-state) is selected via stateDirty rather
+    // than activityRemoteDirty.
+    if (stateDirty) {
+      activity = activity.copyWith(
+        actionType: tsActionType,
+        urgent: tsUrgent,
+        stateOrder: tsStateOrder,
+        stateOn: tsStateOn,
+        stateAt: tsStateAt,
+        readAt: tsReadAt,
+        updatedAt: now,
+      );
+      activityDirty = true;
+    } else if (readAt.present) {
+      // readAt was the only state field changed via copyWith params.
+      // It already landed on `activity` above via the activity copyWith
+      // branch; nothing else to do here.
     }
 
     final scheduleDirty =
@@ -4533,7 +4451,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return Thread._fromStore(
       activity: activity,
       schedule: schedule,
-      userSchedule: userSchedule,
       tags: _tags,
       priority: priority ?? this.priority,
       notes: notes.present ? notes.value : _notes,
@@ -4554,6 +4471,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       activityDirty: activityDirty,
       activityRemoteDirty: activityRemoteDirty,
       scheduleDirty: scheduleDirty,
+      stateDirty: stateDirty,
     );
   }
 
@@ -4569,19 +4487,20 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       case Tag.todo:
         // Toggle per-user todo (star/unstar)
         if (todo) {
-          // Remove from todo: clear dates
-          return _withUserSchedule(
-            _userSchedule!.copyWith(
-              startOn: const Value(null),
-              startAt: const Value(null),
-              endOn: const Value(null),
-              endAt: const Value(null),
+          // Remove from todo: clear per-user date intent. The state row
+          // stays so the thread can render in All / Done; readAt remains
+          // null (the user hasn't actively read it, just unstarred).
+          final now = DateTime.now();
+          return _withThreadState(
+            _thread.copyWith(
+              stateOn: const Value(null),
+              stateAt: const Value(null),
+              updatedAt: now,
             ),
           );
         } else {
-          // Re-add to todo: delegate to copyWith so the schedule_at_xor_on
-          // constraint clearing (and create-vs-update branching) stays in
-          // one place.
+          // Re-add to todo: delegate to copyWith so the to-do branch
+          // (action_type / stateOn / readAt clearing) stays in one place.
           return copyWith(todo: true);
         }
       default:
@@ -4649,7 +4568,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final newActivity = Thread._fromStore(
       activity: _thread,
       schedule: _schedule,
-      userSchedule: _userSchedule,
       tags:
           _tags?.copyWith(
             updatedAt: DateTime.now(),
@@ -4793,45 +4711,21 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
     }
 
-    // 5. Build the new user schedule (same rules as toggleTag(Tag.todo) add).
-    //    startAt/endAt/endOn are cleared so a re-add from a previously
-    //    timed schedule doesn't leave both at/on populated and trip
-    //    DB constraint schedule_at_xor_on.
-    final ScheduleRow newUserSchedule;
-    if (_userSchedule != null) {
-      newUserSchedule = _userSchedule.copyWith(
-        startOn: Value(Thread.todoNowDate),
-        startAt: const Value(null),
-        endOn: const Value(null),
-        endAt: const Value(null),
-        order: Value(Order.first()),
-        archivedAt: const Value(null),
-        reason: const Value('add'),
-        updatedAt: now,
-      );
-    } else {
-      newUserSchedule = ScheduleRow(
-        id: Uuid.generate(),
-        updatedAt: now,
-        threadId: id,
-        userId: Base.userId,
-        startOn: Thread.todoNowDate,
-        order: Order.first(),
-        reason: 'add',
-        outstandingTasks: false,
-      );
-    }
-
-    // 6. Clear thread.archivedAt if set.
+    // 5. Apply new per-user thread-state directly to the thread row
+    //    (matches toggleTag(Tag.todo) add: startOn = todoNowDate, order
+    //    reset, readAt cleared).
     final wasArchived = _thread.archivedAt != null;
-    final newActivity = wasArchived
-        ? _thread.copyWith(
-            archivedAt: const Value(null),
-            updatedAt: now,
-          )
-        : _thread;
+    final newActivity = _thread.copyWith(
+      actionType: Value(_thread.actionType ?? 'do'),
+      stateOrder: Value(Order.first()),
+      stateOn: Value(Thread.todoNowDate),
+      stateAt: const Value(null),
+      readAt: const Value(null),
+      archivedAt: wasArchived ? const Value(null) : const Value.absent(),
+      updatedAt: now,
+    );
 
-    // 7. Build the new tags row (only if anything actually changed).
+    // 6. Build the new tags row (only if anything actually changed).
     final newTagsRow = tagsChanged
         ? (_tags?.copyWith(
               updatedAt: now,
@@ -4851,35 +4745,36 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     return Thread._fromStore(
       activity: newActivity,
       schedule: _schedule,
-      userSchedule: newUserSchedule,
       tags: newTagsRow,
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
       rsvpInheritedFromSeries: rsvpInheritedFromSeries,
-      activityDirty: wasArchived,
+      activityDirty: true,
       activityRemoteDirty: wasArchived,
+      stateDirty: true,
     );
   }
 
-  /// Save only the schedule that was changed by [reorder].
-  /// Avoids unnecessary re-emissions from unchanged rows.
+  /// Save only the per-user state fields changed by [reorder]. Writes
+  /// the thread row locally without setting `pending` (the remote push
+  /// happens via /sync/thread-state, not /sync/threads) and posts the
+  /// new state to the server.
   Future<void> saveOrder() async {
-    if (_userSchedule != null) {
-      log.info(
-        '[saveOrder] "$title" saving userSchedule '
-        '(schedId=${_userSchedule.id.toShortString()}, '
-        'order=${_userSchedule.order?.value})',
-      );
-      await Store.get.save(
-        Store.get.schedules,
-        _userSchedule.toCompanion(false),
-        SchedulesBase(),
-      );
-    } else {
-      log.warning('[saveOrder] "$title" has no userSchedule — nothing to save');
+    if (_thread.actionType == null) {
+      log.warning('[saveOrder] "$title" has no per-user state — nothing to save');
+      return;
     }
-    Thread.push();
+    log.info(
+      '[saveOrder] "$title" saving state_order=${_thread.stateOrder?.value}',
+    );
+    await (Store.get.update(Store.get.threads)
+          ..where((a) => a.id.equalsValue(id)))
+        .write(ThreadsCompanion(
+          stateOrder: Value(_thread.stateOrder),
+          updatedAt: Value(_thread.updatedAt),
+        ));
+    _pushThreadState();
   }
 
   /// Insert this thread's row into the local DB if it doesn't already
@@ -4895,6 +4790,32 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     );
   }
 
+  /// POST the per-user state fields to /sync/thread-state. Fire-and-forget;
+  /// we don't await the response. Errors are logged.
+  void _pushThreadState() {
+    final body = <String, dynamic>{
+      'thread_id': id.toString(),
+      if (_thread.actionType != null) 'action_type': _thread.actionType,
+      if (_thread.urgent != null) 'urgent': _thread.urgent,
+      'importance': _thread.importance,
+      if (_thread.stateOrder != null) 'order': _thread.stateOrder!.value,
+      if (_thread.stateOn != null) 'on': '[${_thread.stateOn},)',
+      if (_thread.stateAt != null)
+        'at': '["${_thread.stateAt!.toIso8601String()}",)',
+      if (_thread.readAt != null)
+        'read_at': _thread.readAt!.toIso8601String(),
+      if (_thread.bumpedAt != null)
+        'bumped_at': _thread.bumpedAt!.toIso8601String(),
+    };
+    () async {
+      try {
+        await api.post<Map<String, dynamic>>('/sync/thread-state', body: body);
+      } catch (e, t) {
+        log.warning('Failed to push thread state for $id: $e\n$t');
+      }
+    }();
+  }
+
   Future<void> save() async {
     if (!Store.isAvailable) return;
     if (_activityDirty) {
@@ -4906,16 +4827,22 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           ThreadsBase(),
         );
       } else {
-        // Local-only update for read-state fields (unread, readAt, etc.).
-        // These sync via /sync/thread-unread, not the regular thread push.
-        // Use update().write() to avoid setting pending (which would trigger
+        // Local-only update for read-state / per-user-state fields
+        // (unread, readAt, action_type, urgent, state_order, state_on,
+        // state_at, importance, bumpedAt). These sync via
+        // /sync/thread-state, not the regular thread push. Use
+        // update().write() to avoid setting pending (which would trigger
         // a full thread sync that fails for viewer members).
         await (Store.get.update(Store.get.threads)
               ..where((a) => a.id.equalsValue(id)))
             .write(ThreadsCompanion(
               unread: Value(_thread.unread),
               importance: Value(_thread.importance),
-              urgency: Value(_thread.urgency),
+              actionType: Value(_thread.actionType),
+              urgent: Value(_thread.urgent),
+              stateOrder: Value(_thread.stateOrder),
+              stateOn: Value(_thread.stateOn),
+              stateAt: Value(_thread.stateAt),
               readAt: Value(_thread.readAt),
               bumpedAt: Value(_thread.bumpedAt),
               updatedAt: Value(_thread.updatedAt),
@@ -4926,7 +4853,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       // the draft filter can correctly exclude child rows (schedules, tags)
       // from being pushed before the thread itself. Uses insertOrIgnore so
       // an existing row (and its pending flag) is never overwritten.
-      final hasChildRows = _userSchedule != null ||
+      final hasChildRows =
           _tags != null ||
           (_scheduleDirty && _schedule != null && _schedule.linkId == null);
       if (hasChildRows) {
@@ -4957,19 +4884,17 @@ LEFT JOIN links l ON l.thread_id = a.id''');
             ));
       }
     }
-    if (_userSchedule != null) {
-      await Store.get.save(
-        Store.get.schedules,
-        _userSchedule.toCompanion(false),
-        SchedulesBase(),
-      );
-    }
     if (_tags != null) {
       await Store.get.save(
         Store.get.threadTags,
         _tags.toCompanion(false),
         ThreadTagsBase(),
       );
+    }
+
+    // Push per-user state changes via /sync/thread-state.
+    if (_stateDirty) {
+      _pushThreadState();
     }
 
     // Trigger full push including activity_read changes. Deferred to idle
@@ -5170,7 +5095,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       activity: _thread,
       priority: priority,
       schedule: representative._schedule,
-      userSchedule: _userSchedule,
       tags: _tags,
       notes: _notes,
       active: _active,
@@ -5213,7 +5137,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
         activity: base._thread,
         priority: base.priority,
         schedule: schedule,
-        userSchedule: base._userSchedule,
         tags: base._tags,
         active: base._active,
         unreadComputed: base._unreadComputed,
@@ -5298,7 +5221,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       activity: base._thread,
       priority: base.priority,
       schedule: picked.row,
-      userSchedule: base._userSchedule,
       tags: base._tags,
       active: base._active,
       unreadComputed: base._unreadComputed,
@@ -5390,9 +5312,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
           recurrenceExdates: _schedule?.recurrenceExdates,
           contacts: _schedule?.contacts,
           currentUserStatus: _schedule?.currentUserStatus,
-          outstandingTasks: false,
         ),
-        userSchedule: _userSchedule,
         priority: priority,
         tags: _tags,
         isLinkScheduleInstance: isLinkScheduleInstance,
@@ -5495,7 +5415,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   List<Object?> get props => [
     _thread,
     _schedule,
-    _userSchedule,
     _tags,
     _notes,
     priority,

@@ -218,6 +218,22 @@ The Activity tab on each priority is the consolidated home for thread management
 
 Drag-and-drop moves threads between sections (drop on Today to make active, on a future day to schedule, on New to mark unread, on Done to finish) and reorders within Today / Scheduled. Drop slots expand to hold the dragged row's height so the surrounding list stays stable.
 
+### Action Type Classification
+Each new thread is auto-classified by Plot's AI into one of five action types that drive which inbox tab it lives in:
+- **Respond** — needs a reply from the recipient (questions directed at them, asks that require an answer).
+- **Do** — needs an action (assigned task, a step that's clearly theirs to take).
+- **Read** — longer read-later material: newsletters, long corporate communications, documents to set aside time for.
+- **Update** — default. Worth knowing about but no follow-up required. FYIs, mentions without a clear ask, unsolicited pitches and cold outreach all land here.
+- **None** — clearly passive records (receipts, account sign-in confirmations, system acknowledgements). Surfaces in the All tab only; no unread indicator, no notification.
+
+The user can drag a thread between tabs to override the AI's classification at any time. Respond / Do / Read also accept "do on this date" intent, surfacing the thread on that day in the agenda.
+
+### Importance Threshold
+The AI scores each thread 0–100 for the recipient. Items below 50 (unsolicited material, promotional content, low-relevance updates) appear in Catch up but do not trigger push notifications, email digests, or priority unread indicators. Items ≥ 50 surface proactively. Strong relational signal and direct messages between known contacts score 60+; cold outreach 10–25.
+
+### Urgent Flag
+Separate from importance, the AI flags a thread `urgent` only when the user should be notified before their next scheduled response window — time-sensitive items or messages clearly needing a quick response. Urgent threads bypass the per-priority `see_within` delay and the 10-minute inactivity gate that normally defers pushes.
+
 ### Priority Features
 - Unlimited nesting depth
 - Path syntax (Work/Projects/Q1)
@@ -243,8 +259,9 @@ Drag-and-drop moves threads between sections (drop on Today to make active, on a
 - Agenda view shows your day chronologically across all priorities
 
 ### Smart Notifications
-- AI classifies each notification by urgency — urgent items (direct requests, time-sensitive changes) are delivered immediately; routine updates are held and batched
-- Respects per-priority "see within" schedules — low-priority updates wait until your preferred window instead of interrupting you immediately
+- AI flags genuinely time-sensitive threads as urgent (direct requests, deadlines) — those fire immediately; everything else waits for the user's configured response window
+- Per-priority `see_within` setting controls how long a non-urgent thread can sit before its notification fires; urgent bypasses it
+- Items with importance < 50 (promotional content, unsolicited outreach) never trigger a push or email digest on their own
 - Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
 - No manual do-not-disturb rules needed — the system infers what matters based on content and your preferences
 - Desktop notifications on macOS and Windows — native OS notifications triggered by real-time sync, with automatic suppression when the app is focused and respect for OS-level Focus/DnD modes

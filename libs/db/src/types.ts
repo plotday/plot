@@ -4603,8 +4603,6 @@ export type Database = {
       priority: {
         Row: {
           archived_at: string | null
-          attention_window: Json | null
-          attention_window_set: boolean | null
           color: number | null
           config: Json | null
           created_at: string | null
@@ -4612,13 +4610,23 @@ export type Database = {
           default_contacts: string[] | null
           default_groups: string[] | null
           default_invite_emails: string[] | null
+          early_notifications_enabled: boolean | null
+          early_notifications_enabled_set: boolean | null
           global_path: unknown
           id: string | null
           inherit_members: boolean | null
           key: string | null
+          notify_window: Json | null
+          notify_window_set: boolean | null
           order: number | null
           path: unknown
           pomodoro: number | null
+          respond_schedule_enabled: boolean | null
+          respond_schedule_enabled_set: boolean | null
+          respond_window: Json | null
+          respond_window_set: boolean | null
+          respond_within: Json | null
+          respond_within_set: boolean | null
           role: string | null
           root: boolean | null
           see_within: Json | null
@@ -5074,13 +5082,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5273,8 +5281,6 @@ export type Database = {
         Args: { p_priority: Json; user_id: string }
         Returns: {
           archived_at: string | null
-          attention_window: Json | null
-          attention_window_set: boolean | null
           color: number | null
           config: Json | null
           created_at: string | null
@@ -5282,13 +5288,23 @@ export type Database = {
           default_contacts: string[] | null
           default_groups: string[] | null
           default_invite_emails: string[] | null
+          early_notifications_enabled: boolean | null
+          early_notifications_enabled_set: boolean | null
           global_path: unknown
           id: string | null
           inherit_members: boolean | null
           key: string | null
+          notify_window: Json | null
+          notify_window_set: boolean | null
           order: number | null
           path: unknown
           pomodoro: number | null
+          respond_schedule_enabled: boolean | null
+          respond_schedule_enabled_set: boolean | null
+          respond_window: Json | null
+          respond_window_set: boolean | null
+          respond_within: Json | null
+          respond_within_set: boolean | null
           role: string | null
           root: boolean | null
           see_within: Json | null
@@ -5310,10 +5326,18 @@ export type Database = {
       }
       upsert_priority_attention: {
         Args: {
-          p_attention_window?: Json
+          p_early_notifications_enabled?: boolean
+          p_notify_window?: Json
           p_priority_id: string
+          p_respond_schedule_enabled?: boolean
+          p_respond_window?: Json
+          p_respond_within?: Json
           p_see_within?: Json
-          p_set_attention_window?: boolean
+          p_set_early_notifications_enabled?: boolean
+          p_set_notify_window?: boolean
+          p_set_respond_schedule_enabled?: boolean
+          p_set_respond_window?: boolean
+          p_set_respond_within?: boolean
           p_set_see_within?: boolean
           p_user_id: string
         }

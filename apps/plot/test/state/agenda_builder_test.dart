@@ -26,8 +26,7 @@ Priority _testPriority({
     unread: false,
     role: 'member',
     attentionWindowSet: false,
-    seeWithinRequestsSet: false,
-    seeWithinUpdatesSet: false,
+    seeWithinSet: false,
   );
   return Priority.fromStore(row, draft: true);
 }
@@ -265,17 +264,11 @@ void main() {
       final pinnedToYesterday = Thread(
         priority: priority,
         title: 'pinned after yesterday\'s event',
-        userSchedule: ScheduleRow(
-          id: Uuid.generate(),
-          updatedAt: DateTime(2026, 5, 1, 15, 0),
-          threadId: Uuid.generate(),
-          userId: Uuid.generate(),
-          startAt: yesterdayAfternoon,
-          // startOn intentionally null → makes this a pinned todo
-          // (pinnedAfterTime returns startAt; isPinnedTodo == true).
-          order: Order.first(),
-          outstandingTasks: false,
-        ),
+        // startAt set + stateOn null → pinned todo (pinnedAfterTime
+        // returns stateAt; isPinnedTodo == true).
+        actionType: 'do',
+        stateOrder: Order.first(),
+        stateAt: yesterdayAfternoon,
       );
 
       // A second todo on today via the `todoNowDate` ("anytime today")
@@ -287,15 +280,9 @@ void main() {
       final anytimeToday = Thread(
         priority: priority,
         title: 'anytime today',
-        userSchedule: ScheduleRow(
-          id: Uuid.generate(),
-          updatedAt: DateTime(2026, 5, 2, 10, 0),
-          threadId: Uuid.generate(),
-          userId: Uuid.generate(),
-          startOn: Thread.todoNowDate,
-          order: Order.first(),
-          outstandingTasks: false,
-        ),
+        actionType: 'do',
+        stateOrder: Order.first(),
+        stateOn: Thread.todoNowDate,
       );
 
       // Sanity-check the fixture matches the production state.

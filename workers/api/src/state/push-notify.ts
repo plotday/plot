@@ -8,12 +8,13 @@ import { withDb } from "../db";
 import type { Bindings } from "../env";
 import { sendDataNotificationToUser } from "../notifications/send";
 
-/**
- * Default delay before firing a push when no `see_within` setting exists on
- * the priority. Half an hour gives the user a chance to settle before being
- * interrupted; urgent items bypass this entirely.
- */
-const DEFAULT_DELAY_MS = 30 * 60 * 1000;
+// The server no longer schedules notification timing. Once a notify-eligible
+// unread thread exists, the DO sends a `sync_wake` so the client can sync
+// and run its own deferred-delivery scheduler (block-start vs see-within
+// deadline vs notify-window). Only two server-side gates remain:
+//   - INACTIVITY_THRESHOLD_MS: skip waking devices while one is actively used.
+//   - MIN_PUSH_INTERVAL_MS: collapse bursts so we don't burn battery / FCM quota.
+// Urgent threads bypass both gates.
 
 /** Minimum interval between push notifications to the same user (ms) */
 const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -81,33 +82,26 @@ export class PushNotify extends DurableObject<Bindings> {
       await this.ctx.storage.put("firstNotifyTime", now);
     }
 
-    // Query for any unread thread that should drive a push:
-    //   - importance >= 50, OR urgent = TRUE
-    // For each candidate, pick the shortest applicable delay using the
-    // priority's see_within setting (urgent → 0 ms).
+    // Look for any notify-eligible unread thread. The client owns timing
+    // now, so we only need to know:
+    //   (a) is there anything to wake the client about, and
+    //   (b) is any of it urgent (which lets the alarm bypass the
+    //       inactivity and min-interval gates).
     let hasUrgent = false;
-    let delayMs = 0;
     let latestUnreadAt: string | null = null;
     let hadCandidates = false;
     try {
       const result = await withDb(this.env, async (db) => {
         const stateResult = await sql<{
-          urgent: boolean;
-          see_within: string | null;
+          any_urgent: boolean;
           latest_updated_at: string;
         }>`
           SELECT
-            ts.urgent,
-            psi.see_within,
+            BOOL_OR(ts.urgent) AS any_urgent,
             MAX(ts.updated_at)::text AS latest_updated_at
           FROM thread_state ts
           JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
-          LEFT JOIN LATERAL (
-            SELECT MAX(CASE WHEN key = 'see_within' THEN value::text END)::jsonb AS see_within
-            FROM priority_setting_inherited
-            WHERE user_id = ${userId}::uuid AND priority_id = tp.priority_id
-          ) psi ON true
           WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
             AND t.archived_at IS NULL
@@ -116,43 +110,22 @@ export class PushNotify extends DurableObject<Bindings> {
               t.contacts && "user".user_contact_ids(${userId}::uuid)
               OR t.groups && "user".user_group_ids(${userId}::uuid)
             )
-          GROUP BY ts.urgent, psi.see_within
-          ORDER BY ts.urgent DESC
         `.execute(db);
 
-        if (stateResult.rows.length === 0) return null;
-
-        let maxUpdatedAt = stateResult.rows[0].latest_updated_at;
-        let shortestDelay = DEFAULT_DELAY_MS;
-        let anyUrgent = false;
-
-        for (const row of stateResult.rows) {
-          if (row.latest_updated_at > maxUpdatedAt) {
-            maxUpdatedAt = row.latest_updated_at;
-          }
-          if (row.urgent) {
-            anyUrgent = true;
-            shortestDelay = 0;
-            continue;
-          }
-          const ms = row.see_within ? seeWithinToMs(row.see_within) : null;
-          const effective = ms ?? DEFAULT_DELAY_MS;
-          if (effective < shortestDelay) shortestDelay = effective;
-        }
-
-        return { urgent: anyUrgent, delayMs: shortestDelay, latestUnreadAt: maxUpdatedAt };
+        const row = stateResult.rows[0];
+        if (!row || !row.latest_updated_at) return null;
+        return { urgent: row.any_urgent, latestUnreadAt: row.latest_updated_at };
       });
 
       if (result) {
         hasUrgent = result.urgent;
-        delayMs = result.delayMs;
         latestUnreadAt = result.latestUnreadAt;
         hadCandidates = true;
       }
     } catch (error) {
-      // If DB query fails, default to a non-urgent default-delay schedule.
+      // If the DB query fails, fall back to a non-urgent wake. The client
+      // will still sync and decide what to show.
       hasUrgent = false;
-      delayMs = DEFAULT_DELAY_MS;
       hadCandidates = true;
       this.captureException(error as Error);
     }
@@ -180,18 +153,13 @@ export class PushNotify extends DurableObject<Bindings> {
     this.hasUrgent = hasUrgent;
     await this.ctx.storage.put("hasUrgent", hasUrgent);
 
+    // Fire as soon as the alarm runner will pick us up. The alarm handler
+    // still applies the inactivity and min-interval gates; urgent bypasses
+    // both. There's no longer a server-side `see_within` delay — the client
+    // schedules its own deferred delivery on receipt of the wake.
     const currentAlarm = await this.ctx.storage.getAlarm();
-    const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
-
-    if (!currentAlarm) {
-      // No pending alarm — schedule one
-      await this.ctx.storage.setAlarm(now + delayMs * multiplier);
-    } else if (hasUrgent && !wasUrgent) {
-      // Urgent just arrived — reschedule to sooner.
-      const newAlarmTime = now + delayMs * multiplier;
-      if (newAlarmTime < currentAlarm) {
-        await this.ctx.storage.setAlarm(newAlarmTime);
-      }
+    if (!currentAlarm || (hasUrgent && !wasUrgent && currentAlarm > now)) {
+      await this.ctx.storage.setAlarm(now);
     }
   }
 
@@ -349,24 +317,5 @@ export class PushNotify extends DurableObject<Bindings> {
     await this.ctx.storage.delete("firstNotifyTime");
     // Note: lastNotifiedUnreadAt and lastNotificationSentAt are NOT cleared —
     // they persist across notification cycles to prevent re-notifying.
-  }
-}
-
-/** Convert a see_within JSON value like {"value":30,"unit":"minutes"} to milliseconds */
-export function seeWithinToMs(raw: string | null): number | null {
-  if (!raw) return null;
-  try {
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    const value = parsed?.value;
-    const unit = parsed?.unit;
-    if (typeof value !== "number" || !unit) return null;
-    switch (unit) {
-      case "minutes": return value * 60 * 1000;
-      case "hours": return value * 60 * 60 * 1000;
-      case "days": return value * 24 * 60 * 60 * 1000;
-      default: return null;
-    }
-  } catch {
-    return null;
   }
 }
