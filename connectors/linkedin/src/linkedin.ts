@@ -1,5 +1,6 @@
 import {
   Connector,
+  type Link,
   type NewLinkWithNotes,
   type NoteWriteBackResult,
   type ToolBuilder,
@@ -246,6 +247,56 @@ export class LinkedIn extends Connector<LinkedIn> {
       key: `message-${sent.id}`,
       externalContent: sent.text,
     };
+  }
+
+  override async onLinkUpdated(link: Link): Promise<void> {
+    if (link.type !== TYPE_CONVERSATION) return;
+
+    const meta = (link.meta ?? {}) as Record<string, unknown>;
+    const channelId    = meta.channelId    as string | undefined;
+    const invitationId = meta.invitationId as string | undefined;
+    const sharedSecret = meta.sharedSecret as string | undefined;
+    if (!channelId) return;
+    if (!invitationId || !sharedSecret) return; // chat-only link — nothing to write back
+
+    // Idempotency: each invitation can only be accepted/ignored once.
+    // Plot may re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
+    const flagKey = `invitation_writeback:${invitationId}`;
+    if (await this.get<string>(flagKey)) return;
+
+    // Map Plot status to LinkedIn action. Archived from Pending is treated
+    // as Ignore on LinkedIn (user wants this off their plate); the local
+    // status stays Archived to match what they clicked.
+    let action: "accept" | "ignore" | null = null;
+    if (link.status === STATUS_INBOX) action = "accept";
+    else if (link.status === STATUS_IGNORED) action = "ignore";
+    else if (link.status === STATUS_ARCHIVED) action = "ignore";
+    if (!action) return;
+
+    try {
+      if (action === "accept") {
+        await this.tools.linkedin.acceptInvitation({
+          channelId,
+          invitationId,
+          sharedSecret,
+        });
+      } else {
+        await this.tools.linkedin.ignoreInvitation({
+          channelId,
+          invitationId,
+          sharedSecret,
+        });
+      }
+      await this.set(flagKey, action);
+    } catch (error) {
+      // Invitation may have been resolved out-of-band; record the attempt so
+      // we don't retry a stale invitation on every subsequent edit.
+      console.warn(
+        `LinkedIn invitation write-back failed (${invitationId}, ${action})`,
+        error
+      );
+      await this.set(flagKey, action);
+    }
   }
 
   override async onThreadRead(
