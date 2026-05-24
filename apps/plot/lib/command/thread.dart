@@ -14,6 +14,7 @@ import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
@@ -451,6 +452,11 @@ class AddThreadWithNote extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
+    final prefsBloc = context.read<LocalPreferencesBloc>();
+
+    final createAction = _data.note?.actions
+        ?.whereType<CreateLinkUserAction>()
+        .firstOrNull;
 
     // Persist the thread + first note before navigating. Running these in
     // parallel with the route flip let a late `_saveDraft` from the
@@ -458,6 +464,14 @@ class AddThreadWithNote extends Command {
     // back to draft=true, which the sync push filter excludes — the note
     // would then never reach the server.
     final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
+
+    if (createAction != null) {
+      await prefsBloc.recordConnectionUsage(
+        channelKey:
+            '${createAction.twistInstanceId}|${createAction.channelId}|${createAction.linkType}',
+        priorityId: savedThread.priority.id.toString(),
+      );
+    }
 
     if (!navigate) {
       return const CommandDone();
