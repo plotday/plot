@@ -309,16 +309,27 @@ export class LinkedIn extends Connector<LinkedIn> {
         error
       );
       // Cursor stays put. Retry on a longer backoff so we don't immediately
-      // re-enter a rate-limited window.
-      const errorDelay =
-        RELATIONS_PAGE_ERROR_MIN_DELAY_MS +
-        Math.random() *
-          (RELATIONS_PAGE_ERROR_MAX_DELAY_MS -
-            RELATIONS_PAGE_ERROR_MIN_DELAY_MS);
-      const retry = await this.callback(this.syncRelationsPage, channelId);
-      await this.runTask(retry, {
-        runAt: new Date(Date.now() + errorDelay),
-      });
+      // re-enter a rate-limited window. If scheduling the retry itself fails
+      // (transient runtime/DO issue), rethrow so the twist runtime's task-
+      // retry machinery handles it — otherwise the backfill loop would be
+      // silently dead until the next onChannelEnabled.
+      try {
+        const errorDelay =
+          RELATIONS_PAGE_ERROR_MIN_DELAY_MS +
+          Math.random() *
+            (RELATIONS_PAGE_ERROR_MAX_DELAY_MS -
+              RELATIONS_PAGE_ERROR_MIN_DELAY_MS);
+        const retry = await this.callback(this.syncRelationsPage, channelId);
+        await this.runTask(retry, {
+          runAt: new Date(Date.now() + errorDelay),
+        });
+      } catch (scheduleError) {
+        console.error(
+          `LinkedIn relations: failed to schedule retry for channel ${channelId}`,
+          scheduleError
+        );
+        throw error;
+      }
       return;
     }
 

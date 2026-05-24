@@ -183,4 +183,24 @@ describe("normalize", () => {
     expect(profile.headline).toBeNull();
     expect(profile.pictureUrl).toBeNull();
   });
+
+  it("normalizeRelation falls back to Unknown when names and publicIdentifier are all empty", () => {
+    const profile = normalizeRelation({
+      object: "UserRelation",
+      member_id: "ACoAA333",
+      member_urn: "urn:li:member:333",
+      connection_urn: "urn:li:fs_miniProfile:333",
+      first_name: "",
+      last_name: "",
+      headline: "",
+      public_identifier: "",
+      public_profile_url: "",
+      created_at: 1700000000,
+    });
+    expect(profile.id).toBe("ACoAA333");
+    expect(profile.fullName).toBe("Unknown");
+    expect(profile.publicIdentifier).toBeNull();
+    expect(profile.headline).toBeNull();
+    expect(profile.url).toBeNull();
+  });
 });
