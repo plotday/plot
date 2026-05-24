@@ -159,3 +159,30 @@ export type UnipileWebhook = {
   headers?: { key: string; value: string }[];
   events?: string[] | null;
 };
+
+/**
+ * Unipile relation (1st-degree LinkedIn connection). Shape comes from
+ * `GET /users/relations`. Unlike `UnipileAttendee` this is flat (no
+ * `specifics` nesting) and uses `member_id` rather than `provider_id`.
+ * See https://github.com/unipile/unipile-node-sdk
+ * (src/users/ressource.types.ts → LinkedinUserRelationSchema).
+ */
+export type UnipileRelation = {
+  object: "UserRelation";
+  member_id: string;
+  member_urn: string;
+  connection_urn: string;
+  first_name: string;
+  last_name: string;
+  headline: string;
+  public_identifier: string;
+  public_profile_url: string;
+  profile_picture_url?: string;
+  created_at: number;
+};
+
+export type UnipileRelationList = {
+  object: "UserRelationsList";
+  items: UnipileRelation[];
+  cursor: string | null;
+};
