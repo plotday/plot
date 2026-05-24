@@ -1053,7 +1053,7 @@ class _ThreadLogo extends StatelessWidget {
     // unless the thread has its own source icon (twist, connector, URL).
     if (activity.priority.isPlot && _hasNoExplicitSource) {
       return SvgPicture.asset(
-        'assets/p.svg',
+        'assets/plot-icon.svg',
         width: 16,
         height: 16,
       );
