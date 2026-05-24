@@ -1,10 +1,12 @@
+-- Shared & link-attached schedules. Per-user todo state (action, order, the
+-- per-user "do on this date" intent) lives on `thread_state`; this table is
+-- now purely for shared/link-scoped temporal data (calendar events,
+-- connector-emitted occurrences, shared thread base schedules).
 CREATE TABLE "public"."schedule" (
     "id" uuid PRIMARY KEY DEFAULT uuidv7 () NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),
     "archived_at" timestamptz,
-    "user_id" uuid REFERENCES public."user" ON DELETE CASCADE,
-    "order" double precision,
     "at" tstzrange,
     "on" daterange,
     "recurrence_rule" text,
@@ -12,10 +14,8 @@ CREATE TABLE "public"."schedule" (
     "recurrence_exdates" timestamptz[],
     "occurrence" text,
     "reason" text,
-    "action" text,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
     "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE,
-    "outstanding_tasks" boolean NOT NULL DEFAULT FALSE,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
@@ -26,17 +26,13 @@ CREATE TABLE "public"."schedule" (
 --   (time changes, RSVP differences). Deleted occurrences do NOT get a schedule row —
 --   they are represented solely via recurrence_exdates on the base schedule.
 
--- Exactly one of at/on must be set, or both null for per-user undated schedules
+-- Exactly one of at/on must be set (no schedules without timing now that
+-- per-user undated "todo" intent lives on thread_state instead).
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_at_xor_on CHECK (
         (at IS NOT NULL AND "on" IS NULL) OR
-        (at IS NULL AND "on" IS NOT NULL) OR
-        (at IS NULL AND "on" IS NULL AND user_id IS NOT NULL)
+        (at IS NULL AND "on" IS NOT NULL)
     );
-
--- order requires user_id and vice versa
-ALTER TABLE "public"."schedule"
-    ADD CONSTRAINT schedule_order_user CHECK (("user_id" IS NULL AND "order" IS NULL) OR ("user_id" IS NOT NULL AND "order" IS NOT NULL));
 
 -- duration requires recurrence_rule and vice versa (unless occurrence is set — occurrence exceptions can override duration)
 ALTER TABLE "public"."schedule"
@@ -49,11 +45,6 @@ ALTER TABLE "public"."schedule"
 -- Schedule reason tracks why item is on agenda (null = legacy/unknown)
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_reason_check CHECK (reason IS NULL OR reason IN ('unread', 'task', 'add', 'schedule'));
-
--- Schedule action partitions a thread's schedule into one of the action tabs
--- in the activity feed (null = no action, shown only in Catch up / All).
-ALTER TABLE "public"."schedule"
-    ADD CONSTRAINT schedule_action_check CHECK (action IS NULL OR action IN ('respond', 'do', 'read'));
 
 -- Cannot have both recurrence_rule and occurrence (occurrence is an exception to a recurrence)
 ALTER TABLE "public"."schedule"
@@ -85,29 +76,15 @@ CREATE UNIQUE INDEX schedule_link_occurrence_unique ON "public"."schedule" ("lin
 WHERE
     occurrence IS NOT NULL;
 
--- One per-user schedule per thread (non-occurrence only)
-CREATE UNIQUE INDEX schedule_thread_user_unique ON "public"."schedule" ("thread_id", "user_id")
+-- One shared base schedule per link (non-occurrence)
+CREATE UNIQUE INDEX schedule_link_base_unique ON "public"."schedule" ("link_id")
 WHERE
-    "user_id" IS NOT NULL
-    AND occurrence IS NULL;
+    occurrence IS NULL;
 
--- One per-user schedule per link (non-occurrence only)
-CREATE UNIQUE INDEX schedule_link_user_unique ON "public"."schedule" ("link_id", "user_id")
+-- One shared base schedule per thread (non-occurrence)
+CREATE UNIQUE INDEX schedule_thread_base_unique ON "public"."schedule" ("thread_id")
 WHERE
-    "user_id" IS NOT NULL
-    AND occurrence IS NULL;
-
--- One shared base schedule per link (non-occurrence, shared only)
-CREATE UNIQUE INDEX schedule_link_shared_base_unique ON "public"."schedule" ("link_id")
-WHERE
-    "user_id" IS NULL
-    AND occurrence IS NULL;
-
--- One shared base schedule per thread (non-occurrence, shared only)
-CREATE UNIQUE INDEX schedule_thread_shared_base_unique ON "public"."schedule" ("thread_id")
-WHERE
-    "user_id" IS NULL
-    AND occurrence IS NULL;
+    occurrence IS NULL;
 
 CREATE INDEX idx_schedule_thread_id ON "public"."schedule" ("thread_id");
 
@@ -116,10 +93,6 @@ CREATE INDEX idx_schedule_link_id ON "public"."schedule" ("link_id");
 CREATE INDEX idx_schedule_at ON "public"."schedule" USING gist ("at");
 
 CREATE INDEX idx_schedule_on ON "public"."schedule" USING gist ("on");
-
-CREATE INDEX idx_schedule_user_id ON "public"."schedule" ("user_id")
-WHERE
-    "user_id" IS NOT NULL;
 
 CREATE INDEX idx_schedule_updated_at ON "public"."schedule" ("updated_at");
 

@@ -355,10 +355,8 @@ account.post("/activate", async (c) => {
         VALUES
           (${user.id}::uuid, ${newPriority.id}::uuid, 'attention_window',
            ${JSON.stringify([{ days: [1, 2, 3, 4, 5, 6, 7], start: "21:00", end: "07:00" }])}::jsonb),
-          (${user.id}::uuid, ${newPriority.id}::uuid, 'see_within_requests',
-           ${JSON.stringify({ value: 30, unit: "minutes" })}::jsonb),
-          (${user.id}::uuid, ${newPriority.id}::uuid, 'see_within_updates',
-           ${JSON.stringify({ value: 1, unit: "hours" })}::jsonb)
+          (${user.id}::uuid, ${newPriority.id}::uuid, 'see_within',
+           ${JSON.stringify({ value: 30, unit: "minutes" })}::jsonb)
         ON CONFLICT (user_id, priority_id, key) DO NOTHING
       `.execute(c.var.db);
     } catch (err) {

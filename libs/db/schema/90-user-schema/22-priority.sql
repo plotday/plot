@@ -27,8 +27,7 @@ direct_settings AS (
         MAX(CASE WHEN key = 'title' THEN value #>> '{}' END) AS title,
         MAX(CASE WHEN key = 'color' THEN (value #>> '{}')::integer END) AS color,
         (MAX(CASE WHEN key = 'attention_window' THEN 1 END) IS NOT NULL) AS attention_window_set,
-        (MAX(CASE WHEN key = 'see_within_requests' THEN 1 END) IS NOT NULL) AS see_within_requests_set,
-        (MAX(CASE WHEN key = 'see_within_updates' THEN 1 END) IS NOT NULL) AS see_within_updates_set,
+        (MAX(CASE WHEN key = 'see_within' THEN 1 END) IS NOT NULL) AS see_within_set,
         MAX(updated_at) AS updated_at
     FROM priority_setting
     GROUP BY user_id, priority_id
@@ -37,8 +36,7 @@ inherited_settings AS (
     SELECT user_id, priority_id,
         MAX(CASE WHEN key = 'pomodoro' THEN (value #>> '{}')::integer END) AS pomodoro,
         MAX(CASE WHEN key = 'attention_window' THEN value::text END)::jsonb AS attention_window,
-        MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
-        MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates,
+        MAX(CASE WHEN key = 'see_within' THEN value::text END)::jsonb AS see_within,
         MAX(updated_at) AS updated_at
     FROM priority_setting_inherited
     GROUP BY user_id, priority_id
@@ -78,11 +76,9 @@ SELECT
     COALESCE(upu.unread, FALSE) AS unread,
     'member'::text AS role,
     inh.attention_window,
-    inh.see_within_requests,
-    inh.see_within_updates,
+    inh.see_within,
     COALESCE(direct.attention_window_set, FALSE) AS attention_window_set,
-    COALESCE(direct.see_within_requests_set, FALSE) AS see_within_requests_set,
-    COALESCE(direct.see_within_updates_set, FALSE) AS see_within_updates_set,
+    COALESCE(direct.see_within_set, FALSE) AS see_within_set,
     p.inherit_members,
     p.config,
     p.default_contacts,

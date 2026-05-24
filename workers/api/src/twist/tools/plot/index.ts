@@ -777,11 +777,12 @@ export class Plot extends Tool implements IPlot {
               linkSource: link?.source ?? null,
             };
 
-            // todo=true if schedule is active (on/at set) and not archived.
-            // Archived schedules are emitted by the view so sources learn when
-            // a thread leaves the agenda.
+            // todo=true if the per-user thread_state has a date/time intent
+            // and the thread hasn't been marked read. The view emits a row
+            // any time those fields change, so sources learn when items
+            // leave the agenda (read_at gets set or on/at gets cleared).
             const todo =
-              item.archived_at == null &&
+              item.read_at == null &&
               (item.on != null || item.at != null);
 
             // Extract date from schedule's on (daterange) or at (tstzrange).
@@ -1506,15 +1507,6 @@ export class Plot extends Tool implements IPlot {
       thread_id: schedule.threadId,
     });
     const userId = await this.getUserId();
-    // Translate ActorId (contact ID) to users.id for per-user schedules
-    if (dbSchedule.user_id) {
-      const contact = await this.db
-        .selectFrom("contact")
-        .select("user_id")
-        .where("id", "=", dbSchedule.user_id as string)
-        .executeTakeFirstOrThrow();
-      dbSchedule.user_id = contact.user_id;
-    }
     const result = await rpcUser(this.db, "upsert_schedule", {
       user_id: userId,
       p_schedule: dbSchedule as Json,
@@ -1550,14 +1542,6 @@ export class Plot extends Tool implements IPlot {
         schedule.contacts,
         scheduleContactsPriorityId
       );
-    }
-
-    // For per-user schedules, recompute outstanding_tasks so threads with
-    // existing todo-tagged notes are reflected immediately (the sync endpoints
-    // that normally trigger this don't run during twist-created content).
-    const scheduleUserId = dbSchedule.user_id as string | undefined;
-    if (scheduleUserId) {
-      await sql`SELECT recompute_outstanding_tasks(${schedule.threadId}::uuid, ${scheduleUserId}::uuid)`.execute(this.db);
     }
 
     return convertDbToSchedule(result as Record<string, unknown>);

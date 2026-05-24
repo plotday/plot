@@ -55,11 +55,12 @@ BEGIN
     ) peer
     ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
 
-    -- thread_unread for newly-added contacts only. Harmless while the
+    -- thread_state for newly-added contacts only. Harmless while the
     -- parent thread_priority row is hidden — only surfaces in user.*
-    -- views once the visibility filter admits the row.
-    INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-    SELECT peer.user_id, NEW.id, 'inform-updates', 50
+    -- views once the visibility filter admits the row. action_type and
+    -- importance use the table defaults ('update', 50).
+    INSERT INTO thread_state (user_id, thread_id)
+    SELECT peer.user_id, NEW.id
     FROM (
         SELECT DISTINCT uc.user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)

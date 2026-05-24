@@ -1,5 +1,5 @@
 -- When thread.groups changes, create pending thread_priority +
--- thread_unread rows for all members of the referenced groups. The
+-- thread_state rows for all members of the referenced groups. The
 -- consumer Worker resolves each peer's priority via the LLM-aware
 -- classifier; see 22-thread_priority_peers.sql for the pending-row
 -- pattern and 24-thread_priority_bump_parent.sql for the parent-seq
@@ -35,8 +35,8 @@ BEGIN
     ) peer
     ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
 
-    INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-    SELECT peer.user_id, NEW.id, 'inform-updates', 50
+    INSERT INTO thread_state (user_id, thread_id)
+    SELECT peer.user_id, NEW.id
     FROM (
         SELECT DISTINCT uc.user_id
         FROM unnest(NEW.groups) AS arr(group_id)
@@ -60,7 +60,7 @@ CREATE TRIGGER file_thread_priority_for_group_members
     EXECUTE FUNCTION public.file_thread_priority_for_group_members ();
 
 -- When a contact is added to or removed from a group, cascade to
--- thread_priority/thread_unread for all threads that reference the group.
+-- thread_priority/thread_state for all threads that reference the group.
 --
 -- On INSERT we classify the threads inline via classify_thread_for_user
 -- instead of leaving the rows pending for the async worker. The async
@@ -119,8 +119,8 @@ BEGIN
         SET revoked_at = NULL
         WHERE thread_priority.revoked_at IS NOT NULL;
 
-        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-        SELECT v_peer_user_id, t.id, 'inform-updates', 50
+        INSERT INTO thread_state (user_id, thread_id)
+        SELECT v_peer_user_id, t.id
         FROM public.thread t
         WHERE NEW.group_id = ANY(t.groups)
           AND t.archived_at IS NULL
@@ -177,12 +177,12 @@ BEGIN
                   AND user_id = v_peer_user_id
                   AND revoked_at IS NULL;
 
-                -- thread_unread is consumed via "user".thread's LEFT JOIN;
+                -- thread_state is consumed via "user".thread's LEFT JOIN;
                 -- the redacted stub emits unread=false regardless, so the
                 -- row is now meaningless. Bare DELETE is safe because the
                 -- table is not directly synced — it feeds computed columns
                 -- on user.thread, which is now serving the redacted stub.
-                DELETE FROM thread_unread
+                DELETE FROM thread_state
                 WHERE thread_id = r_thread.thread_id
                   AND user_id = v_peer_user_id;
             END IF;

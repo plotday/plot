@@ -108,7 +108,7 @@ export type { PreparedThread as PreparedActivity } from "./thread-helpers";
  * mode = "all" marks every priority user unread regardless of authorship —
  * used when the caller passes unread === true.
  *
- * Uses upsert_thread_unread with read_at unset (defaults to NULL = unread).
+ * Uses upsert_thread_state with read_at unset (defaults to NULL = unread).
  * The function preserves an existing read_at if the user has read past the
  * latest note (race-guard via p_note_created_at).
  */
@@ -159,11 +159,15 @@ async function markThreadUnreadForUsers(
     }
 
     try {
-      await rpcUser(plot.db, "upsert_thread_unread", {
+      await rpcUser(plot.db, "upsert_thread_state", {
         user_id,
         p_thread_id: threadId,
-        p_urgency: "inform-updates",
+        p_action_type: "update",
+        p_urgent: false,
         p_importance: 50,
+        p_set_action_type: true,
+        p_set_urgent: false,
+        p_set_importance: false,
         p_note_created_at: noteCreatedAt,
       });
     } catch (err) {

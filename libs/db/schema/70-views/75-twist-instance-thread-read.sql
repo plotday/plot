@@ -14,7 +14,7 @@ FROM
     twist_instance pt
     JOIN thread a ON a.created_by = pt.id
     LEFT JOIN thread_priority tp ON tp.thread_id = a.id AND tp.user_id = pt.owner_id
-    JOIN thread_unread tu ON tu.thread_id = a.id
+    JOIN thread_state tu ON tu.thread_id = a.id
 WHERE
     a.draft = FALSE
     AND pt.archived_at IS NULL

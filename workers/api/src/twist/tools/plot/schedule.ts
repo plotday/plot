@@ -108,13 +108,9 @@ export function convertScheduleToDb(
         : schedule.occurrence;
   }
 
-  // Per-user fields
-  if (schedule.userId !== undefined) {
-    dbSchedule.user_id = schedule.userId;
-  }
-  if (schedule.order !== undefined) {
-    dbSchedule.order = schedule.order;
-  }
+  // Per-user fields (userId, order) are no longer stored on schedule — they
+  // live on thread_state now. Silently drop them so older connectors that
+  // still pass them keep working without surfacing the now-removed column.
 
   // Archived
   if (schedule.archived !== undefined) {
@@ -300,7 +296,6 @@ export async function createLinkSchedules(
           )
         )
         WHERE link_id = ${linkId}
-          AND user_id IS NULL
           AND occurrence IS NULL
       `.execute(plot.db);
     }
@@ -385,8 +380,10 @@ export function convertDbToSchedule(
   return {
     created: new Date(row.created_at as string),
     archived: row.archived_at !== null,
-    userId: (row.user_id as ActorId) ?? null,
-    order: (row.order as number) ?? null,
+    // userId/order are no longer columns on schedule; the SDK type still
+    // includes them for backwards compatibility with installed connectors.
+    userId: null,
+    order: null,
     start,
     end,
     recurrenceRule: (row.recurrence_rule as string) ?? null,

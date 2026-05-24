@@ -8,20 +8,12 @@ import { withDb } from "../db";
 import type { Bindings } from "../env";
 import { sendDataNotificationToUser } from "../notifications/send";
 
-/** Urgency priority: lower = more urgent */
-const URGENCY_RANK: Record<string, number> = {
-  interrupt: 0,
-  "inform-requests": 1,
-  "inform-updates": 2,
-  passive: 3,
-};
-
-/** Default delay per urgency level (ms) — used when no priority see_within setting exists */
-const DEFAULT_DELAY_MS: Record<string, number> = {
-  interrupt: 0,
-  "inform-requests": 30 * 60 * 1000, // 30 minutes
-  "inform-updates": 60 * 60 * 1000, // 1 hour
-};
+/**
+ * Default delay before firing a push when no `see_within` setting exists on
+ * the priority. Half an hour gives the user a chance to settle before being
+ * interrupted; urgent items bypass this entirely.
+ */
+const DEFAULT_DELAY_MS = 30 * 60 * 1000;
 
 /** Minimum interval between push notifications to the same user (ms) */
 const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -32,13 +24,16 @@ const MIN_PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
  *
  * The alarm reschedules itself while any client is reporting `active: true`
  * (window focused + foreground); once nobody has pinged active for this
- * long, the push fires.
+ * long, the push fires. Urgent items bypass this gate.
  */
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
+/** Importance below this value never triggers a push or scheduling on its own. */
+const IMPORTANCE_NOTIFY_THRESHOLD = 50;
+
 export class PushNotify extends DurableObject<Bindings> {
   private userId: string | null = null;
-  private highestUrgency: string | null = null;
+  private hasUrgent: boolean = false;
   private firstNotifyTime: number = 0;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
@@ -86,102 +81,87 @@ export class PushNotify extends DurableObject<Bindings> {
       await this.ctx.storage.put("firstNotifyTime", now);
     }
 
-    // Query the max urgency, latest unread timestamp, and effective see_within
-    // delay for this user's unread threads
-    let maxUrgency: string | null = null;
+    // Query for any unread thread that should drive a push:
+    //   - importance >= 50, OR urgent = TRUE
+    // For each candidate, pick the shortest applicable delay using the
+    // priority's see_within setting (urgent → 0 ms).
+    let hasUrgent = false;
     let delayMs = 0;
     let latestUnreadAt: string | null = null;
+    let hadCandidates = false;
     try {
       const result = await withDb(this.env, async (db) => {
-        const urgencyResult = await sql<{
-          urgency: string;
-          see_within_requests: string | null;
-          see_within_updates: string | null;
+        const stateResult = await sql<{
+          urgent: boolean;
+          see_within: string | null;
           latest_updated_at: string;
         }>`
           SELECT
-            tu.urgency,
-            psi.see_within_requests,
-            psi.see_within_updates,
-            MAX(tu.updated_at)::text AS latest_updated_at
-          FROM thread_unread tu
-          JOIN thread t ON t.id = tu.thread_id
+            ts.urgent,
+            psi.see_within,
+            MAX(ts.updated_at)::text AS latest_updated_at
+          FROM thread_state ts
+          JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
           LEFT JOIN LATERAL (
-            SELECT
-              MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
-              MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates
+            SELECT MAX(CASE WHEN key = 'see_within' THEN value::text END)::jsonb AS see_within
             FROM priority_setting_inherited
             WHERE user_id = ${userId}::uuid AND priority_id = tp.priority_id
           ) psi ON true
-          WHERE tu.user_id = ${userId}::uuid AND tu.read_at IS NULL
-            AND tu.urgency != 'passive'
+          WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
+            AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
             AND (
               t.contacts && "user".user_contact_ids(${userId}::uuid)
               OR t.groups && "user".user_group_ids(${userId}::uuid)
             )
-          GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
-          ORDER BY CASE tu.urgency
-            WHEN 'interrupt' THEN 0
-            WHEN 'inform-requests' THEN 1
-            WHEN 'inform-updates' THEN 2
-            ELSE 3
-          END ASC
+          GROUP BY ts.urgent, psi.see_within
+          ORDER BY ts.urgent DESC
         `.execute(db);
 
-        if (urgencyResult.rows.length === 0) return null;
+        if (stateResult.rows.length === 0) return null;
 
-        const topUrgency = urgencyResult.rows[0].urgency;
+        let maxUpdatedAt = stateResult.rows[0].latest_updated_at;
+        let shortestDelay = DEFAULT_DELAY_MS;
+        let anyUrgent = false;
 
-        // Find the latest updated_at across all unread threads
-        let maxUpdatedAt = urgencyResult.rows[0].latest_updated_at;
-        for (const row of urgencyResult.rows) {
+        for (const row of stateResult.rows) {
           if (row.latest_updated_at > maxUpdatedAt) {
             maxUpdatedAt = row.latest_updated_at;
           }
+          if (row.urgent) {
+            anyUrgent = true;
+            shortestDelay = 0;
+            continue;
+          }
+          const ms = row.see_within ? seeWithinToMs(row.see_within) : null;
+          const effective = ms ?? DEFAULT_DELAY_MS;
+          if (effective < shortestDelay) shortestDelay = effective;
         }
 
-        // Find shortest delay across all unread threads matching the top urgency type
-        let shortestDelay = DEFAULT_DELAY_MS[topUrgency] ?? DEFAULT_DELAY_MS["inform-updates"];
-
-        for (const row of urgencyResult.rows) {
-          let seeWithin: string | null = null;
-          if (row.urgency === "inform-requests") {
-            seeWithin = row.see_within_requests;
-          } else if (row.urgency === "inform-updates") {
-            seeWithin = row.see_within_updates;
-          }
-
-          if (seeWithin) {
-            const ms = seeWithinToMs(seeWithin);
-            if (ms !== null && ms < shortestDelay) {
-              shortestDelay = ms;
-            }
-          }
-        }
-
-        return { urgency: topUrgency, delayMs: shortestDelay, latestUnreadAt: maxUpdatedAt };
+        return { urgent: anyUrgent, delayMs: shortestDelay, latestUnreadAt: maxUpdatedAt };
       });
 
       if (result) {
-        maxUrgency = result.urgency;
+        hasUrgent = result.urgent;
         delayMs = result.delayMs;
         latestUnreadAt = result.latestUnreadAt;
+        hadCandidates = true;
       }
     } catch (error) {
-      // If DB query fails, default to inform-updates
-      maxUrgency = "inform-updates";
-      delayMs = DEFAULT_DELAY_MS["inform-updates"];
+      // If DB query fails, default to a non-urgent default-delay schedule.
+      hasUrgent = false;
+      delayMs = DEFAULT_DELAY_MS;
+      hadCandidates = true;
       this.captureException(error as Error);
     }
 
-    if (!maxUrgency) {
-      // No unread threads (or all passive) — clear state
-      this.highestUrgency = null;
+    if (!hadCandidates) {
+      // No notify-worthy unread threads — clear state.
+      this.hasUrgent = false;
       this.firstNotifyTime = 0;
-      await this.ctx.storage.delete("highestUrgency");
+      await this.ctx.storage.delete("hasUrgent");
       await this.ctx.storage.delete("firstNotifyTime");
       return;
     }
@@ -196,22 +176,18 @@ export class PushNotify extends DurableObject<Bindings> {
       }
     }
 
-    const previousUrgency = this.highestUrgency;
-    this.highestUrgency = maxUrgency;
-    await this.ctx.storage.put("highestUrgency", maxUrgency);
+    const wasUrgent = this.hasUrgent;
+    this.hasUrgent = hasUrgent;
+    await this.ctx.storage.put("hasUrgent", hasUrgent);
 
     const currentAlarm = await this.ctx.storage.getAlarm();
-
     const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
 
     if (!currentAlarm) {
       // No pending alarm — schedule one
       await this.ctx.storage.setAlarm(now + delayMs * multiplier);
-    } else if (
-      previousUrgency &&
-      (URGENCY_RANK[maxUrgency] ?? 2) < (URGENCY_RANK[previousUrgency] ?? 2)
-    ) {
-      // New urgency is higher — reschedule to sooner
+    } else if (hasUrgent && !wasUrgent) {
+      // Urgent just arrived — reschedule to sooner.
       const newAlarmTime = now + delayMs * multiplier;
       if (newAlarmTime < currentAlarm) {
         await this.ctx.storage.setAlarm(newAlarmTime);
@@ -233,9 +209,8 @@ export class PushNotify extends DurableObject<Bindings> {
       logger.error("PushNotify DO has no stored userId");
       return;
     }
-    if (!this.highestUrgency) {
-      this.highestUrgency =
-        (await this.ctx.storage.get<string>("highestUrgency")) ?? null;
+    if (!this.hasUrgent) {
+      this.hasUrgent = (await this.ctx.storage.get<boolean>("hasUrgent")) ?? false;
     }
     if (this.firstNotifyTime === 0) {
       this.firstNotifyTime =
@@ -247,7 +222,8 @@ export class PushNotify extends DurableObject<Bindings> {
       // We use the per-client `last_active_at` recorded in Broadcast's
       // `device_activity` table rather than the raw connection count so
       // that an open-but-unfocused desktop window stops blocking pushes
-      // to mobile once the user actually walks away.
+      // to mobile once the user actually walks away. Urgent items skip
+      // this gate entirely.
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
       const broadcastResponse = await broadcast.fetch(
@@ -261,7 +237,7 @@ export class PushNotify extends DurableObject<Bindings> {
       const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
       const inactivityThresholdMs = INACTIVITY_THRESHOLD_MS * multiplier;
 
-      if (broadcastData.lastActiveAt && this.highestUrgency !== "interrupt") {
+      if (broadcastData.lastActiveAt && !this.hasUrgent) {
         const lastActiveMs = Date.parse(broadcastData.lastActiveAt);
         const idleFor = now - lastActiveMs;
         if (Number.isFinite(lastActiveMs) && idleFor < inactivityThresholdMs) {
@@ -280,28 +256,29 @@ export class PushNotify extends DurableObject<Bindings> {
         }
       }
 
-      // Check minimum interval since last notification
+      // Check minimum interval since last notification (urgent items bypass).
       const lastSentAt =
         (await this.ctx.storage.get<number>("lastNotificationSentAt")) ?? 0;
       const effectiveMinInterval = MIN_PUSH_INTERVAL_MS * multiplier;
-      if (now - lastSentAt < effectiveMinInterval && this.highestUrgency !== "interrupt") {
-        // Too soon — reschedule
+      if (now - lastSentAt < effectiveMinInterval && !this.hasUrgent) {
         const remainingMs = effectiveMinInterval - (now - lastSentAt);
         await this.ctx.storage.setAlarm(now + remainingMs);
         return;
       }
 
-      // Re-check unread state — user may have read threads since the alarm was scheduled
+      // Re-check that we still have a notify-worthy unread (importance >= 50
+      // OR urgent). The user may have read everything since the alarm was
+      // scheduled.
       let latestUnreadAt: string | null = null;
       await withDb(this.env, async (db) => {
         const result = await sql<{ latest: string }>`
-          SELECT MAX(tu.updated_at)::text AS latest
-          FROM thread_unread tu
-          JOIN thread t ON t.id = tu.thread_id
+          SELECT MAX(ts.updated_at)::text AS latest
+          FROM thread_state ts
+          JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
-          WHERE tu.user_id = ${this.userId!}::uuid
-            AND tu.read_at IS NULL
-            AND tu.urgency != 'passive'
+          WHERE ts.user_id = ${this.userId!}::uuid
+            AND ts.read_at IS NULL
+            AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (
@@ -320,8 +297,8 @@ export class PushNotify extends DurableObject<Bindings> {
       });
 
       if (!latestUnreadAt) {
-        // No unread threads — user read everything since alarm was scheduled
-        logger.info("Skipping push — no unread threads remaining", {
+        // No notify-worthy unreads — user read everything since alarm was scheduled
+        logger.info("Skipping push — no notify-worthy unreads remaining", {
           user_id: this.userId,
         });
         return;
@@ -353,7 +330,7 @@ export class PushNotify extends DurableObject<Bindings> {
 
       logger.info("Push notification sent", {
         user_id: this.userId,
-        urgency: this.highestUrgency,
+        urgent: this.hasUrgent,
       });
     } catch (error) {
       logger.error("Error in PushNotify alarm", error as Error, {
@@ -366,9 +343,9 @@ export class PushNotify extends DurableObject<Bindings> {
   }
 
   private async resetState(): Promise<void> {
-    this.highestUrgency = null;
+    this.hasUrgent = false;
     this.firstNotifyTime = 0;
-    await this.ctx.storage.delete("highestUrgency");
+    await this.ctx.storage.delete("hasUrgent");
     await this.ctx.storage.delete("firstNotifyTime");
     // Note: lastNotifiedUnreadAt and lastNotificationSentAt are NOT cleared —
     // they persist across notification cycles to prevent re-notifying.

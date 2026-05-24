@@ -797,23 +797,37 @@ $function$;
 -- silent failures. See also: updatedSinceCursor() in
 -- workers/api/src/app/sync/helpers.ts which documents the same pattern.
 
-CREATE OR REPLACE FUNCTION "user".upsert_thread_unread (
+-- Upsert per-user thread_state. Replaces upsert_thread_unread and also
+-- accepts the per-user action/order/on/at fields that previously lived on
+-- schedule. Every parameter follows the explicit-set pattern (p_set_*) so
+-- partial updates from the client don't clobber fields set elsewhere.
+CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     user_id uuid,
     p_thread_id uuid,
-    p_urgency text,
+    p_action_type text DEFAULT 'update',
+    p_urgent boolean DEFAULT FALSE,
     p_importance smallint DEFAULT 50,
     p_read_at timestamptz DEFAULT NULL::timestamptz,
     p_bumped_at timestamptz DEFAULT NULL::timestamptz,
-    p_note_created_at timestamptz DEFAULT NULL::timestamptz
+    p_note_created_at timestamptz DEFAULT NULL::timestamptz,
+    p_order double precision DEFAULT NULL,
+    p_on daterange DEFAULT NULL,
+    p_at tstzrange DEFAULT NULL,
+    p_set_action_type boolean DEFAULT TRUE,
+    p_set_urgent boolean DEFAULT TRUE,
+    p_set_importance boolean DEFAULT TRUE,
+    p_set_order boolean DEFAULT FALSE,
+    p_set_on boolean DEFAULT FALSE,
+    p_set_at boolean DEFAULT FALSE
 )
-    RETURNS thread_unread
+    RETURNS thread_state
     LANGUAGE plpgsql
     SET search_path TO 'public', 'user'
     AS $function$
 #variable_conflict use_column
 DECLARE
     v_priority_id uuid;
-    v_row thread_unread;
+    v_row thread_state;
 BEGIN
     SELECT
         tp.priority_id INTO v_priority_id
@@ -821,28 +835,32 @@ BEGIN
         thread_priority tp
     WHERE
         tp.thread_id = p_thread_id
-        AND tp.user_id = upsert_thread_unread.user_id;
+        AND tp.user_id = upsert_thread_state.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
 
-    INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
-        VALUES (upsert_thread_unread.user_id, p_thread_id, p_urgency, p_importance, p_read_at, p_bumped_at)
+    INSERT INTO thread_state (user_id, thread_id, action_type, urgent, importance, read_at, bumped_at, "order", "on", "at")
+        VALUES (upsert_thread_state.user_id, p_thread_id, COALESCE(p_action_type, 'update'), COALESCE(p_urgent, FALSE), COALESCE(p_importance, 50), p_read_at, p_bumped_at, p_order, p_on, p_at)
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
-            urgency = EXCLUDED.urgency,
-            importance = EXCLUDED.importance,
+            action_type = CASE WHEN p_set_action_type THEN COALESCE(EXCLUDED.action_type, thread_state.action_type) ELSE thread_state.action_type END,
+            urgent = CASE WHEN p_set_urgent THEN EXCLUDED.urgent ELSE thread_state.urgent END,
+            importance = CASE WHEN p_set_importance THEN EXCLUDED.importance ELSE thread_state.importance END,
+            "order" = CASE WHEN p_set_order THEN EXCLUDED."order" ELSE thread_state."order" END,
+            "on" = CASE WHEN p_set_on THEN EXCLUDED."on" ELSE thread_state."on" END,
+            "at" = CASE WHEN p_set_at THEN EXCLUDED."at" ELSE thread_state."at" END,
             read_at = CASE
                 -- Race condition: user read after the note was created → preserve their read
                 -- Truncate to ms precision (see PRECISION BOUNDARY comment above)
                 WHEN p_note_created_at IS NOT NULL
-                    AND thread_unread.read_at IS NOT NULL
-                    AND thread_unread.read_at >= date_trunc('milliseconds', p_note_created_at)
-                THEN thread_unread.read_at
+                    AND thread_state.read_at IS NOT NULL
+                    AND thread_state.read_at >= date_trunc('milliseconds', p_note_created_at)
+                THEN thread_state.read_at
                 -- New activity or no timestamp context: use caller's value (NULL = unread)
                 ELSE EXCLUDED.read_at
             END,
-            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
+            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_state.bumped_at END,
             updated_at = now()
     RETURNING * INTO v_row;
 
@@ -850,7 +868,10 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".clear_thread_unread (
+-- Mark a thread as read. Race-safe: if no thread_state row exists yet
+-- (analysis hasn't run), inserts a preemptive read marker that
+-- upsert_thread_state will then preserve via its race guard.
+CREATE OR REPLACE FUNCTION "user".clear_thread_state (
     user_id uuid,
     p_thread_id uuid,
     p_read_at timestamptz DEFAULT now(),
@@ -870,39 +891,31 @@ BEGIN
         thread_priority tp
     WHERE
         tp.thread_id = p_thread_id
-        AND tp.user_id = clear_thread_unread.user_id;
+        AND tp.user_id = clear_thread_state.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
 
-    -- Upsert to handle the race where the user reads a thread before analysis
-    -- creates the thread_unread row. If no row exists, INSERT a preemptive read
-    -- marker so that when analysis later calls upsert_thread_unread, the
-    -- race guard (read_at >= note_created_at) preserves it.
-    -- If a row exists, the read_at clear is gated on the client having seen
-    -- all current content (p_read_at >= thread's content timestamp). The
-    -- bumped_at write is independent: bumping is a user action (Finish) and
-    -- must always apply, even when read_at is already set.
     -- Truncate DB timestamp to ms precision (see PRECISION BOUNDARY comment above)
-    INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
-        VALUES (clear_thread_unread.user_id, p_thread_id, 'inform-updates', 50, p_read_at, p_bumped_at)
+    INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at)
+        VALUES (clear_thread_state.user_id, p_thread_id, p_read_at, p_bumped_at)
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
             read_at = CASE
-                WHEN thread_unread.read_at IS NULL
+                WHEN thread_state.read_at IS NULL
                     AND p_read_at >= date_trunc('milliseconds', (
                         SELECT COALESCE(t.last_note_source_created_at, t.created_at)
                         FROM thread t
                         WHERE t.id = p_thread_id
                     ))
                 THEN p_read_at
-                ELSE thread_unread.read_at
+                ELSE thread_state.read_at
             END,
-            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
+            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_state.bumped_at END,
             updated_at = now()
         WHERE
             p_bumped_at IS NOT NULL
-            OR (thread_unread.read_at IS NULL
+            OR (thread_state.read_at IS NULL
                 AND p_read_at >= date_trunc('milliseconds', (
                     SELECT COALESCE(t.last_note_source_created_at, t.created_at)
                     FROM thread t
@@ -916,10 +929,8 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
     p_priority_id uuid,
     p_attention_window jsonb DEFAULT NULL,
     p_set_attention_window boolean DEFAULT FALSE,
-    p_see_within_requests jsonb DEFAULT NULL,
-    p_see_within_updates jsonb DEFAULT NULL,
-    p_set_see_within_requests boolean DEFAULT FALSE,
-    p_set_see_within_updates boolean DEFAULT FALSE
+    p_see_within jsonb DEFAULT NULL,
+    p_set_see_within boolean DEFAULT FALSE
 ) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
 BEGIN
     PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
@@ -934,26 +945,15 @@ BEGIN
               AND priority_setting.priority_id = p_priority_id AND key = 'attention_window';
         END IF;
     END IF;
-    IF p_set_see_within_requests THEN
-        IF p_see_within_requests IS NOT NULL THEN
+    IF p_set_see_within THEN
+        IF p_see_within IS NOT NULL THEN
             INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'see_within_requests', p_see_within_requests)
+            VALUES (p_user_id, p_priority_id, 'see_within', p_see_within)
             ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         ELSE
             DELETE FROM priority_setting
             WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'see_within_requests';
-        END IF;
-    END IF;
-    IF p_set_see_within_updates THEN
-        IF p_see_within_updates IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'see_within_updates', p_see_within_updates)
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'see_within_updates';
+              AND priority_setting.priority_id = p_priority_id AND key = 'see_within';
         END IF;
     END IF;
 END; $function$;

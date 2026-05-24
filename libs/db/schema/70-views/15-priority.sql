@@ -31,7 +31,7 @@ WITH all_sources AS (
     FROM priority_setting ps
     JOIN priority parent ON ps.priority_id = parent.id
     JOIN priority p ON p.path <@ parent.path AND p.user_id = parent.user_id
-    WHERE ps.key IN ('pomodoro', 'color', 'attention_window', 'see_within_requests', 'see_within_updates')
+    WHERE ps.key IN ('pomodoro', 'color', 'attention_window', 'see_within')
     UNION ALL
     -- Priority table color fallback (source_type = 1). Walks up each priority's
     -- own tree via path; no priority_user join needed because paths are scoped

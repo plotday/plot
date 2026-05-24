@@ -609,15 +609,12 @@ export interface Schedule {
   link_id: string | null;
   occurrence: string | null;
   on: string | null;
-  order: number | null;
-  outstanding_tasks: Generated<boolean>;
   reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
   seq: Generated<string>;
   thread_id: string | null;
   updated_at: Generated<Timestamp>;
-  user_id: string | null;
 }
 
 export interface ScheduleContact {
@@ -812,6 +809,21 @@ export interface ThreadRead {
   user_id: string;
 }
 
+export interface ThreadState {
+  action_type: Generated<string>;
+  at: string | null;
+  bumped_at: Timestamp | null;
+  importance: Generated<number>;
+  on: string | null;
+  order: number | null;
+  read_at: Timestamp | null;
+  seq: Generated<string>;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  urgent: Generated<boolean>;
+  user_id: string;
+}
+
 export interface ThreadTag {
   actor_id: string;
   archived_at: Timestamp | null;
@@ -835,17 +847,6 @@ export interface ThreadTags {
   thread_id: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-}
-
-export interface ThreadUnread {
-  bumped_at: Timestamp | null;
-  importance: Generated<number>;
-  read_at: Timestamp | null;
-  seq: Generated<string>;
-  thread_id: string;
-  updated_at: Generated<Timestamp>;
-  urgency: string;
-  user_id: string;
 }
 
 export interface ThreadX {
@@ -1187,11 +1188,11 @@ export interface TwistInstanceThreadRead {
 }
 
 export interface TwistInstanceThreadSchedule {
-  archived_at: Timestamp | null;
+  action_type: string | null;
   at: string | null;
   on: string | null;
   priority_id: string | null;
-  schedule_id: string | null;
+  read_at: Timestamp | null;
   seq: string | null;
   thread_id: string | null;
   twist_instance_id: string | null;
@@ -1418,10 +1419,8 @@ export interface UserPriority {
   pomodoro: number | null;
   role: string | null;
   root: boolean | null;
-  see_within_requests: Json | null;
-  see_within_requests_set: boolean | null;
-  see_within_updates: Json | null;
-  see_within_updates_set: boolean | null;
+  see_within: Json | null;
+  see_within_set: boolean | null;
   seq: string | null;
   title: string | null;
   top_order: number | null;
@@ -1472,15 +1471,12 @@ export interface UserSchedule {
   link_id: string | null;
   occurrence: string | null;
   on: string | null;
-  order: number | null;
-  outstanding_tasks: boolean | null;
   priority_path: string | null;
   range_at: string | null;
   range_on: string | null;
   reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
-  schedule_user_id: string | null;
   seq: string | null;
   thread_id: string | null;
   updated_at: Timestamp | null;
@@ -1537,6 +1533,7 @@ export interface UserTeamUser {
 }
 
 export interface UserThread {
+  action_type: string | null;
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
@@ -1558,12 +1555,15 @@ export interface UserThread {
   priority_path: string | null;
   revoked: boolean | null;
   seq: string | null;
+  state_at: string | null;
+  state_on: string | null;
+  state_order: number | null;
   title: string | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-  urgency: string | null;
+  urgent: boolean | null;
   user_id: string | null;
 }
 
@@ -1580,6 +1580,7 @@ export interface UserThreadAssociation {
 }
 
 export interface UserThreadRedacted {
+  action_type: string | null;
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
@@ -1601,12 +1602,15 @@ export interface UserThreadRedacted {
   priority_path: string | null;
   revoked: boolean | null;
   seq: string | null;
+  state_at: string | null;
+  state_on: string | null;
+  state_order: number | null;
   title: string | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-  urgency: string | null;
+  urgent: boolean | null;
   user_id: string | null;
 }
 
@@ -1710,9 +1714,9 @@ export interface DB {
   thread_association: ThreadAssociation;
   thread_priority: ThreadPriority;
   thread_read: ThreadRead;
+  thread_state: ThreadState;
   thread_tag: ThreadTag;
   thread_tags: ThreadTags;
-  thread_unread: ThreadUnread;
   thread_x: ThreadX;
   token: Token;
   twist: Twist;

@@ -4,35 +4,33 @@ import type { DB } from "../../db-types";
 import { rpcUser } from "../../rpc";
 
 /**
- * Create a per-user schedule for a thread with the given reason.
- * Uses the sentinel date [1970-01-01,) — the app handles
- * smart scheduling locally based on attention window settings.
- * Never throws — schedule creation should not fail the caller.
+ * Write a per-user thread_state row for a thread. The `reason` legacy values
+ * map to action_type:
+ *   - 'task'   → action_type = 'do'    (link assignment, todo-tagged note)
+ *   - 'add'    → action_type = 'update' (user dropped it on their inbox)
+ *   - 'unread' → action_type = 'update' (filed for visibility, no action)
+ *
+ * Never throws — best-effort write.
  */
 export async function createSchedule(
   db: Kysely<DB>,
   userId: string,
   threadId: string,
-  reason: "unread" | "task" | "add",
-  outstandingTasks?: boolean
+  reason: "unread" | "task" | "add"
 ): Promise<void> {
   try {
-    const schedule: Record<string, unknown> = {
-      thread_id: threadId,
+    const actionType = reason === "task" ? "do" : "update";
+    await rpcUser(db, "upsert_thread_state", {
       user_id: userId,
-      order: 0,
-      reason,
-      on: "[1970-01-01,)",
-    };
-    if (outstandingTasks !== undefined) {
-      schedule.outstanding_tasks = outstandingTasks;
-    }
-    await rpcUser(db, "upsert_schedule", {
-      user_id: userId,
-      p_schedule: schedule,
-      p_defaults: {},
-    } as any);
+      p_thread_id: threadId,
+      p_action_type: actionType,
+      p_urgent: false,
+      p_importance: 50,
+      p_set_action_type: true,
+      p_set_urgent: false,
+      p_set_importance: false,
+    });
   } catch (error) {
-    console.error("[schedule] Failed to create schedule:", error);
+    console.error("[thread_state] Failed to write thread_state:", error);
   }
 }

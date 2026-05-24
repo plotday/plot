@@ -1,7 +1,7 @@
--- Upsert schedule with access control
--- Validates user has access to the thread's priority
--- Per-user schedules (user_id set) can only be created/modified by the owning user
--- Supports both thread_id and link_id (exactly one must be set per CHECK constraint)
+-- Upsert shared/link schedule with access control. Per-user todo state
+-- (action / order / per-user "on"/"at") now lives on thread_state — see
+-- "user".upsert_thread_state. This function only handles shared base
+-- schedules and occurrence overrides.
 CREATE OR REPLACE FUNCTION "user".upsert_schedule (
     user_id uuid,
     p_schedule jsonb,
@@ -16,8 +16,6 @@ DECLARE
     v_thread_id uuid;
     v_link_id uuid;
     v_priority_id uuid;
-    v_role text;
-    v_schedule_user_id uuid;
     v_occurrence text;
     v_recurrence_exdates timestamptz[];
     v_recurrence_exdates_add timestamptz[];
@@ -28,7 +26,6 @@ BEGIN
     v_id := COALESCE((p_schedule ->> 'id')::uuid, (p_defaults ->> 'id')::uuid);
     v_thread_id := COALESCE((p_schedule ->> 'thread_id')::uuid, (p_defaults ->> 'thread_id')::uuid);
     v_link_id := COALESCE((p_schedule ->> 'link_id')::uuid, (p_defaults ->> 'link_id')::uuid);
-    v_schedule_user_id := COALESCE((p_schedule ->> 'user_id')::uuid, (p_defaults ->> 'user_id')::uuid);
     v_occurrence := COALESCE(p_schedule ->> 'occurrence', p_defaults ->> 'occurrence');
 
     -- Resolve thread_id/link_id from existing schedule if updating
@@ -76,22 +73,15 @@ BEGIN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
 
-    -- Per-user schedules can only be created/modified by the owning user
-    IF v_schedule_user_id IS NOT NULL AND v_schedule_user_id != upsert_schedule.user_id THEN
-        RAISE EXCEPTION 'Cannot create/modify per-user schedule for another user';
-    END IF;
-
     -- Serialize concurrent upserts for the same logical schedule. Without
     -- this, two sessions can each SELECT the unique tuple (thread_id/link_id,
-    -- user_id, occurrence), find nothing, and both INSERT with different
-    -- primary-key ids — the second violates schedule_thread_user_unique (or
-    -- one of the other partial unique indexes on schedule). The advisory
-    -- lock is transaction-scoped, so it releases on COMMIT/ROLLBACK.
+    -- occurrence), find nothing, and both INSERT with different primary-key
+    -- ids — the second violates the partial unique index. The advisory lock
+    -- is transaction-scoped, so it releases on COMMIT/ROLLBACK.
     PERFORM pg_advisory_xact_lock(
         hashtextextended(
             'schedule_upsert|' ||
             COALESCE(v_thread_id::text, v_link_id::text) || '|' ||
-            COALESCE(v_schedule_user_id::text, '') || '|' ||
             COALESCE(v_occurrence, ''),
             0
         )
@@ -116,34 +106,17 @@ BEGIN
                 WHERE s.thread_id = v_thread_id
                   AND s.occurrence = v_occurrence;
             END IF;
-        ELSIF v_schedule_user_id IS NOT NULL THEN
-            -- Per-user base schedule: resolve by (link_id/thread_id, user_id)
-            IF v_link_id IS NOT NULL THEN
-                SELECT s.id INTO v_existing_id
-                FROM schedule s
-                WHERE s.link_id = v_link_id
-                  AND s.user_id = v_schedule_user_id
-                  AND s.occurrence IS NULL;
-            ELSIF v_thread_id IS NOT NULL THEN
-                SELECT s.id INTO v_existing_id
-                FROM schedule s
-                WHERE s.thread_id = v_thread_id
-                  AND s.user_id = v_schedule_user_id
-                  AND s.occurrence IS NULL;
-            END IF;
         ELSE
-            -- Shared base schedule: resolve by (link_id/thread_id, user_id IS NULL)
+            -- Base schedule: resolve by (link_id/thread_id, occurrence IS NULL)
             IF v_link_id IS NOT NULL THEN
                 SELECT s.id INTO v_existing_id
                 FROM schedule s
                 WHERE s.link_id = v_link_id
-                  AND s.user_id IS NULL
                   AND s.occurrence IS NULL;
             ELSIF v_thread_id IS NOT NULL THEN
                 SELECT s.id INTO v_existing_id
                 FROM schedule s
                 WHERE s.thread_id = v_thread_id
-                  AND s.user_id IS NULL
                   AND s.occurrence IS NULL;
             END IF;
         END IF;
@@ -187,17 +160,11 @@ BEGIN
     END IF;
 
     -- Perform the upsert
-    INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", recurrence_rule, duration, recurrence_exdates, occurrence, reason, action, archived_at, outstanding_tasks)
+    INSERT INTO schedule (id, thread_id, link_id, at, "on", recurrence_rule, duration, recurrence_exdates, occurrence, reason, archived_at)
         VALUES (
             v_id,
             v_thread_id,
             v_link_id,
-            v_schedule_user_id,
-            CASE WHEN v_schedule_user_id IS NOT NULL THEN
-                COALESCE((p_schedule ->> 'order')::double precision, (p_defaults ->> 'order')::double precision, public.order_first())
-            ELSE
-                NULL
-            END,
             COALESCE((p_schedule ->> 'at')::tstzrange, (p_defaults ->> 'at')::tstzrange),
             COALESCE((p_schedule ->> 'on')::daterange, (p_defaults ->> 'on')::daterange),
             COALESCE(p_schedule ->> 'recurrence_rule', p_defaults ->> 'recurrence_rule'),
@@ -205,9 +172,7 @@ BEGIN
             v_recurrence_exdates,
             COALESCE(p_schedule ->> 'occurrence', p_defaults ->> 'occurrence'),
             COALESCE(p_schedule ->> 'reason', p_defaults ->> 'reason'),
-            COALESCE(p_schedule ->> 'action', p_defaults ->> 'action'),
-            COALESCE((p_schedule ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz),
-            COALESCE((p_schedule ->> 'outstanding_tasks')::boolean, (p_defaults ->> 'outstanding_tasks')::boolean, FALSE)
+            COALESCE((p_schedule ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz)
         )
     ON CONFLICT (id)
         DO UPDATE SET
@@ -252,11 +217,6 @@ BEGIN
             ELSE
                 schedule.recurrence_exdates
             END,
-            "order" = CASE
-                WHEN schedule.user_id IS NULL THEN NULL
-                WHEN p_schedule ? 'order' THEN COALESCE((p_schedule ->> 'order')::double precision, schedule."order", public.order_first())
-                ELSE COALESCE(schedule."order", public.order_first())
-            END,
             reason = CASE WHEN p_schedule ? 'reason' THEN
                 CASE
                     WHEN schedule.reason IS NULL THEN (p_schedule ->> 'reason')
@@ -267,19 +227,10 @@ BEGIN
                 END
             ELSE schedule.reason
             END,
-            action = CASE WHEN p_schedule ? 'action' THEN
-                (p_schedule ->> 'action')
-            ELSE schedule.action
-            END,
             archived_at = CASE WHEN p_schedule ? 'archived_at' THEN
                 (p_schedule ->> 'archived_at')::timestamptz
             ELSE
                 schedule.archived_at
-            END,
-            outstanding_tasks = CASE WHEN p_schedule ? 'outstanding_tasks' THEN
-                (p_schedule ->> 'outstanding_tasks')::boolean
-            ELSE
-                schedule.outstanding_tasks
             END
         RETURNING
             * INTO v_result;

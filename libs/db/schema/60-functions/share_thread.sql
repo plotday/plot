@@ -1,7 +1,7 @@
 -- Share or unshare a thread with contacts.
 -- Adds/removes contact_ids from thread.contacts, which fires the
 -- file_thread_priority_peers trigger to create thread_priority rows.
--- Also inserts thread_unread rows for newly-added users so the thread
+-- Also inserts thread_state rows for newly-added users so the thread
 -- appears as unread for them.
 CREATE OR REPLACE FUNCTION public.share_thread (
     p_user_id uuid,
@@ -53,8 +53,9 @@ BEGIN
     SET contacts = v_new_contacts
     WHERE id = p_thread_id;
 
-    -- For each newly-added contact linked to a user, create thread_unread
-    -- so the thread appears as unread for them.
+    -- For each newly-added contact linked to a user, create thread_state
+    -- so the thread appears as unread for them. The default action_type
+    -- ('update') and importance (50) come from the table defaults.
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
         FROM unnest(p_add_contact_ids) AS arr(contact_id)
@@ -64,8 +65,8 @@ BEGIN
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM p_user_id
     LOOP
-        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-        VALUES (r.peer_user_id, p_thread_id, 'inform-updates', 50)
+        INSERT INTO thread_state (user_id, thread_id)
+        VALUES (r.peer_user_id, p_thread_id)
         ON CONFLICT (user_id, thread_id) DO NOTHING;
     END LOOP;
 

@@ -1342,7 +1342,6 @@ export type Database = {
       }
       schedule: {
         Row: {
-          action: string | null
           archived_at: string | null
           at: unknown
           created_at: string
@@ -1351,18 +1350,14 @@ export type Database = {
           link_id: string | null
           occurrence: string | null
           on: unknown
-          order: number | null
-          outstanding_tasks: boolean
           reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           seq: unknown
           thread_id: string | null
           updated_at: string
-          user_id: string | null
         }
         Insert: {
-          action?: string | null
           archived_at?: string | null
           at?: unknown
           created_at?: string
@@ -1371,18 +1366,14 @@ export type Database = {
           link_id?: string | null
           occurrence?: string | null
           on?: unknown
-          order?: number | null
-          outstanding_tasks?: boolean
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           seq?: unknown
           thread_id?: string | null
           updated_at?: string
-          user_id?: string | null
         }
         Update: {
-          action?: string | null
           archived_at?: string | null
           at?: unknown
           created_at?: string
@@ -1391,15 +1382,12 @@ export type Database = {
           link_id?: string | null
           occurrence?: string | null
           on?: unknown
-          order?: number | null
-          outstanding_tasks?: boolean
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           seq?: unknown
           thread_id?: string | null
           updated_at?: string
-          user_id?: string | null
         }
         Relationships: [
           {
@@ -1450,12 +1438,6 @@ export type Database = {
             referencedRelation: "thread_x"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "schedule_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
         ]
       }
       schedule_contact: {
@@ -1504,12 +1486,6 @@ export type Database = {
             columns: ["schedule_id"]
             referencedRelation: "schedule"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "schedule_contact_schedule_id_fkey"
-            columns: ["schedule_id"]
-            referencedRelation: "twist_instance_thread_schedule"
-            referencedColumns: ["schedule_id"]
           },
         ]
       }
@@ -1708,12 +1684,6 @@ export type Database = {
             columns: ["schedule_id"]
             referencedRelation: "schedule"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "session_schedule_id_fkey"
-            columns: ["schedule_id"]
-            referencedRelation: "twist_instance_thread_schedule"
-            referencedColumns: ["schedule_id"]
           },
           {
             foreignKeyName: "session_user_id_fkey"
@@ -2171,6 +2141,70 @@ export type Database = {
           },
         ]
       }
+      thread_state: {
+        Row: {
+          action_type: string
+          at: unknown
+          bumped_at: string | null
+          importance: number
+          on: unknown
+          order: number | null
+          read_at: string | null
+          seq: unknown
+          thread_id: string
+          updated_at: string
+          urgent: boolean
+          user_id: string
+        }
+        Insert: {
+          action_type?: string
+          at?: unknown
+          bumped_at?: string | null
+          importance?: number
+          on?: unknown
+          order?: number | null
+          read_at?: string | null
+          seq?: unknown
+          thread_id: string
+          updated_at?: string
+          urgent?: boolean
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          at?: unknown
+          bumped_at?: string | null
+          importance?: number
+          on?: unknown
+          order?: number | null
+          read_at?: string | null
+          seq?: unknown
+          thread_id?: string
+          updated_at?: string
+          urgent?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_state_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       thread_tag: {
         Row: {
           actor_id: string
@@ -2219,58 +2253,6 @@ export type Database = {
             foreignKeyName: "thread_tag_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      thread_unread: {
-        Row: {
-          bumped_at: string | null
-          importance: number
-          read_at: string | null
-          seq: unknown
-          thread_id: string
-          updated_at: string
-          urgency: string
-          user_id: string
-        }
-        Insert: {
-          bumped_at?: string | null
-          importance?: number
-          read_at?: string | null
-          seq?: unknown
-          thread_id: string
-          updated_at?: string
-          urgency: string
-          user_id: string
-        }
-        Update: {
-          bumped_at?: string | null
-          importance?: number
-          read_at?: string | null
-          seq?: unknown
-          thread_id?: string
-          updated_at?: string
-          urgency?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "thread_unread_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_unread_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_unread_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -3795,12 +3777,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "schedule_contact_schedule_id_fkey"
-            columns: ["schedule_id"]
-            referencedRelation: "twist_instance_thread_schedule"
-            referencedColumns: ["schedule_id"]
-          },
-          {
             foreignKeyName: "schedule_link_id_fkey"
             columns: ["link_id"]
             referencedRelation: "link"
@@ -3898,19 +3874,19 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "thread_unread_thread_id_fkey"
+            foreignKeyName: "thread_state_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_unread_thread_id_fkey"
+            foreignKeyName: "thread_state_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_unread_user_id_fkey"
+            foreignKeyName: "thread_state_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -3919,11 +3895,11 @@ export type Database = {
       }
       twist_instance_thread_schedule: {
         Row: {
-          archived_at: string | null
+          action_type: string | null
           at: unknown
           on: unknown
           priority_id: string | null
-          schedule_id: string | null
+          read_at: string | null
           seq: unknown
           thread_id: string | null
           twist_instance_id: string | null
@@ -3931,24 +3907,6 @@ export type Database = {
           user_id: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "schedule_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "schedule_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "schedule_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "thread_priority_priority_id_fkey"
             columns: ["priority_id"]
@@ -3966,6 +3924,24 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_state_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_state_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4199,10 +4175,6 @@ export type Database = {
           p_user_id: string
         }
         Returns: number
-      }
-      recompute_outstanding_tasks: {
-        Args: { p_thread_id: string; p_user_id: string }
-        Returns: undefined
       }
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
@@ -4649,10 +4621,8 @@ export type Database = {
           pomodoro: number | null
           role: string | null
           root: boolean | null
-          see_within_requests: Json | null
-          see_within_requests_set: boolean | null
-          see_within_updates: Json | null
-          see_within_updates_set: boolean | null
+          see_within: Json | null
+          see_within_set: boolean | null
           seq: unknown
           title: string | null
           top_order: number | null
@@ -4798,7 +4768,6 @@ export type Database = {
       }
       schedule: {
         Row: {
-          action: string | null
           archived_at: string | null
           at: unknown
           contacts: Json | null
@@ -4808,15 +4777,12 @@ export type Database = {
           link_id: string | null
           occurrence: string | null
           on: unknown
-          order: number | null
-          outstanding_tasks: boolean | null
           priority_path: unknown
           range_at: unknown
           range_on: unknown
           reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
-          schedule_user_id: string | null
           seq: unknown
           thread_id: string | null
           updated_at: string | null
@@ -4848,12 +4814,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "schedule_user_id_fkey"
-            columns: ["schedule_user_id"]
-            referencedRelation: "group"
-            referencedColumns: ["user_id"]
-          },
-          {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
@@ -4882,6 +4842,7 @@ export type Database = {
       }
       thread: {
         Row: {
+          action_type: string | null
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
@@ -4903,12 +4864,15 @@ export type Database = {
           priority_path: unknown
           revoked: boolean | null
           seq: unknown
+          state_at: unknown
+          state_on: unknown
+          state_order: number | null
           title: string | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
-          urgency: string | null
+          urgent: boolean | null
           user_id: string | null
         }
         Relationships: [
@@ -5015,6 +4979,7 @@ export type Database = {
       }
       thread_redacted: {
         Row: {
+          action_type: string | null
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
@@ -5036,12 +5001,15 @@ export type Database = {
           priority_path: unknown
           revoked: boolean | null
           seq: unknown
+          state_at: unknown
+          state_on: unknown
+          state_order: number | null
           title: string | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
-          urgency: string | null
+          urgent: boolean | null
           user_id: string | null
         }
         Relationships: [
@@ -5106,13 +5074,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5195,7 +5163,7 @@ export type Database = {
         Args: { p_seed_thread_id: string; p_user_id: string }
         Returns: number
       }
-      clear_thread_unread: {
+      clear_thread_state: {
         Args: {
           p_bumped_at?: string
           p_read_at?: string
@@ -5323,10 +5291,8 @@ export type Database = {
           pomodoro: number | null
           role: string | null
           root: boolean | null
-          see_within_requests: Json | null
-          see_within_requests_set: boolean | null
-          see_within_updates: Json | null
-          see_within_updates_set: boolean | null
+          see_within: Json | null
+          see_within_set: boolean | null
           seq: unknown
           title: string | null
           top_order: number | null
@@ -5346,11 +5312,9 @@ export type Database = {
         Args: {
           p_attention_window?: Json
           p_priority_id: string
-          p_see_within_requests?: Json
-          p_see_within_updates?: Json
+          p_see_within?: Json
           p_set_attention_window?: boolean
-          p_set_see_within_requests?: boolean
-          p_set_see_within_updates?: boolean
+          p_set_see_within?: boolean
           p_user_id: string
         }
         Returns: undefined
@@ -5451,6 +5415,34 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      upsert_thread_state: {
+        Args: {
+          p_action_type?: string
+          p_at?: unknown
+          p_bumped_at?: string
+          p_importance?: number
+          p_note_created_at?: string
+          p_on?: unknown
+          p_order?: number
+          p_read_at?: string
+          p_set_action_type?: boolean
+          p_set_at?: boolean
+          p_set_importance?: boolean
+          p_set_on?: boolean
+          p_set_order?: boolean
+          p_set_urgent?: boolean
+          p_thread_id: string
+          p_urgent?: boolean
+          user_id: string
+        }
+        Returns: Database["public"]["Tables"]["thread_state"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "thread_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       upsert_thread_tag: {
         Args: {
           p_actor_id: string
@@ -5465,24 +5457,6 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "thread_tag"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      upsert_thread_unread: {
-        Args: {
-          p_bumped_at?: string
-          p_importance?: number
-          p_note_created_at?: string
-          p_read_at?: string
-          p_thread_id: string
-          p_urgency: string
-          user_id: string
-        }
-        Returns: Database["public"]["Tables"]["thread_unread"]["Row"]
-        SetofOptions: {
-          from: "*"
-          to: "thread_unread"
           isOneToOne: true
           isSetofReturn: false
         }

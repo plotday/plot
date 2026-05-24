@@ -291,9 +291,9 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for thread_unread changes
--- Notifies the affected user so their thread view refreshes with updated unread status
-CREATE OR REPLACE FUNCTION public.sync_user_for_thread_unread ()
+-- User sync trigger function for thread_state changes.
+-- Notifies the affected user so their thread view refreshes with updated state.
+CREATE OR REPLACE FUNCTION public.sync_user_for_thread_state ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'

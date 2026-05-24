@@ -113,37 +113,10 @@ noteTags.post("/sync/note-tags", async (c) => {
 
         if (note?.thread_id) {
           await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
-          // Recompute outstanding_tasks on the per-user schedule
-          await sql`SELECT recompute_outstanding_tasks(${note.thread_id}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
         }
       }
     } catch (error) {
-      console.error("[schedule] Failed to create task schedule from note tag:", error);
-    }
-  }
-
-  // Recompute outstanding_tasks when todo tag is removed (archived) or done tag is added
-  if ((body.tag_id === 1 && body.archived_at) || body.tag_id === 3) {
-    try {
-      const contact = await c.var.db
-        .selectFrom("contact")
-        .select("user_id")
-        .where("id", "=", body.actor_id)
-        .executeTakeFirst();
-
-      if (contact?.user_id) {
-        const note = await c.var.db
-          .selectFrom("note")
-          .select("thread_id")
-          .where("id", "=", body.note_id)
-          .executeTakeFirst();
-
-        if (note?.thread_id) {
-          await sql`SELECT recompute_outstanding_tasks(${note.thread_id}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
-        }
-      }
-    } catch (error) {
-      console.error("[schedule] Failed to recompute outstanding_tasks from note tag:", error);
+      console.error("[thread_state] Failed to file thread_state from note tag:", error);
     }
   }
 
@@ -167,7 +140,7 @@ noteTags.post("/sync/note-tags/update", async (c) => {
   const priorityId2 = await getPriorityForNote(c.var.db, body.note_id, c.var.user.id);
   notifySync(c, priorityId2);
 
-  // Create task schedule when todo tags are added via update
+  // File a 'do' thread_state when todo tags are added via update
   if (body.tag_updates) {
     const todoEntries = Object.entries(body.tag_updates as Record<string, boolean>)
       .filter(([key, val]) => val === true && key.startsWith('1:'));
@@ -190,44 +163,10 @@ noteTags.post("/sync/note-tags/update", async (c) => {
               .executeTakeFirst();
             if (!contact?.user_id) continue;
             await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
-            // Recompute outstanding_tasks
-            await sql`SELECT recompute_outstanding_tasks(${note.thread_id}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
           }
         }
       } catch (error) {
-        console.error("[schedule] Failed to create task schedule from tag update:", error);
-      }
-    }
-
-    // Recompute outstanding_tasks for todo removals and done tag changes
-    const recomputeEntries = Object.entries(body.tag_updates as Record<string, boolean>)
-      .filter(([key, val]) =>
-        (key.startsWith('1:') && val === false) || // todo removed
-        key.startsWith('3:') // done tag added/removed
-      );
-
-    if (recomputeEntries.length > 0) {
-      try {
-        const note = await c.var.db
-          .selectFrom("note")
-          .select("thread_id")
-          .where("id", "=", body.note_id)
-          .executeTakeFirst();
-
-        if (note?.thread_id) {
-          for (const [key] of recomputeEntries) {
-            const actorId = key.split(':')[1];
-            const contact = await c.var.db
-              .selectFrom("contact")
-              .select("user_id")
-              .where("id", "=", actorId)
-              .executeTakeFirst();
-            if (!contact?.user_id) continue;
-            await sql`SELECT recompute_outstanding_tasks(${note.thread_id}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
-          }
-        }
-      } catch (error) {
-        console.error("[schedule] Failed to recompute outstanding_tasks from tag update:", error);
+        console.error("[thread_state] Failed to file thread_state from tag update:", error);
       }
     }
   }

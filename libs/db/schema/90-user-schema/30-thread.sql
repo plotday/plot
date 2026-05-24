@@ -30,19 +30,19 @@ SELECT
     a.id,
     a.created_at,
     -- updated_at: use the latest of thread, last note, thread_priority,
-    -- and thread_unread timestamps. Including tp.updated_at is required so
+    -- and thread_state timestamps. Including tp.updated_at is required so
     -- reclassifications (priority_id / archived_at changes on thread_priority
     -- without a matching thread update) propagate through the sync cursor.
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
         tp.updated_at,
-        COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
+        COALESCE(ts.updated_at, 'epoch'::timestamptz)) AS updated_at,
     -- seq: xid8 counterpart of updated_at. Same merge as updated_at across
     -- thread, last_note (denormalized in update_thread_on_note_change),
-    -- thread_priority, and thread_unread, so any constituent change advances
+    -- thread_priority, and thread_state, so any constituent change advances
     -- the user.thread cursor. Sync queries gate on
     -- `seq < pg_snapshot_xmin(pg_current_snapshot())` to dodge the
     -- long-transaction cursor-skip race that updated_at has.
-    GREATEST (a.seq, a.last_note_seq, tp.seq, COALESCE(tu.seq, '0'::xid8)) AS seq,
+    GREATEST (a.seq, a.last_note_seq, tp.seq, COALESCE(ts.seq, '0'::xid8)) AS seq,
     a.updated_by,
     -- User-visible archived_at is the first of: global thread archive,
     -- per-user thread_priority archive, or per-user priority archive.
@@ -64,24 +64,34 @@ SELECT
     tp.auto_archived_by_thread_id,
     a.last_note_created_at,
     a.last_note_source_created_at,
-    tu.bumped_at,
-    -- Unread: TRUE when thread_unread row exists and read_at is NULL
-    COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, FALSE) AS unread,
-    COALESCE(CASE WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.importance END, 0::smallint) AS importance,
-    COALESCE(CASE WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.urgency END, NULL) AS urgency,
+    ts.bumped_at,
+    -- Unread: TRUE when thread_state row exists and read_at is NULL
+    COALESCE(ts.read_at IS NULL AND ts.user_id IS NOT NULL, FALSE) AS unread,
+    -- Importance: 0 when there's no thread_state row (treat as low/not-active).
+    COALESCE(ts.importance, 0::smallint) AS importance,
+    -- Action type: drives the activity-feed tab. NULL when no thread_state row
+    -- (e.g. clearly passive content the AI didn't bother to track).
+    ts.action_type,
+    -- Urgent: AI/user flag that forces immediate notification (bypasses
+    -- see_within delay). NULL when no thread_state row.
+    ts.urgent,
+    -- Per-user scheduling intent ("I'll do this on this date / at this time").
+    -- Distinct from shared/link schedules in the `schedule` table.
+    ts."order" AS state_order,
+    ts."on" AS state_on,
+    ts."at" AS state_at,
     -- activity_at: feed ordering timestamp
     COALESCE(
         GREATEST(
             a.last_note_source_created_at,
             la.source_created_at,
-            tu.bumped_at,
+            ts.bumped_at,
             (SELECT CASE
                 WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz) <= now()
                 THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz)
             END
             FROM schedule s_feed
             WHERE s_feed.thread_id = a.id
-                AND s_feed.user_id IS NULL
                 AND s_feed.occurrence IS NULL
                 AND s_feed.archived_at IS NULL
             LIMIT 1)
@@ -89,7 +99,8 @@ SELECT
         a.created_at
     ) AS activity_at,
     -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring/unbounded)
-    -- Considers both direct thread schedules (thread_id) and link schedules (link_id → link.thread_id)
+    -- Considers shared thread schedules (thread_id), link schedules
+    -- (link_id → link.thread_id), and the per-user thread_state on/at.
     -- Uses GREATEST on upper bound to guarantee upper >= lower (prevents tstzrange error)
     (SELECT tstzrange(
         lo,
@@ -98,23 +109,19 @@ SELECT
     ) FROM (SELECT
         COALESCE(
             LEAST(
-                -- Direct shared schedule start
+                -- Shared thread schedule start
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
-                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id IS NULL
+                 FROM schedule s_lo WHERE s_lo.thread_id = a.id
                  AND s_lo.archived_at IS NULL
                  ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
                  LIMIT 1),
-                -- Direct per-user schedule start
-                (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
-                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id = tp.user_id
-                 AND s_lo.archived_at IS NULL
-                 ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
-                 LIMIT 1),
+                -- Per-user thread_state start
+                COALESCE(lower(ts."at"), lower(ts."on")::timestamptz),
                 -- Link schedule start (calendar events from sources)
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
                  FROM schedule s_lo
                  JOIN link l_lo ON l_lo.id = s_lo.link_id
-                 WHERE l_lo.thread_id = a.id AND s_lo.user_id IS NULL
+                 WHERE l_lo.thread_id = a.id
                  AND s_lo.archived_at IS NULL
                  ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
                  LIMIT 1)
@@ -148,23 +155,19 @@ SELECT
                     AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamptz) IS NULL
                 ) THEN 'infinity'::timestamptz
                 ELSE GREATEST(
-                    -- Direct shared schedule end
+                    -- Shared thread schedule end
                     (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
-                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL
+                     FROM schedule s_hi WHERE s_hi.thread_id = a.id
                      AND s_hi.archived_at IS NULL
                      ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
                      LIMIT 1),
-                    -- Direct per-user schedule end
-                    (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
-                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = tp.user_id
-                     AND s_hi.archived_at IS NULL
-                     ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
-                     LIMIT 1),
+                    -- Per-user thread_state end
+                    COALESCE(upper(ts."at"), upper(ts."on")::timestamptz),
                     -- Link schedule end
                     (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
                      FROM schedule s_hi
                      JOIN link l_hi ON l_hi.id = s_hi.link_id
-                     WHERE l_hi.thread_id = a.id AND s_hi.user_id IS NULL
+                     WHERE l_hi.thread_id = a.id
                      AND s_hi.archived_at IS NULL
                      ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
                      LIMIT 1)
@@ -189,8 +192,8 @@ FROM
     -- check trivially passes — which matches the COALESCE-to-root
     -- behavior of the priority_id column the view exposes.
     JOIN priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
-    LEFT JOIN thread_unread tu ON tu.user_id = tp.user_id
-        AND tu.thread_id = a.id
+    LEFT JOIN thread_state ts ON ts.user_id = tp.user_id
+        AND ts.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
     -- Access-loss rows flow through user.thread_redacted, not here.
@@ -237,7 +240,8 @@ WHERE
 --     the stub's seq and the cursor will not re-emit it after the client
 --     first picks it up. This is the leak-prevention mechanism.
 --   • Sensitive fields NULL: title, preview, icon, topic, contacts,
---     groups, last_note_*, bumped_at, urgency. unread=false, importance=0.
+--     groups, last_note_*, bumped_at, action_type, urgent, state_*.
+--     unread=false, importance=0.
 --   • priority_id kept (with root fallback) — the row's about to be
 --     hard-deleted client-side, but during the brief window it should
 --     sit under its prior priority rather than orphan to root unannounced.
@@ -275,7 +279,11 @@ SELECT
     NULL::timestamptz AS bumped_at,
     FALSE AS unread,
     0::smallint AS importance,
-    NULL::text AS urgency,
+    NULL::text AS action_type,
+    NULL::boolean AS urgent,
+    NULL::double precision AS state_order,
+    NULL::daterange AS state_on,
+    NULL::tstzrange AS state_at,
     a.created_at AS activity_at,
     tstzrange(a.created_at, a.created_at, '[]') AS agenda_at,
     TRUE AS revoked

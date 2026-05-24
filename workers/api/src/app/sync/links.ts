@@ -134,15 +134,13 @@ links.post("/sync/links", async (c) => {
             .executeTakeFirst();
           if (!contact?.user_id) return;
 
-          // Only create task schedule if the link's status is not "done"
+          // Only file a 'do' thread_state if the link's status is not "done"
           const isDone = await isLinkStatusDone(db, result);
           if (!isDone) {
             await createSchedule(db, contact.user_id, linkThreadId, 'task');
           }
-          // Always recompute outstanding_tasks (handles done→undone transitions)
-          await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
         } catch (error) {
-          console.error("[schedule] Failed to create task schedule from link assignment:", error);
+          console.error("[thread_state] Failed to file thread_state from link assignment:", error);
         } finally {
           await db.destroy();
         }
@@ -150,64 +148,44 @@ links.post("/sync/links", async (c) => {
     );
   }
 
-  // Recompute outstanding_tasks when link status changes (may mark done/undone)
-  // Uses its own DB connection since the request-scoped one is destroyed after the response
+  // When a link status becomes "done", clear the assignee's thread_state
+  // todo intent (mark it read so the row drops out of action tabs). The
+  // "has outstanding sub-items" badge in the Flutter app is now derived
+  // from note_tag / link state directly.
   if (linkThreadId && linkData.status !== undefined) {
     c.executionCtx.waitUntil(
       (async () => {
         const db = createDb(c.env);
         try {
           const isDone = await isLinkStatusDone(db, result);
+          if (!isDone) return;
 
           if (assigneeId) {
-            // Recompute for the assigned user
             const contact = await db
               .selectFrom("contact")
               .select("user_id")
               .where("id", "=", assigneeId)
               .executeTakeFirst();
             if (contact?.user_id) {
-              await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
-              // Archive per-user schedule when status becomes done
-              if (isDone) {
-                await db
-                  .updateTable("schedule")
-                  .set({ archived_at: new Date() })
-                  .where("thread_id", "=", linkThreadId)
-                  .where("user_id", "=", contact.user_id)
-                  .where("occurrence", "is", null)
-                  .where("archived_at", "is", null)
-                  .execute();
-              }
-            }
-          } else {
-            // Unassigned link: recompute for all users with a schedule on this thread
-            const schedules = await db
-              .selectFrom("schedule")
-              .select("user_id")
-              .where("thread_id", "=", linkThreadId)
-              .where("user_id", "is not", null)
-              .where("occurrence", "is", null)
-              .execute();
-            for (const sched of schedules) {
-              if (sched.user_id) {
-                await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${sched.user_id}::uuid)`.execute(db);
-              }
-            }
-            // Archive per-user schedules when status becomes done
-            if (isDone) {
               await db
-                .updateTable("schedule")
-                .set({ archived_at: new Date() })
+                .updateTable("thread_state")
+                .set({ read_at: new Date() })
                 .where("thread_id", "=", linkThreadId)
-                .where("user_id", "is not", null)
-                .where("occurrence", "is", null)
-                .where("archived_at", "is", null)
+                .where("user_id", "=", contact.user_id)
+                .where("read_at", "is", null)
                 .execute();
             }
+          } else {
+            // Unassigned: clear unread for every user with a state row
+            await db
+              .updateTable("thread_state")
+              .set({ read_at: new Date() })
+              .where("thread_id", "=", linkThreadId)
+              .where("read_at", "is", null)
+              .execute();
           }
         } catch (error) {
-          console.error("[schedule] Failed to recompute outstanding_tasks from link status:", error);
+          console.error("[thread_state] Failed to clear thread_state on link done:", error);
         } finally {
           await db.destroy();
         }

@@ -95,18 +95,18 @@ CREATE TRIGGER user_sync_thread_read_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_thread_read();
 
--- User sync triggers for thread_unread table
-CREATE TRIGGER user_sync_thread_unread_insert
-  AFTER INSERT ON thread_unread
+-- User sync triggers for thread_state table
+CREATE TRIGGER user_sync_thread_state_insert
+  AFTER INSERT ON thread_state
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_thread_unread();
+  EXECUTE FUNCTION sync_user_for_thread_state();
 
-CREATE TRIGGER user_sync_thread_unread_update
-  AFTER UPDATE ON thread_unread
+CREATE TRIGGER user_sync_thread_state_update
+  AFTER UPDATE ON thread_state
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_thread_unread();
+  EXECUTE FUNCTION sync_user_for_thread_state();
 
 -- User sync triggers for thread_tag table
 CREATE TRIGGER user_sync_thread_tag_insert

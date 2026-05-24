@@ -4,10 +4,10 @@
 -- thread_priority insert that happens when a user joins the Everyone group and
 -- the file_thread_priority_on_group_member_change trigger files them in.
 --
--- Without this trigger, no user ever has a todo on these threads, so
--- schedule.outstanding_tasks stays false and the agenda items can't be marked
--- finished. We use note.key = 'todo' to identify the actionable note inside
--- each task thread (set by the migration that ships this trigger).
+-- We use note.key = 'todo' to identify the actionable note inside each task
+-- thread (set by the migration that ships this trigger). The Flutter app
+-- derives "has outstanding sub-items" from the note_tag rows directly, so we
+-- no longer recompute a denormalized flag on schedule.
 CREATE OR REPLACE FUNCTION public.file_onboarding_todos ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -27,7 +27,7 @@ BEGIN
     END IF;
 
     -- Use the user's primary linked contact as the actor — same actor used
-    -- elsewhere for per-user task ownership (see recompute_outstanding_tasks).
+    -- elsewhere for per-user task ownership.
     SELECT uc.contact_id INTO v_contact_id
     FROM public.user_contact uc
     WHERE uc.user_id = NEW.user_id
@@ -50,8 +50,6 @@ BEGIN
       AND n.key = 'todo'
       AND n.archived_at IS NULL
     ON CONFLICT (actor_id, note_id, tag_id) DO NOTHING;
-
-    PERFORM public.recompute_outstanding_tasks(NEW.thread_id, NEW.user_id);
 
     RETURN NEW;
 END;

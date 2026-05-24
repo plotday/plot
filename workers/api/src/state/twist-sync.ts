@@ -336,7 +336,7 @@ export class TwistSync extends DurableObject<Bindings> {
           .limit(100)
           .execute(),
 
-        // Query thread schedule changes (for onThreadToDo callback)
+        // Query per-user thread_state changes (for onThreadToDo callback)
         db
           .selectFrom("twist_instance_thread_schedule")
           .selectAll()
@@ -344,7 +344,8 @@ export class TwistSync extends DurableObject<Bindings> {
           .where("seq", ">=", getSyncSeqExpr("thread_schedule", "update"))
           .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
           .orderBy("seq", "asc")
-          .orderBy("schedule_id", "asc")
+          .orderBy("thread_id", "asc")
+          .orderBy("user_id", "asc")
           .limit(100)
           .execute(),
 

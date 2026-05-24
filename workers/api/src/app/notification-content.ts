@@ -15,11 +15,12 @@ notificationContent.get("/notification-content", async (c) => {
     const db = c.var.db;
     const userId = c.var.user.id;
 
-    // Get all unread non-passive threads with their priority paths.
-    // Excludes archived threads, draft threads (unless created by this user),
-    // and private threads the user can't see.
+    // Get all notify-worthy unread threads (importance >= 50 OR urgent) with
+    // their priority paths. Excludes archived threads, draft threads (unless
+    // created by this user), and private threads the user can't see.
     const threadsResult = await sql<{
-      urgency: string;
+      urgent: boolean;
+      importance: number;
       thread_id: string;
       thread_title: string | null;
       thread_preview: string | null;
@@ -28,32 +29,28 @@ notificationContent.get("/notification-content", async (c) => {
       priority_title: string;
     }>`
       SELECT
-        tu.urgency,
+        tu.urgent,
+        tu.importance,
         t.id::text AS thread_id,
         t.title AS thread_title,
         t.preview AS thread_preview,
         p.id::text AS priority_id,
         p.path::text AS priority_path,
         p.title AS priority_title
-      FROM thread_unread tu
+      FROM thread_state tu
       JOIN thread t ON t.id = tu.thread_id
       JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
       JOIN priority p ON p.id = tp.priority_id
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
-        AND tu.urgency != 'passive'
+        AND (tu.importance >= 50 OR tu.urgent = TRUE)
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
         AND (
           t.contacts && "user".user_contact_ids(${userId}::uuid)
           OR t.groups && "user".user_group_ids(${userId}::uuid)
         )
-      ORDER BY CASE tu.urgency
-        WHEN 'interrupt' THEN 0
-        WHEN 'inform-requests' THEN 1
-        WHEN 'inform-updates' THEN 2
-        ELSE 3
-      END ASC
+      ORDER BY tu.urgent DESC, tu.importance DESC
     `.execute(db);
 
     if (threadsResult.rows.length === 0) {
@@ -86,13 +83,6 @@ notificationContent.get("/notification-content", async (c) => {
       firstLevelByPath.set(fl.path, { id: fl.id, title: fl.title });
     }
 
-    const urgencyRank: Record<string, number> = {
-      interrupt: 0,
-      "inform-requests": 1,
-      "inform-updates": 2,
-      passive: 3,
-    };
-
     type BatchData = {
       firstLevelPriorityId: string;
       priorityTitle: string;
@@ -101,7 +91,7 @@ notificationContent.get("/notification-content", async (c) => {
         title: string | null;
         preview: string | null;
       }>;
-      highestUrgency: string;
+      urgent: boolean;
       priorityPaths: string[];
     };
 
@@ -120,7 +110,7 @@ notificationContent.get("/notification-content", async (c) => {
           firstLevelPriorityId: firstLevelInfo.id,
           priorityTitle: firstLevelInfo.title,
           threads: [],
-          highestUrgency: "inform-updates",
+          urgent: false,
           priorityPaths: [],
         };
         batchMap.set(firstLevelPath, batch);
@@ -133,12 +123,7 @@ notificationContent.get("/notification-content", async (c) => {
       });
       batch.priorityPaths.push(row.priority_path);
 
-      if (
-        (urgencyRank[row.urgency] ?? 4) <
-        (urgencyRank[batch.highestUrgency] ?? 4)
-      ) {
-        batch.highestUrgency = row.urgency;
-      }
+      if (row.urgent) batch.urgent = true;
     }
 
     if (batchMap.size === 0) {
@@ -187,7 +172,7 @@ notificationContent.get("/notification-content", async (c) => {
           title: batch.priorityTitle,
           body,
           target_priority_id: targetPriorityId,
-          urgency: batch.highestUrgency,
+          urgent: batch.urgent,
           thread_ids: threadList.map((t) => t.id),
         };
       })
