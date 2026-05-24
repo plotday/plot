@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -17,6 +19,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   static const String _kMentionMruKey = 'mention_mru_ids';
   static const String _kShowAllPrioritiesKey = 'show_all_priorities';
   static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
+  static const String _kConnectionMruKey = 'connection_mru';
   static const int _maxMruItems = 50;
 
   /// Record usage of a mention, moving it to the front of the MRU list
@@ -36,6 +39,63 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
     emit(state.copyWith(mentionMruIds: currentIds));
     await _persistState();
+  }
+
+  /// Record that the user just used [channelKey] (a `CreateTarget.key`) while
+  /// in [priorityId]. Both this priority's timestamp and the global timestamp
+  /// are bumped to now so rankings reflect the latest use.
+  Future<void> recordConnectionUsage({
+    required String channelKey,
+    required String priorityId,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final next = Map<String, ConnectionMruEntry>.from(state.connectionMru);
+    final existing = next[channelKey];
+    final priorityMap = Map<String, int>.from(
+      existing?.priorityLastUsedMs ?? const {},
+    )..[priorityId] = now;
+    next[channelKey] = ConnectionMruEntry(
+      lastUsedMs: now,
+      priorityLastUsedMs: priorityMap,
+    );
+    emit(state.copyWith(connectionMru: next));
+    await _persistConnectionMru();
+  }
+
+  /// Reorder [keys] by MRU. Bucket 1: keys with a recorded use in
+  /// [priorityId], sorted by that priority's timestamp descending. Bucket 2:
+  /// remaining keys with any recorded use, sorted by global timestamp
+  /// descending. Bucket 3: keys with no recorded use, preserving their
+  /// position in [keys].
+  List<String> rankConnectionsByMru({
+    required List<String> keys,
+    required String priorityId,
+  }) {
+    final mru = state.connectionMru;
+    final priorityBucket = <String>[];
+    final globalBucket = <String>[];
+    final unseenBucket = <String>[];
+    for (final key in keys) {
+      final entry = mru[key];
+      if (entry == null) {
+        unseenBucket.add(key);
+        continue;
+      }
+      if (entry.priorityLastUsedMs.containsKey(priorityId)) {
+        priorityBucket.add(key);
+      } else {
+        globalBucket.add(key);
+      }
+    }
+    priorityBucket.sort((a, b) {
+      final at = mru[a]!.priorityLastUsedMs[priorityId]!;
+      final bt = mru[b]!.priorityLastUsedMs[priorityId]!;
+      return bt.compareTo(at);
+    });
+    globalBucket.sort(
+      (a, b) => mru[b]!.lastUsedMs.compareTo(mru[a]!.lastUsedMs),
+    );
+    return [...priorityBucket, ...globalBucket, ...unseenBucket];
   }
 
   /// Sort a list of items by mention MRU order
@@ -119,11 +179,28 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     final idsString = prefs.getString(_kMentionMruKey);
     final showAllPriorities = prefs.getBool(_kShowAllPrioritiesKey) ?? false;
 
+    final mruJson = prefs.getString(_kConnectionMruKey);
+    Map<String, ConnectionMruEntry> connectionMru = const {};
+    if (mruJson != null && mruJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(mruJson) as Map<String, dynamic>;
+        connectionMru = decoded.map(
+          (k, v) => MapEntry(
+            k,
+            ConnectionMruEntry.fromJson(v as Map<String, dynamic>),
+          ),
+        );
+      } catch (_) {
+        connectionMru = const {};
+      }
+    }
+
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
           : null,
       showAllPriorities: showAllPriorities,
+      connectionMru: connectionMru,
     ));
   }
 
@@ -132,5 +209,15 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     final prefs = ProfilePreferences.instance;
     await prefs.setString(_kMentionMruKey, state.mentionMruIds.join(','));
     await prefs.setBool(_kShowAllPrioritiesKey, state.showAllPriorities);
+  }
+
+  Future<void> _persistConnectionMru() async {
+    final prefs = ProfilePreferences.instance;
+    await prefs.setString(
+      _kConnectionMruKey,
+      jsonEncode(
+        state.connectionMru.map((k, v) => MapEntry(k, v.toJson())),
+      ),
+    );
   }
 }
