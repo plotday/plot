@@ -28,12 +28,12 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Plot Twists are automations and AI agents that work with you, your team, and your connections. Workflows, organization, and AI — built into your work.",
+        "Plot Twists are automations and AI agents that work alongside you on the conversations flowing through your connections — routing, organizing, surfacing context, and helping you reply.",
     },
     { property: "og:title", content: "Plot Twists" },
-    { property: "og:description", content: "Automations and AI agents that work with you, your team, and your connections." },
+    { property: "og:description", content: "Automations and AI agents that work with you, your team, and the conversations flowing through your connections." },
     { name: "twitter:title", content: "Plot Twists" },
-    { name: "twitter:description", content: "Automations and AI agents that work with you, your team, and your connections." },
+    { name: "twitter:description", content: "Automations and AI agents that work with you, your team, and the conversations flowing through your connections." },
   ]);
 }
 
@@ -53,9 +53,9 @@ export default function Twists() {
             </Title>
             <Text className={classes.heroSubtext}>
               Twists are the automations and AI agents that work alongside you,
-              your team, and everything you've connected to Plot. They implement
-              workflows, filter and organize what needs your attention, and
-              bring AI into your work.
+              your team, and the conversations flowing through your connections.
+              They implement workflows, surface what needs your attention, and
+              help you keep things moving.
             </Text>
             <Button variant="gradient" size="lg" component={Link} to="/start">
               Get started free
@@ -73,9 +73,9 @@ export default function Twists() {
                 Powered by your connections
               </Title>
               <Text className={classes.sectionBody}>
-                Twists work with everything you've connected to Plot — your
-                calendar, email, project tools, and more. They act on what's
-                flowing in, so you don't have to.
+                Twists work with everything you've connected to Plot — email,
+                chat, calendars, and the tools where your projects live. They
+                act on the conversations flowing in, so you don't have to.
               </Text>
             </Stack>
             <Button
@@ -122,9 +122,9 @@ export default function Twists() {
                   Filter, organize, prioritize
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Not everything needs your attention. Twists surface what's
-                  important, organize it where it belongs, and keep noise out of
-                  your way.
+                  Not every message needs your attention. Twists surface what's
+                  important, organize it where it belongs, and keep newsletters
+                  and noise out of your way.
                 </Text>
               </Stack>
               <Stack className={classes.card} gap="md">
@@ -183,10 +183,11 @@ export default function Twists() {
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
             <Title order={2} size="h2" className={classes.ctaTitle}>
-              Your team, your tools, your workflow.
+              Your team, your tools, your momentum.
             </Title>
             <Text c="rgba(255,255,255,0.85)" fz="lg">
-              Twists bring automation and AI to everything you do in Plot.
+              Twists bring automation and AI to every conversation flowing
+              through Plot.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
               <Button variant="white" size="xl" component={Link} to="/start">

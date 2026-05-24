@@ -2,6 +2,12 @@
 
 Internal catalog of product features for marketing content generation. Direct and terse - not user-facing.
 
+## Positioning
+
+Plot is a unified workspace for human collaboration. It pulls together every conversation that needs a thoughtful human reply — email, team chat, and threads from the tools you use (Linear, Docs, etc.) — and organizes them by the projects, relationships, and areas they belong to, sorted by what's important and what's urgent. Newsletters, automated messages, and admin noise are excluded.
+
+Sessions, agenda, priorities, and tasks remain part of the product but are supporting capabilities, not the headline. Marketing copy should lead with collaboration and momentum (carry on, keep moving, nothing slips, end the day on something that mattered) and imply identity (the reader is a high-agency collaborator with important work outside their inbox) without naming it. Avoid administrative words like "filed."
+
 ## Core Functionality
 
 ### Activities

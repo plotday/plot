@@ -72,24 +72,20 @@ export default function Go() {
             <Text className={classes.heroEyebrow}>A personal invitation</Text>
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                A better way to work
+                A better way to collaborate
               </Text>
             </Title>
             <Text className={classes.lead}>
-              Something&rsquo;s gone sideways with modern work. Tools that were
-              supposed to multiply our efforts are sapping our best energy. We
-              chase notifications instead of priorities, talk to AI more than to
-              colleagues, and end most days further from the creative,
-              meaningful work we&rsquo;re here to do.
+              Something&rsquo;s gone sideways with modern collaboration. The
+              tools that should help us connect end up keeping us reactive,
+              fragmented, and behind on the conversations that actually matter.
             </Text>
             <Text className={classes.body}>
-              We&rsquo;re developing a different way of working.
-            </Text>
-            <Text className={classes.body}>
-              Plot is designed around your priorities. You decide where to
-              invest your time and everything you need (documents, tasks,
-              messages) is there for you. Everything else coming at you is
-              captured and ready for the right time.
+              We&rsquo;re building a different way. Plot pulls together every
+              conversation that needs a thoughtful reply — email, chat, and
+              threads from the tools you use — and organizes them by project and
+              priority. You decide when to engage; the rest of your day is yours
+              to make real progress on the work only you can do.
             </Text>
             <Text className={classes.body}>
               We&rsquo;d love for you to give it a try! We&rsquo;re running
@@ -100,7 +96,7 @@ export default function Go() {
               shared learning.
             </Text>
             <Text className={classes.body}>
-              Join us in building a better way to work.
+              Join us in building a better way to collaborate.
             </Text>
             <Text className={classes.signoff}>Kris and Beth</Text>
 

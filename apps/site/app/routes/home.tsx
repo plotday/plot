@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState } from "react";
-
 import {
   Box,
   Button,
@@ -21,76 +19,24 @@ import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
-const STORY_TABS = [
-  {
-    label: "Email",
-    image: "/assets/email.png",
-    title: "A to-do list written by others",
-    copy: "Email lets us easily pass work to others. But when inboxes drive our day, we spend it playing the inbox zero game. Once we \"win\", we often realize we haven't started on what's most important.",
-    lightVignette: true,
-  },
-  {
-    label: "Team Chat",
-    image: "/assets/chat.png",
-    title: "Fast coordination, slow resolution",
-    copy: "Chat makes coordination nearly free — a question doesn't need to wait for a meeting, and anyone can weigh in. But the loudest threads are often the least important, while the essential ones quietly go unresolved.",
-    lightVignette: true,
-  },
-  {
-    label: "Project Management",
-    image: "/assets/project.png",
-    title: "Clarity that becomes its own overhead",
-    copy: "Project management tools bring clarity to work. But when nothing moves without a ticket, the tool becomes the bottleneck. Maintaining it becomes its own job, and planning starts taking longer than the work.",
-    lightVignette: true,
-  },
-  {
-    label: "Meetings",
-    image: "/assets/meetings.png",
-    title: "High bandwidth, high cost",
-    copy: "Meetings offer high-bandwidth collaboration that can solve challenges that snarl email threads. But when nothing can happen without a meeting, we live by our calendars and burn our best energy before the work begins.",
-    lightVignette: false,
-  },
-];
-
 export function meta(_: Route.MetaArgs) {
   return mergeMeta([
-    { title: "Plot | Your best work, every day" },
+    { title: "Plot | Collaborate and carry on" },
     {
       name: "description",
       content:
-        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and docs into one prioritized workspace.",
+        "Plot brings together everything you need to know, respond to, and do, organized and prioritized. The best of the day stays yours.",
     },
-    { name: "twitter:title", content: "Plot" },
+    { name: "twitter:title", content: "Plot — Collaborate and carry on" },
     {
       name: "twitter:description",
       content:
-        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and docs into one prioritized workspace.",
+        "Every conversation in its place. Email, chat, and messages from the tools you use — organized and prioritized.",
     },
   ]);
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState(0);
-  const [entering, setEntering] = useState(false);
-  const enteringTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-
-  const handleTabChange = (index: number) => {
-    if (index === activeTab) return;
-    setEntering(true);
-    clearTimeout(enteringTimeout.current);
-    enteringTimeout.current = setTimeout(() => {
-      setActiveTab(index);
-      setEntering(false);
-    }, 150);
-  };
-
-  useEffect(() => {
-    return () => clearTimeout(enteringTimeout.current);
-  }, []);
-
-  const storyRevealRef = useScrollReveal<HTMLDivElement>();
   const ctaRevealRef = useScrollReveal<HTMLDivElement>();
 
   return (
@@ -106,13 +52,13 @@ export default function Home() {
             </div>
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Your best work, every&nbsp;day
+                Collaborate and carry&nbsp;on
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Everything in one place.
+              Every conversation in its place.
               <br />
-              Organized, prioritized, and ready for action.
+              The best of the day stays yours.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
               <Button
@@ -121,17 +67,17 @@ export default function Home() {
                 to="/start"
                 className={classes.heroCta}
               >
-                Get started free
+                Try Plot
               </Button>
               <Button
                 variant="subtle"
                 size="lg"
                 component="a"
-                href="#story"
+                href="#benefits"
                 onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                   e.preventDefault();
                   document
-                    .getElementById("story")
+                    .getElementById("benefits")
                     ?.scrollIntoView({ behavior: "smooth" });
                 }}
               >
@@ -156,7 +102,7 @@ export default function Home() {
               <source srcSet="/assets/screenshot.webp" type="image/webp" />
               <img
                 src="/assets/screenshot.png"
-                alt="Plot interface showing a team conversation transforming into a prioritized action item"
+                alt="Plot interface showing conversations from email and chat organized by project and priority"
                 className={classes.heroScreenshot}
               />
             </picture>
@@ -164,112 +110,32 @@ export default function Home() {
         </Container>
       </Box>
 
-      {/* Productivity Story */}
-      <Box
-        id="story"
-        className={classes.storySection}
-        pt={80}
-        pb={80}
-        ref={storyRevealRef}
-      >
-        <Container size="lg">
-          <Stack align="center" gap="xs" mb="xl">
-            <Title
-              order={2}
-              size="h2"
-              className={classes.sectionTitle}
-              ta="center"
-            >
-              So what's stopping us?
-            </Title>
-            <Text className={classes.storySubtitle} ta="center">
-              The tools we rely on create their own problems
-            </Text>
-          </Stack>
-
-          <Stack gap="lg">
-            <div className={classes.storyTabs}>
-              {STORY_TABS.map((tab, i) => (
-                <button
-                  key={tab.label}
-                  className={`${classes.storyTab} ${
-                    i === activeTab ? classes.storyTabActive : ""
-                  }`}
-                  onClick={() => handleTabChange(i)}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div className={classes.storyCard}>
-              <div className={classes.storyCardGlow} />
-              <div
-                className={`${classes.storyImageWrap} ${
-                  STORY_TABS[activeTab].lightVignette
-                    ? classes.storyImageLightVignette
-                    : ""
-                }`}
-              >
-                <img
-                  src={STORY_TABS[activeTab].image}
-                  alt={STORY_TABS[activeTab].label}
-                  className={classes.storyImage}
-                />
-              </div>
-              <div
-                className={`${classes.storyContent} ${
-                  entering ? classes.storyContentEntering : ""
-                }`}
-              >
-                <div className={classes.storyCopyTitle}>
-                  {STORY_TABS[activeTab].title}
-                </div>
-                <Text className={classes.storyCopy}>
-                  {STORY_TABS[activeTab].copy}
-                </Text>
-              </div>
-            </div>
-          </Stack>
-        </Container>
-        <Container size="md" mt={60}>
-          <Text className={classes.hingeText}>
-            Each keeps us busy.
-            <br />
-            What we need is something that moves us forward.
-          </Text>
-        </Container>
-      </Box>
-
       <Box id="benefits" />
       <BenefitSection
-        label="Unified workspace"
-        title="Everything in one place"
-        body="Your meeting gets a thread. Your task gets a note. Your email gets context. Plot pulls work from Google Calendar, Slack, Linear, Gmail, and more — organized by priority, not arrival time. Related items collect automatically. Smart notifications surface what actually needs your attention. Nothing falls through the cracks."
+        label="One place to keep up"
+        title="Every conversation, ready when you are"
+        body="Email, team chat, and the comment threads in the tools where your real work happens — Plot pulls them into one place. Newsletters, automated messages, and admin noise stay out. What's left is what actually needs you."
         image="/assets/activity.png"
         imageDark="/assets/activity-d.png"
-        imageAlt="Plot activity view showing unified items from multiple sources"
+        imageAlt="Plot activity view showing conversations from email, chat, and project tools"
       />
       <BenefitSection
-        label="Daily workflow"
-        title="Ready for action"
-        body={
-          'Your agenda is your day — and Plot makes sure it\'s ready when you are. See everything due today across every tool, in one place. Open an item and find the notes, messages, and context already there. No tab-switching, no hunting for links, no "let me find that thread."'
-        }
-        image="/assets/agenda.png"
-        imageDark="/assets/agenda-d.png"
-        imageAlt="Plot agenda view showing today's tasks and events"
+        label="Organized and prioritized"
+        title="Know what to pick up next"
+        body="Conversations land in the projects, relationships, and areas they belong to — sorted by what's important and what's urgent. You always know where to look, who's waiting on you, and what to move forward next. Nothing slips."
+        image="/assets/priorities.png"
+        imageDark="/assets/priorities-d.png"
+        imageAlt="Plot priorities view showing conversations grouped by project and area"
         reverse
         background="gray"
       />
       <BenefitSection
-        label="Strategic view"
-        title="Momentum on what matters"
-        body="Most tools break down at the boundary between planning and doing. Plot closes that gap. Zoom out to see your priorities and what's moving. Zoom in to focus on the work in front of you. Everything you need — context, collaborators, next steps — is already in the same place you do the work."
-        image="/assets/priorities.png"
-        imageDark="/assets/priorities-d.png"
-        imageAlt="Plot priorities view showing nested project hierarchy"
+        label="The best of the day stays yours"
+        title="Keep moving on the real work"
+        body="Plot bounds your inbox time to deliberate windows, so you can respond and then carry on with the work only you can do. Urgent things still surface; the rest waits its turn. You ship more and end the day on something that mattered."
+        image="/assets/agenda.png"
+        imageDark="/assets/agenda-d.png"
+        imageAlt="Plot agenda view showing a focused window for replies"
         fade
       />
       <FeaturesStrip />
@@ -285,7 +151,7 @@ export default function Home() {
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
             <Title order={2} size="h2" className={classes.ctaTitle}>
-              Get back to your best work.
+              Make real progress, together.
             </Title>
             <Button variant="white" size="xl" component={Link} to="/start">
               Try Plot

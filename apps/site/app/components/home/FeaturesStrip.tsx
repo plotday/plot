@@ -16,19 +16,19 @@ const FEATURES = [
     icon: IconDevices,
     label: "Everywhere you work",
     description:
-      "Mac, Windows, iOS, Android, and web. Sometimes the best way to clear your head is to put important thoughts where you know you'll see them later.",
+      "Mac, Windows, iOS, Android, and web. Wherever the next reply needs to happen.",
   },
   {
     icon: IconCloudOff,
     label: "Even when you're offline",
     description:
-      "Everything's available whether or not you've got (or want) coverage. Full sync when you're back online.",
+      "Read, reply, or jot a note without coverage. Full sync when you're back online.",
   },
   {
     icon: IconUsers,
-    label: "Made for high-agency teams",
+    label: "Built for teams moving fast together",
     description:
-      "No per-seat fees holding back collaboration. Plot works alongside your existing team chat, but you might find you're not using it anymore.",
+      "No per-seat fees. Bring everyone in without thinking twice — Plot works alongside the chat you already use.",
   },
   {
     icon: IconKeyboard,

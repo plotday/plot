@@ -91,10 +91,10 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Browse all Plot connections. Integrate your calendar, email, project tools, and more. Vote for the integrations you want next.",
+        "Plot connects to the tools where your conversations live — calendars, email, chat, project tools, and more. Browse what's supported and vote for what's next.",
     },
     { property: "og:title", content: "Plot Connections" },
-    { property: "og:description", content: "Browse and vote for the integrations you want in Plot." },
+    { property: "og:description", content: "Browse the tools Plot brings into one place — and vote for the integrations you want next." },
   ]);
 }
 
@@ -223,9 +223,9 @@ export default function Connections({ loaderData }: Route.ComponentProps) {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Plot connects to the tools you already use.
+              Plot connects to the tools where your conversations already live.
               <br />
-              Browse available integrations and vote for the ones you want next.
+              Browse what's supported and vote for the ones you want next.
             </Text>
           </Stack>
         </Container>

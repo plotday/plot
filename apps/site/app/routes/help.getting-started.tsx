@@ -73,9 +73,10 @@ export default function GettingStarted() {
             3. Choose Your Priorities
           </Title>
           <Text mb="sm">
-            Priorities organize your activities into contexts where you can
-            focus. Start with roles or areas of your life, such as work or
-            school and add other such as health, social, volunteer roles, and
+            Priorities are the contexts your conversations and work get
+            organized into — projects, relationships, and areas of
+            responsibility. Start with roles or areas of your life, such as work
+            or school and add other such as health, social, volunteer roles, and
             personal development. Get the most out of Plot by nesting your
             priorities. For example, you probably mave multiple roles and
             projects at work (e.g. manager, project lead), and within each, you
@@ -91,22 +92,12 @@ export default function GettingStarted() {
           <Title order={2} size="h3" mb="md">
             4. Create Activities
           </Title>
-          <Text mb="sm">
-            Activities are the building blocks of Plot. An activity can be:
-          </Text>
-          <List>
-            <List.Item>An action you need to take</List.Item>
-            <List.Item>
-              Scheduled time, including events from your calendar
-            </List.Item>
-            <List.Item>
-              Notes including links to documents and items from other apps
-            </List.Item>
-            <List.Item>Messages and updates from other apps</List.Item>
-          </List>
-          <Text mt="sm">
-            Click the "+" button or use the command bar to create your first
-            activity.
+          <Text>
+            Activities are the things that flow through Plot: conversations from
+            your connected tools (email, chat, project threads), scheduled
+            events, tasks, and notes. New activities show up automatically from
+            your connections; you can also create your own with the "+" button
+            or the command bar.
           </Text>
         </div>
 
@@ -134,9 +125,10 @@ export default function GettingStarted() {
             6. Start Working
           </Title>
           <Text>
-            Choose a focus to see the context and actions you need to make
-            progress on what matters. Plot works offline and syncs when you're
-            connected, so you can work anywhere.
+            Pick a priority to focus on. Plot proposes a window to work through
+            the conversations and work that belong there. Reply, add follow-ups,
+            take notes — everything stays organized for next time. Outside the
+            window, the rest of your day is yours.
           </Text>
         </div>
 

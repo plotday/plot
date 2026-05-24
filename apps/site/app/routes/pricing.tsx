@@ -25,7 +25,7 @@ const FAQS = [
   {
     question: "Why no per-seat pricing?",
     answer:
-      "Per-seat pricing penalizes collaboration — it makes you think twice about adding a teammate. Plot is built around the idea that everyone involved should be working together, so we never charge per person. You pay for connections, which reflect the actual complexity of your business.",
+      "Per-seat pricing penalizes collaboration — it makes you think twice about adding a teammate. Plot is built around the idea that everyone involved should be working together, so we never charge per person. Bringing a teammate into a conversation should be free. You pay for connections, which reflect the actual complexity of your business.",
   },
   {
     question: "What counts as a connection?",
@@ -80,12 +80,12 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Team for growing teams.",
+        "Simple pricing with no per-seat fees. Bring your whole team in without thinking twice.",
     },
     { property: "og:title", content: "Plot Pricing" },
-    { property: "og:description", content: "Simple pricing. No per-seat fees. Unlimited collaboration." },
+    { property: "og:description", content: "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice." },
     { name: "twitter:title", content: "Plot Pricing" },
-    { name: "twitter:description", content: "Simple pricing. No per-seat fees. Unlimited collaboration." },
+    { name: "twitter:description", content: "Simple pricing. No per-seat fees. Bring your whole team in without thinking twice." },
   ]);
 }
 
@@ -106,9 +106,10 @@ export default function Pricing() {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              People work and collaborate in Plot for free.
+              Everyone collaborates in Plot for free.
               <br />
-              You only pay for the connections that bring your work together.
+              You only pay for the connections that bring your conversations
+              together.
             </Text>
           </Stack>
         </Container>

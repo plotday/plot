@@ -17,9 +17,10 @@ export function PlatformCallout() {
             </Title>
             <Text className={classes.sectionBody} maw={560}>
               Twists are extensions that run securely inside your workspace —
-              automations, integrations, and AI workflows that have access to
-              your connections and your work context. Install twists built by
-              others, or build your own with Plot's open SDK.
+              automations, integrations, and AI workflows that route
+              conversations, pull in context from your other tools, and help you
+              keep things moving. Install twists built by others, or build your
+              own with Plot's open SDK.
             </Text>
             <Anchor component={Link} to="/twists" className={classes.link}>
               Explore Twists →

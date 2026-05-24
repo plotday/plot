@@ -37,11 +37,12 @@ export default function FAQs() {
           <Accordion.Item value="what-is-plot">
             <Accordion.Control>What is Plot?</Accordion.Control>
             <Accordion.Panel>
-              Plot is a workspace that organizes and prioritizes everything from
-              all your apps. It's where you go to start your next most impactful
-              action. Sometimes you'll complete it within Plot. Often you'll use
-              Plot to jump straight into the right place in another app to work
-              there.
+              Plot is a unified workspace for collaboration. It pulls together
+              every conversation that needs a thoughtful reply — email, team
+              chat, and threads inside the tools you use, like Linear and Docs —
+              and organizes them by the projects, relationships, and areas they
+              belong to. You stay on top of the people you work with without
+              losing the rest of your day to your inbox.
             </Accordion.Panel>
           </Accordion.Item>
 
@@ -86,24 +87,37 @@ export default function FAQs() {
             </Accordion.Panel>
           </Accordion.Item>
 
+          <Accordion.Item value="calendar-todos">
+            <Accordion.Control>
+              What about my calendar and to-dos?
+            </Accordion.Control>
+            <Accordion.Panel>
+              They're still here. Plot includes scheduled events and tasks
+              alongside the conversations they relate to — agenda, priority
+              tree, and Pomodoro timer included. They just take a back seat to
+              keeping up with the people you work with.
+            </Accordion.Panel>
+          </Accordion.Item>
+
           <Accordion.Item value="collaboration">
             <Accordion.Control>
               Is Plot for individuals or teams?
             </Accordion.Control>
             <Accordion.Panel>
-              We've obsessed over creating a highly effective individual
-              experience while building Plot from the ground up for team
-              collaboration. Team support will be released soon.
+              Both. Plot is built for teams from the ground up, with no per-seat
+              fees. It works just as well if you only connect your own accounts
+              — you'll still see every conversation that needs you, organized
+              and prioritized. Either way, nothing slips, and you keep moving on
+              the work only you can do.
             </Accordion.Panel>
           </Accordion.Item>
 
           <Accordion.Item value="pricing">
             <Accordion.Control>How much does Plot cost?</Accordion.Control>
             <Accordion.Panel>
-              Plot is free to use for core collaboration features including
-              unlimited people, conversations, and priorities. Premium Twist
-              integrations and automations have pricing packages to fit every
-              team.
+              Plot is free to use, including unlimited teammates. You only pay
+              for the connections that bring your conversations together. See
+              the <Anchor href="/pricing">pricing page</Anchor> for details.
             </Accordion.Panel>
           </Accordion.Item>
 
