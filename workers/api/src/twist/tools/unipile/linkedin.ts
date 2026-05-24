@@ -7,6 +7,7 @@ import type {
   LinkedInInvitationPage,
   LinkedInMessage,
   LinkedInMessagePage,
+  LinkedInRelationPage,
 } from "@plotday/unipile";
 
 import type { DB } from "../../../db-types";
@@ -20,6 +21,7 @@ import {
   normalizeInvitation,
   normalizeMessage,
   normalizeProfile,
+  normalizeRelation,
 } from "./normalize";
 
 /**
@@ -137,6 +139,23 @@ export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
     });
     return {
       invitations: result.items.map(normalizeInvitation),
+      nextCursor: result.cursor,
+    };
+  }
+
+  async listRelations(params: {
+    channelId: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<LinkedInRelationPage> {
+    await this.assertAccount(params.channelId);
+    const result = await this.client.listRelations({
+      accountId: params.channelId,
+      cursor: params.cursor ?? null,
+      limit: params.limit,
+    });
+    return {
+      relations: result.items.map(normalizeRelation),
       nextCursor: result.cursor,
     };
   }

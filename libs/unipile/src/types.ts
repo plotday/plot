@@ -88,3 +88,8 @@ export type LinkedInInvitationPage = {
   invitations: LinkedInInvitation[];
   nextCursor: string | null;
 };
+
+export type LinkedInRelationPage = {
+  relations: LinkedInProfile[];
+  nextCursor: string | null;
+};
