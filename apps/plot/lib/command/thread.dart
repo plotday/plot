@@ -466,11 +466,15 @@ class AddThreadWithNote extends Command {
     final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
 
     if (createAction != null) {
-      await prefsBloc.recordConnectionUsage(
-        channelKey:
-            '${createAction.twistInstanceId}|${createAction.channelId}|${createAction.linkType}',
-        priorityId: savedThread.priority.id.toString(),
-      );
+      try {
+        await prefsBloc.recordConnectionUsage(
+          channelKey:
+              '${createAction.twistInstanceId}|${createAction.channelId}|${createAction.linkType}',
+          priorityId: savedThread.priority.id.toString(),
+        );
+      } catch (e, st) {
+        Tracker.captureException(e, st);
+      }
     }
 
     if (!navigate) {
