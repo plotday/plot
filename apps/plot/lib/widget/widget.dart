@@ -14,6 +14,7 @@ export 'infinite_list.dart';
 export 'button.dart';
 export 'command_modal.dart';
 export 'confirm_modal.dart';
+export 'connection_chip.dart';
 export 'connection_targets.dart';
 export 'context_menu.dart';
 export 'modal.dart';
