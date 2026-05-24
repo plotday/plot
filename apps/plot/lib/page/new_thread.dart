@@ -499,9 +499,13 @@ class NewThreadPageState extends State<NewThreadPage> {
       onChanged: (next) async {
         final bloc = _priorityBloc;
         if (bloc == null) return;
-        await bloc.updateDraft(
-          bloc.state.draft.copyWith(title: Value(next)),
-        );
+        try {
+          await bloc.updateDraft(
+            bloc.state.draft.copyWith(title: Value(next)),
+          );
+        } catch (e, t) {
+          Tracker.captureException(e, t);
+        }
       },
     );
   }
@@ -1454,7 +1458,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Builds keyboard shortcut bindings for thread-level actions on the
   /// NewThreadPage: share (contacts). Note-level shortcuts are handled
   /// inside NoteEditor. Priority, title, and schedule are set via the
-  /// priority chip / title chip or after the thread is created.
+  /// priority chip / title input or after the thread is created.
   Map<ShortcutActivator, VoidCallback> _buildThreadShortcuts(
     BuildContext context,
     PriorityState state,
