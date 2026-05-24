@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/analytics/tracker.dart';
@@ -8,6 +9,7 @@ import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/env.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/select_modal.dart';
@@ -178,10 +180,13 @@ class ShowUpgradeOptions extends Command {
           final isCore = plan == 'core';
           return ListTile(
             title: isCore ? 'Core — \$14.99/month' : 'Pro — \$24.99/month',
-            subtitle: isCore
-                ? 'More connections and twists'
-                : 'Unlimited connections and twists',
             icon: isCore ? PlotIcon.connection : PlotIcon.sparkles,
+            details: Text(
+              isCore ? 'Up to five connections' : 'Unlimited connections',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.plotColors.muted,
+              ),
+            ),
           );
         },
       ),
