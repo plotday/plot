@@ -27,6 +27,9 @@ Flutter/flutter_export_environment.sh
 ServiceDefinitions.json
 Runner/GeneratedPluginRegistrant.*
 
+# Local StoreKit configuration for simulator IAP testing — not shipped.
+*.storekit
+
 # Exceptions to above rules.
 !default.mode1v3
 !default.mode2v3
