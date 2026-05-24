@@ -3,7 +3,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
@@ -86,13 +85,6 @@ class InlineTitleInputState extends State<InlineTitleInput> {
     }
   }
 
-  Future<void> _clearAndCollapse() async {
-    if (!_expanded) return;
-    setState(() => _expanded = false);
-    _controller.clear();
-    if (widget.title != null) await widget.onChanged(null);
-  }
-
   void _cancel() {
     _controller.text = widget.title ?? '';
     setState(() => _expanded = false);
@@ -100,7 +92,18 @@ class InlineTitleInputState extends State<InlineTitleInput> {
 
   @override
   Widget build(BuildContext context) {
-    return _expanded ? _buildExpanded(context) : _buildChip(context);
+    // Reserve a constant height equal to the expanded input's natural height
+    // so toggling between chip and input never shifts the editor below. The
+    // chip is top-aligned so the visible gap above it matches the spacing
+    // between every other row; the extra space below the chip is consumed
+    // by the input when expanded.
+    return SizedBox(
+      height: 44,
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: _expanded ? _buildExpanded(context) : _buildChip(context),
+      ),
+    );
   }
 
   Widget _buildChip(BuildContext context) {
@@ -116,7 +119,7 @@ class InlineTitleInputState extends State<InlineTitleInput> {
           : context.theme.plotColors.muted;
     } else if (_hovered) {
       icon = FontAwesomeIcons.pen;
-      label = 'Set title';
+      label = 'Title';
       color = context.theme.colors.foreground;
     } else {
       icon = PlotIcon.sparkles;
@@ -124,19 +127,22 @@ class InlineTitleInputState extends State<InlineTitleInput> {
       color = context.theme.plotColors.veryMuted;
     }
 
+    final fontSize = context.theme.typography.sm.fontSize ?? 14.0;
+
     final button = FButton(
       onPress: focus,
       variant: FButtonVariant.ghost,
       style: ghostSizedStyleDelta(
         context,
         textStyle: context.theme.typography.sm,
+        padding: EdgeInsets.zero,
       ),
       mainAxisSize: MainAxisSize.min,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 6,
         children: [
-          FaIcon(icon, size: context.theme.iconSizes.base, color: color),
+          FaIcon(icon, size: fontSize, color: color),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),
             child: Text(
@@ -172,37 +178,15 @@ class InlineTitleInputState extends State<InlineTitleInput> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): _cancel,
       },
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 6,
-        children: [
-          ListenableBuilder(
-            listenable: _controller,
-            builder: (context, _) {
-              final hasText = _controller.text.trim().isNotEmpty;
-              return FaIcon(
-                hasText ? FontAwesomeIcons.pen : PlotIcon.sparkles,
-                size: context.theme.iconSizes.base,
-                color: context.theme.plotColors.muted,
-              );
-            },
-          ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360, minWidth: 200),
-            child: FTextField(
-              control: .managed(controller: _controller),
-              focusNode: _focusNode,
-              hint: 'Title',
-              onSubmit: _commit,
-              textInputAction: TextInputAction.done,
-            ),
-          ),
-          FButton.icon(
-            onPress: _clearAndCollapse,
-            variant: FButtonVariant.ghost,
-            child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
-          ),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360, minWidth: 200),
+        child: FTextField(
+          control: .managed(controller: _controller),
+          focusNode: _focusNode,
+          hint: 'Title',
+          onSubmit: _commit,
+          textInputAction: TextInputAction.done,
+        ),
       ),
     );
   }

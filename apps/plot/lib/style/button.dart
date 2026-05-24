@@ -420,12 +420,15 @@ FButtonStyleDelta _buildGhostStyleDelta(
 /// - [iconSize]: icon size applied to prefix/suffix icons.
 /// - [color] / [hoverColor]: override base and hovered colors. Default to
 ///   `plotColors.veryMuted` and `colors.foreground` (the ghost defaults).
+/// - [padding]: override the FButton content padding. Pass `EdgeInsets.zero`
+///   for flush-left placement that aligns with the surrounding row content.
 FButtonStyleDelta ghostSizedStyleDelta(
   BuildContext context, {
   TextStyle? textStyle,
   double? iconSize,
   Color? color,
   Color? hoverColor,
+  EdgeInsetsGeometry? padding,
 }) {
   final base = (textStyle ?? context.theme.typography.md).copyWith(
     fontWeight: FontWeight.w500,
@@ -447,6 +450,9 @@ FButtonStyleDelta ghostSizedStyleDelta(
         hovered: IconThemeData(color: hoverC, size: iconPx),
         pressed: IconThemeData(color: hoverC, size: iconPx),
       ),
+      padding: padding == null
+          ? null
+          : EdgeInsetsGeometryDelta.value(padding),
     ),
   );
 }
