@@ -6,6 +6,17 @@ import { rpc } from "../../../rpc";
 import { classifyInviteable } from "../../../state/contact-classifier";
 import type { Plot } from "./index";
 
+/**
+ * True iff `err` is a Postgres unique-constraint violation (SQLSTATE 23505).
+ * The PG driver attaches the code under either `code` or `cause.code`
+ * depending on whether the error reaches us through Kysely's wrapping.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; cause?: { code?: string } };
+  return e.code === "23505" || e.cause?.code === "23505";
+}
+
 function normalizeName(name: string | undefined | null): string | undefined {
   if (!name) return undefined;
 
@@ -209,36 +220,82 @@ export async function addContacts(
           sourceActors.push(actor);
         }
       } else {
-        // No existing mapping — create new contact with NULL email
+        // Insert contact + mapping in one transaction so the contact INSERT
+        // rolls back if a concurrent caller already created the mapping.
+        // Without this, a race produces an orphaned contact row with no
+        // contact_external_account entry (and the second caller's mapping
+        // insert fails with a unique-violation that gets swallowed below).
         const normalizedName = normalizeName(contact.name);
-        const newContact = await plot.db
-          .insertInto("contact")
-          .values({
-            email: null,
-            name: normalizedName || null,
-            avatar_url: contact.avatar || null,
-            inviteable: classifyInviteable(null, normalizedName || null),
-          })
-          .returning(["id", "name"])
-          .executeTakeFirstOrThrow();
+        let inserted: { id: string; name: string | null } | null = null;
+        try {
+          inserted = await plot.db.transaction().execute(async (trx) => {
+            const newContact = await trx
+              .insertInto("contact")
+              .values({
+                email: null,
+                name: normalizedName || null,
+                avatar_url: contact.avatar || null,
+                inviteable: classifyInviteable(null, normalizedName || null),
+              })
+              .returning(["id", "name"])
+              .executeTakeFirstOrThrow();
 
-        // Create the external account mapping
-        await plot.db
-          .insertInto("contact_external_account")
-          .values({
-            contact_id: newContact.id,
-            provider: source.provider,
-            account_id: source.accountId,
-            data_fetched_at: new Date().toISOString(),
-          })
-          .execute();
+            await trx
+              .insertInto("contact_external_account")
+              .values({
+                contact_id: newContact.id,
+                provider: source.provider,
+                account_id: source.accountId,
+                data_fetched_at: new Date().toISOString(),
+              })
+              .execute();
 
-        const actor: Actor = {
-          id: newContact.id as ActorId,
-          type: ActorType.Contact,
-          name: newContact.name || null,
-        };
-        sourceActors.push(actor);
+            return newContact;
+          });
+        } catch (txError) {
+          // Concurrent caller won the race on (provider, account_id). Postgres
+          // returned 23505 (unique_violation), the transaction rolled back, so
+          // no orphan contact was created. Fall through and re-query for the
+          // winner's contact_id.
+          if (!isUniqueViolation(txError)) throw txError;
+        }
+
+        if (inserted) {
+          const actor: Actor = {
+            id: inserted.id as ActorId,
+            type: ActorType.Contact,
+            name: inserted.name || null,
+          };
+          sourceActors.push(actor);
+        } else {
+          // Race lost — the winner already wrote the mapping. Resolve through
+          // the existing mapping path.
+          const winnerMapping = await plot.db
+            .selectFrom("contact_external_account")
+            .select("contact_id")
+            .where("provider", "=", source.provider)
+            .where("account_id", "=", source.accountId)
+            .executeTakeFirst();
+
+          if (winnerMapping) {
+            const winnerContact = await plot.db
+              .selectFrom("contact")
+              .select(["id", "user_id", "name", "email"])
+              .where("id", "=", winnerMapping.contact_id)
+              .executeTakeFirst();
+            if (winnerContact) {
+              const actor: Actor = {
+                id: winnerContact.id as ActorId,
+                type: winnerContact.user_id ? ActorType.User : ActorType.Contact,
+                name: winnerContact.name || null,
+              };
+              if (winnerContact.email) {
+                actor.email = winnerContact.email;
+              }
+              sourceActors.push(actor);
+            }
+          }
+        }
       }
     } catch (error) {
       logger.error(

@@ -618,15 +618,19 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     );
   }
 
-  /// Builds inline toggle for single-channel connectors.
+  /// Builds inline display for single-channel connectors.
+  ///
+  /// With one implicit channel, the only meaningful action is removing the
+  /// account itself — toggling the channel just disables the entire
+  /// connection. Render the account row only; the single channel stays
+  /// selected via `_applySuggestedDefaults` so activation/save still
+  /// includes it.
   Widget _buildSingleChannelConfig(
     BuildContext context,
     TwistIntegrations data,
   ) {
     final theme = context.theme;
-    final channel = data.channels.first;
 
-    // Build account rows
     final accountRows = <Widget>[];
     for (final account in data.accounts) {
       accountRows.add(
@@ -638,29 +642,16 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       );
     }
 
-    final controller = widget.channelListController;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      controller?.update(1, (context, subIndex) async {
-        if (subIndex == 0) {
-          _quickToggleChannel(channel);
-        }
-      });
+      widget.channelListController?.update(0, (context, subIndex) async {});
     });
-
-    final focusCounter = [0];
-    final row = _buildChannelTree(
-      [channel],
-      focusCounter: focusCounter,
-    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...accountRows,
-        ...row,
         SizedBox(height: theme.spacing.md),
       ],
     );

@@ -19,7 +19,7 @@ import { Callbacks } from "./callbacks";
 import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
 import { Smtp, type SmtpOptions } from "./smtp";
-import { LinkedIn } from "./linkedin";
+import { LinkedInMessaging } from "./unipile/linkedin";
 import { Network } from "./network";
 import { Plot } from "./plot";
 import { Store } from "./store";
@@ -69,7 +69,7 @@ function getToolClass(
   | typeof Twists
   | typeof Imap
   | typeof Smtp
-  | typeof LinkedIn
+  | typeof LinkedInMessaging
   | null {
   switch (toolId) {
     case "Plot":
@@ -92,8 +92,8 @@ function getToolClass(
       return Imap;
     case "Smtp":
       return Smtp;
-    case "LinkedIn":
-      return LinkedIn;
+    case "LinkedInMessaging":
+      return LinkedInMessaging;
     case "Options":
       return null; // Handled specially — not a real tool
     default:
@@ -242,8 +242,8 @@ export function createTool(
       return new Imap(options as ImapOptions);
     case "Smtp":
       return new Smtp(options as SmtpOptions);
-    case "LinkedIn":
-      return new LinkedIn({
+    case "LinkedInMessaging":
+      return new LinkedInMessaging({
         env,
         db,
         twistInstanceId,

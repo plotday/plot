@@ -59,6 +59,7 @@ import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
 // Import webhook routes
 import webhook from "./webhook";
+import hookMessaging from "./app/hook-messaging";
 // Import rate limiting middleware
 import {
   generalRateLimiter,
@@ -246,6 +247,9 @@ app.route("/", admin);
 
 // Mount webhook route at top level
 app.route("/", webhook);
+
+// Unipile messaging webhook (account lifecycle + message events)
+app.route("/", hookMessaging);
 
 // OAuth bridge — public endpoint hit by the provider's browser redirect
 // (no user-auth context), so it must live outside the /app section.

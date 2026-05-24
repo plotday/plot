@@ -17,7 +17,6 @@ import 'package:forui/forui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/env.dart';
-import 'package:plot/widget/linkedin_login_modal.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/store/store.dart' show AuthUserAction;
@@ -694,14 +693,6 @@ class _AuthButtonState extends State<AuthButton>
   void _onPress() {
     if (_isLoading) return;
     if (widget._twistInstanceId != null) {
-      // LinkedIn does not use OAuth for personal messaging — it has its own
-      // session-cookie capture flow. Route the connect-button tap to the
-      // LinkedIn login modal instead of falling through to OAuth (which the
-      // server would reject with "Provider linkedin does not use OAuth").
-      if (widget.provider == AuthProvider.linkedin) {
-        _startLinkedInCookieFlow();
-        return;
-      }
       _startTwistAuth();
       return;
     }
@@ -821,40 +812,6 @@ class _AuthButtonState extends State<AuthButton>
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       Tracker.captureException(e, t);
       if (mounted) _showTwistAuthError();
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  /// Connect a LinkedIn twist integration by capturing the user's session
-  /// cookies from an in-app webview pointed at linkedin.com/login.
-  /// LinkedIn has no OAuth scope for personal messaging, so the server's
-  /// `/integrations/linkedin/cookie` endpoint takes the captured `li_at` +
-  /// `JSESSIONID` directly and runs the same `onAuth` callback the OAuth
-  /// path would. On success [AuthButton._onSuccess] fires exactly like
-  /// [_startTwistAuth].
-  Future<void> _startLinkedInCookieFlow() async {
-    setState(() => _isLoading = true);
-    try {
-      final result = await LinkedInLoginModal(
-        twistInstanceId: widget._twistInstanceId!,
-      ).run(context);
-      // null means the user dismissed the modal or cancelled — error
-      // messages have already been surfaced inline inside the modal, so
-      // we don't show a second toast or advance the caller's flow.
-      if (result == null) return;
-      await widget._onSuccess?.call();
-    } catch (e, t) {
-      log.warning('LinkedIn cookie flow failed', e, t);
-      Tracker.captureException(e, t);
-      if (mounted) {
-        final message = 'Unable to connect with LinkedIn. Please try again.';
-        if (widget.onError != null) {
-          widget.onError!(message);
-        } else {
-          context.showToast(message: message, isError: true);
-        }
-      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

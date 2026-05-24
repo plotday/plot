@@ -3,6 +3,7 @@ packages:
   - workers/*
   - libs/*
   - twists/*
+  - connectors/*
   - public/twister
   - public/connectors/*
   - public/twists/*

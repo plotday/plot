@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { DB } from "../db";
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
+import { PROVIDER_CONFIGS } from "../provider";
 import { Integrations } from "../twist/tools/integrations";
 import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
@@ -15,8 +16,6 @@ import { checkChannelConnectionLimit, PlanLimitError } from "../utils/limits";
 import { handleValidationError } from "../utils/validation";
 import type { OptionsSchema } from "@plotday/twister/options";
 import { saveSecureOptions } from "../utils/secure-options";
-import { invokeWebhookCallback } from "../twist/invoke-webhook";
-import { probeLinkedInProfile } from "../twist/tools/linkedin-voyager";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -227,19 +226,23 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     return c.json({ message: "Twist config not found" }, 404);
   }
 
+  // Read twist_instance options once — both branches surface them in the
+  // integrations modal so connector-level boolean toggles render in either
+  // path.
+  const pt = await c.var.db
+    .selectFrom("twist_instance")
+    .select("options")
+    .where("id", "=", twistInstanceId)
+    .executeTakeFirst();
+  const ptConfig: Record<string, unknown> = pt?.options
+    ? typeof pt.options === "string"
+      ? JSON.parse(pt.options)
+      : pt.options
+    : {};
+  const hasConfig = Object.keys(ptConfig).length > 0;
+
   if (config.providers.length === 0) {
     // No-provider connector: check if options have been configured (via /connect)
-    const pt = await c.var.db
-      .selectFrom("twist_instance")
-      .select("options")
-      .where("id", "=", twistInstanceId)
-      .executeTakeFirst();
-    const ptConfig = pt?.options
-      ? typeof pt.options === "string"
-        ? JSON.parse(pt.options)
-        : pt.options
-      : {};
-    const hasConfig = Object.keys(ptConfig).length > 0;
 
     if (!hasConfig) {
       // Include options schema and twist metadata for the connect form
@@ -398,9 +401,72 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       twistInfo.environment
     );
 
-    const data = await integrations.getIntegrationData(
+    let data = await integrations.getIntegrationData(
       currentActorId as any
     );
+
+    // Self-heal: hosted-auth providers can cache an empty channel list when
+    // the token wasn't yet stored during activation. If we see a hosted-auth
+    // account but zero channels, trigger refreshChannels for each connected
+    // actor and re-read. Single-channel connectors are the obvious case
+    // (getChannels should always return exactly one), but the same pattern
+    // helps any hosted-auth provider that lands here with a stale cache.
+    const hostedProviders = providers.filter(
+      (p) =>
+        PROVIDER_CONFIGS[p.provider as keyof typeof PROVIDER_CONFIGS]
+          ?.authMode === "hosted"
+    );
+    if (
+      hostedProviders.length > 0 &&
+      data.accounts.length > 0 &&
+      data.syncables.length === 0
+    ) {
+      try {
+        const twistWrapper = await twistFactory({
+          env: c.env,
+          ctx: c.executionCtx as ExecutionContext,
+          db: c.var.db,
+        })({ twistInstanceId });
+        for (const account of data.accounts) {
+          if (!hostedProviders.some((p) => p.provider === account.provider)) {
+            continue;
+          }
+          try {
+            const r = await twistWrapper.callCallback(
+              pathStr.split(":"),
+              "refreshChannels",
+              account.provider,
+              account.actorId
+            );
+            disposeRpc(r);
+          } catch (refreshErr) {
+            const refreshLogger = createLogger({
+              twist_instance_id: twistInstanceId,
+              route: "GET /twist/:id/integrations",
+              provider: account.provider,
+              actor_id: account.actorId,
+            });
+            refreshLogger.warn(
+              "auto-refresh channels failed",
+              refreshErr instanceof Error
+                ? { error: refreshErr.message }
+                : { error: String(refreshErr) }
+            );
+          }
+        }
+        // Re-read after refresh attempts.
+        data = await integrations.getIntegrationData(currentActorId as any);
+      } catch (e) {
+        const refreshLogger = createLogger({
+          twist_instance_id: twistInstanceId,
+          route: "GET /twist/:id/integrations",
+        });
+        refreshLogger.warn(
+          "auto-refresh setup failed",
+          e instanceof Error ? { error: e.message } : { error: String(e) }
+        );
+      }
+    }
 
     allProviders.push(...data.providers);
     allAccounts.push(...data.accounts);
@@ -409,11 +475,36 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
 
   const teamDomains = await getTeamDomains(c.var.db);
 
+  // Surface connector-level Options to the integrations modal the same way
+  // the no-provider branch does — connectors with a provider (LinkedIn,
+  // WhatsApp, Instagram on Unipile, but also any future OAuth connector
+  // with toggles) should be able to expose user-configurable booleans.
+  let optionsSchema = config.optionsSchema ?? null;
+  if (!optionsSchema && twistInfo.twistOptions) {
+    try {
+      optionsSchema = typeof twistInfo.twistOptions === "string"
+        ? JSON.parse(twistInfo.twistOptions)
+        : twistInfo.twistOptions;
+    } catch { /* ignore parse errors */ }
+  }
+  let optionsConfig: Record<string, unknown> | null = null;
+  if (optionsSchema && hasConfig) {
+    const masked = { ...ptConfig };
+    for (const [key, def] of Object.entries(optionsSchema)) {
+      if (def.type === "text" && "secure" in def && (def as any).secure) {
+        if (key in masked) masked[key] = true;
+      }
+    }
+    optionsConfig = masked;
+  }
+
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
     syncables: allChannels,
     singleChannel: config.singleChannel,
+    optionsSchema,
+    optionsConfig,
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
     teamDomains,
@@ -530,203 +621,6 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
 
   return c.json({ ...result, callback: String(callback) });
 });
-
-// POST /twist/:id/integrations/linkedin/cookie
-// LinkedIn-specific auth flow. The OAuth provider for personal messaging
-// does not exist, so the client (in-app webview) captures the user's
-// `li_at` session cookie and posts it here. The server probes Voyager to
-// validate the cookie + discover profile info, then invokes the
-// connector's `onAuth` callback with a synthetic tokenInfo so downstream
-// code (token storage, contact creation, connection tracking, channel
-// dispatch) works identically to any OAuth provider.
-const LinkedInCookieRequestSchema = z.object({
-  liAt: z.string().min(10),
-  jsessionid: z.string().min(5),
-  userAgent: z.string().min(10),
-  platform: z.enum(["ios", "android", "desktop", "web"]),
-});
-
-twistIntegrations.post(
-  "/twist/:id/integrations/linkedin/cookie",
-  async (c) => {
-    const twistInstanceId = c.req.param("id");
-    const logger = createLogger({
-      twist_instance_id: twistInstanceId,
-      provider: "linkedin",
-      route: "linkedin/cookie",
-    });
-
-    const access = await checkTwistAccess(
-      c.var.db,
-      twistInstanceId,
-      c.var.user.id,
-      "write"
-    );
-    if (!access.ok) return c.json(twistNotFoundResponse, 404);
-
-    const rawBody = await c.req.json();
-    const parseResult = LinkedInCookieRequestSchema.safeParse(rawBody);
-    if (!parseResult.success) {
-      logger.warn("LinkedIn cookie payload failed schema validation", {
-        issues: parseResult.error.issues.map((i) => ({
-          path: i.path,
-          code: i.code,
-        })),
-      });
-      return handleValidationError(parseResult.error);
-    }
-    const { liAt, jsessionid, userAgent, platform } = parseResult.data;
-    // Never log the raw cookie. The cookie itself is the credential —
-    // only log lengths so we can confirm the payload arrived intact.
-    logger.info("LinkedIn cookie request received", {
-      platform,
-      ua_len: userAgent.length,
-      li_at_len: liAt.length,
-      jsession_len: jsessionid.length,
-    });
-
-    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
-    if (!twistInfo) {
-      logger.warn("LinkedIn cookie request: twist instance not found");
-      return c.json({ message: "Twist not found" }, 404);
-    }
-
-    const config = await loadTwistConfig(
-      c.env,
-      twistInfo.twistPackageId,
-      twistInfo.version
-    );
-    if (!config) {
-      logger.warn(
-        "LinkedIn cookie request: no twist config in TWIST_CONFIG KV",
-        {
-          twist_package_id: twistInfo.twistPackageId,
-          version: twistInfo.version,
-        }
-      );
-      return c.json({ message: "Twist config not found" }, 404);
-    }
-
-    const integrationsPathStr = config.integrationsMap["linkedin"];
-    if (!integrationsPathStr) {
-      logger.warn(
-        "LinkedIn cookie request: provider not in integrationsMap (connector probably not deployed at this twist version)",
-        {
-          twist_package_id: twistInfo.twistPackageId,
-          version: twistInfo.version,
-          known_providers: Object.keys(config.integrationsMap),
-        }
-      );
-      return c.json(
-        { message: "Provider linkedin not configured for this twist" },
-        400
-      );
-    }
-
-    // Probe Voyager. This both validates the cookie and gives us the
-    // profile triple we need for LinkedInProviderData.
-    const profile = await probeLinkedInProfile({ liAt, jsessionid, userAgent });
-    if (!profile) {
-      logger.warn(
-        "LinkedIn cookie request: Voyager probe failed (cookie invalid/expired/blocked)"
-      );
-      // 400, not 401: the caller IS authenticated to Plot — what failed is
-      // the LinkedIn credential they uploaded. Returning 401 here makes the
-      // Flutter API client think the user's Plot/Clerk session expired,
-      // which force-signs them out of the app entirely.
-      return c.json(
-        { message: "Invalid or expired LinkedIn session cookie" },
-        400
-      );
-    }
-    logger.info("LinkedIn cookie request: Voyager probe succeeded", {
-      profile_user_id: profile.userId,
-      profile_name_len: profile.fullName.length,
-      profile_email_present: profile.email != null,
-    });
-
-    // Create the onAuth callback exactly like the OAuth path does.
-    const callbacksId = c.env.CALLBACKS.idFromName(twistInstanceId);
-    const callbacksStub = c.env.CALLBACKS.get(callbacksId);
-    const callback = await callbacksStub.create({
-      twistInstanceId,
-      path: integrationsPathStr.split(":"),
-      functionName: "onAuth",
-      extraArgs: [],
-    });
-    logger.info("LinkedIn cookie request: onAuth callback created", {
-      integrations_path: integrationsPathStr,
-    });
-
-    // Assemble the tokenInfo. `parseTokenResponse` on the linkedin
-    // PROVIDER_CONFIG entry will lift `jsessionid`, `userAgent`, profile
-    // fields, etc. out of this onto LinkedInProviderData.
-    const tokenInfo = {
-      access_token: liAt,
-      refresh_token: undefined,
-      expires_in: undefined,
-      provider: "linkedin" as const,
-      scopes: [] as string[],
-      client_id: "",
-      jsessionid,
-      userAgent,
-      platform,
-      userId: profile.userId,
-      fullName: profile.fullName,
-      email: profile.email,
-    };
-
-    try {
-      const result = await invokeWebhookCallback(
-        c.env,
-        c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
-        String(callback),
-        tokenInfo
-      );
-      disposeRpc(result);
-      logger.info("LinkedIn cookie request: onAuth completed");
-    } catch (error) {
-      logger.error("LinkedIn onAuth invocation failed", error as Error);
-      return c.json({ message: "LinkedIn authentication failed" }, 500);
-    }
-
-    // Verify onAuth actually persisted the connection. Without this check a
-    // silent failure inside the callback (e.g. buildActor fell through to a
-    // synthetic actor because the contact insert failed) would return 200
-    // while the Flutter UI sees no connection on its next refresh — the user
-    // would land back on the setup modal with "Continue with LinkedIn" still
-    // showing instead of channels. Better to surface it as an explicit error.
-    const persisted = await c.var.db
-      .selectFrom("twist_instance_connection")
-      .select("connected_at")
-      .where("twist_instance_id", "=", twistInstanceId)
-      .where("provider", "=", "linkedin")
-      .executeTakeFirst();
-    if (!persisted) {
-      logger.error(
-        "LinkedIn onAuth completed but no twist_instance_connection row was written",
-        new Error("LinkedIn connection not persisted"),
-        { profile_user_id: profile.userId }
-      );
-      return c.json(
-        {
-          message:
-            "LinkedIn signed in, but the connection could not be saved. Try reconnecting; if it keeps failing, contact support.",
-        },
-        500
-      );
-    }
-    logger.info("LinkedIn cookie request: connection persisted", {
-      connected_at: persisted.connected_at,
-    });
-
-    return c.json({
-      ok: true,
-      accountLabel: profile.fullName,
-      userId: profile.userId,
-    });
-  }
-);
 
 // POST /twist/:id/integrations/connect
 // For no-provider connectors: saves options, calls getChannels, returns channel list.

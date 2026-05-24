@@ -234,6 +234,11 @@ export type Bindings = {
   readonly SYNC_TIMING_ENABLED?: string;
   readonly NOTIFICATION_DELAY_MULTIPLIER?: string;
 
+  // Unipile API configuration for LinkedIn messaging
+  readonly UNIPILE_API_KEY: string;
+  readonly UNIPILE_DSN: string;
+  readonly UNIPILE_WEBHOOK_SECRET: string;
+
   readonly TWIST_CONFIG: KVNamespace;
   readonly VOTES: KVNamespace;
   // Shared between workers/api and workers/classify. Holds the LLM
@@ -253,10 +258,6 @@ export type Bindings = {
   readonly APP_SYNC_RATE_LIMITER: RateLimit;
   readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
   readonly SDK_RATE_LIMITER: RateLimit;
-  // Per-channel Voyager call throttle. Key by channelId so each LinkedIn
-  // connection has its own bucket (6 calls per 10s) — a single user's burst
-  // can't trigger LinkedIn-side throttling for other users.
-  readonly LINKEDIN_RATE_LIMITER: RateLimit;
 
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;

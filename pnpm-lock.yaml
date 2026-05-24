@@ -152,6 +152,22 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
 
+  connectors/linkedin:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:*
+        version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:*
+        version: link:../../libs/unipile
+    devDependencies:
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   libs/classifier:
     dependencies:
       kysely:
@@ -355,6 +371,19 @@ importers:
         specifier: workspace:*
         version: link:../tsconfig
 
+  libs/unipile:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:*
+        version: link:../../public/twister
+    devDependencies:
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   libs/worker-util:
     devDependencies:
       '@plotday/eslint-config-custom':
@@ -533,16 +562,6 @@ importers:
       '@linear/sdk':
         specifier: ^72.0.0
         version: 72.0.0(graphql@16.13.2)
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  public/connectors/linkedin-messaging:
-    dependencies:
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -762,6 +781,9 @@ importers:
       '@plotday/twister':
         specifier: workspace:*
         version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:^
+        version: link:../../libs/unipile
       '@plotday/worker-util':
         specifier: workspace:^
         version: link:../../libs/worker-util
@@ -19318,7 +19340,7 @@ snapshots:
   tough-cookie@4.1.4:
     dependencies:
       psl: 1.15.0
-      punycode: 2.3.0
+      punycode: 2.3.1
       universalify: 0.2.0
       url-parse: 1.5.10
 

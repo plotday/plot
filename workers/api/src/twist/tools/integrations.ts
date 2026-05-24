@@ -39,6 +39,7 @@ import {
 } from "../../provider";
 import { hashExternalContent } from "./hash-external-content";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
+import { UnipileClient } from "./unipile/client";
 import type { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
 import { invokeWebhookCallback } from "../invoke-webhook";
@@ -2555,9 +2556,14 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     const config = PROVIDER_CONFIGS[tokenInfo.provider];
 
-    // Parse provider-specific data if handler exists (may be async)
-    const providerData =
+    // Parse provider-specific data if handler exists (may be async). For
+    // hosted-auth providers the caller already builds the providerData (we
+    // don't have an OAuth response to parse), so fall through to it when
+    // there's no parser or the parser returned null.
+    const parsedFromTokenInfo =
       (await config?.parseTokenResponse?.(tokenInfo)) ?? null;
+    const providerData =
+      parsedFromTokenInfo ?? (tokenInfo.providerData as ProviderData | null) ?? null;
 
     // Extract email from providerData and link to contact, building actor.
     // For providers that don't surface an email (e.g. Slack user-token-only
@@ -3239,7 +3245,23 @@ export class Integrations extends Tool implements IAuth {
           this.getChannelAccess(provider, actorId as ActorId),
         ]);
 
-        const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
+        // Self-heal: hosted-auth providers (LinkedIn, future WhatsApp/Instagram)
+        // can land here with an empty providerData.fullName when the initial
+        // /users/me probe at auth time failed (rate limit, transient). Re-try
+        // the probe lazily here so the modal eventually shows the right label
+        // without forcing the user to re-auth — important because the auth
+        // hop itself is rate-limited by the provider and risks an account
+        // ban under repeated attempts.
+        const refreshedTokenData = await this.maybeRefreshHostedProviderData(
+          provider,
+          actorId,
+          tokenData
+        );
+        const effectiveTokenData = refreshedTokenData ?? tokenData;
+
+        const email = effectiveTokenData
+          ? this.extractEmail(effectiveTokenData.providerData)
+          : null;
 
         // contact.name is intentionally NOT used as the account label — it's
         // the connected person's display name, not the workspace/account
@@ -3252,9 +3274,9 @@ export class Integrations extends Tool implements IAuth {
         // email (Google, Microsoft) the email is surfaced separately below.
         // For providers whose `extractAccountLabel` returns the email we also
         // reuse it as the label so the UI shows something.
-        const name: string | null = tokenData?.providerData
+        const name: string | null = effectiveTokenData?.providerData
           ? (PROVIDER_CONFIGS[provider]?.extractAccountLabel?.(
-              tokenData.providerData
+              effectiveTokenData.providerData
             ) ?? null)
           : null;
 
@@ -3635,6 +3657,87 @@ export class Integrations extends Tool implements IAuth {
     }
 
     return null;
+  }
+
+  /**
+   * For hosted-auth providers, lazily refill `providerData.fullName` /
+   * `email` from the vendor when the values landed empty at auth time.
+   * Returns the updated tokenData if a refresh happened, null otherwise.
+   *
+   * Failure is non-fatal: this is best-effort backfill for UI labels.
+   */
+  private async maybeRefreshHostedProviderData(
+    provider: AuthProvider,
+    actorId: string,
+    tokenData: StoredTokenData | null
+  ): Promise<StoredTokenData | null> {
+    if (!tokenData) return null;
+    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") return null;
+    const hosted = (tokenData.providerData ?? {}) as Partial<{
+      fullName: string | null;
+      accountId: string;
+    }>;
+    if (hosted.fullName) return null;
+    const accountId = hosted.accountId ?? tokenData.access_token;
+    if (!accountId) return null;
+
+    try {
+      const { UnipileClient } = await import("./unipile/client");
+      const client = new UnipileClient(this.env);
+
+      // Three-stage probe to maximise the chance of getting a friendly name:
+      //   1. /users/me?account_id=X — minimal, returns provider_id always
+      //   2. /users/{provider_id}?account_id=X — rich profile (the LinkedIn
+      //      /users/me endpoint omits `name` for the calling member)
+      //   3. /accounts/{id} — Unipile's stored account label as fallback
+      const me = await client.getOwnProfile({ accountId });
+
+      let fullName = me.name && me.name.trim() ? me.name : null;
+      let email = me.specifics?.email ?? null;
+      const userId = me.provider_id ?? null;
+
+      if ((!fullName || !email) && userId) {
+        try {
+          const rich = await client.getAttendee({ providerId: userId });
+          if (!fullName && rich.name && rich.name.trim()) fullName = rich.name;
+          if (!email && rich.specifics?.email) email = rich.specifics.email;
+        } catch {
+          // Best-effort: the rich attendee probe failing is not fatal.
+        }
+      }
+
+      if (!fullName) {
+        try {
+          const account = await client.getAccount(accountId);
+          if (account.name && account.name.trim()) fullName = account.name;
+        } catch {
+          // Best-effort: the account-label fallback failing is not fatal.
+        }
+      }
+
+      // Even if we don't get a name, persist the userId / accountId we know.
+      const existing = (tokenData.providerData ?? {}) as Record<string, unknown>;
+      const merged: StoredTokenData = {
+        ...tokenData,
+        providerData: {
+          ...existing,
+          accountId: accountId,
+          accountType:
+            (existing.accountType as string | undefined) ?? "LINKEDIN",
+          fullName: fullName ?? (existing.fullName as string | null) ?? null,
+          email: email ?? (existing.email as string | null) ?? null,
+          userId:
+            userId ??
+            (existing.userId as string | undefined) ??
+            accountId,
+        } as ProviderData,
+      };
+      await this.store.set(`auth_token:${provider}:${actorId}`, merged);
+      return merged;
+    } catch {
+      // Vendor probe failed — accept the stale data, try again next modal open.
+      return null;
+    }
   }
 
   /**
@@ -4320,6 +4423,15 @@ export class Integrations extends Tool implements IAuth {
       logger.error("Provider not supported", { provider });
       throw new Error(`Provider ${provider} not supported`);
     }
+    if (config.authMode === "hosted") {
+      return await Integrations.GenerateHostedAuthUrl({
+        provider,
+        callback,
+        redirectUri,
+        env,
+        storage,
+      });
+    }
     if (!config.authUrl) {
       // Non-OAuth provider (e.g. LinkedIn cookie auth). The client must use
       // that provider's dedicated auth endpoint instead of the OAuth flow.
@@ -4431,6 +4543,59 @@ export class Integrations extends Tool implements IAuth {
     const url = `${config.authUrl}?${params.toString()}`;
 
     return { url, clientId, state };
+  }
+
+  static async GenerateHostedAuthUrl({
+    provider,
+    callback,
+    redirectUri,
+    env,
+    storage,
+  }: {
+    provider: AuthProvider;
+    callback?: Callback;
+    redirectUri: string;
+    env: Bindings;
+    storage: DurableObjectNamespace<Storage>;
+  }): Promise<{ url: string; clientId: string; state: string }> {
+    const state = crypto.randomUUID();
+
+    // Stash the in-flight auth so the webhook handler and the /auth completion
+    // path can pair the inbound account_id with this state token.
+    const storageStub = storage.idFromName("auth");
+    const storageObj = storage.get(storageStub);
+    await storageObj.set(
+      `hosted_auth:${state}`,
+      superjson.stringify({
+        provider,
+        callback: callback ? String(callback) : null,
+        redirectUri,
+        createdAt: Date.now(),
+      })
+    );
+
+    // Map the API provider name to Unipile's source enum.
+    const sourceMap: Record<string, "LINKEDIN" | "WHATSAPP" | "INSTAGRAM"> = {
+      linkedin: "LINKEDIN",
+      whatsapp: "WHATSAPP",
+      instagram: "INSTAGRAM",
+    };
+    const source = sourceMap[provider];
+    if (!source) {
+      throw new Error(`Provider ${provider} not supported for hosted auth`);
+    }
+
+    const client = new UnipileClient(env);
+    const { url } = await client.createHostedAuthLink({
+      providers: [source],
+      name: state,
+      successRedirectUrl: `${env.API_ROOT}/auth/hosted/success?state=${state}`,
+      failureRedirectUrl: `${env.API_ROOT}/auth/hosted/failure?state=${state}`,
+      notifyUrl: `${env.API_ROOT}/hook/messaging`,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    });
+
+    return { url, clientId: "hosted", state };
   }
 
   private static ALL_PLATFORMS: (undefined | "ios" | "android" | "desktop")[] =
