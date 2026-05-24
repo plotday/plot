@@ -686,18 +686,6 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     channels: Channel[]
   ): Promise<any> {
-    createLogger({
-      twist_instance_id: this.twistInstanceId,
-      step: "setChannels",
-      provider,
-      actor_id: actorId,
-    }).warn("TEMP: setChannels called", {
-      channels_count: Array.isArray(channels) ? channels.length : -1,
-      channels_summary: Array.isArray(channels)
-        ? channels.map((c) => ({ id: c.id, title: c.title }))
-        : null,
-      channels_raw_type: typeof channels,
-    });
     // Snapshot the set of channels we already know about before mirroring so
     // we can identify newly-discovered ones for auto-enable.
     const flat = this.flattenChannels(channels);
@@ -3683,33 +3671,15 @@ export class Integrations extends Tool implements IAuth {
     actorId: string,
     tokenData: StoredTokenData | null
   ): Promise<StoredTokenData | null> {
-    const logger = createLogger({
-      twist_instance_id: this.twistInstanceId,
-      step: "maybeRefreshHostedProviderData",
-      provider,
-      actor_id: actorId,
-    });
-    if (!tokenData) {
-      logger.info("skip: no tokenData");
-      return null;
-    }
-    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") {
-      logger.info("skip: provider not hosted-auth");
-      return null;
-    }
+    if (!tokenData) return null;
+    if (PROVIDER_CONFIGS[provider]?.authMode !== "hosted") return null;
     const hosted = (tokenData.providerData ?? {}) as Partial<{
       fullName: string | null;
       accountId: string;
     }>;
-    if (hosted.fullName) {
-      logger.info("skip: fullName already populated");
-      return null;
-    }
+    if (hosted.fullName) return null;
     const accountId = hosted.accountId ?? tokenData.access_token;
-    if (!accountId) {
-      logger.warn("skip: no accountId or access_token");
-      return null;
-    }
+    if (!accountId) return null;
 
     try {
       const { UnipileClient } = await import("./unipile/client");
@@ -3720,50 +3690,28 @@ export class Integrations extends Tool implements IAuth {
       //   2. /users/{provider_id}?account_id=X — rich profile (the LinkedIn
       //      /users/me endpoint omits `name` for the calling member)
       //   3. /accounts/{id} — Unipile's stored account label as fallback
-      logger.info("calling Unipile getOwnProfile", { account_id: accountId });
       const me = await client.getOwnProfile({ accountId });
-      logger.info("Unipile getOwnProfile returned", {
-        has_name: !!me.name,
-        has_email: !!me.specifics?.email,
-        provider_id: me.provider_id ?? null,
-        specifics_keys: Object.keys(me.specifics ?? {}),
-      });
 
       let fullName = me.name && me.name.trim() ? me.name : null;
       let email = me.specifics?.email ?? null;
-      let publicIdentifier = me.specifics?.public_identifier ?? null;
       const userId = me.provider_id ?? null;
 
       if ((!fullName || !email) && userId) {
         try {
           const rich = await client.getAttendee({ providerId: userId });
-          logger.info("Unipile getAttendee returned", {
-            has_name: !!rich.name,
-            has_email: !!rich.specifics?.email,
-          });
           if (!fullName && rich.name && rich.name.trim()) fullName = rich.name;
           if (!email && rich.specifics?.email) email = rich.specifics.email;
-          if (!publicIdentifier && rich.specifics?.public_identifier) {
-            publicIdentifier = rich.specifics.public_identifier;
-          }
-        } catch (e) {
-          logger.info("Unipile getAttendee threw (continuing)", {
-            error: e instanceof Error ? e.message : String(e),
-          });
+        } catch {
+          // Best-effort: the rich attendee probe failing is not fatal.
         }
       }
 
       if (!fullName) {
         try {
           const account = await client.getAccount(accountId);
-          logger.info("Unipile getAccount returned", {
-            has_name: !!account.name,
-          });
           if (account.name && account.name.trim()) fullName = account.name;
-        } catch (e) {
-          logger.info("Unipile getAccount threw (continuing)", {
-            error: e instanceof Error ? e.message : String(e),
-          });
+        } catch {
+          // Best-effort: the account-label fallback failing is not fatal.
         }
       }
 
@@ -3785,16 +3733,9 @@ export class Integrations extends Tool implements IAuth {
         } as ProviderData,
       };
       await this.store.set(`auth_token:${provider}:${actorId}`, merged);
-      logger.info("providerData refreshed and persisted", {
-        fullName_persisted: !!fullName,
-        email_persisted: !!email,
-        public_identifier: publicIdentifier,
-      });
       return merged;
-    } catch (e) {
-      logger.warn("Unipile getOwnProfile threw", {
-        error: e instanceof Error ? e.message : String(e),
-      });
+    } catch {
+      // Vendor probe failed — accept the stale data, try again next modal open.
       return null;
     }
   }

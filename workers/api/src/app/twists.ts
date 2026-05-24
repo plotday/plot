@@ -360,69 +360,6 @@ twists.post("/twist/draft", async (c) => {
   }
   const body = parseResult.data;
   try {
-    // TEMP(linkedin-unipile): reuse an existing LinkedIn draft for this
-    // user/twist pair instead of creating a new one. New drafts get fresh
-    // twist_instance_ids, which orphans the hosted-auth token already
-    // captured in DO storage (and forces another rate-limited re-auth).
-    // twist_id on twist_instance is the bigint twist.id, so resolve through
-    // the package UUID first. Revert before merging.
-    const LINKEDIN_TWIST_PACKAGE_ID =
-      "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
-    const debug = createLogger({ route: "POST /twist/draft (TEMP)" });
-    debug.warn("incoming", {
-      body_twistId: body.twistId,
-      body_twistId_typeof: typeof body.twistId,
-      owner_id: c.var.user.id,
-    });
-    const twistRow = await c.var.db
-      .selectFrom("twist")
-      .select(["id", "twist_package_id"])
-      .where("id", "=", String(body.twistId) as never)
-      .executeTakeFirst();
-    debug.warn("twistRow lookup", { twistRow });
-    if (
-      twistRow?.twist_package_id === LINKEDIN_TWIST_PACKAGE_ID
-    ) {
-      // Pick the most recent LinkedIn instance for this user, regardless
-      // of draft status. Activated instances (`draft=false`) still own
-      // their DO storage where the auth_token lives; flipping draft back
-      // to true lets Flutter's setup flow resume on that exact instance
-      // instead of creating a fresh empty draft.
-      const existing = await c.var.db
-        .selectFrom("twist_instance")
-        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-        .select([
-          "twist_instance.id",
-          "twist_instance.twist_id",
-          "twist_instance.draft",
-          "twist.twist_package_id",
-          "twist_instance.created_at",
-        ])
-        .where("twist_instance.owner_id", "=", c.var.user.id)
-        .where("twist.twist_package_id", "=", LINKEDIN_TWIST_PACKAGE_ID)
-        .where("twist_instance.archived_at", "is", null)
-        .orderBy("twist_instance.created_at", "desc")
-        .executeTakeFirst();
-      debug.warn("existing LinkedIn instance lookup", { existing });
-      if (existing) {
-        if (!existing.draft) {
-          await c.var.db
-            .updateTable("twist_instance")
-            .set({ draft: true } as never)
-            .where("id", "=", existing.id)
-            .execute();
-          debug.warn("TEMP: flipped activated instance back to draft", {
-            id: existing.id,
-          });
-        }
-        debug.warn("TEMP: reusing existing LinkedIn instance to preserve hosted-auth token", {
-          existing_id: existing.id,
-          existing_twist_id: existing.twist_id,
-          existing_was_draft: existing.draft,
-        });
-        return c.json({ id: existing.id });
-      }
-    }
     const draft = await createDraft(
       c.var.db,
       c.var.user.id,
@@ -511,41 +448,6 @@ twists.delete("/twist/draft/:id", async (c) => {
   );
   if (!access.ok) return c.json(notFoundResponse, 404);
   try {
-    // TEMP(linkedin-unipile): skip deletion so the captured hosted-auth
-    // token in DO storage survives modal close/reopen and we can iterate
-    // on the setup-modal UX without re-auth (LinkedIn rate-limits the
-    // hosted-auth flow). Revert this branch before merging.
-    const debug = createLogger({
-      twist_instance_id: draftId,
-      route: "DELETE /twist/draft (TEMP)",
-    });
-    const draftRow = await c.var.db
-      .selectFrom("twist_instance")
-      .leftJoin("twist", "twist.id", "twist_instance.twist_id")
-      .select([
-        "twist_instance.id as ti_id",
-        "twist_instance.twist_id as ti_twist_id",
-        "twist_instance.draft as ti_draft",
-        "twist_instance.archived_at as ti_archived_at",
-        "twist.id as t_id",
-        "twist.twist_package_id as t_package_id",
-        "twist.name as t_name",
-      ])
-      .where("twist_instance.id", "=", draftId)
-      .executeTakeFirst();
-    debug.warn("DELETE draft lookup", { draftRow });
-    const LINKEDIN_TWIST_PACKAGE_ID =
-      "4e6a959d-ebe2-4a85-bd06-ec46fbac204a";
-    if (draftRow?.t_package_id === LINKEDIN_TWIST_PACKAGE_ID) {
-      debug.warn(
-        "TEMP: skipping draft deletion to preserve hosted-auth token",
-        {
-          twist_id: draftRow.ti_twist_id,
-          twist_name: draftRow.t_name,
-        }
-      );
-      return c.json({ success: true });
-    }
     await deleteDraft(c.var.db, draftId);
     return c.json({ success: true });
   } catch (error) {
