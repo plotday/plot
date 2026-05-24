@@ -1050,11 +1050,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       horizontal: 10,
       vertical: isMobilePlatform() ? 10 : 5,
     );
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
 
     Widget buildChip(bool hovered) {
       return FButton(
-        onPress: isPrivate ? null : _clearShareTargets,
+        onPress: isPrivate ? () {} : _clearShareTargets,
         variant: isPrivate ? FButtonVariant.primary : FButtonVariant.secondary,
         style: FButtonStyleDelta.delta(
           decoration: FVariantsDelta.delta([
@@ -1067,13 +1066,12 @@ class NewThreadPageState extends State<NewThreadPage> {
           ),
         ),
         mainAxisSize: MainAxisSize.min,
-        child: Opacity(
-          opacity: isPrivate || hovered ? 1.0 : (isDark ? 0.5 : 0.9),
-          child: FaIcon(
-            FontAwesomeIcons.lock,
-            size: context.theme.iconSizes.sm,
-            color: isPrivate ? null : context.theme.plotColors.veryMuted,
-          ),
+        child: FaIcon(
+          FontAwesomeIcons.lock,
+          size: context.theme.iconSizes.sm,
+          color: (isPrivate || hovered)
+              ? null
+              : context.theme.plotColors.veryMuted,
         ),
       );
     }
@@ -1100,7 +1098,6 @@ class NewThreadPageState extends State<NewThreadPage> {
         inviteEmails: const Value(null),
       ),
     );
-    if (mounted) _refreshPinnedChips();
   }
 
   Widget _buildContactChip(
