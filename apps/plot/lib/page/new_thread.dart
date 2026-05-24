@@ -18,7 +18,6 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
-import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -86,6 +85,8 @@ class NewThreadPage extends StatefulWidget {
 class NewThreadPageState extends State<NewThreadPage> {
   final GlobalKey<NoteEditorState> _threadEditorKey =
       GlobalKey<NoteEditorState>();
+  final GlobalKey<InlineTitleInputState> _titleInputKey =
+      GlobalKey<InlineTitleInputState>();
 
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
@@ -485,7 +486,23 @@ class NewThreadPageState extends State<NewThreadPage> {
         ],
         SizedBox(height: context.theme.spacing.md),
         _buildWithSelector(context, state),
+        SizedBox(height: context.theme.spacing.md),
+        _buildTitleRow(context, state),
       ],
+    );
+  }
+
+  Widget _buildTitleRow(BuildContext context, PriorityState state) {
+    return InlineTitleInput(
+      key: _titleInputKey,
+      title: state.draft.title,
+      onChanged: (next) async {
+        final bloc = _priorityBloc;
+        if (bloc == null) return;
+        await bloc.updateDraft(
+          bloc.state.draft.copyWith(title: Value(next)),
+        );
+      },
     );
   }
 
@@ -771,148 +788,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       contacts: Value(mergedContacts.isEmpty ? null : mergedContacts),
       groups: Value(mergedGroups.isEmpty ? null : mergedGroups),
       inviteEmails: Value(mergedEmails.isEmpty ? null : mergedEmails),
-    );
-  }
-
-  /// Row showing either "Auto title" (sparkles → pencil on hover) or the
-  /// title the user set (with an X to clear).
-  Widget _buildAutoOrganizeLine(BuildContext context, PriorityState state) {
-    final draft = state.draft;
-    return Padding(
-      padding: const EdgeInsets.only(left: 6, bottom: 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildTitleChip(context, draft),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTitleChip(BuildContext context, Thread draft) {
-    final hasTitle = draft.title?.isNotEmpty ?? false;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _HoverBuilder(
-          builder: (context, hovered) {
-            final IconData icon;
-            final String? label;
-            final Color color;
-            if (hasTitle) {
-              icon = FontAwesomeIcons.pen;
-              label = draft.title!;
-              color = hovered
-                  ? context.theme.colors.foreground
-                  : context.theme.plotColors.muted;
-            } else if (hovered) {
-              icon = FontAwesomeIcons.pen;
-              label = 'Set title';
-              color = context.theme.colors.foreground;
-            } else {
-              icon = PlotIcon.sparkles;
-              label = null;
-              color = context.theme.plotColors.veryMuted;
-            }
-            final button = FButton(
-              onPress: () => _openTitleModal(context, draft),
-              variant: FButtonVariant.ghost,
-              style: ghostSizedStyleDelta(
-                context,
-                textStyle: context.theme.typography.sm,
-              ),
-              mainAxisSize: MainAxisSize.min,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 6,
-                children: [
-                  FaIcon(
-                    icon,
-                    size: context.theme.iconSizes.base,
-                    color: color,
-                  ),
-                  if (label != null)
-                    Text(
-                      label,
-                      style: context.theme.typography.sm.copyWith(
-                        color: color,
-                        height: 1,
-                      ),
-                    ),
-                ],
-              ),
-            );
-            if (!hasPhysicalKeyboard()) return button;
-            return FTooltip(
-              tipBuilder: (context, controller) => _buildChipTooltip(
-                context: context,
-                label: hasTitle ? 'Edit title' : 'Set title',
-                shortcut: platformSingleActivator(
-                  LogicalKeyboardKey.keyH,
-                  shift: true,
-                ),
-              ),
-              child: button,
-            );
-          },
-        ),
-        if (hasTitle) _buildClearTitleButton(context, draft),
-      ],
-    );
-  }
-
-  Widget _buildClearTitleButton(BuildContext context, Thread draft) {
-    final button = FButton.icon(
-      onPress: () => _clearTitle(draft),
-      variant: FButtonVariant.ghost,
-      child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
-    );
-    if (!hasPhysicalKeyboard()) return button;
-    return FTooltip(
-      tipBuilder: (context, controller) => const Text('Clear title'),
-      child: button,
-    );
-  }
-
-  Future<void> _clearTitle(Thread draft) async {
-    final bloc = context.read<PriorityBloc>();
-    await bloc.updateDraft(draft.copyWith(title: const Value(null)));
-  }
-
-  Future<void> _openTitleModal(BuildContext context, Thread draft) async {
-    final priorityBloc = context.read<PriorityBloc>();
-    await context.run(
-      ShowForm(
-        title: 'Title',
-        icon: FontAwesomeIcons.pen,
-        form: (ctx) async {
-          return FormData(
-            title: 'Title',
-            groups: [
-              StaticFormGroup(
-                items: [
-                  FormTextInput(
-                    key: 'title',
-                    label: 'Title',
-                    initialValue: draft.title,
-                  ),
-                  FormButton(
-                    key: 'save',
-                    isPrimary: true,
-                    buildCommand: (values) => _SaveDraftTitle(
-                      (values['title'] as String?) ?? '',
-                      priorityBloc: priorityBloc,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 
@@ -1481,14 +1356,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 const SizedBox(height: 16),
                               ],
 
-                              if (!isViewerMode)
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.contentPaddingH,
-                                  ),
-                                  child: _buildAutoOrganizeLine(context, state),
-                                ),
-
                               Flexible(
                                 child: NoteEditor(
                                   key: _threadEditorKey,
@@ -1541,8 +1408,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (!isViewerMode)
-                                        _buildAutoOrganizeLine(context, state),
                                       Flexible(
                                         child: NoteEditor(
                                           key: _threadEditorKey,
@@ -1610,35 +1475,11 @@ class NewThreadPageState extends State<NewThreadPage> {
       ): () {
         _selectPriority(context, state);
       },
-      // ⌘⇧H — change title (heading)
+      // ⌘⇧H — focus title input
       platformSingleActivator(LogicalKeyboardKey.keyH, shift: true): () {
-        _openTitleModal(context, state.draft);
+        _titleInputKey.currentState?.focus();
       },
     };
-  }
-}
-
-/// Saves (or clears) the draft title from the title modal.
-class _SaveDraftTitle extends Command {
-  _SaveDraftTitle(this.newTitle, {required this.priorityBloc})
-    : super(
-        title: 'Save',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-      );
-
-  final String newTitle;
-  final PriorityBloc priorityBloc;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final trimmed = newTitle.trim();
-    await priorityBloc.updateDraft(
-      priorityBloc.state.draft.copyWith(
-        title: Value(trimmed.isEmpty ? null : trimmed),
-      ),
-    );
-    return const CommandDone();
   }
 }
 
