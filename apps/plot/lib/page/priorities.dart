@@ -145,64 +145,6 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                                   ),
                           ),
                         ),
-                        // Footer renders at the same depth as the rest
-                        // of the priorities panel — no nested darkenTheme.
-                        // The divider above keeps it visually separated.
-                        if (layoutState.multiPanel)
-                          Padding(
-                            padding: EdgeInsets.only(
-                              top: context.theme.spacing.sm,
-                            ),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  top: BorderSide(
-                                    color: context.theme.colors.border,
-                                    width: 1,
-                                  ),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  top: context.theme.spacing.sm,
-                                ),
-                                child: Column(
-                                  children: [
-                                    const ConnectionStatusTile(),
-                                    BlocBuilder<UserBloc, UserState>(
-                                      builder: (context, userState) {
-                                        if (userState is UserReady) {
-                                          final userName =
-                                              userState.user.name ??
-                                              userState.user.primaryEmail ??
-                                              'User';
-                                          return ListTile(
-                                            title: userName,
-                                            subtitle:
-                                                userState.user.primaryEmail,
-                                            textStyle: context.theme.typography
-                                                .sm
-                                                .copyWith(
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                            icon: PlotIcon.account,
-                                            muted: true,
-                                            highlightColor:
-                                                const Color(0x00000000),
-                                            command: CommandWrapper(
-                                              ShowSettings(),
-                                              icon: Value(null),
-                                            ),
-                                          );
-                                        }
-                                        return const SizedBox.shrink();
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
                       ],
                     );
                   },
@@ -406,6 +348,50 @@ class _EverythingTileForSearch extends StatelessWidget {
       highlightColor: rootAccentBg,
       borderRadius: borderRadius,
       textStyle: textStyle.copyWith(color: rootAccent),
+    );
+  }
+}
+
+/// Connection status + account tiles shown at the bottom of the left
+/// panel, below the agenda squircle. The squircle's lower edge separates
+/// it from the agenda, so this widget paints no divider of its own.
+class LeftPanelFooter extends StatelessWidget {
+  const LeftPanelFooter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: context.theme.spacing.md),
+      child: Column(
+        children: [
+          const ConnectionStatusTile(),
+          BlocBuilder<UserBloc, UserState>(
+            builder: (context, userState) {
+              if (userState is UserReady) {
+                final userName =
+                    userState.user.name ??
+                    userState.user.primaryEmail ??
+                    'User';
+                return ListTile(
+                  title: userName,
+                  subtitle: userState.user.primaryEmail,
+                  textStyle: context.theme.typography.sm.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                  icon: PlotIcon.account,
+                  muted: true,
+                  highlightColor: const Color(0x00000000),
+                  command: CommandWrapper(
+                    ShowSettings(),
+                    icon: Value(null),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
     );
   }
 }

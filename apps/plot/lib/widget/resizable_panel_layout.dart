@@ -89,6 +89,7 @@ class ResizablePanelLayout extends StatefulWidget {
   const ResizablePanelLayout({
     required this.left,
     this.leftBottom,
+    this.leftFooter,
     required this.middle,
     required this.child,
     super.key,
@@ -104,6 +105,11 @@ class ResizablePanelLayout extends StatefulWidget {
   /// [leftBottom] below (wrapped in a squircle card, fills remaining
   /// space).
   final Widget? leftBottom;
+
+  /// Optional footer rendered below the [leftBottom] squircle in the left
+  /// column. Shares the column's horizontal padding but sits outside the
+  /// squircle so the card naturally separates it from the agenda above.
+  final Widget? leftFooter;
 
   /// Middle panel when all three are shown.
   /// When only two are shown, child is in the middle
@@ -209,6 +215,11 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
       child: widget.left,
     );
+    final squircle = _squircleCard(
+      context,
+      widget.leftBottom!,
+      borderRadius: bottomRadius,
+    );
     final bottom = Padding(
       padding: const EdgeInsets.fromLTRB(
         _outerInset,
@@ -216,11 +227,15 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         _halfGap,
         _outerInset,
       ),
-      child: _squircleCard(
-        context,
-        widget.leftBottom!,
-        borderRadius: bottomRadius,
-      ),
+      child: widget.leftFooter == null
+          ? squircle
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: squircle),
+                widget.leftFooter!,
+              ],
+            ),
     );
     return _LeftPanelVerticalSplit(top: top, bottom: bottom);
   }

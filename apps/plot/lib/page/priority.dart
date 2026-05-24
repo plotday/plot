@@ -169,6 +169,9 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
                 final panelLayout = ResizablePanelLayout(
                   left: PrioritiesPanelContent(),
                   leftBottom: const LeftPanelAgendaView(),
+                  leftFooter: layoutState.multiPanel
+                      ? const LeftPanelFooter()
+                      : null,
                   middle: PriorityPage(priorityId: priorityId),
                   child: BlocSelector<PriorityBloc, PriorityState, int>(
                     selector: (state) =>
