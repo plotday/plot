@@ -9,6 +9,11 @@
 export type LinkedInProfile = {
   /** Provider-side member id (Unipile's `provider_id` / LinkedIn member URN). */
   id: string;
+  /** True when this profile is the connected account itself (Unipile's
+   * `is_self === 1`). Connectors should still surface this profile as a
+   * participant so message-sender lookups by `id` succeed, but skip it
+   * when building the chat's contact list (the user is implicit). */
+  isSelf: boolean;
   /** LinkedIn public identifier slug (`linkedin.com/in/<slug>`). May be null
    * when the member's profile is restricted. */
   publicIdentifier: string | null;

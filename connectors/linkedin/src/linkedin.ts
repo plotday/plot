@@ -295,13 +295,14 @@ export class LinkedIn extends Connector<LinkedIn> {
       .reverse()
       .map((msg) => buildNoteFromMessage(msg, chat));
 
-    const contacts = chat.participants
+    const others = chat.participants.filter((p) => !p.isSelf);
+    const contacts = others
       .map(profileToContact)
       .filter((c): c is NewContact => c != null);
 
     const title = chat.isGroup
-      ? chat.title ?? joinParticipantNames(chat.participants)
-      : chat.participants[0]?.fullName ?? "LinkedIn message";
+      ? chat.title ?? joinParticipantNames(others)
+      : others[0]?.fullName ?? "LinkedIn message";
 
     return {
       source: `linkedin:chat:${chat.id}`,
@@ -331,9 +332,11 @@ function buildNoteFromMessage(
   msg: LinkedInMessage,
   chat: LinkedInChat
 ): NewNote {
-  const author = msg.sentByMe
-    ? null
-    : chat.participants.find((p) => p.id === msg.senderId) ?? null;
+  const sender =
+    chat.participants.find((p) => p.id === msg.senderId) ?? null;
+  const author = sender
+    ? profileToContact(sender)
+    : senderFallbackContact(msg);
 
   const attachmentSuffix = msg.attachments.length
     ? "\n\n" +
@@ -352,27 +355,35 @@ function buildNoteFromMessage(
     created: msg.sentAt,
     content: msg.text + attachmentSuffix,
     contentType: "text",
-    author: author ? profileToContact(author) ?? undefined : undefined,
+    author,
   };
 }
 
-function profileToContact(profile: LinkedInProfile | null): NewContact | null {
-  if (!profile) return null;
+function profileToContact(profile: LinkedInProfile): NewContact {
+  const source = {
+    provider: AuthProvider.LinkedIn,
+    accountId: profile.id,
+  };
+  const avatar = profile.pictureUrl ?? undefined;
   if (profile.email) {
-    return {
-      email: profile.email,
-      name: profile.fullName,
-      avatar: profile.pictureUrl ?? undefined,
-    };
+    return { email: profile.email, name: profile.fullName, avatar, source };
   }
   if (profile.publicIdentifier) {
     return {
       email: `${profile.publicIdentifier}@linkedin.invalid`,
       name: profile.fullName,
-      avatar: profile.pictureUrl ?? undefined,
+      avatar,
+      source,
     };
   }
-  return null;
+  return { name: profile.fullName, avatar, source };
+}
+
+function senderFallbackContact(msg: LinkedInMessage): NewContact {
+  return {
+    name: msg.sentByMe ? "You" : "LinkedIn user",
+    source: { provider: AuthProvider.LinkedIn, accountId: msg.senderId },
+  };
 }
 
 function joinParticipantNames(profiles: LinkedInProfile[]): string {
@@ -390,7 +401,6 @@ function buildInvitationLink(
   initialSync: boolean
 ): NewLinkWithNotes | null {
   const contact = profileToContact(inv.inviter);
-  if (!contact) return null;
 
   const notes: NewNote[] = [];
   if (inv.message) {

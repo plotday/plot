@@ -22,6 +22,7 @@ export function normalizeProfile(att: UnipileAttendee): LinkedInProfile {
     "Unknown";
   return {
     id: att.provider_id,
+    isSelf: att.is_self === 1,
     publicIdentifier,
     fullName,
     headline: att.specifics?.headline ?? null,
@@ -39,9 +40,10 @@ export function normalizeChat(
   chat: UnipileChat,
   attendees: UnipileAttendee[]
 ): LinkedInChat {
-  const profiles = attendees
-    .filter((a) => a.is_self === 0)
-    .map(normalizeProfile);
+  // Keep self in the participants list so message-sender lookups by id
+  // (`msg.senderId === participant.id`) succeed for the connected user's
+  // own messages. Callers building thread.contacts filter on `isSelf`.
+  const profiles = attendees.map(normalizeProfile);
   return {
     id: chat.id,
     title: chat.name,
@@ -86,11 +88,26 @@ function normalizeAttachment(a: UnipileAttachment): LinkedInAttachment {
 export function normalizeInvitation(
   inv: UnipileInvitation
 ): LinkedInInvitation {
+  const inviter = inv.inviter;
+  const publicIdentifier = inviter.inviter_public_identifier ?? null;
+  const trimmedName = inviter.inviter_name?.trim();
+  const fullName = trimmedName || publicIdentifier || "Unknown";
   return {
     id: inv.id,
-    sharedSecret: inv.shared_secret,
-    inviter: normalizeProfile(inv.inviter),
-    message: inv.message,
-    sentAt: new Date(inv.created_at),
+    sharedSecret: inv.specifics.shared_secret,
+    inviter: {
+      id: inviter.inviter_id,
+      isSelf: false,
+      publicIdentifier,
+      fullName,
+      headline: inviter.inviter_description ?? null,
+      email: null,
+      pictureUrl: inviter.inviter_profile_picture_url ?? null,
+      url: publicIdentifier
+        ? `https://www.linkedin.com/in/${publicIdentifier}`
+        : null,
+    },
+    message: inv.invitation_text,
+    sentAt: new Date(inv.parsed_datetime),
   };
 }

@@ -7,7 +7,7 @@ import {
 } from "./normalize";
 
 describe("normalize", () => {
-  it("normalizes a 1:1 chat with one attendee into a LinkedInChat", () => {
+  it("normalizes a 1:1 chat and includes self in participants with isSelf flag", () => {
     const chat = normalizeChat(
       {
         object: "Chat",
@@ -34,13 +34,26 @@ describe("normalize", () => {
           is_self: 0,
           specifics: { public_identifier: "jdoe", headline: "PM" },
         },
+        {
+          object: "Attendee",
+          provider_id: "ACoAAme00",
+          name: "Me Myself",
+          profile_url: null,
+          picture_url: null,
+          is_self: 1,
+          specifics: {},
+        },
       ]
     );
     expect(chat.id).toBe("c1");
     expect(chat.isGroup).toBe(false);
-    expect(chat.participants).toHaveLength(1);
-    expect(chat.participants[0]!.fullName).toBe("Jane Doe");
-    expect(chat.participants[0]!.publicIdentifier).toBe("jdoe");
+    expect(chat.participants).toHaveLength(2);
+    const jane = chat.participants.find((p) => p.id === "ACoAA12345")!;
+    expect(jane.fullName).toBe("Jane Doe");
+    expect(jane.publicIdentifier).toBe("jdoe");
+    expect(jane.isSelf).toBe(false);
+    const me = chat.participants.find((p) => p.id === "ACoAAme00")!;
+    expect(me.isSelf).toBe(true);
     expect(chat.unreadCount).toBe(2);
     expect(chat.url).toBe(
       "https://www.linkedin.com/messaging/thread/linkedin-thread-xyz/"
@@ -71,26 +84,48 @@ describe("normalize", () => {
 
   it("normalizes an invitation with inviter profile", () => {
     const inv = normalizeInvitation({
-      object: "Invitation",
+      object: "InvitationReceived",
       id: "inv-1",
-      created_at: "2026-05-22T09:00:00.000Z",
-      message: "Let's connect",
-      shared_secret: "ss-token",
+      parsed_datetime: "2026-05-22T09:00:00.000Z",
+      invitation_text: "Let's connect",
       inviter: {
-        object: "Attendee",
-        provider_id: "ACoAA999",
-        name: "Carla Ng",
-        profile_url: "https://www.linkedin.com/in/carlang/",
-        picture_url: null,
-        is_self: 0,
-        specifics: { public_identifier: "carlang" },
+        inviter_id: "ACoAA999",
+        inviter_name: "Carla Ng",
+        inviter_public_identifier: "carlang",
+        inviter_description: "PM",
+        inviter_profile_picture_url: null,
       },
+      specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
     expect(inv.id).toBe("inv-1");
     expect(inv.sharedSecret).toBe("ss-token");
     expect(inv.message).toBe("Let's connect");
+    expect(inv.inviter.id).toBe("ACoAA999");
     expect(inv.inviter.fullName).toBe("Carla Ng");
     expect(inv.inviter.publicIdentifier).toBe("carlang");
+    expect(inv.inviter.headline).toBe("PM");
+    expect(inv.inviter.url).toBe("https://www.linkedin.com/in/carlang");
+    expect(inv.sentAt.toISOString()).toBe("2026-05-22T09:00:00.000Z");
+  });
+
+  it("falls back to Unknown when inviter name and public id are missing", () => {
+    const inv = normalizeInvitation({
+      object: "InvitationReceived",
+      id: "inv-2",
+      parsed_datetime: "2026-05-22T09:00:00.000Z",
+      invitation_text: null,
+      inviter: {
+        inviter_id: "ACoAA000",
+        inviter_name: null,
+        inviter_public_identifier: null,
+        inviter_description: null,
+        inviter_profile_picture_url: null,
+      },
+      specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
+    });
+    expect(inv.inviter.id).toBe("ACoAA000");
+    expect(inv.inviter.fullName).toBe("Unknown");
+    expect(inv.inviter.url).toBeNull();
   });
 
   it("falls back to publicIdentifier when name missing", () => {

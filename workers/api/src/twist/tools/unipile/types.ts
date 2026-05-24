@@ -107,13 +107,29 @@ export type UnipileAttendeeList = {
   cursor: string | null;
 };
 
+/**
+ * Per-invitation inviter sub-object. Unipile uses a flat snake_case
+ * `inviter_*` prefix here instead of the `UnipileAttendee` shape — fields
+ * are mostly the same data but renamed and not nested under `specifics`.
+ */
+export type UnipileInviter = {
+  inviter_id: string;
+  inviter_name: string | null;
+  inviter_public_identifier: string | null;
+  inviter_description: string | null;
+  inviter_profile_picture_url: string | null;
+};
+
 export type UnipileInvitation = {
-  object: "Invitation";
+  object: "InvitationReceived";
   id: string;
-  inviter: UnipileAttendee;
-  message: string | null;
-  shared_secret: string;
-  created_at: string;
+  parsed_datetime: string;
+  invitation_text: string | null;
+  inviter: UnipileInviter;
+  specifics: {
+    provider: string;
+    shared_secret: string;
+  };
 };
 
 export type UnipileInvitationList = {

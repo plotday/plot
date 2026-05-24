@@ -8,14 +8,12 @@
  *
  * Run twice — once per env:
  *
- *   tsx scripts/bootstrap-unipile-webhooks.ts development https://api-kris.plot.day
+ *   tsx scripts/bootstrap-unipile-webhooks.ts development
  *   tsx scripts/bootstrap-unipile-webhooks.ts production
  *
- * Pulls UNIPILE_API_KEY, UNIPILE_DSN, UNIPILE_WEBHOOK_SECRET from
- * workers/api/.dev.vars.<env>. The webhook URL is built from the
- * 2nd positional arg if given (the dev tunnel URL is developer-
- * specific so it cannot live in .env), otherwise from API_ROOT in
- * the same file (the right shape for production).
+ * The env arg selects which generated env file to source. The script
+ * pulls UNIPILE_API_KEY, UNIPILE_DSN, UNIPILE_WEBHOOK_SECRET, and
+ * API_ROOT from workers/api/.dev.vars.<env>.
  *
  * Existing webhooks pointing at our `${API_ROOT}/hook/messaging` URL
  * with the matching source are reused; the script never deletes.
@@ -43,11 +41,8 @@ const WEBHOOK_PATH = "/hook/messaging";
 
 async function main(): Promise<void> {
   const envArg = process.argv[2];
-  const urlArg = process.argv[3];
   if (envArg !== "development" && envArg !== "production") {
-    fail(
-      "Usage: bootstrap-unipile-webhooks.ts <development|production> [webhook-base-url]"
-    );
+    fail("Usage: bootstrap-unipile-webhooks.ts <development|production>");
   }
 
   const envFile = resolve(
@@ -60,25 +55,19 @@ async function main(): Promise<void> {
     "UNIPILE_API_KEY",
     "UNIPILE_DSN",
     "UNIPILE_WEBHOOK_SECRET",
+    "API_ROOT",
   ] as const;
   for (const key of required) {
     if (!env[key]) fail(`Missing ${key} in ${envFile}`);
   }
 
-  const baseUrl = urlArg ?? env.API_ROOT;
-  if (!baseUrl) {
+  const apiRoot = env.API_ROOT!;
+  if (apiRoot.includes("localhost") || apiRoot.includes("127.0.0.1")) {
     fail(
-      `No webhook base URL: pass one as the 2nd arg, or set API_ROOT in ${envFile}.`
+      `API_ROOT looks local (${apiRoot}). Unipile cannot reach localhost — use the tunnel URL or skip dev bootstrap.`
     );
   }
-  if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) {
-    fail(
-      `Webhook URL looks local (${baseUrl}). Unipile cannot reach localhost.\n` +
-        `Pass the cloudflared tunnel URL as the 2nd arg, e.g.\n` +
-        `  pnpm bootstrap-unipile-webhooks ${envArg} https://api-kris.plot.day`
-    );
-  }
-  const requestUrl = `${baseUrl.replace(/\/$/, "")}${WEBHOOK_PATH}`;
+  const requestUrl = `${apiRoot.replace(/\/$/, "")}${WEBHOOK_PATH}`;
 
   const client = new UnipileClient({
     UNIPILE_API_KEY: env.UNIPILE_API_KEY!,
