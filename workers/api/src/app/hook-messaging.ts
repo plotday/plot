@@ -68,6 +68,9 @@ hookMessaging.post("/hook/messaging", async (c) => {
       case "users.invitation.received":
         await handleInvitationReceived(c.env, ctx, event, logger);
         break;
+      case "users.new_relation":
+        await handleNewRelation(c.env, ctx, event, logger);
+        break;
       default:
         logger.info("Unhandled hosted-auth event", {
           event_type: event.event_type ?? null,
@@ -110,6 +113,7 @@ function classifyEvent(
   | "account.needs_reauth"
   | "messaging.new_message"
   | "users.invitation.received"
+  | "users.new_relation"
   | null {
   if (event.event_type === "account.connected") return "account.connected";
   if (
@@ -122,6 +126,9 @@ function classifyEvent(
   if (event.event_type === "messaging.new_message") return "messaging.new_message";
   if (event.event_type === "users.invitation.received") {
     return "users.invitation.received";
+  }
+  if (event.event_type === "users.new_relation") {
+    return "users.new_relation";
   }
   // Hosted-auth notify_url shape:
   if (event.status === "CREATION_SUCCESS" || event.status === "RECONNECTED") {
@@ -440,6 +447,95 @@ async function handleInvitationReceived(
       }
     }
     // Re-throw for unexpected errors — the route handler will capture them.
+    throw error;
+  }
+}
+
+async function handleNewRelation(
+  env: Bindings,
+  ctx: { exports: ExecutionContext["exports"] },
+  event: HostedWebhookEvent,
+  logger: ReturnType<typeof createLogger>
+): Promise<void> {
+  const accountId = event.account_id;
+  // Unipile delivers the connected member's id under a few possible keys
+  // depending on payload revision; check the documented one first.
+  const profileId =
+    (event.payload?.member_id as string | undefined) ??
+    (event.payload?.user_id as string | undefined) ??
+    (event.payload?.provider_id as string | undefined);
+  logger.info("new_relation received", {
+    account_id: accountId,
+    profile_id: profileId,
+  });
+
+  if (!accountId) {
+    logger.warn("new_relation event missing account_id, dropping");
+    return;
+  }
+  if (!profileId) {
+    logger.warn("new_relation event missing member id, dropping", {
+      payload_keys: event.payload ? Object.keys(event.payload) : [],
+    });
+    return;
+  }
+
+  const db = createDb(env);
+  let twistInstanceId: string | undefined;
+  try {
+    const row = await db
+      .selectFrom("channel")
+      .select("twist_instance_id")
+      .where("channel_id", "=", accountId)
+      .executeTakeFirst();
+    twistInstanceId = row?.twist_instance_id;
+  } finally {
+    await db.destroy();
+  }
+
+  if (!twistInstanceId) {
+    logger.warn("No channel found for account_id, dropping new_relation", {
+      account_id: accountId,
+    });
+    return;
+  }
+
+  const callbackKey = `webhook_callback_${accountId}`;
+  const token = await loadConnectorCallback(env, twistInstanceId, callbackKey);
+  if (!token) {
+    logger.warn(
+      "Webhook callback not yet stored for account, dropping new_relation",
+      { account_id: accountId, twist_instance_id: twistInstanceId }
+    );
+    return;
+  }
+
+  try {
+    const result = await invokeWebhookCallback(env, ctx, token, {
+      kind: "relation.new",
+      profileId,
+    });
+    disposeRpc(result);
+    logger.info("new_relation callback invoked", {
+      account_id: accountId,
+      twist_instance_id: twistInstanceId,
+    });
+  } catch (error) {
+    if (isCallbackError(error)) {
+      const errorType = getCallbackErrorType(error as Error);
+      if (
+        errorType === "NOT_FOUND" ||
+        errorType === "EXPIRED" ||
+        errorType === "INVALID_TOKEN" ||
+        errorType === "INVALID_TOKEN_FORMAT"
+      ) {
+        logger.warn(
+          "Webhook callback permanently unavailable for new_relation",
+          { account_id: accountId, error_type: errorType }
+        );
+        return;
+      }
+    }
     throw error;
   }
 }
