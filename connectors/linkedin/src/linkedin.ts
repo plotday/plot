@@ -4,7 +4,6 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import { Options, type OptionsSchema } from "@plotday/twister/options";
 import type {
   Actor,
   NewContact,
@@ -30,25 +29,15 @@ import {
   type LinkedInProfile,
 } from "@plotday/unipile";
 
-const TYPE_MESSAGE = "message";
-const TYPE_INVITATION = "invitation";
-const STATUS_INBOX = "inbox";
-const STATUS_ARCHIVE = "archive";
-const STATUS_PENDING = "pending";
-const PROVIDER_KEY = "linkedin";
+const TYPE_CONVERSATION = "conversation"; // 1:1 chats + invitations
+const TYPE_GROUP = "group";
 
-const OPTIONS_SCHEMA = {
-  importMessages: {
-    type: "boolean",
-    label: "Sync direct messages",
-    default: true,
-  },
-  importInvitations: {
-    type: "boolean",
-    label: "Sync connection requests",
-    default: true,
-  },
-} as const satisfies OptionsSchema;
+const STATUS_PENDING  = "pending";
+const STATUS_INBOX    = "inbox";
+const STATUS_ARCHIVED = "archived";
+const STATUS_IGNORED  = "ignored";
+
+const PROVIDER_KEY = "linkedin";
 
 type SyncState = {
   initialSync: boolean;
@@ -66,23 +55,25 @@ export class LinkedIn extends Connector<LinkedIn> {
   readonly singleChannel = true;
   readonly linkTypes = [
     {
-      type: TYPE_MESSAGE,
-      label: "Message",
+      type: TYPE_CONVERSATION,
+      label: "LinkedIn conversation",
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
       statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVE, label: "Archived" },
+        { status: STATUS_PENDING,  label: "Pending" },
+        { status: STATUS_INBOX,    label: "Connected" },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true },
+        { status: STATUS_IGNORED,  label: "Ignored",  done: true },
       ],
     },
     {
-      type: TYPE_INVITATION,
-      label: "Connection request",
+      type: TYPE_GROUP,
+      label: "LinkedIn group",
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
       statuses: [
-        { status: STATUS_PENDING, label: "Pending" },
-        { status: STATUS_ARCHIVE, label: "Archived" },
+        { status: STATUS_INBOX,    label: "Inbox" },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true },
       ],
     },
   ];
@@ -92,7 +83,6 @@ export class LinkedIn extends Connector<LinkedIn> {
       integrations: build(Integrations),
       linkedin: build(LinkedInMessaging),
       network: build(Network, { urls: [] }),
-      options: build(Options, OPTIONS_SCHEMA),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
     };
@@ -143,13 +133,30 @@ export class LinkedIn extends Connector<LinkedIn> {
       lastInvitationHighWaterMs: null,
     };
 
-    const importMessages = this.tools.options.importMessages !== false;
-    const importInvitations = this.tools.options.importInvitations !== false;
-
     let newMessageHigh = state.lastMessageHighWaterMs ?? 0;
     let newInvitationHigh = state.lastInvitationHighWaterMs ?? 0;
 
-    if (importMessages) {
+    // Invitations first so a follow-up chat sync converges onto the same
+    // person-keyed link (and flips status from Pending → Connected if the
+    // user has already accepted on LinkedIn between syncs).
+    {
+      const result = await this.tools.linkedin.listReceivedInvitations({
+        channelId,
+        limit: 20,
+      });
+      const links = result.invitations.map((inv) =>
+        buildInvitationLink(channelId, inv, state.initialSync)
+      );
+      for (const inv of result.invitations) {
+        const t = inv.sentAt.getTime();
+        if (t > newInvitationHigh) newInvitationHigh = t;
+      }
+      if (links.length > 0) {
+        await this.tools.integrations.saveLinks(links);
+      }
+    }
+
+    {
       const since = state.lastMessageHighWaterMs
         ? new Date(state.lastMessageHighWaterMs)
         : undefined;
@@ -160,32 +167,17 @@ export class LinkedIn extends Connector<LinkedIn> {
       });
       const links: NewLinkWithNotes[] = [];
       for (const chat of result.chats) {
-        const link = await this.buildChatLink(
-          channelId,
-          chat,
-          state.initialSync,
-          since
-        );
+        const link = chat.isGroup
+          ? await this.buildGroupLink(channelId, chat, state.initialSync, since)
+          : await this.build1to1ConversationLink(
+              channelId,
+              chat,
+              state.initialSync,
+              since
+            );
         if (link) links.push(link);
         const t = chat.lastActivityAt.getTime();
         if (t > newMessageHigh) newMessageHigh = t;
-      }
-      if (links.length > 0) {
-        await this.tools.integrations.saveLinks(links);
-      }
-    }
-
-    if (importInvitations) {
-      const result = await this.tools.linkedin.listReceivedInvitations({
-        channelId,
-        limit: 20,
-      });
-      const links = result.invitations
-        .map((inv) => buildInvitationLink(inv, state.initialSync))
-        .filter((l): l is NewLinkWithNotes => l != null);
-      for (const inv of result.invitations) {
-        const t = inv.sentAt.getTime();
-        if (t > newInvitationHigh) newInvitationHigh = t;
       }
       if (links.length > 0) {
         await this.tools.integrations.saveLinks(links);
@@ -219,7 +211,9 @@ export class LinkedIn extends Connector<LinkedIn> {
         channelId,
         chatId: event.chatId,
       });
-      const link = await this.buildChatLink(channelId, chat, false, undefined);
+      const link = chat.isGroup
+        ? await this.buildGroupLink(channelId, chat, false, undefined)
+        : await this.build1to1ConversationLink(channelId, chat, false, undefined);
       if (link) await this.tools.integrations.saveLinks([link]);
     } else {
       const result = await this.tools.linkedin.listReceivedInvitations({
@@ -230,8 +224,8 @@ export class LinkedIn extends Connector<LinkedIn> {
         (i) => i.id === event.invitationId
       );
       if (!target) return;
-      const link = buildInvitationLink(target, false);
-      if (link) await this.tools.integrations.saveLinks([link]);
+      const link = buildInvitationLink(channelId, target, false);
+      await this.tools.integrations.saveLinks([link]);
     }
   }
 
@@ -277,12 +271,59 @@ export class LinkedIn extends Connector<LinkedIn> {
     }
   }
 
-  private async buildChatLink(
+  private async build1to1ConversationLink(
     channelId: string,
     chat: LinkedInChat,
     initialSync: boolean,
     since: Date | undefined
   ): Promise<NewLinkWithNotes | null> {
+    const other = chat.participants.find((p) => !p.isSelf);
+    if (!other) return null; // no counterparty — skip
+
+    const messages = await this.tools.linkedin.listMessages({
+      channelId,
+      chatId: chat.id,
+      limit: 20,
+      since: initialSync ? undefined : since,
+    });
+    const notes: NewNote[] = messages.messages
+      .slice()
+      .reverse()
+      .map((msg) => buildNoteFromMessage(msg, chat, other.id));
+
+    const contact = profileToContact(other);
+    if (!contact) return null;
+
+    return {
+      source: `linkedin:person:${other.id}`,
+      sources: [
+        `linkedin:person:${other.id}`,
+        `linkedin:chat:${chat.id}`,
+      ],
+      type: TYPE_CONVERSATION,
+      status: STATUS_INBOX,
+      title: other.fullName,
+      preview: chat.lastMessagePreview ?? null,
+      sourceUrl: chat.url,
+      created: chat.lastActivityAt,
+      accessContacts: [contact],
+      notes,
+      meta: {
+        syncProvider: PROVIDER_KEY,
+        channelId,
+        profileId: other.id,
+        chatId: chat.id,
+      },
+      ...(initialSync ? { unread: false, archived: false } : {}),
+    } satisfies NewLinkWithNotes;
+  }
+
+  private async buildGroupLink(
+    channelId: string,
+    chat: LinkedInChat,
+    initialSync: boolean,
+    since: Date | undefined
+  ): Promise<NewLinkWithNotes> {
     const messages = await this.tools.linkedin.listMessages({
       channelId,
       chatId: chat.id,
@@ -290,24 +331,22 @@ export class LinkedIn extends Connector<LinkedIn> {
       since: initialSync ? undefined : since,
     });
 
+    const others = chat.participants.filter((p) => !p.isSelf);
     const notes: NewNote[] = messages.messages
       .slice()
       .reverse()
       .map((msg) => buildNoteFromMessage(msg, chat));
 
-    const others = chat.participants.filter((p) => !p.isSelf);
     const contacts = others
       .map(profileToContact)
       .filter((c): c is NewContact => c != null);
 
-    const title = chat.isGroup
-      ? chat.title ?? joinParticipantNames(others)
-      : others[0]?.fullName ?? "LinkedIn message";
+    const title = chat.title ?? joinParticipantNames(others);
 
     return {
       source: `linkedin:chat:${chat.id}`,
       sources: [`linkedin:chat:${chat.id}`],
-      type: TYPE_MESSAGE,
+      type: TYPE_GROUP,
       status: STATUS_INBOX,
       title,
       preview: chat.lastMessagePreview ?? null,
@@ -319,7 +358,6 @@ export class LinkedIn extends Connector<LinkedIn> {
         syncProvider: PROVIDER_KEY,
         channelId,
         chatId: chat.id,
-        isGroup: chat.isGroup,
       },
       ...(initialSync ? { unread: false, archived: false } : {}),
     } satisfies NewLinkWithNotes;
@@ -330,10 +368,10 @@ export default LinkedIn;
 
 function buildNoteFromMessage(
   msg: LinkedInMessage,
-  chat: LinkedInChat
+  chat: LinkedInChat,
+  threadPersonId?: string,
 ): NewNote {
-  const sender =
-    chat.participants.find((p) => p.id === msg.senderId) ?? null;
+  const sender = chat.participants.find((p) => p.id === msg.senderId) ?? null;
   const author = sender
     ? profileToContact(sender)
     : senderFallbackContact(msg);
@@ -349,8 +387,12 @@ function buildNoteFromMessage(
         .join("\n")
     : "";
 
+  const threadSource = threadPersonId
+    ? `linkedin:person:${threadPersonId}`
+    : `linkedin:chat:${chat.id}`;
+
   return {
-    thread: { source: `linkedin:chat:${chat.id}` },
+    thread: { source: threadSource },
     key: `message-${msg.id}`,
     created: msg.sentAt,
     content: msg.text + attachmentSuffix,
@@ -397,15 +439,16 @@ function joinParticipantNames(profiles: LinkedInProfile[]): string {
 }
 
 function buildInvitationLink(
+  channelId: string,
   inv: LinkedInInvitation,
   initialSync: boolean
-): NewLinkWithNotes | null {
+): NewLinkWithNotes {
   const contact = profileToContact(inv.inviter);
 
   const notes: NewNote[] = [];
   if (inv.message) {
     notes.push({
-      thread: { source: `linkedin:invitation:${inv.id}` },
+      thread: { source: `linkedin:person:${inv.inviter.id}` },
       key: `invitation-${inv.id}`,
       content: inv.message,
       contentType: "text",
@@ -415,14 +458,14 @@ function buildInvitationLink(
   }
 
   return {
-    source: `linkedin:invitation:${inv.id}`,
+    source: `linkedin:person:${inv.inviter.id}`,
     sources: [
-      `linkedin:invitation:${inv.id}`,
       `linkedin:person:${inv.inviter.id}`,
+      `linkedin:invitation:${inv.id}`,
     ],
-    type: TYPE_INVITATION,
+    type: TYPE_CONVERSATION,
     status: STATUS_PENDING,
-    title: `Connection request from ${inv.inviter.fullName}`,
+    title: inv.inviter.fullName,
     preview: inv.message ?? inv.inviter.headline ?? null,
     sourceUrl: inv.inviter.url,
     created: inv.sentAt,
@@ -430,10 +473,10 @@ function buildInvitationLink(
     notes,
     meta: {
       syncProvider: PROVIDER_KEY,
-      channelId: PROVIDER_KEY,
+      channelId,
+      profileId: inv.inviter.id,
       invitationId: inv.id,
       sharedSecret: inv.sharedSecret,
-      inviterId: inv.inviter.id,
     },
     ...(initialSync ? { unread: false, archived: false } : {}),
   } satisfies NewLinkWithNotes;
