@@ -292,7 +292,6 @@ export class LinkedIn extends Connector<LinkedIn> {
       .map((msg) => buildNoteFromMessage(msg, chat, other.id));
 
     const contact = profileToContact(other);
-    if (!contact) return null;
 
     return {
       source: `linkedin:person:${other.id}`,
@@ -301,7 +300,9 @@ export class LinkedIn extends Connector<LinkedIn> {
         `linkedin:chat:${chat.id}`,
       ],
       type: TYPE_CONVERSATION,
-      status: STATUS_INBOX,
+      // status is only written on initial sync — incremental syncs must not
+      // re-promote a user-set Archived/Ignored back to Inbox on every poll.
+      ...(initialSync ? { status: STATUS_INBOX } : {}),
       title: other.fullName,
       preview: chat.lastMessagePreview ?? null,
       sourceUrl: chat.url,
@@ -347,7 +348,9 @@ export class LinkedIn extends Connector<LinkedIn> {
       source: `linkedin:chat:${chat.id}`,
       sources: [`linkedin:chat:${chat.id}`],
       type: TYPE_GROUP,
-      status: STATUS_INBOX,
+      // status is only written on initial sync — incremental syncs must not
+      // re-promote a user-set Archived/Ignored back to Inbox on every poll.
+      ...(initialSync ? { status: STATUS_INBOX } : {}),
       title,
       preview: chat.lastMessagePreview ?? null,
       sourceUrl: chat.url,
