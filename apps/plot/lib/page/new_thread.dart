@@ -117,6 +117,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// recently-used contacts instead of always coming first.
   List<ShareCandidate> _pinnedSuggestions = const [];
 
+  /// All available create-targets for this user, loaded once on mount and
+  /// rerun when the priority changes (so MRU rerank reflects the new
+  /// priority).
+  List<CreateTarget> _allConnectionTargets = const [];
+
+  /// The 3 chips shown in the connection row, ranked per-priority then
+  /// global by [LocalPreferencesBloc.rankConnectionsByMru].
+  List<CreateTarget> _pinnedConnections = const [];
+
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
 
@@ -187,7 +196,41 @@ class NewThreadPageState extends State<NewThreadPage> {
     _applyDefaultAutoFile();
 
     // Load recently shared people + groups for suggestion chips.
-    _loadRecentCandidates();
+    await _loadRecentCandidates();
+    if (!mounted) return;
+    // Load available connection create-targets for the connection chip row.
+    await _loadConnections();
+  }
+
+  Future<void> _loadConnections() async {
+    try {
+      final targets = await loadCreateTargets();
+      if (!mounted) return;
+      setState(() => _allConnectionTargets = targets);
+      _refreshPinnedConnections();
+    } catch (e, t) {
+      log.warning('[NewThreadPage._loadConnections] failed', e, t);
+    }
+  }
+
+  void _refreshPinnedConnections() {
+    if (_allConnectionTargets.isEmpty) {
+      setState(() => _pinnedConnections = const []);
+      return;
+    }
+    final bloc = context.read<PriorityBloc>();
+    final priorityId = bloc.state.draft.priority.id.toString();
+    final prefs = context.read<LocalPreferencesBloc>();
+    final keys = _allConnectionTargets.map((t) => t.key).toList();
+    final ranked = prefs.rankConnectionsByMru(
+      keys: keys,
+      priorityId: priorityId,
+    );
+    final byKey = {for (final t in _allConnectionTargets) t.key: t};
+    setState(() {
+      _pinnedConnections =
+          ranked.take(3).map((k) => byKey[k]!).toList(growable: false);
+    });
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -424,13 +467,46 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Widget _buildThreadTypeSelector(BuildContext context, PriorityState state) {
+    final connectionRow = _buildConnectionRow(context, state);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildPriorityChipRow(context, state),
+        if (connectionRow != null) ...[
+          SizedBox(height: context.theme.spacing.md),
+          connectionRow,
+        ],
         SizedBox(height: context.theme.spacing.md),
         _buildWithSelector(context, state),
+      ],
+    );
+  }
+
+  /// Row of connection chips. Each chip toggles a [CreateLinkUserAction] on
+  /// the draft note (single-select: tapping a different chip replaces the
+  /// previous one). Hidden when the user has no enabled connections that
+  /// expose a create-default link type.
+  Widget? _buildConnectionRow(BuildContext context, PriorityState state) {
+    if (_allConnectionTargets.isEmpty) return null;
+    final hasMore = _allConnectionTargets.length > _pinnedConnections.length;
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final target in _pinnedConnections)
+          ConnectionChip(
+            target: target,
+            selected: _isConnectionActive(target),
+            onTap: () => _toggleConnection(target),
+          ),
+        Button.icon(
+          _ConnectionPickerCommand(
+            onOpen: _openConnectionPicker,
+            hasMore: hasMore,
+          ),
+        ),
       ],
     );
   }
@@ -619,6 +695,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (mounted) {
       _loadRecentCandidates();
       _refreshPinnedChips();
+      _refreshPinnedConnections();
     }
   }
 
@@ -636,6 +713,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (mounted) {
       _loadRecentCandidates();
       _refreshPinnedChips();
+      _refreshPinnedConnections();
     }
   }
 
@@ -1069,6 +1147,40 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  CreateLinkUserAction? get _activeCreateAction {
+    final note = context.read<PriorityBloc>().state.draftNote;
+    return note.actions?.whereType<CreateLinkUserAction>().firstOrNull;
+  }
+
+  bool _isConnectionActive(CreateTarget target) {
+    final active = _activeCreateAction;
+    if (active == null) return false;
+    return active.twistInstanceId == target.twist.id.toString() &&
+        active.channelId == target.channel.channelId &&
+        active.linkType == target.linkType.type;
+  }
+
+  Future<void> _toggleConnection(CreateTarget target) async {
+    final bloc = context.read<PriorityBloc>();
+    final note = bloc.state.draftNote;
+    final actions = List<UserAction>.from(note.actions ?? const []);
+    final wasActive = _isConnectionActive(target);
+    actions.removeWhere((a) => a is CreateLinkUserAction);
+    if (!wasActive) {
+      actions.add(target.toUserAction());
+    }
+    await bloc.updateDraft(
+      bloc.state.draft,
+      note: note.copyWith(actions: actions.isEmpty ? null : actions),
+    );
+  }
+
+  Future<void> _openConnectionPicker() async {
+    final picked = await ConnectionPickerModal.open(context);
+    if (picked == null || !mounted) return;
+    await _toggleConnection(picked);
+  }
+
   Future<void> _toggleWithContact(Actor actor) async {
     final bloc = context.read<PriorityBloc>();
     final current = bloc.state.draft.contacts.toList();
@@ -1458,6 +1570,27 @@ class _SaveDraftTitle extends Command {
         title: Value(trimmed.isEmpty ? null : trimmed),
       ),
     );
+    return const CommandDone();
+  }
+}
+
+/// Opens the connection picker modal from the connection chip row's
+/// trailing button. Icon switches to a "more" ellipsis when there are
+/// additional create-targets beyond the pinned chips.
+class _ConnectionPickerCommand extends Command {
+  _ConnectionPickerCommand({required this.onOpen, bool hasMore = false})
+    : super(
+        title: 'Pick a connection',
+        icon: hasMore ? PlotIcon.more : PlotIcon.shareAdd,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Future<void> Function() onOpen;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onOpen();
     return const CommandDone();
   }
 }
