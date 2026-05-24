@@ -116,17 +116,13 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
       if (_segmentsContainThread(segments)) return;
 
       final multi = context.read<LayoutBloc>().state.multiPanel;
-      innerRouter.replaceAll([
-        multi ? NewThreadRoute() : PriorityOnlyRoute(),
-      ]);
+      innerRouter.replaceAll([multi ? NewThreadRoute() : PriorityOnlyRoute()]);
     });
   }
 
   StackRouter? _findInnerRouter() {
     StackRouter? walk(RoutingController controller) {
-      final direct = controller.innerRouterOf<StackRouter>(
-        PriorityRoute.name,
-      );
+      final direct = controller.innerRouterOf<StackRouter>(PriorityRoute.name);
       if (direct != null) return direct;
       for (final child in controller.childControllers) {
         final hit = walk(child);
@@ -134,14 +130,14 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
       }
       return null;
     }
+
     return walk(context.router.root);
   }
 
   static bool _segmentsContainThread(List<RouteMatch<dynamic>> segments) {
     for (final segment in segments) {
       if (segment.name == ThreadRoute.name) return true;
-      if (segment.hasChildren &&
-          _segmentsContainThread(segment.children!)) {
+      if (segment.hasChildren && _segmentsContainThread(segment.children!)) {
         return true;
       }
     }
@@ -698,8 +694,9 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
             canPop: false,
             onPopInvokedWithResult: (didPop, popResult) {
               if (didPop) return;
-              final shortcuts =
-                  ActivityPanelControllerProvider.maybeOf(context);
+              final shortcuts = ActivityPanelControllerProvider.maybeOf(
+                context,
+              );
               if (shortcuts != null && shortcuts.tryCloseSearch()) return;
               // Return to whichever bottom-nav tab the user came from
               // when they tapped the priority chip. Cleared by the
@@ -754,8 +751,7 @@ class _PriorityPageState extends State<PriorityPage>
     with TickerProviderStateMixin {
   BlockDragController? _activityFeedDragControllerInstance;
   BlockDragController get _activityFeedDragController =>
-      _activityFeedDragControllerInstance ??=
-          BlockDragController(vsync: this);
+      _activityFeedDragControllerInstance ??= BlockDragController(vsync: this);
 
   /// Memoized drop-boundary computation. Recomputing on every parent
   /// rebuild would re-walk the entire feed and re-parse every section
@@ -933,7 +929,6 @@ class _PriorityPageState extends State<PriorityPage>
                               // alive when the modal context can't resolve
                               // PriorityBloc.
                               final capturedBloc = priorityBloc;
-                              final activeTab = priorityBloc.state.activeTab;
                               context.run(
                                 OpenFocusedItemActions(listController, (
                                   index,
@@ -951,7 +946,6 @@ class _PriorityPageState extends State<PriorityPage>
                                             threadCommandGroups(
                                               agendaActivity.thread,
                                               priorityBloc: capturedBloc,
-                                              currentTab: activeTab,
                                             ),
                                         header: (_) async =>
                                             <StaticCommandGroup>[],
@@ -980,13 +974,9 @@ class _PriorityPageState extends State<PriorityPage>
                       final item = index >= 0 && index < items.length
                           ? items[index]
                           : null;
-                      final activeTab = state.activeTab;
                       return item?.when<List<StaticCommandGroup>>(
                             activity: (agendaActivity) =>
-                                threadCommandGroupsSync(
-                                  agendaActivity.thread,
-                                  currentTab: activeTab,
-                                ),
+                                threadCommandGroupsSync(agendaActivity.thread),
                             header: (_) => <StaticCommandGroup>[],
                           ) ??
                           <StaticCommandGroup>[];
@@ -998,14 +988,30 @@ class _PriorityPageState extends State<PriorityPage>
                       childPad: false,
                       body: ThreadListSourceProvider(
                         source: ThreadListSource.activityFeed,
-                        // Sticky tab header sits above the scrollable
-                        // list. The reschedule-all button (when the
-                        // active tab is an action tab) lives on the
-                        // right side of this header.
-                        child: Column(
-                          children: [
-                            _ActivityFeedTabHeader(state: state),
-                            Expanded(
+                        // Sticky tab header. In multi-panel mode it
+                        // sits above the scrollable list and carries
+                        // the "Reschedule all" button on the right.
+                        // In single-panel (phone) mode it sits at
+                        // the bottom of the screen for thumb reach,
+                        // offset upward by the measured bottom-nav
+                        // height so it lands just above the nav
+                        // rather than under it. A visible "Today"
+                        // date header at the top of the list takes
+                        // over labelling the first block.
+                        child: Builder(
+                          builder: (context) {
+                            final isMulti = context.isMultiPanel;
+                            final navInset = isMulti
+                                ? 0.0
+                                : BottomNavInset.of(context);
+                            final header = Padding(
+                              padding: EdgeInsets.only(bottom: navInset),
+                              child: _ActivityFeedTabHeader(
+                                state: state,
+                                atBottom: !isMulti,
+                              ),
+                            );
+                            final list = Expanded(
                               child: _buildActivityFeed(
                                 context,
                                 state,
@@ -1016,8 +1022,13 @@ class _PriorityPageState extends State<PriorityPage>
                                   'priority_feed_${widget.priorityId}',
                                 ),
                               ),
-                            ),
-                          ],
+                            );
+                            return Column(
+                              children: isMulti
+                                  ? [header, list]
+                                  : [list, header],
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -1039,11 +1050,29 @@ class _PriorityPageState extends State<PriorityPage>
     InfiniteListController controller,
   ) {
     final selectedId = state.thread?.id;
+    // In multi-panel mode the Today section marker renders as
+    // SizedBox.shrink (the sticky tab header above the list carries
+    // that label), so the separator slots both above and below that
+    // marker are pure dead space sitting under the sticky header's
+    // bottom border — the 1px above adds an extra-pixel band, and
+    // the 1px below would light up whenever the first thread is
+    // hovered, focused, or selected. Drop both so the header's
+    // divider is the only line above the first row.
+    //
+    // In single-panel mode the Today marker renders as a visible
+    // date header instead, so its separators behave normally.
+    final isMulti = context.isMultiPanel;
+    final rawPrev = index > 0 && index - 1 < listItems.length
+        ? listItems[index - 1]
+        : null;
+    final rawNext = index < listItems.length ? listItems[index] : null;
+    if (isMulti &&
+        (_isTodaySectionMarker(rawPrev) || _isTodaySectionMarker(rawNext))) {
+      return const SizedBox.shrink();
+    }
     return BlockListSeparator(
-      prev: index > 0 && index - 1 < listItems.length
-          ? listItems[index - 1]
-          : null,
-      next: index < listItems.length ? listItems[index] : null,
+      prev: rawPrev,
+      next: rawNext,
       controller: controller,
       dragController: _activityFeedDragController,
       index: index,
@@ -1062,6 +1091,14 @@ class _PriorityPageState extends State<PriorityPage>
       dragSourceId: (item) =>
           item is AgendaThreadItem ? item.thread.id.toString() : null,
     );
+  }
+
+  static bool _isTodaySectionMarker(AgendaItem? item) {
+    if (item is! AgendaHeaderItem) return false;
+    final text = item.text;
+    if (text == null) return false;
+    final marker = ActivitySectionMarker.tryDecode(text);
+    return marker?.section == ActivitySection.today;
   }
 
   Widget _buildActivityFeed(
@@ -1220,14 +1257,23 @@ class _PriorityPageState extends State<PriorityPage>
                 if (marker != null) displayText = marker.label;
 
                 // The Today section header used to render the "Doing"
-                // label inline. That label moved to the sticky tab
-                // header at the top of the activity feed. The marker
-                // item itself is still emitted so drag-drop boundary
-                // computation has a target for "make active today" —
-                // but it renders zero-height so the visual is just
-                // [sticky tab header] → threads.
-                if (marker?.section == ActivitySection.today) {
-                  return const [SizedBox.shrink()];
+                // label inline. In multi-panel mode the sticky tab
+                // header above the feed carries that label, so the
+                // marker renders zero-height (still emitted as a
+                // drag-drop target for "make active today"). In
+                // single-panel mode the tab header sits at the
+                // bottom — well below today's threads — so render
+                // the marker as a plain "Today" text label here,
+                // matching the appearance of scheduled-day headers
+                // like "Tomorrow" or "Monday" (which also flow
+                // through AgendaTile's text-only path with their
+                // relativeDateLabel as text).
+                final isTodayMarker = marker?.section == ActivitySection.today;
+                if (isTodayMarker) {
+                  if (context.isMultiPanel) {
+                    return const [SizedBox.shrink()];
+                  }
+                  displayText = relativeDateLabel(Date.today());
                 }
 
                 // Activity-feed section headers (Today / New / Scheduled
@@ -1449,9 +1495,15 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
 /// applies to every thread in the active tab's natives across all
 /// dates.
 class _ActivityFeedTabHeader extends StatelessWidget {
-  const _ActivityFeedTabHeader({required this.state});
+  const _ActivityFeedTabHeader({required this.state, this.atBottom = false});
 
   final PriorityState state;
+
+  /// When true, the header sits at the bottom of the screen
+  /// (single-panel mode) so its divider must be on top, and the
+  /// "Reschedule all" affordance is suppressed — at the bottom of
+  /// the screen it's unclear which block it would apply to.
+  final bool atBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -1468,17 +1520,21 @@ class _ActivityFeedTabHeader extends StatelessWidget {
         natives.addAll(list);
       }
     }
-    final Widget? rescheduleButton = natives.isNotEmpty
-        ? Padding(
-            padding: EdgeInsets.symmetric(horizontal: spacing.sm),
-            child: Button.icon(
-              RescheduleAllInBlock(
-                natives,
-                sectionLabel: state.activeTab.label,
-              ),
-            ),
-          )
-        : null;
+    // Always build the button widget so the invisible mirror can
+    // reserve its height regardless of whether the visible button
+    // renders. This keeps the header height constant across tab
+    // switches and across reschedule-all completions within an
+    // action tab. The bottom-of-screen variant drops the button
+    // entirely (and its mirrors) since it's ambiguous which block
+    // the action would target from down there.
+    final rescheduleButton = Padding(
+      padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+      child: Button.icon(
+        RescheduleAllInBlock(natives, sectionLabel: state.activeTab.label),
+      ),
+    );
+    final showRescheduleButton = !atBottom && natives.isNotEmpty;
+    final reserveButtonSpace = !atBottom;
 
     // Build the centred row of tab labels separated by pipes.
     final tabsRow = <Widget>[];
@@ -1503,17 +1559,29 @@ class _ActivityFeedTabHeader extends StatelessWidget {
       );
     }
 
+    final borderSide = BorderSide(color: context.theme.colors.border, width: 1);
     return DecoratedBox(
-      decoration: BoxDecoration(color: context.colour.headerBackground),
+      decoration: BoxDecoration(
+        color: context.colour.headerBackground,
+        border: Border(
+          top: atBottom ? borderSide : BorderSide.none,
+          bottom: atBottom ? BorderSide.none : borderSide,
+        ),
+      ),
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: spacing.md),
+        padding: EdgeInsets.symmetric(vertical: spacing.sm),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Invisible mirror on the left preserves horizontal
-            // centring of the tab row even when the button is on the
-            // right.
-            if (rescheduleButton != null)
+            // Invisible mirror on the left always reserves the
+            // button's width so the centred tab row sits at the true
+            // horizontal midpoint of the header, and reserves its
+            // height so the header doesn't grow/shrink when the
+            // right-side button toggles. Using the same Visibility
+            // wrapper on both sides keeps the widths identical
+            // (down to anti-aliasing) — wrapping only one side led
+            // to a 1px asymmetry that shifted the tabs.
+            if (reserveButtonSpace)
               Visibility(
                 visible: false,
                 maintainSize: true,
@@ -1527,7 +1595,14 @@ class _ActivityFeedTabHeader extends StatelessWidget {
                 children: tabsRow,
               ),
             ),
-            if (rescheduleButton != null) rescheduleButton,
+            if (reserveButtonSpace)
+              Visibility(
+                visible: showRescheduleButton,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: rescheduleButton,
+              ),
           ],
         ),
       ),
@@ -1566,8 +1641,7 @@ class _ActivityTabLabelState extends State<_ActivityTabLabel> {
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () =>
-            context.read<PriorityBloc>().selectActivityTab(widget.tab),
+        onTap: () => context.read<PriorityBloc>().selectActivityTab(widget.tab),
         child: Text(
           widget.tab.label,
           style: TextStyle(color: color, fontSize: widget.fontSize),
@@ -1576,4 +1650,3 @@ class _ActivityTabLabelState extends State<_ActivityTabLabel> {
     );
   }
 }
-

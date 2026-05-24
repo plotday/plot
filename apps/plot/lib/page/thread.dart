@@ -469,7 +469,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       ...threadCommandGroupsSync(
                         state.thread,
                         priorityBloc: priorityBloc,
-                        currentTab: priorityBloc?.state.activeTab,
                       ),
                     ];
                   },
@@ -1356,10 +1355,7 @@ class _ThreadActionsRow extends StatelessWidget {
       selectedColor: threadColor,
     );
 
-    final startGroup = <Widget>[
-      todoButton,
-      scheduleButton,
-    ];
+    final startGroup = <Widget>[todoButton, scheduleButton];
 
     final endGroup = <Widget>[
       if (!readOnly) Button.icon(EditThread(thread)),
@@ -1376,10 +1372,8 @@ class _ThreadActionsRow extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: context.isMultiPanel
-              ? 20.0
-              : context.contentPaddingH,
-          vertical: context.theme.spacing.xs,
+          horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
+          vertical: context.theme.spacing.sm,
         ),
         child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
       ),
@@ -1395,7 +1389,6 @@ class _ThreadActionsRow extends StatelessWidget {
         final groups = await threadCommandGroups(
           thread,
           priorityBloc: priorityBloc,
-          currentTab: priorityBloc?.state.activeTab,
         );
         return Commands(groups: groups);
       },

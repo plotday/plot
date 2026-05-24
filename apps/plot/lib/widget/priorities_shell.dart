@@ -471,6 +471,14 @@ class _MobileShellChromeState extends State<_MobileShellChrome> {
   // off-screen into place even though there's no real navigation.
   bool _firstBuild = true;
 
+  // Measured height of the bottom nav (background + items + safe-area
+  // inset). Published through [BottomNavInset] so pages that pin
+  // content to the bottom — e.g. the single-panel activity-feed tab
+  // bar — can offset themselves to sit just above the nav instead of
+  // being painted under it.
+  final GlobalKey _navKey = GlobalKey();
+  double _navHeight = 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -481,11 +489,30 @@ class _MobileShellChromeState extends State<_MobileShellChrome> {
     }
   }
 
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final renderObject = _navKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) return;
+      final height = renderObject.size.height;
+      if (height != _navHeight) {
+        setState(() => _navHeight = height);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _scheduleMeasure();
+    final reservedHeight = widget.showNav ? _navHeight : 0.0;
     return Stack(
       children: [
-        Positioned.fill(child: widget.child),
+        Positioned.fill(
+          child: BottomNavInset(
+            height: reservedHeight,
+            child: widget.child,
+          ),
+        ),
         Positioned(
           left: 0,
           right: 0,
@@ -499,6 +526,7 @@ class _MobileShellChromeState extends State<_MobileShellChrome> {
             child: IgnorePointer(
               ignoring: !widget.showNav,
               child: _PersistentBottomNav(
+                key: _navKey,
                 currentIndex: widget.currentIndex,
                 onChange: widget.onChange,
                 items: widget.items,
@@ -511,11 +539,31 @@ class _MobileShellChromeState extends State<_MobileShellChrome> {
   }
 }
 
+/// Publishes the measured height of the overlaid bottom-nav so pages
+/// can pin content (e.g. the single-panel activity-feed tab bar) just
+/// above it. Returns 0 in multi-panel and on routes that hide the nav.
+class BottomNavInset extends InheritedWidget {
+  const BottomNavInset({required this.height, required super.child, super.key});
+
+  final double height;
+
+  static double of(BuildContext context) {
+    final inset =
+        context.dependOnInheritedWidgetOfExactType<BottomNavInset>();
+    return inset?.height ?? 0;
+  }
+
+  @override
+  bool updateShouldNotify(BottomNavInset oldWidget) =>
+      height != oldWidget.height;
+}
+
 class _PersistentBottomNav extends StatelessWidget {
   const _PersistentBottomNav({
     required this.currentIndex,
     required this.onChange,
     required this.items,
+    super.key,
   });
 
   /// Visual index of the highlighted item, or -1 when no item should be
