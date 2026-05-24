@@ -365,7 +365,8 @@ export class LinkedIn extends Connector<LinkedIn> {
   async onWebhookEvent(
     event:
       | { kind: "message.received"; chatId: string; messageId: string }
-      | { kind: "invitation.received"; invitationId: string },
+      | { kind: "invitation.received"; invitationId: string }
+      | { kind: "relation.new"; profileId: string },
     channelId: string
   ): Promise<void> {
     if (event.kind === "message.received") {
@@ -377,7 +378,7 @@ export class LinkedIn extends Connector<LinkedIn> {
         ? await this.buildGroupLink(channelId, chat, false, undefined)
         : await this.build1to1ConversationLink(channelId, chat, false, undefined);
       if (link) await this.tools.integrations.saveLinks([link]);
-    } else {
+    } else if (event.kind === "invitation.received") {
       const result = await this.tools.linkedin.listReceivedInvitations({
         channelId,
         limit: 1,
@@ -388,6 +389,24 @@ export class LinkedIn extends Connector<LinkedIn> {
       if (!target) return;
       const link = buildInvitationLink(channelId, target, false);
       await this.tools.integrations.saveLinks([link]);
+    } else {
+      // relation.new — a new 1st-degree LinkedIn connection. Fetch the
+      // profile and save as a Plot contact. Existing person-keyed links
+      // (chats/invitations) will dedupe onto the same contact_external_account
+      // row via (LinkedIn, profileId).
+      try {
+        const profile = await this.tools.linkedin.getProfile({
+          channelId,
+          profileId: event.profileId,
+        });
+        const contact = profileToContact(profile);
+        await this.tools.integrations.saveContacts([contact]);
+      } catch (error) {
+        console.warn(
+          `LinkedIn new_relation handler failed for profile ${event.profileId}`,
+          error
+        );
+      }
     }
   }
 
