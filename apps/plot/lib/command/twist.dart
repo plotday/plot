@@ -228,8 +228,13 @@ class ManageConnections extends Command {
           } else if (item is _AvailableSource) {
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
+            final activatedInSetup =
+                AddSourceDetail.lastActivatedInSetupModal;
             AddSourceDetail.lastActivatedSourceId = null;
-            if (activatedId != null && item.twist.providers.isNotEmpty) {
+            AddSourceDetail.lastActivatedInSetupModal = false;
+            if (activatedId != null &&
+                item.twist.providers.isNotEmpty &&
+                !activatedInSetup) {
               // OAuth: push EditSource on top of the connections list so the
               // list isn't visible as a standalone interstitial. Popping
               // EditSource returns the user to ManageConnections naturally.
@@ -241,7 +246,9 @@ class ManageConnections extends Command {
                 ).run(ctx);
               }
             }
-            // Non-OAuth: channels configured during setup, just refresh + stay
+            // Non-OAuth, or OAuth where setup completed in the AddSourceDetail
+            // modal itself: channels configured during setup, just refresh +
+            // stay.
           } else if (item is _UpcomingConnection) {
             await _NotifyUpcomingConnection(item).run(ctx);
           }
@@ -925,6 +932,76 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
   return '(${parts.join(', ')})';
 }
 
+/// Standard source-modal items shared by [AddSourceDetail] (when reopening
+/// a hosted-auth draft that already has an authenticated account) and
+/// [EditSource]. Keeps the two modals visually identical: Label → Team →
+/// optional sync prompt → channels (account row + channel list inside
+/// [SetupSourceWidget]) → options. Callers append their own action button
+/// (Add connection vs Save).
+List<FormItem> _buildStandardSourceItems({
+  required String twistInstanceId,
+  required String sourceName,
+  required String? logoUrl,
+  required String? logoUrlDark,
+  required TwistIntegrations integrations,
+  required List<TeamUsage> teams,
+  required String initialTeamId,
+  required String initialLabel,
+  required FormChannelListController channelListController,
+  required ValueChanged<IntegrationChanges> onChannelChanges,
+  required bool Function() channelsValidator,
+  required bool setupMode,
+  required bool isAccountBased,
+  required bool showSyncMessage,
+  TwistOptionItems? optionItems,
+  ValueNotifier<int>? refreshNotifier,
+}) {
+  return [
+    FormTextInput(
+      key: 'account_label',
+      label: 'Label',
+      initialValue: initialLabel,
+      required: false,
+    ),
+    if (teams.isNotEmpty)
+      FormSelect<String>(
+        key: 'team_id',
+        label: 'Team',
+        initialValue: initialTeamId,
+        items: (search) async => [
+          'personal',
+          ...teams.map((t) => t.id),
+        ],
+        titleBuilder: (id) => id == 'personal'
+            ? 'Personal'
+            : teams.firstWhere((t) => t.id == id).name,
+      ),
+    if (showSyncMessage)
+      FormInfo(
+        key: 'sync_message',
+        text: 'Select what you\'d like to sync.',
+      ),
+    FormChannelList(
+      key: 'integrations',
+      controller: channelListController,
+      validator: channelsValidator,
+      builder: (context) => SetupSourceWidget(
+        twistInstanceId: twistInstanceId,
+        setupMode: setupMode,
+        isAccountBased: isAccountBased,
+        sourceName: sourceName,
+        logoUrl: logoUrl,
+        logoUrlDark: logoUrlDark,
+        initialData: integrations,
+        refreshNotifier: refreshNotifier,
+        channelListController: channelListController,
+        onChanged: onChannelChanges,
+      ),
+    ),
+    if (optionItems != null) ...optionItems.items,
+  ];
+}
+
 /// Edit an existing source — shows integrations, channels, and management options.
 class EditSource extends ShowForm {
   EditSource({
@@ -1109,54 +1186,29 @@ class EditSource extends ShowForm {
 
       return [
         StaticFormGroup(
-          items: [
-            FormTextInput(
-              key: 'account_label',
-              label: 'Label',
-              initialValue: existingLabel,
-              required: false,
-            ),
-            if (teams.isNotEmpty)
-              FormSelect<String>(
-                key: 'team_id',
-                label: 'Team',
-                initialValue: initialTeamId,
-                items: (search) async => [
-                  'personal',
-                  ...teams.map((t) => t.id),
-                ],
-                titleBuilder: (id) => id == 'personal'
-                    ? 'Personal'
-                    : teams.firstWhere((t) => t.id == id).name,
-              ),
-            if (optionItems != null) ...optionItems.items,
-            if (isNewlyActivated &&
+          items: _buildStandardSourceItems(
+            twistInstanceId: twistInstanceId,
+            sourceName: name,
+            logoUrl: logoUrl,
+            logoUrlDark: logoUrlDark,
+            integrations: integrations,
+            teams: teams,
+            initialTeamId: initialTeamId,
+            initialLabel: existingLabel,
+            channelListController: channelListController,
+            onChannelChanges: (changes) {
+              integrationChanges = changes;
+            },
+            channelsValidator: () =>
+                integrationChanges.selectedChannels.isNotEmpty,
+            setupMode: isNewlyActivated,
+            isAccountBased: isAccountBased,
+            showSyncMessage: isNewlyActivated &&
                 (integrations.accounts.isNotEmpty ||
-                    integrations.channels.isNotEmpty))
-              FormInfo(
-                key: 'sync_message',
-                text: 'Select what you\'d like to sync.',
-              ),
-            FormChannelList(
-              key: 'integrations',
-              controller: channelListController,
-              validator: () => integrationChanges.selectedChannels.isNotEmpty,
-              builder: (context) => SetupSourceWidget(
-                twistInstanceId: twistInstanceId,
-                setupMode: isNewlyActivated,
-                isAccountBased: isAccountBased,
-                sourceName: name,
-                logoUrl: logoUrl,
-                logoUrlDark: logoUrlDark,
-                initialData: integrations,
-                refreshNotifier: refreshNotifier,
-                channelListController: channelListController,
-                onChanged: (changes) {
-                  integrationChanges = changes;
-                },
-              ),
-            ),
-          ],
+                    integrations.channels.isNotEmpty),
+            optionItems: optionItems,
+            refreshNotifier: refreshNotifier,
+          ),
         ),
         StaticFormGroup(
           items: [
@@ -1492,6 +1544,13 @@ class AddSourceDetail extends ShowForm {
   /// Set after activation so ManageConnections can open EditSource.
   static String? lastActivatedSourceId;
 
+  /// True when the user finished setup (Label, channels, options, activate)
+  /// inside the setup modal itself — i.e. activation went through
+  /// `_ActivateNoProviderSource`. ManageConnections reads this to skip the
+  /// follow-up EditSource modal, which would otherwise stack on top as a
+  /// redundant second "Set up …" screen.
+  static bool lastActivatedInSetupModal = false;
+
   /// Cached connect result from ConnectNoProviderCommand, used when the form
   /// rebuilds after CommandRefresh so we don't depend on getAccountName
   /// succeeding again in GET /integrations.
@@ -1647,120 +1706,179 @@ class AddSourceDetail extends ShowForm {
       var refreshChanges = const IntegrationChanges();
 
       final refreshedDefault = defaultTeamFor(refreshed);
+      // Same hosted-auth-already-authed guard as the initial render: when a
+      // hosted-auth draft already has an authenticated account, fall through
+      // to the standard Label / Team / channels / options layout instead of
+      // re-rendering the auth button.
+      final refreshedHostedHasAccount = refreshed.providers.isNotEmpty &&
+          refreshed.accounts.isNotEmpty;
+      final refreshedInitialLabel = _initialLabelFor(refreshed, teams);
       return [
         StaticFormGroup(
           items: [
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
-            if (buildTeamSelect(refreshed) != null) buildTeamSelect(refreshed)!,
-            ...refreshed.providers.map((provider) {
-              final initialOwner = refreshedDefault;
-              // Gate preemptively only when the user has no team to fall
-              // back to. When teams exist, let them authenticate — the
-              // save/connect path checks the selected team's limit.
-              final initialAtLimit =
-                  teams.isEmpty && usage.personal.connections.isAtLimit;
-
-              if (initialAtLimit) {
-                return FormButton(
-                  key: 'upgrade_${provider.provider.name}',
-                  isPrimary: true,
-                  buildCommand: (_) => _connectionAtLimitCommand(),
-                );
-              }
-
-              return FormInfo(
-                key: 'auth_${provider.provider.name}',
-                divider: false,
-                builder: (formContext) {
-                  return Padding(
-                    padding: formContext.theme.spacing.padding.copyWith(top: 0),
-                    child: _AuthWithScopeToggles(
-                      provider: provider,
-                      twistInstanceId: draftId,
-                      initialEnabledGroups:
-                          scopeGroupSelections[provider.provider.name],
-                      onScopeGroupsChanged: (groups) {
-                        scopeGroupSelections[provider.provider.name] = groups;
-                      },
-                      onSuccess: () async {
-                        await _activateAfterOAuth(
-                          formContext,
-                          draftId,
-                          twist.name,
-                          teams,
-                          fallbackOwner: initialOwner,
-                        );
-                      },
-                    ),
-                  );
+            if (refreshedHostedHasAccount) ...[
+              ..._buildStandardSourceItems(
+                twistInstanceId: draftId,
+                sourceName: twist.name,
+                logoUrl: twist.logoUrl,
+                logoUrlDark: twist.logoUrlDark,
+                integrations: refreshed,
+                teams: teams,
+                initialTeamId: refreshedDefault,
+                initialLabel: refreshedInitialLabel,
+                channelListController: refreshChannelController,
+                onChannelChanges: (changes) {
+                  refreshChanges = changes;
                 },
-              );
-            }),
-            if (optionItems != null &&
-                (refreshed.providers.isNotEmpty || refreshed.isEmpty))
-              ...optionItems.items,
-            if (refreshed.providers.isEmpty &&
-                optionItems != null &&
-                refreshed.isEmpty)
-              FormButton(
-                key: 'connect',
-                isPrimary: true,
-                buildCommand: (values) {
-                  final owner = values['team_id'] as String? ?? 'personal';
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit = team != null
-                      ? team.connections.isAtLimit
-                      : usage.personal.connections.isAtLimit;
-
-                  if (atLimit) {
-                    return _connectionAtLimitCommand();
-                  }
-
-                  return ConnectNoProviderCommand(
-                    twistInstanceId: draftId,
-                    optionItems: optionItems,
-                    teamId: owner == 'personal' ? null : owner,
-                  );
-                },
-              ),
-            if (refreshed.providers.isEmpty && !refreshed.isEmpty) ...[
-              FormChannelList(
-                key: 'channels',
-                controller: refreshChannelController,
-                validator: () => refreshChanges.selectedChannels.isNotEmpty,
-                builder: (context) => SetupSourceWidget(
-                  twistInstanceId: draftId,
-                  setupMode: true,
-                  isAccountBased: true,
-                  sourceName: twist.name,
-                  logoUrl: twist.logoUrl,
-                  logoUrlDark: twist.logoUrlDark,
-                  initialData: refreshed,
-                  channelListController: refreshChannelController,
-                  onChanged: (changes) {
-                    refreshChanges = changes;
-                  },
-                ),
+                channelsValidator: () =>
+                    refreshChanges.selectedChannels.isNotEmpty,
+                setupMode: true,
+                isAccountBased: true,
+                showSyncMessage: false,
+                optionItems: optionItems,
               ),
               FormButton(
                 key: 'add_connection',
                 isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
+                  final label =
+                      (values['account_label'] as String?)?.trim() ?? '';
                   return _ActivateNoProviderSource(
                     draftId: draftId,
                     twistName: twist.name,
                     teamId: owner == 'personal' ? null : owner,
                     getChanges: () => refreshChanges,
+                    accountLabel: label.isEmpty ? null : label,
                   );
                 },
               ),
+            ] else ...[
+              if (buildTeamSelect(refreshed) != null)
+                buildTeamSelect(refreshed)!,
+              ...refreshed.providers.map((provider) {
+                final initialOwner = refreshedDefault;
+                // Gate preemptively only when the user has no team to fall
+                // back to. When teams exist, let them authenticate — the
+                // save/connect path checks the selected team's limit.
+                final initialAtLimit =
+                    teams.isEmpty && usage.personal.connections.isAtLimit;
+
+                if (initialAtLimit) {
+                  return FormButton(
+                    key: 'upgrade_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => _connectionAtLimitCommand(),
+                  );
+                }
+
+                return FormInfo(
+                  key: 'auth_${provider.provider.name}',
+                  divider: false,
+                  builder: (formContext) {
+                    return Padding(
+                      padding:
+                          formContext.theme.spacing.padding.copyWith(top: 0),
+                      child: _AuthWithScopeToggles(
+                        provider: provider,
+                        twistInstanceId: draftId,
+                        initialEnabledGroups:
+                            scopeGroupSelections[provider.provider.name],
+                        onScopeGroupsChanged: (groups) {
+                          scopeGroupSelections[provider.provider.name] =
+                              groups;
+                        },
+                        onSuccess: () async {
+                          await _activateAfterOAuth(
+                            formContext,
+                            draftId,
+                            twist.name,
+                            teams,
+                            fallbackOwner: initialOwner,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              }),
+              if (optionItems != null &&
+                  (refreshed.providers.isNotEmpty || refreshed.isEmpty))
+                ...optionItems.items,
+              if (refreshed.providers.isEmpty &&
+                  optionItems != null &&
+                  refreshed.isEmpty)
+                FormButton(
+                  key: 'connect',
+                  isPrimary: true,
+                  buildCommand: (values) {
+                    final owner = values['team_id'] as String? ?? 'personal';
+                    final team = teams.firstWhereOrNull((t) => t.id == owner);
+                    final atLimit = team != null
+                        ? team.connections.isAtLimit
+                        : usage.personal.connections.isAtLimit;
+
+                    if (atLimit) {
+                      return _connectionAtLimitCommand();
+                    }
+
+                    return ConnectNoProviderCommand(
+                      twistInstanceId: draftId,
+                      optionItems: optionItems,
+                      teamId: owner == 'personal' ? null : owner,
+                    );
+                  },
+                ),
+              if (refreshed.providers.isEmpty && !refreshed.isEmpty) ...[
+                FormChannelList(
+                  key: 'channels',
+                  controller: refreshChannelController,
+                  validator: () => refreshChanges.selectedChannels.isNotEmpty,
+                  builder: (context) => SetupSourceWidget(
+                    twistInstanceId: draftId,
+                    setupMode: true,
+                    isAccountBased: true,
+                    sourceName: twist.name,
+                    logoUrl: twist.logoUrl,
+                    logoUrlDark: twist.logoUrlDark,
+                    initialData: refreshed,
+                    channelListController: refreshChannelController,
+                    onChanged: (changes) {
+                      refreshChanges = changes;
+                    },
+                  ),
+                ),
+                FormButton(
+                  key: 'add_connection',
+                  isPrimary: true,
+                  buildCommand: (values) {
+                    final owner = values['team_id'] as String? ?? 'personal';
+                    return _ActivateNoProviderSource(
+                      draftId: draftId,
+                      twistName: twist.name,
+                      teamId: owner == 'personal' ? null : owner,
+                      getChanges: () => refreshChanges,
+                    );
+                  },
+                ),
+              ],
             ],
           ],
         ),
       ];
     }
+
+    // When a hosted-auth draft is reopened and already has an authenticated
+    // account (the OAuth callback persisted the token in DO storage during a
+    // prior session, or the form is rebuilding after onSuccess), skip the
+    // auth button and render the standard setup layout — Label, Team,
+    // account, options — so the user finishes setup in one place rather
+    // than re-triggering the hosted-auth flow.
+    final hostedHasAccount = integrations.providers.isNotEmpty &&
+        integrations.accounts.isNotEmpty;
+    final initialLabel = _initialLabelFor(integrations, teams);
 
     return FormData(
       title: 'Set up ${twist.name}',
@@ -1771,118 +1889,181 @@ class AddSourceDetail extends ShowForm {
           items: [
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
-            if (buildTeamSelect(integrations) != null)
-              buildTeamSelect(integrations)!,
-            ...integrations.providers.map((provider) {
-              final initialOwner = defaultTeamFor(integrations);
-              // Gate preemptively only when the user has no team to fall
-              // back to. When teams exist, let them authenticate — the
-              // save/connect path checks the selected team's limit.
-              final initialAtLimit =
-                  teams.isEmpty && usage.personal.connections.isAtLimit;
-
-              if (initialAtLimit) {
-                return FormButton(
-                  key: 'upgrade_${provider.provider.name}',
-                  isPrimary: true,
-                  buildCommand: (_) => _connectionAtLimitCommand(),
-                );
-              }
-
-              return FormInfo(
-                key: 'auth_${provider.provider.name}',
-                divider: false,
-                builder: (formContext) {
-                  return Padding(
-                    padding: formContext.theme.spacing.padding.copyWith(top: 0),
-                    child: _AuthWithScopeToggles(
-                      provider: provider,
-                      twistInstanceId: draftId,
-                      initialEnabledGroups:
-                          scopeGroupSelections[provider.provider.name],
-                      onScopeGroupsChanged: (groups) {
-                        scopeGroupSelections[provider.provider.name] = groups;
-                      },
-                      onSuccess: () async {
-                        await _activateAfterOAuth(
-                          formContext,
-                          draftId,
-                          twist.name,
-                          teams,
-                          fallbackOwner: initialOwner,
-                        );
-                      },
-                    ),
-                  );
+            if (hostedHasAccount) ...[
+              ..._buildStandardSourceItems(
+                twistInstanceId: draftId,
+                sourceName: twist.name,
+                logoUrl: twist.logoUrl,
+                logoUrlDark: twist.logoUrlDark,
+                integrations: integrations,
+                teams: teams,
+                initialTeamId: defaultTeamFor(integrations),
+                initialLabel: initialLabel,
+                channelListController: noProviderChannelController,
+                onChannelChanges: (changes) {
+                  noProviderChanges = changes;
                 },
-              );
-            }),
-            if (optionItems != null &&
-                (integrations.providers.isNotEmpty || integrations.isEmpty))
-              ...optionItems.items,
-            if (integrations.providers.isEmpty &&
-                optionItems != null &&
-                integrations.isEmpty)
-              // Not yet connected: show Connect button
-              FormButton(
-                key: 'connect',
-                isPrimary: true,
-                buildCommand: (values) {
-                  final owner = values['team_id'] as String? ?? 'personal';
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit = team != null
-                      ? team.connections.isAtLimit
-                      : usage.personal.connections.isAtLimit;
-
-                  if (atLimit) {
-                    return _connectionAtLimitCommand();
-                  }
-
-                  return ConnectNoProviderCommand(
-                    twistInstanceId: draftId,
-                    optionItems: optionItems,
-                    teamId: owner == 'personal' ? null : owner,
-                  );
-                },
-              ),
-            if (integrations.providers.isEmpty && !integrations.isEmpty) ...[
-              // Already connected: show channels + Add connection
-              FormChannelList(
-                key: 'channels',
-                controller: noProviderChannelController,
-                validator: () => noProviderChanges.selectedChannels.isNotEmpty,
-                builder: (context) => SetupSourceWidget(
-                  twistInstanceId: draftId,
-                  setupMode: true,
-                  isAccountBased: true,
-                  sourceName: twist.name,
-                  logoUrl: twist.logoUrl,
-                  logoUrlDark: twist.logoUrlDark,
-                  initialData: integrations,
-                  channelListController: noProviderChannelController,
-                  onChanged: (changes) {
-                    noProviderChanges = changes;
-                  },
-                ),
+                channelsValidator: () =>
+                    noProviderChanges.selectedChannels.isNotEmpty,
+                setupMode: true,
+                isAccountBased: true,
+                showSyncMessage: false,
+                optionItems: optionItems,
               ),
               FormButton(
                 key: 'add_connection',
                 isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
+                  final label =
+                      (values['account_label'] as String?)?.trim() ?? '';
                   return _ActivateNoProviderSource(
                     draftId: draftId,
                     twistName: twist.name,
                     teamId: owner == 'personal' ? null : owner,
                     getChanges: () => noProviderChanges,
+                    accountLabel: label.isEmpty ? null : label,
                   );
                 },
               ),
+            ] else ...[
+              if (buildTeamSelect(integrations) != null)
+                buildTeamSelect(integrations)!,
+              ...integrations.providers.map((provider) {
+                final initialOwner = defaultTeamFor(integrations);
+                // Gate preemptively only when the user has no team to fall
+                // back to. When teams exist, let them authenticate — the
+                // save/connect path checks the selected team's limit.
+                final initialAtLimit =
+                    teams.isEmpty && usage.personal.connections.isAtLimit;
+
+                if (initialAtLimit) {
+                  return FormButton(
+                    key: 'upgrade_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => _connectionAtLimitCommand(),
+                  );
+                }
+
+                return FormInfo(
+                  key: 'auth_${provider.provider.name}',
+                  divider: false,
+                  builder: (formContext) {
+                    return Padding(
+                      padding:
+                          formContext.theme.spacing.padding.copyWith(top: 0),
+                      child: _AuthWithScopeToggles(
+                        provider: provider,
+                        twistInstanceId: draftId,
+                        initialEnabledGroups:
+                            scopeGroupSelections[provider.provider.name],
+                        onScopeGroupsChanged: (groups) {
+                          scopeGroupSelections[provider.provider.name] =
+                              groups;
+                        },
+                        onSuccess: () async {
+                          await _activateAfterOAuth(
+                            formContext,
+                            draftId,
+                            twist.name,
+                            teams,
+                            fallbackOwner: initialOwner,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              }),
+              if (optionItems != null &&
+                  (integrations.providers.isNotEmpty || integrations.isEmpty))
+                ...optionItems.items,
+              if (integrations.providers.isEmpty &&
+                  optionItems != null &&
+                  integrations.isEmpty)
+                // Not yet connected: show Connect button
+                FormButton(
+                  key: 'connect',
+                  isPrimary: true,
+                  buildCommand: (values) {
+                    final owner = values['team_id'] as String? ?? 'personal';
+                    final team = teams.firstWhereOrNull((t) => t.id == owner);
+                    final atLimit = team != null
+                        ? team.connections.isAtLimit
+                        : usage.personal.connections.isAtLimit;
+
+                    if (atLimit) {
+                      return _connectionAtLimitCommand();
+                    }
+
+                    return ConnectNoProviderCommand(
+                      twistInstanceId: draftId,
+                      optionItems: optionItems,
+                      teamId: owner == 'personal' ? null : owner,
+                    );
+                  },
+                ),
+              if (integrations.providers.isEmpty && !integrations.isEmpty) ...[
+                // Already connected: show channels + Add connection
+                FormChannelList(
+                  key: 'channels',
+                  controller: noProviderChannelController,
+                  validator: () =>
+                      noProviderChanges.selectedChannels.isNotEmpty,
+                  builder: (context) => SetupSourceWidget(
+                    twistInstanceId: draftId,
+                    setupMode: true,
+                    isAccountBased: true,
+                    sourceName: twist.name,
+                    logoUrl: twist.logoUrl,
+                    logoUrlDark: twist.logoUrlDark,
+                    initialData: integrations,
+                    channelListController: noProviderChannelController,
+                    onChanged: (changes) {
+                      noProviderChanges = changes;
+                    },
+                  ),
+                ),
+                FormButton(
+                  key: 'add_connection',
+                  isPrimary: true,
+                  buildCommand: (values) {
+                    final owner = values['team_id'] as String? ?? 'personal';
+                    return _ActivateNoProviderSource(
+                      draftId: draftId,
+                      twistName: twist.name,
+                      teamId: owner == 'personal' ? null : owner,
+                      getChanges: () => noProviderChanges,
+                    );
+                  },
+                ),
+              ],
             ],
           ],
         ),
       ],
     );
+  }
+
+  /// Initial Label value for the setup modal. Prefers the OAuth-provided
+  /// account name (e.g. Unipile's `name` field for LinkedIn) over the
+  /// stored `account_label`, because the latter is often the generic
+  /// "Personal" fallback that backend activation seeds when no provider
+  /// metadata is available — a stale placeholder that should not beat
+  /// the real account identity surfaced by the integrations response.
+  static String _initialLabelFor(
+    TwistIntegrations integrations,
+    List<TeamUsage> teams,
+  ) {
+    for (final account in integrations.accounts) {
+      final name = account.name;
+      if (name != null && name.isNotEmpty) return name;
+    }
+    final stored = integrations.accountLabel;
+    if (stored != null && stored.isNotEmpty) return stored;
+    final teamName = integrations.teamName;
+    if (teamName != null && teamName.isNotEmpty) return teamName;
+    return 'Personal';
   }
 
   /// After a successful OAuth, re-fetch integrations so we can default the
@@ -3098,6 +3279,7 @@ class _ActivateNoProviderSource extends Command {
     required this.twistName,
     required this.getChanges,
     this.teamId,
+    this.accountLabel,
   }) : super(
          title: 'Add connection',
          icon: PlotIcon.save,
@@ -3109,6 +3291,10 @@ class _ActivateNoProviderSource extends Command {
   final String twistName;
   final IntegrationChanges Function() getChanges;
   final String? teamId;
+
+  /// Per-connection disambiguator, applied via updateTwist after activation
+  /// since activateDraft itself doesn't take a label argument.
+  final String? accountLabel;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -3129,7 +3315,19 @@ class _ActivateNoProviderSource extends Command {
         teamId: teamId,
       );
 
+      if (accountLabel != null) {
+        try {
+          await TwistApi.updateTwist(
+            twistInstanceId: draftId,
+            accountLabel: Value(accountLabel),
+          );
+        } catch (e, t) {
+          log.warning('Failed to apply account label after activation', e, t);
+        }
+      }
+
       AddSourceDetail.lastActivatedSourceId = draftId;
+      AddSourceDetail.lastActivatedInSetupModal = true;
       AddSourceDetail.clearDraft();
 
       return const CommandDone();
