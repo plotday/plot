@@ -42,10 +42,10 @@ linkTypes = [
     logo: "https://api.iconify.design/logos/linkedin-icon.svg",
     logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
     statuses: [
-      { status: STATUS_PENDING,  label: "Pending"  },
-      { status: STATUS_INBOX,    label: "Inbox"    },
-      { status: STATUS_ARCHIVED, label: "Archived", done: true },
-      { status: STATUS_IGNORED,  label: "Ignored",  done: true },
+      { status: STATUS_PENDING,  label: "Pending"   },
+      { status: STATUS_INBOX,    label: "Connected" },
+      { status: STATUS_ARCHIVED, label: "Archived",  done: true },
+      { status: STATUS_IGNORED,  label: "Ignored",   done: true },
     ],
   },
   {
@@ -232,7 +232,11 @@ Status semantics summary:
 \* User picked "Archived" but the only LinkedIn-side action that
 "removes" a pending invitation is ignore. Local label stays Archived
 (matches what they clicked); write-back fires once. After the flag is
-set, later Inbox ↔ Archived flips are local only.
+set, later Connected ↔ Archived flips are local only.
+
+The status key on the conversation type stays `inbox` for code-level
+consistency with the group type and the rest of Plot's conventions —
+only the user-facing label differs.
 
 For conversations that started as chats (no invitation ever existed),
 `invitationId` is absent from `link.meta`; `onLinkUpdated` returns
