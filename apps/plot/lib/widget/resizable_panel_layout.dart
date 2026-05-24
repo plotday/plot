@@ -8,6 +8,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/note_viewer.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'note_viewer.dart';
@@ -211,6 +212,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       );
     }
     const bottomRadius = BorderRadius.all(Radius.circular(_panelRadius));
+    final agendaGap = context.theme.spacing.xl;
     final top = Padding(
       padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
       child: widget.left,
@@ -221,9 +223,9 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       borderRadius: bottomRadius,
     );
     final bottom = Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         _outerInset,
-        _outerInset / 2,
+        agendaGap,
         _halfGap,
         _outerInset,
       ),
@@ -233,6 +235,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(child: squircle),
+                SizedBox(height: agendaGap),
                 widget.leftFooter!,
               ],
             ),
