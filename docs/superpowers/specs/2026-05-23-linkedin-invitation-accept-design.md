@@ -1,149 +1,282 @@
-# LinkedIn invitation: accept state
+# LinkedIn: unify connection requests and DMs
 
 ## Problem
 
-Incoming LinkedIn connection requests sync into Plot as links of type
-`invitation` with one of two statuses: `pending` or `archive` (labelled
-"Archived"). Neither status writes back to LinkedIn — moving an invitation to
-"Archived" only hides it locally; the request stays pending on LinkedIn until
-the user goes to LinkedIn and acts on it.
+Incoming LinkedIn connection requests sync into Plot as `invitation` links;
+direct messages sync as `message` links. They're disjoint — even though a
+connection request from someone is followed (after acceptance) by a 1:1 DM
+thread with that same person, Plot shows two unrelated threads.
 
-The Unipile tool already exposes `acceptInvitation` and `ignoreInvitation`
-(`workers/api/src/twist/tools/unipile/linkedin.ts:144,156`). The connector
-just never calls them.
+In practice users want to act on a connection request and start messaging
+in the same place. Acting also needs to reach LinkedIn — today, status
+changes on the invitation link only hide things locally; the request stays
+pending on LinkedIn.
 
 ## Goal
 
-Let the user accept (or ignore) a LinkedIn connection request from inside
-Plot, and have that decision reach LinkedIn.
+One thread per LinkedIn person (for 1:1 conversations). It carries
+whatever lifecycle state applies — invitation pending, accepted with
+messages, ignored, archived. Status changes write back to LinkedIn where
+meaningful. Group chats stay separate (they have no single profile to
+unify on).
 
 ## Design
 
-### Status config
+### Two link types
 
-In `connectors/linkedin/src/linkedin.ts`, the invitation `linkType` gets a
-new `accepted` status and renames `archive` to `ignored`:
+In `connectors/linkedin/src/linkedin.ts`:
 
 ```typescript
-const STATUS_ACCEPTED = "accepted";
+const TYPE_CONVERSATION = "conversation"; // 1:1 (and invitations)
+const TYPE_GROUP        = "group";        // group chats
+
+const STATUS_PENDING  = "pending";
+const STATUS_INBOX    = "inbox";
+const STATUS_ARCHIVED = "archived";
 const STATUS_IGNORED  = "ignored";
 
 linkTypes = [
-  // ...message type unchanged (still uses STATUS_INBOX / STATUS_ARCHIVE)...
   {
-    type: TYPE_INVITATION,
-    label: "Connection request",
+    type: TYPE_CONVERSATION,
+    label: "LinkedIn conversation",
     logo: "https://api.iconify.design/logos/linkedin-icon.svg",
     logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
     statuses: [
       { status: STATUS_PENDING,  label: "Pending"  },
-      { status: STATUS_ACCEPTED, label: "Accepted", done: true },
+      { status: STATUS_INBOX,    label: "Inbox"    },
+      { status: STATUS_ARCHIVED, label: "Archived", done: true },
       { status: STATUS_IGNORED,  label: "Ignored",  done: true },
+    ],
+  },
+  {
+    type: TYPE_GROUP,
+    label: "LinkedIn group",
+    logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+    logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
+    statuses: [
+      { status: STATUS_INBOX,    label: "Inbox"    },
+      { status: STATUS_ARCHIVED, label: "Archived", done: true },
     ],
   },
 ];
 ```
 
-- `STATUS_ARCHIVE = "archive"` stays declared in the file because the
-  `message` link type still uses it. Only the invitation type stops
-  referencing it.
-- Both terminal states set `done: true` so Plot's UI and tag logic treat
-  them as resolved (consistent with Gmail's `archived` status pattern at
-  `public/connectors/gmail/src/gmail.ts:124`).
-- No `tag:` on either status. Connection-request resolution doesn't need to
-  surface as a thread tag.
+The old `TYPE_MESSAGE` / `TYPE_INVITATION` constants go away.
+
+### Link identity
+
+Conversation links use the LinkedIn person id as their stable source key:
+
+- **`source`**: `linkedin:person:{profileId}` (the canonical identifier)
+- **`sources`**: also include `linkedin:chat:{chatId}` and/or
+  `linkedin:invitation:{invitationId}` when known, so multi-source matching
+  resolves either origin to the same link
+
+Group links keep the existing chat-id keying:
+
+- **`source`**: `linkedin:chat:{chatId}`
+
+### Meta merging (schema change)
+
+Today, `user.upsert_link` (`libs/db/schema/90-user-schema/80-upsert_link.sql:211-215`)
+replaces `meta` wholesale whenever the upsert payload includes a `meta`
+key. That breaks the unified-link approach: the chat sync would nuke the
+invitation's `sharedSecret`, and vice versa.
+
+Change `upsert_link` to **shallow-merge** the incoming `meta` into the
+existing row:
+
+```sql
+meta = CASE WHEN p_link ? 'meta' THEN
+    COALESCE(link.meta, '{}'::jsonb) || (p_link -> 'meta')
+ELSE
+    link.meta
+END,
+```
+
+This is the standard JSONB `||` operator — top-level keys from the new
+object replace existing same-named keys; existing keys not in the new
+object are preserved.
+
+**Backwards compatibility check.** I scanned every existing connector
+(Apple Calendar, Attio, Asana, Gmail, GitHub, Fellow, Airtable, Slack,
+Linear, Jira, etc.). All of them write a fixed-shape `meta` on every
+save — none rely on "omit a key to clear it" semantics. Shallow merge
+produces an identical final row for all current callers; only the new
+multi-source LinkedIn pattern exercises the merge behavior.
+
+A caller that genuinely wants to clear a meta key under merge semantics
+can pass `{key: null}` (sets to JSON null, not absent — fine for our
+purposes). Hard-deleting a key isn't supported; YAGNI.
+
+With merge in place, `link.meta` becomes the single home for per-person
+bookkeeping. No connector-side KV needed:
+
+```typescript
+link.meta = {
+  syncProvider: "linkedin",
+  channelId,
+  profileId,
+  // added by invitation sync:
+  invitationId?: string,
+  sharedSecret?: string,
+  // added by chat sync (1:1):
+  chatId?: string,
+};
+```
+
+Invitation sync writes `{profileId, invitationId, sharedSecret, …}`.
+Chat sync writes `{profileId, chatId, …}`. The merge combines them.
+Either sync running second adds its keys without dropping the other's.
+
+### Title and preview
+
+- 1:1 conversation title: `profile.fullName` (drop the "Connection
+  request from" prefix).
+- Group title: `chat.title || joinParticipantNames(others)` (unchanged
+  logic).
+- Preview: prefer `chat.lastMessagePreview` if a chat exists, fall back
+  to `invitation.message || inviter.headline`.
+
+### Sync
+
+Drop the `OPTIONS_SCHEMA` options entirely — `importMessages` and
+`importInvitations` both become unconditional. The full options export
+is removed and `build(Options, ...)` is dropped from `build()`. The
+sync-state shape stays the same (watermarks per source).
+
+`syncBatch` keeps two passes (invitations, then chats):
+
+1. **Invitations.** For each `inv`, write a conversation link keyed on
+   `inv.inviter.id`, with `status: STATUS_PENDING`, sources
+   `[linkedin:person:{inviter.id}, linkedin:invitation:{inv.id}]`, and
+   `meta: { syncProvider, channelId, profileId, invitationId,
+   sharedSecret }`. Notes get the invitation message authored by the
+   inviter.
+
+2. **Chats.** For each `chat`:
+   - **1:1**: pick the other participant; write a conversation link
+     keyed on that participant id with `status: STATUS_INBOX`, sources
+     `[linkedin:person:{other.id}, linkedin:chat:{chat.id}]`, and
+     `meta: { syncProvider, channelId, profileId, chatId }`. Notes get
+     every message.
+   - **Group**: write a group link keyed on chat id with
+     `status: STATUS_INBOX` and `meta: { syncProvider, channelId,
+     chatId }`. Current logic.
+
+Status precedence when both shapes exist for the same person: the chat
+overrides (a 1:1 chat only exists once the invitation has been
+accepted on LinkedIn, so showing Pending after that is wrong). Concretely,
+if the chat sync runs after the invitation sync, the second `saveLink`
+flips status to `STATUS_INBOX`.
 
 ### Write-back via `onLinkUpdated`
 
-The connector currently has no `onLinkUpdated` override. We add one,
-scoped to invitations:
-
 ```typescript
 override async onLinkUpdated(link: Link): Promise<void> {
-  if (link.type !== TYPE_INVITATION) return;
+  if (link.type !== TYPE_CONVERSATION) return;
 
   const meta = (link.meta ?? {}) as Record<string, unknown>;
   const channelId    = meta.channelId    as string | undefined;
   const invitationId = meta.invitationId as string | undefined;
   const sharedSecret = meta.sharedSecret as string | undefined;
-  if (!channelId || !invitationId || !sharedSecret) return;
+  if (!channelId) return;
+  if (!invitationId || !sharedSecret) return; // no invitation to act on
 
-  // Idempotency: Unipile rejects re-accepting/re-ignoring a resolved
-  // invitation, and Plot can re-fire onLinkUpdated for unrelated edits
-  // (e.g. note changes) on the same link.
+  // Idempotency: each invitation can only be accepted/ignored once.
   const flagKey = `invitation_writeback:${invitationId}`;
   if (await this.get<string>(flagKey)) return;
 
+  const status = link.status;
+
+  // Map Plot status to LinkedIn action. Archived from Pending is
+  // treated as Ignore on LinkedIn (user wants this off their plate);
+  // the local status stays Archived per their click.
+  let action: "accept" | "ignore" | null = null;
+  if (status === STATUS_INBOX)         action = "accept";
+  else if (status === STATUS_IGNORED)  action = "ignore";
+  else if (status === STATUS_ARCHIVED) action = "ignore";
+  if (!action) return; // STATUS_PENDING — nothing to do
+
   try {
-    if (link.status === STATUS_ACCEPTED) {
+    if (action === "accept") {
       await this.tools.linkedin.acceptInvitation({
         channelId, invitationId, sharedSecret,
       });
-    } else if (link.status === STATUS_IGNORED) {
+    } else {
       await this.tools.linkedin.ignoreInvitation({
         channelId, invitationId, sharedSecret,
       });
-    } else {
-      return; // pending or unknown — nothing to write back
     }
-    await this.set(flagKey, link.status);
+    await this.set(flagKey, action);
   } catch (error) {
-    // Invitation may have been resolved out-of-band (e.g. accepted on
-    // mobile). Log and stop retrying a stale invitation — the next sync
-    // will reflect reality.
+    // Invitation may have been resolved out-of-band; stop retrying.
     console.warn(
-      `LinkedIn invitation write-back failed (${invitationId}, ${link.status})`,
+      `LinkedIn invitation write-back failed (${invitationId}, ${action})`,
       error
     );
-    await this.set(flagKey, link.status);
+    await this.set(flagKey, action);
   }
 }
 ```
 
-Notes:
-- `meta.channelId`, `meta.invitationId`, and `meta.sharedSecret` are all
-  written into the invitation link by `buildInvitationLink`
-  (`connectors/linkedin/src/linkedin.ts:431-437`), so they're available
-  whenever `onLinkUpdated` fires for an invitation.
-- `console.warn` (not PostHog) matches the existing convention in the
-  connector and the user-memory rule that twists/connectors run sandboxed
-  with no `captureException` access.
-- The flag is keyed on `invitationId`, not link id, so even if the link is
-  rebuilt from a later sync we still treat the invitation as written back.
+Status semantics summary:
 
-### Sync interaction
+| Local status   | LinkedIn action (Pending → here) | After flag set |
+| -------------- | -------------------------------- | -------------- |
+| `pending`      | —                                | —              |
+| `inbox`        | `acceptInvitation`               | local only     |
+| `archived`     | `ignoreInvitation` *             | local only     |
+| `ignored`      | `ignoreInvitation`               | local only     |
 
-Once accepted or ignored on LinkedIn, the invitation drops out of
-`listReceivedInvitations`. `syncBatch`'s `lastInvitationHighWaterMs`
-already filters by send time, so resolved invitations are not refetched.
-The local link stays at its chosen terminal status — the correct end
-state.
+\* User picked "Archived" but the only LinkedIn-side action that
+"removes" a pending invitation is ignore. Local label stays Archived
+(matches what they clicked); write-back fires once. After the flag is
+set, later Inbox ↔ Archived flips are local only.
 
-### Backwards compatibility
+For conversations that started as chats (no invitation ever existed),
+`invitationId` is absent from `link.meta`; `onLinkUpdated` returns
+early and Inbox/Archived behave as local-only state, matching today's
+message behavior.
 
-The connector is new and not in production. Existing invitation links
-with `status: "archive"` should be rare or non-existent. We rename the
-status key directly without a migration. If old `archive`-status
-invitation links surface later, the UI will show the raw status string
-until the user picks a new status; a one-line `onLinkUpdated` fixup can
-be added then.
+### Existing local test data
+
+There's one local test connection with invitation/message data already
+synced. Nothing's deployed and no migration burden — disable +
+re-enable the LinkedIn channel after these changes ship to re-run
+initial sync and overwrite everything in the new shape.
 
 ## Files touched
 
-- `connectors/linkedin/src/linkedin.ts` — status constants, statuses
-  array for the invitation link type, new `onLinkUpdated` override.
+- `libs/db/schema/90-user-schema/80-upsert_link.sql` — switch the
+  `meta` CASE branch from wholesale replace to `link.meta || (p_link ->
+  'meta')` shallow merge.
+- `libs/db/migrations/<timestamp>_link_meta_shallow_merge.sql` —
+  generated via `pnpm gen-migration -- link_meta_shallow_merge`. Just
+  the `CREATE OR REPLACE FUNCTION upsert_link` rebuild.
+- `connectors/linkedin/src/linkedin.ts` — link types, status
+  constants, identity keying, `syncBatch` rewrite (drop options,
+  switch to person-id keying for 1:1), `onLinkUpdated` override,
+  removal of `Options` tool and `OPTIONS_SCHEMA`.
 
-No changes to:
-- `workers/api/src/twist/tools/unipile/*` (tool already exposes
-  `acceptInvitation` / `ignoreInvitation`).
-- `public/twister/src/` (no SDK type changes).
-- Flutter app (statuses are surfaced generically from the link type
-  config).
+No SDK / type changes (`public/twister/src/`) or Flutter changes.
+
+## Open questions
+
+1. **Status precedence on second write.** `upsert_link` always writes
+   `status` when present in the payload (`80-upsert_link.sql:201-205`).
+   So when chat sync runs after invitation sync for the same person, the
+   chat-side `STATUS_INBOX` will override `STATUS_PENDING` as intended.
+   But this also means a manual `STATUS_IGNORED` could be re-flipped to
+   `STATUS_INBOX` by a subsequent chat sync — unlikely (ignored
+   invitations don't generate chats) but worth confirming in
+   implementation. May want to omit `status` from chat-sync upserts when
+   the link already exists, or only set it on the initial insert.
 
 ## Out of scope
 
-- Migrating any existing `archive`-status invitation links.
-- Tagging accepted invitations with `Tag.Done` or another thread tag.
-- Surfacing a "View on LinkedIn" affordance distinct from the existing
-  `sourceUrl` on the link.
 - Outbound: sending new connection requests from Plot.
+- Auto-archiving the local thread on LinkedIn (no `setChatRead` /
+  archive write-back for the message side — chat archive stays local
+  only).
+- Surfacing connection state visually beyond the status itself.
