@@ -7,7 +7,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'command.dart';
-import 'package:plot/command/unread_filter.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -904,7 +903,6 @@ List<Command> currentPriorityCommands(
   // clutter the menu with a no-op toggle.
   if (context != null && context.read<PriorityBloc>().state.showArchived)
     ToggleAutoArchiveFilter(context: context),
-  if (context != null) ToggleUnreadFilter.fromContext(context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),

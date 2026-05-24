@@ -768,17 +768,17 @@ class _PriorityPageState extends State<PriorityPage>
     super.initState();
     // One-shot: when the user lands on this priority from a
     // multi-thread notification tap, [NotificationLandingPage] leaves
-    // `PendingActivityFeedView.openUnreadFilter` set. Consume and
-    // clear the flag in a post-frame callback so `PriorityBloc` is
-    // already available via context.read.
-    if (PendingActivityFeedView.openUnreadFilter) {
+    // `PendingActivityFeedView.openCatchUpTab` set. Consume and clear
+    // the flag in a post-frame callback so `PriorityBloc` is already
+    // available via context.read. Switches the active tab even when the
+    // user had previously navigated to a different action tab on this
+    // priority.
+    if (PendingActivityFeedView.openCatchUpTab) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (!PendingActivityFeedView.openUnreadFilter) return;
-        PendingActivityFeedView.openUnreadFilter = false;
-        context
-            .read<PriorityBloc>()
-            .activateUnreadFilterFromNotification();
+        if (!PendingActivityFeedView.openCatchUpTab) return;
+        PendingActivityFeedView.openCatchUpTab = false;
+        context.read<PriorityBloc>().selectActivityTab(ActivityTab.catchUp);
       });
     }
   }
@@ -1097,26 +1097,6 @@ class _PriorityPageState extends State<PriorityPage>
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
 
-    // Filter on, view empty, and still waiting: either the activity
-    // feed has not finished its initial load, or we are inside the
-    // notification-activation window waiting for sync to deliver
-    // unread items. Show a centered spinner instead of the empty
-    // state so the user understands the screen is not frozen.
-    if (!hasAnyThread &&
-        !showFooter &&
-        state.unreadFilterActive &&
-        (state.unreadFilterPending || !state.activityFeedLoaded)) {
-      return Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.contentPaddingH,
-          vertical: context.theme.spacing.xl,
-        ),
-        child: Center(
-          child: Spinner.message('Loading unread threads'),
-        ),
-      );
-    }
-
     if (!hasAnyThread &&
         !showFooter &&
         state.activityFeedDoneEnd &&
@@ -1188,7 +1168,7 @@ class _PriorityPageState extends State<PriorityPage>
       initialScrollOffset: bloc.activityFeedScrollOffset,
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: totalCount,
-      doneEnd: state.activityFeedViewDoneEnd,
+      doneEnd: state.activityFeedDoneEnd,
       fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
           _buildSeparator(context, displayItems, index, state, controller),

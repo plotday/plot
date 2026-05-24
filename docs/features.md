@@ -22,8 +22,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Pin favorites with top order
 - Search scoped to priority trees
 - Unread indicators per priority
-- Unread-only filter toggle in the priority header (envelope button + ⌘⇧U / Ctrl+Shift+U shortcut) to focus the activity feed on what's new without losing section grouping
-- Multi-thread notification taps open the priority with the unread filter on (single-thread taps still jump straight to the thread)
+- Multi-thread notification taps open the priority on the Catch up tab (single-thread taps still jump straight to the thread)
 
 ### Thread Sharing
 - Threads are shared by adding contacts via the "With" field at creation

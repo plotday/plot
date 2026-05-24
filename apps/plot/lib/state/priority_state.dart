@@ -35,8 +35,6 @@ class PriorityState extends Equatable {
     bool remoteSearchOffline = false,
     bool hasArchivedMatches = false,
     bool hideSubPriorities = true,
-    bool unreadFilterActive = false,
-    bool unreadFilterPending = false,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -83,8 +81,6 @@ class PriorityState extends Equatable {
       remoteSearchOffline: remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches,
       hideSubPriorities: hideSubPriorities,
-      unreadFilterActive: unreadFilterActive,
-      unreadFilterPending: unreadFilterPending,
     );
   }
 
@@ -117,8 +113,6 @@ class PriorityState extends Equatable {
     this.remoteSearchOffline = false,
     this.hasArchivedMatches = false,
     this.hideSubPriorities = true,
-    this.unreadFilterActive = false,
-    this.unreadFilterPending = false,
   });
 
   final Priority context;
@@ -206,47 +200,17 @@ class PriorityState extends Equatable {
   /// false, only threads filed directly on [context] are shown.
   final bool hideSubPriorities;
 
-  /// True while the user has the unread-only filter toggled on for this
-  /// priority's activity feed. In-memory only; resets when the bloc
-  /// recomputes the feed with zero unread items (and no pending
-  /// notification arrival), or when the context priority changes.
-  final bool unreadFilterActive;
-
-  /// True while the filter was activated by a multi-thread notification
-  /// tap and we are still waiting for unread items to surface (the
-  /// activity feed is loading, or local DB doesn't have them yet and
-  /// sync is in flight). Suppresses [unreadFilterActive] auto-off and
-  /// drives a centered spinner in the feed body. Cleared by the bloc
-  /// when the first emit with at least one unread item arrives or
-  /// after a 10-second timeout.
-  final bool unreadFilterPending;
-
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 
-  /// Any unread thread anywhere in the activity feed. Drives the
-  /// header button's visibility and the auto-off invariant.
-  bool get hasUnreadInFeed {
-    for (final item in activityFeedItems) {
-      if (item is AgendaThreadItem && item.thread.unread) return true;
-    }
-    return false;
-  }
-
   /// The activity feed items as the user should see them — equal to
-  /// [activityFeedItems] when [unreadFilterActive] is false, otherwise
-  /// only the unread threads plus the section/sub-section headers that
-  /// immediately precede them. Read threads that the user is currently
-  /// viewing remain unread until the bloc recomputes the feed, so the
-  /// "sticky unread" behavior of the New section carries over here for
-  /// free.
+  /// [activityFeedItems] except when [autoArchiveOnly] is on, in which
+  /// case the view is filtered down to threads carrying an
+  /// `auto_archived_by_thread_id` flag (with empty section headers
+  /// suppressed).
   List<AgendaItem> get activityFeedViewItems {
-    if (!unreadFilterActive && !autoArchiveOnly) return activityFeedItems;
-    bool keep(Thread t) {
-      if (unreadFilterActive && !t.unread) return false;
-      if (autoArchiveOnly && t.autoArchivedByThreadId == null) return false;
-      return true;
-    }
+    if (!autoArchiveOnly) return activityFeedItems;
+    bool keep(Thread t) => t.autoArchivedByThreadId != null;
     final result = <AgendaItem>[];
     final pendingHeaders = <AgendaHeaderItem>[];
     for (final item in activityFeedItems) {
@@ -263,17 +227,6 @@ class PriorityState extends Equatable {
     }
     return result;
   }
-
-  /// Whether the activity feed view has no more items to load. When the
-  /// unread filter is active, the view is treated as exhausted regardless
-  /// of the raw feed's pagination state: the filter operates on locally
-  /// loaded threads, and the bottom "loading more" spinner would otherwise
-  /// spin forever — [InfiniteList] keys its spinner off this flag while
-  /// the fetcher early-returns (raw threads already cover the requested
-  /// filtered index range). Mirrors how search forces exhaustion in
-  /// [PriorityBloc._computeActivityFeedDoneEnd].
-  bool get activityFeedViewDoneEnd =>
-      activityFeedDoneEnd || unreadFilterActive;
 
   /// "Agenda": items starting from today, moving forward. Today's date
   /// header is preserved so the agenda always opens with a header above
@@ -1252,8 +1205,6 @@ class PriorityState extends Equatable {
     bool? remoteSearchOffline,
     bool? hasArchivedMatches,
     bool? hideSubPriorities,
-    bool? unreadFilterActive,
-    bool? unreadFilterPending,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1305,8 +1256,6 @@ class PriorityState extends Equatable {
       remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
       hideSubPriorities: hideSubPriorities ?? this.hideSubPriorities,
-      unreadFilterActive: unreadFilterActive ?? this.unreadFilterActive,
-      unreadFilterPending: unreadFilterPending ?? this.unreadFilterPending,
     );
   }
 
@@ -1340,8 +1289,6 @@ class PriorityState extends Equatable {
     remoteSearchOffline,
     hasArchivedMatches,
     hideSubPriorities,
-    unreadFilterActive,
-    unreadFilterPending,
   ];
 
   @override

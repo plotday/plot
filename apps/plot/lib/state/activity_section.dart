@@ -3,12 +3,12 @@ import 'package:plot/store/store.dart';
 
 /// Cross-component signal: when the user taps a multi-thread
 /// notification, [NotificationLandingPage] sets this to true. The
-/// matching priority page consumes it on mount, calls
-/// `PriorityBloc.activateUnreadFilterFromNotification()`, and clears
-/// the flag. Single-thread notifications still route through
-/// `ThreadLookupRoute` and never touch this signal.
+/// matching priority page consumes it on mount, switches to the
+/// [ActivityTab.catchUp] tab, and clears the flag. Single-thread
+/// notifications still route through `ThreadLookupRoute` and never
+/// touch this signal.
 class PendingActivityFeedView {
-  static bool openUnreadFilter = false;
+  static bool openCatchUpTab = false;
 }
 
 /// The sections of the Activity tab. Each thread belongs to exactly
