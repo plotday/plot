@@ -389,9 +389,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       .reverse()
       .map((msg) => buildNoteFromMessage(msg, chat));
 
-    const contacts = others
-      .map(profileToContact)
-      .filter((c): c is NewContact => c != null);
+    const contacts = others.map(profileToContact);
 
     const title = chat.title ?? joinParticipantNames(others);
 
@@ -518,7 +516,10 @@ function buildInvitationLink(
       `linkedin:invitation:${inv.id}`,
     ],
     type: TYPE_CONVERSATION,
-    status: STATUS_PENDING,
+    // status only on initial sync — incremental polls may see a still-pending
+    // invitation for a propagation window after the user accepts in Plot;
+    // overwriting status would undo their accept.
+    ...(initialSync ? { status: STATUS_PENDING } : {}),
     title: inv.inviter.fullName,
     preview: inv.message ?? inv.inviter.headline ?? null,
     sourceUrl: inv.inviter.url,
