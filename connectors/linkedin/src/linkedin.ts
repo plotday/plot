@@ -313,7 +313,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       preview: chat.lastMessagePreview ?? null,
       sourceUrl: chat.url,
       created: chat.lastActivityAt,
-      contacts,
+      accessContacts: contacts,
       notes,
       meta: {
         syncProvider: PROVIDER_KEY,
@@ -322,7 +322,7 @@ export class LinkedIn extends Connector<LinkedIn> {
         isGroup: chat.isGroup,
       },
       ...(initialSync ? { unread: false, archived: false } : {}),
-    } as NewLinkWithNotes;
+    } satisfies NewLinkWithNotes;
   }
 }
 
@@ -426,7 +426,7 @@ function buildInvitationLink(
     preview: inv.message ?? inv.inviter.headline ?? null,
     sourceUrl: inv.inviter.url,
     created: inv.sentAt,
-    contacts: [contact],
+    accessContacts: [contact],
     notes,
     meta: {
       syncProvider: PROVIDER_KEY,
@@ -436,5 +436,5 @@ function buildInvitationLink(
       inviterId: inv.inviter.id,
     },
     ...(initialSync ? { unread: false, archived: false } : {}),
-  } as NewLinkWithNotes;
+  } satisfies NewLinkWithNotes;
 }
