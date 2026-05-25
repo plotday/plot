@@ -71,6 +71,23 @@ describe("preprocessEmailHtml", () => {
     expect(out).toContain("Body content");
   });
 
+  it("preserves <h1>-<h6> tags so ai.toMarkdown emits Markdown headings", async () => {
+    const html = `
+      <html><body>
+        <h1>Main title</h1>
+        <h2>Section</h2>
+        <h3>Subsection</h3>
+        <h6>Caption</h6>
+        <p>Body.</p>
+      </body></html>
+    `;
+    const out = await preprocessEmailHtml(html);
+    expect(out).toContain("<h1>Main title</h1>");
+    expect(out).toContain("<h2>Section</h2>");
+    expect(out).toContain("<h3>Subsection</h3>");
+    expect(out).toContain("<h6>Caption</h6>");
+  });
+
   it("rewrites td/tr/th to div", async () => {
     const html = `
       <table><tbody>
@@ -87,6 +104,23 @@ describe("preprocessEmailHtml", () => {
 });
 
 describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
+  it("preserves non-empty Markdown headings", () => {
+    const input = [
+      "# Title",
+      "",
+      "## Section",
+      "",
+      "### Subsection",
+      "",
+      "Body paragraph.",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toContain("# Title");
+    expect(out).toContain("## Section");
+    expect(out).toContain("### Subsection");
+    expect(out).toContain("Body paragraph.");
+  });
+
   it("drops empty headings from <h4></h4>-style placeholders", () => {
     const input = [
       "####",
