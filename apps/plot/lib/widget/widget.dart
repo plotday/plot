@@ -28,7 +28,6 @@ export 'hoverable_link.dart';
 export 'drag_handle.dart';
 export 'icon.dart';
 export 'icon_input_row.dart';
-export 'inline_title_input.dart';
 export 'input_tile.dart';
 export 'link.dart';
 export 'link_input.dart';
