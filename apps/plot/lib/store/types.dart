@@ -95,6 +95,79 @@ class CustomSerializer extends ValueSerializer {
 }
 
 
+/// A single external account mapping for a contact (e.g. Slack, Gmail, LinkedIn).
+/// Populated by messaging connectors during sync and stored locally for fast
+/// lookup in the DM picker without round-tripping to the server.
+class ContactExternalAccount {
+  const ContactExternalAccount({
+    required this.provider,
+    required this.accountId,
+  });
+
+  final String provider;
+  final String accountId;
+
+  factory ContactExternalAccount.fromJson(Map<String, dynamic> json) {
+    return ContactExternalAccount(
+      provider: json['provider'] as String,
+      accountId: json['account_id'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'provider': provider,
+    'account_id': accountId,
+  };
+
+  @override
+  String toString() => 'ContactExternalAccount($provider, $accountId)';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContactExternalAccount &&
+      other.provider == provider &&
+      other.accountId == accountId;
+
+  @override
+  int get hashCode => Object.hash(provider, accountId);
+}
+
+/// Drift converter for a list of [ContactExternalAccount] objects.
+/// Stored in SQLite as a JSON string. The sync layer sends a JSON array of
+/// {provider, account_id} objects (aggregated by the user.actor view).
+class ExternalAccountListConverter
+    extends TypeConverter<List<ContactExternalAccount>, String>
+    with JsonTypeConverter2<List<ContactExternalAccount>, String, List<dynamic>> {
+  const ExternalAccountListConverter();
+
+  @override
+  List<ContactExternalAccount> fromSql(String fromDb) {
+    if (fromDb.isEmpty || fromDb == '[]') return [];
+    final decoded = jsonDecode(fromDb);
+    if (decoded is! List) return [];
+    return decoded
+        .map((item) => ContactExternalAccount.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  String toSql(List<ContactExternalAccount> value) {
+    return jsonEncode(value.map((e) => e.toJson()).toList());
+  }
+
+  @override
+  List<ContactExternalAccount> fromJson(List<dynamic> json) {
+    return json
+        .map((item) => ContactExternalAccount.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  List<dynamic> toJson(List<ContactExternalAccount> value) {
+    return value.map((e) => e.toJson()).toList();
+  }
+}
+
 class LocalDateTimeConverter extends TypeConverter<DateTime, DateTime> {
   const LocalDateTimeConverter();
 

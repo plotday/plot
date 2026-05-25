@@ -4294,6 +4294,7 @@ export type Database = {
           avatar_url: string | null
           created_at: string | null
           email: string | null
+          external_accounts: Json | null
           id: string | null
           inviteable: boolean | null
           linked_user_id: string | null

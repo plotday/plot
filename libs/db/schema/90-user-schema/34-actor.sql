@@ -13,6 +13,11 @@
 -- contact rows on the same thread that share a linked_user_id represent
 -- the same person and must be deduped in client-side rendering. NULL for
 -- unlinked external contacts and twist instances.
+--
+-- The "external_accounts" column aggregates contact_external_account rows
+-- for this contact as a JSON array of {provider, account_id} objects.
+-- Used by the DM picker to filter contacts by reachable messaging platform.
+-- Always an empty array for twist instances (which are not contacts).
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
 -- Contacts visible via user_contact (primary or external contacts).
@@ -41,7 +46,15 @@ SELECT
     ) AS self,
     a.inviteable,
     true AS "primary",
-    c.user_id AS linked_user_id
+    c.user_id AS linked_user_id,
+    COALESCE(
+        (
+            SELECT json_agg(json_build_object('provider', cea.provider, 'account_id', cea.account_id))
+            FROM contact_external_account cea
+            WHERE cea.contact_id = a.id
+        ),
+        '[]'::json
+    ) AS external_accounts
 FROM
     user_contact uc
     JOIN contact c ON c.id = uc.contact_id
@@ -68,7 +81,15 @@ SELECT
     (c.user_id = uc_primary.user_id) AS self,
     a.inviteable,
     false AS "primary",
-    c.user_id AS linked_user_id
+    c.user_id AS linked_user_id,
+    COALESCE(
+        (
+            SELECT json_agg(json_build_object('provider', cea.provider, 'account_id', cea.account_id))
+            FROM contact_external_account cea
+            WHERE cea.contact_id = a.id
+        ),
+        '[]'::json
+    ) AS external_accounts
 FROM
     contact c
     JOIN actor a ON a.id = c.id
@@ -92,7 +113,8 @@ SELECT
     false AS self,
     a.inviteable,
     true AS "primary",
-    NULL::uuid AS linked_user_id
+    NULL::uuid AS linked_user_id,
+    '[]'::json AS external_accounts
 FROM
     "public"."user" u
     JOIN twist_instance pt ON pt.owner_id = u.id

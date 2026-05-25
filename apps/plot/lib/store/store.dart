@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 338;
+  int get schemaVersion => 339;
 
   @override
   MigrationStrategy get migration {
@@ -3567,6 +3567,17 @@ class Store extends _$Store {
       await _safeAddColumn(m, priorities, priorities.notifyWindowSet);
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
+      );
+    }
+    if (from < 339) {
+      // Add external_accounts column to actors. The server's user.actor view
+      // now aggregates contact_external_account rows as a JSON array so the
+      // DM picker can filter contacts by reachable messaging platform without
+      // a network call. Resetting the actors cursor ensures every row is
+      // re-pulled with the new column populated.
+      await _safeAddColumn(m, actors, actors.externalAccounts);
+      await m.database.customStatement(
+        "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
     }
   }

@@ -21,6 +21,14 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   BlobColumn get linkedUserId =>
       blob().nullable().map(const UuidConverter())();
 
+  /// External messaging platform accounts mapped to this contact.
+  /// Aggregated from the server's contact_external_account table and stored
+  /// as a JSON array of {provider, account_id} objects. Always an empty list
+  /// for twist instances. Used by the DM picker to filter contacts by
+  /// reachable messaging platform (Slack, Gmail, LinkedIn, Teams, etc.).
+  TextColumn get externalAccounts =>
+      text().withDefault(const Constant('[]')).map(const ExternalAccountListConverter())();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -816,6 +824,7 @@ class Actor extends ActorRow {
         inviteable: row.inviteable,
         primary: row.primary,
         linkedUserId: row.linkedUserId,
+        externalAccounts: row.externalAccounts,
       );
 
   @override
@@ -833,6 +842,7 @@ class Actor extends ActorRow {
     bool? primary,
     Value<Uuid?> linkedUserId = const Value.absent(),
     Value<int?> pending = const Value.absent(),
+    List<ContactExternalAccount>? externalAccounts,
   }) => Actor.fromStore(
     super.copyWith(
       id: id,
@@ -848,6 +858,7 @@ class Actor extends ActorRow {
       primary: primary,
       linkedUserId: linkedUserId,
       pending: pending,
+      externalAccounts: externalAccounts,
     ),
   );
 
@@ -857,6 +868,20 @@ class Actor extends ActorRow {
       return name!;
     }
     return email ?? 'Unknown';
+  }
+
+  /// Returns true if this actor has at least one external account for the
+  /// given [provider] (e.g. 'slack', 'gmail', 'linkedin', 'teams', 'google_chat').
+  /// Used by the DM picker to filter contacts reachable on a given platform.
+  bool hasExternalAccount(String provider) {
+    return externalAccounts.any((a) => a.provider == provider);
+  }
+
+  /// Returns all external accounts for the given [provider], or all accounts
+  /// if [provider] is null.
+  List<ContactExternalAccount> externalAccountsFor([String? provider]) {
+    if (provider == null) return externalAccounts;
+    return externalAccounts.where((a) => a.provider == provider).toList();
   }
 }
 
