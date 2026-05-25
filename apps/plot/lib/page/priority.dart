@@ -1035,26 +1035,10 @@ class _PriorityPageState extends State<PriorityPage>
     InfiniteListController controller,
   ) {
     final selectedId = state.thread?.id;
-    // In multi-panel mode the Today section marker renders as
-    // SizedBox.shrink (the sticky tab header above the list carries
-    // that label), so the separator slots both above and below that
-    // marker are pure dead space sitting under the sticky header's
-    // bottom border — the 1px above adds an extra-pixel band, and
-    // the 1px below would light up whenever the first thread is
-    // hovered, focused, or selected. Drop both so the header's
-    // divider is the only line above the first row.
-    //
-    // In single-panel mode the Today marker renders as a visible
-    // date header instead, so its separators behave normally.
-    final isMulti = context.isMultiPanel;
     final rawPrev = index > 0 && index - 1 < listItems.length
         ? listItems[index - 1]
         : null;
     final rawNext = index < listItems.length ? listItems[index] : null;
-    if (isMulti &&
-        (_isTodaySectionMarker(rawPrev) || _isTodaySectionMarker(rawNext))) {
-      return const SizedBox.shrink();
-    }
     return BlockListSeparator(
       prev: rawPrev,
       next: rawNext,
@@ -1076,14 +1060,6 @@ class _PriorityPageState extends State<PriorityPage>
       dragSourceId: (item) =>
           item is AgendaThreadItem ? item.thread.id.toString() : null,
     );
-  }
-
-  static bool _isTodaySectionMarker(AgendaItem? item) {
-    if (item is! AgendaHeaderItem) return false;
-    final text = item.text;
-    if (text == null) return false;
-    final marker = ActivitySectionMarker.tryDecode(text);
-    return marker?.section == ActivitySection.doing;
   }
 
   Widget _buildActivityFeed(
@@ -1240,26 +1216,6 @@ class _PriorityPageState extends State<PriorityPage>
                     ? null
                     : ActivitySectionMarker.tryDecode(displayText);
                 if (marker != null) displayText = marker.label;
-
-                // The Today section header used to render the "Doing"
-                // label inline. In multi-panel mode the sticky tab
-                // header above the feed carries that label, so the
-                // marker renders zero-height (still emitted as a
-                // drag-drop target for "make active today"). In
-                // single-panel mode the tab header sits at the
-                // bottom — well below today's threads — so render
-                // the marker as a plain "Today" text label here,
-                // matching the appearance of scheduled-day headers
-                // like "Tomorrow" or "Monday" (which also flow
-                // through AgendaTile's text-only path with their
-                // relativeDateLabel as text).
-                final isTodayMarker = marker?.section == ActivitySection.doing;
-                if (isTodayMarker) {
-                  if (context.isMultiPanel) {
-                    return const [SizedBox.shrink()];
-                  }
-                  displayText = relativeDateLabel(Date.today());
-                }
 
                 // Activity-feed section headers (Today / New / Scheduled
                 // day buckets / Done) are all just text labels and must
