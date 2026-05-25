@@ -56,6 +56,7 @@ class TitleComposeFieldState extends State<TitleComposeField> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onControllerChanged);
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
