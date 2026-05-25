@@ -116,6 +116,8 @@ class ContactsComposeField extends StatefulWidget {
   /// owns this helper.
   final Future<void> Function() openTouchModal;
 
+  /// Whether this is the last row in the compose surface. Suppresses the
+  /// bottom hairline divider so the surface ends cleanly above the body.
   final bool isLast;
 
   @override
@@ -130,6 +132,7 @@ class ContactsComposeFieldState extends State<ContactsComposeField> {
   late final TextEditingController _controller;
   List<ContactCandidate> _candidates = const [];
   int? _focusedChipIndex;
+  int _candidateGeneration = 0;
 
   @override
   void initState() {
@@ -165,13 +168,17 @@ class ContactsComposeFieldState extends State<ContactsComposeField> {
   }
 
   Future<void> _refreshCandidates() async {
+    // Rapid typing can fire several loadCandidates concurrently; stamp each
+    // call so a slower earlier result can't clobber a faster later one.
+    final generation = ++_candidateGeneration;
     final results = await widget.loadCandidates(_controller.text);
-    if (!mounted) return;
+    if (!mounted || generation != _candidateGeneration) return;
     setState(() => _candidates = results);
   }
 
   Future<void> _handlePicked(ContactCandidate candidate) async {
     await widget.onAdd(candidate);
+    if (!mounted) return;
     _controller.clear();
     _refreshCandidates();
   }
@@ -180,6 +187,7 @@ class ContactsComposeFieldState extends State<ContactsComposeField> {
     final text = EmailParser.normalize(_controller.text);
     if (!EmailParser.isEmail(text)) return;
     await widget.onAdd(InviteEmailCandidate(text));
+    if (!mounted) return;
     _controller.clear();
     _refreshCandidates();
   }
@@ -265,12 +273,16 @@ class ContactsComposeFieldState extends State<ContactsComposeField> {
   }
 
   Future<void> _handleChipTap(int idx) async {
+    // Capture the chip before suspending — by the time the menu closes,
+    // the chip list may have changed and `idx` could point elsewhere.
+    final chip = widget.chips[idx];
     final action = await showComposeChipMenu(
       context,
-      chipLabel: widget.chips[idx].label,
+      chipLabel: chip.label,
     );
+    if (!mounted) return;
     if (action == ComposeChipAction.remove) {
-      await widget.onRemove(widget.chips[idx]);
+      await widget.onRemove(chip);
     }
   }
 
