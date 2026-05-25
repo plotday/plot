@@ -349,6 +349,23 @@ class ThreadsBase extends BaseTable {
     json.remove('agenda_at');
     json.remove('invite_emails');
 
+    // state_on / state_at arrive from the server as Postgres range literals
+    // (`[lower,upper)`, or `empty`). The local model stores only the lower
+    // bound; collapse the range here so the row deserializer sees a scalar
+    // date / timestamp instead of failing to parse the bracketed form.
+    final rawStateOn = json['state_on'];
+    if (rawStateOn is String) {
+      json['state_on'] = rawStateOn == 'empty'
+          ? null
+          : DateRange.fromString(rawStateOn).start?.toString();
+    }
+    final rawStateAt = json['state_at'];
+    if (rawStateAt is String) {
+      json['state_at'] = rawStateAt == 'empty'
+          ? null
+          : DateTimeRange.fromString(rawStateAt).start?.toUtc().toIso8601String();
+    }
+
     return ThreadRow.fromJson(json);
   }
 
