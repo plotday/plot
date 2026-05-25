@@ -345,7 +345,11 @@ CROSS JOIN LATERAL (
         ('respond_window', '[{"days":[1,2,3,4,5],"start":"09:00","end":"17:00"}]'::jsonb),
         ('respond_within', '{"value":4,"unit":"hours"}'::jsonb),
         ('early_notifications_enabled', 'true'::jsonb),
-        ('notify_window', '[{"days":[1,2,3,4,5,6,7],"start":"08:00","end":"20:00"}]'::jsonb)
+        ('notify_window', '[{"days":[1,2,3,4,5,6,7],"start":"08:00","end":"20:00"}]'::jsonb),
+        -- see_within may or may not already exist (depending on whether the
+        -- prior migration's see_within_requests rename had source rows to
+        -- carry forward). Seed it for any root that's still missing it.
+        ('see_within', '{"value":30,"unit":"minutes"}'::jsonb)
 ) AS key_value(key, value)
 WHERE nlevel(p.path) = 1
 ON CONFLICT (user_id, priority_id, key) DO NOTHING;
