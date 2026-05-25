@@ -113,10 +113,21 @@ class BroadcastClient with WidgetsBindingObserver {
   /// engaged and never push to their mobile.
   bool _appIsActive = true;
 
+  /// Whether the OS has actually suspended the app (mobile background or
+  /// torn down). Distinct from [_appIsActive], which also goes false on
+  /// desktop when the window merely loses focus — but in that case the app
+  /// is still running and must keep its WebSocket alive (and reconnect
+  /// immediately if it drops). Reconnect attempts are only gated when truly
+  /// suspended; otherwise an unfocused desktop window that loses its socket
+  /// would never reconnect and would show "Offline" until the window
+  /// regained focus.
+  bool _appIsSuspended = false;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _appIsActive = true;
+      _appIsSuspended = false;
       if (_shouldReconnect && !_isConnected) {
         _resetBackoff(); // Reset backoff for immediate reconnect
         _reconnectTimer?.cancel();
@@ -127,14 +138,21 @@ class BroadcastClient with WidgetsBindingObserver {
         _sendPing(active: true);
       }
     } else if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+        state == AppLifecycleState.hidden) {
+      // Desktop window lost focus / hidden, or mobile multitasking switcher
+      // visible. The app is still running, so keep the WebSocket alive and
+      // keep retrying if it drops — only the server-reported `active` flag
+      // changes so push notifications start deferring to mobile.
       _appIsActive = false;
       _sendPing(active: false);
-      // Cancel pending reconnect — don't reconnect while backgrounded.
-      // (On `inactive`/`hidden` desktop we stay connected; we just stop
-      // racing to reconnect if the socket happens to be down.)
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // OS has truly suspended the app (mobile background) or is tearing
+      // it down. Stop scheduling reconnects — the next resume reconnects
+      // immediately.
+      _appIsActive = false;
+      _appIsSuspended = true;
+      _sendPing(active: false);
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
     }
@@ -471,7 +489,7 @@ class BroadcastClient with WidgetsBindingObserver {
 
   /// Schedule a reconnection attempt with exponential backoff (no max attempts)
   void _scheduleReconnect() {
-    if (!_shouldReconnect || _reconnectTimer != null || !_appIsActive) {
+    if (!_shouldReconnect || _reconnectTimer != null || _appIsSuspended) {
       return;
     }
 
