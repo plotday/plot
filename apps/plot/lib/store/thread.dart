@@ -3204,6 +3204,67 @@ SELECT
         );
   }
 
+  /// Live stream of the action tab's head page (Respond / Do / Read).
+  /// Mirrors [watchCatchUpHead] but parameterised by `action` and carrying
+  /// the bucket cursor shape — see [_watchActionTabIds].
+  static Stream<({
+    List<Thread> threads,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+        tailCursor,
+    bool saturated,
+  })> watchActionTabHead({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchActionTabIds(
+      action: action,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (
+          isActiveInv: last.isActive ? 0 : 1,
+          bucketKey: last.isActive ? '0000' : (last.bucketDate ?? '9999'),
+          order: last.order,
+          id: last.id,
+        ),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
   /// Page result for the Respond / Do / Read action tabs. Each row carries
   /// the bucket assignment so the renderer can insert date headers at
   /// transitions without re-bucketing in Dart. `isActive=true` rows render

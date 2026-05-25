@@ -143,8 +143,6 @@ class _Overlay {
     required this.expected,
     this.watched = _OptimisticOverride._defaultWatched,
     this.catchUpSortKeys,
-    this.bucketDate,
-    this.isActive,
     this.sticky = false,
   });
 
@@ -171,8 +169,6 @@ class _Overlay {
   final Thread? expected;
   final Set<_OverrideField> watched;
   final ({int urgent, int importance, DateTime activityAt})? catchUpSortKeys;
-  final Date? bucketDate;
-  final bool? isActive;
   final bool sticky;
 
   /// True when [actual] (the stream's copy, or null) makes this overlay
@@ -630,6 +626,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Cursor of the next All-tab append page.
   ({String activityAt, ThreadId id})? _allTabAppendCursor;
 
+  /// Tail cursor of the most recent head emission for an action tab.
+  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      _actionTabHeadTailCursor;
+
+  /// Cursor of the next action-tab append page.
+  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      _actionTabAppendCursor;
+
   /// Latest threads list emitted by the agenda subscription (after
   /// optimistic overrides). Optimistic mutation handlers transform
   /// this list and call [_rebuildAgendaModel] to derive a fresh
@@ -766,6 +770,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     _catchUpAppendCursor = null;
     _allTabHeadTailCursor = null;
     _allTabAppendCursor = null;
+    _actionTabHeadTailCursor = null;
+    _actionTabAppendCursor = null;
     _overlay.clear();
 
     final tab = state.activeTab;
@@ -777,9 +783,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       case ActivityTab.respond:
       case ActivityTab.doIt:
       case ActivityTab.read:
-        // Action tabs remain on the legacy dual-stream path until they
-        // are migrated in subsequent commits.
-        break;
+        _subscribeActionTabHead(tab);
     }
   }
 
@@ -807,6 +811,37 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabHead = result.threads;
       _activeTabHeadSaturated = result.saturated;
       _catchUpHeadTailCursor = result.tailCursor;
+      _rebuildActiveTabSection();
+    });
+  }
+
+  void _subscribeActionTabHead(ActivityTab tab) {
+    final action = tab.actionFilter;
+    if (action == null) return;
+    final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
+    final searchGlobal = isSearching && priorityToLoad.root;
+
+    _activeTabSubscriptionTab = tab;
+    _activeTabSubscription = Thread.watchActionTabHead(
+      action: action,
+      priorityId: scopeByPath ? null : priorityToLoad.id,
+      priorityPath: scopeByPath
+          ? (searchGlobal ? null : priorityToLoad.path)
+          : null,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: isSearching ? state.search : null,
+      limit: _activityFeedLimit,
+    ).listen((result) {
+      if (isClosed) return;
+      _activeTabHead = result.threads;
+      _activeTabHeadSaturated = result.saturated;
+      _actionTabHeadTailCursor = result.tailCursor;
       _rebuildActiveTabSection();
     });
   }
@@ -852,10 +887,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     final merged = _applyOverlay(combined, tab);
 
     final eventPrefix = _buildEventAgendaItems();
-    final items = <AgendaItem>[
-      ...eventPrefix,
-      for (final t in merged) AgendaThreadItem(t),
-    ];
+    final List<AgendaItem> items;
+    if (tab.isActionTab) {
+      items = _buildActionTabItems(merged, eventPrefix);
+    } else {
+      items = <AgendaItem>[
+        ...eventPrefix,
+        for (final t in merged) AgendaThreadItem(t),
+      ];
+    }
 
     final byTab = Map<ActivityTab, ActivityFeedTabData>.from(
       state.activityFeedByTab,
@@ -868,6 +908,79 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedLoaded: true,
       ),
     );
+  }
+
+  /// Walk an action-tab's merged thread list (already re-sorted via
+  /// [_actionTabCompare] for overlay-affected positions) and emit the
+  /// interleaved AgendaHeaderItem / AgendaThreadItem sequence. The Today
+  /// header is always emitted (drop target); per-day Scheduled headers
+  /// follow bucket transitions. The multi-panel header-suppression rule
+  /// is a render-time concern handled by `page/priority.dart`.
+  List<AgendaItem> _buildActionTabItems(
+    List<Thread> merged,
+    List<AgendaItem> eventPrefix,
+  ) {
+    // Sort the merged list using the same key order as the SQL ORDER BY,
+    // so overlay-substituted rows whose bucket / order changed land in
+    // the right slot. Stable Dart sort preserves SQL order for rows the
+    // overlay didn't touch.
+    final sorted = List<Thread>.from(merged)..sort(_actionTabCompare);
+
+    final items = <AgendaItem>[
+      ...eventPrefix,
+      // Today header is always emitted (even when empty) so it remains a
+      // valid drag-and-drop target for "make active".
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.today),
+      ),
+    ];
+
+    Date? lastBucket;
+    bool sawActive = false;
+    for (final t in sorted) {
+      if (t.isActiveThread) {
+        items.add(AgendaThreadItem(t));
+        sawActive = true;
+        continue;
+      }
+      // Scheduled bucket — emit header when entering a new day.
+      final date = t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+      if (lastBucket == null || lastBucket != date || sawActive) {
+        items.add(
+          AgendaHeaderItem(
+            date: date,
+            text: ActivitySectionMarker.encode(
+              ActivitySection.scheduled,
+              label: relativeDateLabel(date),
+            ),
+          ),
+        );
+        lastBucket = date;
+        sawActive = false;
+      }
+      items.add(AgendaThreadItem(t));
+    }
+    return items;
+  }
+
+  /// Comparator mirroring the SQL ORDER BY in `_watchActionTabIds`:
+  /// active rows first, then scheduled rows by bucket date ascending,
+  /// finally by `state_order` (Thread.order.value) and id ascending.
+  int _actionTabCompare(Thread a, Thread b) {
+    final aActive = a.isActiveThread;
+    final bActive = b.isActiveThread;
+    if (aActive != bActive) return aActive ? -1 : 1;
+
+    if (!aActive) {
+      final aDate = a.on?.start ?? a.at?.start?.toDate() ?? Date.today();
+      final bDate = b.on?.start ?? b.at?.start?.toDate() ?? Date.today();
+      final dateCmp = aDate.compareTo(bDate);
+      if (dateCmp != 0) return dateCmp;
+    }
+
+    final orderCmp = a.order.compareTo(b.order);
+    if (orderCmp != 0) return orderCmp;
+    return a.id.toString().compareTo(b.id.toString());
   }
 
   /// Apply the activity-feed overlay to a per-tab SQL result. Substitutes
@@ -954,8 +1067,12 @@ class PriorityBloc extends Cubit<PriorityState> {
         localExhausted = _activeTabAppended.isEmpty
             ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
             : _allTabAppendCursor == null;
-      default:
-        return false;
+      case ActivityTab.respond:
+      case ActivityTab.doIt:
+      case ActivityTab.read:
+        localExhausted = _activeTabAppended.isEmpty
+            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
+            : _actionTabAppendCursor == null;
     }
     return localExhausted && exhaustedRemote;
   }
@@ -1128,6 +1245,100 @@ class PriorityBloc extends Cubit<PriorityState> {
           page.threads.where((t) => !headIds.contains(t.id)).toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
       _allTabAppendCursor = page.saturated ? page.nextCursor : null;
+      if (!page.saturated) {
+        _activeTabAppendsExhausted = true;
+      }
+      _rebuildActiveTabSection();
+
+      if (!page.saturated) break;
+    }
+  }
+
+  /// Fetch additional action-tab pages beyond the head. Same shape as
+  /// [_fetchMoreCatchUp] but uses [Thread.fetchActionTabPage] and the
+  /// action tab's `(isActiveInv, bucketKey, order, id)` cursor.
+  Future<void> _fetchMoreActionTab(ActivityTab tab, int first, int count) async {
+    final action = tab.actionFilter;
+    if (action == null) return;
+    final needed = first + count;
+    bool needsProbeBeyondHead() =>
+        _activeTabHeadSaturated &&
+        _activeTabAppended.isEmpty &&
+        !_activeTabAppendsExhausted;
+
+    if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+        !needsProbeBeyondHead()) {
+      return;
+    }
+
+    while (_activeTabAppendInFlight != null) {
+      try {
+        await _activeTabAppendInFlight;
+      } catch (_) {}
+      if (isClosed) return;
+      if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+          !needsProbeBeyondHead()) {
+        return;
+      }
+    }
+
+    while (!_computeActiveTabDoneEnd() &&
+        (_activeTabHead.length + _activeTabAppended.length < needed ||
+            needsProbeBeyondHead())) {
+      final cursor = _actionTabAppendCursor ?? _actionTabHeadTailCursor;
+      if (cursor == null) {
+        if (needsProbeBeyondHead()) {
+          _activeTabAppendsExhausted = true;
+          _rebuildActiveTabSection();
+        }
+        break;
+      }
+
+      final gen = _activeTabAppendGeneration;
+      final priorityToLoad = state.context;
+      final isSearching = state.search.isNotEmpty;
+      final scopeByPath = isSearching ||
+          state.hideSubPriorities ||
+          _currentEventForFeed != null;
+      final searchGlobal = isSearching && priorityToLoad.root;
+
+      final completer = Completer<void>();
+      _activeTabAppendInFlight = completer.future;
+      ({
+        List<Thread> threads,
+        List<({ThreadId id, bool isActive, String? bucketDate, double order})>
+            rows,
+        ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+            nextCursor,
+        bool saturated,
+      })? page;
+      try {
+        page = await Thread.fetchActionTabPage(
+          action: action,
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+          after: cursor,
+        );
+      } finally {
+        completer.complete();
+        _activeTabAppendInFlight = null;
+      }
+
+      if (isClosed) return;
+      if (gen != _activeTabAppendGeneration) return;
+
+      final headIds = {for (final t in _activeTabHead) t.id};
+      final dedupedNew =
+          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
+      _actionTabAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
         _activeTabAppendsExhausted = true;
       }
@@ -3897,7 +4108,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     for (final tab in ActivityTab.values) {
       final action = tab.actionFilter;
       if (action == null) continue;
-      result[tab] = _buildActionTabData(action, eventPrefix);
+      if (_activeTabSubscriptionTab == tab) {
+        // Per-tab subscription owns this action tab; preserve its
+        // last write so the legacy rebuild doesn't clobber it.
+        result[tab] =
+            state.activityFeedByTab[tab] ?? ActivityFeedTabData.empty;
+      } else {
+        result[tab] = _buildActionTabData(action, eventPrefix);
+      }
     }
 
     if (_activeTabSubscriptionTab == ActivityTab.all) {
@@ -4206,13 +4424,18 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     // Route to the per-tab fetch when the active tab has been migrated.
-    // Action tabs (Respond / Do / Read) still fall through to the legacy
-    // dual-stream path below.
-    if (_activeTabSubscriptionTab == ActivityTab.catchUp) {
+    // Every tab now has a per-tab path; the legacy branch below remains
+    // as a safety net but is no longer reachable while a per-tab
+    // subscription is active.
+    final activeTab = _activeTabSubscriptionTab;
+    if (activeTab == ActivityTab.catchUp) {
       return _fetchMoreCatchUp(first, count);
     }
-    if (_activeTabSubscriptionTab == ActivityTab.all) {
+    if (activeTab == ActivityTab.all) {
       return _fetchMoreAllTab(first, count);
+    }
+    if (activeTab != null && activeTab.isActionTab) {
+      return _fetchMoreActionTab(activeTab, first, count);
     }
 
     final needed = first + count;
