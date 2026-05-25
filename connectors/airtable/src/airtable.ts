@@ -111,7 +111,7 @@ export class Airtable extends Connector<Airtable> {
         {
           status: STATUS_TODO,
           label: "To Do",
-          todo: true as const,
+          task: true as const,
           createDefault: true as const,
         },
         {
@@ -225,10 +225,10 @@ export class Airtable extends Connector<Airtable> {
       if (isDone) {
         statuses.push({ status, label, done: true, tag: Tag.Done });
       } else if (!createDefaultAssigned) {
-        statuses.push({ status, label, todo: true, createDefault: true });
+        statuses.push({ status, label, task: true, createDefault: true });
         createDefaultAssigned = true;
       } else {
-        statuses.push({ status, label, todo: true });
+        statuses.push({ status, label, task: true });
       }
     };
 

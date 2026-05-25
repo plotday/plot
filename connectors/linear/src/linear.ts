@@ -81,7 +81,7 @@ export class Linear extends Connector<Linear> {
         {
           status: "unstarted",
           label: "To Do",
-          todo: true,
+          task: true,
           createDefault: true,
         },
         { status: "started", label: "In Progress" },
@@ -178,7 +178,7 @@ export class Linear extends Connector<Linear> {
             status: s.id,
             label: s.name,
             ...(s.type === "unstarted"
-              ? { todo: true as const, createDefault: true as const }
+              ? { task: true as const, createDefault: true as const }
               : {}),
             ...(s.type === "completed"
               ? { tag: Tag.Done, done: true as const }

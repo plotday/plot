@@ -58,7 +58,7 @@ export class Asana extends Connector<Asana> {
       logo: "https://api.iconify.design/logos/asana-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/asana.svg",
       statuses: [
-        { status: "open", label: "Open", todo: true },
+        { status: "open", label: "Open", task: true },
         { status: "done", label: "Done", tag: Tag.Done, done: true },
       ],
       supportsAssignee: true,

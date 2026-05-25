@@ -51,11 +51,35 @@ export type LinkTypeConfig = {
     /** Whether this status represents completion (done, closed, merged, cancelled, etc.) */
     done?: boolean;
     /**
-     * Whether this status represents the connector's "to-do" / active state.
-     * When a user adds a thread to Plot's agenda, done-status links flip to
-     * the status marked `todo: true` (e.g., Gmail's "starred", Linear's
-     * "todo") so the link widget and thread tags reflect the active state.
-     * At most one status per type should set this.
+     * Mark the thread `active=true` in Plot when a link enters this status.
+     * Use for messaging-style flags where the user has indicated they want
+     * to act on the thread now — Gmail's "starred", Slack's "later", etc.
+     * The Plot user can later un-flag the thread without breaking the
+     * connector relationship.
+     */
+    active?: boolean;
+    /**
+     * Mark the thread `task=true` in Plot when a link enters this status.
+     * Use for project-tracker assignments — Linear / Todoist / Jira / etc.
+     * `task` puts the thread on the user's task list without flooding their
+     * inbox under `active`: the user explicitly flips it to `active` when
+     * they decide to start.
+     */
+    task?: boolean;
+    /**
+     * Mark the thread `to_read=true` in Plot when a link enters this status.
+     * Use for connectors that explicitly track read-later state (Pocket
+     * archives, Slack "remind me", etc).
+     */
+    toRead?: boolean;
+    /**
+     * @deprecated Use `active` (messaging) or `task` (project tracker) instead.
+     * Treated as `task: true` for backward compatibility.
+     *
+     * Original meaning: whether this status represents the connector's
+     * "to-do" / active state. When a user adds a thread to Plot's agenda,
+     * done-status links flip to the status marked `todo: true` (e.g.,
+     * Gmail's "starred", Linear's "todo").
      */
     todo?: boolean;
     /**
@@ -408,14 +432,6 @@ export enum AuthProvider {
   Todoist = "todoist",
   /** Airtable OAuth provider for Airtable bases */
   Airtable = "airtable",
-  /**
-   * LinkedIn provider — uses a captured `li_at` session cookie rather than
-   * OAuth, because LinkedIn does not expose an OAuth scope for personal
-   * messaging. The cookie is captured by the Plot client (in-app webview) and
-   * the rest of the auth surface (`get(channelId)`, `actAs`, `markNeedsReauth`,
-   * the connection list UI) behaves identically to OAuth providers.
-   */
-  LinkedIn = "linkedin",
 }
 
 /**

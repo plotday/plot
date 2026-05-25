@@ -97,7 +97,7 @@ export class Slack extends Connector<Slack> {
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", tag: Tag.Star, todo: true },
+        { status: "later", label: "Later", tag: Tag.Star, active: true },
       ],
     },
     {
