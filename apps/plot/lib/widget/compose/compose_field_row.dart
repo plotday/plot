@@ -1,6 +1,7 @@
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
@@ -31,7 +32,7 @@ class ComposeFieldRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final iconColor = theme.plotColors.muted;
-    final iconSize = theme.typography.sm.fontSize ?? 14.0;
+    final iconSize = theme.iconSizes.sm;
 
     final Widget leadingIcon = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),
