@@ -3405,9 +3405,7 @@ List<Command> threadCommands(
   Command? primary;
   if (!skipPrimary) {
     if (thread.todo) {
-      if (!thread.outstandingTasks) {
-        primary = FinishThread(thread, stateIcon: false);
-      }
+      primary = FinishThread(thread, stateIcon: false);
     } else if (thread.on != null) {
       primary = PickScheduleThread(thread);
     } else {

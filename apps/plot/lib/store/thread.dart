@@ -3675,11 +3675,6 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// non-todo threads.
   bool get isInactiveThread => !todo && !unread;
 
-  // TODO(thread-state-refactor): Derive `outstandingTasks` from the
-  // thread's note-tag / link state already loaded in memory. Stubbed to
-  // `false` so the "outstanding tasks" badge is inert until the
-  // derivation lands.
-  bool get outstandingTasks => false;
   DateTime? get bumpedAt => _thread.bumpedAt;
 
   /// True when the current user has a per-user state row on this thread

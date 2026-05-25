@@ -578,13 +578,6 @@ class Note extends Equatable implements Comparable<Note> {
         await _ensureTodoForUser(threadId);
       }
 
-      // TODO(thread-state-refactor): the "outstanding tasks" badge used
-      // to be recomputed here and stored on the per-user schedule. With
-      // the per-user schedule gone, we no longer persist this — the
-      // badge is derived on demand from the thread's loaded note-tag /
-      // link state (see `Thread.outstandingTasks`, currently stubbed
-      // to `false`).
-
       // Reply tag propagation: note → thread
       if (!skipReplyPropagation) {
         final replyUpdated = _tags?.tagsUpdated?[Tag.reply.id.toString()];
@@ -673,11 +666,6 @@ class Note extends Equatable implements Comparable<Note> {
       }
     }
   }
-
-  // _recomputeOutstandingTasks / _checkOutstandingTasks were removed
-  // with the per-user schedule. The "outstanding tasks" badge is now
-  // derived on demand from the thread's loaded note-tag / link state
-  // (see Thread.outstandingTasks).
 
   Future<void> archive() => copyWith(archivedAt: Value(DateTime.now())).save();
 
