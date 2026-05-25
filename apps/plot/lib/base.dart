@@ -245,10 +245,13 @@ class Base {
     //   pre-contact-id app versions): block on /activate, sign out of
     //   Clerk on failure so the user can sign in fresh.
     // - If we have a complete restored identity: validate in the background
-    //   with a timeout. App startup proceeds with the restored identity; if
-    //   /activate returns a different user.id (e.g. after a DB reset), the
-    //   resulting User emission triggers Store rebuild in UserBloc. Failures
-    //   are non-fatal — the user keeps working with restored data.
+    //   with a timeout. App startup proceeds with the restored identity. If
+    //   /activate returns a different user.id (e.g. after a DB reset, or in
+    //   dev when switching between APIs backed by different databases),
+    //   resolveIdentity() signs out so the user reauthenticates fresh —
+    //   silently swapping userIds underneath the restored data was leaving
+    //   sync wedged on a Broadcast DO 403. Failures are non-fatal — the user
+    //   keeps working with restored data.
     // Skip entirely when using FailedAuthService (no session possible).
     if (authService is! FailedAuthService && authService.isSignedIn) {
       if (!hasRestoredIdentity) {
@@ -351,10 +354,36 @@ class Base {
   /// This handles stale JWTs (e.g. after a database reset) by always asking
   /// the server for the correct user ID. Falls back to JWT on network error.
   static Future<void> resolveIdentity() async {
+    // Snapshot the locally-stored userId before /activate runs. If the server
+    // resolves to a different user.id, the local identity is stale and any
+    // local data is keyed to a userId the server doesn't agree is ours — the
+    // WebSocket would loop forever on 403 from the Broadcast DO's path/JWT
+    // check. Sign out so the user reauthenticates against the current API
+    // and starts clean, instead of silently swapping identity and leaving
+    // sync wedged. Only triggers when local identity was already restored
+    // (returning user pointing at a stale or otherwise-different backend);
+    // first-time sign-ins have `_userId == null` here and are unaffected.
+    final localUserIdBeforeActivate = Injector.appInstance
+        .get<Base>()
+        ._userId
+        ?.toString();
+
     // Try /activate first — server is the source of truth for user identity.
     try {
       final result = await api.post<Map<String, dynamic>>('/activate');
       final userId = result['userId'] as String;
+
+      if (localUserIdBeforeActivate != null &&
+          localUserIdBeforeActivate != userId) {
+        log.warning(
+          '/activate resolved a different user (local='
+          '$localUserIdBeforeActivate server=$userId) — signing out to avoid '
+          'wedged sync against a backend that does not recognize the cached '
+          'identity',
+        );
+        await signOut();
+        return;
+      }
 
       await Injector.appInstance.get<Base>().setIdentity(
         userId: userId,
@@ -363,15 +392,37 @@ class Base {
         contactId: result['contactId'] as String?,
       );
 
-      // If the server assigned a different user ID than what's in the JWT,
-      // refresh the Clerk client so future JWTs have the correct external_id.
+      // Reconcile the cached Clerk JWT against the server's resolved userId.
       final jwtUser = await identityFromJwt();
-      if (jwtUser == null || jwtUser.id != userId) {
+      if (jwtUser != null && jwtUser.id != userId) {
+        // The cached JWT's external_id disagrees with the server's view of
+        // who we are. Most common cause: the JWT was set by a different
+        // backend (dev switching between APIs backed by different
+        // databases, or a server-side DB reset). The WebSocket /updates
+        // handler authenticates by external_id and returns 403 on every
+        // reconnect when it disagrees with the userId in the URL path,
+        // wedging sync. refreshClient() reconciles session state but the
+        // Clerk SDK's token cache often outlives that reconciliation, so
+        // subsequent sessionToken() calls keep handing back the stale JWT.
+        // Sign out instead so the next sign-in writes a fresh, consistent
+        // JWT. Won't fire on a stable production backend (the JWT and the
+        // server agree); only triggers when they explicitly disagree.
+        log.warning(
+          'JWT external_id (${jwtUser.id}) disagrees with server userId '
+          '($userId) — signing out to avoid wedged sync',
+        );
+        await signOut();
+        return;
+      }
+      if (jwtUser == null) {
+        // First sign-in: JWT may not include external_id / contact_id yet.
+        // Refresh the Clerk client so the next JWT picks up the values
+        // /activate just set on the Clerk user.
         try {
           await auth.refreshClient();
         } catch (e) {
           log.warning(
-            'Failed to refresh Clerk client after identity change: $e',
+            'Failed to refresh Clerk client after first sign-in: $e',
           );
         }
       }

@@ -17,6 +17,13 @@ export type ClerkClaims = {
   email: string | undefined;
   name: string | undefined;
   picture: string | undefined;
+  /** Raw `external_id` claim as it appeared in the JWT, before any DB
+   * lookup or reconciliation. `/activate` compares this against the
+   * resolved user.id to detect a stale Clerk external_id (left over from
+   * a previous backend, e.g. dev switching APIs between different DBs)
+   * and re-points Clerk at the correct user. Undefined for first-time
+   * sign-ins where Clerk hasn't been told an external_id yet. */
+  externalId: string | undefined;
 };
 
 export type GetUserResult = {
@@ -49,6 +56,7 @@ export async function getUser(
       picture: ((claims as any).picture
         ?? (claims as any).image_url
         ?? (claims as any).imageUrl) as string | undefined,
+      externalId: userId,
     };
 
     if (userId) {

@@ -32,6 +32,54 @@ const account = new Hono<{ Bindings: Bindings }>();
 account.post("/activate", async (c) => {
   let user: AuthUser | undefined = c.var.user;
 
+  // Reconcile Clerk's external_id with the resolved user.id when the JWT
+  // carries a stale value (left over from a previous backend — typically
+  // dev switching between APIs backed by different databases, or a
+  // server-side DB reset that issued a new user UUID under the same Clerk
+  // identity). Without this, the WebSocket /updates handler 403's every
+  // reconnect (its auth check compares JWT external_id to the URL userId)
+  // and the client's cached Clerk JWT never picks up the corrected value,
+  // wedging sync. updateUser also rewrites publicMetadata.contact_id so
+  // the contact_id claim stays in sync with external_id — they were set
+  // together in the new-user branch below and identityFromJwt() reads
+  // both. Idempotent — only updates Clerk when the values actually
+  // differ. Non-fatal: a failure here just means the client's mismatch
+  // check will sign the user out again on the next /activate cycle.
+  if (user) {
+    const claimsExternalId = c.var.clerkClaims?.externalId;
+    if (claimsExternalId && claimsExternalId !== user.id) {
+      try {
+        const primaryContact = await c.var.db
+          .selectFrom("contact")
+          .select("id")
+          .where("user_id", "=", user.id)
+          .where("primary", "=", true)
+          .executeTakeFirst();
+        const clerk = createClerkClient({
+          secretKey: c.env.CLERK_SECRET_KEY,
+        });
+        await clerk.users.updateUser(user.clerkId, {
+          externalId: user.id,
+          publicMetadata: { contact_id: primaryContact?.id ?? null },
+        });
+        const logger = createLogger(extractRequestContext(c));
+        logger.info("Reconciled stale Clerk external_id", {
+          user_id: user.id,
+          stale_external_id: claimsExternalId,
+          clerk_id: user.clerkId,
+        });
+      } catch (err) {
+        const logger = createLogger(extractRequestContext(c));
+        logger.warn("Failed to reconcile stale Clerk external_id (non-fatal)", {
+          user_id: user.id,
+          stale_external_id: claimsExternalId,
+          clerk_id: user.clerkId,
+          error: (err as Error).message,
+        });
+      }
+    }
+  }
+
   // Fast path: existing user already fully activated and no pending external
   // state to reconcile. /activate is called on every app startup now, so this
   // collapses ~8 sequential queries (priority/contact/subscription/twist/
