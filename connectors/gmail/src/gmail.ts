@@ -1,10 +1,11 @@
 import {
   Connector,
+  type CreateLinkDraft,
   type NoteWriteBackResult,
   type ToolBuilder,
   Tag,
 } from "@plotday/twister";
-import type { Actor, ActorId, Note, Thread, Link } from "@plotday/twister/plot";
+import type { Actor, ActorId, NewLinkWithNotes, Note, Thread, Link } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -24,6 +25,7 @@ import {
   GmailApi,
   type GmailThread,
   type SyncState,
+  buildNewEmailMessage,
   buildReplyMessage,
   getHeader,
   parseEmailAddresses,
@@ -122,6 +124,16 @@ export class Gmail extends Connector<Gmail> {
         { status: "inbox", label: "Inbox" },
         { status: "starred", label: "Starred", tag: Tag.Star, todo: true },
         { status: "archived", label: "Archived", tag: Tag.Done, done: true },
+      ],
+    },
+    {
+      type: "gmail-email",
+      label: "New email",
+      logo: "https://api.iconify.design/logos/google-gmail.svg",
+      logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
       ],
     },
   ];
@@ -1420,6 +1432,110 @@ export class Gmail extends Connector<Gmail> {
       // Back to inbox, unstar.
       await api.modifyThread(threadId, ["INBOX"], ["STARRED"]);
     }
+  }
+
+  /**
+   * Creates a new outbound email from Plot.
+   *
+   * Recipients are resolved via `draft.recipients` (pre-populated by the
+   * runtime from `contact_external_account` rows where the Gmail connector
+   * stored `source: { provider: Google, accountId: email }`). As a fallback,
+   * `draft.contacts[i].email` is used for any contact not yet represented in
+   * `recipients`, so the connector works even before membership sync has run.
+   *
+   * Returns a `NewLinkWithNotes` whose `meta` matches what `onNoteCreated`
+   * reads so replies work with zero extra wiring.
+   */
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "gmail-email") return null;
+
+    // Collect recipient email addresses: prefer runtime-resolved
+    // externalAccountId (= email for Google contacts), then fall back to
+    // draft.contacts[i].email for contacts not yet in contact_external_account.
+    const seenEmails = new Set<string>();
+    const toEmails: string[] = [];
+
+    if (draft.recipients) {
+      for (const r of draft.recipients) {
+        const email = r.externalAccountId.trim().toLowerCase();
+        if (email && !seenEmails.has(email)) {
+          seenEmails.add(email);
+          toEmails.push(r.externalAccountId.trim());
+        }
+      }
+    }
+
+    // Fallback: contacts whose email wasn't resolved through externalAccountId.
+    for (const contact of draft.contacts) {
+      if (!contact.email) continue;
+      const email = contact.email.trim().toLowerCase();
+      if (email && !seenEmails.has(email)) {
+        seenEmails.add(email);
+        toEmails.push(contact.email.trim());
+      }
+    }
+
+    if (toEmails.length === 0) {
+      console.error(
+        "[gmail] onCreateLink: no email recipients could be derived from draft"
+      );
+      return null;
+    }
+
+    // Get sender's email address.
+    const api = await this.getApiAny();
+    if (!api) {
+      console.error("[gmail] onCreateLink: no enabled channel to source auth from");
+      return null;
+    }
+
+    const profile = await api.getProfile();
+    const fromEmail = profile.emailAddress;
+
+    const subject = draft.title || "";
+    const body = draft.noteContent ?? "";
+
+    const raw = buildNewEmailMessage({
+      to: toEmails,
+      from: fromEmail,
+      subject,
+      body,
+    });
+
+    const result = await api.sendNewMessage(raw);
+    const gmailThreadId = result.threadId;
+    const gmailMessageId = result.id;
+
+    // Suppress the echo when this sent message is synced back via Gmail's
+    // incremental history. The message id is the note key the sync path
+    // uses (same as onNoteCreated dedup).
+    await this.set(`sent:${gmailMessageId}`, true);
+
+    const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${gmailThreadId}`;
+
+    // channelId: use the first enabled channel so onNoteCreated (reply path)
+    // can resolve the OAuth token via getApi(channelId).
+    const enabledChannels = await this.getEnabledChannels();
+    const channelId = [...enabledChannels][0] ?? "";
+
+    return {
+      source: canonicalUrl,
+      type: "gmail-email",
+      title: subject || undefined,
+      status: draft.status,
+      created: new Date(),
+      sourceUrl: canonicalUrl,
+      channelId,
+      meta: {
+        syncProvider: "google",
+        syncableId: channelId,
+        channelId,
+        threadId: gmailThreadId,
+        historyId: null,
+      },
+    };
   }
 
   /**
