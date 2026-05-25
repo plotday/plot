@@ -78,7 +78,10 @@ class InlineTitleInputState extends State<InlineTitleInput> {
 
   Future<void> _commit(String value) async {
     if (!_expanded) return; // Already committing; ignore re-entry.
-    setState(() => _expanded = false);
+    setState(() {
+      _expanded = false;
+      _hovered = false;
+    });
     final trimmed = value.trim();
     final next = trimmed.isEmpty ? null : trimmed;
     if (next != widget.title) {
@@ -88,14 +91,20 @@ class InlineTitleInputState extends State<InlineTitleInput> {
 
   Future<void> _clearAndCollapse() async {
     if (!_expanded) return;
-    setState(() => _expanded = false);
+    setState(() {
+      _expanded = false;
+      _hovered = false;
+    });
     _controller.clear();
     if (widget.title != null) await widget.onChanged(null);
   }
 
   void _cancel() {
     _controller.text = widget.title ?? '';
-    setState(() => _expanded = false);
+    setState(() {
+      _expanded = false;
+      _hovered = false;
+    });
   }
 
   @override
