@@ -2202,6 +2202,224 @@ class Thread extends Equatable implements Comparable<Thread> {
   }) =>
       (unreadSort: unreadSort, activityAt: activityAt, id: id);
 
+  /// Shared filter/join machinery for activity-feed-style ID queries.
+  /// Builds the FROM/JOIN/WHERE portion only — callers prepend their own
+  /// SELECT clause, append GROUP BY and ORDER BY (plus any HAVING cursor
+  /// predicate and LIMIT/OFFSET), and bind variables in the documented
+  /// order.
+  ///
+  /// Variable order produced by this helper, in lookup order:
+  /// 1. (if [priorityPath] != null) path, pathPrefix
+  /// 2. (else if [priorityId] != null) priorityId
+  /// 3. draft flag
+  /// 4. (if [actionType] != null) action type
+  /// 5. iconFilter values, in order
+  /// 6. (if [requireTodoPredicate]) today, now, now, today, now, now
+  ///
+  /// The caller is responsible for any variables bound by its SELECT
+  /// clause (e.g. the `now` for the activity_at end-of-window predicate)
+  /// and for the cursor / LIMIT / OFFSET vars.
+  static ({
+    String sql,
+    List<Variable> variables,
+    Set<ResultSetImplementation<dynamic, dynamic>> readsFrom,
+  })
+  _buildFeedFilter({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    bool requireTodoPredicate = false,
+    bool requireUnread = false,
+    bool requireLinkSched = false,
+    String? actionType,
+  }) {
+    // Extract special tags (mirrors [_getQuery] / [_watchActivityFeedIds]
+    // semantics).
+    final mutableFilter = filter != null ? List<Tag>.from(filter) : null;
+    if (mutableFilter?.remove(Tag.archived) == true) {
+      archived = null;
+    }
+    final doTodo =
+        requireTodoPredicate || (mutableFilter?.remove(Tag.todo) == true);
+    final filterUnread =
+        requireUnread || (mutableFilter?.remove(Tag.unread) == true);
+
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+
+    // FROM + standard joins. Per-user state lives on `a.*` since the
+    // thread-state refactor, so there's no `user_sched` join. The shared
+    // schedule is distinguished from link schedules by `link_id IS NULL`.
+    sqlBuf.writeln('''
+FROM threads a
+LEFT JOIN schedules sched ON sched.thread_id = a.id AND sched.link_id IS NULL
+LEFT JOIN links l ON l.thread_id = a.id''');
+
+    // Action-tab queries need link_sched for bucket-date fallback (a
+    // synced calendar event with an action set inherits its date from
+    // the link's schedule). doTodo also needs it for its predicate.
+    if (doTodo || requireLinkSched) {
+      sqlBuf.writeln(
+        'LEFT JOIN schedules link_sched ON link_sched.link_id = l.id',
+      );
+    }
+
+    // Priority scope: priorityPath = self + descendants; priorityId = exact.
+    if (priorityPath != null) {
+      sqlBuf.writeln(
+        'INNER JOIN priorities p ON p.id = a.priority_id '
+        'AND (p.path = ? OR p.path LIKE ?)',
+      );
+      variables.add(Variable.withString(priorityPath.toString()));
+      variables.add(Variable.withString('$priorityPath%'));
+    }
+
+    // WHERE clauses.
+    final wheres = <String>[];
+    if (priorityPath == null && priorityId != null) {
+      wheres.add('a.priority_id = ?');
+      variables.add(Variable.withBlob(priorityId.toBytes()));
+    }
+    if (archived == false) {
+      wheres.add('a.archived_at IS NULL');
+    } else if (archived == true) {
+      wheres.add('a.archived_at IS NOT NULL');
+    }
+    wheres.add('a.draft = ?');
+    variables.add(Variable.withInt(draft ? 1 : 0));
+    if (filterUnread) {
+      wheres.add('a.unread = 1 AND a.read_at IS NULL');
+    }
+    if (actionType != null) {
+      wheres.add('a.action_type = ?');
+      variables.add(Variable.withString(actionType));
+    }
+
+    // Icon filter — mirrors [_getQuery] logic.
+    if (iconFilter != null && iconFilter.isNotEmpty) {
+      final includesLink = iconFilter.any(
+        (v) => v == 'link' || v.startsWith('http'),
+      );
+      final others = iconFilter
+          .where((v) => v != 'link' && !v.startsWith('http'))
+          .toList();
+      final preds = <String>[];
+      if (includesLink) {
+        preds.add("(a.icon = 'link' OR a.icon LIKE 'http%')");
+      }
+      if (others.isNotEmpty) {
+        final placeholders = others.map((_) => '?').join(',');
+        preds.add('a.icon IN ($placeholders)');
+        for (final v in others) {
+          variables.add(Variable.withString(v));
+        }
+      }
+      if (preds.isNotEmpty) {
+        wheres.add('(${preds.join(' OR ')})');
+      }
+    }
+
+    // Search predicate — same shape as [_getQuery] (interpolated, not bound,
+    // because the existing code relies on sanitized words and validated UUIDs).
+    if (search?.isNotEmpty == true) {
+      final sanitizedWords = _sanitizeSearchWords(search);
+      if (sanitizedWords.isNotEmpty) {
+        final ftsWords = _ftsQueryFromWords(sanitizedWords);
+        final linkConditions = sanitizedWords
+            .map(
+              (word) => "(title LIKE '%$word%' OR source_url LIKE '%$word%')",
+            )
+            .join(' AND ');
+        String? contactBranch;
+        if (contactIdMatchesPerWord != null &&
+            contactIdMatchesPerWord.length == sanitizedWords.length &&
+            contactIdMatchesPerWord.every((ids) => ids.isNotEmpty)) {
+          final clauses = <String>[];
+          for (final ids in contactIdMatchesPerWord) {
+            final orParts = ids
+                .map(
+                  (id) =>
+                      "(',' || COALESCE(a.contacts, '') || ',') LIKE '%,$id,%'",
+                )
+                .join(' OR ');
+            clauses.add('($orParts)');
+          }
+          contactBranch = clauses.join(' AND ');
+        }
+        final ftsBranch = ftsWords.isNotEmpty
+            ? '''SELECT thread_id FROM thread_fts WHERE thread_fts MATCH '$ftsWords'
+              UNION ALL
+              SELECT thread_id FROM note_fts WHERE note_fts MATCH '$ftsWords'
+              UNION ALL
+              '''
+            : '';
+        wheres.add('''
+(a.id IN (
+  ${ftsBranch}SELECT thread_id FROM links WHERE thread_id IS NOT NULL AND $linkConditions
+)${contactBranch != null ? ' OR ($contactBranch)' : ''})''');
+      }
+    }
+
+    // Tag filter — hoist out of the join via EXISTS subqueries so tag rows
+    // don't multiply the join. `tag.id` is a UUID, safe to interpolate.
+    if (mutableFilter != null && mutableFilter.isNotEmpty) {
+      for (final tag in mutableFilter) {
+        wheres.add(
+          "EXISTS (SELECT 1 FROM thread_tags tt "
+          "WHERE tt.id = a.id AND tt.occurrence = '' "
+          "AND JSON_EXTRACT(tt.tags, '\$.${tag.id}') IS NOT NULL)",
+        );
+      }
+    }
+
+    // doTodo: SQL form of [Thread.todo] — at least one of shared schedule /
+    // per-user thread state / link schedule must be active right now.
+    if (doTodo) {
+      final today = Date.today().toString();
+      final now = Time.now();
+      wheres.add('''
+((sched.start_on <= ? AND sched.start_at IS NULL) OR
+ (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
+ (a.action_type IS NOT NULL AND a.read_at IS NULL) OR
+ (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
+ (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
+      variables.add(Variable.withString(today));
+      variables.add(Variable.withDateTime(now));
+      variables.add(Variable.withDateTime(now));
+      variables.add(Variable.withString(today));
+      variables.add(Variable.withDateTime(now));
+      variables.add(Variable.withDateTime(now));
+    }
+
+    if (wheres.isNotEmpty) {
+      sqlBuf.writeln('WHERE ${wheres.join(' AND ')}');
+    }
+
+    final readsFrom = <ResultSetImplementation<dynamic, dynamic>>{
+      Store.get.threads,
+      Store.get.schedules,
+      Store.get.links,
+    };
+    if (priorityPath != null) {
+      readsFrom.add(Store.get.priorities);
+    }
+    if (mutableFilter != null && mutableFilter.isNotEmpty) {
+      readsFrom.add(Store.get.threadTags);
+    }
+    if (search?.isNotEmpty == true) {
+      // FTS shadow tables are driven by triggers on threads and notes;
+      // adding notes here ensures the watcher fires on new note content too.
+      readsFrom.add(Store.get.notes);
+    }
+
+    return (sql: sqlBuf.toString(), variables: variables, readsFrom: readsFrom);
+  }
+
   /// Phase 1 of the two-step activity-feed query. Returns just
   /// `(id, unread_sort, activity_at)` for each thread matching the feed
   /// filter, ordered by `unread_sort DESC, activity_at DESC, id DESC`.
@@ -2557,6 +2775,717 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     query.where(a.id.isIn(ids.map((id) => id.toBytes()).toList()));
     return await query.get();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-tab activity-feed queries (new architecture).
+  //
+  // Each Activity Feed tab gets its own single SQL query that returns thread
+  // IDs already in display order. Catch up and All produce flat lists.
+  // Action tabs (Respond/Do/Read) additionally surface a bucket_date column
+  // so the bloc can insert per-day headers at bucket transitions without
+  // any in-memory partitioning.
+  //
+  // These methods are paired with the existing [_hydrateActivityFeedRows]
+  // and [_mapResultsToThreads] for detail hydration — the row tuple they
+  // return only needs to carry the ID plus the sort-key tuple needed to
+  // express the next-page cursor. Cursor variables come last; all other
+  // variables are bound by the shared [_buildFeedFilter].
+  // ---------------------------------------------------------------------------
+
+  /// Live stream of the Catch up tab's head page. Returns hydrated
+  /// threads in display order along with the SQL-derived tail cursor
+  /// (for pagination beyond the head) and whether the head was saturated.
+  ///
+  /// The bloc subscribes to this when Catch up is the active tab; on
+  /// every emission it pairs the head with previously-fetched appended
+  /// pages (via [fetchCatchUpPage]) to render the visible list.
+  static Stream<({
+    List<Thread> threads,
+    ({int urgent, int importance, String activityAt, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchCatchUpHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchCatchUpIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (
+          urgent: last.urgent,
+          importance: last.importance,
+          activityAt: last.activityAt,
+          id: last.id,
+        ),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
+  /// Page result for the Catch up tab's cursor pagination. Mirrors
+  /// [ActivityFeedPage] but with the urgency-keyed cursor shape.
+  static Future<({
+    List<Thread> threads,
+    ({int urgent, int importance, String activityAt, ThreadId id})? nextCursor,
+    bool saturated,
+  })> fetchCatchUpPage({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    ({int urgent, int importance, String activityAt, ThreadId id})? after,
+  }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    final idRows = await _watchCatchUpIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+      after: after,
+    ).first;
+
+    if (idRows.isEmpty) {
+      return (threads: <Thread>[], nextCursor: null, saturated: false);
+    }
+
+    final ids = idRows.map((r) => r.id).toList();
+    final detailRows = await _hydrateActivityFeedRows(ids);
+    final threads = await _mapResultsToThreads(detailRows);
+
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+    threads.sort(
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+    );
+
+    final last = idRows.last;
+    return (
+      threads: threads,
+      nextCursor: (
+        urgent: last.urgent,
+        importance: last.importance,
+        activityAt: last.activityAt,
+        id: last.id,
+      ),
+      saturated: idRows.length >= limit,
+    );
+  }
+
+  /// Phase 1 of the Catch up tab's query. Returns
+  /// `(id, urgent, importance, activity_at)` per row for every unread thread
+  /// the user can see, ordered by `urgent DESC, importance DESC,
+  /// activity_at DESC, id DESC`.
+  ///
+  /// Pair with [_hydrateActivityFeedRows] for detail hydration.
+  static Stream<
+    List<({
+      ThreadId id,
+      int urgent,
+      int importance,
+      String activityAt,
+    })>
+  >
+  _watchCatchUpIds({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({int urgent, int importance, String activityAt, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+    final now = Time.now();
+
+    // SELECT: identity + sort keys. `urgent` is nullable; COALESCE to 0 so
+    // the integer comparison matches Dart's `bool == true` semantic.
+    // `activity_at` follows the same formula as [_watchActivityFeedIds].
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  COALESCE(a.urgent, 0) AS urgent,
+  a.importance AS importance,
+  MAX(MAX(
+    COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
+    COALESCE(a.bumped_at, '0000'),
+    CASE WHEN sched.end_at IS NOT NULL
+          AND sched.occurrence IS NULL
+          AND sched.end_at <= ?
+         THEN sched.end_at
+         ELSE '0000' END
+  )) AS activity_at''');
+    variables.add(Variable.withDateTime(now));
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      requireUnread: true,
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    // Cursor predicate runs after GROUP BY because `urgent` / `importance`
+    // are taken from `a.*` directly but the row-value comparison is
+    // semantically post-aggregation (mixed with `activity_at`).
+    if (after != null) {
+      sqlBuf.writeln(
+        'HAVING (urgent, importance, activity_at, a.id) < (?, ?, ?, ?)',
+      );
+      variables.add(Variable.withInt(after.urgent));
+      variables.add(Variable.withInt(after.importance));
+      variables.add(Variable.withString(after.activityAt));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln(
+      'ORDER BY urgent DESC, importance DESC, activity_at DESC, a.id DESC',
+    );
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  urgent: row.read<int>('urgent'),
+                  importance: row.read<int>('importance'),
+                  activityAt: row.read<String>('activity_at'),
+                ),
+              )
+              .toList(),
+        );
+  }
+
+  /// Live stream of the All tab's head page. Mirrors [watchCatchUpHead]
+  /// but with the activity-at-only cursor shape — see [_watchAllTabIds].
+  static Stream<({
+    List<Thread> threads,
+    ({String activityAt, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchAllTabHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchAllTabIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (activityAt: last.activityAt, id: last.id),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
+  /// Page result for the All tab's cursor pagination.
+  static Future<({
+    List<Thread> threads,
+    ({String activityAt, ThreadId id})? nextCursor,
+    bool saturated,
+  })> fetchAllTabPage({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    ({String activityAt, ThreadId id})? after,
+  }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    final idRows = await _watchAllTabIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+      after: after,
+    ).first;
+
+    if (idRows.isEmpty) {
+      return (threads: <Thread>[], nextCursor: null, saturated: false);
+    }
+
+    final ids = idRows.map((r) => r.id).toList();
+    final detailRows = await _hydrateActivityFeedRows(ids);
+    final threads = await _mapResultsToThreads(detailRows);
+
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+    threads.sort(
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+    );
+
+    final last = idRows.last;
+    return (
+      threads: threads,
+      nextCursor: (activityAt: last.activityAt, id: last.id),
+      saturated: idRows.length >= limit,
+    );
+  }
+
+  /// Phase 1 of the All tab's query. Returns `(id, activity_at)` per row
+  /// for every visible thread, ordered by `activity_at DESC, id DESC`.
+  /// This is `_watchActivityFeedIds` minus the unread-first sort key — the
+  /// unread-first slot is now Catch up's job.
+  static Stream<List<({ThreadId id, String activityAt})>> _watchAllTabIds({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({String activityAt, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+    final now = Time.now();
+
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  MAX(MAX(
+    COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
+    COALESCE(a.bumped_at, '0000'),
+    CASE WHEN sched.end_at IS NOT NULL
+          AND sched.occurrence IS NULL
+          AND sched.end_at <= ?
+         THEN sched.end_at
+         ELSE '0000' END
+  )) AS activity_at''');
+    variables.add(Variable.withDateTime(now));
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    if (after != null) {
+      sqlBuf.writeln('HAVING (activity_at, a.id) < (?, ?)');
+      variables.add(Variable.withString(after.activityAt));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln('ORDER BY activity_at DESC, a.id DESC');
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  activityAt: row.read<String>('activity_at'),
+                ),
+              )
+              .toList(),
+        );
+  }
+
+  /// Live stream of the action tab's head page (Respond / Do / Read).
+  /// Mirrors [watchCatchUpHead] but parameterised by `action` and carrying
+  /// the bucket cursor shape — see [_watchActionTabIds].
+  static Stream<({
+    List<Thread> threads,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+        tailCursor,
+    bool saturated,
+  })> watchActionTabHead({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchActionTabIds(
+      action: action,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (
+          isActiveInv: last.isActive ? 0 : 1,
+          bucketKey: last.isActive ? '0000' : (last.bucketDate ?? '9999'),
+          order: last.order,
+          id: last.id,
+        ),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
+  /// Page result for the Respond / Do / Read action tabs. Each row carries
+  /// the bucket assignment so the renderer can insert date headers at
+  /// transitions without re-bucketing in Dart. `isActive=true` rows render
+  /// in the Today bucket; `isActive=false` rows render under the scheduled
+  /// day named by `bucketDate`.
+  static Future<({
+    List<Thread> threads,
+    List<({ThreadId id, bool isActive, String? bucketDate, double order})> rows,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? nextCursor,
+    bool saturated,
+  })> fetchActionTabPage({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+  }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    final idRows = await _watchActionTabIds(
+      action: action,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+      after: after,
+    ).first;
+
+    if (idRows.isEmpty) {
+      return (
+        threads: <Thread>[],
+        rows: <({ThreadId id, bool isActive, String? bucketDate, double order})>[],
+        nextCursor: null,
+        saturated: false,
+      );
+    }
+
+    final ids = idRows.map((r) => r.id).toList();
+    final detailRows = await _hydrateActivityFeedRows(ids);
+    final threads = await _mapResultsToThreads(detailRows);
+
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+    threads.sort(
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+    );
+
+    final last = idRows.last;
+    return (
+      threads: threads,
+      rows: idRows,
+      nextCursor: (
+        isActiveInv: last.isActive ? 0 : 1,
+        bucketKey: last.isActive ? '0000' : (last.bucketDate ?? '9999'),
+        order: last.order,
+        id: last.id,
+      ),
+      saturated: idRows.length >= limit,
+    );
+  }
+
+  /// Phase 1 of the action-tab query (Respond / Do / Read). Returns
+  /// `(id, is_active, bucket_date, state_order)` per row, ordered so that
+  /// active (today/past) threads come first followed by scheduled rows in
+  /// ascending date order, then by user-chosen `state_order`.
+  ///
+  /// `bucket_date` is `NULL` only when the thread has no schedule at all
+  /// AND no per-user state date — in which case it sorts as active (the
+  /// renderer's Today bucket). For scheduled rows it's the user state date
+  /// when set, falling back to the shared schedule, then to the link
+  /// schedule.
+  ///
+  /// Pair with [_hydrateActivityFeedRows] for detail hydration.
+  static Stream<
+    List<({
+      ThreadId id,
+      bool isActive,
+      String? bucketDate,
+      double order,
+    })>
+  >
+  _watchActionTabIds({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+    final today = Date.today().toString();
+
+    // SELECT: identity + the three sort keys plus the bucket-date that the
+    // renderer uses to insert headers. `is_active` is computed from the
+    // same date sources as the Dart `Thread.isActiveThread` predicate
+    // (state_on / state_at / sched / link_sched), with NULL bucket dates
+    // treated as active.
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  CASE WHEN
+    (a.state_on IS NOT NULL AND a.state_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NOT NULL AND DATE(a.state_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NOT NULL AND sched.start_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NOT NULL
+        AND DATE(sched.start_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NOT NULL AND link_sched.start_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NULL AND link_sched.start_at IS NOT NULL
+        AND DATE(link_sched.start_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NULL AND link_sched.start_at IS NULL)
+  THEN 1 ELSE 0 END AS is_active,
+  COALESCE(
+    a.state_on,
+    CASE WHEN a.state_at IS NOT NULL THEN DATE(a.state_at) ELSE NULL END,
+    sched.start_on,
+    CASE WHEN sched.start_at IS NOT NULL THEN DATE(sched.start_at) ELSE NULL END,
+    link_sched.start_on,
+    CASE WHEN link_sched.start_at IS NOT NULL
+         THEN DATE(link_sched.start_at) ELSE NULL END
+  ) AS bucket_date,
+  COALESCE(a.state_order, 0) AS state_order''');
+    // The six `<= today` comparisons in the is_active CASE.
+    for (var i = 0; i < 6; i++) {
+      variables.add(Variable.withString(today));
+    }
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      requireLinkSched: true,
+      actionType: action,
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    // Action tabs are todos by definition. The _buildFeedFilter actionType
+    // clause only constrains `a.action_type = ?`; pair it with the unread
+    // half of the todo predicate so threads the user has marked read drop
+    // out (they belong in the All / Catch up tabs, not action tabs).
+    sqlBuf.writeln('AND a.read_at IS NULL');
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    // Cursor predicate. The visible sort is
+    //   `is_active DESC, bucket_key ASC, state_order ASC, id ASC`
+    // expressed as ascending across `is_active_inv = (1 - is_active)`,
+    // a normalized bucket key ('0000' for active, COALESCE date for
+    // scheduled, '9999' for unscheduled), state_order, and id.
+    if (after != null) {
+      sqlBuf.writeln('''
+HAVING (
+  (1 - is_active),
+  CASE WHEN is_active = 1 THEN '0000' ELSE COALESCE(bucket_date, '9999') END,
+  state_order,
+  a.id
+) > (?, ?, ?, ?)''');
+      variables.add(Variable.withInt(after.isActiveInv));
+      variables.add(Variable.withString(after.bucketKey));
+      variables.add(Variable.withReal(after.order));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln('''
+ORDER BY
+  (1 - is_active) ASC,
+  CASE WHEN is_active = 1 THEN '0000' ELSE COALESCE(bucket_date, '9999') END ASC,
+  state_order ASC,
+  a.id ASC''');
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  isActive: row.read<int>('is_active') == 1,
+                  bucketDate: row.readNullable<String>('bucket_date'),
+                  order: row.read<double>('state_order'),
+                ),
+              )
+              .toList(),
+        );
   }
 
   /// Efficiently gets which activity IDs from the given list are active.

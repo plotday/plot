@@ -9,7 +9,6 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
-import 'package:plot/state/agenda_limits.dart';
 import 'package:plot/state/agenda_model.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so it
 // doesn't shadow the agenda_model.dart `PriorityBlock` UI type already
@@ -127,6 +126,63 @@ class _OptimisticOverride {
   }
 }
 
+/// Per-thread overlay entry for the activity feed's active tab. Mirrors
+/// [_OptimisticOverride]'s expected-vs-watched semantics but also carries
+/// tab-specific positioning hints so the merger can re-position
+/// substituted rows (reorder/reschedule) and inject overlay-only rows
+/// (sticky-unread that fell past LIMIT) without losing the SQL-driven
+/// display order for everything else.
+///
+/// Lifecycle: the overlay map is owned by the active tab's subscription.
+/// It is cleared on tab switch, filter/search/scope/icon change, priority
+/// switch, or auto-settled (non-sticky entries) when the stream matches
+/// the expected state on every watched field.
+class _Overlay {
+  const _Overlay({
+    required this.expected,
+    this.watched = _OptimisticOverride._defaultWatched,
+    this.catchUpSortKeys,
+    this.sticky = false,
+  });
+
+  /// Expect the thread to drop out of the active tab. Settled when the
+  /// stream no longer returns it.
+  const _Overlay.drop({
+    Set<_OverrideField> watched = _OptimisticOverride._defaultWatched,
+  }) : this(expected: null, watched: watched);
+
+  /// Sticky-unread: a Catch up thread the user just read should remain
+  /// visible at its pre-read sort position until the tab is switched away.
+  /// Never auto-settles — cleared only by explicit triggers (tab switch,
+  /// setThread away, archive, drop-to-Done).
+  factory _Overlay.stickyUnread(
+    Thread thread, {
+    required ({int urgent, int importance, DateTime activityAt}) sortKeys,
+  }) => _Overlay(
+    expected: thread,
+    watched: const <_OverrideField>{},
+    catchUpSortKeys: sortKeys,
+    sticky: true,
+  );
+
+  final Thread? expected;
+  final Set<_OverrideField> watched;
+  final ({int urgent, int importance, DateTime activityAt})? catchUpSortKeys;
+  final bool sticky;
+
+  /// True when [actual] (the stream's copy, or null) makes this overlay
+  /// safe to drop. Sticky entries never settle implicitly.
+  bool settled(Thread? actual) {
+    if (sticky) return false;
+    if (expected == null) return actual == null;
+    if (actual == null) return false;
+    for (final field in watched) {
+      if (!_OptimisticOverride._matches(field, actual, expected!)) return false;
+    }
+    return true;
+  }
+}
+
 /// Stopwatch-based instrumentation for priority loading. Logs each phase
 /// of the switch-priority/load-agenda pipeline at info level so the user
 /// can see exactly where time goes when threads are slow to render. The
@@ -179,19 +235,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     return v;
   }
 
-  /// Tracks threads that should stay in the unread section while being viewed,
-  /// along with their original sort values to prevent position jumps when
-  /// urgency is cleared by sync after marking as read.
-  ///
-  /// Also caches the full [Thread] so that when a thread transitions from
-  /// unread→read and falls outside the SQL LIMIT (the ORDER BY puts read
-  /// threads after unreads, so the newly-read thread can be pushed past the
-  /// row limit), the cached thread can be injected into the feed results.
-  final Map<
-    ThreadId,
-    ({bool urgent, int importance, DateTime activityAt, Thread thread})
-  >
-  _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
 
   /// Persisted scroll offsets for scroll restoration across route changes.
@@ -237,6 +280,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       )) {
     _allInstances.add(this);
     _loadPriority();
+    _restartActiveTabSubscription();
 
     // Register callback to reload agenda when time changes (e.g., via TimeTravel)
     Time.setOnTimeChanged(() {
@@ -260,7 +304,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final next = !state.hideSubPriorities;
     log.info('Toggling hideSubPriorities to $next');
     emit(state.copyWith(hideSubPriorities: next));
-    _loadActivityFeed();
+    _restartActiveTabSubscription();
   }
 
   void toggleShowArchived() {
@@ -275,6 +319,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reload agenda items with new archived filter
     _loadPriority();
+    _restartActiveTabSubscription();
 
     // If a search is active, rerun the remote search so its archived
     // scope matches and the archived-match hint is re-evaluated.
@@ -292,6 +337,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Toggling autoArchiveOnly to $next');
     emit(state.copyWith(autoArchiveOnly: next));
     _loadPriority();
+    _restartActiveTabSubscription();
   }
 
   void updateFilter(List<Tag> filter) {
@@ -308,6 +354,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // The agenda is universal and ignores filters; only the activity
     // feed needs to refresh.
     _loadPriority(reloadAgenda: false);
+    _restartActiveTabSubscription();
   }
 
   void updateIconFilter(String iconValue) {
@@ -323,6 +370,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // The agenda is universal and ignores filters; only the activity
     // feed needs to refresh.
     _loadPriority(reloadAgenda: false);
+    _restartActiveTabSubscription();
   }
 
   /// Called immediately on every keystroke to update search text in state
@@ -344,11 +392,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     // When searching, force navigation to use activityFeed (matches UI)
     if (search.isNotEmpty) {
       threadListSource = ThreadListSource.activityFeed;
-      // Cancel stale subscriptions so unfiltered results don't flash.
-      // The agenda subscription is intentionally left alone — the
-      // agenda is universal and search never narrows it.
-      _activityFeedSubscription?.cancel();
-      _todoThreadsSubscription?.cancel();
+      // Cancel the active per-tab subscription so unfiltered results
+      // don't flash. The agenda subscription is intentionally left
+      // alone — the agenda is universal and search never narrows it.
+      _activeTabSubscription?.cancel();
     } else {
       threadListSource = null;
     }
@@ -362,8 +409,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // The agenda doesn't react to search — only the activity feed does.
-    _resetActivityFeedWindow();
-    _loadActivityFeed(triggerSync: false);
+    _restartActiveTabSubscription();
 
     _runRemoteSearch(search);
   }
@@ -513,6 +559,63 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// suppression that operates per thread and per field.
   final Map<ThreadId, _OptimisticOverride> _optimisticOverrides = {};
 
+  /// Per-thread overlay for the active activity-feed tab. See [_Overlay].
+  /// Cleared on tab/filter/search/scope/priority change — anything that
+  /// re-fires the per-tab SQL query. The legacy [_optimisticOverrides]
+  /// continues to serve the agenda; this map serves only the per-tab
+  /// activity feed.
+  final Map<ThreadId, _Overlay> _overlay = {};
+
+  /// Live subscription for the currently-active activity-feed tab's
+  /// per-tab query. Started in [_restartActiveTabSubscription], cancelled
+  /// and re-started on tab / filter / scope / priority changes. `null`
+  /// when the active tab is still on the legacy dual-stream path
+  /// (transitional state during the per-tab migration).
+  StreamSubscription<void>? _activeTabSubscription;
+
+  /// Which tab the [_activeTabSubscription] is currently feeding. `null`
+  /// when the active tab still routes through the legacy build.
+  ActivityTab? _activeTabSubscriptionTab;
+
+  /// Head emission for the active per-tab subscription. Replaced wholesale
+  /// on every stream fire.
+  List<Thread> _activeTabHead = const [];
+  bool _activeTabHeadSaturated = false;
+
+  /// Static append pages beyond the head for the active per-tab
+  /// subscription. Filled by [fetchMoreActivityFeedItems] via the per-tab
+  /// `fetch*Page` method that matches [_activeTabSubscriptionTab].
+  List<Thread> _activeTabAppended = const [];
+  bool _activeTabAppendsExhausted = false;
+  Future<void>? _activeTabAppendInFlight;
+  int _activeTabAppendGeneration = 0;
+
+  /// Tail cursor of the most recent head emission for the Catch up tab.
+  /// Used to start the first append page from the right spot when the
+  /// active tab is Catch up.
+  ({int urgent, int importance, String activityAt, ThreadId id})?
+      _catchUpHeadTailCursor;
+
+  /// Cursor of the next Catch up append page, or `null` when no further
+  /// append is available locally (last fetched page was non-saturated or
+  /// no append has run yet — fall back to the head tail cursor).
+  ({int urgent, int importance, String activityAt, ThreadId id})?
+      _catchUpAppendCursor;
+
+  /// Tail cursor of the most recent head emission for the All tab.
+  ({String activityAt, ThreadId id})? _allTabHeadTailCursor;
+
+  /// Cursor of the next All-tab append page.
+  ({String activityAt, ThreadId id})? _allTabAppendCursor;
+
+  /// Tail cursor of the most recent head emission for an action tab.
+  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      _actionTabHeadTailCursor;
+
+  /// Cursor of the next action-tab append page.
+  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      _actionTabAppendCursor;
+
   /// Latest threads list emitted by the agenda subscription (after
   /// optimistic overrides). Optimistic mutation handlers transform
   /// this list and call [_rebuildAgendaModel] to derive a fresh
@@ -539,6 +642,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Rebuild the agenda model from the cached threads list and emit
   /// it. Optional [extra] state-shape changes (e.g. updated activity
   /// feed, cleared selected thread) are layered onto the same emit.
+  ///
+  /// Also re-emits the active tab's items via [_rebuildActiveTabSection]
+  /// when a per-tab subscription is feeding the active tab. Callers that
+  /// just wrote to [_overlay] don't need a separate trigger.
   void _rebuildAgendaModel({
     Value<Thread?> thread = const Value.absent(),
     Map<ActivityTab, ActivityFeedTabData>? activityFeedByTab,
@@ -559,6 +666,9 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedByTab: activityFeedByTab,
       ),
     );
+    if (_activeTabSubscriptionTab != null) {
+      _rebuildActiveTabSection();
+    }
   }
 
   /// Finds a thread from the current state so callers that only have an id
@@ -625,6 +735,601 @@ class PriorityBloc extends Cubit<PriorityState> {
     return patched;
   }
 
+  /// Cancel any running per-tab subscription and reset per-tab state, then
+  /// start the subscription for the now-active tab if it has been migrated.
+  /// Call on every event that changes what the per-tab SQL query would
+  /// return: tab switch, filter/icon/search/scope change, priority switch.
+  void _restartActiveTabSubscription() {
+    _activeTabSubscription?.cancel();
+    _activeTabSubscription = null;
+    _activeTabSubscriptionTab = null;
+    _activeTabHead = const [];
+    _activeTabAppended = const [];
+    _activeTabHeadSaturated = false;
+    _activeTabAppendsExhausted = false;
+    _activeTabAppendGeneration++;
+    _catchUpHeadTailCursor = null;
+    _catchUpAppendCursor = null;
+    _allTabHeadTailCursor = null;
+    _allTabAppendCursor = null;
+    _actionTabHeadTailCursor = null;
+    _actionTabAppendCursor = null;
+    _overlay.clear();
+
+    final tab = state.activeTab;
+    switch (tab) {
+      case ActivityTab.catchUp:
+        _subscribeCatchUpHead();
+      case ActivityTab.all:
+        _subscribeAllTabHead();
+      case ActivityTab.respond:
+      case ActivityTab.doIt:
+      case ActivityTab.read:
+        _subscribeActionTabHead(tab);
+    }
+  }
+
+  void _subscribeCatchUpHead() {
+    final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
+    final searchGlobal = isSearching && priorityToLoad.root;
+
+    _activeTabSubscriptionTab = ActivityTab.catchUp;
+    _activeTabSubscription = Thread.watchCatchUpHead(
+      priorityId: scopeByPath ? null : priorityToLoad.id,
+      priorityPath: scopeByPath
+          ? (searchGlobal ? null : priorityToLoad.path)
+          : null,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: isSearching ? state.search : null,
+      limit: _activityFeedLimit,
+    ).listen((result) {
+      if (isClosed) return;
+      _activeTabHead = result.threads;
+      _activeTabHeadSaturated = result.saturated;
+      _catchUpHeadTailCursor = result.tailCursor;
+      _rebuildActiveTabSection();
+    });
+  }
+
+  void _subscribeActionTabHead(ActivityTab tab) {
+    final action = tab.actionFilter;
+    if (action == null) return;
+    final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
+    final searchGlobal = isSearching && priorityToLoad.root;
+
+    _activeTabSubscriptionTab = tab;
+    _activeTabSubscription = Thread.watchActionTabHead(
+      action: action,
+      priorityId: scopeByPath ? null : priorityToLoad.id,
+      priorityPath: scopeByPath
+          ? (searchGlobal ? null : priorityToLoad.path)
+          : null,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: isSearching ? state.search : null,
+      limit: _activityFeedLimit,
+    ).listen((result) {
+      if (isClosed) return;
+      _activeTabHead = result.threads;
+      _activeTabHeadSaturated = result.saturated;
+      _actionTabHeadTailCursor = result.tailCursor;
+      _rebuildActiveTabSection();
+    });
+  }
+
+  void _subscribeAllTabHead() {
+    final priorityToLoad = state.context;
+    final isSearching = state.search.isNotEmpty;
+    final scopeByPath = isSearching ||
+        state.hideSubPriorities ||
+        _currentEventForFeed != null;
+    final searchGlobal = isSearching && priorityToLoad.root;
+
+    _activeTabSubscriptionTab = ActivityTab.all;
+    _activeTabSubscription = Thread.watchAllTabHead(
+      priorityId: scopeByPath ? null : priorityToLoad.id,
+      priorityPath: scopeByPath
+          ? (searchGlobal ? null : priorityToLoad.path)
+          : null,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: isSearching ? state.search : null,
+      limit: _activityFeedLimit,
+    ).listen((result) {
+      if (isClosed) return;
+      _activeTabHead = result.threads;
+      _activeTabHeadSaturated = result.saturated;
+      _allTabHeadTailCursor = result.tailCursor;
+      _rebuildActiveTabSection();
+    });
+  }
+
+  /// Recompose the active tab's items list from the per-tab subscription's
+  /// head + appended pages, applying the overlay (substitute / drop /
+  /// sticky-unread injection). Emits a state update that overrides
+  /// `activityFeedByTab[activeTab]` while leaving the legacy data for
+  /// other tabs intact.
+  void _rebuildActiveTabSection() {
+    final tab = _activeTabSubscriptionTab;
+    if (tab == null) return;
+
+    final combined = <Thread>[..._activeTabHead, ..._activeTabAppended];
+    final merged = _applyOverlay(combined, tab);
+
+    final eventPrefix = _buildEventAgendaItems();
+    final List<AgendaItem> items;
+    if (tab.isActionTab) {
+      items = _buildActionTabItems(merged, eventPrefix);
+    } else {
+      items = <AgendaItem>[
+        ...eventPrefix,
+        for (final t in merged) AgendaThreadItem(t),
+      ];
+    }
+
+    final byTab = Map<ActivityTab, ActivityFeedTabData>.from(
+      state.activityFeedByTab,
+    );
+    byTab[tab] = ActivityFeedTabData(items: items);
+    emit(
+      state.copyWith(
+        activityFeedByTab: byTab,
+        activityFeedDoneEnd: _computeActiveTabDoneEnd(),
+        activityFeedLoaded: true,
+      ),
+    );
+  }
+
+  /// Walk an action-tab's merged thread list (already re-sorted via
+  /// [_actionTabCompare] for overlay-affected positions) and emit the
+  /// interleaved AgendaHeaderItem / AgendaThreadItem sequence. The Today
+  /// header is always emitted (drop target); per-day Scheduled headers
+  /// follow bucket transitions. The multi-panel header-suppression rule
+  /// is a render-time concern handled by `page/priority.dart`.
+  List<AgendaItem> _buildActionTabItems(
+    List<Thread> merged,
+    List<AgendaItem> eventPrefix,
+  ) {
+    // Sort the merged list using the same key order as the SQL ORDER BY,
+    // so overlay-substituted rows whose bucket / order changed land in
+    // the right slot. Stable Dart sort preserves SQL order for rows the
+    // overlay didn't touch.
+    final sorted = List<Thread>.from(merged)..sort(_actionTabCompare);
+
+    final items = <AgendaItem>[
+      ...eventPrefix,
+      // Today header is always emitted (even when empty) so it remains a
+      // valid drag-and-drop target for "make active".
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.today),
+      ),
+    ];
+
+    Date? lastBucket;
+    bool sawActive = false;
+    for (final t in sorted) {
+      if (t.isActiveThread) {
+        items.add(AgendaThreadItem(t));
+        sawActive = true;
+        continue;
+      }
+      // Scheduled bucket — emit header when entering a new day.
+      final date = t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+      if (lastBucket == null || lastBucket != date || sawActive) {
+        items.add(
+          AgendaHeaderItem(
+            date: date,
+            text: ActivitySectionMarker.encode(
+              ActivitySection.scheduled,
+              label: relativeDateLabel(date),
+            ),
+          ),
+        );
+        lastBucket = date;
+        sawActive = false;
+      }
+      items.add(AgendaThreadItem(t));
+    }
+    return items;
+  }
+
+  /// Comparator mirroring the SQL ORDER BY in `_watchActionTabIds`:
+  /// active rows first, then scheduled rows by bucket date ascending,
+  /// finally by `state_order` (Thread.order.value) and id ascending.
+  int _actionTabCompare(Thread a, Thread b) {
+    final aActive = a.isActiveThread;
+    final bActive = b.isActiveThread;
+    if (aActive != bActive) return aActive ? -1 : 1;
+
+    if (!aActive) {
+      final aDate = a.on?.start ?? a.at?.start?.toDate() ?? Date.today();
+      final bDate = b.on?.start ?? b.at?.start?.toDate() ?? Date.today();
+      final dateCmp = aDate.compareTo(bDate);
+      if (dateCmp != 0) return dateCmp;
+    }
+
+    final orderCmp = a.order.compareTo(b.order);
+    if (orderCmp != 0) return orderCmp;
+    return a.id.toString().compareTo(b.id.toString());
+  }
+
+  /// Apply the activity-feed overlay to a per-tab SQL result. Substitutes
+  /// or drops rows that have overlay entries; for Catch up, also injects
+  /// overlay entries whose expected thread is missing from the SQL result
+  /// (sticky-unread rows that fell past the LIMIT after being marked read)
+  /// and re-sorts via the catch-up comparator so cached pre-read sort
+  /// keys keep the row pinned at its original position.
+  List<Thread> _applyOverlay(List<Thread> sqlThreads, ActivityTab tab) {
+    if (_overlay.isEmpty) return sqlThreads;
+
+    final byId = <ThreadId, Thread>{};
+    for (final t in sqlThreads) {
+      byId[t.id] = t;
+    }
+
+    _overlay.removeWhere((id, o) => o.settled(byId[id]));
+    if (_overlay.isEmpty) return sqlThreads;
+
+    final patched = <Thread>[];
+    for (final thread in sqlThreads) {
+      final o = _overlay[thread.id];
+      if (o == null) {
+        patched.add(thread);
+      } else if (o.expected == null) {
+        continue;
+      } else {
+        patched.add(o.expected!);
+      }
+    }
+
+    if (tab == ActivityTab.catchUp) {
+      for (final entry in _overlay.entries) {
+        if (entry.value.expected != null && !byId.containsKey(entry.key)) {
+          patched.add(entry.value.expected!);
+        }
+      }
+      patched.sort(_catchUpCompare);
+    }
+
+    return patched;
+  }
+
+  /// Mirror of the SQL `ORDER BY urgent DESC, importance DESC,
+  /// activity_at DESC, id DESC` used by `_watchCatchUpIds`. When an entry
+  /// has cached pre-read sort keys (sticky-unread), those override the
+  /// thread's current fields so the row stays at its original position
+  /// even after `unread` flips to false.
+  int _catchUpCompare(Thread a, Thread b) {
+    final aO = _overlay[a.id]?.catchUpSortKeys;
+    final bO = _overlay[b.id]?.catchUpSortKeys;
+
+    final aUrg = aO?.urgent ?? (a.urgent ? 1 : 0);
+    final bUrg = bO?.urgent ?? (b.urgent ? 1 : 0);
+    if (aUrg != bUrg) return bUrg.compareTo(aUrg);
+
+    final aImp = aO?.importance ?? a.importance;
+    final bImp = bO?.importance ?? b.importance;
+    if (aImp != bImp) return bImp.compareTo(aImp);
+
+    final aAt = aO?.activityAt ?? a.activityAt;
+    final bAt = bO?.activityAt ?? b.activityAt;
+    final atCmp = bAt.compareTo(aAt);
+    if (atCmp != 0) return atCmp;
+
+    return b.id.toString().compareTo(a.id.toString());
+  }
+
+  /// doneEnd flag for the active per-tab subscription's pagination, used
+  /// in place of the legacy [_computeActivityFeedDoneEnd] while the
+  /// active tab's data comes from a per-tab query.
+  bool _computeActiveTabDoneEnd() {
+    final tab = _activeTabSubscriptionTab;
+    if (tab == null) return false;
+    final isSearching = state.search.isNotEmpty;
+    final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
+    bool localExhausted;
+    switch (tab) {
+      case ActivityTab.catchUp:
+        localExhausted = _activeTabAppended.isEmpty
+            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
+            : _catchUpAppendCursor == null;
+      case ActivityTab.all:
+        localExhausted = _activeTabAppended.isEmpty
+            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
+            : _allTabAppendCursor == null;
+      case ActivityTab.respond:
+      case ActivityTab.doIt:
+      case ActivityTab.read:
+        localExhausted = _activeTabAppended.isEmpty
+            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
+            : _actionTabAppendCursor == null;
+    }
+    return localExhausted && exhaustedRemote;
+  }
+
+  /// Fetch additional Catch up pages beyond the head when InfiniteList
+  /// scrolls past what's loaded. Mirrors [fetchMoreActivityFeedItems] but
+  /// uses [Thread.fetchCatchUpPage] and the per-tab cursors.
+  Future<void> _fetchMoreCatchUp(int first, int count) async {
+    final needed = first + count;
+    bool needsProbeBeyondHead() =>
+        _activeTabHeadSaturated &&
+        _activeTabAppended.isEmpty &&
+        !_activeTabAppendsExhausted;
+
+    if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+        !needsProbeBeyondHead()) {
+      return;
+    }
+
+    while (_activeTabAppendInFlight != null) {
+      try {
+        await _activeTabAppendInFlight;
+      } catch (_) {}
+      if (isClosed) return;
+      if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+          !needsProbeBeyondHead()) {
+        return;
+      }
+    }
+
+    while (!_computeActiveTabDoneEnd() &&
+        (_activeTabHead.length + _activeTabAppended.length < needed ||
+            needsProbeBeyondHead())) {
+      final cursor = _catchUpAppendCursor ?? _catchUpHeadTailCursor;
+      if (cursor == null) {
+        if (needsProbeBeyondHead()) {
+          _activeTabAppendsExhausted = true;
+          _rebuildActiveTabSection();
+        }
+        break;
+      }
+
+      final gen = _activeTabAppendGeneration;
+      final priorityToLoad = state.context;
+      final isSearching = state.search.isNotEmpty;
+      final scopeByPath = isSearching ||
+          state.hideSubPriorities ||
+          _currentEventForFeed != null;
+      final searchGlobal = isSearching && priorityToLoad.root;
+
+      final completer = Completer<void>();
+      _activeTabAppendInFlight = completer.future;
+      ({
+        List<Thread> threads,
+        ({int urgent, int importance, String activityAt, ThreadId id})?
+            nextCursor,
+        bool saturated,
+      })? page;
+      try {
+        page = await Thread.fetchCatchUpPage(
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+          after: cursor,
+        );
+      } finally {
+        completer.complete();
+        _activeTabAppendInFlight = null;
+      }
+
+      if (isClosed) return;
+      if (gen != _activeTabAppendGeneration) return;
+
+      final headIds = {for (final t in _activeTabHead) t.id};
+      final dedupedNew =
+          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
+      _catchUpAppendCursor = page.saturated ? page.nextCursor : null;
+      if (!page.saturated) {
+        _activeTabAppendsExhausted = true;
+      }
+      _rebuildActiveTabSection();
+
+      if (!page.saturated) break;
+    }
+  }
+
+  /// Fetch additional All-tab pages beyond the head. Same shape as
+  /// [_fetchMoreCatchUp] but uses [Thread.fetchAllTabPage] and the All
+  /// tab's `(activityAt, id)` cursor.
+  Future<void> _fetchMoreAllTab(int first, int count) async {
+    final needed = first + count;
+    bool needsProbeBeyondHead() =>
+        _activeTabHeadSaturated &&
+        _activeTabAppended.isEmpty &&
+        !_activeTabAppendsExhausted;
+
+    if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+        !needsProbeBeyondHead()) {
+      return;
+    }
+
+    while (_activeTabAppendInFlight != null) {
+      try {
+        await _activeTabAppendInFlight;
+      } catch (_) {}
+      if (isClosed) return;
+      if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+          !needsProbeBeyondHead()) {
+        return;
+      }
+    }
+
+    while (!_computeActiveTabDoneEnd() &&
+        (_activeTabHead.length + _activeTabAppended.length < needed ||
+            needsProbeBeyondHead())) {
+      final cursor = _allTabAppendCursor ?? _allTabHeadTailCursor;
+      if (cursor == null) {
+        if (needsProbeBeyondHead()) {
+          _activeTabAppendsExhausted = true;
+          _rebuildActiveTabSection();
+        }
+        break;
+      }
+
+      final gen = _activeTabAppendGeneration;
+      final priorityToLoad = state.context;
+      final isSearching = state.search.isNotEmpty;
+      final scopeByPath = isSearching ||
+          state.hideSubPriorities ||
+          _currentEventForFeed != null;
+      final searchGlobal = isSearching && priorityToLoad.root;
+
+      final completer = Completer<void>();
+      _activeTabAppendInFlight = completer.future;
+      ({
+        List<Thread> threads,
+        ({String activityAt, ThreadId id})? nextCursor,
+        bool saturated,
+      })? page;
+      try {
+        page = await Thread.fetchAllTabPage(
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+          after: cursor,
+        );
+      } finally {
+        completer.complete();
+        _activeTabAppendInFlight = null;
+      }
+
+      if (isClosed) return;
+      if (gen != _activeTabAppendGeneration) return;
+
+      final headIds = {for (final t in _activeTabHead) t.id};
+      final dedupedNew =
+          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
+      _allTabAppendCursor = page.saturated ? page.nextCursor : null;
+      if (!page.saturated) {
+        _activeTabAppendsExhausted = true;
+      }
+      _rebuildActiveTabSection();
+
+      if (!page.saturated) break;
+    }
+  }
+
+  /// Fetch additional action-tab pages beyond the head. Same shape as
+  /// [_fetchMoreCatchUp] but uses [Thread.fetchActionTabPage] and the
+  /// action tab's `(isActiveInv, bucketKey, order, id)` cursor.
+  Future<void> _fetchMoreActionTab(ActivityTab tab, int first, int count) async {
+    final action = tab.actionFilter;
+    if (action == null) return;
+    final needed = first + count;
+    bool needsProbeBeyondHead() =>
+        _activeTabHeadSaturated &&
+        _activeTabAppended.isEmpty &&
+        !_activeTabAppendsExhausted;
+
+    if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+        !needsProbeBeyondHead()) {
+      return;
+    }
+
+    while (_activeTabAppendInFlight != null) {
+      try {
+        await _activeTabAppendInFlight;
+      } catch (_) {}
+      if (isClosed) return;
+      if (_activeTabHead.length + _activeTabAppended.length >= needed &&
+          !needsProbeBeyondHead()) {
+        return;
+      }
+    }
+
+    while (!_computeActiveTabDoneEnd() &&
+        (_activeTabHead.length + _activeTabAppended.length < needed ||
+            needsProbeBeyondHead())) {
+      final cursor = _actionTabAppendCursor ?? _actionTabHeadTailCursor;
+      if (cursor == null) {
+        if (needsProbeBeyondHead()) {
+          _activeTabAppendsExhausted = true;
+          _rebuildActiveTabSection();
+        }
+        break;
+      }
+
+      final gen = _activeTabAppendGeneration;
+      final priorityToLoad = state.context;
+      final isSearching = state.search.isNotEmpty;
+      final scopeByPath = isSearching ||
+          state.hideSubPriorities ||
+          _currentEventForFeed != null;
+      final searchGlobal = isSearching && priorityToLoad.root;
+
+      final completer = Completer<void>();
+      _activeTabAppendInFlight = completer.future;
+      ({
+        List<Thread> threads,
+        List<({ThreadId id, bool isActive, String? bucketDate, double order})>
+            rows,
+        ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+            nextCursor,
+        bool saturated,
+      })? page;
+      try {
+        page = await Thread.fetchActionTabPage(
+          action: action,
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+          after: cursor,
+        );
+      } finally {
+        completer.complete();
+        _activeTabAppendInFlight = null;
+      }
+
+      if (isClosed) return;
+      if (gen != _activeTabAppendGeneration) return;
+
+      final headIds = {for (final t in _activeTabHead) t.id};
+      final dedupedNew =
+          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
+      _actionTabAppendCursor = page.saturated ? page.nextCursor : null;
+      if (!page.saturated) {
+        _activeTabAppendsExhausted = true;
+      }
+      _rebuildActiveTabSection();
+
+      if (!page.saturated) break;
+    }
+  }
+
   /// Current thread associations, keyed by parent thread ID.
   /// Updated via a separate stream subscription.
   Map<Uuid, List<ThreadAssociationRow>>? _associations;
@@ -658,9 +1363,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       // Only reload when the effective scope actually flips. When the
       // user already has descendants visible (hideSubPriorities=true) or
       // is searching (already global), nothing changes.
-      _loadActivityFeed();
-    } else {
-      _scheduleActivityFeedRebuild();
+      _restartActiveTabSubscription();
+    } else if (_activeTabSubscriptionTab != null) {
+      // Re-render the active tab so the new Event Agenda prefix takes
+      // effect without re-fetching SQL.
+      _rebuildActiveTabSection();
     }
   }
 
@@ -857,17 +1564,10 @@ class PriorityBloc extends Cubit<PriorityState> {
         .map((t) => movedById[t.id] ?? t)
         .toList();
 
-    // Patch the activity-feed source list so the moved threads land in
-    // the new date's section synchronously. Without this, dropping a
-    // block onto a day where the same priority already has a block
-    // leaves the activity feed showing the threads on their old day
-    // until a stream refresh rebuilds it from scratch.
-    _todoThreads = _todoThreads
-        .map((t) => movedById[t.id] ?? t)
-        .toList();
-
+    // _rebuildAgendaModel re-emits the active per-tab section too, so
+    // the dragged block's threads land in their new day on the visible
+    // activity feed synchronously (via overlay substitution / sort).
     _rebuildAgendaModel();
-    _rebuildActivityFeedSections();
 
     for (final t in updated) {
       // Fire-and-forget; the optimistic override survives until the
@@ -1117,15 +1817,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     required ThreadId? prevId,
     required ThreadId? nextId,
   }) async {
-    Thread? dragged;
-    for (final t in _todoThreads) {
-      if (t.id == draggedId) {
-        dragged = t;
-        break;
-      }
-    }
+    Thread? dragged = _findThreadInState(draggedId);
     if (dragged == null) {
-      for (final t in _activityFeedRawThreads) {
+      // Fall back to the active per-tab subscription's caches if the item
+      // hasn't propagated into state yet.
+      for (final t in [..._activeTabHead, ..._activeTabAppended]) {
         if (t.id == draggedId) {
           dragged = t;
           break;
@@ -1163,25 +1859,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     Order? newOrder;
     if (targetSection == ActivitySection.today ||
         targetSection == ActivitySection.scheduled) {
-      Thread? above;
-      Thread? below;
-      if (prevId != null) {
-        for (final t in _todoThreads) {
-          if (t.id == prevId) {
-            above = t;
-            break;
-          }
-        }
+      Order? above;
+      Order? below;
+      for (final item in state.activityFeedItems) {
+        if (item is! AgendaThreadItem) continue;
+        if (item.thread.id == prevId) above = item.thread.order;
+        if (item.thread.id == nextId) below = item.thread.order;
       }
-      if (nextId != null) {
-        for (final t in _todoThreads) {
-          if (t.id == nextId) {
-            below = t;
-            break;
-          }
-        }
-      }
-      newOrder = Order.between(above?.order, below?.order);
+      newOrder = Order.between(above, below);
     }
 
     Thread updated;
@@ -1207,27 +1892,10 @@ class PriorityBloc extends Cubit<PriorityState> {
         // after its `unread` flag flips to false (so opening an unread
         // thread doesn't make it disappear from New mid-read). An
         // explicit drop on Done is a deliberate move — clear the sticky
-        // entry so `_rebuildActivityFeedSections` routes the thread to
+        // overlay entry so the per-tab merger routes the thread to
         // Done, not back to New.
-        _stickyUnreadIds.remove(draggedId);
+        _overlay.remove(draggedId);
         break;
-    }
-
-    // Re-shape the source lists that drive `_rebuildActivityFeedSections`
-    // before the override is recorded. `optimisticallyUpdateThread` only
-    // patches `state.activityFeedItems` in place — the dragged row keeps
-    // its old position until the DB stream re-emits with the saved
-    // change, producing a visible bounce. Updating `_todoThreads` /
-    // `_activityFeedRawThreads` here lets us rebuild the sections
-    // synchronously below so the row lands in its target section
-    // immediately, and the eventual stream emission is a no-op.
-    _todoThreads = _todoThreads.where((t) => t.id != draggedId).toList();
-    _activityFeedRawThreads =
-        _activityFeedRawThreads.where((t) => t.id != draggedId).toList();
-    if (updated.todo) {
-      _todoThreads = [..._todoThreads, updated];
-    } else {
-      _activityFeedRawThreads = [updated, ..._activityFeedRawThreads];
     }
 
     // Watch order — within Today/Scheduled the only thing changing on a
@@ -1235,7 +1903,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // (todo/at/on/...) is unchanged from the start. Without `order` in
     // the watched set, the override settles on the first stream emission
     // (before the schedule write completes) and the row snaps back to
-    // its pre-drop position.
+    // its pre-drop position. The optimistic update writes to `_overlay`,
+    // which the per-tab subscription's merger consults to reflect the
+    // new section / order on the next rebuild.
     optimisticallyUpdateThread(updated, watchOrder: true);
 
     // Propagate the optimistic override to peer bloc instances so the
@@ -1250,11 +1920,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       peer._applyPeerOptimisticOverride(updated, watchOrder: true);
     }
 
-    // Final emit: rebuild the sectioned feed from the now-updated source
-    // lists. This wins over the in-place map `optimisticallyUpdateThread`
-    // performs, so the row is rendered in its new section/order.
-    _rebuildActivityFeedSections();
-
+    // optimisticallyUpdateThread already wrote to `_overlay` and
+    // triggered `_rebuildActiveTabSection` (via _rebuildAgendaModel),
+    // so the dragged row already shows in its target section/order.
     await updated.save();
   }
 
@@ -1382,12 +2050,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
-    _activityFeedSubscription?.cancel();
-    _todoThreadsSubscription?.cancel();
     _associationsSubscription?.cancel();
     _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
+    _activeTabSubscription?.cancel();
     return super.close();
   }
 
@@ -1415,8 +2082,13 @@ class PriorityBloc extends Cubit<PriorityState> {
           expected: finished!,
           fields: const {_OverrideField.todo},
         );
+        _overlay[id] = _Overlay(
+          expected: finished,
+          watched: const {_OverrideField.todo},
+        );
       } else {
         _optimisticOverrides[id] = _OptimisticOverride.absent();
+        _overlay[id] = const _Overlay.drop();
       }
     }
     // Drop non-link-instance copies of the thread from the cached
@@ -1441,19 +2113,10 @@ class PriorityBloc extends Cubit<PriorityState> {
         })
         .toList();
 
-    // Patch the activity-feed source lists so `_buildActivityFeedItems`
-    // re-sections the feed in the same frame. `finishTodo` flips the
-    // thread to todo=false (moves Today → Done); a bare remove (e.g.
-    // disassociate) drops it entirely until the stream agrees.
-    if (existing != null) {
-      if (finishTodo) {
-        _patchActivityFeedSourcesForOptimisticUpdate(finished!);
-      } else {
-        _patchActivityFeedSourcesForOptimisticUpdate(existing, drop: true);
-      }
-    }
-
-    _rebuildAgendaModel(activityFeedByTab: _buildActivityFeedItems());
+    // The overlay write above is what the per-tab subscription consults
+    // to re-bin the visible feed; _rebuildAgendaModel re-emits the
+    // active tab's section.
+    _rebuildAgendaModel();
   }
 
   /// Optimistically remove an archived thread from the agenda and the
@@ -1470,25 +2133,26 @@ class PriorityBloc extends Cubit<PriorityState> {
             fields: const {_OverrideField.archived},
           )
         : _OptimisticOverride.absent();
-    _stickyUnreadIds.remove(id);
+    // Mirror in the per-tab overlay so the active tab reflects archive
+    // in the same frame.
+    _overlay[id] = state.showArchived
+        ? _Overlay(
+            expected: archivedThread,
+            watched: const {_OverrideField.archived},
+          )
+        : const _Overlay.drop();
 
     // Drop the archived thread from the cached source list so the
     // rebuilt model omits it.
     _lastAgendaThreads = _lastAgendaThreads.where((t) => t.id != id).toList();
 
-    // Patch activity-feed source lists so the section rebuild reflects
-    // the archive instantly. When viewing the archive, the thread stays
-    // with `archivedAt` set; otherwise it disappears from both lists.
-    _patchActivityFeedSourcesForOptimisticUpdate(
-      archivedThread,
-      drop: !state.showArchived,
-    );
-
+    // The overlay write above is what the per-tab subscription consults
+    // to drop or keep the archived row. _rebuildAgendaModel re-emits
+    // the active tab's section in the same frame.
     _rebuildAgendaModel(
       thread: state.thread?.id == id
           ? Value(archivedThread)
           : const Value.absent(),
-      activityFeedByTab: _buildActivityFeedItems(),
     );
   }
 
@@ -1566,23 +2230,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       expected: updatedThread,
       fields: fields,
     );
-
-    // Keep sticky cache in sync so edits (rename, archive, etc.) aren't
-    // reverted when the stream re-emits and the thread is outside the LIMIT.
-    if (_stickyUnreadIds.containsKey(updatedThread.id)) {
-      if (updatedThread.archivedAt != null) {
-        // Archived — stop injecting so it disappears from the feed.
-        _stickyUnreadIds.remove(updatedThread.id);
-      } else {
-        final old = _stickyUnreadIds[updatedThread.id]!;
-        _stickyUnreadIds[updatedThread.id] = (
-          urgent: old.urgent,
-          importance: old.importance,
-          activityAt: old.activityAt,
-          thread: updatedThread,
-        );
-      }
-    }
+    // Mirror in the per-tab activity-feed overlay so the active tab
+    // shows the optimistic state in the same frame as the edit.
+    _overlay[updatedThread.id] = _Overlay(
+      expected: updatedThread,
+      watched: fields ?? _OptimisticOverride._defaultWatched,
+    );
 
     // Mutate the cached threads list to reflect the update. Sibling
     // occurrences of recurring threads share an id but have different
@@ -1637,28 +2290,22 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _lastAgendaThreads = rebuilt;
 
-    // Patch the activity-feed source lists so `_buildActivityFeedItems`
-    // places the thread in the correct section in the same frame as the
-    // click. A naive in-place map of `state.activityFeedItems` would
-    // leave the thread in its previous section (e.g. Done stayed Done
-    // when the user clicked To do) until the DB stream landed.
-    _patchActivityFeedSourcesForOptimisticUpdate(updatedThread);
-
+    // The overlay write above is consumed by the per-tab subscription's
+    // merger to render the new section / order in the same frame as
+    // the click. _rebuildAgendaModel re-emits the active tab's section.
     _rebuildAgendaModel(
       thread: state.thread?.id == updatedThread.id
           ? Value(updatedThread)
           : const Value.absent(),
-      activityFeedByTab: _buildActivityFeedItems(),
     );
   }
 
   /// Apply an optimistic override propagated from a peer bloc that ran
   /// its own optimistic update (e.g. the priority page's bloc handled a
   /// drag-to-Doing). Only patches the agenda model — the activity-feed
-  /// source lists (`_todoThreads`, `_activityFeedRawThreads`) are
-  /// priority-scoped to this bloc's own context and must not be reshaped
-  /// by another priority's drag, so we skip
-  /// [_patchActivityFeedSourcesForOptimisticUpdate]. The override is
+  /// overlay is bloc-local (each bloc has its own active per-tab
+  /// subscription) so we don't propagate overlay writes here. The
+  /// per-thread agenda override is
   /// still recorded so the subsequent Drift stream emission is patched
   /// the same way as the originating bloc's — keeping the agenda in
   /// sync until the saved row settles the override.
@@ -1757,18 +2404,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.clear();
     _threadSubscription?.cancel();
     _watchingThreadId = null;
-    _activityFeedSubscription?.cancel();
-    _todoThreadsSubscription?.cancel();
     _tagsSubscription?.cancel();
 
     // Drop optimistic overrides — they apply to the old priority's streams
-    // and won't naturally settle in the new one.
+    // and won't naturally settle in the new one. The per-tab overlay is
+    // cleared below in `_restartActiveTabSubscription`.
     _optimisticOverrides.clear();
-
-    // Sticky-unread entries are bound to threads under the previous priority's
-    // feed. Letting them survive means a thread that happens to appear in the
-    // new feed could keep an unexpected sort position.
-    _stickyUnreadIds.clear();
 
     // Cancel any in-flight remote search so its result doesn't land in B
     // after the user switched away from A.
@@ -1822,25 +2463,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
     profile.mark('emitted context-switched state');
 
-    // Clear the cached source lists for [_rebuildActivityFeedSections] so a
-    // first stream emission from the new subscription can't mix new-priority
-    // threads with old-priority threads still sitting in the other field.
-    // The first-emit gates below provide the atomic-swap guarantee; clearing
-    // these fields is belt-and-suspenders for any direct rebuild path that
-    // bypasses the gates.
-    _activityFeedRawThreads = const [];
-    _todoThreads = const [];
-
-    // Reset only the activity-feed pagination — the agenda's pagination
-    // and sync state carry over because the data hasn't been re-fetched.
+    // Reset the activity-feed sync state — the per-tab subscription will
+    // be restarted below for the new priority, and a fresh sync is owed.
     _activityFeedSyncNoMore = false;
-    _resetActivityFeedWindow();
 
     // Re-init priority-scoped subscriptions (drafts, tags, icons,
     // activity feed). reloadAgenda: false skips the global agenda
     // subscription — it's still alive from the initial load.
     _loadPriority(profile: profile, reloadAgenda: false);
     profile.mark('_loadPriority returned (subscriptions started)');
+    // Per-tab subscription is priority-scoped — restart so the active
+    // tab reloads for the new priority.
+    _restartActiveTabSubscription();
 
     // Look up the chain draft so the new-thread input shows the right
     // content. We deliberately DO NOT call `Priority.get(archived: null)` to
@@ -2009,23 +2643,36 @@ class PriorityBloc extends Cubit<PriorityState> {
       headerNotifier?.isThreadVisible = false;
     }
 
-    // Sticky unread tracking: when navigating away from a thread, remove it
-    // from sticky set so it moves to the read section. When selecting an
-    // unread thread, add it so it stays in place while being read.
+    // Sticky-unread tracking: when navigating away from a thread, drop
+    // the overlay entry so the thread can fall back to its natural
+    // position on the next emission. If the entry was a sticky pin,
+    // bump `bumped_at` so it floats back up in the next emission's
+    // ordering. When selecting an unread thread, pin it via the overlay
+    // so the per-tab Catch up subscription keeps it visible at its
+    // pre-read position even after `unread` flips to false.
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
-      final wasSticky = _stickyUnreadIds.remove(oldThread.id) != null;
-      if (wasSticky) {
+      final removed = _overlay.remove(oldThread.id);
+      if (removed?.sticky == true) {
         oldThread.copyWith(bumpedAt: Value(DateTime.now())).save();
       }
+      if (removed != null &&
+          _activeTabSubscriptionTab == ActivityTab.catchUp) {
+        _rebuildActiveTabSection();
+      }
     }
-    if (thread != null && thread.unread) {
-      _stickyUnreadIds[thread.id] = (
-        urgent: thread.urgent,
-        importance: thread.importance,
-        activityAt: thread.activityAt,
-        thread: thread,
+    if (thread != null &&
+        thread.unread &&
+        _activeTabSubscriptionTab == ActivityTab.catchUp) {
+      _overlay[thread.id] = _Overlay.stickyUnread(
+        thread,
+        sortKeys: (
+          urgent: thread.urgent ? 1 : 0,
+          importance: thread.importance,
+          activityAt: thread.activityAt,
+        ),
       );
+      _rebuildActiveTabSection();
     }
 
     if (state.thread == thread) {
@@ -2338,14 +2985,16 @@ class PriorityBloc extends Cubit<PriorityState> {
       associations,
     ) {
       _associations = associations;
-      // Refresh the activity feed so the "Event Agenda" section picks
-      // up newly created / archived associations. Without this, a drop
-      // that calls `associateWith` would write to the DB and update the
-      // stream but the feed wouldn't re-render — the source row would
-      // be hidden by the drag system while the association never
-      // surfaced in the section, so the thread visibly disappears
-      // until a manual reload.
-      _scheduleActivityFeedRebuild();
+      // Refresh the active per-tab section so the "Event Agenda" prefix
+      // picks up newly created / archived associations. Without this,
+      // a drop that calls `associateWith` would write to the DB and
+      // update the stream but the feed wouldn't re-render — the source
+      // row would be hidden by the drag system while the association
+      // never surfaced in the section, so the thread visibly
+      // disappears until a manual reload.
+      if (_activeTabSubscriptionTab != null) {
+        _rebuildActiveTabSection();
+      }
     });
 
     // Watch the per-priority order timeline. Each emission updates the
@@ -2427,22 +3076,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     _activityFeedSyncNoMore = false;
-    _resetActivityFeedWindow();
-    _loadActivityFeed(profile: profile);
-  }
-
-  /// Clears appended pages and resets the cursor — invoked on every code
-  /// path that swaps the visible feed (priority switch, filter change,
-  /// search execute). Also bumps the generation so any in-flight
-  /// [fetchMoreActivityFeedItems] page hydration aborts before mutating
-  /// the (now stale) window state.
-  void _resetActivityFeedWindow() {
-    _activityFeedAppendedThreads = const [];
-    _activityFeedNextCursor = null;
-    _activityFeedHeadSaturated = false;
-    _activityFeedHeadTailCursor = null;
-    _activityFeedAppendsExhausted = false;
-    _activityFeedAppendGeneration++;
+    // Trigger the server-side feed sync (still needed to populate the
+    // local DB that per-tab queries read from).
+    unawaited(_triggerActivityFeedSync(state.context));
   }
 
   ThreadId? _watchingThreadId;
@@ -2971,373 +3607,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     // fetchMoreAgendaItems will extend the horizon as the user scrolls.
   }
 
-  void _loadActivityFeed({
-    bool triggerSync = true,
-    _PriorityLoadProfile? profile,
-  }) {
-    final priorityToLoad = state.context;
-    final isSearching = state.search.isNotEmpty;
-    _activityFeedSubscription?.cancel();
-    // Reset distinct tracker so the first emission from this new
-    // subscription is always processed.
-    _lastActivityFeedSig = null;
-    // Reset the first-emission gates for both streams — [_loadTodoThreads]
-    // is invoked below, so a single reset point keeps both flags in sync.
-    _activityFeedFirstEmitted = false;
-    _todoThreadsFirstEmitted = false;
-    profile?.mark('_loadActivityFeed subscribing');
-    // When [hideSubPriorities] is false the user has opted to see only
-    // threads filed directly on this priority — pass `priorityId` instead
-    // of `priorityPath` so the SQL filter switches from
-    // `path = X OR path LIKE 'X.%'` (this priority + descendants) to
-    // `priority_id = X` (this priority only). A selected event overrides
-    // the user's choice and forces descendants back into the feed so the
-    // event's nested threads can surface on the same page.
-    final scopeByPath = isSearching ||
-        state.hideSubPriorities ||
-        _currentEventForFeed != null;
-    // While searching, the root priority ("Everything") means global scope;
-    // selecting any other priority narrows the search to that subtree so
-    // matches are filtered to just that priority.
-    final searchGlobal = isSearching && priorityToLoad.root;
-    _activityFeedSubscription =
-        Thread.watch(
-          order: ThreadOrder.reverse,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          archived: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
-          // Fixed page size — never bumped. Phase-1 two-step query makes
-          // rawRowCount equal distinct thread count, so this is exactly
-          // the number of head threads. Scrolling appends static pages
-          // via [fetchMoreActivityFeedItems] cursor pagination.
-          limit: _activityFeedLimit,
-        ).listen((result) {
-          // Always signal that a stream emission has been observed.
-          // Unblocks any [fetchMoreActivityFeedItems] caller awaiting the
-          // next emission so InfiniteList's `_fetching` guard releases
-          // only after data has actually arrived.
-          final emissionCompleter = _activityFeedNextEmission;
-          if (emissionCompleter != null && !emissionCompleter.isCompleted) {
-            _activityFeedNextEmission = null;
-            emissionCompleter.complete();
-          }
 
-          // Mark the gate satisfied on every emission (cheap, idempotent)
-          // so the gate also unblocks if Drift coalesces multiple writes
-          // into a single first emission with the same signature as the
-          // initial empty result.
-          if (!_activityFeedFirstEmitted) {
-            _activityFeedFirstEmitted = true;
-            profile?.mark('_loadActivityFeed first emission');
-          }
-
-          // Drop identical re-emissions before paying the optimistic-
-          // override and section-rebuild cost. Drift streams re-fire on
-          // every table change, including unrelated tags/notes that don't
-          // move a thread.
-          final sig = _activityFeedSig(result);
-          if (sig == _lastActivityFeedSig) return;
-          _lastActivityFeedSig = sig;
-
-          final (:threads, :rawRowCount, :feedTailCursor) = result;
-          // Post-Phase-1: rawRowCount equals distinct thread count, so
-          // saturation is a reliable signal that more local rows exist.
-          _activityFeedHeadSaturated = threads.length >= _activityFeedLimit;
-          // Stash the head-tail cursor (SQL-computed, matches the sort
-          // formula exactly) so [fetchMoreActivityFeedItems] can cursor-
-          // paginate beyond the head without re-deriving it from Dart's
-          // `Thread.activityAt` (which doesn't match the SQL in all cases).
-          _activityFeedHeadTailCursor = feedTailCursor;
-
-          // Apply per-thread optimistic overrides so intermediate stream
-          // snapshots (e.g. thread row written but user schedule not yet —
-          // which derives todo=true even though the user just archived it)
-          // don't flip the list back to a stale state. Unrelated threads
-          // keep updating normally on every emission.
-          final patchedHead = _applyOptimisticOverrides(threads);
-
-          // Inject sticky threads that fell out of the head after being
-          // marked read (unreadSort dropped 1→0).
-          final headIds = patchedHead.map((t) => t.id).toSet();
-          final headWithSticky = List<Thread>.from(patchedHead);
-          for (final entry in _stickyUnreadIds.entries.toList()) {
-            if (headIds.contains(entry.key)) {
-              _stickyUnreadIds[entry.key] = (
-                urgent: entry.value.urgent,
-                importance: entry.value.importance,
-                activityAt: entry.value.activityAt,
-                thread: patchedHead.firstWhere((t) => t.id == entry.key),
-              );
-            } else {
-              headWithSticky.add(entry.value.thread.copyWith(unread: false));
-            }
-          }
-
-          // Dedup appended pages against the current head. When the head
-          // shifts (sync surfaces a new top-of-feed thread), a previously-
-          // appended thread may now appear in the head — drop it from
-          // appended so it doesn't render twice.
-          final headIdsAfterSticky = headWithSticky.map((t) => t.id).toSet();
-          final dedupedAppended = _activityFeedAppendedThreads
-              .where((t) => !headIdsAfterSticky.contains(t.id))
-              .toList();
-
-          _activityFeedRawThreads = [...headWithSticky, ...dedupedAppended];
-          _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
-          _scheduleActivityFeedRebuild();
-        });
-
-    _loadTodoThreads(profile: profile);
-
-    if (triggerSync) {
-      // Per-priority feed sync runs in the background. With cursor
-      // pagination the user's scroll-load doesn't depend on this future
-      // — [fetchMoreActivityFeedItems] reads whatever is locally
-      // available at fetch time, and head watcher re-emissions surface
-      // any newly-synced content automatically.
-      unawaited(_triggerActivityFeedSync(priorityToLoad));
-    }
-  }
-
-  /// Watches every non-archived todo (`todo=true`) for the priority, with
-  /// no LIMIT. The Activity tab uses this in parallel with the
-  /// reverse-chronological feed so every Active and Scheduled thread is
-  /// visible regardless of pagination. Filter / icon-filter / search are
-  /// passed through so the Today and Scheduled sections shrink to the
-  /// matching subset while a search/filter is active.
-  void _loadTodoThreads({_PriorityLoadProfile? profile}) {
-    final priorityToLoad = state.context;
-    final isSearching = state.search.isNotEmpty;
-    _todoThreadsSubscription?.cancel();
-    profile?.mark('_loadTodoThreads subscribing');
-    // Mirror [_loadActivityFeed]'s direct-only scope so the todo list and
-    // feed stay consistent when sub-priorities are hidden — and likewise
-    // honor the event-selected override that re-includes descendants.
-    final scopeByPath = isSearching ||
-        state.hideSubPriorities ||
-        _currentEventForFeed != null;
-    // Mirror _loadActivityFeed: searching from the root priority is
-    // global; searching from a non-root priority filters to that subtree.
-    final searchGlobal = isSearching && priorityToLoad.root;
-    _todoThreadsSubscription =
-        Thread.watch(
-          order: ThreadOrder.sorted,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          archived: state.showArchived,
-          // SQL-side todo filter: returns only threads whose user_schedule
-          // is the canonical `Thread.todo` shape. Replaces the previous
-          // `includeUnscheduled: false` over-fetch + Dart-side
-          // `.where((t) => t.todo)`, which on calendar-heavy priorities
-          // returned every shared/link-scheduled event before discarding
-          // the bulk client-side.
-          todoOnly: true,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: state.search.isNotEmpty ? state.search : null,
-        )
-        // Drop identical re-emissions before re-running the section rebuild.
-        .distinct((a, b) => _activityFeedSig(a) == _activityFeedSig(b))
-        .listen((result) {
-          // Apply optimistic overrides BEFORE filtering by `todo`. Without
-          // this, intermediate stream emissions during a multi-step save
-          // (e.g. `asActiveToday` writes the thread row, then the user
-          // schedule — between those two writes the SQL `todoOnly` filter
-          // excludes the thread because the schedule isn't yet restored)
-          // would temporarily revert `_todoThreads` to a non-optimistic
-          // snapshot, producing a visible "bounce" after a drop. The
-          // override application both replaces patched-in stream rows
-          // with their expected state AND injects expected-but-missing
-          // threads, so a row dropped into Today stays in Today across
-          // the entire save lifecycle.
-          if (!_todoThreadsFirstEmitted) {
-            _todoThreadsFirstEmitted = true;
-            profile?.mark('_loadTodoThreads first emission');
-          }
-          final patched = _applyOptimisticOverrides(result.threads);
-          _todoThreads = patched.where((t) => t.todo).toList();
-          _scheduleActivityFeedRebuild();
-        });
-  }
-
-  /// Compact signature for [ThreadWatchResult] that captures the fields
-  /// the activity-feed sectioning actually depends on. Identical
-  /// signatures across consecutive emissions mean the rebuild would
-  /// produce the same output and can be skipped.
-  static String _activityFeedSig(ThreadWatchResult r) {
-    final buf = StringBuffer()
-      ..write(r.rawRowCount)
-      ..write('|')
-      ..write(r.threads.length)
-      ..write('|');
-    for (final t in r.threads) {
-      buf
-        ..write(t.id)
-        ..write(':')
-        ..write(t.updatedAt.microsecondsSinceEpoch)
-        ..write(':')
-        ..write(t.todo ? 1 : 0)
-        ..write(':')
-        ..write(t.unread ? 1 : 0)
-        ..write(':')
-        ..write(t.archivedAt?.microsecondsSinceEpoch ?? 0)
-        ..write(':')
-        ..write(t.activityAt.microsecondsSinceEpoch)
-        ..write(':')
-        ..write(t.scheduleId ?? '')
-        ..write(',');
-    }
-    return buf.toString();
-  }
-
-  /// Schedule a microtask-coalesced [_rebuildActivityFeedSections]. When
-  /// both `_loadActivityFeed` and `_loadTodoThreads` re-emit on the same
-  /// underlying write, only one rebuild runs.
-  void _scheduleActivityFeedRebuild() {
-    if (_activityFeedRebuildScheduled) return;
-    _activityFeedRebuildScheduled = true;
-    scheduleMicrotask(() {
-      _activityFeedRebuildScheduled = false;
-      if (isClosed) return;
-      _rebuildActivityFeedSections();
-    });
-  }
-
-  /// Build the Activity-feed item list from `_todoThreads` (Active /
-  /// Scheduled) and `_activityFeedRawThreads` (everything else,
-  /// reverse-chronological). Emits the final sectioned list to state.
-  ///
-  /// Sections, in order:
-  ///   1. Today      — Active threads (todo with sentinel or past/today date)
-  ///   2. Tomorrow / Friday / "MMM d" — one section per future-scheduled day
-  ///   3. New        — Unread threads that aren't active or scheduled
-  ///   4. Done       — Inactive threads (read, no active todo)
-  ///
-  /// Section headers carry an `ActivitySectionMarker`-encoded text so the
-  /// drag dispatcher can recover the section identity.
-  void _rebuildActivityFeedSections() {
-    // Gate on both streams' first emission. While either is pending, the
-    // source lists for one of them is the previous priority's data (or
-    // empty after setPriority cleared them), and rebuilding now would
-    // either flash old threads with new headers, or partial threads under
-    // new headers. Wait for an atomic swap.
-    if (!_activityFeedFirstEmitted || !_todoThreadsFirstEmitted) return;
-    final byTab = _buildActivityFeedItems();
-    emit(
-      state.copyWith(
-        activityFeedByTab: byTab,
-        activityFeedDoneEnd: _activityFeedDoneEnd,
-        activityFeedLoaded: true,
-      ),
-    );
-  }
-
-  /// Switch which activity-feed tab the user is viewing. Pure view
-  /// operation — no rebuild, just toggling [PriorityState.activeTab].
+  /// Switch which activity-feed tab the user is viewing. Tears down the
+  /// previous tab's per-tab subscription and starts the new tab's, also
+  /// clearing the overlay so the new tab's first emission is canonical.
   void selectActivityTab(ActivityTab tab) {
     if (state.activeTab == tab) return;
     emit(state.copyWith(activeTab: tab));
-  }
-
-  /// Compose the activity-feed item lists from `_todoThreads` and
-  /// `_activityFeedRawThreads`, one per [ActivityTab]. Pure with respect
-  /// to bloc state — callers that need an emit should use
-  /// [_rebuildActivityFeedSections] or pass the returned map to
-  /// [_rebuildAgendaModel]. Optimistic update paths use this to re-bin
-  /// the feed after patching the source lists, so a thread that
-  /// transitioned (e.g. todo flipped) lands in the correct tab in the
-  /// same frame as the click.
-  ///
-  /// Every tab is rebuilt together because they share underlying thread
-  /// pools. Tab switching is a pure re-render — no recompute needed.
-  Map<ActivityTab, ActivityFeedTabData> _buildActivityFeedItems() {
-    // Build the Event Agenda prefix once and prepend it to every tab.
-    final eventPrefix = _buildEventAgendaItems();
-
-    // Unread pool feeds the Catch up tab. Pulled from both todos and
-    // non-todos (a todo can be unread too) and sorted by urgency.
-    final unread = <Thread>[];
-    final unreadIds = <ThreadId>{};
-    for (final t in _todoThreads) {
-      if (t.unread || _stickyUnreadIds.containsKey(t.id)) {
-        unread.add(t);
-        unreadIds.add(t.id);
-      }
-    }
-    for (final t in _activityFeedRawThreads) {
-      if (unreadIds.contains(t.id)) continue;
-      if (t.unread || _stickyUnreadIds.containsKey(t.id)) {
-        unread.add(t);
-        unreadIds.add(t.id);
-      }
-    }
-    unread.sort((a, b) {
-      final aSticky = _stickyUnreadIds[a.id];
-      final bSticky = _stickyUnreadIds[b.id];
-      // Sort by urgent DESC (true first), then importance DESC, then
-      // activityAt DESC. Replaces the old four-level urgencyRank scheme.
-      final aUrgent = aSticky?.urgent ?? a.urgent;
-      final bUrgent = bSticky?.urgent ?? b.urgent;
-      if (aUrgent != bUrgent) return aUrgent ? -1 : 1;
-      final aImp = aSticky?.importance ?? a.importance;
-      final bImp = bSticky?.importance ?? b.importance;
-      final importanceCmp = bImp.compareTo(aImp);
-      if (importanceCmp != 0) return importanceCmp;
-      final aAt = aSticky?.activityAt ?? a.activityAt;
-      final bAt = bSticky?.activityAt ?? b.activityAt;
-      return bAt.compareTo(aAt);
-    });
-
-    // All pool feeds the All tab. Every visible thread, sorted by
-    // activityAt DESC (matches the Done section's prior behaviour and
-    // the SQL feed-sort).
-    final allThreads = <Thread>[];
-    final allIds = <ThreadId>{};
-    for (final t in _todoThreads) {
-      if (allIds.add(t.id)) allThreads.add(t);
-    }
-    for (final t in _activityFeedRawThreads) {
-      if (allIds.add(t.id)) allThreads.add(t);
-    }
-    allThreads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
-
-    final result = <ActivityTab, ActivityFeedTabData>{};
-
-    // Catch up: flat sorted-by-urgency list of unread threads. No
-    // section headers, no Today/Scheduled split.
-    result[ActivityTab.catchUp] = ActivityFeedTabData(
-      items: <AgendaItem>[
-        ...eventPrefix,
-        for (final t in unread) AgendaThreadItem(t),
-      ],
-    );
-
-    // Action tabs: build a Today + Scheduled-day view scoped to each
-    // action value. Only todos contribute (action lives on the user
-    // schedule). Each action tab cascades independently so per-priority
-    // per-day caps don't bleed across actions.
-    for (final tab in ActivityTab.values) {
-      final action = tab.actionFilter;
-      if (action == null) continue;
-      result[tab] = _buildActionTabData(action, eventPrefix);
-    }
-
-    // All: flat list of every thread, sorted by activityAt DESC.
-    result[ActivityTab.all] = ActivityFeedTabData(
-      items: <AgendaItem>[
-        ...eventPrefix,
-        for (final t in allThreads) AgendaThreadItem(t),
-      ],
-    );
-
-    return result;
+    _restartActiveTabSubscription();
   }
 
   /// Build the Event Agenda prefix items — pinned event thread plus its
@@ -3354,10 +3631,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     final eventAssocs = _associations?[currentEvent.id] ?? const [];
     if (eventAssocs.isEmpty) return items;
     final lookup = <ThreadId, Thread>{};
-    for (final t in _activityFeedRawThreads) {
+    for (final t in _activeTabHead) {
       lookup.putIfAbsent(t.id, () => t);
     }
-    for (final t in _todoThreads) {
+    for (final t in _activeTabAppended) {
       lookup.putIfAbsent(t.id, () => t);
     }
     for (final t in _lastAgendaThreads) {
@@ -3380,133 +3657,6 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }
     return items;
-  }
-
-  /// Build the tab data for one of the action tabs (Respond / Do /
-  /// Read). Filters `_todoThreads` to the matching `schedule.action`,
-  /// partitions into Today (active) + per-day Scheduled, cascades the
-  /// per-priority per-day cap, and emits a Today header + day headers.
-  ///
-  /// Returns the rendered items together with the pre-cascade
-  /// `nativesByDate` snapshot so Reschedule All can move a day's full
-  /// native set together (including threads pushed forward by the cap).
-  ActivityFeedTabData _buildActionTabData(
-    String action,
-    List<AgendaItem> eventPrefix,
-  ) {
-    final active = <Thread>[];
-    final scheduledByDate = <Date, List<Thread>>{};
-    for (final t in _todoThreads) {
-      if (t.actionType != action) continue;
-      if (t.isActiveThread) {
-        active.add(t);
-      } else if (t.isScheduledThread) {
-        final date =
-            t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
-        scheduledByDate.putIfAbsent(date, () => []).add(t);
-      }
-    }
-
-    // Use activityCompareTo (order-only) for parity with the original
-    // Today section logic — see the comment that preceded the refactor.
-    active.sort((a, b) => a.activityCompareTo(b));
-    final scheduledDates = scheduledByDate.keys.toList()..sort();
-    for (final d in scheduledDates) {
-      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
-    }
-
-    // Snapshot natives before cascade — Reschedule All moves a date's
-    // full membership including threads pushed to a later day by the
-    // per-priority per-day cap.
-    final today = Date.today();
-    final nativesByDate = <Date, List<Thread>>{
-      today: List<Thread>.from(active),
-      for (final d in scheduledDates)
-        d: List<Thread>.from(scheduledByDate[d]!),
-    };
-
-    final cascaded = cascadeActivityFeedByPriority(
-      today: today,
-      active: active,
-      scheduledByDate: scheduledByDate,
-    );
-    active
-      ..clear()
-      ..addAll(cascaded.active);
-    scheduledByDate
-      ..clear()
-      ..addAll(cascaded.scheduledByDate);
-    active.sort((a, b) => a.activityCompareTo(b));
-    final cascadedDates = scheduledByDate.keys.toList()..sort();
-    for (final d in cascadedDates) {
-      scheduledByDate[d]!.sort((a, b) => a.activityCompareTo(b));
-    }
-
-    final items = <AgendaItem>[
-      ...eventPrefix,
-      // Today header is always emitted (even when empty) so it remains
-      // a valid drag-and-drop target for "make active".
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.today),
-      ),
-      for (final t in active) AgendaThreadItem(t),
-    ];
-
-    for (final d in cascadedDates) {
-      final dayThreads = scheduledByDate[d];
-      if (dayThreads == null || dayThreads.isEmpty) continue;
-      items.add(
-        AgendaHeaderItem(
-          date: d,
-          text: ActivitySectionMarker.encode(
-            ActivitySection.scheduled,
-            label: relativeDateLabel(d),
-          ),
-        ),
-      );
-      for (final t in dayThreads) {
-        items.add(AgendaThreadItem(t));
-      }
-    }
-
-    return ActivityFeedTabData(
-      items: items,
-      nativesByDate: nativesByDate,
-    );
-  }
-
-
-  /// Patch the activity-feed source lists (`_todoThreads`,
-  /// `_activityFeedRawThreads`) to reflect an optimistic update on
-  /// [updated], so that [_buildActivityFeedItems] places the thread in
-  /// the correct section in the same frame as the click. The next stream
-  /// emission will overwrite these lists with stream data run through
-  /// [_applyOptimisticOverrides] — which preserves the optimistic state
-  /// until the DB row matches `expected` on every watched field — so
-  /// this patch only needs to bridge the synchronous gap.
-  ///
-  /// When [drop] is true, the thread is removed from both source lists
-  /// (used when the optimistic update expects the thread to disappear,
-  /// e.g. archive or full disassociate).
-  void _patchActivityFeedSourcesForOptimisticUpdate(
-    Thread updated, {
-    bool drop = false,
-  }) {
-    _todoThreads = _todoThreads.where((t) => t.id != updated.id).toList();
-    if (!drop && updated.todo) _todoThreads.add(updated);
-
-    var found = false;
-    _activityFeedRawThreads = _activityFeedRawThreads
-        .map((t) {
-          if (t.id != updated.id) return t;
-          found = true;
-          return updated;
-        })
-        .where((t) => !drop || t.id != updated.id)
-        .toList();
-    if (!drop && !found) {
-      _activityFeedRawThreads = [..._activityFeedRawThreads, updated];
-    }
   }
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
@@ -3565,224 +3715,40 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     if (isClosed) return;
-    // "Caught up" can mean either: server says no more (`_activityFeedSyncNoMore`),
-    // OR the sync boundary now covers our last visible item so anything still
-    // unpulled is outside the LIMIT window anyway (`syncedPastLastItem`). In
-    // both cases the trailing "loading more" spinner should stop spinning,
-    // otherwise it spins forever (the only other path to `doneEnd: true` is a
-    // subsequent stream emission whose `_activityFeedSig` differs — which
-    // never happens once the visible window has stabilised).
+    // Caught up: server says no more, OR the sync boundary now covers
+    // our last visible item (anything still unpulled is outside the
+    // active tab's LIMIT window). Re-emit the active per-tab section so
+    // `activityFeedDoneEnd` recomputes from the new sync state — the
+    // trailing spinner stops once syncNoMore is observed.
     final caughtUp = _activityFeedSyncNoMore || syncedPastLastItem;
-    // Only trust head-saturated state once the watcher has actually fired
-    // (`_lastActivityFeedSig != null`). If sync completes faster than the
-    // first watcher emission, `_activityFeedHeadSaturated` is still
-    // `false` (default) — flipping doneEnd here on the default would race
-    // with the imminent first watcher emission, which may then compute a
-    // truer doneEnd. Let the watcher own the decision in that race.
-    final watcherHasFired = _lastActivityFeedSig != null;
-    if (caughtUp && watcherHasFired && !_activityFeedHeadSaturated) {
-      // Also write the instance var so the next [_rebuildActivityFeedSections]
-      // (which emits `activityFeedDoneEnd: _activityFeedDoneEnd`) preserves
-      // this value. Without this, a todo-thread stream emission that fires
-      // after sync completes — common on first sign-in when pullActivityFeed
-      // writes onboarding threads and the todo watcher re-runs — would emit
-      // the stale `false` and the bottom-of-list spinner spins forever.
-      _activityFeedDoneEnd = true;
-      emit(state.copyWith(activityFeedDoneEnd: true));
+    if (caughtUp && _activeTabSubscriptionTab != null) {
+      _rebuildActiveTabSection();
     }
-  }
-
-  /// True when the loaded window covers everything that can be loaded:
-  /// head was non-saturated (no more local rows after head) AND no pages
-  /// were appended; OR head was saturated and the last append exhausted
-  /// the local set. Combined with sync-noMore / search-mode this drives
-  /// the trailing-spinner doneEnd flag.
-  bool _computeActivityFeedDoneEnd() {
-    final isSearching = state.search.isNotEmpty;
-    final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
-    final localExhausted = _activityFeedAppendedThreads.isEmpty
-        ? (!_activityFeedHeadSaturated || _activityFeedAppendsExhausted)
-        : _activityFeedNextCursor == null;
-    return localExhausted && exhaustedRemote;
-  }
-
-  /// Cursor pointing at the row immediately after the last loaded thread,
-  /// for [Thread.fetchActivityFeedPage]. `null` means no more cursor —
-  /// either head is non-saturated (we know there's nothing past head) OR
-  /// the last appended page was non-saturated.
-  ({int unreadSort, String activityAt, ThreadId id})?
-      _computeActivityFeedTailCursor() {
-    if (_activityFeedNextCursor != null) return _activityFeedNextCursor;
-    if (_activityFeedAppendedThreads.isNotEmpty) {
-      // Last append was non-saturated → no more pages.
-      return null;
-    }
-    if (!_activityFeedHeadSaturated) return null;
-    // Use the SQL-derived head tail cursor stashed by the watcher's most
-    // recent emission. This matches the SQL formula exactly; deriving
-    // from `Thread.activityAt` in Dart would diverge for threads where
-    // `lastNoteSourceCreatedAt` is non-null but `link.sourceCreatedAt`
-    // is later (Dart picks max; SQL picks last_note via COALESCE).
-    return _activityFeedHeadTailCursor;
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
-    final needed = first + count;
-
-    // Even when `needed` is already satisfied by the head, we still owe a
-    // single probe past the head when it came back saturated but no append
-    // page has run — without it, [_activityFeedAppendsExhausted] never flips
-    // and the trailing spinner spins forever for priorities whose total
-    // local count equals exactly [_activityFeedLimit].
-    bool needsProbeBeyondHead() =>
-        _activityFeedHeadSaturated &&
-        _activityFeedAppendedThreads.isEmpty &&
-        !_activityFeedAppendsExhausted;
-
-    // Already loaded enough AND nothing left to probe? Nothing to do.
-    if (_activityFeedRawThreads.length >= needed && !needsProbeBeyondHead()) {
-      return;
+    final activeTab = _activeTabSubscriptionTab;
+    if (activeTab == ActivityTab.catchUp) {
+      return _fetchMoreCatchUp(first, count);
     }
-
-    // Coalesce concurrent callers — InfiniteList can fire fetchMore on
-    // every scroll tick during fast scrolls; without this they spawn
-    // overlapping page fetches.
-    while (_activityFeedAppendInFlight != null) {
-      try {
-        await _activityFeedAppendInFlight;
-      } catch (_) {}
-      if (isClosed) return;
-      if (_activityFeedRawThreads.length >= needed && !needsProbeBeyondHead()) {
-        return;
-      }
+    if (activeTab == ActivityTab.all) {
+      return _fetchMoreAllTab(first, count);
     }
-
-    while (!_activityFeedDoneEnd &&
-        (_activityFeedRawThreads.length < needed || needsProbeBeyondHead())) {
-      final cursor = _computeActivityFeedTailCursor();
-      if (cursor == null) {
-        // No more pages available locally; head not saturated or last
-        // appended page was non-saturated. Mark appends exhausted so the
-        // probe loop above won't keep re-entering.
-        if (needsProbeBeyondHead()) {
-          _activityFeedAppendsExhausted = true;
-          _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
-          _scheduleActivityFeedRebuild();
-        }
-        break;
-      }
-
-      final gen = _activityFeedAppendGeneration;
-      final priorityToLoad = state.context;
-      final isSearching = state.search.isNotEmpty;
-      final scopeByPath = isSearching ||
-          state.hideSubPriorities ||
-          _currentEventForFeed != null;
-
-      final completer = Completer<void>();
-      _activityFeedAppendInFlight = completer.future;
-      ActivityFeedPage? page;
-      try {
-        page = await Thread.fetchActivityFeedPage(
-          priorityPath: scopeByPath
-              ? (isSearching ? null : priorityToLoad.path)
-              : null,
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          archived: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          iconFilter:
-              state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
-          limit: _activityFeedLimit,
-          after: cursor,
-        );
-      } finally {
-        completer.complete();
-        _activityFeedAppendInFlight = null;
-      }
-
-      if (isClosed) return;
-      // Reset happened during the await — drop this stale page.
-      if (gen != _activityFeedAppendGeneration) return;
-
-      _activityFeedAppendedThreads = [
-        ..._activityFeedAppendedThreads,
-        ...page.threads,
-      ];
-      // Saturated → there may be more; remember the cursor.
-      // Non-saturated → exhausted locally; null cursor stops further appends,
-      // and the exhausted flag breaks the "saturated head + empty appends"
-      // doneEnd stall when this page came back empty.
-      _activityFeedNextCursor =
-          page.saturated ? page.nextCursor : null;
-      if (!page.saturated) {
-        _activityFeedAppendsExhausted = true;
-      }
-
-      // Recompute the displayed list. Head emission's dedup logic runs
-      // on the next watcher fire; for now just append optimistically.
-      // (Head re-emission triggered by table activity will dedup later.)
-      final headIds = <ThreadId>{};
-      final headEnd = _activityFeedLimit < _activityFeedRawThreads.length
-          ? _activityFeedLimit
-          : _activityFeedRawThreads.length;
-      for (var i = 0; i < headEnd; i++) {
-        headIds.add(_activityFeedRawThreads[i].id);
-      }
-      final dedupedNew =
-          page.threads.where((t) => !headIds.contains(t.id)).toList();
-      _activityFeedRawThreads = [
-        ..._activityFeedRawThreads,
-        ...dedupedNew,
-      ];
-      _activityFeedDoneEnd = _computeActivityFeedDoneEnd();
-      _scheduleActivityFeedRebuild();
-
-      if (!page.saturated) break;
+    if (activeTab != null && activeTab.isActionTab) {
+      return _fetchMoreActionTab(activeTab, first, count);
     }
+    // Reached only if no per-tab subscription is active — defensive
+    // guard so InfiniteList doesn't hang on an unmigrated tab.
   }
+
 
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<void>? _fullResyncSubscription;
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
-  StreamSubscription<void>? _activityFeedSubscription;
-  StreamSubscription<void>? _todoThreadsSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
 
-  /// Latest reverse-chronological feed result, kept so the section
-  /// rebuilder can rerun when the parallel todo stream emits without
-  /// re-issuing the feed query.
-  List<Thread> _activityFeedRawThreads = const [];
-
-  /// Latest todo set (Active + Scheduled) for the priority. Sourced from
-  /// the unbounded `Thread.watch(includeUnscheduled: false)` stream and
-  /// filtered to `t.todo` in `_loadTodoThreads`.
-  List<Thread> _todoThreads = const [];
-
-  /// Latest "done end" flag from the activity feed stream — preserved
-  /// across todo-stream emissions so the rebuilder doesn't toggle it.
-  bool _activityFeedDoneEnd = false;
-
-  /// True while a microtask-coalesced [_rebuildActivityFeedSections] is
-  /// already scheduled. Both watch streams (`_loadActivityFeed` and
-  /// `_loadTodoThreads`) re-fire on overlapping table writes; without
-  /// coalescing every shared write reruns the entire sectioning pipeline
-  /// twice in a row.
-  bool _activityFeedRebuildScheduled = false;
-
-  /// First-emission gates for the two streams that feed
-  /// [_rebuildActivityFeedSections]. Reset to false in [_loadActivityFeed]
-  /// (which also re-subscribes the todo stream) so they correctly track the
-  /// new subscriptions, and flipped true inside each listener on its first
-  /// emission. While either is false, [_rebuildActivityFeedSections]
-  /// suppresses its emit — otherwise the rebuild would mix the new
-  /// priority's headers with whichever list hadn't received its first
-  /// emission yet, producing the "old threads under new headers" flash on
-  /// priority switch.
-  bool _activityFeedFirstEmitted = false;
-  bool _todoThreadsFirstEmitted = false;
   // Initial cold-start window kept small for fast first paint; grows via
   // [fetchMoreAgendaItems] as the user scrolls.
   int _agendaHorizonDays = 30;
@@ -3792,7 +3758,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   // the user scrolls past the buffer so more empty days appear instead
   // of leaving the user on a stuck spinner.
   int _agendaFillDays = 0;
-  /// Fixed page size for the activity feed — never grows. The watcher
+  /// Fixed page size for every activity-feed per-tab query. The watcher
   /// always covers the head (top [_activityFeedLimit] threads); scrolling
   /// past appends static pages via cursor pagination in
   /// [fetchMoreActivityFeedItems], so watcher cost stays constant
@@ -3801,63 +3767,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
   Future<void>? _agendaSyncFuture;
-
-  /// Pages loaded by [fetchMoreActivityFeedItems] beyond the head. These
-  /// are static snapshots — they don't live-update on table changes — so
-  /// scroll depth doesn't multiply the watcher's emission cost.
-  /// `_activityFeedRawThreads` is the head emission deduplicated against
-  /// this list. Reset on filter/priority/search change.
-  List<Thread> _activityFeedAppendedThreads = const [];
-
-  /// Cursor for the next [fetchMoreActivityFeedItems] page. `null` means
-  /// either no page has been appended yet (cursor is at head tail) OR the
-  /// last appended page was non-saturated (no more pages available
-  /// locally).
-  ({int unreadSort, String activityAt, ThreadId id})? _activityFeedNextCursor;
-
-  /// SQL-computed cursor of the head emission's tail row, populated by
-  /// the head watcher each emission. Used by [fetchMoreActivityFeedItems]
-  /// to start the first append from the right spot. Matches the SQL
-  /// formula exactly — deriving from `Thread.activityAt` in Dart doesn't.
-  ({int unreadSort, String activityAt, ThreadId id})? _activityFeedHeadTailCursor;
-
-  /// True when the most recent head emission returned [_activityFeedLimit]
-  /// threads (i.e. there may be more local content beyond the head).
-  /// Gates the first append.
-  bool _activityFeedHeadSaturated = false;
-
-  /// True once a cursor-paginated append fetch has confirmed there are no
-  /// more local rows beyond the head — set when [fetchActivityFeedPage]
-  /// returns a non-saturated page. Without this, the
-  /// "head saturated AND no appends yet" branch of
-  /// [_computeActivityFeedDoneEnd] returns false forever when the head holds
-  /// exactly [_activityFeedLimit] rows (= the total local count): the
-  /// cursor fetcher runs once and gets 0 rows back, but
-  /// [_activityFeedAppendedThreads] stays empty so the doneEnd check keeps
-  /// falling back to `!_activityFeedHeadSaturated = false` and the trailing
-  /// spinner spins forever.
-  bool _activityFeedAppendsExhausted = false;
-
-  /// True while a [fetchMoreActivityFeedItems] page is being fetched, so
-  /// concurrent callers coalesce instead of racing.
-  Future<void>? _activityFeedAppendInFlight;
-
-  /// Generation counter bumped on reset (priority/filter/search switch).
-  /// Any in-flight append checks this before committing — keeps stale
-  /// page hydration from clobbering a freshly-reset window.
-  int _activityFeedAppendGeneration = 0;
-
-  /// Resolved by the activity feed watcher's `listen` callback every time
-  /// it fires. [fetchMoreActivityFeedItems] sets this before re-issuing
-  /// the watch and awaits it, so InfiniteList's `_fetching` guard only
-  /// releases after the new data has actually been delivered.
-  Completer<void>? _activityFeedNextEmission;
-
-  /// Last [_activityFeedSig] processed by the watcher's `listen` callback.
-  /// Drives manual distinct-emission filtering; reset to `null` whenever
-  /// [_loadActivityFeed] re-subscribes so the new subscription's first
-  /// emission is always processed.
-  String? _lastActivityFeedSig;
 }
 
 /// Provides the [ThreadListSource] to descendant widgets so that

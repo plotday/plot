@@ -1510,13 +1510,18 @@ class _ActivityFeedTabHeader extends StatelessWidget {
     final spacing = context.theme.spacing;
     final fontSize = context.theme.typography.sm.fontSize;
 
-    // Reschedule-all applies to every thread currently in the active
-    // tab's natives. Only action tabs populate natives — Catch up and
-    // All are passive (no reorder, no reschedule).
+    // Reschedule-all applies to every thread currently rendered in the
+    // active action tab. Walk activityFeedItems and pick the regular
+    // (non-pinned, non-associated) AgendaThreadItems — those are the
+    // action-typed todos that came from the action-tab query.
     final natives = <Thread>[];
     if (state.activeTab.isActionTab) {
-      for (final list in state.activityFeedNativesByDate.values) {
-        natives.addAll(list);
+      for (final item in state.activityFeedItems) {
+        if (item is AgendaThreadItem &&
+            !item.pinned &&
+            !item.isAssociated) {
+          natives.add(item.thread);
+        }
       }
     }
     // Always build the button widget so the invisible mirror can
