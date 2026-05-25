@@ -208,7 +208,20 @@ class BroadcastClient with WidgetsBindingObserver {
         _scheduleReconnect();
         return;
       }
-      final userId = Base.userId.toString();
+      // Sign-out can clear Base.userId between the await above and here —
+      // either via the identity-mismatch path in resolveIdentity() or via
+      // an explicit user sign-out racing with a connectivity-triggered
+      // _startSync. Use the nullable getter and abandon cleanly; Store
+      // teardown will call disconnect() as part of sign-out and a fresh
+      // sign-in will resubscribe through its own _subscribeToUpdates().
+      final userIdValue = Base.userIdOrNull;
+      if (userIdValue == null) {
+        log.info(
+          'Base.userId cleared during connect — abandoning WebSocket attempt',
+        );
+        return;
+      }
+      final userId = userIdValue.toString();
 
       // Build WebSocket URL
       final wsUri = Uri.parse(_wsScheme('${Env.apiRoot}/updates/$userId'))
