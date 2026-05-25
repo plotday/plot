@@ -147,13 +147,13 @@ export class EmailNotify extends DurableObject<Bindings> {
             p.id::text AS priority_id,
             p.path::text AS priority_path,
             p.title AS priority_title
-          FROM thread_unread tu
+          FROM thread_state tu
           JOIN thread t ON t.id = tu.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
           JOIN priority p ON p.id = tp.priority_id
           WHERE tu.user_id = ${this.userId!}::uuid
             AND tu.read_at IS NULL
-            AND tu.urgency != 'passive'
+            AND (tu.importance >= 50 OR tu.urgent = TRUE)
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (

@@ -2029,10 +2029,13 @@ class _ExecuteMerge extends ThreadCommand {
       targetRow.importance,
       sourceRow.importance,
     );
-    final newUrgency = mergeUrgencyMostUrgent(
-      targetRow.urgency,
-      sourceRow.urgency,
-    );
+    // urgent merges with OR: if either side flagged urgent, the merged
+    // thread stays urgent. Null is treated as "no preference".
+    final mergedUrgent = (targetRow.urgent ?? false) ||
+        (sourceRow.urgent ?? false);
+    final newUrgent = (targetRow.urgent == null && sourceRow.urgent == null)
+        ? null
+        : mergedUrgent;
 
     await db.add(
       db.threads,
@@ -2041,7 +2044,7 @@ class _ExecuteMerge extends ThreadCommand {
             contacts: Value(mergedContacts),
             groups: Value(mergedGroups),
             importance: newImportance,
-            urgency: Value(newUrgency),
+            urgent: Value(newUrgent),
             updatedAt: now,
           )
           .toCompanion(false),
@@ -2132,12 +2135,13 @@ class _ExecuteMerge extends ThreadCommand {
     final targetSchedules = await (db.select(
       db.schedules,
     )..where((s) => s.threadId.equalsValue(target.id))).get();
+    // Per-user schedules are gone; only shared schedules remain, so the
+    // slot key collapses to the occurrence string.
     final targetSlots = <String>{
-      for (final s in targetSchedules)
-        '${s.userId ?? ''}_${s.occurrence ?? ''}',
+      for (final s in targetSchedules) s.occurrence ?? '',
     };
     for (final s in sourceSchedules) {
-      final slot = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      final slot = s.occurrence ?? '';
       if (!targetSlots.contains(slot)) {
         await db.add(
           db.schedules,
@@ -2353,15 +2357,15 @@ class _ExecuteSplit extends ThreadCommand {
     final allSourceSchedules = await (db.select(
       db.schedules,
     )..where((s) => s.threadId.equalsValue(source.id))).get();
+    // Per-user schedules are gone; slot key collapses to occurrence.
     final sourceSlots = <String>{
-      for (final s in allSourceSchedules)
-        '${s.userId ?? ''}_${s.occurrence ?? ''}',
+      for (final s in allSourceSchedules) s.occurrence ?? '',
     };
     final currentSchedules = await (db.select(
       db.schedules,
     )..where((s) => s.threadId.equalsValue(current.id))).get();
     for (final s in currentSchedules) {
-      final slot = '${s.userId ?? ''}_${s.occurrence ?? ''}';
+      final slot = s.occurrence ?? '';
       if (!sourceSlots.contains(slot)) {
         await db.add(
           db.schedules,
@@ -3401,9 +3405,7 @@ List<Command> threadCommands(
   Command? primary;
   if (!skipPrimary) {
     if (thread.todo) {
-      if (!thread.outstandingTasks) {
-        primary = FinishThread(thread, stateIcon: false);
-      }
+      primary = FinishThread(thread, stateIcon: false);
     } else if (thread.on != null) {
       primary = PickScheduleThread(thread);
     } else {

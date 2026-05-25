@@ -564,8 +564,8 @@ BEGIN
                       classify_at = COALESCE(thread_priority.classify_at, now()),
                       updated_at = now();
 
-        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
-        SELECT peer.user_id, v_result.id, 'inform-updates', 50
+        INSERT INTO thread_state (user_id, thread_id)
+        SELECT peer.user_id, v_result.id
         FROM (
             SELECT DISTINCT uc.user_id
             FROM unnest(v_promoted_contacts) AS arr(contact_id)
@@ -575,7 +575,7 @@ BEGIN
              AND uc.archived_at IS NULL
             WHERE uc.user_id IS DISTINCT FROM upsert_thread.user_id
         ) peer
-        ON CONFLICT ON CONSTRAINT thread_unread_pkey DO NOTHING;
+        ON CONFLICT ON CONSTRAINT thread_state_pkey DO NOTHING;
     END IF;
 
     -- Re-mark peer thread_priority rows pending on INITIAL creation. The

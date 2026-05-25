@@ -1,11 +1,11 @@
--- User-scoped schedule view
--- Shows shared schedules (user_id IS NULL) to users who can see the schedule's parent.
+-- User-scoped schedule view. Shows shared schedules to users who can see the
+-- schedule's parent.
 --   - Link-attached schedules (link_id IS NOT NULL) follow the link's per-user
 --     visibility: connector-authored links are visible only to the twist_instance
 --     owner, so their schedules are too. This keeps two users' connections of the
 --     same calendar event from each showing as duplicate agenda entries.
 --   - Thread-scoped schedules (link_id IS NULL) stay shared across thread members.
--- Shows per-user schedules (user_id IS NOT NULL) only to the owning user.
+-- Per-user todo/order/action state now lives on thread_state, not schedule.
 -- Computes range_at/range_on for client-side time-based filtering.
 CREATE OR REPLACE VIEW "user"."schedule"
 --
@@ -15,16 +15,8 @@ SELECT
     s.id,
     s.created_at,
     s.updated_at,
-    -- s.seq alone is sufficient: bump_schedule_updated_at (AFTER on
-    -- schedule_contact) bumps the parent schedule, which fires
-    -- update_seq_and_updated_at and advances s.seq to the current
-    -- transaction's xid. Computing GREATEST(s.seq, MAX(schedule_contact.seq))
-    -- here forced a seq scan + per-row subplan on /sync/schedules because
-    -- the filter on a computed expression couldn't use idx_schedule_seq.
     s.seq,
     COALESCE(s.archived_at, upe.archived_at) AS archived_at,
-    s.user_id AS schedule_user_id,
-    s."order",
     s.at,
     s."on",
     s.recurrence_rule,
@@ -34,8 +26,6 @@ SELECT
     s.thread_id,
     s.link_id,
     s.reason,
-    s.action,
-    s.outstanding_tasks,
     upe.path AS priority_path,
     -- range_at: for timestamp-based schedules
     CASE WHEN s.at IS NOT NULL THEN
@@ -95,10 +85,4 @@ FROM
     -- Get priority path from the user's filing (case-A → root via COALESCE)
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
-        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
-WHERE
-    -- Shared schedules visible to all users with thread_priority (link visibility gated above)
-    (s.user_id IS NULL
-    -- Per-user schedules visible only to the owning user
-    OR s.user_id = tp.user_id);
-
+        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id));

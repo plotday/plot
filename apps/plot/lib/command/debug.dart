@@ -139,7 +139,7 @@ class ShowTestNotification extends Command {
           'title': 'Plot',
           'body': 'Test notification — direct display test',
           'target_priority_id': '',
-          'urgency': 'inform-updates',
+          'urgent': false,
         },
       ]);
       return CommandMessage('Notification shown');
@@ -185,7 +185,7 @@ class TestNotificationNavigation extends Command {
         title: 'Debug: tap to navigate',
         body: 'Should open activity tab for current priority',
         targetPriorityId: priorityId,
-        urgency: 'interrupt',
+        urgent: true,
       );
       return CommandMessage('Notification shown — tap it to test navigation');
     } catch (e) {

@@ -38,7 +38,7 @@ CREATE TABLE "public"."thread" (
     "last_note_seq" xid8 NOT NULL DEFAULT '0'::xid8,
     -- When set, this thread is a merge source whose content has been moved
     -- to merged_into_thread_id. The row is archived but its identity columns
-    -- (contacts, groups, importance, urgency, twist_id, key) are preserved
+    -- (contacts, groups, twist_id, key) are preserved
     -- so SplitThread can restore them. Many sources may point at one target.
     "merged_into_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL
 );

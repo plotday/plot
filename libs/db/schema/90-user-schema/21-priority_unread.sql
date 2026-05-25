@@ -1,18 +1,21 @@
--- user.priority_unread — "does this priority have any unread threads
--- visible to this user?". Mirrors user.thread's visibility: a thread
+-- user.priority_unread — "does this priority have any notify-worthy unread
+-- threads visible to this user?". Mirrors user.thread's visibility: a thread
 -- counts only if thread_priority has a row for the user, the thread is
 -- visible through the user's contacts or groups, and (if the priority is
--- team-scoped) the user is still a current member of that team. Without
--- the team_user guard, leaving a team would leave stale unread dots on
--- the team's priorities until the priority-archive cascade reaches the
--- client.
+-- team-scoped) the user is still a current member of that team.
+--
+-- A row counts toward the unread dot only when its thread_state row has
+-- importance >= 50 OR urgent = TRUE. Low-importance items (promotional /
+-- unsolicited / passive update) intentionally do not light up priorities
+-- so the user can choose whether to look at Catch up rather than being
+-- prompted by an indicator.
 CREATE OR REPLACE VIEW "user"."priority_unread" --
 AS
 SELECT
     tp.user_id,
     COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
     TRUE AS unread,
-    MAX(tu.updated_at) AS updated_at
+    MAX(ts.updated_at) AS updated_at
 FROM
     thread_priority tp
     JOIN thread a ON a.id = tp.thread_id
@@ -43,9 +46,12 @@ FROM
                   AND tu2.archived_at IS NULL
             )
         )
-    JOIN thread_unread tu ON tu.user_id = tp.user_id
-        AND tu.thread_id = a.id
-        AND tu.read_at IS NULL
+    JOIN thread_state ts ON ts.user_id = tp.user_id
+        AND ts.thread_id = a.id
+        AND ts.read_at IS NULL
+        -- Importance gate: low-importance unreads don't trip the dot
+        -- unless they're flagged urgent.
+        AND (ts.importance >= 50 OR ts.urgent = TRUE)
 GROUP BY
     tp.user_id,
     COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id));

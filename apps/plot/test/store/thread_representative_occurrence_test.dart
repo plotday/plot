@@ -13,7 +13,6 @@ ScheduleRow _row({
   occurrence: occurrence,
   startAt: start,
   endAt: end,
-  outstandingTasks: false,
   archivedAt: archivedAt,
 );
 

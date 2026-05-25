@@ -618,7 +618,7 @@ async function processTwistBatch(
           }
         }
 
-        // Fallback: mark unread with default urgency if analysis didn't handle it
+        // Fallback: write default thread_state if analysis didn't handle it
         if (!analysisHandledUnread && note.thread_id) {
           try {
             await markThreadUnreadForOthers(env, db, note.thread_id, ownerId);

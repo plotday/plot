@@ -28,13 +28,10 @@ class Priorities extends Table
   TextColumn get role => text().withDefault(const Constant('member'))();
   Int64Column get teamId => int64().nullable()();
   TextColumn get attentionWindow => text().nullable()();
-  TextColumn get seeWithinRequests => text().nullable()();
-  TextColumn get seeWithinUpdates => text().nullable()();
+  TextColumn get seeWithin => text().nullable()();
   BoolColumn get attentionWindowSet =>
       boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinRequestsSet =>
-      boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinUpdatesSet =>
+  BoolColumn get seeWithinSet =>
       boolean().withDefault(const Constant(false))();
 
   /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
@@ -79,21 +76,16 @@ class PrioritiesBase extends BaseTable {
         !json.containsKey('attention_window_set')) {
       json['attention_window_set'] = json.remove('response_window_set');
     }
-    // JSON-encode attention_window and see_within_* from API (JSON objects → strings for Drift text columns)
+    // JSON-encode attention_window and see_within from API (JSON objects → strings for Drift text columns)
     if (json['attention_window'] != null) {
       json['attention_window'] = json['attention_window'] is String
           ? json['attention_window']
           : jsonEncode(json['attention_window']);
     }
-    if (json['see_within_requests'] != null) {
-      json['see_within_requests'] = json['see_within_requests'] is String
-          ? json['see_within_requests']
-          : jsonEncode(json['see_within_requests']);
-    }
-    if (json['see_within_updates'] != null) {
-      json['see_within_updates'] = json['see_within_updates'] is String
-          ? json['see_within_updates']
-          : jsonEncode(json['see_within_updates']);
+    if (json['see_within'] != null) {
+      json['see_within'] = json['see_within'] is String
+          ? json['see_within']
+          : jsonEncode(json['see_within']);
     }
     // Ensure order is never null — the server COALESCE should prevent this,
     // but a null here causes a native SIGSEGV at sqlite3_bind_double
@@ -129,11 +121,22 @@ class PrioritiesBase extends BaseTable {
     json.remove('unread');
     json.remove('role');
     json.remove('attention_window');
-    json.remove('see_within_requests');
-    json.remove('see_within_updates');
+    json.remove('see_within');
     json.remove('attention_window_set');
-    json.remove('see_within_requests_set');
-    json.remove('see_within_updates_set');
+    json.remove('see_within_set');
+    // Newer per-priority response-time keys not yet wired in Flutter.
+    // Drop them on push so we don't accidentally clear server-side values
+    // the user set from another client.
+    json.remove('respond_schedule_enabled');
+    json.remove('respond_window');
+    json.remove('respond_within');
+    json.remove('early_notifications_enabled');
+    json.remove('notify_window');
+    json.remove('respond_schedule_enabled_set');
+    json.remove('respond_window_set');
+    json.remove('respond_within_set');
+    json.remove('early_notifications_enabled_set');
+    json.remove('notify_window_set');
     // config is read-only from the client's perspective.
     json.remove('config');
     // default_contacts / default_groups / default_invite_emails are stored
@@ -585,11 +588,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final a = Store.get.threads;
 
-    // Query 1: Shared schedules (userId IS NULL) with time filter
+    // Query 1: Shared (thread-owned) schedules with time filter.
     final s = Store.get.schedules;
     final sharedQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
     sharedQuery.join([
-      innerJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
+      innerJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
     sharedQuery.where(
       a.priorityId.isIn(idBytes) &
@@ -600,24 +603,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now)))),
     );
 
-    // Query 2: User schedules (userId = current user) with time filter
-    final us = Store.get.schedules;
+    // Query 2: Per-user state on the thread row (action_type set, not
+    // yet read, with a state_on/state_at in the past).
     final userQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
-    userQuery.join([
-      innerJoin(
-        us,
-        us.threadId.equalsExp(a.id) &
-            us.userId.equalsValue(userId) &
-            us.occurrence.isNull() &
-            us.archivedAt.isNull(),
-      ),
-    ]);
     userQuery.where(
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
           a.draft.equals(false) &
-          ((us.startOn.isSmallerOrEqualValue(today) & us.startAt.isNull()) |
-              (us.startAt.isSmallerOrEqualValue(now))),
+          a.actionType.isNotNull() &
+          a.readAt.isNull() &
+          ((a.stateOn.isSmallerOrEqualValue(today) & a.stateAt.isNull()) |
+              (a.stateAt.isSmallerOrEqualValue(now))),
     );
 
     final sharedResults = await sharedQuery.get();
@@ -695,12 +691,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final a = Store.get.threads;
 
-    // Stream 1: Shared schedules (userId IS NULL) — time filtered in-memory
+    // Stream 1: Shared (thread-owned) schedules — time filtered in-memory.
     final s = Store.get.schedules;
     final sharedQuery = Store.get.selectOnly(a)
       ..addColumns([a.priorityId, s.startAt, s.startOn, s.endAt, s.endOn]);
     sharedQuery.join([
-      innerJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
+      innerJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
     sharedQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
 
@@ -732,28 +728,24 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           .toSet();
     });
 
-    // Stream 2: User schedules (userId = current user) — time filtered in-memory
-    final us = Store.get.schedules;
+    // Stream 2: Per-user state on the thread row — time filtered
+    // in-memory. (userId is implicit since thread_state is per-user.)
     final userQuery = Store.get.selectOnly(a)
-      ..addColumns([a.priorityId, us.startAt, us.startOn]);
-    userQuery.join([
-      innerJoin(
-        us,
-        us.threadId.equalsExp(a.id) &
-            us.userId.equalsValue(userId) &
-            us.occurrence.isNull() &
-            us.archivedAt.isNull(),
-      ),
-    ]);
-    userQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
+      ..addColumns([a.priorityId, a.stateAt, a.stateOn]);
+    userQuery.where(
+      a.archivedAt.isNull() &
+          a.draft.equals(false) &
+          a.actionType.isNotNull() &
+          a.readAt.isNull(),
+    );
 
     final userStream = userQuery.watch().map((results) {
       final now = Time.now();
       final today = Date.today().toString();
       return results
           .where((row) {
-            final startAt = row.read(us.startAt);
-            final startOn = row.read(us.startOn);
+            final startAt = row.read(a.stateAt);
+            final startOn = row.read(a.stateOn);
             if (startAt != null) {
               return startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
             }
@@ -995,8 +987,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          unread: false,
          role: parent.role,
          attentionWindowSet: false,
-         seeWithinRequestsSet: false,
-         seeWithinUpdatesSet: false,
+         seeWithinSet: false,
          defaultContacts:
              defaultContacts == null || defaultContacts.isEmpty
                  ? null
@@ -1073,11 +1064,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          unread: row.unread,
          role: row.role,
          attentionWindow: row.attentionWindow,
-         seeWithinRequests: row.seeWithinRequests,
-         seeWithinUpdates: row.seeWithinUpdates,
+         seeWithin: row.seeWithin,
          attentionWindowSet: row.attentionWindowSet,
-         seeWithinRequestsSet: row.seeWithinRequestsSet,
-         seeWithinUpdatesSet: row.seeWithinUpdatesSet,
+         seeWithinSet: row.seeWithinSet,
          config: row.config,
          defaultContacts: row.defaultContacts,
          defaultGroups: row.defaultGroups,
@@ -1229,13 +1218,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   List<AttentionWindow>? get attentionWindows =>
       AttentionWindow.fromJsonString(attentionWindow);
 
-  /// Parsed see within requests time (inherited from this priority or ancestors).
-  SeeWithinTime? get seeWithinRequestsTime =>
-      SeeWithinTime.fromJsonString(seeWithinRequests);
-
-  /// Parsed see within updates time (inherited from this priority or ancestors).
-  SeeWithinTime? get seeWithinUpdatesTime =>
-      SeeWithinTime.fromJsonString(seeWithinUpdates);
+  /// Parsed "see within" time (inherited from this priority or
+  /// ancestors). Single window — server collapsed the previous
+  /// requests/updates pair into one knob.
+  SeeWithinTime? get seeWithinTime =>
+      SeeWithinTime.fromJsonString(seeWithin);
 
   /// Parsed sparse priority config (topic/view behaviours). Not
   /// user-editable; populated from the server.
@@ -1364,12 +1351,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? unread,
     String? role,
     Value<String?> attentionWindow = const Value.absent(),
-    Value<String?> seeWithinRequests = const Value.absent(),
-    Value<String?> seeWithinUpdates = const Value.absent(),
+    Value<String?> seeWithin = const Value.absent(),
     Value<BigInt?> teamId = const Value.absent(),
     bool? attentionWindowSet,
-    bool? seeWithinRequestsSet,
-    bool? seeWithinUpdatesSet,
+    bool? seeWithinSet,
     Value<String?> config = const Value.absent(),
     Value<List<Uuid>?> defaultContacts = const Value.absent(),
     Value<List<Uuid>?> defaultGroups = const Value.absent(),
@@ -1408,11 +1393,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,
-        seeWithinRequests: seeWithinRequests,
-        seeWithinUpdates: seeWithinUpdates,
+        seeWithin: seeWithin,
         attentionWindowSet: attentionWindowSet,
-        seeWithinRequestsSet: seeWithinRequestsSet,
-        seeWithinUpdatesSet: seeWithinUpdatesSet,
+        seeWithinSet: seeWithinSet,
         config: config,
         defaultContacts: defaultContacts,
         defaultGroups: defaultGroups,

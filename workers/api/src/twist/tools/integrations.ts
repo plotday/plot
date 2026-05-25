@@ -1,4 +1,4 @@
-import { sql, type Kysely } from "kysely";
+import { type Kysely } from "kysely";
 
 import type { NoteWriteBackResult } from "@plotday/twister";
 import {
@@ -1447,7 +1447,7 @@ export class Integrations extends Tool implements IAuth {
     }
 
     if (todo) {
-      // Upsert a per-user schedule. With no explicit date, use the epoch
+      // Upsert a per-user thread_state. With no explicit date, use the epoch
       // "Now" sentinel (1970-01-01) so the thread lands in the current
       // to-do bucket rather than being scheduled for a specific day.
       let dateStr: string;
@@ -1459,15 +1459,17 @@ export class Integrations extends Tool implements IAuth {
         dateStr = "1970-01-01";
       }
 
-      const dbSchedule: Record<string, unknown> = {
-        thread_id: link.thread_id,
+      await rpcUser(this.db, "upsert_thread_state", {
         user_id: contact.user_id,
-        on: `[${dateStr},)`,
-      };
-
-      await rpcUser(this.db, "upsert_schedule", {
-        user_id: contact.user_id,
-        p_schedule: dbSchedule as Json,
+        p_thread_id: link.thread_id,
+        p_action_type: "do",
+        p_urgent: false,
+        p_importance: 50,
+        p_on: `[${dateStr},)`,
+        p_set_action_type: true,
+        p_set_urgent: false,
+        p_set_importance: false,
+        p_set_on: true,
       });
 
       // Lift this user's per-user archive so the thread appears in their agenda.
@@ -1491,14 +1493,13 @@ export class Integrations extends Tool implements IAuth {
         });
       }
     } else {
-      // Archive the per-user schedule for this thread
+      // Mark the user's thread_state read so it falls out of the action tabs.
       await this.db
-        .updateTable("schedule")
-        .set({ archived_at: new Date() })
+        .updateTable("thread_state")
+        .set({ read_at: new Date() })
         .where("thread_id", "=", link.thread_id)
         .where("user_id", "=", contact.user_id)
-        .where("occurrence", "is", null)
-        .where("archived_at", "is", null)
+        .where("read_at", "is", null)
         .execute();
     }
 
@@ -1545,7 +1546,7 @@ export class Integrations extends Tool implements IAuth {
   /**
    * Create a task schedule for the assignee of a link, if applicable.
    * Queries the link row for assignee_id, resolves the contact's user_id,
-   * creates a task schedule if non-done, and always recomputes outstanding_tasks.
+   * files a 'do' thread_state if non-done, or marks it read if done.
    */
   private async createTaskScheduleForLink(
     threadId: Uuid
@@ -1571,27 +1572,23 @@ export class Integrations extends Tool implements IAuth {
 
       if (!contact?.user_id) return;
 
-      // Create schedule only if status is not done
+      // File a 'do' thread_state only if status is not done. When status flips
+      // to done, mark the user's thread_state read so it drops out of the
+      // action tabs.
       const channelLinkTypes = await this.getChannelLinkTypesForThread(threadId);
       if (!this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
         await createSchedule(this.db, contact.user_id, threadId as string, "task");
       } else {
-        // Archive per-user task schedule when link status is done
         await this.db
-          .updateTable("schedule")
-          .set({ archived_at: new Date() })
+          .updateTable("thread_state")
+          .set({ read_at: new Date() })
           .where("thread_id", "=", threadId as string)
           .where("user_id", "=", contact.user_id)
-          .where("reason", "=", "task")
-          .where("occurrence", "is", null)
-          .where("archived_at", "is", null)
+          .where("read_at", "is", null)
           .execute();
       }
-
-      // Always recompute outstanding_tasks (handles done→undone transitions)
-      await sql`SELECT recompute_outstanding_tasks(${threadId}::uuid, ${contact.user_id}::uuid)`.execute(this.db);
     } catch (error) {
-      console.error("[schedule] Failed to create task schedule from link assignment:", error);
+      console.error("[thread_state] Failed to file thread_state from link assignment:", error);
     }
   }
 

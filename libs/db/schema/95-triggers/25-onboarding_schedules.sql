@@ -1,14 +1,10 @@
--- Automatic scheduling for global onboarding threads.
+-- Automatic per-user thread_state seeding for global onboarding threads.
 -- Fires when a user is linked to one of the global onboarding threads
 -- (usually via joining the "Everyone" group).
 --
--- Also seeds the per-user thread_unread row with a custom importance so the
--- onboarding sequence sorts top-down in the Catch up tab starting with the
--- per-user "Welcome to Plot!" thread (handled in activate_invited_user) and
--- continuing through the global set in their natural reading order. The
--- file_thread_priority_on_group_member_change trigger that fires next does a
--- bulk thread_unread insert with ON CONFLICT DO NOTHING, so the importance
--- we seed here wins.
+-- Writes to thread_state with the action_type and importance that controls
+-- both the activity-feed tab and the Catch up ordering. Per-user "do on this
+-- date" intent is stored via thread_state."on".
 CREATE OR REPLACE FUNCTION public.file_onboarding_schedules ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -28,7 +24,7 @@ BEGIN
     SELECT key INTO v_thread_key FROM public.thread WHERE id = NEW.thread_id;
 
     IF v_thread_key IN ('welcome', 'priorities', 'connections', 'getting-around', 'invest-your-time', 'twists', 'notifications', 'clean-up') THEN
-        -- action partitions each thread into the Activity feed action tab:
+        -- action_type partitions each thread into the Activity feed action tab:
         --   'do'   — threads that ask the user to take a concrete action
         --            (matches the keys handled by file_onboarding_todos).
         --   'read' — informational threads with no actionable todo.
@@ -47,25 +43,18 @@ BEGIN
             WHEN 'clean-up'          THEN v_date_offset := 3; v_order := 100; v_action := 'read'; v_importance := 60;
         END CASE;
 
-        IF v_date_offset = 0 THEN
-            -- "Started" status (epoch sentinel)
-            INSERT INTO public.schedule (thread_id, user_id, "order", reason, action, "on")
-            VALUES (NEW.thread_id, NEW.user_id, v_order, 'add', v_action, daterange('1970-01-01', NULL))
-            ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL DO NOTHING;
-        ELSE
-            -- Scheduled for a future date relative to join time
-            INSERT INTO public.schedule (thread_id, user_id, "order", reason, action, "on")
-            VALUES (NEW.thread_id, NEW.user_id, v_order, 'add', v_action, daterange((CURRENT_DATE + v_date_offset), NULL))
-            ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL DO NOTHING;
-        END IF;
-
-        -- Pre-seed the unread row with the desired importance. The bulk
-        -- insert in file_thread_priority_on_group_member_change runs after
-        -- this per-row trigger and uses ON CONFLICT DO NOTHING, so this
-        -- value wins for onboarding threads while non-onboarding threads
-        -- keep the default importance of 50.
-        INSERT INTO public.thread_unread (user_id, thread_id, urgency, importance)
-        VALUES (NEW.user_id, NEW.thread_id, 'inform-updates', v_importance)
+        INSERT INTO public.thread_state (user_id, thread_id, action_type, importance, "order", "on")
+        VALUES (
+            NEW.user_id,
+            NEW.thread_id,
+            v_action,
+            v_importance,
+            v_order,
+            CASE
+                WHEN v_date_offset = 0 THEN daterange('1970-01-01', NULL)
+                ELSE daterange((CURRENT_DATE + v_date_offset), NULL)
+            END
+        )
         ON CONFLICT (user_id, thread_id) DO NOTHING;
     END IF;
 

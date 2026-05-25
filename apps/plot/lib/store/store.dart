@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 335;
+  int get schemaVersion => 337;
 
   @override
   MigrationStrategy get migration {
@@ -2904,13 +2904,36 @@ class Store extends _$Store {
       await _safeAddColumn(m, threads, threads.importance);
     }
     if (from < 273) {
-      await _safeAddColumn(m, threads, threads.urgency);
+      // Legacy `urgency` column on threads — dropped at v336 along with the
+      // server-side rename to thread_state. Add it as a no-op so older
+      // schemas catch up to the (then-current) v273 shape before later
+      // migrations drop it.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE threads ADD COLUMN urgency TEXT',
+      );
     }
     if (from < 274) {
-      await _safeAddColumn(m, priorities, priorities.seeWithinRequests);
-      await _safeAddColumn(m, priorities, priorities.seeWithinUpdates);
-      await _safeAddColumn(m, priorities, priorities.seeWithinRequestsSet);
-      await _safeAddColumn(m, priorities, priorities.seeWithinUpdatesSet);
+      // Legacy `see_within_requests` / `see_within_updates` columns —
+      // collapsed to a single `see_within` at v337. Added here as raw
+      // SQL no-ops so older schemas can catch up; v337 then rebuilds the
+      // table to drop them.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN see_within_requests TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN see_within_updates TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN see_within_requests_set BOOLEAN NOT NULL DEFAULT 0',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN see_within_updates_set BOOLEAN NOT NULL DEFAULT 0',
+      );
     }
     if (from < 275) {
       // Drop see_within and see_within_set columns (replaced by see_within_requests/see_within_updates)
@@ -2937,7 +2960,13 @@ class Store extends _$Store {
       );
     }
     if (from < 277) {
-      await _safeAddColumn(m, schedules, schedules.outstandingTasks);
+      // Legacy `outstanding_tasks` column on schedules — dropped at v336
+      // when per-user state moved off `schedule`. Added as a no-op so older
+      // schemas catch up to the (then-current) v277 shape.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE schedules ADD COLUMN outstanding_tasks BOOLEAN NOT NULL DEFAULT 0',
+      );
     }
     if (from < 278) {
       // (v278 originally deleted the row, but that doesn't work — see v279)
@@ -3454,11 +3483,62 @@ class Store extends _$Store {
       await _safeAddColumn(m, threads, threads.revoked);
     }
     if (from < 335) {
-      await _safeAddColumn(m, schedules, schedules.action);
+      // Legacy `action` column on schedules — dropped at v336 when per-user
+      // state moved off `schedule` onto `thread_state` (and then onto the
+      // thread row as `action_type`). Added as a no-op so older schemas
+      // catch up to the (then-current) v335 shape.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE schedules ADD COLUMN action TEXT',
+      );
       // Reset schedule sync cursor so existing schedules re-pull with the
-      // new action field populated from the server.
+      // new shape on the next sync.
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'schedules'",
+      );
+    }
+    if (from < 336) {
+      // Server retired `urgency` on thread_unread (renamed thread_state) and
+      // absorbed per-user schedule fields (action / order / on / at) onto the
+      // per-user row. Add the new Thread columns; drop the legacy ones on
+      // Thread + Schedule by rebuilding the tables from the current schema.
+      await _safeAddColumn(m, threads, threads.actionType);
+      await _safeAddColumn(m, threads, threads.urgent);
+      await _safeAddColumn(m, threads, threads.stateOrder);
+      await _safeAddColumn(m, threads, threads.stateOn);
+      await _safeAddColumn(m, threads, threads.stateAt);
+      // Drop `urgency` from threads, and `user_id`/`order`/`action`/
+      // `outstanding_tasks` from schedules. TableMigration with no
+      // columnTransformer rebuilds each table keeping only the columns
+      // currently declared in Dart, which is exactly what we want.
+      await m.alterTable(TableMigration(threads));
+      await m.alterTable(TableMigration(schedules));
+      // Reset cursors so the freshly-shaped rows re-pull with the new fields.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity IN ('threads', 'schedules')",
+      );
+    }
+    if (from < 337) {
+      // Server collapsed see_within_requests / see_within_updates into a
+      // single see_within column. Add the new columns, copy the requests
+      // value over (matches the server's chosen carry-over), then rebuild
+      // the priorities table to drop the legacy columns.
+      await _safeAddColumn(m, priorities, priorities.seeWithin);
+      await _safeAddColumn(m, priorities, priorities.seeWithinSet);
+      await _safeCustomStatement(
+        m,
+        'UPDATE priorities SET see_within = see_within_requests '
+        'WHERE see_within IS NULL AND see_within_requests IS NOT NULL',
+      );
+      await _safeCustomStatement(
+        m,
+        'UPDATE priorities SET see_within_set = see_within_requests_set '
+        'WHERE see_within_set = 0 AND see_within_requests_set = 1',
+      );
+      await m.alterTable(TableMigration(priorities));
+      // Reset priorities cursor so updated rows re-pull with the new shape.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
       );
     }
   }
@@ -3474,10 +3554,8 @@ class Store extends _$Store {
       'CREATE INDEX IF NOT EXISTS idx_schedules_link_id '
       'ON schedules(link_id) WHERE link_id IS NOT NULL',
     );
-    await db.customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_schedules_user_id '
-      'ON schedules(user_id) WHERE user_id IS NOT NULL',
-    );
+    // idx_schedules_user_id retired: per-user schedule rows no longer exist.
+    await db.customStatement('DROP INDEX IF EXISTS idx_schedules_user_id');
     await db.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_links_thread_id '
       'ON links(thread_id) WHERE thread_id IS NOT NULL',

@@ -23,13 +23,13 @@ export async function analyzeNote(
 
     const result = await classifyNote(env, context);
 
-    await applyUnreadStatus(
+    await applyThreadState(
       env,
       db,
       threadId,
       userId,
       context.members,
-      result.unread,
+      result.state,
       context.noteSourceCreatedAt
     );
 
@@ -67,17 +67,18 @@ interface NoteContext {
   }>;
 }
 
-type UnreadUrgency = "interrupt" | "inform-requests" | "inform-updates" | "passive" | "ignore";
+type ActionType = "respond" | "do" | "read" | "update" | "none";
 
-interface UnreadClassification {
-  urgency: UnreadUrgency;
+interface ThreadStateClassification {
+  action_type: ActionType;
+  urgent: boolean;
   importance: number; // 0-100
 }
 
 interface AnalysisResult {
-  unread: {
-    default: UnreadClassification;
-    overrides: Record<string, Partial<UnreadClassification>>;
+  state: {
+    default: ThreadStateClassification;
+    overrides: Record<string, Partial<ThreadStateClassification>>;
   };
 }
 
@@ -295,28 +296,37 @@ async function classifyNote(
   const messages = [
     {
       role: "system" as const,
-      content: `You classify notes in a collaborative productivity app to determine notification urgency for each member.
+      content: `You classify notes in a collaborative productivity app to decide where each member should see this thread, how important it is to them, and whether it warrants immediate notification.
 
 All members are identified by sequential numbers (e.g. member #1).
 
-Unread classification rules:
-- For each member, classify how urgently and importantly they should be notified.
-- Return a "default" with per-member "overrides" where needed (use member numbers as keys).
-- The note author should NEVER be included (they are always ignored).
-- urgency levels:
-  - interrupt: urgent, needs immediate attention
-  - inform-requests: someone is waiting on this person (reply needed, question asked, task assigned)
-  - inform-updates: general update worth reviewing (status changes, comments, progress)
-  - passive: minor update, show as unread but don't push-notify (automated updates, low-relevance changes)
-  - ignore: not worth surfacing
-- importance: 0-100 numeric scale. 0 = trivial, 50 = normal, 100 = critical. Consider how relevant the note is to each member.
+For each member, return:
+- action_type — where this thread belongs in their inbox
+- urgent — whether to notify before their next scheduled "response window"
+- importance — 0-100, drives whether the thread shows up proactively at all
+
+Return a "default" plus per-member "overrides" where needed (use member numbers as keys). NEVER include the note author (they are always classified as "none").
+
+action_type (assign "update" by default; only choose another with high confidence):
+- respond: the recipient needs to reply (question directed at them, request that requires their answer)
+- do: the recipient needs to take a concrete action (task assigned, a step that's clearly theirs to complete)
+- read: longer read-later material — newsletters, long corporate communications, documents the recipient should set aside time to read. NOT for short informational updates.
+- update: DEFAULT. The recipient should know about it but no follow-up is required. Status notes, FYIs, mentions without a clear ask, and all unsolicited material (cold outreach, pitches, marketing) belong here.
+- none: clearly passive records the recipient doesn't need to process — confirmation emails, account sign-in notifications, receipts, system acknowledgements. No thread_state row is created.
+
+urgent (boolean): true only when the recipient should be notified BEFORE their next scheduled response window — time-sensitive items or messages clearly requiring a quick response. Most notes are not urgent.
+
+importance (0-100):
+- 50-100 means "this should surface to the recipient proactively" (drives push, email digest, priority unread indicators)
+- 0-49 means "this exists but won't push or trigger early response scheduling"
+- Score promotional / unsolicited / mass-distribution material BELOW 50 even if it's marked as 'update' — typically 5-30. Cold outreach with no relational signal: 10-25. Receipts/confirmations get action_type='none' and are not scored.
+- Personal direct messages between people who clearly know each other: 60-90.
+- Anything you flag urgent should also be >= 50.
 
 Respond with JSON only. No explanation.
 
 Output schema:
-{"unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"1": {"urgency": "inform-requests", "importance": 75}}}}
-
-Default {"urgency": "inform-updates", "importance": 50} if no special classification needed.`,
+{"state": {"default": {"action_type": "update", "urgent": false, "importance": 50}, "overrides": {"1": {"action_type": "respond", "urgent": false, "importance": 75}}}}`,
     },
     {
       role: "user" as const,
@@ -340,124 +350,131 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
     throw new Error("Unexpected stream response from AI");
   }
 
-  const defaultClassification: UnreadClassification = { urgency: "inform-updates", importance: 50 };
+  const defaultClassification: ThreadStateClassification = {
+    action_type: "update",
+    urgent: false,
+    importance: 50,
+  };
 
   const raw = response.response;
   const text = (typeof raw === "string" ? raw : JSON.stringify(raw))?.trim();
   if (!text) {
-    return { unread: { default: defaultClassification, overrides: {} } };
+    return { state: { default: defaultClassification, overrides: {} } };
   }
 
   // Extract JSON object from the response (handle potential markdown wrapping)
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return { unread: { default: defaultClassification, overrides: {} } };
+    return { state: { default: defaultClassification, overrides: {} } };
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
-    const validUrgencies = new Set([
-      "interrupt",
-      "inform-requests",
-      "inform-updates",
-      "passive",
-      "ignore",
-    ]);
+    const validActions = new Set<ActionType>(["respond", "do", "read", "update", "none"]);
 
-    const unreadDefault = parseClassification(parsed.unread?.default, validUrgencies, defaultClassification);
-    const overrides: Record<string, Partial<UnreadClassification>> = {};
-    if (parsed.unread?.overrides && typeof parsed.unread.overrides === "object") {
-      for (const [key, value] of Object.entries(parsed.unread.overrides)) {
+    const stateDefault = parseClassification(parsed.state?.default, validActions, defaultClassification);
+    const overrides: Record<string, Partial<ThreadStateClassification>> = {};
+    if (parsed.state?.overrides && typeof parsed.state.overrides === "object") {
+      for (const [key, value] of Object.entries(parsed.state.overrides)) {
         // Resolve member number to real ID
         const memberId = memberNumToId.get(Number(key));
         if (!memberId) continue;
-        const override = parseClassificationOverride(value, validUrgencies);
+        const override = parseClassificationOverride(value, validActions);
         if (override) {
           overrides[memberId] = override;
         }
       }
     }
 
-    return { unread: { default: unreadDefault, overrides } };
+    return { state: { default: stateDefault, overrides } };
   } catch {
     console.error("[note-analysis] Failed to parse AI response:", text);
-    return { unread: { default: defaultClassification, overrides: {} } };
+    return { state: { default: defaultClassification, overrides: {} } };
   }
 }
 
 function parseClassification(
   raw: any,
-  validUrgencies: Set<string>,
-  fallback: UnreadClassification
-): UnreadClassification {
+  validActions: Set<string>,
+  fallback: ThreadStateClassification
+): ThreadStateClassification {
   if (!raw) return fallback;
-  // Handle string format (backward compat: just urgency)
+  // Backward-compat: a bare string is treated as action_type only
   if (typeof raw === "string") {
-    return { urgency: validUrgencies.has(raw) ? raw as UnreadUrgency : fallback.urgency, importance: fallback.importance };
+    return {
+      action_type: validActions.has(raw) ? (raw as ActionType) : fallback.action_type,
+      urgent: fallback.urgent,
+      importance: fallback.importance,
+    };
   }
   if (typeof raw !== "object") return fallback;
   return {
-    urgency: validUrgencies.has(raw.urgency) ? raw.urgency : fallback.urgency,
-    importance: typeof raw.importance === "number" ? Math.max(0, Math.min(100, Math.round(raw.importance))) : fallback.importance,
+    action_type: validActions.has(raw.action_type) ? (raw.action_type as ActionType) : fallback.action_type,
+    urgent: typeof raw.urgent === "boolean" ? raw.urgent : fallback.urgent,
+    importance:
+      typeof raw.importance === "number"
+        ? Math.max(0, Math.min(100, Math.round(raw.importance)))
+        : fallback.importance,
   };
 }
 
 function parseClassificationOverride(
   raw: any,
-  validUrgencies: Set<string>
-): Partial<UnreadClassification> | null {
+  validActions: Set<string>
+): Partial<ThreadStateClassification> | null {
   if (!raw) return null;
-  // Handle string format (just urgency)
   if (typeof raw === "string") {
-    return validUrgencies.has(raw) ? { urgency: raw as UnreadUrgency } : null;
+    return validActions.has(raw) ? { action_type: raw as ActionType } : null;
   }
   if (typeof raw !== "object") return null;
-  const result: Partial<UnreadClassification> = {};
-  if (validUrgencies.has(raw.urgency)) result.urgency = raw.urgency;
-  if (typeof raw.importance === "number") result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
+  const result: Partial<ThreadStateClassification> = {};
+  if (validActions.has(raw.action_type)) result.action_type = raw.action_type as ActionType;
+  if (typeof raw.urgent === "boolean") result.urgent = raw.urgent;
+  if (typeof raw.importance === "number") {
+    result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
+  }
   return Object.keys(result).length > 0 ? result : null;
 }
 
-async function applyUnreadStatus(
+async function applyThreadState(
   env: Bindings,
   db: Kysely<DB>,
   threadId: string,
   noteAuthorUserId: string,
   members: Array<{ id: string; name: string | null; userId: string | null }>,
-  unread: AnalysisResult["unread"],
+  state: AnalysisResult["state"],
   noteSourceCreatedAt: Date
 ): Promise<void> {
   for (const member of members) {
     if (!member.userId) continue;
-    if (member.userId === noteAuthorUserId) continue; // Author never gets unread
+    if (member.userId === noteAuthorUserId) continue; // Author is never in the inbox
 
-    const override = unread.overrides[member.id];
-    const urgency = override?.urgency ?? unread.default.urgency;
-    const importance = override?.importance ?? unread.default.importance;
-    if (urgency === "ignore") continue; // No row for ignore
+    const override = state.overrides[member.id];
+    const actionType = override?.action_type ?? state.default.action_type;
+    const urgent = override?.urgent ?? state.default.urgent;
+    const importance = override?.importance ?? state.default.importance;
+    if (actionType === "none") continue; // No thread_state row for passive material
 
     try {
-      await rpcUser(db, "upsert_thread_unread", {
+      await rpcUser(db, "upsert_thread_state", {
         user_id: member.userId,
         p_thread_id: threadId,
-        p_urgency: urgency,
+        p_action_type: actionType,
+        p_urgent: urgent,
         p_importance: importance,
         p_note_created_at: noteSourceCreatedAt.toISOString(),
+        p_set_action_type: true,
+        p_set_urgent: true,
+        p_set_importance: true,
       });
-
-      // Disabled: auto-add to agenda based on AI urgency was too aggressive.
-      // Unread status is still set above so notifications/badges work; we just
-      // no longer create an "unread" schedule entry. May be tuned and re-enabled later.
-      // if (urgency === "passive") continue;
-      // await createSchedule(db, member.userId, threadId, "unread");
     } catch (error) {
       console.error(
-        `[note-analysis] Failed to apply unread status for user ${member.userId}:`,
+        `[note-analysis] Failed to apply thread state for user ${member.userId}:`,
         error
       );
       const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-      postHog.captureException(error as Error, member.userId, { context: "note-analysis:applyUnreadStatus", thread_id: threadId });
+      postHog.captureException(error as Error, member.userId, { context: "note-analysis:applyThreadState", thread_id: threadId });
       await postHog.shutdown();
     }
   }
