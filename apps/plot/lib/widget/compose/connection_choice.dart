@@ -22,6 +22,8 @@ sealed class ConnectionChoice {
       TargetConnectionChoice;
 }
 
+/// The synthetic "Plot thread" sentinel. Selecting it clears any
+/// [CreateLinkUserAction] on the draft.
 class PlotThreadChoice implements ConnectionChoice {
   const PlotThreadChoice._();
 
@@ -44,6 +46,7 @@ class PlotThreadChoice implements ConnectionChoice {
   CreateLinkUserAction? toUserAction() => null;
 }
 
+/// A real [CreateTarget] wrapped as a [ConnectionChoice].
 class TargetConnectionChoice implements ConnectionChoice {
   TargetConnectionChoice(this.target);
 
