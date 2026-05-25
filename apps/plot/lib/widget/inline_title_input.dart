@@ -195,31 +195,25 @@ class InlineTitleInputState extends State<InlineTitleInput> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): _cancel,
       },
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360, minWidth: 200),
-            child: FTextField(
-              control: .managed(controller: _controller),
-              focusNode: _focusNode,
-              hint: 'Title',
-              onSubmit: _commit,
-              textInputAction: TextInputAction.done,
-              style: FTextFieldStyleDelta.delta(
-                contentPadding: EdgeInsetsGeometryDelta.value(
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                ),
-              ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360, minWidth: 200),
+        child: FTextField(
+          control: .managed(controller: _controller),
+          focusNode: _focusNode,
+          hint: 'Title',
+          onSubmit: _commit,
+          textInputAction: TextInputAction.done,
+          style: FTextFieldStyleDelta.delta(
+            contentPadding: EdgeInsetsGeometryDelta.value(
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             ),
           ),
-          FButton.icon(
+          suffixBuilder: (context, style, states) => FButton.icon(
             onPress: _clearAndCollapse,
             variant: FButtonVariant.ghost,
             child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
           ),
-        ],
+        ),
       ),
     );
   }
