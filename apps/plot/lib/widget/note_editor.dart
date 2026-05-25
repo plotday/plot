@@ -39,6 +39,7 @@ class NoteEditor extends StatefulWidget {
     // Link/navigation callbacks
     this.onNavigateToThread,
     this.autofocus,
+    this.bodyOnly = false,
     super.key,
   });
 
@@ -81,6 +82,10 @@ class NoteEditor extends StatefulWidget {
   /// autofocuses in new-thread mode or when a physical keyboard is present.
   final bool? autofocus;
 
+  /// Skip the outer EditableArea wrapper. Used when an ancestor already
+  /// provides the bordered surface (e.g. NewThreadPage's compose card).
+  final bool bodyOnly;
+
   bool get isNewThreadMode => thread != null;
 
   @override
@@ -97,6 +102,9 @@ class NoteEditorState extends State<NoteEditor> {
   String _lastSavedContent = '';
   Uuid? _lastDraftNoteId;
   FocusNode? _currentFocusNode;
+  // Used only when widget.bodyOnly is true. EditableArea owns the
+  // FocusNode in the normal path; here we own it.
+  FocusNode? _bodyOnlyFocusNode;
   // Tracks the most recent in-flight _saveDraft. Submit handlers await this
   // before publishing so the publish can't race with a keystroke-triggered
   // save that already passed the _finalized check.
@@ -170,7 +178,11 @@ class NoteEditorState extends State<NoteEditor> {
     log.info(
       '[Focus] NoteEditor.focus() called: _editableAreaKey.currentState=${_editableAreaKey.currentState != null}',
     );
-    _editableAreaKey.currentState?.focus();
+    if (widget.bodyOnly) {
+      _bodyOnlyFocusNode?.requestFocus();
+    } else {
+      _editableAreaKey.currentState?.focus();
+    }
   }
 
   @override
@@ -219,6 +231,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
+    _bodyOnlyFocusNode?.dispose();
     _currentFocusNode?.removeListener(_onFocusChange);
     super.dispose();
   }
@@ -481,160 +494,167 @@ class NoteEditorState extends State<NoteEditor> {
     required List<TwistInstance> twists,
     required List<Actor> actors,
   }) {
+    Widget buildContent(BuildContext context, FocusNode focusNode) {
+      // Set up focus listener once
+      if (_currentFocusNode != focusNode) {
+        _currentFocusNode?.removeListener(_onFocusChange);
+        _currentFocusNode = focusNode;
+        _currentFocusNode?.addListener(_onFocusChange);
+      }
+
+      final String hint;
+      final bool isEditing;
+      if (widget.isNewThreadMode) {
+        hint = widget.hint ?? 'Start a new thread';
+        isEditing = false;
+      } else {
+        final activityBloc = context.read<ThreadBloc>();
+        final editingNote = activityBloc.state.editingNote;
+        isEditing = editingNote != null;
+        hint = isEditing ? 'Edit note' : 'Add a note';
+      }
+
+      // Contacts already on this thread are surfaced first in @-mention
+      // suggestions. In new-thread mode the draft thread is the source; in
+      // note mode it's the live thread from ThreadBloc. `thread.contacts`
+      // can include non-primary aliases for the same person, so collapse
+      // each to its canonical actor id before matching against `actors`
+      // (which is loaded with `primary: true`).
+      final Thread? mentionThread = widget.isNewThreadMode
+          ? widget.thread
+          : context.read<ThreadBloc>().state.thread;
+      final Set<String> threadContactIds = mentionThread == null
+          ? const <String>{}
+          : mentionThread.contacts
+                .map((u) => Actor.canonicalId(ActorId.fromUuid(u)).toString())
+                .toSet();
+
+      final editor = Editor(
+        key: _editorKey,
+        hint: hint,
+        autofocus:
+            widget.autofocus ??
+            (widget.isNewThreadMode || hasPhysicalKeyboard()),
+        focusNode: focusNode,
+        twists: twists,
+        actors: actors,
+        threadContactIds: threadContactIds,
+        shrinkWrap: true,
+        initialContent: widget.draft.content,
+        onIsEmptyChanged: (isEmpty) {
+          // Defer setState to avoid calling it during build
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _isEmpty = isEmpty;
+              });
+            }
+          });
+        },
+        onChange: widget.isNewThreadMode
+            ? (value) {
+                // Auto-save on content change in new-thread mode
+                _saveDraft(value);
+              }
+            : null,
+        onSubmitted: widget.isNewThreadMode
+            ? _onNewThreadSubmitted
+            : _onNoteSubmitted,
+        onImagePasted: (imageBytes) => _handleImagePaste(imageBytes),
+        onUrlPastedWhenEmpty: (url) => _handleUrlPasteWhenEmpty(url),
+      );
+
+      return CallbackShortcuts(
+        bindings: _buildNoteShortcuts(context),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Reply / editing indicators sit flush against the editor border,
+            // separated from the content below by their own bottom border.
+            if (!widget.isNewThreadMode) _buildNoteIndicators(context),
+            Flexible(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: 12,
+                  top: 4,
+                  bottom:
+                      12 +
+                      (widget.flushToBottom
+                          ? MediaQuery.paddingOf(context).bottom
+                          : 0),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 4,
+                  children: [
+                    _buildAttachmentRows(),
+                    Flexible(
+                      child: IgnorePointer(
+                        ignoring: _saving,
+                        child: Opacity(
+                          opacity: _saving ? 0.6 : 1.0,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 8,
+                                    bottom: 4,
+                                    left: 6,
+                                    right: 6,
+                                  ),
+                                  child: ScrollEdgeFade(
+                                    background: context
+                                        .theme
+                                        .plotColors
+                                        .editableBackground,
+                                    child: editor,
+                                  ),
+                                ),
+                              ),
+                              if (_isEmpty)
+                                SpeechDictationButton(
+                                  onResult: (text) {
+                                    _editorKey.currentState
+                                        ?.insertTextAtCursor(text);
+                                  },
+                                  onError: (error) {
+                                    Alert.show(context, error);
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (widget.isNewThreadMode)
+                      _buildNewThreadBottomBar()
+                    else
+                      _buildNoteBottomBar(context),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (widget.bodyOnly) {
+      final focusNode = _bodyOnlyFocusNode ??= FocusNode();
+      return Builder(builder: (context) => buildContent(context, focusNode));
+    }
+
     return EditableArea(
       key: _editableAreaKey,
       padding: false,
       position: EditableAreaPosition.bottom,
       flushToBottom: widget.flushToBottom,
-      builder: (context, focusNode) {
-        // Set up focus listener once
-        if (_currentFocusNode != focusNode) {
-          _currentFocusNode?.removeListener(_onFocusChange);
-          _currentFocusNode = focusNode;
-          _currentFocusNode?.addListener(_onFocusChange);
-        }
-
-        final String hint;
-        final bool isEditing;
-        if (widget.isNewThreadMode) {
-          hint = widget.hint ?? 'Start a new thread';
-          isEditing = false;
-        } else {
-          final activityBloc = context.read<ThreadBloc>();
-          final editingNote = activityBloc.state.editingNote;
-          isEditing = editingNote != null;
-          hint = isEditing ? 'Edit note' : 'Add a note';
-        }
-
-        // Contacts already on this thread are surfaced first in @-mention
-        // suggestions. In new-thread mode the draft thread is the source; in
-        // note mode it's the live thread from ThreadBloc. `thread.contacts`
-        // can include non-primary aliases for the same person, so collapse
-        // each to its canonical actor id before matching against `actors`
-        // (which is loaded with `primary: true`).
-        final Thread? mentionThread = widget.isNewThreadMode
-            ? widget.thread
-            : context.read<ThreadBloc>().state.thread;
-        final Set<String> threadContactIds = mentionThread == null
-            ? const <String>{}
-            : mentionThread.contacts
-                  .map((u) => Actor.canonicalId(ActorId.fromUuid(u)).toString())
-                  .toSet();
-
-        final editor = Editor(
-          key: _editorKey,
-          hint: hint,
-          autofocus:
-              widget.autofocus ??
-              (widget.isNewThreadMode || hasPhysicalKeyboard()),
-          focusNode: focusNode,
-          twists: twists,
-          actors: actors,
-          threadContactIds: threadContactIds,
-          shrinkWrap: true,
-          initialContent: widget.draft.content,
-          onIsEmptyChanged: (isEmpty) {
-            // Defer setState to avoid calling it during build
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isEmpty = isEmpty;
-                });
-              }
-            });
-          },
-          onChange: widget.isNewThreadMode
-              ? (value) {
-                  // Auto-save on content change in new-thread mode
-                  _saveDraft(value);
-                }
-              : null,
-          onSubmitted: widget.isNewThreadMode
-              ? _onNewThreadSubmitted
-              : _onNoteSubmitted,
-          onImagePasted: (imageBytes) => _handleImagePaste(imageBytes),
-          onUrlPastedWhenEmpty: (url) => _handleUrlPasteWhenEmpty(url),
-        );
-
-        return CallbackShortcuts(
-          bindings: _buildNoteShortcuts(context),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Reply / editing indicators sit flush against the editor border,
-              // separated from the content below by their own bottom border.
-              if (!widget.isNewThreadMode) _buildNoteIndicators(context),
-              Flexible(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: 12,
-                    right: 12,
-                    top: 4,
-                    bottom:
-                        12 +
-                        (widget.flushToBottom
-                            ? MediaQuery.paddingOf(context).bottom
-                            : 0),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 4,
-                    children: [
-                      _buildAttachmentRows(),
-                      Flexible(
-                        child: IgnorePointer(
-                          ignoring: _saving,
-                          child: Opacity(
-                            opacity: _saving ? 0.6 : 1.0,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(
-                                      top: 8,
-                                      bottom: 4,
-                                      left: 6,
-                                      right: 6,
-                                    ),
-                                    child: ScrollEdgeFade(
-                                      background: context
-                                          .theme
-                                          .plotColors
-                                          .editableBackground,
-                                      child: editor,
-                                    ),
-                                  ),
-                                ),
-                                if (_isEmpty)
-                                  SpeechDictationButton(
-                                    onResult: (text) {
-                                      _editorKey.currentState
-                                          ?.insertTextAtCursor(text);
-                                    },
-                                    onError: (error) {
-                                      Alert.show(context, error);
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (widget.isNewThreadMode)
-                        _buildNewThreadBottomBar()
-                      else
-                        _buildNoteBottomBar(context),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: buildContent,
     );
   }
 
