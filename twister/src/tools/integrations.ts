@@ -262,10 +262,15 @@ export abstract class Integrations extends ITool {
   abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
 
   /**
-   * Saves contacts to the connector's priority.
+   * Upserts contacts into the connector's priority without requiring a Link.
    *
-   * @param contacts - Array of contacts to save
-   * @returns Promise resolving to the saved actors
+   * Use this for messaging connectors to bulk-sync workspace members so the
+   * recipient picker can filter contacts by reachable platform account. Populate
+   * `NewContact.source` to persist `contact_external_account` rows (the platform
+   * identity used to address the contact). Returns one `Actor` per input, in order.
+   *
+   * @param contacts - Contacts to upsert, keyed by `source`/`key`
+   * @returns Promise resolving to the saved actors, 1:1 with input order
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
