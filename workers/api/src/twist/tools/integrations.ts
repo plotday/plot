@@ -1374,8 +1374,12 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Saves contacts to the source's priority.
-   * Delegates to an internal Plot instance.
+   * Upserts contacts into the connector's priority without requiring a Link.
+   *
+   * Use this for messaging connectors to bulk-sync workspace members so the
+   * recipient picker can filter contacts by reachable platform account. Populate
+   * `NewContact.source` to persist `contact_external_account` rows. Returns one
+   * `Actor` per input, in order. Delegates to an internal Plot instance.
    */
   async saveContacts(contacts: NewContact[]): Promise<Actor[]> {
     const plot = this.getPlot();
