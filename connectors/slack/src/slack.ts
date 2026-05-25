@@ -1,10 +1,11 @@
 import {
   Connector,
+  type CreateLinkDraft,
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
 import { Tag } from "@plotday/twister/tag";
-import type { Actor, ActorId, Link, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -79,7 +80,9 @@ export class Slack extends Connector<Slack> {
     "users:read.email",
     "chat:write",
     "im:history",
+    "im:write",
     "mpim:history",
+    "mpim:write",
     "stars:read",
     "stars:write",
   ];
@@ -95,6 +98,25 @@ export class Slack extends Connector<Slack> {
       statuses: [
         { status: "inbox", label: "Inbox" },
         { status: "later", label: "Later", tag: Tag.Star, todo: true },
+      ],
+    },
+    {
+      type: "slack-channel",
+      label: "Channel message",
+      logo: "https://api.iconify.design/logos/slack-icon.svg",
+      logoMono: "https://api.iconify.design/simple-icons/slack.svg",
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
+      ],
+    },
+    {
+      type: "slack-dm",
+      label: "Direct message",
+      logo: "https://api.iconify.design/logos/slack-icon.svg",
+      logoMono: "https://api.iconify.design/simple-icons/slack.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
       ],
     },
   ];
@@ -177,6 +199,13 @@ export class Slack extends Connector<Slack> {
       null
     );
     await this.runTask(backfillCallback);
+
+    // Sync workspace members so the DM recipient picker can filter to
+    // reachable Slack contacts. Gated inside syncMembers to once per day,
+    // so repeated onChannelEnabled calls (e.g. multiple channels enabled)
+    // only hit users.list once.
+    const membersCallback = await this.callback(this.syncMembers, channel.id);
+    await this.runTask(membersCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -757,6 +786,196 @@ export class Slack extends Connector<Slack> {
     } else {
       await api.removeStar(channelId, threadTs);
     }
+  }
+
+  // ---- Compose new messages from Plot ----
+
+  /**
+   * Creates a new Slack message from Plot via `onCreateLink`.
+   *
+   * - `slack-channel`: posts to the enabled channel (`draft.channelId`).
+   * - `slack-dm`: opens or retrieves the DM/MPIM channel for the selected
+   *   recipients, then posts there.
+   *
+   * The returned `meta` matches what `onNoteCreated` reads so replies via
+   * the existing write-back path work with zero extra wiring.
+   */
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type === "slack-channel") {
+      return this.createChannelPost(draft);
+    }
+    if (draft.type === "slack-dm") {
+      return this.createDirectMessage(draft);
+    }
+    return null;
+  }
+
+  private async createChannelPost(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const channelId = draft.channelId;
+    const api = await this.getApi(channelId);
+
+    const body = draft.noteContent ?? draft.title;
+    const result = await api.postMessage(channelId, body);
+    if (!result?.ts) return null;
+
+    const ts = result.ts;
+    const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${ts}`;
+
+    return {
+      source: `slack:channel:${channelId}:ts:${ts}`,
+      type: "slack-channel",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(parseFloat(ts) * 1000),
+      sourceUrl: canonicalUrl,
+      channelId,
+      meta: {
+        syncProvider: "slack",
+        channelId,
+        threadTs: ts,
+        syncableId: channelId,
+      },
+    };
+  }
+
+  private async createDirectMessage(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const recipients = draft.recipients;
+    if (!recipients || recipients.length === 0) {
+      console.error("slack-dm onCreateLink: no recipients provided");
+      return null;
+    }
+
+    const userIds = recipients.map((r) => r.externalAccountId);
+
+    // Use any enabled channel's token to reach the workspace API.
+    const api = await this.getApi(draft.channelId);
+
+    // Open (or retrieve existing) DM/MPIM conversation.
+    const dmChannelId = await api.openConversation(userIds);
+
+    const body = draft.noteContent ?? draft.title;
+    const result = await api.postMessage(dmChannelId, body);
+    if (!result?.ts) return null;
+
+    const ts = result.ts;
+    const canonicalUrl = `https://slack.com/app_redirect?channel=${dmChannelId}&message_ts=${ts}`;
+
+    return {
+      source: `slack:channel:${dmChannelId}:ts:${ts}`,
+      type: "slack-dm",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(parseFloat(ts) * 1000),
+      sourceUrl: canonicalUrl,
+      channelId: draft.channelId,
+      meta: {
+        syncProvider: "slack",
+        channelId: dmChannelId,
+        threadTs: ts,
+        syncableId: draft.channelId,
+      },
+    };
+  }
+
+  // ---- Workspace member sync ----
+
+  /**
+   * Syncs all active human workspace members as Plot contacts so the
+   * recipient picker can filter to reachable Slack users.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection) to
+   * avoid re-hitting `users.list` on every `onChannelEnabled` call.
+   */
+  async syncMembers(channelId: string): Promise<void> {
+    const now = Date.now();
+    const lastSyncedAt = await this.get<number>("membersSyncedAt");
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (lastSyncedAt && now - lastSyncedAt < ONE_DAY_MS) {
+      return; // Already synced recently for this workspace; skip.
+    }
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch (error) {
+      console.warn("syncMembers: Slack token unavailable", error);
+      return;
+    }
+
+    const contacts: NewContact[] = [];
+    let cursor: string | undefined;
+
+    try {
+      do {
+        const { members, nextCursor } = await api.listUsers(cursor);
+
+        for (const member of members) {
+          // Skip deleted users, bots, and Slackbot.
+          if ((member as any).deleted) continue;
+          if ((member as any).is_bot) continue;
+          if (member.id === "USLACKBOT") continue;
+
+          const profile = member.profile;
+          const name =
+            profile?.display_name ||
+            profile?.real_name ||
+            member.real_name ||
+            member.name ||
+            null;
+          const email = profile?.email ?? null;
+          const avatar = profile?.image_72 ?? undefined;
+
+          if (!name && !email) continue; // Need at least one identifier.
+
+          const contact: NewContact = {
+            ...(email ? { email } : {}),
+            ...(name ? { name } : {}),
+            ...(avatar ? { avatar } : {}),
+            source: { provider: AuthProvider.Slack, accountId: member.id },
+          } as NewContact;
+
+          contacts.push(contact);
+        }
+
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // Schedule a retry for after the rate-limit window.
+        const runAt = new Date(Date.now() + error.retryAfterMs);
+        const retry = await this.callback(this.syncMembers, channelId);
+        await this.rescheduleAt(retry, runAt, `syncMembers (${error.method})`);
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `syncMembers stopped: ${error.method} → ${error.slackError}`
+        );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.error("syncMembers: unexpected error", error);
+      throw error;
+    }
+
+    if (contacts.length > 0) {
+      await this.tools.integrations.saveContacts(contacts);
+    }
+
+    await this.set("membersSyncedAt", now);
+
+    // Schedule next daily sync.
+    const nextRunAt = new Date(now + ONE_DAY_MS);
+    const dailyCallback = await this.callback(this.syncMembers, channelId);
+    await this.runTask(dailyCallback, { runAt: nextRunAt });
   }
 
   // ---- Write-back: reply from Plot ----
