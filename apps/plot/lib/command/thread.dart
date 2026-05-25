@@ -2600,10 +2600,15 @@ Future<void> _persistSharedChange(Thread thread) async {
 
 /// Share picker for draft threads on NewThreadPage (uses callback instead of
 /// direct save).
+///
+/// When [dmProvider] is non-null, the picker is in DM-mode: only contacts
+/// that have a `contact_external_account` row for [dmProvider] appear in
+/// suggestions, and an explanatory empty state is shown when none are found.
 class PickDraftThreadShared extends ShowCommands {
   factory PickDraftThreadShared({
     required Thread thread,
     required Future<void> Function(Thread thread) onUpdate,
+    String? dmProvider,
   }) {
     // Mutable reference so commandsBuilder always sees the latest thread
     final threadRef = [thread];
@@ -2622,6 +2627,7 @@ class PickDraftThreadShared extends ShowCommands {
         onUpdate: wrappedOnUpdate,
         isDraft: true,
         candidates: candidatesCache,
+        dmProvider: dmProvider,
       ),
     );
   }
@@ -2815,6 +2821,7 @@ Future<Commands> _buildSharedCommands(
   required Future<void> Function(Thread) onUpdate,
   required bool isDraft,
   required _ShareCandidatesCache candidates,
+  String? dmProvider,
 }) async {
   // Resolve groups filed on the thread. Groups are shown in the "Shared"
   // list so the viewer can see (and remove) the team the thread is shared
@@ -2880,7 +2887,10 @@ Future<Commands> _buildSharedCommands(
 
   return Commands(
     prompt: 'Share with contact or email',
-    emptyMessage: 'Enter an email address to invite someone',
+    emptyMessage: dmProvider != null
+        ? 'No contacts found for this connection. '
+          'They appear here after the workspace member sync completes.'
+        : 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||
           sharedGroups.isNotEmpty ||
@@ -2899,6 +2909,7 @@ Future<Commands> _buildSharedCommands(
         excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
+        dmProvider: dmProvider,
         title: 'Share with',
       ),
     ],
@@ -2909,6 +2920,11 @@ Future<Commands> _buildSharedCommands(
 /// modal, ordered by the shared MRU sort from
 /// [Actor.getSortedShareCandidates] so a recently-used group can appear
 /// beside recently-used contacts instead of pushing them out of view.
+///
+/// When [dmProvider] is non-null, only [ActorShareCandidate]s that have a
+/// `contact_external_account` row for that provider are shown. Groups are
+/// excluded in DM-mode (you can't DM a group). The "Share with contact or
+/// email" prompt becomes the empty-state message when no matches exist.
 class _ThreadShareSuggestionsGroup extends CommandGroup {
   _ThreadShareSuggestionsGroup({
     required this.thread,
@@ -2917,6 +2933,7 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
     required this.onUpdate,
     required this.candidates,
     required String title,
+    this.dmProvider,
   }) : super(title: title);
 
   final Thread thread;
@@ -2924,6 +2941,8 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
   final Set<Uuid> excludeGroupIds;
   final Future<void> Function(Thread) onUpdate;
   final _ShareCandidatesCache candidates;
+  /// When non-null, only contacts reachable on this provider are shown.
+  final String? dmProvider;
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -2932,19 +2951,27 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
       priority: thread.priority,
     );
     final excludedActorIds = excludeActorIds.toSet();
+    final provider = dmProvider;
     final commands = <Command>[];
     for (final candidate in sorted) {
       switch (candidate) {
         case ActorShareCandidate(:final actor):
           if (excludedActorIds.contains(actor.id)) continue;
+          // In DM-mode, skip contacts that aren't reachable on the platform.
+          if (provider != null && !actor.hasExternalAccount(provider)) continue;
           commands.add(ShareThreadActor(thread, actor, onUpdate: onUpdate));
         case GroupShareCandidate(:final group):
+          // Groups are excluded in DM-mode (can't DM a group).
+          if (provider != null) continue;
           if (excludeGroupIds.contains(group.id)) continue;
           commands.add(ShareThreadGroup(thread, group, onUpdate: onUpdate));
       }
     }
 
-    if (search != null && _isValidShareEmail(search)) {
+    // Email invites are not filtered by provider (user may know the address
+    // independently of the member sync). Skip in DM-mode to keep focus on
+    // known platform accounts.
+    if (provider == null && search != null && _isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
       final emailExists = sorted.any(
         (c) =>

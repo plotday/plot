@@ -1099,9 +1099,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   bool _isConnectionActive(CreateTarget target) {
     final active = _activeCreateAction;
     if (active == null) return false;
-    return active.twistInstanceId == target.twist.id.toString() &&
-        active.channelId == target.channel.channelId &&
-        active.linkType == target.linkType.type;
+    if (active.twistInstanceId != target.twist.id.toString()) return false;
+    if (active.linkType != target.linkType.type) return false;
+    // For DM-type targets both channelIds are null; for channel-type they must match.
+    return active.channelId == (target.isDmType ? null : target.channel?.channelId);
   }
 
   Future<void> _toggleConnection(CreateTarget target) async {
@@ -1159,9 +1160,14 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   Future<void> _openSharedPicker(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
+    // When a DM-type connection is active, pass the provider string so the
+    // picker can filter candidates to contacts reachable on that platform.
+    final activeAction = _activeCreateAction;
+    final dmProvider = (activeAction?.isDmType ?? false) ? activeAction?.provider : null;
     await context.run(
       PickDraftThreadShared(
         thread: priorityBloc.state.draft,
+        dmProvider: dmProvider,
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);
@@ -1170,6 +1176,43 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
     if (!context.mounted) return;
     _refreshPinnedChips();
+  }
+
+  /// Returns a validation error message when submit should be blocked,
+  /// or null if submit is allowed.
+  ///
+  /// When a DM-type connection is active, at least one contact with a
+  /// resolved external account for the target provider must be selected.
+  String? _validateDmSubmit() {
+    final action = _activeCreateAction;
+    if (action == null || !action.isDmType) return null;
+
+    final bloc = _priorityBloc;
+    if (bloc == null) return null;
+    final draft = bloc.state.draft;
+    final provider = action.provider;
+
+    // Collect contacts selected on the draft (excluding self).
+    final selfUuids = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    final contactIds = draft.contacts.where((id) => !selfUuids.contains(id)).toList();
+
+    if (contactIds.isEmpty) {
+      return 'Add at least one recipient before sending.';
+    }
+
+    // When we know the provider, verify at least one contact is reachable.
+    if (provider != null) {
+      final hasReachable = contactIds.any((id) {
+        final actor = Actor.fromCache(ActorId.fromUuid(id));
+        return actor != null && actor.hasExternalAccount(provider);
+      });
+      if (!hasReachable) {
+        return 'None of the selected recipients are reachable via this connection. '
+            'They appear here after the workspace member sync completes.';
+      }
+    }
+
+    return null;
   }
 
   void _selectTwist(TwistInstance twist) {
@@ -1373,6 +1416,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                       : _editorHint,
                                   additionalMentions: _twistMentions,
                                   onSubmitted: _onChatSubmitted,
+                                  submitValidator: _validateDmSubmit,
                                   viewerMode: isViewerMode,
                                   selectedTwist: _selectedTwist,
                                   onTwistSelected: _selectTwist,
@@ -1424,6 +1468,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               : _editorHint,
                                           additionalMentions: _twistMentions,
                                           onSubmitted: _onChatSubmitted,
+                                          submitValidator: _validateDmSubmit,
                                           viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,

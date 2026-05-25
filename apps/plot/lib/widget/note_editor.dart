@@ -32,6 +32,7 @@ class NoteEditor extends StatefulWidget {
     this.hint,
     this.additionalMentions,
     this.onSubmitted,
+    this.submitValidator,
     this.viewerMode = false,
     // Twist selection (new-thread mode)
     this.selectedTwist,
@@ -63,6 +64,14 @@ class NoteEditor extends StatefulWidget {
 
   /// Called after the thread is submitted. Only used in new-thread mode.
   final VoidCallback? onSubmitted;
+
+  /// Optional pre-submit validation hook for new-thread mode.
+  ///
+  /// Called at the start of `_onNewThreadSubmitted` before any writes.
+  /// Return a non-null [String] to block submission — the string is shown
+  /// to the user as an error toast. Return null to allow submission to
+  /// proceed normally.
+  final String? Function()? submitValidator;
 
   /// When true, hides all toolbar controls for viewer-created content in
   /// readonly priorities. Notes are auto-private.
@@ -876,10 +885,13 @@ class NoteEditorState extends State<NoteEditor> {
     final twist = TwistInstance.fromCache(
       TwistInstanceId.fromString(action.twistInstanceId),
     );
-    final channel = Channel.findByChannel(
-      TwistInstanceId.fromString(action.twistInstanceId),
-      action.channelId,
-    );
+    final channelId = action.channelId;
+    final channel = channelId != null
+        ? Channel.findByChannel(
+            TwistInstanceId.fromString(action.twistInstanceId),
+            channelId,
+          )
+        : null;
     final channelType = channel?.parsedLinkTypes
         ?.where((c) => c.type == action.linkType)
         .firstOrNull;
@@ -1595,6 +1607,15 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Future<void> _onNewThreadSubmitted(String body, {bool alt = false}) async {
+    // Run the caller's pre-submit validator (e.g. DM-type recipient gate).
+    final validationError = widget.submitValidator?.call();
+    if (validationError != null) {
+      if (mounted) {
+        context.showToast(message: validationError, isError: true);
+      }
+      return;
+    }
+
     // Block subsequent _saveDraft calls and wait out any already in flight,
     // so the publish writes can't be reordered with a draft write.
     _finalized = true;

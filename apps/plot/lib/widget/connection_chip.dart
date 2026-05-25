@@ -92,7 +92,12 @@ class _ConnectionChipState extends State<ConnectionChip> {
             child: button,
           );
 
-    if (widget.target.accountName == null) return hoverable;
+    // Show a tooltip with the full subtitle when there's extra context:
+    // account name for channel-type targets, or the connection display name
+    // for DM-type targets.
+    if (widget.target.accountName == null && !widget.target.isDmType) {
+      return hoverable;
+    }
     return FTooltip(
       tipBuilder: (context, controller) => Text(widget.target.subtitle),
       child: hoverable,
