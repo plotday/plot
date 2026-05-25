@@ -1,6 +1,7 @@
 import type { Kysely } from "kysely";
 
 import type { DB } from "../../db-types";
+import { rpcUser } from "../../rpc";
 import { truncateUuidForUpdatedBy } from "../../utils/uuid";
 
 type LinkTypeStatus = {
@@ -8,6 +9,14 @@ type LinkTypeStatus = {
   label: string;
   tag?: number;
   done?: boolean;
+  /**
+   * State-flag declarations. When a link enters a status carrying one of
+   * these, the framework writes thread_state.<flag>=true for the link's
+   * affected user. `todo` is a deprecated alias for `task`.
+   */
+  active?: boolean;
+  task?: boolean;
+  toRead?: boolean;
   todo?: boolean;
 };
 
@@ -278,4 +287,111 @@ export async function isLinkStatusDone(
   if (!typeConfig?.statuses) return false;
   const statusDef = typeConfig.statuses.find((s) => s.status === link.status);
   return statusDef?.done === true;
+}
+
+/**
+ * Resolve the LinkStatus definition for a link's current (type, status) pair.
+ * Returns null when the link's type isn't declared by the twist or the status
+ * isn't enumerated.
+ */
+async function getStatusDef(
+  db: Kysely<DB>,
+  link: { id: string; created_by: string | null; type: string | null; status: string | null }
+): Promise<LinkTypeStatus | null> {
+  if (!link.type || !link.status || !link.created_by) return null;
+
+  let allLinkTypes: LinkTypeConfig[] = await getChannelLinkTypes(db, link.id, link.created_by);
+  if (allLinkTypes.length === 0) {
+    const twistRow = await db
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+      .select("twist.permissions")
+      .where("twist_instance.id", "=", link.created_by)
+      .executeTakeFirst();
+    if (!twistRow?.permissions) return null;
+    const providers = (twistRow.permissions as any)._providers;
+    if (!Array.isArray(providers)) return null;
+    allLinkTypes = providers.flatMap((p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]);
+  }
+
+  const typeConfig = allLinkTypes.find((lt) => lt.type === link.type);
+  return typeConfig?.statuses?.find((s) => s.status === link.status) ?? null;
+}
+
+/**
+ * Propagate a link's status `active`/`task`/`toRead` flags to thread_state
+ * for the affected user.
+ *
+ *  - Assignee-bearing links (Linear, Todoist, etc.): the assignee's user.
+ *  - Messaging links (Gmail star, Slack later): the twist_instance owner
+ *    (per-user connection — the link's creator).
+ *
+ * Done-status links are a no-op for active/task: completion is signaled by
+ * the absence of the flag, not by writing FALSE (which would clobber a user's
+ * own manual flag). To clear, the connector emits a status that does NOT
+ * carry the flag, and the existing schedule cleanup paths take over.
+ *
+ * Never throws.
+ */
+export async function propagateLinkStateFlagsFromDb(
+  db: Kysely<DB>,
+  link: {
+    id: string;
+    thread_id: string | null;
+    created_by: string | null;
+    type: string | null;
+    status: string | null;
+    assignee_id: string | null;
+  }
+): Promise<void> {
+  if (!link.thread_id || !link.created_by) return;
+
+  const statusDef = await getStatusDef(db, link);
+  if (!statusDef) return;
+
+  // Resolve the affected user. Prefer the assignee (tracker-style links);
+  // fall back to the twist_instance owner (messaging connections).
+  let userId: string | null = null;
+  if (link.assignee_id) {
+    const contact = await db
+      .selectFrom("contact")
+      .select("user_id")
+      .where("id", "=", link.assignee_id)
+      .executeTakeFirst();
+    userId = contact?.user_id ?? null;
+  }
+  if (!userId) {
+    const owner = await db
+      .selectFrom("twist_instance")
+      .select("owner_id")
+      .where("id", "=", link.created_by)
+      .executeTakeFirst();
+    userId = owner?.owner_id ?? null;
+  }
+  if (!userId) return;
+
+  // todo is the deprecated alias for task.
+  const wantsActive = statusDef.active === true;
+  const wantsTask = statusDef.task === true || statusDef.todo === true;
+  const wantsToRead = statusDef.toRead === true;
+  if (!wantsActive && !wantsTask && !wantsToRead) return;
+
+  try {
+    await rpcUser(db, "upsert_thread_state", {
+      user_id: userId,
+      p_thread_id: link.thread_id,
+      p_active: wantsActive,
+      p_task: wantsTask,
+      p_to_read: wantsToRead,
+      p_urgent: false,
+      p_importance: 50,
+      p_set_active: wantsActive,
+      p_set_task: wantsTask,
+      p_set_to_read: wantsToRead,
+      p_set_urgent: false,
+      p_set_importance: false,
+    });
+  } catch (error) {
+    console.error("[link-state] Failed to propagate link state flags:", error);
+  }
 }

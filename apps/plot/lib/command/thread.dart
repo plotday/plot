@@ -1008,14 +1008,12 @@ abstract class _MoveThreadToTab extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Build the optimistic Thread with todo=true, read, AND the new
-    // schedule.action so the agenda re-classifies into the right tab on
-    // the next render. Without the action write the row would briefly
-    // pop into the Do tab (which is what bare todo+no-action implies in
-    // some legacy data) before settling.
+    // Tab-style action moves no longer exist — collapse to the unified
+    // Doing section (active = true). Subclasses' `action` is ignored for
+    // routing; preserved for analytics continuity.
     final order = thread.order;
     final restored = thread
-        .withScheduleRestored(order: order, action: action)
+        .withScheduleRestored(order: order)
         .copyWith(
           todo: true,
           unread: false,

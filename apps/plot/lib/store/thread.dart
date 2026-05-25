@@ -56,18 +56,25 @@ class Threads extends Table
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
 
-  /// AI/user classification of this thread for the current user: drives the
-  /// activity-feed tab. One of 'respond' / 'do' / 'read' / 'update' when a
-  /// thread_state row exists for the user; NULL otherwise (clearly passive
-  /// material that lives only in All).
-  TextColumn get actionType => text().nullable()();
+  /// Three independent per-user state booleans, set with high confidence by
+  /// the AI/connector and/or directly by the user:
+  ///   active  — user is acting on (or about to act on) this thread now.
+  ///             Drives the Doing section of the unified feed.
+  ///   task    — task list (typically set by Linear/Todoist-style connectors
+  ///             on assignment so the user can flip to active themselves).
+  ///   toRead  — reading list (long-form content the user wants to read later).
+  /// Independent: a thread can carry any combination.
+  BoolColumn get active => boolean().withDefault(const Constant(false))();
+  BoolColumn get task => boolean().withDefault(const Constant(false))();
+  BoolColumn get toRead => boolean().withDefault(const Constant(false))();
 
   /// True when the user should be notified immediately rather than waiting
   /// for the next see_within window. Bypasses the importance >= 50 gate.
   BoolColumn get urgent => boolean().nullable()();
 
-  /// Drag-to-reorder position within an action tab (Respond / Do / Read).
-  /// Previously stored on the per-user schedule row.
+  /// Drag-to-reorder position within the Doing section of the unified feed
+  /// (and within a single day of the Scheduled section). Previously stored
+  /// on the per-user schedule row.
   RealColumn get stateOrder =>
       real().nullable().map(const OrderConverter())();
 
@@ -408,13 +415,14 @@ class ThreadsBase extends BaseTable {
 
       // Conflict resolution: local has a pending read (readAt != null).
       if (local != null && local.readAt != null) {
-        if (local.actionType != null) {
-          // Action-tab thread: read_at is the durable "finished" marker
-          // for the Respond / Do / Read tab filters. The user.thread server
-          // view does not expose read_at, so local is the source of truth.
-          // Preserve it through the merge — without this, insertOrReplace
+        if (local.active || local.task || local.toRead) {
+          // Active / task / reading-list thread: read_at is the durable
+          // "finished" marker that drives section placement (Doing →
+          // Activity on finish). The user.thread server view does not
+          // expose read_at, so local is the source of truth. Preserve it
+          // through the merge — without this, insertOrReplace
           // (store.dart:1381) overwrites local read_at with the server's
-          // null and the thread re-appears in its action tab.
+          // null and the thread re-appears in Doing.
           merged = merged.copyWith(readAt: Value(local.readAt));
         } else {
           final serverContent =
@@ -432,7 +440,9 @@ class ThreadsBase extends BaseTable {
             merged = merged.copyWith(
               unread: false,
               importance: 0,
-              actionType: const Value(null),
+              active: false,
+              task: false,
+              toRead: false,
               urgent: const Value(null),
               readAt: Value(local.readAt),
             );
@@ -493,11 +503,13 @@ class ThreadsBase extends BaseTable {
     // Do NOT remove - the sync API needs it to set the correct author
 
     // Remove per-user thread_state fields — they are managed separately via
-    // /sync/thread-state (action_type / urgent / importance / order / on / at
-    // / read_at all live there, not on the shared thread row).
+    // /sync/thread-state (active / task / to_read / urgent / importance /
+    // order / on / at / read_at all live there, not on the shared thread row).
     json.remove('unread');
     json.remove('importance');
-    json.remove('action_type');
+    json.remove('active');
+    json.remove('task');
+    json.remove('to_read');
     json.remove('urgent');
     json.remove('state_order');
     json.remove('state_on');
@@ -958,14 +970,18 @@ class Thread extends Equatable implements Comparable<Thread> {
     final success = results.every((r) => r);
 
     // Push pending read changes (readAt != null means user read locally).
-    // Action-tab threads (actionType != null) sync read_at via the per-user
-    // state endpoint (/sync/thread-state) and rely on local read_at as a
-    // durable "finished" marker for the Respond / Do / Read tab filters,
-    // so they must NOT go through this endpoint — it clears local read_at
-    // after push, which un-finishes them and makes them re-appear.
+    // Threads with any state flag (active / task / toRead) sync read_at via
+    // the per-user state endpoint (/sync/thread-state) and rely on local
+    // read_at as a durable "finished" marker so they leave Doing and land
+    // in Activity. They must NOT go through this endpoint — it would clear
+    // local read_at after push and un-finish them.
     final readActivities = await (Store.get.select(
       Store.get.threads,
-    )..where((t) => t.readAt.isNotNull() & t.actionType.isNull()))
+    )..where((t) =>
+        t.readAt.isNotNull() &
+        t.active.equals(false) &
+        t.task.equals(false) &
+        t.toRead.equals(false)))
         .get();
 
     if (readActivities.isEmpty) {
@@ -1292,9 +1308,9 @@ class Thread extends Equatable implements Comparable<Thread> {
         ta.childThreadId.equalsExp(a.id) & ta.archivedAt.isNull(),
       ),
       // Same joins as _getQuery so _mapResultsToThreads works. Per-user
-      // state (action_type, urgent, state_order, state_on, state_at,
-      // read_at) lives on the thread row itself, so no per-user schedule
-      // join is needed.
+      // state (active / task / to_read / urgent / state_order / state_on
+      // / state_at / read_at) lives on the thread row itself, so no
+      // per-user schedule join is needed.
       leftOuterJoin(
         sched,
         sched.threadId.equalsExp(a.id) & sched.linkId.isNull(),
@@ -1427,9 +1443,8 @@ class Thread extends Equatable implements Comparable<Thread> {
               // DateTime-based scheduling: startAt <= now AND endAt >= now
               (s.startAt.isSmallerOrEqualValue(now) &
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now))) |
-              // Per-user todo: thread has an unread/unfinished per-user
-              // state (action_type set, not yet marked read).
-              (a.actionType.isNotNull() & a.readAt.isNull())),
+              // Per-user todo: thread has an unfinished active flag.
+              (a.active.equals(true) & a.readAt.isNull())),
     );
     final nowCountStream = nowQuery.watch().map(
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
@@ -1724,9 +1739,9 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     var query = startingQuery.join([
       // Shared schedule (event timing, visible to all priority members).
-      // Per-user state — action_type / urgent / state_order / state_on /
-      // state_at / read_at — now lives directly on the thread row (a.*),
-      // so no per-user schedule join is needed.
+      // Per-user state — active / task / to_read / urgent / state_order /
+      // state_on / state_at / read_at — now lives directly on the thread
+      // row (a.*), so no per-user schedule join is needed.
       leftOuterJoin(
         sched,
         sched.threadId.equalsExp(a.id) & sched.linkId.isNull(),
@@ -1784,9 +1799,8 @@ class Thread extends Equatable implements Comparable<Thread> {
             (sched.startAt.isSmallerOrEqualValue(now) &
                 (sched.endAt.isNull() |
                     sched.endAt.isBiggerOrEqualValue(now))) |
-            // Per-user todo: thread has an unfinished per-user state
-            // (action_type set, not yet marked read).
-            (a.actionType.isNotNull() & a.readAt.isNull()) |
+            // Per-user todo: thread has an unfinished active flag.
+            (a.active.equals(true) & a.readAt.isNull()) |
             // Link schedule date-based: startOn <= today
             (linkSched.startOn.isSmallerOrEqualValue(Date.today().toString()) &
                 linkSched.startAt.isNull()) |
@@ -1803,14 +1817,13 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
     if (todoOnly) {
-      // SQL translation of [Thread.isTodo]:
-      //   actionType != null
-      //   && readAt == null
+      // SQL translation of [Thread.isActive]:
+      //   active == true && readAt == null
       //
-      // **Keep in lockstep with [Thread.isTodo] and the fixture matrix in
-      // `test/store/thread_todo_predicate_test.dart`.**
+      // **Keep in lockstep with [Thread.isActive] and the fixture matrix
+      // in `test/store/thread_todo_predicate_test.dart`.**
       query.where(
-        a.actionType.isNotNull() & a.readAt.isNull(),
+        a.active.equals(true) & a.readAt.isNull(),
       );
     }
     if (archived != null) {
@@ -1944,14 +1957,13 @@ class Thread extends Equatable implements Comparable<Thread> {
         condition = condition | unscheduled;
       }
 
-      // Active todo: always include threads with an unfinished per-user
-      // state (action_type set, not yet read).
+      // Active todo: always include threads with an unfinished active flag.
       // Skip for linkScheduledOnly — we only want threads by their link
       // schedule, not by their per-user state.
       // Skip for eventsOnly — caller is running a separate todoOnly watch.
       if (!linkScheduledOnly && !eventsOnly) {
         Expression<bool> activeTodo =
-            a.actionType.isNotNull() & a.readAt.isNull();
+            a.active.equals(true) & a.readAt.isNull();
         condition = condition | activeTodo;
       }
 
@@ -2089,13 +2101,13 @@ class Thread extends Equatable implements Comparable<Thread> {
       condition = condition | linkDateTimeScheduled;
 
       // Exclude read-and-done threads (done items). Only include threads
-      // where the per-user state is absent, not yet read, or where there
-      // is a link schedule to render.
+      // where there is no per-user flag, or it isn't yet read, or there's
+      // a link schedule to render.
+      final hasAnyStateFlag =
+          a.active.equals(true) | a.task.equals(true) | a.toRead.equals(true);
       condition =
           condition &
-          (a.actionType.isNull() |
-              a.readAt.isNull() |
-              linkSched.id.isNotNull());
+          (hasAnyStateFlag.not() | a.readAt.isNull() | linkSched.id.isNotNull());
 
       query.where(condition);
     }
@@ -2227,7 +2239,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// 1. (if [priorityPath] != null) path, pathPrefix
   /// 2. (else if [priorityId] != null) priorityId
   /// 3. draft flag
-  /// 4. (if [actionType] != null) action type
+  /// 4. (if [stateFlag] != null) state flag column
   /// 5. iconFilter values, in order
   /// 6. (if [requireTodoPredicate]) today, now, now, today, now, now
   ///
@@ -2251,7 +2263,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool requireTodoPredicate = false,
     bool requireUnread = false,
     bool requireLinkSched = false,
-    String? actionType,
+    /// When set, restrict to threads with the named state flag = TRUE.
+    /// Accepted values: 'active', 'task', 'to_read'. Anything else is ignored.
+    String? stateFlag,
   }) {
     // Extract special tags (mirrors [_getQuery] / [_watchActivityFeedIds]
     // semantics).
@@ -2310,9 +2324,8 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     if (filterUnread) {
       wheres.add('a.unread = 1 AND a.read_at IS NULL');
     }
-    if (actionType != null) {
-      wheres.add('a.action_type = ?');
-      variables.add(Variable.withString(actionType));
+    if (stateFlag == 'active' || stateFlag == 'task' || stateFlag == 'to_read') {
+      wheres.add('a.$stateFlag = 1');
     }
 
     // Icon filter — mirrors [_getQuery] logic.
@@ -2392,15 +2405,16 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
     }
 
-    // doTodo: SQL form of [Thread.todo] — at least one of shared schedule /
-    // per-user thread state / link schedule must be active right now.
+    // doTodo: SQL form of [Thread.active] — at least one of shared schedule
+    // currently in range, an unfinished active flag, or a link schedule
+    // currently in range.
     if (doTodo) {
       final today = Date.today().toString();
       final now = Time.now();
       wheres.add('''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
- (a.action_type IS NOT NULL AND a.read_at IS NULL) OR
+ (a.active = 1 AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
  (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
       variables.add(Variable.withString(today));
@@ -2504,7 +2518,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     variables.add(Variable.withDateTime(now));
 
     // doTodo also needs link_sched. Per-user state lives directly on `a.*`
-    // (action_type / read_at), so no user_sched join is required.
+    // (active / task / to_read / read_at), so no user_sched join is required.
     if (doTodo) {
       sqlBuf.writeln(
         'LEFT JOIN schedules link_sched ON link_sched.link_id = l.id',
@@ -2615,14 +2629,15 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
     }
 
-    // doTodo: SQL form of [Thread.todo] — at least one of shared schedule /
-    // per-user thread state / link schedule must be active right now.
+    // doTodo: SQL form of [Thread.active] — at least one of shared schedule
+    // currently in range, an unfinished active flag, or a link schedule
+    // currently in range.
     if (doTodo) {
       final today = Date.today().toString();
       wheres.add('''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
- (a.action_type IS NOT NULL AND a.read_at IS NULL) OR
+ (a.active = 1 AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
  (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
       variables.add(Variable.withString(today));
@@ -3440,15 +3455,16 @@ SELECT
       filter: filter,
       iconFilter: iconFilter,
       requireLinkSched: true,
-      actionType: action,
+      stateFlag: action,
     );
     sqlBuf.write(parts.sql);
     variables.addAll(parts.variables);
 
-    // Action tabs are todos by definition. The _buildFeedFilter actionType
-    // clause only constrains `a.action_type = ?`; pair it with the unread
-    // half of the todo predicate so threads the user has marked read drop
-    // out (they belong in the All / Catch up tabs, not action tabs).
+    // Action-tab caller passes whatever flag it cares about as `action`;
+    // pair it with the unread half of the active predicate so threads the
+    // user has marked read drop out. NOTE: per-tab queries are slated to
+    // be removed when the unified feed is restored — this code is a
+    // compile-time shim only.
     sqlBuf.writeln('AND a.read_at IS NULL');
 
     sqlBuf.writeln('GROUP BY a.id');
@@ -3989,9 +4005,10 @@ ORDER BY
     /// Optional per-user thread-state fields. Production paths populate
     /// these via the Drift query in [Thread.watch] (the columns live
     /// directly on `threads`); exposed here so tests can construct a
-    /// [Thread] in a specific todo or pinned-todo state without going
-    /// through [copyWith].
-    String? actionType,
+    /// [Thread] in a specific state without going through [copyWith].
+    bool active = false,
+    bool task = false,
+    bool toRead = false,
     bool? urgent,
     Order? stateOrder,
     Date? stateOn,
@@ -4010,7 +4027,9 @@ ORDER BY
       preview: preview,
       unread: false,
       importance: 0,
-      actionType: actionType,
+      active: active,
+      task: task,
+      toRead: toRead,
       urgent: urgent,
       stateOrder: stateOrder,
       stateOn: stateOn,
@@ -4156,8 +4175,11 @@ ORDER BY
       entry.key: Actor.dedupeByIdentity(entry.value),
   };
 
-  /// Returns true if this activity is active (computed from query or false if not computed)
-  bool get active => _active ?? false;
+  /// Whether this thread is in the per-tab "active bucket" computed by the
+  /// SQL `is_active` column (today vs scheduled, etc). Set by the per-tab
+  /// query path; null elsewhere. Kept as `inActiveBucket` to avoid clashing
+  /// with the per-user `active` state boolean exposed on the thread row.
+  bool get inActiveBucket => _active ?? false;
 
   /// Returns true if this activity is unread (considering local overrides)
   bool get unread {
@@ -4174,15 +4196,20 @@ ORDER BY
   /// Used as the read_at value when the user reads this thread.
   DateTime get contentTimestamp =>
       lastNoteSourceCreatedAt ?? createdAt;
-  /// AI/user classification of this thread for the current user: drives
-  /// the activity-feed action tab (Respond / Do / Read) when set. Null
-  /// for threads with no per-user state row.
-  String? get actionType => _thread.actionType;
+  /// Derived "action type" string for backwards-compatible call sites that
+  /// still want a single-valued summary. Returns one of 'active' / 'task' /
+  /// 'to_read' (in priority order if multiple flags are set), or null when
+  /// the thread has no per-user state. Prefer the `active` / `task` /
+  /// `toRead` boolean getters directly.
+  String? get actionType {
+    if (_thread.active) return 'active';
+    if (_thread.task) return 'task';
+    if (_thread.toRead) return 'to_read';
+    return null;
+  }
 
-  /// Backwards-compat alias used by older call sites that filtered the
-  /// activity tab on the schedule's `action` column. Equivalent to
-  /// [actionType].
-  String? get scheduleAction => _thread.actionType;
+  /// Backwards-compat alias for older call sites. Equivalent to [actionType].
+  String? get scheduleAction => actionType;
 
   /// True when the user should be notified immediately rather than
   /// waiting for the next see-within window.
@@ -4556,30 +4583,44 @@ ORDER BY
     return null;
   }
 
-  bool get todo => isTodo(
-    actionType: _thread.actionType,
-    readAt: _thread.readAt,
-  );
+  /// Whether the user is actively acting on this thread now (Doing section
+  /// in the unified feed). Independent of `task` and `toRead`.
+  bool get active => _thread.active && _thread.readAt == null;
 
-  /// Canonical "is this thread a user todo?" predicate, factored out so
-  /// the Dart [todo] getter and the SQL `todoOnly` clause in [_getQuery]
-  /// both reference a single source of truth.
+  /// Whether this thread is on the user's task list (typically set by a
+  /// connector like Linear/Todoist on assignment). Independent flag.
+  bool get task => _thread.task;
+
+  /// Whether this thread is on the user's reading list. Independent flag.
+  bool get toRead => _thread.toRead;
+
+  /// Backwards-compat alias: a thread is `todo` when the user has flagged
+  /// it active and hasn't finished it.
+  bool get todo => active;
+
+  /// Canonical "is this thread in the user's Doing list?" predicate,
+  /// factored out so the Dart [active] getter and any SQL clause that
+  /// filters Doing share a single source of truth.
   ///
-  /// A thread is a todo when the per-user state exists (action_type set)
-  /// and the user hasn't marked it read.
-  ///
-  /// **Keep this in lockstep with the SQL clause guarded by `todoOnly` in
-  /// [_getQuery].** The SQL form is the same conjunction translated to
-  /// Drift expressions; if you change one, change the other and the
-  /// fixtures in `test/store/thread_todo_predicate_test.dart`.
-  static bool isTodo({
-    required String? actionType,
+  /// **Keep this in lockstep with any SQL clause that mirrors it** and
+  /// with the fixtures in `test/store/thread_todo_predicate_test.dart`.
+  static bool isActive({
+    required bool active,
     required DateTime? readAt,
   }) {
-    return actionType != null && readAt == null;
+    return active && readAt == null;
   }
 
-  /// Backwards-compat alias for older call sites. Equivalent to [isTodo].
+  /// Backwards-compat alias for older call sites.
+  static bool isTodo({required bool active, required DateTime? readAt}) =>
+      isActive(active: active, readAt: readAt);
+
+  /// Legacy helper retained for the predicate-matrix test fixtures. Mirrors
+  /// the old schedule-shape rule: a user has a todo when the per-user
+  /// schedule row exists, isn't archived, and has either a start date or
+  /// start time. The new per-user state model expresses the same idea
+  /// through the [active] / [task] / [toRead] booleans.
+  @Deprecated('Use Thread.isActive (booleans) for new code.')
   static bool isTodoUserSchedule({
     required Object? userScheduleId,
     required DateTime? archivedAt,
@@ -4591,9 +4632,10 @@ ORDER BY
         (startOn != null || startAt != null);
   }
 
-  /// Returns the pinned-after time for a todo that was dragged after an event.
-  /// A todo is "pinned" when it has a per-user state_at but no real state_on
-  /// (null or epoch sentinel). Returns null for regular todos/events.
+  /// Returns the pinned-after time for an active thread that was dragged
+  /// after an event. A thread is "pinned" when it has a per-user `stateAt`
+  /// but no real `stateOn` (null or epoch sentinel). Returns null for
+  /// regular active/scheduled threads.
   DateTime? get pinnedAfterTime {
     final stateAt = _thread.stateAt;
     if (stateAt == null) return null;
@@ -4602,40 +4644,34 @@ ORDER BY
     return null;
   }
 
-  /// Whether this todo is pinned after a specific event.
+  /// Whether this active thread is pinned after a specific event.
   bool get isPinnedTodo => pinnedAfterTime != null;
 
-  /// A thread is "done" when it has per-user state but has been read.
-  /// Effectively: not a todo, but still touched by the user.
-  bool get done => _thread.actionType != null && !todo;
+  /// A thread is "done" when the user previously flagged it (active / task
+  /// / toRead) and has since marked it read. Effectively: not currently
+  /// in Doing, but the user touched it.
+  bool get done =>
+      (_thread.active || _thread.task || _thread.toRead) && !active;
 
-  /// Active = marked "To do" (user schedule with `todoNowDate` sentinel)
-  /// or todo with a user-schedule date that is today or in the past.
-  ///
-  /// Primary state for threads currently being worked on; rendered in the
-  /// Today section of the Activity feed and recorded using the sentinel
-  /// `Thread.todoNowDate` when no explicit date is set.
-  bool get isActiveThread => todo && !isFuture;
+  /// Doing section: active and not scheduled for the future.
+  bool get isActiveThread => active && !isFuture;
 
-  /// Scheduled = todo with a user-schedule date in the future. Rendered in
-  /// per-day sections of the Activity feed ("Tomorrow", "Friday", etc.).
-  bool get isScheduledThread => todo && isFuture;
+  /// Scheduled section (per-day): active with a future user-schedule date.
+  bool get isScheduledThread => active && isFuture;
 
-  /// Unread but not active or scheduled. Rendered in the "New" section.
-  /// Active and scheduled threads that happen to be unread render in their
-  /// own date-anchored section instead.
-  bool get isUnreadOnly => unread && !todo;
+  /// Unread row visible in the Updates section. Always rendered for any
+  /// unread thread regardless of whether it's also in Doing or Scheduled
+  /// (the Updates section explicitly duplicates).
+  bool get isUnreadOnly => unread;
 
-  /// Inactive = neither active, scheduled, nor unread. Rendered in the
-  /// "Done" section. Includes threads with no user schedule and read
-  /// non-todo threads.
-  bool get isInactiveThread => !todo && !unread;
+  /// Activity section (tail of history): not unread and not active.
+  bool get isInactiveThread => !active && !unread;
 
   DateTime? get bumpedAt => _thread.bumpedAt;
 
-  /// True when the current user has a per-user state row on this thread
-  /// (i.e. action_type is set).
-  bool get hasUserSchedule => _thread.actionType != null;
+  /// True when the current user has any per-user state on this thread.
+  bool get hasUserSchedule =>
+      _thread.active || _thread.task || _thread.toRead || _thread.readAt != null;
 
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
@@ -4806,7 +4842,7 @@ ORDER BY
   /// model treats this thread as no longer todo. No-op when there's no
   /// per-user state to clear.
   Thread withScheduleArchived() {
-    if (_thread.actionType == null) return this;
+    if (!_thread.active && !_thread.task && !_thread.toRead) return this;
     final now = DateTime.now();
     return _withThreadState(
       _thread.copyWith(
@@ -4816,28 +4852,19 @@ ORDER BY
     );
   }
 
-  /// Returns a copy with the per-user state restored so the thread
-  /// renders as a regular todo in the agenda. Mirrors what
+  /// Returns a copy with the per-user state restored so the thread renders
+  /// as a regular active item in the unified feed. Mirrors what
   /// `disassociate(order, date)` will persist so the optimistic UI shows
-  /// the thread back on the agenda the instant the user clicks "Remove
-  /// from event" — instead of letting it vanish while the DB write
-  /// resolves.
-  ///
-  /// [action] writes the thread's `action_type` field — the value the
-  /// Activity feed filters on to route a thread into the Respond / Do /
-  /// Read tabs. When omitted, the existing action_type is preserved
-  /// (falling back to `'do'` for never-classified threads so the row
-  /// lands somewhere visible).
+  /// the thread back the instant the user clicks "Remove from event"
+  /// instead of letting it vanish while the DB write resolves.
   Thread withScheduleRestored({
     required Order order,
     Date? date,
-    String? action,
   }) {
     final now = DateTime.now();
-    final effectiveAction = action ?? _thread.actionType ?? 'do';
     return _withThreadState(
       _thread.copyWith(
-        actionType: Value(effectiveAction),
+        active: true,
         stateOrder: Value(order),
         stateOn: Value(date ?? Thread.todoNowDate),
         stateAt: const Value(null),
@@ -4872,7 +4899,8 @@ ORDER BY
   /// true and marks any per-user state as read so the thread isn't
   /// classed as active or scheduled.
   Thread asUnread() {
-    final base = _thread.actionType == null ? this : withScheduleArchived();
+    final hasState = _thread.active || _thread.task || _thread.toRead;
+    final base = hasState ? withScheduleArchived() : this;
     return base.copyWith(unread: true, readAt: const Value(null));
   }
 
@@ -4899,7 +4927,7 @@ ORDER BY
 
   /// Reorder this thread. Updates the per-user state_order on the thread row.
   Thread reorder(Order order) {
-    if (_thread.actionType == null) {
+    if (!_thread.active && !_thread.task && !_thread.toRead) {
       log.warning(
         '[reorder] "$title" has no per-user state — cannot reorder',
       );
@@ -4918,7 +4946,7 @@ ORDER BY
   /// [date] null → sets epoch sentinel (Now/current todo).
   /// [date] someDate → schedules for that date, clears time fields.
   Thread reorderTo(Order order, {required Date? date}) {
-    if (_thread.actionType == null) {
+    if (!_thread.active && !_thread.task && !_thread.toRead) {
       log.warning(
         '[reorderTo] "$title" has no per-user state — cannot reorder',
       );
@@ -4945,7 +4973,7 @@ ORDER BY
   /// time and clears stateOn so the todo appears after that event on
   /// today.
   Thread reorderToAfterEvent(Order order, {required DateTime eventEndTime}) {
-    if (_thread.actionType == null) {
+    if (!_thread.active && !_thread.task && !_thread.toRead) {
       log.warning(
         '[reorderToAfterEvent] "$title" has no per-user state — cannot reorder',
       );
@@ -5219,7 +5247,9 @@ ORDER BY
     // Update schedule if scheduling fields are changing
     var schedule = _schedule;
     // Per-user thread-state field overrides applied to the thread row.
-    Value<String?> tsActionType = const Value.absent();
+    // Non-nullable columns (active) use plain bool? where null = no change.
+    // Nullable columns use Value<> with `absent` for no change.
+    bool? tsActive;
     Value<bool?> tsUrgent = const Value.absent();
     Value<Order?> tsStateOrder = const Value.absent();
     Value<Date?> tsStateOn = const Value.absent();
@@ -5316,8 +5346,8 @@ ORDER BY
         if (at.present) tsStateAt = Value(at.value?.start);
         if (on.present) tsStateOn = Value(on.value?.start);
         if (order != null) tsStateOrder = Value(order);
-        if (_thread.actionType == null) {
-          tsActionType = const Value('do');
+        if (!_thread.active && !_thread.task && !_thread.toRead) {
+          tsActive = true;
         }
         stateDirty = true;
       } else if (order != null) {
@@ -5328,7 +5358,9 @@ ORDER BY
     }
 
     // Clear per-user date intent when shared schedule is intentionally removed.
-    if (schedule == null && _schedule != null && _thread.actionType != null) {
+    if (schedule == null &&
+        _schedule != null &&
+        (_thread.active || _thread.task || _thread.toRead)) {
       tsStateOn = const Value(null);
       tsStateAt = const Value(null);
       stateDirty = true;
@@ -5336,8 +5368,7 @@ ORDER BY
 
     // Handle personal to-do state.
     if (todo == true) {
-      tsActionType =
-          Value(_thread.actionType ?? 'do');
+      tsActive = true;
       tsStateOn = Value(Thread.todoNowDate);
       tsStateAt = const Value(null);
       tsStateOrder = Value(Order.first());
@@ -5346,13 +5377,13 @@ ORDER BY
     }
 
     if (todo == false) {
-      // Mark done: clear per-user date intent and stamp read_at so the
-      // thread leaves the agenda.
+      // Mark done: clear active + per-user date intent and stamp read_at
+      // so the thread leaves Doing. Task / toRead flags are preserved —
+      // those are independent user-set lists.
+      tsActive = false;
       tsReadAt = Value(DateTime.now());
       tsStateOn = const Value(null);
       tsStateAt = const Value(null);
-      // Keep actionType so the thread can still appear in the All tab
-      // and in per-action history; readAt is the "done" signal.
       stateDirty = true;
     }
 
@@ -5373,7 +5404,7 @@ ORDER BY
     // than activityRemoteDirty.
     if (stateDirty) {
       activity = activity.copyWith(
-        actionType: tsActionType,
+        active: tsActive,
         urgent: tsUrgent,
         stateOrder: tsStateOrder,
         stateOn: tsStateOn,
@@ -5451,7 +5482,7 @@ ORDER BY
           );
         } else {
           // Re-add to todo: delegate to copyWith so the to-do branch
-          // (action_type / stateOn / readAt clearing) stays in one place.
+          // (active / stateOn / readAt clearing) stays in one place.
           return copyWith(todo: true);
         }
       default:
@@ -5664,10 +5695,10 @@ ORDER BY
 
     // 5. Apply new per-user thread-state directly to the thread row
     //    (matches toggleTag(Tag.todo) add: startOn = todoNowDate, order
-    //    reset, readAt cleared).
+    //    reset, readAt cleared, active flag set).
     final wasArchived = _thread.archivedAt != null;
     final newActivity = _thread.copyWith(
-      actionType: Value(_thread.actionType ?? 'do'),
+      active: true,
       stateOrder: Value(Order.first()),
       stateOn: Value(Thread.todoNowDate),
       stateAt: const Value(null),
@@ -5712,7 +5743,7 @@ ORDER BY
   /// happens via /sync/thread-state, not /sync/threads) and posts the
   /// new state to the server.
   Future<void> saveOrder() async {
-    if (_thread.actionType == null) {
+    if (!_thread.active && !_thread.task && !_thread.toRead) {
       log.warning('[saveOrder] "$title" has no per-user state — nothing to save');
       return;
     }
@@ -5746,7 +5777,9 @@ ORDER BY
   void _pushThreadState() {
     final body = <String, dynamic>{
       'thread_id': id.toString(),
-      if (_thread.actionType != null) 'action_type': _thread.actionType,
+      'active': _thread.active,
+      'task': _thread.task,
+      'to_read': _thread.toRead,
       if (_thread.urgent != null) 'urgent': _thread.urgent,
       'importance': _thread.importance,
       if (_thread.stateOrder != null) 'order': _thread.stateOrder!.value,
@@ -5779,8 +5812,8 @@ ORDER BY
         );
       } else {
         // Local-only update for read-state / per-user-state fields
-        // (unread, readAt, action_type, urgent, state_order, state_on,
-        // state_at, importance, bumpedAt). These sync via
+        // (unread, readAt, active, task, toRead, urgent, state_order,
+        // state_on, state_at, importance, bumpedAt). These sync via
         // /sync/thread-state, not the regular thread push. Use
         // update().write() to avoid setting pending (which would trigger
         // a full thread sync that fails for viewer members).
@@ -5789,7 +5822,9 @@ ORDER BY
             .write(ThreadsCompanion(
               unread: Value(_thread.unread),
               importance: Value(_thread.importance),
-              actionType: Value(_thread.actionType),
+              active: Value(_thread.active),
+              task: Value(_thread.task),
+              toRead: Value(_thread.toRead),
               urgent: Value(_thread.urgent),
               stateOrder: Value(_thread.stateOrder),
               stateOn: Value(_thread.stateOn),
@@ -5798,6 +5833,8 @@ ORDER BY
               bumpedAt: Value(_thread.bumpedAt),
               updatedAt: Value(_thread.updatedAt),
             ));
+            // ThreadsCompanion uses Value<> for all columns so the above
+            // works for both nullable and non-nullable fields.
       }
     } else {
       // Thread row wasn't written — ensure it exists in the local DB so

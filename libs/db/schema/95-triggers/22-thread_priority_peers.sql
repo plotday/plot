@@ -57,8 +57,8 @@ BEGIN
 
     -- thread_state for newly-added contacts only. Harmless while the
     -- parent thread_priority row is hidden — only surfaces in user.*
-    -- views once the visibility filter admits the row. action_type and
-    -- importance use the table defaults ('update', 50).
+    -- views once the visibility filter admits the row. active/task/to_read
+    -- and importance use the table defaults (FALSE, FALSE, FALSE, 50).
     INSERT INTO thread_state (user_id, thread_id)
     SELECT peer.user_id, NEW.id
     FROM (

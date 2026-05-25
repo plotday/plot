@@ -798,13 +798,20 @@ $function$;
 -- workers/api/src/app/sync/helpers.ts which documents the same pattern.
 
 -- Upsert per-user thread_state. Replaces upsert_thread_unread and also
--- accepts the per-user action/order/on/at fields that previously lived on
+-- accepts the per-user order/on/at fields that previously lived on
 -- schedule. Every parameter follows the explicit-set pattern (p_set_*) so
 -- partial updates from the client don't clobber fields set elsewhere.
+--
+-- active/task/to_read are three independent booleans replacing the old
+-- single-valued action_type. The caller sets each one only when it has
+-- meaningful information about that flag (p_set_active etc.); otherwise
+-- the existing value on the row is preserved.
 CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     user_id uuid,
     p_thread_id uuid,
-    p_action_type text DEFAULT 'update',
+    p_active boolean DEFAULT FALSE,
+    p_task boolean DEFAULT FALSE,
+    p_to_read boolean DEFAULT FALSE,
     p_urgent boolean DEFAULT FALSE,
     p_importance smallint DEFAULT 50,
     p_read_at timestamptz DEFAULT NULL::timestamptz,
@@ -813,7 +820,9 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     p_order double precision DEFAULT NULL,
     p_on daterange DEFAULT NULL,
     p_at tstzrange DEFAULT NULL,
-    p_set_action_type boolean DEFAULT TRUE,
+    p_set_active boolean DEFAULT FALSE,
+    p_set_task boolean DEFAULT FALSE,
+    p_set_to_read boolean DEFAULT FALSE,
     p_set_urgent boolean DEFAULT TRUE,
     p_set_importance boolean DEFAULT TRUE,
     p_set_order boolean DEFAULT FALSE,
@@ -840,11 +849,13 @@ BEGIN
         RAISE EXCEPTION 'Thread not found';
     END IF;
 
-    INSERT INTO thread_state (user_id, thread_id, action_type, urgent, importance, read_at, bumped_at, "order", "on", "at")
-        VALUES (upsert_thread_state.user_id, p_thread_id, COALESCE(p_action_type, 'update'), COALESCE(p_urgent, FALSE), COALESCE(p_importance, 50), p_read_at, p_bumped_at, p_order, p_on, p_at)
+    INSERT INTO thread_state (user_id, thread_id, active, task, to_read, urgent, importance, read_at, bumped_at, "order", "on", "at")
+        VALUES (upsert_thread_state.user_id, p_thread_id, COALESCE(p_active, FALSE), COALESCE(p_task, FALSE), COALESCE(p_to_read, FALSE), COALESCE(p_urgent, FALSE), COALESCE(p_importance, 50), p_read_at, p_bumped_at, p_order, p_on, p_at)
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
-            action_type = CASE WHEN p_set_action_type THEN COALESCE(EXCLUDED.action_type, thread_state.action_type) ELSE thread_state.action_type END,
+            active = CASE WHEN p_set_active THEN EXCLUDED.active ELSE thread_state.active END,
+            task = CASE WHEN p_set_task THEN EXCLUDED.task ELSE thread_state.task END,
+            to_read = CASE WHEN p_set_to_read THEN EXCLUDED.to_read ELSE thread_state.to_read END,
             urgent = CASE WHEN p_set_urgent THEN EXCLUDED.urgent ELSE thread_state.urgent END,
             importance = CASE WHEN p_set_importance THEN EXCLUDED.importance ELSE thread_state.importance END,
             "order" = CASE WHEN p_set_order THEN EXCLUDED."order" ELSE thread_state."order" END,

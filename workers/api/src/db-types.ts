@@ -810,7 +810,7 @@ export interface ThreadRead {
 }
 
 export interface ThreadState {
-  action_type: Generated<string>;
+  active: Generated<boolean>;
   at: string | null;
   bumped_at: Timestamp | null;
   importance: Generated<number>;
@@ -818,7 +818,9 @@ export interface ThreadState {
   order: number | null;
   read_at: Timestamp | null;
   seq: Generated<string>;
+  task: Generated<boolean>;
   thread_id: string;
+  to_read: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   urgent: Generated<boolean>;
   user_id: string;
@@ -1188,13 +1190,15 @@ export interface TwistInstanceThreadRead {
 }
 
 export interface TwistInstanceThreadSchedule {
-  action_type: string | null;
+  active: boolean | null;
   at: string | null;
   on: string | null;
   priority_id: string | null;
   read_at: Timestamp | null;
   seq: string | null;
+  task: boolean | null;
   thread_id: string | null;
+  to_read: boolean | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1260,6 +1264,7 @@ export interface UserActor {
   avatar_url: string | null;
   created_at: Timestamp | null;
   email: string | null;
+  external_accounts: Json | null;
   id: string | null;
   inviteable: boolean | null;
   linked_user_id: string | null;
@@ -1541,7 +1546,7 @@ export interface UserTeamUser {
 }
 
 export interface UserThread {
-  action_type: string | null;
+  active: boolean | null;
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
@@ -1566,7 +1571,9 @@ export interface UserThread {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
+  task: boolean | null;
   title: string | null;
+  to_read: boolean | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
@@ -1588,7 +1595,7 @@ export interface UserThreadAssociation {
 }
 
 export interface UserThreadRedacted {
-  action_type: string | null;
+  active: boolean | null;
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
@@ -1613,7 +1620,9 @@ export interface UserThreadRedacted {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
+  task: boolean | null;
   title: string | null;
+  to_read: boolean | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;

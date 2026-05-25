@@ -159,15 +159,15 @@ LIMIT 1)) INTO v_plot_team_group_id;
             VALUES (v_welcome_thread_id, p_user_id, v_using_plot_id)
         ON CONFLICT ON CONSTRAINT thread_priority_pkey
             DO NOTHING;
-        -- importance = 100 puts this thread at the top of Catch up, above
+        -- importance = 100 puts this thread at the top of Updates, above
         -- the global onboarding sequence seeded by file_onboarding_schedules
         -- (which starts at importance = 95 for the 'welcome' thread).
-        -- action_type = 'read' places it in the Read tab of the activity feed
-        -- (informational thread with no actionable todo). Plot team members
-        -- are filed by file_thread_priority_for_group_members but do NOT
-        -- receive a thread_state row — the welcome stays off their agendas.
-        INSERT INTO public.thread_state (user_id, thread_id, action_type, importance, "order", "on")
-            VALUES (p_user_id, v_welcome_thread_id, 'read', 100, 50, daterange('1970-01-01', NULL))
+        -- to_read = TRUE places it on the user's reading list (informational
+        -- thread with no actionable todo). Plot team members are filed by
+        -- file_thread_priority_for_group_members but do NOT receive a
+        -- thread_state row — the welcome stays off their agendas.
+        INSERT INTO public.thread_state (user_id, thread_id, to_read, importance, "order", "on")
+            VALUES (p_user_id, v_welcome_thread_id, TRUE, 100, 50, daterange('1970-01-01', NULL))
         ON CONFLICT (user_id, thread_id)
             DO NOTHING;
         INSERT INTO public.note (author_id, created_by, thread_id, source_created_at, content, key)

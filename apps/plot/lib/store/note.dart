@@ -613,19 +613,19 @@ class Note extends Equatable implements Comparable<Note> {
   }
 
   /// Ensures per-user thread-state exists on the thread for the current
-  /// user — sets action_type, state_on = todoNowDate, clears read_at —
+  /// user — sets active=true, state_on = todoNowDate, clears read_at —
   /// then pushes via POST /sync/thread-state.
   static Future<void> _ensureTodoForUser(ThreadId threadId) async {
     final row = await (Store.get.select(Store.get.threads)
           ..where((t) => t.id.equalsValue(threadId)))
         .getSingleOrNull();
     if (row == null) return;
-    if (row.actionType != null && row.readAt == null) return;
+    if (row.active && row.readAt == null) return;
     final now = DateTime.now();
     await (Store.get.update(Store.get.threads)
           ..where((t) => t.id.equalsValue(threadId)))
         .write(ThreadsCompanion(
-          actionType: Value(row.actionType ?? 'do'),
+          active: const Value(true),
           stateOrder: Value(row.stateOrder ?? Order.first()),
           stateOn: Value(row.stateOn ?? Thread.todoNowDate),
           readAt: const Value(null),
@@ -634,7 +634,7 @@ class Note extends Equatable implements Comparable<Note> {
     try {
       await api.post<Map<String, dynamic>>('/sync/thread-state', body: {
         'thread_id': threadId.toString(),
-        'action_type': row.actionType ?? 'do',
+        'active': true,
         'on': '[${row.stateOn ?? Thread.todoNowDate},)',
         'read_at': null,
       });

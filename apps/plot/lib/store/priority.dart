@@ -639,14 +639,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now)))),
     );
 
-    // Query 2: Per-user state on the thread row (action_type set, not
+    // Query 2: Per-user state on the thread row (active flag set, not
     // yet read, with a state_on/state_at in the past).
     final userQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
     userQuery.where(
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
           a.draft.equals(false) &
-          a.actionType.isNotNull() &
+          a.active.equals(true) &
           a.readAt.isNull() &
           ((a.stateOn.isSmallerOrEqualValue(today) & a.stateAt.isNull()) |
               (a.stateAt.isSmallerOrEqualValue(now))),
@@ -771,7 +771,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     userQuery.where(
       a.archivedAt.isNull() &
           a.draft.equals(false) &
-          a.actionType.isNotNull() &
+          a.active.equals(true) &
           a.readAt.isNull(),
     );
 

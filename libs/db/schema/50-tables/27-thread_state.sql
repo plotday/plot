@@ -1,13 +1,21 @@
 -- Per-user, per-thread state. Replaces the legacy `thread_unread` table and
 -- absorbs the per-user fields that previously lived on `schedule` (`order`,
--- `action`, the per-user `at`/`on`). The schedule table now holds only shared
--- and link-attached schedules.
+-- per-user `at`/`on`). The schedule table now holds only shared and
+-- link-attached schedules.
 --
 -- Columns:
---   action_type — how the user (or the AI on their behalf) has categorized
---     this thread. `update` is the default; `respond`/`do`/`read` are set with
---     high confidence; `none` is never stored (rows are simply not created for
---     clearly passive material like receipts).
+--   active — the user is acting on (or about to act on) this thread now.
+--     Drives the Doing section of the unified feed and bypasses the
+--     "low importance" filter. Set with high confidence by the AI for
+--     direct asks; otherwise the user (or a connector like Gmail-star)
+--     sets it themselves.
+--   task — the thread is on the user's task list. Set by connectors that
+--     surface task-shaped state (Linear/Todoist assignment) so the user
+--     doesn't get flooded with their entire backlog under `active`.
+--     Independent of `active`: a task can also be active, or just a task.
+--   to_read — the thread is on the user's reading list. Set by the AI for
+--     long-form content (newsletters, long docs) or by the user manually.
+--     Independent of `active` and `task`.
 --   urgent — bypasses the per-priority `see_within` delay for push/email.
 --     Reserved for time-sensitive material where the user should be notified
 --     before the next scheduled response window.
@@ -16,8 +24,7 @@
 --     The AI scores promotional / unsolicited content < 50.
 --   read_at — NULL while the thread is unread; set when the user reads it.
 --   bumped_at — manual bump-to-top timestamp.
---   "order" — drag-to-reorder position within an action tab (previously on
---     schedule).
+--   "order" — drag-to-reorder position within the Doing / Scheduled sections.
 --   "on" / "at" — per-user "I'll handle this on this date / at this time"
 --     intent. Previously on schedule. The shared schedule table still owns
 --     event-shaped scheduling (calendar invites, link timing).
@@ -25,12 +32,14 @@ CREATE TABLE "public"."thread_state" (
     "updated_at" timestamptz NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
-    "action_type" text NOT NULL DEFAULT 'update' CHECK (action_type IN ('respond', 'do', 'read', 'update')),
+    "active" boolean NOT NULL DEFAULT FALSE,
+    "task" boolean NOT NULL DEFAULT FALSE,
+    "to_read" boolean NOT NULL DEFAULT FALSE,
     "urgent" boolean NOT NULL DEFAULT FALSE,
     "importance" smallint NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
     "read_at" timestamptz,          -- NULL = unread; set when user reads
     "bumped_at" timestamptz,        -- for manual bumps
-    "order" double precision,       -- drag-to-reorder within an action tab
+    "order" double precision,       -- drag-to-reorder within Doing / Scheduled
     "on" daterange,                 -- per-user "do on this date"
     "at" tstzrange,                 -- per-user "do at this time"
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
@@ -58,5 +67,7 @@ CREATE INDEX idx_thread_state_thread_id ON "public"."thread_state" ("thread_id")
 CREATE INDEX idx_thread_state_on ON "public"."thread_state" USING gist ("on") WHERE "on" IS NOT NULL;
 CREATE INDEX idx_thread_state_at ON "public"."thread_state" USING gist ("at") WHERE "at" IS NOT NULL;
 
--- For action-tab queries
-CREATE INDEX idx_thread_state_user_action ON "public"."thread_state" ("user_id", "action_type", "order");
+-- Partial indexes for the new section queries (Doing reorder, task / reading filters)
+CREATE INDEX idx_thread_state_active  ON "public"."thread_state" ("user_id", "order") WHERE active;
+CREATE INDEX idx_thread_state_task    ON "public"."thread_state" ("user_id")          WHERE task;
+CREATE INDEX idx_thread_state_to_read ON "public"."thread_state" ("user_id")          WHERE to_read;

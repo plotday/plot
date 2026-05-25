@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 338;
+  int get schemaVersion => 339;
 
   @override
   MigrationStrategy get migration {
@@ -3502,7 +3502,13 @@ class Store extends _$Store {
       // absorbed per-user schedule fields (action / order / on / at) onto the
       // per-user row. Add the new Thread columns; drop the legacy ones on
       // Thread + Schedule by rebuilding the tables from the current schema.
-      await _safeAddColumn(m, threads, threads.actionType);
+      // NOTE: `action_type` text column was added here in v336 and then
+      // dropped in v339 in favor of three independent booleans. Use a raw
+      // ALTER for the legacy column since Drift no longer knows about it.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE threads ADD COLUMN action_type TEXT',
+      );
       await _safeAddColumn(m, threads, threads.urgent);
       await _safeAddColumn(m, threads, threads.stateOrder);
       await _safeAddColumn(m, threads, threads.stateOn);
@@ -3567,6 +3573,33 @@ class Store extends _$Store {
       await _safeAddColumn(m, priorities, priorities.notifyWindowSet);
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
+      );
+    }
+    if (from < 339) {
+      // Unify the feed: replace `action_type` with three independent
+      // booleans (`active`, `task`, `to_read`). Backfill from the existing
+      // string column before dropping it, then reset the threads cursor so
+      // the next sync pulls the new server-side columns.
+      await _safeAddColumn(m, threads, threads.active);
+      await _safeAddColumn(m, threads, threads.task);
+      await _safeAddColumn(m, threads, threads.toRead);
+      // Backfill from the legacy action_type column. SQLite SET clauses
+      // here are independent — boolean stored as 0/1.
+      await _safeCustomStatement(
+        m,
+        "UPDATE threads SET active = 1 "
+        "WHERE action_type IN ('respond', 'do')",
+      );
+      await _safeCustomStatement(
+        m,
+        "UPDATE threads SET to_read = 1 WHERE action_type = 'read'",
+      );
+      // Drop the legacy column. alterTable rebuilds the table keeping only
+      // current Drift columns.
+      await m.alterTable(TableMigration(threads));
+      // Reset the threads cursor so we re-pull with the new view shape.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'threads'",
       );
     }
   }

@@ -54,8 +54,9 @@ BEGIN
     WHERE id = p_thread_id;
 
     -- For each newly-added contact linked to a user, create thread_state
-    -- so the thread appears as unread for them. The default action_type
-    -- ('update') and importance (50) come from the table defaults.
+    -- so the thread appears as unread for them. The default booleans
+    -- (active/task/to_read = FALSE) and importance (50) come from the
+    -- table defaults.
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
         FROM unnest(p_add_contact_ids) AS arr(contact_id)

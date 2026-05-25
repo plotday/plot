@@ -2143,7 +2143,7 @@ export type Database = {
       }
       thread_state: {
         Row: {
-          action_type: string
+          active: boolean
           at: unknown
           bumped_at: string | null
           importance: number
@@ -2151,13 +2151,15 @@ export type Database = {
           order: number | null
           read_at: string | null
           seq: unknown
+          task: boolean
           thread_id: string
+          to_read: boolean
           updated_at: string
           urgent: boolean
           user_id: string
         }
         Insert: {
-          action_type?: string
+          active?: boolean
           at?: unknown
           bumped_at?: string | null
           importance?: number
@@ -2165,13 +2167,15 @@ export type Database = {
           order?: number | null
           read_at?: string | null
           seq?: unknown
+          task?: boolean
           thread_id: string
+          to_read?: boolean
           updated_at?: string
           urgent?: boolean
           user_id: string
         }
         Update: {
-          action_type?: string
+          active?: boolean
           at?: unknown
           bumped_at?: string | null
           importance?: number
@@ -2179,7 +2183,9 @@ export type Database = {
           order?: number | null
           read_at?: string | null
           seq?: unknown
+          task?: boolean
           thread_id?: string
+          to_read?: boolean
           updated_at?: string
           urgent?: boolean
           user_id?: string
@@ -3895,13 +3901,15 @@ export type Database = {
       }
       twist_instance_thread_schedule: {
         Row: {
-          action_type: string | null
+          active: boolean | null
           at: unknown
           on: unknown
           priority_id: string | null
           read_at: string | null
           seq: unknown
+          task: boolean | null
           thread_id: string | null
+          to_read: boolean | null
           twist_instance_id: string | null
           updated_at: string | null
           user_id: string | null
@@ -4294,6 +4302,7 @@ export type Database = {
           avatar_url: string | null
           created_at: string | null
           email: string | null
+          external_accounts: Json | null
           id: string | null
           inviteable: boolean | null
           linked_user_id: string | null
@@ -4850,7 +4859,7 @@ export type Database = {
       }
       thread: {
         Row: {
-          action_type: string | null
+          active: boolean | null
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
@@ -4875,7 +4884,9 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
+          task: boolean | null
           title: string | null
+          to_read: boolean | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
@@ -4987,7 +4998,7 @@ export type Database = {
       }
       thread_redacted: {
         Row: {
-          action_type: string | null
+          active: boolean | null
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
@@ -5012,7 +5023,9 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
+          task: boolean | null
           title: string | null
+          to_read: boolean | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
@@ -5082,13 +5095,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5441,7 +5454,7 @@ export type Database = {
       }
       upsert_thread_state: {
         Args: {
-          p_action_type?: string
+          p_active?: boolean
           p_at?: unknown
           p_bumped_at?: string
           p_importance?: number
@@ -5449,13 +5462,17 @@ export type Database = {
           p_on?: unknown
           p_order?: number
           p_read_at?: string
-          p_set_action_type?: boolean
+          p_set_active?: boolean
           p_set_at?: boolean
           p_set_importance?: boolean
           p_set_on?: boolean
           p_set_order?: boolean
+          p_set_task?: boolean
+          p_set_to_read?: boolean
           p_set_urgent?: boolean
+          p_task?: boolean
           p_thread_id: string
+          p_to_read?: boolean
           p_urgent?: boolean
           user_id: string
         }
