@@ -100,11 +100,6 @@
       "types": "./dist/tools/smtp.d.ts",
       "default": "./dist/tools/smtp.js"
     },
-    "./tools/linkedin": {
-      "@plotday/connector": "./src/tools/linkedin.ts",
-      "types": "./dist/tools/linkedin.d.ts",
-      "default": "./dist/tools/linkedin.js"
-    },
     "./utils/types": {
       "@plotday/connector": "./src/utils/types.ts",
       "types": "./dist/utils/types.d.ts",
@@ -209,11 +204,6 @@
       "@plotday/connector": "./src/llm-docs/tools/smtp.ts",
       "types": "./dist/llm-docs/tools/smtp.d.ts",
       "default": "./dist/llm-docs/tools/smtp.js"
-    },
-    "./llm-docs/tools/linkedin": {
-      "@plotday/connector": "./src/llm-docs/tools/linkedin.ts",
-      "types": "./dist/llm-docs/tools/linkedin.d.ts",
-      "default": "./dist/llm-docs/tools/linkedin.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
