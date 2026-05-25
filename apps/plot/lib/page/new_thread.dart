@@ -66,6 +66,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Cached so callbacks triggered during deactivate() (e.g. NoteEditor
   // saving its draft) don't call context.read once ancestors are detached.
   PriorityBloc? _priorityBloc;
+  LocalPreferencesBloc? _localPrefs;
   bool _hasAppliedQueryParams = false;
 
   /// All available create-targets for this user, loaded once on mount and
@@ -83,6 +84,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _priorityBloc = context.read<PriorityBloc>();
+    _localPrefs = context.read<LocalPreferencesBloc>();
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     // We've arrived — clear the navigation-intent flag set by callers
@@ -163,9 +165,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// the ranked list. Returns an empty list if [targets] is empty.
   List<CreateTarget> _rankConnections(List<CreateTarget> targets) {
     if (targets.isEmpty) return const [];
-    final bloc = context.read<PriorityBloc>();
+    final bloc = _priorityBloc;
+    final prefs = _localPrefs;
+    if (bloc == null || prefs == null) return targets;
     final priorityId = bloc.state.draft.priority.id.toString();
-    final prefs = context.read<LocalPreferencesBloc>();
     final keys = targets.map((t) => t.key).toList();
     final ranked = prefs.rankConnectionsByMru(
       keys: keys,
@@ -493,6 +496,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final priority = bloc.state.draft.priority;
     final sorted =
         await Actor.getSortedShareCandidates(priority: priority);
+    if (!mounted) return const [];
+    // Re-read draft after the await — selections may have changed while the
+    // candidate fetch was in flight.
     final draft = bloc.state.draft;
     final selectedActorIds = draft.contacts.toSet();
     final selectedGroupIds = draft.groups.toSet();
@@ -542,9 +548,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         await bloc.updateDraft(draft.copyWith(contacts: Value(ids)));
       case GroupCandidate(:final group):
         final ids = [...draft.groups, group.id];
-        await bloc.updateDraft(
-          draft.copyWith(groups: Value(ids.isEmpty ? null : ids)),
-        );
+        await bloc.updateDraft(draft.copyWith(groups: Value(ids)));
       case InviteEmailCandidate(:final email):
         final emails = [...draft.inviteEmails, email];
         await bloc.updateDraft(
