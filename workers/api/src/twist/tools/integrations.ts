@@ -1,6 +1,7 @@
 import { type Kysely } from "kysely";
 
 import type { NoteWriteBackResult } from "@plotday/twister";
+import type { ResolvedRecipient } from "@plotday/twister/connector";
 import {
   type Actor,
   type ActorId,
@@ -2117,9 +2118,69 @@ export class Integrations extends Tool implements IAuth {
             email: string | null;
             name: string | null;
           }>;
+          recipients?: ResolvedRecipient[];
         };
       };
       if (!threadId || !draft) return [];
+
+      // For link types with targets === "contacts", pre-resolve the picked
+      // contacts to their platform account IDs so connectors don't need to
+      // do their own contact lookup in onCreateLink. Contacts without a
+      // matching contact_external_account row are silently dropped — the
+      // connector can detect the gap via contacts.length vs recipients.length.
+      //
+      // Resolution is skipped (recipients stays undefined) for channel-target
+      // link types and when no contacts were picked.
+      const provider = this.sourceProvider.provider;
+      if (provider && draft.contacts.length > 0) {
+        // Resolve the link type config for this draft's type. Check
+        // channel-level linkTypes first (from the DB row), then fall back to
+        // the connector-level declaration in sourceProvider.linkTypes.
+        let linkTypeConfig: LinkTypeConfig | undefined;
+        try {
+          const channelRow = await this.db
+            .selectFrom("channel")
+            .select("link_types")
+            .where("twist_instance_id", "=", this.twistInstanceId)
+            .where("channel_id", "=", draft.channelId)
+            .executeTakeFirst();
+          if (channelRow?.link_types) {
+            const parsed: unknown = typeof channelRow.link_types === "string"
+              ? JSON.parse(channelRow.link_types)
+              : channelRow.link_types;
+            if (Array.isArray(parsed)) {
+              linkTypeConfig = (parsed as LinkTypeConfig[]).find((lt) => lt.type === draft.type);
+            }
+          }
+        } catch {
+          // Non-fatal: fall through to sourceProvider fallback
+        }
+        if (!linkTypeConfig) {
+          const sourceLinkTypes = this.sourceProvider.linkTypes as LinkTypeConfig[] | undefined;
+          linkTypeConfig = sourceLinkTypes?.find((lt) => lt.type === draft.type);
+        }
+
+        if (linkTypeConfig?.targets === "contacts") {
+          const contactIds = draft.contacts.map((c) => c.id);
+          const rows = await this.db
+            .selectFrom("contact_external_account")
+            .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
+            .where("contact_external_account.provider", "=", provider)
+            .where("contact_external_account.contact_id", "in", contactIds)
+            .select([
+              "contact.id",
+              "contact.name",
+              "contact_external_account.account_id",
+            ])
+            .execute();
+          draft.recipients = rows.map((r) => ({
+            id: r.id as Uuid,
+            name: r.name ?? null,
+            externalAccountId: r.account_id,
+          }));
+        }
+      }
+
       // Pass the draft's channelId and type through forwardTo so
       // saveCreatedLink can default them on the returned link if the
       // connector omitted them. That way connectors don't have to remember
