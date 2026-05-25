@@ -876,8 +876,13 @@ export class Slack extends Connector<Slack> {
       channelId: draft.channelId,
       meta: {
         syncProvider: "slack",
+        // channelId is the actual DM conversation to post into.
         channelId: dmChannelId,
         threadTs: ts,
+        // tokenChannelId is an enabled workspace channel whose OAuth token
+        // grants workspace access. onNoteCreated uses this for getApi() since
+        // DM channel ids are not registered as "enabled" channels.
+        tokenChannelId: draft.channelId,
         syncableId: draft.channelId,
       },
     };
@@ -996,13 +1001,17 @@ export class Slack extends Connector<Slack> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string;
     const threadTs = meta.threadTs as string;
+    // For slack-dm threads, tokenChannelId is an enabled workspace channel
+    // whose OAuth token grants workspace access. Falls back to channelId for
+    // regular channel threads where the channel IS the enabled resource.
+    const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
 
     if (!channelId) {
       console.error("No channelId in meta for Slack reply");
       return;
     }
 
-    const api = await this.getApi(channelId);
+    const api = await this.getApi(tokenChannelId);
 
     const body = note.content ?? "";
     const result = await api.postMessage(channelId, body, threadTs);
@@ -1028,7 +1037,8 @@ export class Slack extends Connector<Slack> {
     if (!channelId) return;
     if (!note.key) return;
 
-    const api = await this.getApi(channelId);
+    const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
+    const api = await this.getApi(tokenChannelId);
     const body = note.content ?? "";
     const result = await api.updateMessage(channelId, note.key, body);
     const externalContent = formatSlackText(result.text ?? body);
