@@ -11,14 +11,6 @@ import {
 import { Twist } from "./twist";
 
 /**
- * Fields captured in Plot when a user initiates creation of a new external
- * item via a connector's `onCreateLink` hook.
- *
- * Thread-agnostic on purpose — connectors do not receive the Plot thread.
- * The platform attaches the returned `NewLinkWithNotes` to the originating
- * thread once `onCreateLink` resolves.
- */
-/**
  * Result returned from {@link Connector.onNoteCreated} and
  * {@link Connector.onNoteUpdated} to report what the external system now
  * has stored for the note.
@@ -87,6 +79,14 @@ export type ResolvedRecipient = {
   externalAccountId: string;
 };
 
+/**
+ * Fields captured in Plot when a user initiates creation of a new external
+ * item via a connector's `onCreateLink` hook.
+ *
+ * Thread-agnostic on purpose — connectors do not receive the Plot thread.
+ * The platform attaches the returned `NewLinkWithNotes` to the originating
+ * thread once `onCreateLink` resolves.
+ */
 export type CreateLinkDraft = {
   /** The channel (account + resource) the new item belongs to. */
   channelId: string;
@@ -103,6 +103,11 @@ export type CreateLinkDraft = {
    * creating user. Use these as recipients (email, chat DM members, etc.)
    * when the external item is a message or invite. An empty list means
    * the user did not add anyone to the thread.
+   *
+   * For `targets: "contacts"` link types, prefer `recipients` over
+   * re-resolving contacts yourself: the runtime pre-resolves each contact
+   * to its platform account ID (`externalAccountId`) and populates
+   * `recipients` before `onCreateLink` is called.
    */
   contacts: Actor[];
   /**
