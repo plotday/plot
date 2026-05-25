@@ -137,7 +137,7 @@ export class Attio extends Connector<Attio> {
       dealStatuses = nonArchived.map((stage, i) => ({
         status: stage.title,
         label: stage.title,
-        ...(i === firstActiveIndex ? { todo: true as const } : {}),
+        ...(i === firstActiveIndex ? { task: true as const } : {}),
         ...(isWonStage(stage.title)
           ? { tag: Tag.Done, done: true as const }
           : {}),

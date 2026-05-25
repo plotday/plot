@@ -54,7 +54,37 @@ type SyncState = {
   batchNumber: number;
   /** Event hrefs remaining to process (for batched multiget) */
   pendingHrefs?: string[];
+  /**
+   * Initial sync is two-pass:
+   *  - `quick` walks `start = now → end = now + 1y` so upcoming meetings
+   *    surface immediately.
+   *  - `full` walks `start = 2y ago → end = now + 1y` for the historical
+   *    backfill. The two passes share one sync lock; phase carries the
+   *    transition without releasing.
+   * Absent on incremental sync.
+   */
+  phase?: "quick" | "full";
+  /** Range used by the current pass (only set during initial sync). */
+  timeRangeStart?: string;
+  timeRangeEnd?: string;
 };
+
+/**
+ * Short stable hash of a string for use in note keys. Same content
+ * produces the same key (idempotent upsert on re-sync); edited content
+ * produces a different key (new note, prior versions preserved as
+ * history on the thread).
+ */
+async function hashContent(content: string): Promise<string> {
+  const data = new TextEncoder().encode(content);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  const bytes = new Uint8Array(buf);
+  let hex = "";
+  for (let i = 0; i < 8; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
 
 /**
  * Apple Calendar connector — syncs events from iCloud via CalDAV.
@@ -72,6 +102,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       logoMono: "https://api.iconify.design/simple-icons/apple.svg",
     },
   ];
+
+  // Lock TTL covering the worst-case full backfill. The framework releases
+  // the lock automatically after this window even if a worker crashes, so
+  // no stuck-sync recovery is needed.
+  private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
 
   build(build: ToolBuilder) {
     return {
@@ -156,13 +191,54 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
   /**
    * Called when a calendar channel is enabled for syncing.
+   *
+   * Three cases (see SyncContext docs):
+   *  - Initial enable: full backfill from scratch.
+   *  - Already-enabled history-min refresh: skips when stored window is
+   *    already at least as wide.
+   *  - Recovery (`context.recovering = true`): the user re-entered their
+   *    Apple ID / app-specific password after a credentials change. Drop
+   *    the persisted ctag, etag/uid maps, sync state, and any scheduled
+   *    poll so the next pass re-walks every event and picks up changes
+   *    that landed during the auth gap.
+   *
+   * Keep this method thin: it must return quickly so the HTTP response
+   * boundary doesn't hold the sync lock. All real init work (lock,
+   * starting ctag, first batch) is deferred to initChannel which runs
+   * inside a queued task.
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Store sync_history_min if provided and not already stored with an equal/earlier value
-    if (context?.syncHistoryMin) {
+    if (context?.recovering) {
+      // Wipe persisted cursors and per-event state so the next pass
+      // re-walks history. Each clear is idempotent. Release any TTL-stuck
+      // lock from the pre-recovery outage so initChannel can acquire fresh.
+      await this.clear(`ctag_${channel.id}`);
+      await this.clear(`etags_${channel.id}`);
+      await this.clear(`event_uids_${channel.id}`);
+      await this.clear(`sync_state_${channel.id}`);
+      await this.tools.store.releaseLock(`sync_${channel.id}`);
+
+      // Cancel any scheduled poll so the post-recovery sync starts cleanly
+      // (a stale poll firing concurrently would race against initChannel).
+      const pollTask = await this.get<string>(`poll_task_${channel.id}`);
+      if (pollTask) {
+        await this.cancelTask(pollTask);
+        await this.clear(`poll_task_${channel.id}`);
+      }
+
+      // Clear any `pending_occ:` / `seen_master:` markers left behind
+      // by the crashed pre-recovery sync. Stale markers from a half-done
+      // run can otherwise cause the next full-pass orphan flush to
+      // materialise empty Untitled threads (leftover `pending_occ`
+      // matching leftover `seen_master` whose link no longer exists).
+      await this.clearBuffers(channel.id);
+    } else if (context?.syncHistoryMin) {
+      // Store sync_history_min if provided and not already stored with an
+      // equal/earlier value. Skipped on recovery so the recovery pass
+      // re-walks even when the window hasn't widened.
       const key = `sync_history_min_${channel.id}`;
       const stored = await this.get<string>(key);
-      if (stored && new Date(stored) <= context.syncHistoryMin && !context?.recovering) {
+      if (stored && new Date(stored) <= context.syncHistoryMin) {
         return; // Already synced with equal or earlier history min
       }
       await this.set(key, context.syncHistoryMin.toISOString());
@@ -171,39 +247,98 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Queue all initialization work as a task so the HTTP response returns
-    // quickly. initChannel makes a CalDAV request for the starting ctag.
+    // quickly. initChannel acquires the sync lock, fetches the starting
+    // ctag, and queues the first batch.
     const initCallback = await this.callback(this.initChannel, channel.id);
     await this.runTask(initCallback);
   }
 
   /**
-   * Initializes a calendar channel: fetches the starting ctag and kicks off
-   * the initial sync batch. Runs as a task to keep onChannelEnabled fast.
+   * Initializes a calendar channel: acquires the sync lock, fetches the
+   * starting ctag, initializes sync state, and queues the first sync batch.
+   * Runs as a queued task so the lock acquisition doesn't straddle the
+   * HTTP-response boundary (where a dropped task could leave the lock held
+   * until the TTL expires) and so the first batch's CalDAV multiget runs
+   * in its own task.
    */
   async initChannel(channelId: string): Promise<void> {
-    // Store initial ctag for incremental sync
-    const client = this.getCalDAV();
-    const ctag = await client.getCalendarCtag(channelId);
-    if (ctag) await this.set(`ctag_${channelId}`, ctag);
-
-    // Start initial sync (2 years back)
-    const now = new Date();
-    const min = new Date(now.getFullYear() - 2, 0, 1);
-    const end = new Date(now.getFullYear() + 1, 11, 31);
-
-    await this.set(`sync_state_${channelId}`, {
-      calendarHref: channelId,
-      initialSync: true,
-      batchNumber: 1,
-    } as SyncState);
-
-    await this.syncBatch(
-      channelId,
-      true, // initialSync
-      1, // batchNumber
-      toCalDAVTimeString(min),
-      toCalDAVTimeString(end)
+    // Acquire sync lock. Self-expires after SYNC_LOCK_TTL_MS so a crashed
+    // worker can't wedge sync forever. Bails if another sync is in flight
+    // (e.g. an in-flight poll or a previous initChannel that hasn't drained).
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${channelId}`,
+      AppleCalendar.SYNC_LOCK_TTL_MS
     );
+    if (!acquired) {
+      // Another sync holds the lock (e.g. an in-flight init from a previous
+      // enable attempt that hasn't drained, or a stuck TTL'd run). Schedule
+      // a poll so the next interval can retry init — otherwise this channel
+      // would be stuck with no scheduled work until the user re-enables.
+      await this.schedulePoll(channelId);
+      return;
+    }
+
+    try {
+      // Store initial ctag for incremental sync
+      const client = this.getCalDAV();
+      const ctag = await client.getCalendarCtag(channelId);
+      if (ctag) await this.set(`ctag_${channelId}`, ctag);
+
+      // Two-pass initial sync:
+      //  - Quick pass: `start = now → end = now + 1y`. Front-loads upcoming
+      //    meetings so they appear in the activity feed immediately. Skips
+      //    long-running recurring masters whose first instance is in the past
+      //    (those land in the full pass).
+      //  - Full pass: `start = 2y ago → end = now + 1y`. Walks the historical
+      //    backfill. Saves are idempotent by `source`, so the overlap with
+      //    the quick window is harmless.
+      // The transition queues a fresh syncBatch with phase "full" without
+      // releasing the lock; the full pass's terminal batch fires the
+      // pending_occ orphan flush, channelSyncCompleted, and lock release.
+      const now = new Date();
+      const quickStart = toCalDAVTimeString(now);
+      const quickEnd = toCalDAVTimeString(
+        new Date(now.getFullYear() + 1, 11, 31)
+      );
+
+      await this.set(`sync_state_${channelId}`, {
+        calendarHref: channelId,
+        initialSync: true,
+        batchNumber: 1,
+        phase: "quick",
+        timeRangeStart: quickStart,
+        timeRangeEnd: quickEnd,
+      } as SyncState);
+
+      // Queue the first batch as a separate task instead of awaiting inline.
+      // This mirrors google-calendar's initCalendar pattern: the init task
+      // returns immediately after setup, freeing the runtime to schedule
+      // syncBatch (which does the heavy CalDAV multiget) on its own.
+      const syncCallback = await this.callback(
+        this.syncBatch,
+        channelId,
+        true, // initialSync
+        1, // batchNumber
+        quickStart,
+        quickEnd
+      );
+      await this.runTask(syncCallback);
+    } catch (error) {
+      // CalDAV throws here (bad credentials, network outage) would otherwise
+      // leave the just-acquired lock held for the full 2-hour TTL. Release
+      // it and schedule a poll so the next interval can retry init.
+      try {
+        await this.tools.store.releaseLock(`sync_${channelId}`);
+        await this.clear(`sync_state_${channelId}`);
+      } catch (cleanupError) {
+        console.error(
+          "Cleanup after initChannel failure also failed:",
+          cleanupError
+        );
+      }
+      await this.schedulePoll(channelId);
+      throw error;
+    }
   }
 
   /**
@@ -222,12 +357,36 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`ctag_${channel.id}`);
     await this.clear(`etags_${channel.id}`);
+    await this.clear(`event_uids_${channel.id}`);
 
-    // Clear pending occurrences
+    // Release the framework-managed sync lock so a re-enable can acquire
+    // cleanly without waiting for the TTL.
+    await this.tools.store.releaseLock(`sync_${channel.id}`);
+
+    // Clear pending occurrences AND seen-master markers for this
+    // calendar only. Keys are scoped per calendar (calendar href as
+    // prefix) so disabling one calendar doesn't wipe buffers for
+    // siblings on the same account that are still enabled.
+    await this.clearBuffers(channel.id);
+  }
+
+  /**
+   * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
+   * Used on recovery, disable, and sync-error paths so stale buffers from
+   * a crashed run can't combine with leftover seen-master markers to
+   * materialise empty Untitled threads on the next initial sync.
+   */
+  private async clearBuffers(channelHref: string): Promise<void> {
     const pendingKeys = await this.tools.store.list(
-      "pending_occ:apple-calendar:"
+      `pending_occ:${channelHref}:`
     );
     for (const key of pendingKeys) {
+      await this.clear(key);
+    }
+    const seenMasterKeys = await this.tools.store.list(
+      `seen_master:${channelHref}:`
+    );
+    for (const key of seenMasterKeys) {
       await this.clear(key);
     }
   }
@@ -244,49 +403,114 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     timeRangeStart?: string,
     timeRangeEnd?: string
   ): Promise<void> {
-    const client = this.getCalDAV();
+    try {
+      const client = this.getCalDAV();
 
-    if (batchNumber === 1 && timeRangeStart && timeRangeEnd) {
-      // First batch: fetch all events in the time range
-      const events = await client.fetchEvents(calendarHref, {
-        start: timeRangeStart,
-        end: timeRangeEnd,
-      });
+      if (batchNumber === 1 && timeRangeStart && timeRangeEnd) {
+        // First batch: fetch all events in the time range. Preserve `phase`
+        // from any pre-seeded state (initChannel writes phase=quick before
+        // queuing this callback; the quick→full transition writes phase=full
+        // before queuing again).
+        const seeded = await this.get<SyncState>(`sync_state_${calendarHref}`);
+        const phase = seeded?.phase;
+        const events = await client.fetchEvents(calendarHref, {
+          start: timeRangeStart,
+          end: timeRangeEnd,
+        });
 
-      // Store etags for incremental sync
-      const etagMap: Record<string, string> = {};
-      for (const event of events) {
-        etagMap[event.href] = event.etag;
+        // Process events in batches. processCalDAVEvents persists the
+        // href→uid AND href→etag maps together at end-of-batch so the two
+        // stay consistent across worker crashes — see the comment on
+        // processCalDAVEvents for why we deliberately don't pre-write
+        // etags before processing.
+        await this.processCalDAVEvents(
+          events.slice(0, 50),
+          calendarHref,
+          initialSync
+        );
+
+        if (events.length > 50) {
+          // Store remaining hrefs for next batches
+          const remainingHrefs = events.slice(50).map((e) => e.href);
+          await this.set(`sync_state_${calendarHref}`, {
+            calendarHref,
+            initialSync,
+            batchNumber: batchNumber + 1,
+            pendingHrefs: remainingHrefs,
+            phase,
+            timeRangeStart,
+            timeRangeEnd,
+          } as SyncState);
+
+          const nextBatch = await this.callback(
+            this.syncBatchContinue,
+            calendarHref,
+            initialSync,
+            batchNumber + 1
+          );
+          await this.runTask(nextBatch);
+        } else {
+          await this.finishSync(calendarHref, initialSync, phase);
+        }
       }
-      await this.set(`etags_${calendarHref}`, etagMap);
-
-      // Process events in batches
-      await this.processCalDAVEvents(
-        events.slice(0, 50),
-        calendarHref,
-        initialSync
+    } catch (error) {
+      console.error(
+        `Apple Calendar sync failed for ${calendarHref} in batch ${batchNumber}:`,
+        error
       );
 
-      if (events.length > 50) {
-        // Store remaining hrefs for next batches
-        const remainingHrefs = events.slice(50).map((e) => e.href);
-        await this.set(`sync_state_${calendarHref}`, {
-          calendarHref,
-          initialSync,
-          batchNumber: batchNumber + 1,
-          pendingHrefs: remainingHrefs,
-        } as SyncState);
-
-        const nextBatch = await this.callback(
-          this.syncBatchContinue,
-          calendarHref,
-          initialSync,
-          batchNumber + 1
+      // Release lock and clear state so future syncs aren't permanently
+      // blocked. Wrap in its own try/catch so a release/clear failure
+      // doesn't mask the original error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`sync_state_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
         );
-        await this.runTask(nextBatch);
-      } else {
-        await this.finishSync(calendarHref, initialSync);
       }
+
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this initial-sync run. Otherwise the next initial sync would
+      // inherit them and the full-pass orphan flush could materialise
+      // empty Untitled threads from leftover-but-now-stale buffers.
+      // Incremental sync doesn't buffer, but the clear is idempotent.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws. Without an explicit signal here, the indicator stays on
+      // indefinitely after a mid-sync crash until the user disables and
+      // re-enables. Inner try/catch so a signal failure doesn't mask
+      // the original error.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarHref);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
+      }
+
+      // Schedule a poll so polling resumes — otherwise a failure here
+      // strands the channel (startIncrementalSync's lock-fail bail
+      // intentionally relies on the active holder, which is us, to
+      // reschedule).
+      await this.schedulePoll(calendarHref);
+
+      // Re-throw to let the runtime handle it (PostHog capture, etc.).
+      throw error;
     }
   }
 
@@ -298,52 +522,222 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     initialSync: boolean,
     batchNumber: number
   ): Promise<void> {
-    const state = await this.get<SyncState>(`sync_state_${calendarHref}`);
-    if (!state?.pendingHrefs?.length) {
-      await this.finishSync(calendarHref, initialSync);
-      return;
-    }
+    try {
+      const state = await this.get<SyncState>(`sync_state_${calendarHref}`);
+      if (!state?.pendingHrefs?.length) {
+        await this.finishSync(calendarHref, initialSync, state?.phase);
+        return;
+      }
 
-    const client = this.getCalDAV();
-    const batch = state.pendingHrefs.slice(0, 50);
-    const remaining = state.pendingHrefs.slice(50);
+      const client = this.getCalDAV();
+      const batch = state.pendingHrefs.slice(0, 50);
+      const remaining = state.pendingHrefs.slice(50);
 
-    const events = await client.fetchEventsByHref(calendarHref, batch);
-    await this.processCalDAVEvents(events, calendarHref, initialSync);
+      const events = await client.fetchEventsByHref(calendarHref, batch);
+      await this.processCalDAVEvents(events, calendarHref, initialSync);
 
-    if (remaining.length > 0) {
-      await this.set(`sync_state_${calendarHref}`, {
-        calendarHref,
-        initialSync,
-        batchNumber: batchNumber + 1,
-        pendingHrefs: remaining,
-      } as SyncState);
+      if (remaining.length > 0) {
+        await this.set(`sync_state_${calendarHref}`, {
+          calendarHref,
+          initialSync,
+          batchNumber: batchNumber + 1,
+          pendingHrefs: remaining,
+          phase: state.phase,
+          timeRangeStart: state.timeRangeStart,
+          timeRangeEnd: state.timeRangeEnd,
+        } as SyncState);
 
-      const nextBatch = await this.callback(
-        this.syncBatchContinue,
-        calendarHref,
-        initialSync,
-        batchNumber + 1
+        const nextBatch = await this.callback(
+          this.syncBatchContinue,
+          calendarHref,
+          initialSync,
+          batchNumber + 1
+        );
+        await this.runTask(nextBatch);
+      } else {
+        await this.finishSync(calendarHref, initialSync, state.phase);
+      }
+    } catch (error) {
+      console.error(
+        `Apple Calendar sync continue failed for ${calendarHref} in batch ${batchNumber}:`,
+        error
       );
-      await this.runTask(nextBatch);
-    } else {
-      await this.finishSync(calendarHref, initialSync);
+
+      // Release lock and clear state so future syncs aren't permanently
+      // blocked. Wrap cleanup so a release/clear failure doesn't mask the
+      // original error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+        await this.clear(`sync_state_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this initial-sync run — see syncBatch's catch for why.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws — see syncBatch's catch for the full rationale.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarHref);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
+      }
+
+      // Schedule a poll so polling resumes — startIncrementalSync's
+      // lock-fail bail relies on the active holder (us) to reschedule.
+      await this.schedulePoll(calendarHref);
+
+      throw error;
     }
   }
 
   /**
    * Clean up after sync completes and schedule polling.
+   *
+   * On initial sync, this is invoked twice — once for the quick pass and
+   * once for the full pass. The quick→full transition queues a fresh
+   * syncBatch with `phase = "full"` and returns WITHOUT releasing the
+   * lock or signalling completion. The full-pass terminal call performs
+   * the orphan flush, ctag bump, channelSyncCompleted, and lock release.
    */
   private async finishSync(
     calendarHref: string,
-    initialSync: boolean
+    initialSync: boolean,
+    phase?: "quick" | "full"
   ): Promise<void> {
-    if (initialSync) {
-      // Discard buffered occurrences whose masters never appeared
-      const pendingKeys = await this.tools.store.list(
-        "pending_occ:apple-calendar:"
+    // Quick pass done: transition to full pass without releasing the lock
+    // or clearing pending_occ buffers. The full pass walks the historical
+    // range and any exception instances the quick pass buffered are
+    // carried across; orphans (master never appeared in either pass) are
+    // cleared by the orphan-flush block on the full-pass terminal below.
+    if (initialSync && phase === "quick") {
+      const now = new Date();
+      const fullStart = toCalDAVTimeString(
+        new Date(now.getFullYear() - 2, 0, 1)
       );
+      const fullEnd = toCalDAVTimeString(
+        new Date(now.getFullYear() + 1, 11, 31)
+      );
+
+      await this.set(`sync_state_${calendarHref}`, {
+        calendarHref,
+        initialSync: true,
+        batchNumber: 1,
+        phase: "full",
+        timeRangeStart: fullStart,
+        timeRangeEnd: fullEnd,
+      } as SyncState);
+
+      const fullCallback = await this.callback(
+        this.syncBatch,
+        calendarHref,
+        true,
+        1,
+        fullStart,
+        fullEnd
+      );
+      await this.runTask(fullCallback);
+      return;
+    }
+
+    // Full-pass terminal (or `phase` absent, e.g. older deployed callbacks):
+    // flush leftover pending_occ buffers as standalone occurrence-only
+    // links — but ONLY when their master was actually processed during
+    // this initial sync (and is therefore in the DB by now).
+    // `seen_master:<canonical>` markers, written per batch in
+    // processCalDAVEvents, distinguish legitimate cross-batch leftovers
+    // (master-in-batch-A, instance-in-batch-B → flushed; saveLinks
+    // upserts onto the existing master link) from orphans whose master
+    // never came through (master deleted upstream → flushing would
+    // create a useless empty Untitled thread, so drop silently).
+    if (initialSync) {
+      // Scope lookups to this calendar so concurrent syncs of other
+      // calendars in the same account aren't affected.
+      const seenMasterPrefix = `seen_master:${calendarHref}:`;
+      const pendingPrefix = `pending_occ:${calendarHref}:`;
+      const seenMasterKeys = await this.tools.store.list(seenMasterPrefix);
+      const seenMasters = new Set(
+        seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
+      );
+      const pendingKeys = await this.tools.store.list(pendingPrefix);
+      const flushLinks: NewLinkWithNotes[] = [];
+      let droppedOrphans = 0;
       for (const key of pendingKeys) {
+        const pending = await this.get<NewScheduleOccurrence>(key);
+        if (!pending) {
+          await this.clear(key);
+          continue;
+        }
+        const occurrenceDate =
+          pending.occurrence instanceof Date
+            ? pending.occurrence
+            : new Date(pending.occurrence as unknown as string);
+        const suffix = `:${occurrenceDate.toISOString()}`;
+        if (!key.startsWith(pendingPrefix) || !key.endsWith(suffix)) {
+          // Malformed key — drop it.
+          await this.clear(key);
+          continue;
+        }
+        const canonical = key.slice(
+          pendingPrefix.length,
+          key.length - suffix.length
+        );
+        if (!seenMasters.has(canonical)) {
+          droppedOrphans += 1;
+          await this.clear(key);
+          continue;
+        }
+        flushLinks.push({
+          type: "event",
+          title: undefined,
+          source: canonical,
+          sources: canonical.startsWith("apple-calendar:")
+            ? buildEventSources(canonical.slice("apple-calendar:".length))
+            : undefined,
+          channelId: calendarHref,
+          meta: {
+            uid: canonical.startsWith("apple-calendar:")
+              ? canonical.slice("apple-calendar:".length)
+              : null,
+            syncProvider: "apple",
+            syncableId: calendarHref,
+          },
+          scheduleOccurrences: [pending],
+          notes: [],
+        });
+        await this.clear(key);
+      }
+      if (flushLinks.length > 0 || droppedOrphans > 0) {
+        console.log(
+          `[AppleCalendar] full-pass flush: calendar=${calendarHref} ` +
+            `flushedLinks=${flushLinks.length} ` +
+            `droppedOrphans=${droppedOrphans}`
+        );
+      }
+      if (flushLinks.length > 0) {
+        await this.tools.integrations.saveLinks(flushLinks);
+      }
+
+      // Clear master markers for the next initial sync.
+      for (const key of seenMasterKeys) {
         await this.clear(key);
       }
     }
@@ -354,6 +748,17 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
 
     await this.clear(`sync_state_${calendarHref}`);
+
+    // Initial sync is fully complete — clear the "syncing…" indicator on
+    // the connection. Gated on initialSync so incremental polls don't
+    // re-fire the signal.
+    if (initialSync) {
+      await this.tools.integrations.channelSyncCompleted(calendarHref);
+    }
+
+    // Release the framework-managed sync lock so the next poll (or a
+    // manual re-trigger) can acquire it.
+    await this.tools.store.releaseLock(`sync_${calendarHref}`);
 
     // Schedule next poll in 15 minutes
     await this.schedulePoll(calendarHref);
@@ -405,87 +810,280 @@ export class AppleCalendar extends Connector<AppleCalendar> {
    * Incremental sync: compare etags to find changed/new/deleted events.
    */
   private async startIncrementalSync(calendarHref: string): Promise<void> {
-    const client = this.getCalDAV();
+    // Acquire sync lock to prevent the 15-min poll from racing an
+    // in-progress initial sync, or two polls overlapping if a previous
+    // run is still draining batches.
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${calendarHref}`,
+      AppleCalendar.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
+      // Another sync is in flight. Don't reschedule a poll either — the
+      // running sync's finishSync will schedule the next one.
+      return;
+    }
 
-    // Get current etags
-    const currentEtags = await client.getEventEtags(calendarHref);
-    const storedEtags =
-      (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+    try {
+      const client = this.getCalDAV();
 
-    // Find new/changed events
-    const changedHrefs: string[] = [];
-    const newEtagMap: Record<string, string> = {};
+      // Get current etags
+      const currentEtags = await client.getEventEtags(calendarHref);
+      const storedEtags =
+        (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+      const storedUids =
+        (await this.get<Record<string, string>>(
+          `event_uids_${calendarHref}`
+        )) || {};
 
-    for (const [href, etag] of currentEtags) {
-      newEtagMap[href] = etag;
-      if (!storedEtags[href] || storedEtags[href] !== etag) {
-        changedHrefs.push(href);
+      // Find new/changed events
+      const changedHrefs: string[] = [];
+      const newEtagMap: Record<string, string> = {};
+
+      for (const [href, etag] of currentEtags) {
+        newEtagMap[href] = etag;
+        if (!storedEtags[href] || storedEtags[href] !== etag) {
+          changedHrefs.push(href);
+        }
       }
-    }
 
-    // Find deleted events
-    const deletedHrefs: string[] = [];
-    for (const href of Object.keys(storedEtags)) {
-      if (!currentEtags.has(href)) {
-        deletedHrefs.push(href);
+      // Find deleted events (present in stored, absent from current)
+      const deletedHrefs: string[] = [];
+      for (const href of Object.keys(storedEtags)) {
+        if (!currentEtags.has(href)) {
+          deletedHrefs.push(href);
+        }
       }
+
+      // Archive deleted events selectively, per-uid. Previously this code
+      // called archiveLinks with only the channel-level meta — a
+      // containment filter that matches every Apple event on the channel.
+      // One deleted event would wipe the whole calendar. The href→uid map
+      // built in processEvent/processEventInstance lets us resolve each
+      // deleted href back to its uid and archive precisely.
+      //
+      // Hrefs missing from the uid map are skipped (logged): they were
+      // synced before this map existed, will be rebuilt on the next batch
+      // that touches them, but on this one run we can't safely archive by
+      // channel without the data-loss risk above.
+      let archivedCount = 0;
+      let missingUidCount = 0;
+      // Per-uid archive is serial — fine for typical incremental drift
+      // (≤handful of deletes per poll), but a bulk delete (user clearing
+      // a multi-year backfill) could approach the ~1000-request runtime
+      // limit.
+      //
+      // TODO: extend `integrations.archiveLinks` to accept a `uids[]`
+      // filter (or chunk this loop into batched callbacks via runTask)
+      // before this becomes a real-world cap. Deferred for now —
+      // typical deletion volume is well below the budget.
+      for (const href of deletedHrefs) {
+        const uid = storedUids[href];
+        if (!uid) {
+          missingUidCount += 1;
+          continue;
+        }
+        await this.tools.integrations.archiveLinks({
+          channelId: calendarHref,
+          meta: { syncProvider: "apple", syncableId: calendarHref, uid },
+        });
+        archivedCount += 1;
+      }
+      if (deletedHrefs.length > 0) {
+        console.log(
+          `[AppleCalendar] incremental sync: calendar=${calendarHref} ` +
+            `deleted=${deletedHrefs.length} archived=${archivedCount} ` +
+            `missingUid=${missingUidCount}`
+        );
+      }
+
+      // Fetch and process changed events. processCalDAVEvents updates
+      // event_uids_<calendarHref> from each event's uid so future
+      // incremental syncs can archive them precisely.
+      if (changedHrefs.length > 0) {
+        const events = await client.fetchEventsByHref(
+          calendarHref,
+          changedHrefs
+        );
+        await this.processCalDAVEvents(events, calendarHref, false);
+      }
+
+      // Prune the uid map: drop entries whose href is no longer present in
+      // the current etag set. Keeps the map bounded as events are deleted.
+      const newUidMap: Record<string, string> = {};
+      for (const href of Object.keys(newEtagMap)) {
+        const uid = storedUids[href];
+        if (uid) newUidMap[href] = uid;
+      }
+      await this.set(`event_uids_${calendarHref}`, newUidMap);
+
+      // Update stored etags and ctag
+      await this.set(`etags_${calendarHref}`, newEtagMap);
+      const ctag = await client.getCalendarCtag(calendarHref);
+      if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
+
+      // Release lock before scheduling the next poll so the poll can
+      // re-acquire cleanly.
+      await this.tools.store.releaseLock(`sync_${calendarHref}`);
+
+      // Schedule next poll
+      await this.schedulePoll(calendarHref);
+    } catch (error) {
+      console.error(
+        `Apple Calendar incremental sync failed for ${calendarHref}:`,
+        error
+      );
+
+      // Release lock so future syncs aren't permanently blocked. Wrap in
+      // its own try/catch so a release failure doesn't mask the real
+      // error — the lock's TTL is the safety net.
+      try {
+        await this.tools.store.releaseLock(`sync_${calendarHref}`);
+      } catch (cleanupError) {
+        console.error(
+          `Apple Calendar incremental sync cleanup after failure also failed for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Incremental sync doesn't buffer to `pending_occ:`, but the next
+      // initial sync (after a fresh enable) might inherit any markers
+      // sitting in storage. The clear is idempotent so it's safe to run
+      // here even on the incremental error path.
+      try {
+        await this.clearBuffers(calendarHref);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after incremental sync error for ${calendarHref}:`,
+          cleanupError
+        );
+      }
+
+      // Reschedule a poll so we recover on the next interval.
+      await this.schedulePoll(calendarHref);
+
+      throw error;
     }
-
-    // Archive deleted events
-    if (deletedHrefs.length > 0) {
-      // We need to find the UIDs for deleted events from stored state
-      // Since we don't store href→UID mapping, archive by channel
-      await this.tools.integrations.archiveLinks({
-        channelId: calendarHref,
-        meta: { syncProvider: "apple", syncableId: calendarHref },
-      });
-    }
-
-    // Fetch and process changed events
-    if (changedHrefs.length > 0) {
-      const events = await client.fetchEventsByHref(calendarHref, changedHrefs);
-      await this.processCalDAVEvents(events, calendarHref, false);
-    }
-
-    // Update stored etags and ctag
-    await this.set(`etags_${calendarHref}`, newEtagMap);
-    const ctag = await client.getCalendarCtag(calendarHref);
-    if (ctag) await this.set(`ctag_${calendarHref}`, ctag);
-
-    // Schedule next poll
-    await this.schedulePoll(calendarHref);
   }
 
   // ---- Event Processing ----
 
   /**
    * Process CalDAV events (parse ICS and save as links).
+   *
+   * Also maintains the `event_uids_<calendarHref>` and `etags_<calendarHref>`
+   * maps keyed by event href so future incremental syncs can archive deleted
+   * events selectively by uid (see startIncrementalSync). Both maps are
+   * updated together at end-of-batch as one logical commit per batch — if a
+   * worker crashes mid-batch and never reaches this point, neither map is
+   * advanced, keeping stored etags and stored uids consistent. Writing etags
+   * before this method ran would have stranded hrefs in the etag set with no
+   * uid mapping, so a future deletion would silently drop (logged as
+   * missingUid).
+   *
+   * Recurrence-only entries (RECURRENCE-ID overrides) share the same uid
+   * as their master, so the master entry already covers them — we record
+   * uid once per href.
    */
   private async processCalDAVEvents(
     events: CalDAVEvent[],
     calendarHref: string,
     initialSync: boolean
   ): Promise<void> {
+    // Load persisted href→uid and href→etag maps once, merge new entries
+    // from this batch in memory, and write back together at the end. Avoids
+    // one read+write per event and ensures both maps advance atomically per
+    // batch.
+    const uidMap =
+      (await this.get<Record<string, string>>(
+        `event_uids_${calendarHref}`
+      )) || {};
+    const etagMap =
+      (await this.get<Record<string, string>>(`etags_${calendarHref}`)) || {};
+    let uidMapDirty = false;
+    let etagMapDirty = false;
+
+    // Coalesce everything keyed by canonical source so a master + any number
+    // of its exception instances (and multiple exceptions of the same series
+    // landing in the same batch) collapse into a single NewLinkWithNotes. The
+    // final saveLinks call makes one RPC for the entire batch. Heavy
+    // recurring meetings (master + many exception VEVENTs in one ICS file)
+    // used to fire N+1 saveLink calls; now they fire one.
+    const linksBySource = new Map<string, NewLinkWithNotes>();
+    type LinkWithSource = NewLinkWithNotes & { source: string };
+    const addLink = (link: LinkWithSource) => {
+      const existing = linksBySource.get(link.source) as
+        | LinkWithSource
+        | undefined;
+      if (!existing) {
+        linksBySource.set(link.source, link);
+        return;
+      }
+      // Merge occurrences and notes. Prefer the fuller entry (master)
+      // when only one side carries the series-level fields (schedules,
+      // title, ...).
+      existing.scheduleOccurrences = [
+        ...(existing.scheduleOccurrences || []),
+        ...(link.scheduleOccurrences || []),
+      ];
+      if (link.notes?.length) {
+        existing.notes = [...(existing.notes || []), ...link.notes];
+      }
+      if (link.schedules && !existing.schedules) {
+        existing.schedules = link.schedules;
+        existing.title = link.title ?? existing.title;
+        existing.type = link.type ?? existing.type;
+        existing.status = link.status ?? existing.status;
+        existing.actions = link.actions ?? existing.actions;
+        existing.sourceUrl = link.sourceUrl ?? existing.sourceUrl;
+        existing.preview = link.preview ?? existing.preview;
+        existing.access = link.access ?? existing.access;
+        existing.accessContacts =
+          link.accessContacts ?? existing.accessContacts;
+        existing.author = link.author ?? existing.author;
+        existing.created = link.created ?? existing.created;
+        existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
+        if (link.unread !== undefined) existing.unread = link.unread;
+        if (link.archived !== undefined) existing.archived = link.archived;
+      }
+    };
+
     for (const caldavEvent of events) {
       try {
         const icsEvents = parseICSEvents(caldavEvent.icsData);
 
         for (const icsEvent of icsEvents) {
-          if (icsEvent.recurrenceId) {
-            await this.processEventInstance(
-              icsEvent,
-              calendarHref,
-              initialSync,
-              caldavEvent.href
-            );
-          } else {
-            await this.processEvent(
-              icsEvent,
-              calendarHref,
-              initialSync,
-              caldavEvent.href
-            );
+          // Record href→uid mapping. Apple ICS UID is stable per event
+          // (RECURRENCE-ID overrides share the master's uid) so writing
+          // it once per href is sufficient.
+          if (icsEvent.uid && uidMap[caldavEvent.href] !== icsEvent.uid) {
+            uidMap[caldavEvent.href] = icsEvent.uid;
+            uidMapDirty = true;
           }
+
+          if (icsEvent.recurrenceId) {
+            const instanceLink = await this.prepareEventInstance(
+              icsEvent,
+              calendarHref,
+              initialSync
+            );
+            if (instanceLink) addLink(instanceLink as LinkWithSource);
+          } else {
+            const masterLink = await this.prepareEvent(
+              icsEvent,
+              calendarHref,
+              initialSync,
+              caldavEvent.href
+            );
+            if (masterLink) addLink(masterLink as LinkWithSource);
+          }
+        }
+
+        // Record etag only after the per-event work succeeds so a parse
+        // failure can't leave an etag without a uid (which would later
+        // surface as a `missingUid` skip on deletion).
+        if (etagMap[caldavEvent.href] !== caldavEvent.etag) {
+          etagMap[caldavEvent.href] = caldavEvent.etag;
+          etagMapDirty = true;
         }
       } catch (error) {
         console.error(
@@ -494,27 +1092,95 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         );
       }
     }
+
+    // Drain pending_occ buffers for any masters present in this batch.
+    // Done here (after the events loop) instead of inline at master-
+    // processing time so the merge is order-independent within a batch:
+    // instances arriving before the master are caught (the original
+    // case), and instances arriving after the master are caught too
+    // (the case inline draining would miss, silently losing
+    // cancellations whose master happened to come first in the
+    // CalDAV response).
+    let drainedTotal = 0;
+    for (const [source, link] of linksBySource.entries()) {
+      // Keys are scoped per calendar so concurrent syncs of other
+      // calendars in the same account aren't affected.
+      const pendingPrefix = `pending_occ:${calendarHref}:${source}:`;
+      const pendingKeys = await this.tools.store.list(pendingPrefix);
+      if (pendingKeys.length === 0) continue;
+      const merged: NewScheduleOccurrence[] = [
+        ...(link.scheduleOccurrences || []),
+      ];
+      for (const key of pendingKeys) {
+        const pending = await this.get<NewScheduleOccurrence>(key);
+        if (pending) {
+          merged.push(pending);
+          drainedTotal += 1;
+        }
+        await this.clear(key);
+      }
+      link.scheduleOccurrences = merged;
+    }
+    if (initialSync && drainedTotal > 0) {
+      console.log(
+        `[AppleCalendar] drain: calendar=${calendarHref} ` +
+          `masters=${linksBySource.size} drained=${drainedTotal}`
+      );
+    }
+
+    // Record every master/regular event saved this batch so the full-pass
+    // terminal cleanup in finishSync can distinguish legitimate cross-
+    // batch leftovers (master-in-batch-A, instance-in-batch-B → flush is
+    // correct, upserts onto the existing master link) from orphans whose
+    // master never came through (master deleted upstream → flushing
+    // would create a useless empty Untitled thread, so drop silently).
+    //
+    // Scoped with the calendar href so multi-calendar accounts don't
+    // share the seen-master set — without scoping, Calendar A's orphan
+    // flush would treat B's buffered occurrences as flushable.
+    if (initialSync) {
+      for (const source of linksBySource.keys()) {
+        await this.set(`seen_master:${calendarHref}:${source}`, true);
+      }
+    }
+
+    // Single batched save for the whole batch. Collapses what used to be
+    // one saveLink RPC per event (and one per exception instance on heavy
+    // recurring meetings) into a single cross-runtime call.
+    const batch = Array.from(linksBySource.values());
+    if (batch.length > 0) {
+      await this.tools.integrations.saveLinks(batch);
+    }
+
+    if (uidMapDirty) {
+      await this.set(`event_uids_${calendarHref}`, uidMap);
+    }
+    if (etagMapDirty) {
+      await this.set(`etags_${calendarHref}`, etagMap);
+    }
   }
 
   /**
-   * Process a single ICS event (master or standalone) into a Plot link.
+   * Transform a master/standalone ICS event into a {@link NewLinkWithNotes}
+   * for the caller's batched saveLinks. Returns null when the event should
+   * be skipped (e.g. already-cancelled events during initial sync). Never
+   * saves directly.
    */
-  private async processEvent(
+  private async prepareEvent(
     icsEvent: ICSEvent,
     calendarHref: string,
     initialSync: boolean,
     eventHref?: string
-  ): Promise<void> {
+  ): Promise<NewLinkWithNotes | null> {
     const source = `apple-calendar:${icsEvent.uid}`;
     const isCancelled = icsEvent.status === "CANCELLED";
 
     // On initial sync, skip cancelled events
-    if (initialSync && isCancelled) return;
+    if (initialSync && isCancelled) return null;
 
     // Parse start/end
     const start = parseICSDateTime(icsEvent.dtstart);
     const end = icsEvent.dtend ? parseICSDateTime(icsEvent.dtend) : null;
-    const isAllDay = typeof start === "string";
 
     // Author from organizer
     const authorContact: NewContact | undefined = icsEvent.organizer
@@ -532,12 +1198,16 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           ? `${icsEvent.organizer.name} cancelled this event.`
           : "This event was cancelled.",
         contentType: "text" as const,
+        // Apple ICS LAST-MODIFIED on a CANCELLED VEVENT is when the event
+        // was cancelled (per RFC 5545); it doesn't drift on later edits
+        // because cancelled events aren't edited further. Safe to use as
+        // the note `created`.
         created: icsEvent.lastModified
           ? parseICSDateTimeToDate(icsEvent.lastModified)
           : new Date(),
       };
 
-      const link: NewLinkWithNotes = {
+      return {
         source,
         sources: buildEventSources(icsEvent.uid),
         type: "event",
@@ -561,9 +1231,6 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         ...(initialSync ? { unread: false } : {}),
         ...(initialSync ? { archived: false } : {}),
       };
-
-      await this.tools.integrations.saveLink(link);
-      return;
     }
 
     // Build schedule
@@ -642,7 +1309,15 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       });
     }
 
-    // Build description note
+    // Build description note. The key embeds a hash of the description
+    // content so each distinct version produces a separate note:
+    // re-syncing the same description is an idempotent no-op upsert
+    // (same key + same content), while an edited description gets a new
+    // key and a fresh note — preserving prior versions as history on
+    // the thread. Apple ICS CREATED is per-spec stable across edits
+    // (set once when the event is first created), so we can use it
+    // directly as the note `created` without a firstSeenAt anchor
+    // (unlike Outlook's lastModifiedDateTime, which drifts on any edit).
     const hasDescription =
       icsEvent.description && icsEvent.description.trim().length > 0;
 
@@ -652,26 +1327,26 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       attendeeMentions.push({ email: att.email, name: att.name ?? undefined });
     }
 
-    const descriptionNote = hasDescription
-      ? {
-          key: "description",
-          content: icsEvent.description!,
-          contentType: "text" as const,
-          created: icsEvent.created
-            ? parseICSDateTimeToDate(icsEvent.created)
-            : undefined,
-          ...(authorContact ? { author: authorContact } : {}),
-        }
-      : null;
+    const descHash =
+      hasDescription && icsEvent.description
+        ? await hashContent(icsEvent.description)
+        : null;
+    const descriptionNote =
+      hasDescription && descHash
+        ? {
+            key: `description-${descHash}`,
+            content: icsEvent.description!,
+            contentType: "text" as const,
+            created: icsEvent.created
+              ? parseICSDateTimeToDate(icsEvent.created)
+              : undefined,
+            ...(authorContact ? { author: authorContact } : {}),
+          }
+        : null;
 
     const notes = descriptionNote ? [descriptionNote] : [];
 
-    // Skip all-day events without a type (matching Google Calendar pattern)
-    if (isAllDay && !isCancelled) {
-      // All-day events are still synced, they just don't get type "event"
-    }
-
-    const link: NewLinkWithNotes = {
+    return {
       source,
       sources: buildEventSources(icsEvent.uid),
       type: "event",
@@ -705,38 +1380,21 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
     };
-
-    // Merge buffered occurrences from initial sync. Each pending occurrence
-    // is stored under its own key (pending_occ:<master>:<occurrenceIso>) so
-    // instance buffering is O(1) per instance instead of rewriting a growing
-    // list — see processEventInstance.
-    const pendingPrefix = `pending_occ:${source}:`;
-    const pendingKeys = await this.tools.store.list(pendingPrefix);
-    if (pendingKeys.length > 0) {
-      const merged: NewScheduleOccurrence[] = [
-        ...(link.scheduleOccurrences || []),
-      ];
-      for (const key of pendingKeys) {
-        const pending = await this.get<NewScheduleOccurrence>(key);
-        if (pending) merged.push(pending);
-        await this.clear(key);
-      }
-      link.scheduleOccurrences = merged;
-    }
-
-    await this.tools.integrations.saveLink(link);
   }
 
   /**
-   * Process a recurring event instance (RECURRENCE-ID) as an occurrence override.
+   * Transform a recurring event instance (RECURRENCE-ID) into either an
+   * occurrence-only {@link NewLinkWithNotes} (for the caller's batched
+   * saveLinks), or `null` when the occurrence is instead buffered to
+   * `pending_occ:` storage for cross-batch merging during initial sync.
+   * Never saves directly.
    */
-  private async processEventInstance(
+  private async prepareEventInstance(
     icsEvent: ICSEvent,
     calendarHref: string,
-    initialSync: boolean,
-    _eventHref?: string
-  ): Promise<void> {
-    if (!icsEvent.recurrenceId) return;
+    initialSync: boolean
+  ): Promise<NewLinkWithNotes | null> {
+    if (!icsEvent.recurrenceId) return null;
 
     const originalStart = parseICSDateTime(icsEvent.recurrenceId);
     const masterSource = `apple-calendar:${icsEvent.uid}`;
@@ -761,17 +1419,25 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       // O(1); appending to a single shared list was O(N²) across batches
       // and blew the CF worker CPU limit on calendars with many recurring
       // exceptions.
+      //
+      // The key is scoped with the calendar href so multi-calendar accounts
+      // (e.g. iCloud Home + Work + Family) don't share `pending_occ:`
+      // namespace. UIDs are globally unique per iCal spec, but they are
+      // shared across one user's calendars whenever a meeting was filed
+      // on more than one, so an un-scoped key would cause Calendar A's
+      // orphan flush to misclassify B's buffered occurrences and silently
+      // drop them.
       if (initialSync) {
         const occurrenceTs =
           originalStart instanceof Date
             ? originalStart.toISOString()
             : new Date(originalStart).toISOString();
-        const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+        const pendingKey = `pending_occ:${calendarHref}:${masterSource}:${occurrenceTs}`;
         await this.set(pendingKey, cancelledOccurrence);
-        return;
+        return null;
       }
 
-      const occurrenceUpdate: NewLinkWithNotes = {
+      return {
         type: "event",
         title: undefined,
         source: masterSource,
@@ -781,9 +1447,6 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         scheduleOccurrences: [cancelledOccurrence],
         notes: [],
       };
-
-      await this.tools.integrations.saveLink(occurrenceUpdate);
-      return;
     }
 
     // Build contacts from attendees for this occurrence
@@ -826,19 +1489,22 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     // During initial sync, buffer under a unique key for merging with
     // master. See the cancelled branch above for why per-occurrence keys
-    // replaced the single-list-append pattern.
+    // replaced the single-list-append pattern, and why the key is
+    // prefixed with the calendar href.
     if (initialSync) {
       const occurrenceTs =
         originalStart instanceof Date
           ? originalStart.toISOString()
           : new Date(originalStart).toISOString();
-      const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+      const pendingKey = `pending_occ:${calendarHref}:${masterSource}:${occurrenceTs}`;
       await this.set(pendingKey, occurrence);
-      return;
+      return null;
     }
 
-    // Incremental sync: save immediately
-    const occurrenceUpdate: NewLinkWithNotes = {
+    // Incremental sync: return an occurrence-only link. The caller merges
+    // it with the master (if the master is in the same batch) or saves it
+    // standalone (master already exists in the DB from a prior sync).
+    return {
       type: "event",
       title: undefined,
       source: masterSource,
@@ -848,8 +1514,6 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       scheduleOccurrences: [occurrence],
       notes: [],
     };
-
-    await this.tools.integrations.saveLink(occurrenceUpdate);
   }
 
   // ---- RSVP Write-Back ----

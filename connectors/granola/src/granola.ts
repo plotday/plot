@@ -38,6 +38,8 @@ type SyncState = {
  * calendar event matches, a standalone Granola thread is created instead.
  */
 export class Granola extends Connector<Granola> {
+  readonly singleChannel = true;
+
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),

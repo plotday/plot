@@ -120,7 +120,7 @@ export class Gmail extends Connector<Gmail> {
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
-        { status: "starred", label: "Starred", tag: Tag.Star, todo: true },
+        { status: "starred", label: "Starred", tag: Tag.Star, active: true },
         { status: "archived", label: "Archived", tag: Tag.Done, done: true },
       ],
     },
@@ -461,6 +461,40 @@ export class Gmail extends Connector<Gmail> {
   }
 
   private async setupMailboxWebhook(): Promise<void> {
+    // Tear down any prior watch and topic before creating new ones. Gmail
+    // enforces one watch per (mailbox, OAuth client) and returns 400
+    // "Only one user push notification client allowed per developer (call
+    // /stop then try again)" when users.watch() is called with a NEW topic
+    // while a watch is already active. setupMailboxWebhook always creates
+    // a fresh topic (createWebhook mints a new callback token → new topic
+    // name), so the existing watch must be stopped first; the orphaned
+    // Pub/Sub topic is also deleted to avoid leaking resources every
+    // self-heal renewal.
+    const existing = await this.get<MailboxWebhookState>("mailbox_webhook");
+    await this.clear("mailbox_webhook");
+    const cleanupApi = await this.getApiAny();
+    if (cleanupApi) {
+      try {
+        await cleanupApi.stopWatch();
+      } catch (error) {
+        // Best-effort — old watch may have already expired or never existed.
+        console.warn(
+          `Gmail setupMailboxWebhook [${this.id}]: stopWatch (cleanup) failed`,
+          error
+        );
+      }
+    }
+    if (existing?.topicName) {
+      try {
+        await this.tools.network.deleteWebhook(existing.topicName);
+      } catch (error) {
+        console.warn(
+          `Gmail setupMailboxWebhook [${this.id}]: deleteWebhook (cleanup) failed`,
+          error
+        );
+      }
+    }
+
     // createWebhook returns a Pub/Sub topic name when the provider is Google
     // with Gmail scopes. The webhook delivers no extra args — onGmailWebhook
     // operates on the single mailbox-wide watch.

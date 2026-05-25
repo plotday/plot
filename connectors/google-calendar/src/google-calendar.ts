@@ -34,6 +34,7 @@ import {
   type SyncState,
   containsHtml,
   extractConferencingLinks,
+  hashContent,
   syncGoogleCalendar,
   transformGoogleEvent,
 } from "./google-api";
@@ -222,6 +223,14 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       await this.clear(`last_sync_token_${channel.id}`);
       await this.clear(`sync_state_${resolvedCalendarId}`);
       await this.tools.store.releaseLock(`sync_${resolvedCalendarId}`);
+
+      // Clear any `pending_occ:` and `seen_master:` markers left over
+      // from the crashed pre-recovery sync. Stale markers from a half-
+      // done run can otherwise cause the next full-pass orphan flush
+      // to materialise empty Untitled threads (leftover `pending_occ`
+      // matching leftover `seen_master` whose actual link no longer
+      // exists in the DB).
+      await this.clearBuffers(resolvedCalendarId);
     } else if (context?.syncHistoryMin) {
       // Store sync_history_min if provided and not already stored with an
       // equal/earlier value. Skipped on recovery so the recovery pass
@@ -307,6 +316,21 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
+  }
+
+  /**
+   * Stamp the first time the connector observes some opaque key, and
+   * reuse that timestamp on every subsequent observation. Used for note
+   * `created` timestamps where Google doesn't tell us when something
+   * actually happened (cancellation date, description-edit date) and we
+   * don't want re-syncs to bump the note forward in the activity feed.
+   */
+  private async firstSeenAt(storeKey: string): Promise<Date> {
+    const existing = await this.get<string>(storeKey);
+    if (existing) return new Date(existing);
+    const now = new Date();
+    await this.set(storeKey, now.toISOString());
+    return now;
   }
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
@@ -491,6 +515,32 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     await this.clear(`sync_state_${calendarId}`);
     await this.clear(`auth_token_${calendarId}`);
     await this.tools.store.releaseLock(`sync_${calendarId}`);
+
+    // 4. Clear any leftover `pending_occ:` / `seen_master:` markers so a
+    // future re-enable starts from a clean slate (no stale buffers from
+    // a crashed run sitting around to corrupt the next orphan flush).
+    await this.clearBuffers(calendarId);
+  }
+
+  /**
+   * Clear all `pending_occ:` and `seen_master:` markers for one calendar.
+   * Used on recovery, stopSync, and sync-error paths so stale buffers
+   * from a crashed run can't combine with leftover seen-master markers
+   * to materialise empty Untitled threads on the next initial sync.
+   */
+  private async clearBuffers(calendarId: string): Promise<void> {
+    const pendingKeys = await this.tools.store.list(
+      `pending_occ:${calendarId}:`
+    );
+    for (const key of pendingKeys) {
+      await this.clear(key);
+    }
+    const seenMasterKeys = await this.tools.store.list(
+      `seen_master:${calendarId}:`
+    );
+    for (const key of seenMasterKeys) {
+      await this.clear(key);
+    }
   }
 
   /**
@@ -761,13 +811,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // with no schedule, no title, no notes — the cancellation
           // exdate has no master schedule to attach to. Drop those
           // orphans silently instead.
+          // Scope the lookup to this calendar so concurrent syncs of
+          // other calendars in the same account aren't affected.
+          const seenMasterPrefix = `seen_master:${calendarId}:`;
+          const pendingPrefix = `pending_occ:${calendarId}:`;
           const seenMasterKeys = await this.tools.store.list(
-            "seen_master:"
+            seenMasterPrefix
           );
           const seenMasters = new Set(
-            seenMasterKeys.map((k) => k.slice("seen_master:".length))
+            seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
           );
-          const pendingKeys = await this.tools.store.list("pending_occ:");
+          const pendingKeys = await this.tools.store.list(pendingPrefix);
           const flushLinks: NewLinkWithNotes[] = [];
           let droppedOrphans = 0;
           for (const key of pendingKeys) {
@@ -782,7 +836,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                 : new Date(pending.occurrence);
             const suffix = `:${occurrenceDate.toISOString()}`;
             if (
-              !key.startsWith("pending_occ:") ||
+              !key.startsWith(pendingPrefix) ||
               !key.endsWith(suffix)
             ) {
               // Malformed key — drop it.
@@ -790,7 +844,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               continue;
             }
             const canonical = key.slice(
-              "pending_occ:".length,
+              pendingPrefix.length,
               key.length - suffix.length
             );
             if (!seenMasters.has(canonical)) {
@@ -848,6 +902,36 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // blocked. Even if this release fails, the lock's TTL will expire it.
       await this.tools.store.releaseLock(`sync_${calendarId}`);
       await this.clear(`sync_state_${calendarId}`);
+
+      // Clear any `pending_occ:` / `seen_master:` markers buffered by
+      // this run. Otherwise a future initial sync would inherit them and
+      // the full-pass orphan flush could materialise empty Untitled
+      // threads from leftover-but-now-stale buffers.
+      try {
+        await this.clearBuffers(calendarId);
+      } catch (cleanupError) {
+        console.error(
+          `Failed to clear pending buffers after sync error for ${calendarId}:`,
+          cleanupError
+        );
+      }
+
+      // The runtime auto-clears the "Syncing…" indicator when
+      // onChannelEnabled itself throws, but NOT when a queued task
+      // throws. Without an explicit signal here, the indicator stays on
+      // indefinitely after a mid-sync crash until the user disables and
+      // re-enables. Inner try/catch so a signal failure doesn't mask
+      // the original error.
+      if (initialSync) {
+        try {
+          await this.tools.integrations.channelSyncCompleted(calendarId);
+        } catch (signalError) {
+          console.error(
+            "Failed to signal sync completion on error path:",
+            signalError
+          );
+        }
+      }
 
       throw error;
     }
@@ -966,16 +1050,18 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             // so using it converges cross-user threads for the same event.
             const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
-            // Create cancellation note
-            const cancelledBy =
-              event.organizer?.displayName || event.organizer?.email;
+            // Google doesn't tell us who cancelled or when, so stamp the
+            // note with the time we first noticed the cancellation and
+            // reuse that on every subsequent sync (instead of letting
+            // event.updated drag the note forward on unrelated edits).
+            const cancelFirstSeen = await this.firstSeenAt(
+              `cancel_seen:${canonicalUrl}`
+            );
             const cancelNote = {
               key: "cancellation" as const,
-              content: cancelledBy
-                ? `${cancelledBy} cancelled this event.`
-                : "This event was cancelled.",
+              content: "This event was cancelled.",
               contentType: "text" as const,
-              created: event.updated ? new Date(event.updated) : new Date(),
+              created: cancelFirstSeen,
             };
 
             // Convert to link with cancellation note
@@ -1100,19 +1186,37 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // so using it converges cross-user threads for the same event.
           const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
-          // Build description note if available
-          const descriptionNote = hasDescription
-            ? {
-                key: "description",
-                content: description,
-                contentType:
-                  description && containsHtml(description)
-                    ? ("html" as const)
-                    : ("text" as const),
-                created: event.created ? new Date(event.created) : undefined,
-                ...(authorContact ? { author: authorContact } : {}),
-              }
+          // Build description note if available. The key embeds a hash of
+          // the description content so each distinct version produces a
+          // separate note: re-syncing the same description is an
+          // idempotent no-op upsert (same key + same content), while an
+          // edited description gets a new key and a fresh note —
+          // preserving the prior versions as history on the thread.
+          // Stamp `created` with the first time we observed each hash
+          // and reuse that timestamp on subsequent syncs, so an
+          // unrelated event update (which bumps event.updated) doesn't
+          // drag the description note forward in the activity feed.
+          const descHash = hasDescription
+            ? await hashContent(description)
             : null;
+          const descFirstSeen = descHash
+            ? await this.firstSeenAt(
+                `desc_seen:${canonicalUrl}:${descHash}`
+              )
+            : undefined;
+          const descriptionNote =
+            hasDescription && descHash
+              ? {
+                  key: `description-${descHash}`,
+                  content: description,
+                  contentType:
+                    description && containsHtml(description)
+                      ? ("html" as const)
+                      : ("text" as const),
+                  created: descFirstSeen,
+                  ...(authorContact ? { author: authorContact } : {}),
+                }
+              : null;
 
           // Build attendee contacts for link-level access control
           const attendeeMentions: NewContact[] = [];
@@ -1190,7 +1294,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // events.list response).
     let drainedTotal = 0;
     for (const [source, link] of linksBySource.entries()) {
-      const pendingPrefix = `pending_occ:${source}:`;
+      // Keys are scoped per calendar so concurrent syncs on other
+      // calendars in the same account don't have their buffers drained
+      // here.
+      const pendingPrefix = `pending_occ:${calendarId}:${source}:`;
       const pendingKeys = await this.tools.store.list(pendingPrefix);
       if (pendingKeys.length === 0) continue;
       const merged: NewScheduleOccurrence[] = [
@@ -1223,8 +1330,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // upserts onto the existing master link) from orphans whose
       // master never came through (master deleted upstream → flushing
       // would create a useless empty Untitled thread).
+      //
+      // Scoped with the calendar ID so multi-calendar accounts don't
+      // share the seen-master set — without scoping, Calendar A's
+      // orphan flush would treat B's buffered occurrences as flushable
+      // (and write standalone empty threads).
       for (const source of linksBySource.keys()) {
-        await this.set(`seen_master:${source}`, true);
+        await this.set(`seen_master:${calendarId}:${source}`, true);
       }
     }
 
@@ -1314,8 +1426,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // O(1); appending to a single shared list was O(N²) across batches
       // (re-serializing a growing array every instance) and blew the CF
       // worker CPU limit on calendars with many recurring exceptions.
+      //
+      // The key is scoped with the calendar ID so multi-calendar accounts
+      // (e.g. primary + holidays + shared) don't share `pending_occ:`
+      // namespace. iCalUID is shared across attendees' copies AND across
+      // one user's calendars when the same meeting lands on more than
+      // one, so an un-scoped key would cause Calendar A's full-pass
+      // orphan flush to misclassify B's buffered occurrences as orphans
+      // and silently drop them.
       if (initialSync) {
-        const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+        const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
           originalStartTime
         ).toISOString()}`;
         await this.set(pendingKey, cancelledOccurrence);
@@ -1328,8 +1448,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         return null;
       }
 
-      const cancelledBy =
-        event.organizer?.displayName || event.organizer?.email;
       const isAllDay = !event.originalStartTime?.dateTime;
       const formattedDate = new Date(originalStartTime).toLocaleDateString(
         "en-US",
@@ -1338,15 +1456,25 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           ...(isAllDay ? { timeZone: "UTC" } : {}),
         }
       );
+      // Google doesn't tell us when (or by whom) an occurrence was
+      // cancelled — event.created is the series creation time and
+      // event.updated drifts forward on unrelated edits (e.g. a "this
+      // and future occurrences" change re-emits old cancellations with
+      // a fresh updated timestamp, which would bump the thread to the
+      // top of activity). Instead, stamp the note with the time we
+      // first noticed the cancellation, persist that in connector
+      // storage, and reuse it on every subsequent sync.
+      const occurrenceIso = new Date(originalStartTime).toISOString();
+      const cancelFirstSeen = await this.firstSeenAt(
+        `cancel_seen:${masterCanonicalUrl}:${occurrenceIso}`
+      );
       const cancelNote = {
         // Unique key per occurrence so multiple instance cancellations on the
         // same recurring event don't overwrite each other's notes.
-        key: `cancellation-${new Date(originalStartTime).toISOString()}`,
-        content: cancelledBy
-          ? `${cancelledBy} cancelled the ${formattedDate} occurrence.`
-          : `The ${formattedDate} occurrence was cancelled.`,
+        key: `cancellation-${occurrenceIso}`,
+        content: `The ${formattedDate} occurrence was cancelled.`,
         contentType: "text" as const,
-        created: event.updated ? new Date(event.updated) : new Date(),
+        created: cancelFirstSeen,
       };
 
       return {
@@ -1411,9 +1539,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
     // During initial sync, buffer the occurrence under a unique key for
     // later merging with its master. See the cancelled branch above for why
-    // per-occurrence keys replaced the single-list-append pattern.
+    // per-occurrence keys replaced the single-list-append pattern, and why
+    // the key is prefixed with the calendar ID.
     if (initialSync) {
-      const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+      const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
         originalStartTime
       ).toISOString()}`;
       await this.set(pendingKey, occurrence);
