@@ -32,6 +32,11 @@ Priority _priority(String title) {
     role: 'member',
     attentionWindowSet: false,
     seeWithinSet: false,
+    respondScheduleEnabledSet: false,
+    respondWindowSet: false,
+    respondWithinSet: false,
+    earlyNotificationsEnabledSet: false,
+    notifyWindowSet: false,
   );
   return Priority.fromStore(row, draft: true);
 }

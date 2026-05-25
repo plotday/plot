@@ -1,6 +1,7 @@
 import 'package:plot/state/agenda_model.dart';
 import 'package:plot/state/agenda_sort.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/scheduling.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) so the
 // `PriorityBlock` symbol below resolves to agenda_model.dart's UI block.
 // The store-side timeline rows are referenced via [PriorityBlockRow]
@@ -45,14 +46,19 @@ class AgendaBuilder {
       now: effectiveNow,
       priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
     );
-    // Merge unread threads from the input that the day-by-`agendaAt`
-    // grouping in [PriorityState.makeAgendaItems] dropped (e.g. an
-    // unread thread last touched on a past date is filtered out by the
-    // `!date.isBefore(today)` cutoff). Surface them on today's section
-    // so the universal /agenda view never silently hides an unread
-    // thread.
-    final withUnread = _mergeUnreadIntoToday(
+    // Window-aware placer: for each priority with eligible respond threads
+    // (action_type = 'respond' AND read_at IS NULL AND (importance >= 50
+    // OR urgent = true) AND respondScheduleEnabled != false), compute a
+    // 15-minute slot using [scheduling.dart] and insert a PriorityBlock at
+    // that slot. Non-eligible unread threads fall through to the
+    // today-fallback so they still surface in the agenda.
+    final withPlacements = _placeRespondBlocks(
       consolidated,
+      inputThreads: threads,
+      now: effectiveNow,
+    );
+    final withUnread = _mergeUnreadIntoToday(
+      withPlacements,
       inputThreads: threads,
       now: effectiveNow,
     );
@@ -67,6 +73,243 @@ class AgendaBuilder {
       todayMidnight: _todayMidnightFromNow(effectiveNow),
       priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
     );
+  }
+
+  /// Filter respond-eligible threads from [inputThreads] (those whose
+  /// owning priority has `respondScheduleEnabled != false` AND
+  /// `action_type = 'respond'` AND `read_at IS NULL` AND `importance >= 50`
+  /// OR `urgent = true`), compute a 15-minute slot per priority using
+  /// [findRespondBlockSlot], and insert a [PriorityBlock] into the
+  /// DateSection matching the slot's calendar date. Returns the original
+  /// model when no eligible threads remain.
+  ///
+  /// Threads already placed in [model] (by their own schedule, for
+  /// example) are skipped — the placer never duplicates a thread.
+  static AgendaModel _placeRespondBlocks(
+    AgendaModel model, {
+    required List<Thread> inputThreads,
+    required DateTime now,
+  }) {
+    final placedIds = <Uuid>{};
+    for (final block in model.allBlocks) {
+      for (final t in block.threads) {
+        placedIds.add(t.id);
+      }
+    }
+
+    final eligible = <Thread>[];
+    for (final t in inputThreads) {
+      if (placedIds.contains(t.id)) continue;
+      if (t.archivedAt != null) continue;
+      if (t.actionType != 'respond') continue;
+      if (t.readAt != null) continue;
+      if (!t.urgent && t.importance < 50) continue;
+      // Treat null (server-seeded default) as enabled. Only an explicit
+      // `false` disables placement on this priority.
+      if (t.priority.respondScheduleEnabled == false) continue;
+      if (t.priority.respondWindows == null) continue;
+      if (t.priority.respondWithinTime == null) continue;
+      eligible.add(t);
+    }
+
+    if (eligible.isEmpty) return model;
+
+    final byPriority = <Uuid, List<Thread>>{};
+    final priorities = <Uuid, Priority>{};
+    for (final t in eligible) {
+      byPriority.putIfAbsent(t.priority.id, () => <Thread>[]).add(t);
+      priorities[t.priority.id] = t.priority;
+    }
+
+    final deadlines = <Uuid, DateTime>{};
+    for (final entry in byPriority.entries) {
+      final p = priorities[entry.key]!;
+      final inputs = entry.value
+          .map(
+            (t) => RespondThreadInput(
+              arrivedAt: t.updatedAt,
+              urgent: t.urgent,
+            ),
+          )
+          .toList();
+      deadlines[entry.key] = computeRespondDeadline(
+        threads: inputs,
+        respondWithin: p.respondWithinTime!,
+      );
+    }
+
+    // Seed busy intervals from existing event blocks and pinned/manual
+    // priority blocks. Placer outputs are added in-loop so later
+    // placements treat earlier ones as busy.
+    final busy = <BusyInterval>[];
+    for (final section in model.sections) {
+      for (final block in section.blocks) {
+        if (block is EventBlock) {
+          final at = block.event.at;
+          if (at != null && at.start != null && at.end != null) {
+            busy.add(BusyInterval(start: at.start!, end: at.end!));
+          }
+        } else if (block is PriorityBlock) {
+          // Pinned/manual blocks carry real (non-epoch) window times.
+          if (block.windowStart.millisecondsSinceEpoch > 0 &&
+              block.windowEnd.millisecondsSinceEpoch > 0 &&
+              block.windowEnd.isAfter(block.windowStart) &&
+              // Avoid treating the day-bracket placeholders inserted by
+              // [_populateBlockWindows] as busy intervals: those run
+              // midnight→next-midnight, which would consume the whole day.
+              block.windowEnd.difference(block.windowStart) <
+                  const Duration(hours: 8)) {
+            busy.add(
+              BusyInterval(start: block.windowStart, end: block.windowEnd),
+            );
+          }
+        }
+      }
+    }
+
+    // Sort priorities by deadline ascending: earliest deadline placed
+    // first so later placements treat its slot as busy.
+    final sortedPriorityIds = byPriority.keys.toList()
+      ..sort((a, b) => deadlines[a]!.compareTo(deadlines[b]!));
+
+    final placements = <Uuid, RespondBlockSlot>{};
+    for (final pid in sortedPriorityIds) {
+      final p = priorities[pid]!;
+      final slot = findRespondBlockSlot(
+        now: now,
+        deadline: deadlines[pid]!,
+        respondWindow: p.respondWindows!,
+        busy: busy,
+      );
+      if (slot == null) continue;
+      placements[pid] = slot;
+      busy.add(BusyInterval(start: slot.start, end: slot.end));
+    }
+
+    if (placements.isEmpty) return model;
+
+    return _insertPlacements(
+      model,
+      placements: placements,
+      priorities: priorities,
+      threadsByPriority: byPriority,
+    );
+  }
+
+  /// Insert one [PriorityBlock] per placement into the [DateSection] that
+  /// matches the placement's calendar date. Creates the section if it
+  /// doesn't exist yet (placements past the current horizon).
+  static AgendaModel _insertPlacements(
+    AgendaModel model, {
+    required Map<Uuid, RespondBlockSlot> placements,
+    required Map<Uuid, Priority> priorities,
+    required Map<Uuid, List<Thread>> threadsByPriority,
+  }) {
+    // Group placements by Date for batch insertion.
+    final byDate = <Date, List<MapEntry<Uuid, RespondBlockSlot>>>{};
+    for (final entry in placements.entries) {
+      final date = Date(
+        entry.value.start.year,
+        entry.value.start.month,
+        entry.value.start.day,
+      );
+      byDate.putIfAbsent(date, () => []).add(entry);
+    }
+
+    // Sort within-date placements by start time so the most pressing
+    // (earliest) lands first in the section's blocks list.
+    for (final list in byDate.values) {
+      list.sort((a, b) => a.value.start.compareTo(b.value.start));
+    }
+
+    // Materialize a mutable list of sections, locating-or-creating one
+    // per placement date.
+    final newSections = <AgendaSection>[];
+    final remaining = Map<Date, List<MapEntry<Uuid, RespondBlockSlot>>>.from(
+      byDate,
+    );
+
+    // First pass: append placements to existing DateSections.
+    for (final section in model.sections) {
+      if (section is! DateSection) {
+        newSections.add(section);
+        continue;
+      }
+      final dateEntries = remaining.remove(section.date);
+      if (dateEntries == null) {
+        newSections.add(section);
+        continue;
+      }
+      final newBlocks = <AgendaBlock>[...section.blocks];
+      for (final entry in dateEntries) {
+        final pid = entry.key;
+        final slot = entry.value;
+        newBlocks.add(
+          PriorityBlock(
+            id: 'p_${section.id}_${priorities[pid]!.path.value}_respond',
+            priority: priorities[pid]!,
+            threads: List.unmodifiable(threadsByPriority[pid]!),
+            isOutside: false,
+            windowStart: slot.start,
+            windowEnd: slot.end,
+            overflow: slot.overflow,
+          ),
+        );
+      }
+      newSections.add(
+        DateSection(
+          date: section.date,
+          blocks: List.unmodifiable(newBlocks),
+          isNow: section.isNow,
+          scheduleAt: section.scheduleAt,
+        ),
+      );
+    }
+
+    // Second pass: any placements whose date had no existing section get
+    // a freshly-created DateSection. Insert in chronological order
+    // (relative to neighboring DateSections in the new list).
+    if (remaining.isEmpty) {
+      return AgendaModel(sections: List.unmodifiable(newSections));
+    }
+    final extraDates = remaining.keys.toList()..sort();
+    for (final date in extraDates) {
+      final dateEntries = remaining[date]!;
+      final blocks = <AgendaBlock>[];
+      for (final entry in dateEntries) {
+        final pid = entry.key;
+        final slot = entry.value;
+        blocks.add(
+          PriorityBlock(
+            id: 'p_date_${date}_${priorities[pid]!.path.value}_respond',
+            priority: priorities[pid]!,
+            threads: List.unmodifiable(threadsByPriority[pid]!),
+            isOutside: false,
+            windowStart: slot.start,
+            windowEnd: slot.end,
+            overflow: slot.overflow,
+          ),
+        );
+      }
+      final newSection = DateSection(
+        date: date,
+        blocks: List.unmodifiable(blocks),
+        isNow: false,
+      );
+      // Insert in chronological order — find the first existing
+      // DateSection with a strictly later date and slot in before it.
+      var inserted = false;
+      for (var i = 0; i < newSections.length; i++) {
+        final s = newSections[i];
+        if (s is DateSection && s.date.compareTo(date) > 0) {
+          newSections.insert(i, newSection);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) newSections.add(newSection);
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
   }
 
   /// Append every input thread with [Thread.unread] true that is not
@@ -543,6 +786,7 @@ class AgendaBuilder {
             cascadeDuration: dur,
             windowStart: block.windowStart,
             windowEnd: block.windowEnd,
+            overflow: block.overflow,
           ));
         } else if (block is GapBlock) {
           newBlocks.add(GapBlock(
@@ -649,6 +893,7 @@ class AgendaBuilder {
             cascadeDuration: b.cascadeDuration,
             windowStart: w.start,
             windowEnd: w.end,
+            overflow: b.overflow,
           ));
         } else {
           rebuilt.add(b);

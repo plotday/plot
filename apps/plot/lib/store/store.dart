@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 337;
+  int get schemaVersion => 338;
 
   @override
   MigrationStrategy get migration {
@@ -3537,6 +3537,34 @@ class Store extends _$Store {
       );
       await m.alterTable(TableMigration(priorities));
       // Reset priorities cursor so updated rows re-pull with the new shape.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
+      );
+    }
+    if (from < 338) {
+      // Response-times rework: split "Notifications" into two mechanisms,
+      // each with a master toggle, an active-hours window list, and an SLA.
+      // The server side is already merged on main; this catches the Flutter
+      // store up. Bumped `priority.updated_at` server-side ensures every row
+      // re-pulls with values for the new columns.
+      await _safeAddColumn(m, priorities, priorities.respondScheduleEnabled);
+      await _safeAddColumn(m, priorities, priorities.respondWindow);
+      await _safeAddColumn(m, priorities, priorities.respondWithin);
+      await _safeAddColumn(m, priorities, priorities.earlyNotificationsEnabled);
+      await _safeAddColumn(m, priorities, priorities.notifyWindow);
+      await _safeAddColumn(
+        m,
+        priorities,
+        priorities.respondScheduleEnabledSet,
+      );
+      await _safeAddColumn(m, priorities, priorities.respondWindowSet);
+      await _safeAddColumn(m, priorities, priorities.respondWithinSet);
+      await _safeAddColumn(
+        m,
+        priorities,
+        priorities.earlyNotificationsEnabledSet,
+      );
+      await _safeAddColumn(m, priorities, priorities.notifyWindowSet);
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
       );

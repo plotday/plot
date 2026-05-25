@@ -880,7 +880,7 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer) EditPriorityCommand(priority),
-  if (!priority.isViewer) ShowAttentionSettings(priority),
+  if (!priority.isViewer) ShowResponseTimesSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer && !priority.isPlot) NewPriority(parent: priority),
   if (!priority.root && !priority.isViewer && !priority.isPlot)

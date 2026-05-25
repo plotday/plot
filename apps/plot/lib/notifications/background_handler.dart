@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/notifications/notification_display.dart';
-import 'package:plot/notifications/notification_quiet_hours.dart';
+import 'package:plot/notifications/notification_window.dart';
 import 'package:plot/notifications/notification_service.dart';
 
 const _threadIdsPrefsKey = 'notification_thread_ids';
@@ -72,19 +72,21 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   // Load previously shown thread IDs for dedup
   final previousThreadIds = _loadPersistedThreadIds(prefs);
 
-  // Check whether we're currently in quiet hours
-  final scheduleAt = computeNotifyTime(prefs);
+  // Check whether the notify window is open right now. If it's closed and
+  // none of the summaries are flagged urgent, defer delivery until the
+  // next opening. Urgent notifications bypass the window.
+  final hasUrgent = summaries.any((s) => (s['urgent'] as bool?) ?? false);
+  final scheduleAt = hasUrgent ? null : computeWindowOpenTime(prefs);
   // ignore: avoid_print
-  print('[BG_HANDLER] scheduleAt=$scheduleAt');
+  print('[BG_HANDLER] scheduleAt=$scheduleAt (urgent=$hasUrgent)');
   if (scheduleAt != null) {
-    // Quiet hours: schedule persistent notifications for when they end
+    // Notify window closed: schedule persistent notifications for when it opens.
     await _scheduleNotifications(summaries, scheduleAt);
   } else {
     final shown = await showSummaryNotifications(
       summaries,
       previousThreadIds: previousThreadIds,
     );
-    // Persist updated thread IDs
     await _persistThreadIds(prefs, shown);
   }
 }

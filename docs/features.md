@@ -232,7 +232,7 @@ The user can drag a thread between tabs to override the AI's classification at a
 The AI scores each thread 0–100 for the recipient. Items below 50 (unsolicited material, promotional content, low-relevance updates) appear in Catch up but do not trigger push notifications, email digests, or priority unread indicators. Items ≥ 50 surface proactively. Strong relational signal and direct messages between known contacts score 60+; cold outreach 10–25.
 
 ### Urgent Flag
-Separate from importance, the AI flags a thread `urgent` only when the user should be notified before their next scheduled response window — time-sensitive items or messages clearly needing a quick response. Urgent threads bypass the per-priority `see_within` delay and the 10-minute inactivity gate that normally defers pushes.
+Separate from importance, the AI flags a thread `urgent` only when the user should be notified before their next scheduled response window — time-sensitive items or messages clearly needing a quick response. Urgent threads bypass the per-priority `see_within` delay, the `notify_window` clamping, and the 10-minute inactivity gate that normally defers pushes.
 
 ### Priority Features
 - Unlimited nesting depth
@@ -258,10 +258,17 @@ Separate from importance, the AI flags a thread `urgent` only when the user shou
 - Do Now view surfaces everything current and overdue in one place
 - Agenda view shows your day chronologically across all priorities
 
+### Response Times
+Each priority carries two settings the user controls together under "Response times":
+
+- **Schedule time to respond** — master toggle plus a `respond_window` (active hours, e.g. weekdays 9–5) and a `respond_within` SLA (e.g. 4 hours). When enabled, the agenda automatically places a 15-minute response block per priority for unread respond-type threads (importance ≥ 50 or urgent), inside the configured hours and around existing calendar events. Block placement is window-aware, deterministic, and computed entirely on the client.
+- **Early notifications** — master toggle plus a `notify_window` (when interruptions are allowed, e.g. 8am–8pm any day) and a `see_within` deadline (max delay before a thread notifies, e.g. 30 minutes). Notifications fire at the earlier of the placed block-start or the see-within deadline. Block-start notifications are always honoured. Early notifications are clamped to the next opening when the window is closed; urgent threads bypass both the batching delay and the window.
+
+Both settings inherit by priority path: a sub-priority that matches its parent's value reverts to inheritance automatically on save.
+
 ### Smart Notifications
-- AI flags genuinely time-sensitive threads as urgent (direct requests, deadlines) — those fire immediately; everything else waits for the user's configured response window
-- Per-priority `see_within` setting controls how long a non-urgent thread can sit before its notification fires; urgent bypasses it
-- Items with importance < 50 (promotional content, unsolicited outreach) never trigger a push or email digest on their own
+- AI flags genuinely time-sensitive threads as urgent (direct requests, deadlines) — those fire immediately, even outside the notify window; everything else waits for the user's configured `see_within` or the next placed response block
+- Items with importance < 50 (promotional content, unsolicited outreach) never trigger a push, an auto-block, or an email digest on their own
 - Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
 - No manual do-not-disturb rules needed — the system infers what matters based on content and your preferences
 - Desktop notifications on macOS and Windows — native OS notifications triggered by real-time sync, with automatic suppression when the app is focused and respect for OS-level Focus/DnD modes
