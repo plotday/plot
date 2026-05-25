@@ -1,5 +1,6 @@
 import {
   Connector,
+  type CreateLinkDraft,
   type NewLinkWithNotes,
   type NoteWriteBackResult,
   type ToolBuilder,
@@ -41,10 +42,12 @@ const CHANNEL_INVITATIONS = "invitations";
 
 const TYPE_MESSAGE = "message";
 const TYPE_INVITATION = "invitation";
+const TYPE_DM = "linkedin-dm";
 
 const STATUS_INBOX = "inbox";
 const STATUS_ARCHIVE = "archive";
 const STATUS_PENDING = "pending";
+const STATUS_SENT = "sent";
 
 const PROVIDER_KEY = "linkedin";
 
@@ -130,6 +133,18 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
         { status: STATUS_ARCHIVE, label: "Archived" },
       ],
     },
+    {
+      // Compose a new LinkedIn DM from Plot (1:1 or group). Opts in to
+      // Plot-initiated creation by marking one status createDefault: true.
+      type: TYPE_DM,
+      label: "New message",
+      logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+      logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: STATUS_SENT, label: "Sent", createDefault: true },
+      ],
+    },
   ];
 
   build(build: ToolBuilder) {
@@ -173,6 +188,16 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
 
     const batch = await this.callback(this.syncBatch, channel.id);
     await this.runTask(batch);
+
+    // Best-effort: sync LinkedIn connections so the DM recipient picker can
+    // offer LinkedIn contacts. Gated inside syncConnections to once per 24h.
+    if (channel.id === CHANNEL_MESSAGES) {
+      const connectionsCallback = await this.callback(
+        this.syncConnections,
+        channel.id
+      );
+      await this.runTask(connectionsCallback);
+    }
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -396,6 +421,100 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
   }
 
   // ---------------------------------------------------------------------------
+  // Compose new messages (Plot → LinkedIn)
+  // ---------------------------------------------------------------------------
+
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== TYPE_DM) return null;
+
+    // Resolve recipient URNs from the pre-resolved recipients list.
+    const recipients = draft.recipients;
+    if (!recipients || recipients.length === 0) {
+      console.error(
+        "[linkedin] onCreateLink: no recipients provided. LinkedIn DMs require " +
+          "a recipient profile URN; cannot fall back to email or other identifier."
+      );
+      return null;
+    }
+
+    const recipientUrns = recipients.map((r) => r.externalAccountId);
+
+    // LinkedIn DMs have no subject — just a body.
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error(
+        "[linkedin] onCreateLink: message body is empty; cannot send."
+      );
+      return null;
+    }
+
+    const { conversationUrn, message } =
+      await this.tools.linkedin.createConversation({
+        channelId: draft.channelId,
+        recipientUrns,
+        text: body,
+      });
+
+    return {
+      source: `linkedin:conversation:${conversationUrn}`,
+      sources: [`linkedin:conversation:${conversationUrn}`],
+      type: TYPE_DM,
+      status: STATUS_SENT,
+      title: draft.title,
+      created: message.sentAt,
+      channelId: draft.channelId,
+      meta: {
+        syncProvider: PROVIDER_KEY,
+        channelId: CHANNEL_MESSAGES,
+        conversationUrn,
+        isGroup: recipientUrns.length > 1,
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Connection sync (best-effort DM recipient population)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Syncs LinkedIn connections as Plot contacts so the DM recipient picker
+   * can offer reachable LinkedIn users.
+   *
+   * LinkedIn's public API does NOT expose a general connections endpoint to
+   * third-party apps; the `/v2/connections` endpoint requires
+   * `r_1st_connections_size` (count only) and full enumeration requires
+   * LinkedIn partner-level access most apps don't have.
+   *
+   * This is therefore a documented no-op stub. Contact data still accumulates
+   * over time via `profileToContact` at message-ingest time (every participant
+   * on every synced conversation gets a `source.accountId = profileUrn`
+   * entry), which gives the DM picker increasingly useful data after a few
+   * days of normal inbox sync.
+   *
+   * If LinkedIn's partner API becomes available to this connector in the
+   * future, this method should:
+   *  1. List connections via the partner endpoint.
+   *  2. Call `this.tools.integrations.saveContacts(contacts)` with `source`
+   *     set to `{ provider: AuthProvider.LinkedIn, accountId: profileUrn }`.
+   *  3. Schedule itself daily via `runTask({ runAt: nextRunAt })` in a
+   *     `finally` block (defensive scheduling pattern — runs even if an error
+   *     is thrown above).
+   *  4. Gate execution with a `connectionsSyncedAt` state key (24h window)
+   *     so repeated `onChannelEnabled` calls (e.g. re-auth recovery) don't
+   *     hit the partner API on every call.
+   */
+  async syncConnections(_channelId: string): Promise<void> {
+    console.warn(
+      "[linkedin] syncConnections: LinkedIn does not expose a public connections " +
+        "endpoint. Contact data will accumulate via message-ingest profileToContact " +
+        "over time. No partner API is configured."
+    );
+    // No-op. See JSDoc above for what to do if partner access is granted.
+  }
+
+  // ---------------------------------------------------------------------------
   // Write-back
   // ---------------------------------------------------------------------------
 
@@ -507,6 +626,15 @@ function senderProfile(
 
 function profileToContact(profile: LinkedInProfile | null): NewContact | null {
   if (!profile) return null;
+  // Always attach the LinkedIn URN as a contact_external_account source so
+  // the DM recipient picker can resolve Plot contacts → LinkedIn profile URNs
+  // without a separate lookup. This is the primary mechanism for building the
+  // `externalAccountId` values that `onCreateLink` reads from `draft.recipients`.
+  const source = {
+    provider: AuthProvider.LinkedIn,
+    accountId: profile.urn,
+  };
+  const avatar = profile.pictureUrl ?? undefined;
   // Anchor the contact on email when available, otherwise on the LinkedIn
   // public identifier (slug). Profiles without either are surfaced as a
   // bare display contact — they're rare in practice (only when the user
@@ -515,7 +643,8 @@ function profileToContact(profile: LinkedInProfile | null): NewContact | null {
     return {
       email: profile.email,
       name: profile.fullName,
-      avatar: profile.pictureUrl ?? undefined,
+      avatar,
+      source,
     };
   }
   // No email: synthesize a deterministic, scoped pseudo-email so the
@@ -526,10 +655,13 @@ function profileToContact(profile: LinkedInProfile | null): NewContact | null {
     return {
       email: `${profile.publicIdentifier}@linkedin.invalid`,
       name: profile.fullName,
-      avatar: profile.pictureUrl ?? undefined,
+      avatar,
+      source,
     };
   }
-  return null;
+  // No email or public identifier — bare display contact. Still attach the
+  // source so recipient resolution works for restricted profiles.
+  return { name: profile.fullName, avatar, source };
 }
 
 function joinParticipantNames(profiles: LinkedInProfile[]): string {

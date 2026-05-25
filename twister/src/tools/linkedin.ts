@@ -165,6 +165,31 @@ export abstract class LinkedIn extends ITool {
   }): Promise<void>;
 
   /**
+   * Start a new LinkedIn DM conversation (1:1 or group) and send the first
+   * message atomically.
+   *
+   * - **1:1**: pass exactly one URN in `recipientUrns`.
+   * - **Group**: pass two or more URNs in `recipientUrns`.
+   *
+   * If a 1:1 conversation with the recipient already exists, LinkedIn
+   * typically reuses it. The returned `conversationUrn` is stable and
+   * can be stored in `thread.meta.conversationUrn` so subsequent replies
+   * via `onNoteCreated` work without extra lookup.
+   *
+   * @param params.recipientUrns - Profile URNs of the recipients
+   *   (e.g. `urn:li:fsd_profile:AbC123`). The authenticated user is
+   *   added implicitly by LinkedIn.
+   * @param params.text - Message body (plain text). LinkedIn DMs have no
+   *   subject line.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createConversation(params: {
+    channelId: string;
+    recipientUrns: string[];
+    text: string;
+  }): Promise<{ conversationUrn: string; message: LinkedInMessage }>;
+
+  /**
    * Fetch a LinkedIn member's public profile by URN.
    *
    * Used to resolve participants in conversations to Plot contacts.
