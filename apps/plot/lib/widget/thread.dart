@@ -260,17 +260,18 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final leadingHovered = _isBlockDragging ? false : _leadingHovered;
         final bool isTodo = activity.todo;
 
-        // Leading button: to-do state icon (shows calendar icon when scheduled)
+        // Leading button: unified-feed state icon.
+        //   - !active resting: nothing visible.
+        //   - !active hovered: `circlePlus` with "To do" tooltip; tap sets
+        //                      active=true (lands in Doing).
+        //   - active resting:  `circle`.
+        //   - active hovered:  `circleCheck` with "Mark done" tooltip; tap
+        //                      clears active and marks read (lands in
+        //                      Activity).
         final longPress = activity.priority.isViewer
             ? null
             : () => buildContext.run(PickScheduleThread(activity));
 
-        // The command that the leading tap target triggers.
-        // Associated threads use the same leading commands as regular
-        // (non-event) threads — adding to the agenda or finishing —
-        // because users still want to manage the thread's own todo
-        // state from this slot. Removing the thread from the event is
-        // surfaced as an X-icon at the trailing end on hover instead.
         final Command leadingCommand;
         if (!isTodo) {
           leadingCommand = MoveThreadToRespond(activity);
@@ -290,10 +291,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         }
 
-        // Leading column hugs a centred icon with horizontal padding that
-        // matches the trailing edge of the row: roomy on desktop, tight on
-        // mobile. The threads-in-agenda layout that needed an agenda-time-
-        // width gutter is no longer used here.
         final iconBaseSize = buildContext.theme.iconSizes.base;
         final leadingPad = buildContext.isMultiPanel
             ? buildContext.theme.spacing.lg
@@ -304,30 +301,30 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final String leadingTitle = !isTodo ? 'To respond' : 'Finish';
+        final String leadingTitle = !isTodo ? 'To do' : 'Mark done';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
         if (!isTodo) {
+          // Inactive: hidden at rest, circlePlus on hover.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
-              outlineIcon: PlotIcon.send,
+              outlineIcon: FontAwesomeIcons.circlePlus,
               showEmpty: !activity.unread,
               dotColor: activity.unread
                   ? buildContext.colour.accent.withValues(alpha: 0.7)
                   : null,
               iconHoverColor: iconHoverColor,
-              hoverIcon: Value(PlotIcon.send),
+              hoverIcon: Value(FontAwesomeIcons.circlePlus),
               title: leadingTitle,
             ),
             forceHover: isHovered,
             onLongPress: longPress,
           );
         } else {
-          // Active and scheduled threads both use the circle; hover swaps to
-          // a circle-with-check finish affordance. When unread, a centered
-          // dot overlays the circle instead of a shaded fill.
+          // Active: circle at rest; circleCheck on hover. Unread overlays
+          // a centered dot on the circle.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,

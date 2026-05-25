@@ -140,6 +140,8 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
               before[i] = (target: doneTopTarget(), silent: false);
               doneBoundaryEmitted = true;
             }
+          } else if (currentSection == ActivitySection.updates) {
+            // Updates accepts no drops; emit no tail boundary either.
           } else {
             before[i] = (
               target: BlockDropTarget(
@@ -165,14 +167,20 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
     if (item is AgendaThreadItem) {
       if (currentSection == null) continue;
       if (currentSection == ActivitySection.activity) {
-        // Only the first done thread gets a drop zone — and the target
-        // is "top of Done" (prev/next null), not adjacent to the first
-        // done thread. Skip emitting a boundary for any subsequent
-        // done thread so the gap never opens between done rows.
+        // Only the first activity thread gets a drop zone — and the
+        // target is "top of Activity" (prev/next null), not adjacent.
+        // Skip emitting a boundary for any subsequent activity thread
+        // so the gap never opens between activity rows.
         if (!doneBoundaryEmitted) {
           before[i] = (target: doneTopTarget(), silent: false);
           doneBoundaryEmitted = true;
         }
+        continue;
+      }
+      if (currentSection == ActivitySection.updates) {
+        // Updates is not a drop target — it's a derived projection over
+        // unread threads sorted by urgency. Drops over Updates should
+        // fall through; emit no boundaries here.
         continue;
       }
       final threadIdStr = item.thread.id.toString();

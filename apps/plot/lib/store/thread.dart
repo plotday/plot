@@ -2277,6 +2277,15 @@ class Thread extends Equatable implements Comparable<Thread> {
         requireTodoPredicate || (mutableFilter?.remove(Tag.todo) == true);
     final filterUnread =
         requireUnread || (mutableFilter?.remove(Tag.unread) == true);
+    // Task list / Reading list filters: when the user picks them, route
+    // through the stateFlag clause so the SQL where-list filters on the
+    // matching boolean column.
+    if (mutableFilter?.remove(Tag.task) == true) {
+      stateFlag = 'task';
+    }
+    if (mutableFilter?.remove(Tag.reading) == true) {
+      stateFlag = 'to_read';
+    }
 
     final variables = <Variable>[];
     final sqlBuf = StringBuffer();
