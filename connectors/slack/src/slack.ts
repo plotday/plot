@@ -818,7 +818,11 @@ export class Slack extends Connector<Slack> {
     const channelId = draft.channelId;
     const api = await this.getApi(channelId);
 
-    const body = draft.noteContent ?? draft.title;
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[slack] Cannot create channel post: body is empty");
+      return null;
+    }
     const result = await api.postMessage(channelId, body);
     if (!result?.ts) return null;
 
@@ -859,7 +863,11 @@ export class Slack extends Connector<Slack> {
     // Open (or retrieve existing) DM/MPIM conversation.
     const dmChannelId = await api.openConversation(userIds);
 
-    const body = draft.noteContent ?? draft.title;
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[slack] Cannot create direct message: body is empty");
+      return null;
+    }
     const result = await api.postMessage(dmChannelId, body);
     if (!result?.ts) return null;
 
@@ -879,9 +887,21 @@ export class Slack extends Connector<Slack> {
         // channelId is the actual DM conversation to post into.
         channelId: dmChannelId,
         threadTs: ts,
-        // tokenChannelId is an enabled workspace channel whose OAuth token
-        // grants workspace access. onNoteCreated uses this for getApi() since
-        // DM channel ids are not registered as "enabled" channels.
+        // tokenChannelId is an *enabled* workspace channel (C… / G…) whose
+        // OAuth token grants workspace-wide access. DM channel ids (D… / G…
+        // for MPIMs) are not registered as "enabled" channels, so getApi()
+        // must resolve the token through a channel that is. We capture the
+        // channel the user selected when composing the DM and store it here.
+        //
+        // LIMITATION: if the user later disables this channel (onChannelDisabled
+        // clears its token), replies to this DM thread will fail with
+        // "No Slack authentication token available". onNoteCreated /
+        // onNoteUpdated fall back to getApi(channelId), which also lacks a
+        // token for DM ids. A future improvement could enumerate other enabled
+        // channels for this workspace and try each in turn, but that requires
+        // a way to list active channels from connector state (not available
+        // today). Users can work around this by re-enabling any channel to
+        // restore workspace token access.
         tokenChannelId: draft.channelId,
         syncableId: draft.channelId,
       },
@@ -912,6 +932,15 @@ export class Slack extends Connector<Slack> {
       console.warn("syncMembers: Slack token unavailable", error);
       return;
     }
+
+    // Prepare the daily callback token before the pagination loop so we can
+    // schedule it in a finally block. This ensures the chain persists even
+    // when the loop throws an unexpected error (e.g. a transient network
+    // failure). Rate-limit and permanent-error branches handle their own
+    // scheduling (or skip rescheduling) and set scheduleDaily = false.
+    const nextRunAt = new Date(now + ONE_DAY_MS);
+    const dailyCallback = await this.callback(this.syncMembers, channelId);
+    let scheduleDaily = true;
 
     const contacts: NewContact[] = [];
     let cursor: string | undefined;
@@ -950,15 +979,25 @@ export class Slack extends Connector<Slack> {
 
         cursor = nextCursor;
       } while (cursor);
+
+      if (contacts.length > 0) {
+        await this.tools.integrations.saveContacts(contacts);
+      }
+
+      await this.set("membersSyncedAt", now);
     } catch (error) {
       if (error instanceof SlackRateLimitedError) {
-        // Schedule a retry for after the rate-limit window.
+        // Reschedule after the rate-limit window (shorter than one day).
+        // Suppress the daily finally-schedule so we don't queue two tasks.
+        scheduleDaily = false;
         const runAt = new Date(Date.now() + error.retryAfterMs);
         const retry = await this.callback(this.syncMembers, channelId);
         await this.rescheduleAt(retry, runAt, `syncMembers (${error.method})`);
         return;
       }
       if (error instanceof SlackPermanentError) {
+        // Permanent errors are not retried; suppress daily reschedule too.
+        scheduleDaily = false;
         console.warn(
           `syncMembers stopped: ${error.method} → ${error.slackError}`
         );
@@ -969,18 +1008,14 @@ export class Slack extends Connector<Slack> {
       }
       console.error("syncMembers: unexpected error", error);
       throw error;
+    } finally {
+      // Persist the daily chain even when an unexpected error is thrown. Rate-
+      // limit and permanent-error paths set scheduleDaily = false and return
+      // early above, so they are not double-scheduled here.
+      if (scheduleDaily) {
+        await this.runTask(dailyCallback, { runAt: nextRunAt });
+      }
     }
-
-    if (contacts.length > 0) {
-      await this.tools.integrations.saveContacts(contacts);
-    }
-
-    await this.set("membersSyncedAt", now);
-
-    // Schedule next daily sync.
-    const nextRunAt = new Date(now + ONE_DAY_MS);
-    const dailyCallback = await this.callback(this.syncMembers, channelId);
-    await this.runTask(dailyCallback, { runAt: nextRunAt });
   }
 
   // ---- Write-back: reply from Plot ----
