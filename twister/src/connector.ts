@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, type Link, type NewLinkWithNotes, type Note, type Thread } from "./plot";
+import { type Actor, type ActorId, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
 import {
   type AuthProvider,
@@ -69,6 +69,24 @@ export type NoteWriteBackResult = {
   externalContent?: string;
 };
 
+/**
+ * A Plot contact pre-resolved to its platform account ID, ready for use
+ * in a messaging dispatch.
+ *
+ * Populated by the runtime for `targets: "contacts"` link types before
+ * `onCreateLink` is called. The connector should use `externalAccountId`
+ * directly to address the recipient on the platform (e.g. Slack user ID,
+ * LinkedIn URN, Gmail address) without performing its own contact lookup.
+ */
+export type ResolvedRecipient = {
+  /** Plot contact UUID */
+  id: Uuid;
+  /** Display name, or null if not set */
+  name: string | null;
+  /** Platform-specific account identifier pre-resolved at dispatch time (e.g. Slack `U…`, LinkedIn URN, Gmail email address) */
+  externalAccountId: string;
+};
+
 export type CreateLinkDraft = {
   /** The channel (account + resource) the new item belongs to. */
   channelId: string;
@@ -87,6 +105,15 @@ export type CreateLinkDraft = {
    * the user did not add anyone to the thread.
    */
   contacts: Actor[];
+  /**
+   * Pre-resolved recipients for `targets: "contacts"` link types.
+   *
+   * Only populated when the picked link type has `targets: "contacts"`;
+   * otherwise undefined. Each entry contains the Plot contact UUID and
+   * the platform-specific account ID (`externalAccountId`) the connector
+   * should use to address the recipient without performing its own lookup.
+   */
+  recipients?: ResolvedRecipient[];
 };
 
 /**

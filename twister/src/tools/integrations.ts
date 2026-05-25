@@ -70,6 +70,18 @@ export type LinkTypeConfig = {
   supportsAssignee?: boolean;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
+  /**
+   * Selects the destination model for this link type's "Create new…" picker.
+   *
+   * - `"channels"` (default when omitted): The picker shows one chip per
+   *   enabled channel (e.g. a Linear workspace, a Slack channel). This is the
+   *   existing behaviour for task-tracker and calendar connectors.
+   * - `"contacts"`: The picker shows one chip per connection (account), and
+   *   the user picks recipients from their contacts before dispatching. The
+   *   runtime pre-resolves the chosen Plot contacts to platform account IDs
+   *   and delivers them as `CreateLinkDraft.recipients`.
+   */
+  targets?: "channels" | "contacts";
 };
 
 /**
