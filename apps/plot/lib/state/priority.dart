@@ -588,6 +588,15 @@ class PriorityBloc extends Cubit<PriorityState> {
   List<Thread> _activeTabHead = const [];
   bool _activeTabHeadSaturated = false;
 
+  /// Set to false in [_restartActiveTabSubscription] and flipped to true on
+  /// the first emission from a per-tab head subscription. Gates
+  /// [_rebuildActiveTabSection] so that adjacent subscriptions (notably
+  /// [_associationsSubscription], which fires on any priority reload) can't
+  /// publish an empty "loaded" state during the race window before the new
+  /// tab-head query yields. Without this, opening then immediately closing
+  /// search would briefly flash the activity feed's empty-state text.
+  bool _activeTabHeadReceived = false;
+
   /// Static append pages beyond the head for the active per-tab
   /// subscription. Filled by [fetchMoreActivityFeedItems] via the per-tab
   /// `fetch*Page` method that matches [_activeTabSubscriptionTab].
@@ -754,6 +763,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activeTabHeadSaturated = false;
     _activeTabAppendsExhausted = false;
     _activeTabAppendGeneration++;
+    _activeTabHeadReceived = false;
     _catchUpHeadTailCursor = null;
     _catchUpAppendCursor = null;
     _allTabHeadTailCursor = null;
@@ -792,6 +802,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabHead = result.threads;
       _activeTabHeadSaturated = result.saturated;
       _catchUpHeadTailCursor = result.tailCursor;
+      _activeTabHeadReceived = true;
       _rebuildActiveTabSection();
     });
   }
@@ -823,6 +834,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabHead = result.threads;
       _activeTabHeadSaturated = result.saturated;
       _actionTabHeadTailCursor = result.tailCursor;
+      _activeTabHeadReceived = true;
       _rebuildActiveTabSection();
     });
   }
@@ -851,6 +863,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabHead = result.threads;
       _activeTabHeadSaturated = result.saturated;
       _allTabHeadTailCursor = result.tailCursor;
+      _activeTabHeadReceived = true;
       _rebuildActiveTabSection();
     });
   }
@@ -863,6 +876,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _rebuildActiveTabSection() {
     final tab = _activeTabSubscriptionTab;
     if (tab == null) return;
+    // The tab-head subscription owns the ground-truth `_activeTabHead` for
+    // the active filter set; until it emits, any rebuild kicked off by an
+    // adjacent stream (associations, event-agenda updates, etc.) would
+    // publish stale or empty data labeled as `activityFeedLoaded: true`.
+    // Skip those — the tab-head listener will call us once data is in.
+    if (!_activeTabHeadReceived) return;
 
     final combined = <Thread>[..._activeTabHead, ..._activeTabAppended];
     final merged = _applyOverlay(combined, tab);
@@ -1101,7 +1120,27 @@ class PriorityBloc extends Cubit<PriorityState> {
       byId[t.id] = t;
     }
 
-    _overlay.removeWhere((id, o) => o.settled(byId[id]));
+    _overlay.removeWhere((id, o) {
+      final settled = o.settled(byId[id]);
+      if (settled) {
+        final actual = byId[id];
+        log.info(
+          '[bug2] overlay SETTLED id=$id '
+          'expected: unread=${o.expected?.unread} active=${o.expected?.active} '
+          'actual: unread=${actual?.unread} active=${actual?.active}',
+        );
+      } else {
+        final actual = byId[id];
+        if (actual != null) {
+          log.info(
+            '[bug2] overlay HOLDS id=$id '
+            'expected: unread=${o.expected?.unread} active=${o.expected?.active} '
+            'actual: unread=${actual.unread} active=${actual.active}',
+          );
+        }
+      }
+      return settled;
+    });
     if (_overlay.isEmpty) return sqlThreads;
 
     final patched = <Thread>[];

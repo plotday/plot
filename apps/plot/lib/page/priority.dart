@@ -1098,6 +1098,16 @@ class _PriorityPageState extends State<PriorityPage>
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
 
+    // Initial load / priority switch: the bloc has reset `activityFeedByTab`
+    // and `activityFeedLoaded` to wait for the new subscription's first
+    // emission. Show a LoadingPage so the user doesn't see the empty-state
+    // text flash before the real list arrives. Typing a search keeps
+    // `activityFeedLoaded == true` so the existing filtered list keeps
+    // rendering through the transition.
+    if (!hasAnyThread && !showFooter && !state.activityFeedLoaded) {
+      return const LoadingPage();
+    }
+
     if (!hasAnyThread &&
         !showFooter &&
         state.activityFeedDoneEnd &&

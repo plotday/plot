@@ -211,13 +211,27 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       _panelController?.updateSearchExpanded(false);
       _searchController.clear();
     });
+    // Only invoke bloc mutations when there's something to undo. Calling
+    // these unconditionally — even with the search field empty and no
+    // filters armed — restarts the activity-feed subscription and reloads
+    // the priority's auxiliary streams. The reloaded associations stream
+    // fires before the new tab-head stream and emits an empty "loaded"
+    // state, flashing the feed's empty-state text for ~100ms on every
+    // search open/close cycle.
     final priorityBloc = context.read<PriorityBloc>();
-    priorityBloc.updateSearch('');
-    priorityBloc.updateFilter([]);
+    if (priorityBloc.state.search.isNotEmpty) {
+      priorityBloc.updateSearch('');
+    }
+    if (priorityBloc.state.filter.isNotEmpty) {
+      priorityBloc.updateFilter([]);
+    }
     for (final icon in List<String>.from(priorityBloc.state.iconFilter)) {
       priorityBloc.updateIconFilter(icon);
     }
-    context.read<PrioritiesBloc>().updateSearch('');
+    final prioritiesBloc = context.read<PrioritiesBloc>();
+    if (prioritiesBloc.state.search.isNotEmpty) {
+      prioritiesBloc.updateSearch('');
+    }
     final notifier = ThreadHeaderNotifierProvider.read(context);
     notifier?.onSearchChanged?.call('');
     notifier?.onSearchClosed?.call();
