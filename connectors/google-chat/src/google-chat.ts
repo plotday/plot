@@ -1,10 +1,11 @@
 import GoogleContacts from "@plotday/connector-google-contacts";
 import {
   Connector,
+  type CreateLinkDraft,
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Actor, ContentType, NewActor, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, ContentType, NewActor, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
 import {
   AuthProvider,
@@ -27,6 +28,8 @@ import {
   type SyncState,
   extractMessageId,
   extractSpaceId,
+  extractThreadKey,
+  googleUserIdToAccountId,
   toSpaceName,
   syncChatSpace,
   transformChatThread,
@@ -65,6 +68,7 @@ export class GoogleChat extends Connector<GoogleChat> {
   static readonly handleReplies = true;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/chat.spaces.readonly",
+    "https://www.googleapis.com/auth/chat.spaces.create",
     "https://www.googleapis.com/auth/chat.messages",
     "https://www.googleapis.com/auth/chat.memberships.readonly",
     "https://www.googleapis.com/auth/chat.users.readstate",
@@ -83,6 +87,25 @@ export class GoogleChat extends Connector<GoogleChat> {
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
+    },
+    {
+      type: "google-chat-space",
+      label: "Space message",
+      logo: "https://plot.day/assets/logo-google-chat.svg",
+      logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
+      ],
+    },
+    {
+      type: "google-chat-dm",
+      label: "Direct message",
+      logo: "https://plot.day/assets/logo-google-chat.svg",
+      logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
+      ],
     },
   ];
 
@@ -211,6 +234,12 @@ export class GoogleChat extends Connector<GoogleChat> {
       initialSync: true,
     };
     await this.set(`sync_state_${channel.id}`, initialState);
+
+    // Sync workspace members once per day for the recipient picker.
+    // Gated inside syncMembers to at most once per 24 hours, so enabling
+    // multiple channels only hits the directory once.
+    const membersCallback = await this.callback(this.syncMembers, channel.id);
+    await this.runTask(membersCallback);
 
     if (channel.id === DM_CHANNEL_ID) {
       // For DMs, list all DM spaces and sync each (batch only, no realtime)
@@ -1266,6 +1295,245 @@ export class GoogleChat extends Connector<GoogleChat> {
       key: msgId,
       externalContent,
     };
+  }
+
+  // ---- Compose new messages from Plot ----
+
+  /**
+   * Creates a new Google Chat message from Plot via `onCreateLink`.
+   *
+   * - `google-chat-space`: posts to `draft.channelId` (the space resource id
+   *   like "AAAA…"). Uses the existing channel token directly.
+   * - `google-chat-dm`: finds or creates the DM space for the selected
+   *   recipients, then posts there.
+   *
+   * The returned `meta` matches what `onNoteCreated` reads so replies via
+   * the existing write-back path work with zero extra wiring.
+   */
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type === "google-chat-space") {
+      return this.createSpacePost(draft);
+    }
+    if (draft.type === "google-chat-dm") {
+      return this.createDirectMessage(draft);
+    }
+    return null;
+  }
+
+  private async createSpacePost(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const channelId = draft.channelId;
+    const spaceName = toSpaceName(channelId);
+    const api = await this.getApi(channelId);
+
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[google-chat] Cannot create space post: body is empty");
+      return null;
+    }
+
+    const result = await api.createMessage(spaceName, body);
+    const msgId = `message-${extractMessageId(result.name)}`;
+    // Store sent message ID for dedup when synced back
+    await this.set(`sent:${msgId}`, true);
+
+    const threadKey = extractThreadKey(result.thread.name);
+
+    return {
+      source: `google-chat:${channelId}:thread:${threadKey}`,
+      type: "google-chat-space",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(result.createTime),
+      sourceUrl: `https://chat.google.com/room/${channelId}/${threadKey}`,
+      channelId,
+      meta: {
+        syncProvider: "google-chat",
+        syncableId: channelId,
+        spaceId: channelId,
+        spaceName,
+        threadName: result.thread.name,
+        threadKey,
+      },
+    };
+  }
+
+  private async createDirectMessage(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const recipients = draft.recipients;
+    if (!recipients || recipients.length === 0) {
+      console.error("[google-chat] google-chat-dm onCreateLink: no recipients provided");
+      return null;
+    }
+
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[google-chat] Cannot create direct message: body is empty");
+      return null;
+    }
+
+    // Retrieve the authenticated user's Google user ID.
+    const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
+    const callerName = authUser?.googleUserId;
+    if (!callerName) {
+      console.error("[google-chat] google-chat-dm: no auth_google_user stored; re-auth required");
+      return null;
+    }
+
+    // externalAccountId is the bare numeric Google user ID (without "users/" prefix).
+    const recipientIds = recipients.map((r) => r.externalAccountId);
+
+    // Use the DM_CHANNEL_ID token if available, otherwise fall back to draft.channelId.
+    // The DM channel is not a "space" channel but shares the same Google auth token.
+    let api: GoogleChatApi;
+    try {
+      api = await this.getApi(DM_CHANNEL_ID);
+    } catch {
+      // Fall back to the picker's channelId token (any enabled space works).
+      api = await this.getApi(draft.channelId);
+    }
+
+    let dmSpaceName: string;
+
+    if (recipientIds.length === 1) {
+      // 1:1 DM — use spaces.setup to find or create the DM space.
+      const recipientName = `users/${recipientIds[0]}`;
+      const space = await api.setupDmSpace(callerName, recipientName);
+      dmSpaceName = space.name;
+    } else {
+      // Group DM (>1 recipient) — create a GROUP_CHAT space and add all members.
+      // Google Chat distinguishes unnamed group chats (spaceType=GROUP_CHAT) from
+      // named spaces (spaceType=SPACE). We use GROUP_CHAT here.
+      const membershipEntries = [
+        { member: { name: callerName, type: "HUMAN" as const } },
+        ...recipientIds.map((id) => ({
+          member: { name: `users/${id}`, type: "HUMAN" as const },
+        })),
+      ];
+      const space = await api.createSpace(undefined, "GROUP_CHAT", membershipEntries);
+      dmSpaceName = space.name;
+    }
+
+    const result = await api.createMessage(dmSpaceName, body);
+    const msgId = `message-${extractMessageId(result.name)}`;
+    // Store sent message ID for dedup when synced back
+    await this.set(`sent:${msgId}`, true);
+
+    const threadKey = extractThreadKey(result.thread.name);
+    const spaceId = extractSpaceId(dmSpaceName);
+
+    return {
+      source: `google-chat:${spaceId}:thread:${threadKey}`,
+      type: "google-chat-dm",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(result.createTime),
+      sourceUrl: `https://chat.google.com/dm/${spaceId}/${threadKey}`,
+      // Route DM threads to the DM channel so onNoteCreated can resolve a token.
+      channelId: DM_CHANNEL_ID,
+      meta: {
+        syncProvider: "google-chat",
+        // channelId is the actual DM space — needed by onNoteCreated / onNoteUpdated.
+        channelId: DM_CHANNEL_ID,
+        syncableId: DM_CHANNEL_ID,
+        spaceId,
+        spaceName: dmSpaceName,
+        threadName: result.thread.name,
+        threadKey,
+      },
+    };
+  }
+
+  // ---- Workspace member sync ----
+
+  /**
+   * Syncs Google Chat space members as Plot contacts so the recipient picker
+   * can show reachable Google Chat users.
+   *
+   * Google Chat's `chat.memberships.readonly` scope allows listing members
+   * of spaces the user is in, but there is no directory-wide "list all users"
+   * endpoint available under user OAuth (that would require Workspace Admin SDK
+   * or the People API with domain delegation, which are beyond the scopes we
+   * request). Instead, we gather members from already-synced spaces:
+   * each batch sync calls `getMemberInfo()` which already calls `listMembers()`,
+   * so contacts accumulate organically as messages are synced.
+   *
+   * This method provides a proactive pass: it iterates all enabled named spaces
+   * and saves their members so the picker is populated even before messages
+   * arrive. Gated to at most once per 24 hours per connection.
+   */
+  async syncMembers(channelId: string): Promise<void> {
+    const now = Date.now();
+    const lastSyncedAt = await this.get<number>("googleChatMembersSyncedAt");
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (lastSyncedAt && now - lastSyncedAt < ONE_DAY_MS) {
+      return; // Already synced recently; skip.
+    }
+
+    // Prepare the daily callback token before any API calls so we can schedule
+    // it in a finally block even if the sync throws.
+    const nextRunAt = new Date(now + ONE_DAY_MS);
+    const dailyCallback = await this.callback(this.syncMembers, channelId);
+
+    try {
+      // Enumerate members from all enabled named spaces.
+      // We iterate spaces rather than calling a hypothetical directory endpoint
+      // because user OAuth doesn't grant domain-wide contact enumeration.
+      const tokenChannelId = channelId !== DM_CHANNEL_ID ? channelId : null;
+      const token = tokenChannelId
+        ? await this.tools.integrations.get(tokenChannelId)
+        : await this.tools.integrations.get(DM_CHANNEL_ID);
+      if (!token) {
+        console.warn("[google-chat] syncMembers: no token available, skipping");
+        return;
+      }
+
+      const api = new GoogleChatApi(token.token);
+      const spaces = await api.listSpaces();
+      const contacts: NewContact[] = [];
+      const seen = new Set<string>();
+
+      for (const space of spaces) {
+        if (space.spaceType !== "SPACE") continue;
+        try {
+          const members = await api.listMembers(space.name);
+          for (const m of members) {
+            if (m.member.type !== "HUMAN") continue;
+            const accountId = googleUserIdToAccountId(m.member.name);
+            if (seen.has(accountId)) continue;
+            seen.add(accountId);
+
+            const email = m.member.email;
+            const name = m.member.displayName || undefined;
+            if (!email && !name) continue;
+
+            const contact: NewContact = {
+              ...(email ? { email } : {}),
+              ...(name ? { name } : {}),
+              source: { provider: AuthProvider.Google, accountId },
+            } as NewContact;
+            contacts.push(contact);
+          }
+        } catch {
+          // Non-fatal: skip spaces we can't list members for.
+        }
+      }
+
+      if (contacts.length > 0) {
+        await this.tools.integrations.saveContacts(contacts);
+      }
+
+      await this.set("googleChatMembersSyncedAt", now);
+    } catch (error) {
+      console.error("[google-chat] syncMembers: unexpected error", error);
+      throw error;
+    } finally {
+      await this.runTask(dailyCallback, { runAt: nextRunAt });
+    }
   }
 }
 
