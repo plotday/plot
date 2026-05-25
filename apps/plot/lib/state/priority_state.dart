@@ -159,14 +159,6 @@ class PriorityState extends Equatable {
   List<AgendaItem> get activityFeedItems =>
       activityFeedByTab[activeTab]?.items ?? const [];
 
-  /// For each date represented in the active tab (when it's an action
-  /// tab), the full set of threads that **natively** belong to that
-  /// date — before the per-priority per-day cap pushes overflow forward.
-  /// Reschedule All uses this so a day's full native set moves
-  /// together. Empty for [ActivityTab.catchUp] and [ActivityTab.all].
-  Map<Date, List<Thread>> get activityFeedNativesByDate =>
-      activityFeedByTab[activeTab]?.nativesByDate ?? const {};
-
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 

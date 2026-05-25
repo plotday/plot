@@ -63,19 +63,13 @@ enum ActivityTab {
 }
 
 /// The per-tab build output: the flat list of [AgendaItem]s the widget
-/// renders for the tab, plus the pre-cascade native-by-date map
-/// (relevant only for action tabs — empty for [ActivityTab.catchUp] and
-/// [ActivityTab.all]).
+/// renders for the tab.
 class ActivityFeedTabData {
-  const ActivityFeedTabData({
-    required this.items,
-    this.nativesByDate = const {},
-  });
+  const ActivityFeedTabData({required this.items});
 
   final List<AgendaItem> items;
-  final Map<Date, List<Thread>> nativesByDate;
 
-  static const empty = ActivityFeedTabData(items: [], nativesByDate: {});
+  static const empty = ActivityFeedTabData(items: []);
 }
 
 /// Classify a thread into its Activity-tab section. Mirrors the four
