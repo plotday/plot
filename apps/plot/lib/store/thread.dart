@@ -3020,6 +3020,58 @@ SELECT
         );
   }
 
+  /// Live stream of the All tab's head page. Mirrors [watchCatchUpHead]
+  /// but with the activity-at-only cursor shape — see [_watchAllTabIds].
+  static Stream<({
+    List<Thread> threads,
+    ({String activityAt, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchAllTabHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchAllTabIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (activityAt: last.activityAt, id: last.id),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
   /// Page result for the All tab's cursor pagination.
   static Future<({
     List<Thread> threads,
