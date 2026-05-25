@@ -24,13 +24,13 @@ DateTime? _sectionToMarker(ActivitySection section) {
   switch (section) {
     case ActivitySection.eventAgenda:
       return _eventAgendaSectionMarker;
-    case ActivitySection.today:
+    case ActivitySection.doing:
       return _todaySectionMarker;
     case ActivitySection.scheduled:
       return null; // disambiguated by targetDate
-    case ActivitySection.newSection:
+    case ActivitySection.updates:
       return _newSectionMarker;
-    case ActivitySection.done:
+    case ActivitySection.activity:
       return _doneSectionMarker;
   }
 }
@@ -39,9 +39,9 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
   if (target.targetDate != null) return ActivitySection.scheduled;
   final marker = target.targetPeriodStart;
   if (marker == _eventAgendaSectionMarker) return ActivitySection.eventAgenda;
-  if (marker == _todaySectionMarker) return ActivitySection.today;
-  if (marker == _newSectionMarker) return ActivitySection.newSection;
-  if (marker == _doneSectionMarker) return ActivitySection.done;
+  if (marker == _todaySectionMarker) return ActivitySection.doing;
+  if (marker == _newSectionMarker) return ActivitySection.updates;
+  if (marker == _doneSectionMarker) return ActivitySection.activity;
   return null;
 }
 
@@ -108,7 +108,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
 
   BlockDropTarget doneTopTarget() => BlockDropTarget(
     targetDate: null,
-    targetPeriodStart: _sectionToMarker(ActivitySection.done),
+    targetPeriodStart: _sectionToMarker(ActivitySection.activity),
     prevBlockId: null,
     prevPriorityId: null,
     nextBlockId: null,
@@ -135,7 +135,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
         // empty, emit the single Done top target here so the empty
         // section remains a valid drop site.
         if (currentSection != null) {
-          if (currentSection == ActivitySection.done) {
+          if (currentSection == ActivitySection.activity) {
             if (!doneBoundaryEmitted) {
               before[i] = (target: doneTopTarget(), silent: false);
               doneBoundaryEmitted = true;
@@ -164,7 +164,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
     }
     if (item is AgendaThreadItem) {
       if (currentSection == null) continue;
-      if (currentSection == ActivitySection.done) {
+      if (currentSection == ActivitySection.activity) {
         // Only the first done thread gets a drop zone — and the target
         // is "top of Done" (prev/next null), not adjacent to the first
         // done thread. Skip emitting a boundary for any subsequent
@@ -210,7 +210,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
   //     [BlockDropZone]'s target-equality check.
   //   * Other sections → ordinary tail target.
   if (currentSection != null) {
-    if (currentSection == ActivitySection.done) {
+    if (currentSection == ActivitySection.activity) {
       afterList = (
         target: doneTopTarget(),
         silent: doneBoundaryEmitted,

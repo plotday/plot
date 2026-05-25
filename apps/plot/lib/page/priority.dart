@@ -1000,33 +1000,18 @@ class _PriorityPageState extends State<PriorityPage>
                         // over labelling the first block.
                         child: Builder(
                           builder: (context) {
-                            final isMulti = context.isMultiPanel;
-                            final navInset = isMulti
-                                ? 0.0
-                                : BottomNavInset.of(context);
-                            final header = Padding(
-                              padding: EdgeInsets.only(bottom: navInset),
-                              child: _ActivityFeedTabHeader(
-                                state: state,
-                                atBottom: !isMulti,
+                            // Unified feed: no tab header. The four
+                            // sections (Updates / Doing / Scheduled /
+                            // Activity) render inline as agenda headers.
+                            return _buildActivityFeed(
+                              context,
+                              state,
+                              items,
+                              listController,
+                              ScrollControllerContext.of(context),
+                              scrollStorageKey: PageStorageKey(
+                                'priority_feed_${widget.priorityId}',
                               ),
-                            );
-                            final list = Expanded(
-                              child: _buildActivityFeed(
-                                context,
-                                state,
-                                items,
-                                listController,
-                                ScrollControllerContext.of(context),
-                                scrollStorageKey: PageStorageKey(
-                                  'priority_feed_${widget.priorityId}',
-                                ),
-                              ),
-                            );
-                            return Column(
-                              children: isMulti
-                                  ? [header, list]
-                                  : [list, header],
                             );
                           },
                         ),
@@ -1098,7 +1083,7 @@ class _PriorityPageState extends State<PriorityPage>
     final text = item.text;
     if (text == null) return false;
     final marker = ActivitySectionMarker.tryDecode(text);
-    return marker?.section == ActivitySection.today;
+    return marker?.section == ActivitySection.doing;
   }
 
   Widget _buildActivityFeed(
@@ -1268,7 +1253,7 @@ class _PriorityPageState extends State<PriorityPage>
                 // like "Tomorrow" or "Monday" (which also flow
                 // through AgendaTile's text-only path with their
                 // relativeDateLabel as text).
-                final isTodayMarker = marker?.section == ActivitySection.today;
+                final isTodayMarker = marker?.section == ActivitySection.doing;
                 if (isTodayMarker) {
                   if (context.isMultiPanel) {
                     return const [SizedBox.shrink()];

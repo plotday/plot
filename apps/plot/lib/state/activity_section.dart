@@ -3,93 +3,88 @@ import 'package:plot/store/store.dart';
 
 /// Cross-component signal: when the user taps a multi-thread
 /// notification, [NotificationLandingPage] sets this to true. The
-/// matching priority page consumes it on mount, switches to the
-/// [ActivityTab.catchUp] tab, and clears the flag. Single-thread
-/// notifications still route through `ThreadLookupRoute` and never
-/// touch this signal.
+/// matching priority page consumes it on mount and scrolls to the
+/// Updates section at the top of the unified feed, then clears the
+/// flag. Single-thread notifications still route through
+/// `ThreadLookupRoute` and never touch this signal.
 class PendingActivityFeedView {
-  static bool openCatchUpTab = false;
+  /// Scroll-to-top hint for multi-thread notification taps.
+  static bool scrollToUpdates = false;
+
+  /// Deprecated alias for [scrollToUpdates] retained for transitional
+  /// callers. The unified feed always shows Updates at the top, so the
+  /// old "open Catch up tab" semantics map cleanly onto the scroll hint.
+  @Deprecated('Use scrollToUpdates')
+  static bool get openCatchUpTab => scrollToUpdates;
+  @Deprecated('Use scrollToUpdates')
+  static set openCatchUpTab(bool value) => scrollToUpdates = value;
 }
 
-/// The sections of the Activity tab. Each thread belongs to exactly
-/// one ordinary section, computed from `Thread.isActiveThread` /
-/// `isScheduledThread` / `isUnreadOnly` / `isInactiveThread`.
-///
-/// - [eventAgenda] — Pinned event thread + associated threads. Only
-///                   present when an event is currently selected.
-/// - [today]      — Active threads (todo with `todoNowDate` sentinel or
-///                  schedule date today/past).
-/// - [scheduled]  — Todo with a future schedule date (per-day sections).
-/// - [newSection] — Unread, not active or scheduled.
-/// - [done]       — Inactive (everything else).
-enum ActivitySection { eventAgenda, today, scheduled, newSection, done }
-
-/// The top-level tabs that split the activity feed.
-///
-/// - [catchUp] — Every unread thread (sorted by urgency). No reorder.
-/// - [respond] — Threads whose schedule.action == 'respond'. Reorderable,
-///   organised into Today + per-day Scheduled sub-sections.
-/// - [doIt]    — Threads whose schedule.action == 'do'. Same shape as
-///   [respond]. (Named `doIt` because `do` is a Dart keyword.)
-/// - [read]    — Threads whose schedule.action == 'read'. Same shape.
-/// - [all]     — Everything visible to the user in this priority,
-///   sorted by activityAt DESC. No reorder.
-///
-/// Unread threads with a non-null schedule.action appear in both
-/// [catchUp] and their action tab.
+/// Transitional shim: the unified feed has only one "tab" (the whole
+/// feed). Callers that still reference [ActivityTab] route through this
+/// single-value enum; the per-tab SQL paths short-circuit to the
+/// unified builder.
 enum ActivityTab {
-  catchUp('Catch up'),
-  respond('Respond'),
-  doIt('Do'),
-  read('Read'),
-  all('All');
+  unified('Activity');
 
   const ActivityTab(this.label);
   final String label;
 
-  /// The `schedule.action` value a thread must have to appear in this
-  /// tab, or null if the tab is not action-filtered.
-  String? get actionFilter => switch (this) {
-    ActivityTab.respond => 'respond',
-    ActivityTab.doIt => 'do',
-    ActivityTab.read => 'read',
-    _ => null,
-  };
+  /// All callers reference [actionFilter] to decide which thread_state
+  /// flag to filter on. The unified feed never filters at the tab level
+  /// (the user's search filters drive that), so this is always null.
+  String? get actionFilter => null;
 
-  /// True for [respond] / [doIt] / [read] — the tabs that organise
-  /// threads by Today + Scheduled-day sub-sections and allow drag
-  /// reorder + reschedule.
-  bool get isActionTab => actionFilter != null;
+  /// Retained for callers that branched on this. Always false in the
+  /// unified feed.
+  bool get isActionTab => false;
+
+  /// Backwards-compat alias.
+  static const ActivityTab catchUp = ActivityTab.unified;
+  static const ActivityTab respond = ActivityTab.unified;
+  static const ActivityTab doIt = ActivityTab.unified;
+  static const ActivityTab read = ActivityTab.unified;
+  static const ActivityTab all = ActivityTab.unified;
 }
 
-/// The per-tab build output: the flat list of [AgendaItem]s the widget
-/// renders for the tab.
-class ActivityFeedTabData {
-  const ActivityFeedTabData({required this.items});
+/// The sections of the unified activity feed.
+///
+/// The feed is built in this order; the Updates section explicitly
+/// duplicates: every unread thread appears in Updates in addition to
+/// whichever non-Updates section it would otherwise sit in.
+///
+/// - [eventAgenda] — Pinned event thread + associated threads. Only
+///                   present when an event is currently selected.
+/// - [updates]    — All unread threads. Sorted by urgency, like the
+///                  pre-tab "Catch up" view. Not a drop target — drops
+///                  fall through to the section below.
+/// - [doing]      — Active threads not scheduled for the future.
+///                  Reorderable end-to-end.
+/// - [scheduled]  — Active threads scheduled for a future day.
+///                  Per-day sub-sections, reorderable within a day.
+/// - [activity]   — Tail of history: everything that's not unread and
+///                  not active. Only the top is a valid drop target;
+///                  drops there mark the thread done and bump it to
+///                  the top of activity.
+enum ActivitySection { eventAgenda, updates, doing, scheduled, activity }
 
-  final List<AgendaItem> items;
-
-  static const empty = ActivityFeedTabData(items: []);
-}
-
-/// Classify a thread into its Activity-tab section. Mirrors the four
-/// boolean getters on Thread; centralized here so callers can switch on
-/// the result without re-deriving the booleans.
-ActivitySection sectionFor(Thread thread) {
-  if (thread.isActiveThread) return ActivitySection.today;
+/// Classify a thread into its primary (non-Updates) section. The feed
+/// builder layers the Updates section on top by scanning for unread
+/// threads independently.
+ActivitySection primarySectionFor(Thread thread) {
+  if (thread.isActiveThread) return ActivitySection.doing;
   if (thread.isScheduledThread) return ActivitySection.scheduled;
-  if (thread.isUnreadOnly) return ActivitySection.newSection;
-  return ActivitySection.done;
+  return ActivitySection.activity;
 }
+
+/// Backwards-compat alias for callers that haven't moved to the
+/// primary/Updates split yet. Returns the primary section.
+ActivitySection sectionFor(Thread thread) => primarySectionFor(thread);
 
 /// Marker sentinel embedded in `AgendaHeaderItem.text` so the drag
 /// dispatcher can identify which section a header belongs to without
 /// string-matching on the displayed label. Encoded as
 /// `__activity_section__:<section.name>:<displayLabel>`.
-///
-/// We use a string sentinel rather than a new field on `AgendaHeaderItem`
-/// to avoid changes to the agenda-shared item model that the parallel
-/// agenda redesign agent is concurrently editing.
 class ActivitySectionMarker {
   static const String prefix = '__activity_section__';
 
@@ -117,17 +112,36 @@ class ActivitySectionMarker {
     switch (section) {
       case ActivitySection.eventAgenda:
         return 'Event Agenda';
-      case ActivitySection.today:
+      case ActivitySection.updates:
+        return 'Updates';
+      case ActivitySection.doing:
         return 'Doing';
       case ActivitySection.scheduled:
         return 'Scheduled';
-      case ActivitySection.newSection:
-        return 'New';
-      case ActivitySection.done:
-        return 'Done';
+      case ActivitySection.activity:
+        return 'Activity';
     }
   }
 }
+
+/// True for sections where the user can drop a thread anywhere within
+/// the section's slot range to position it exactly. Doing and per-day
+/// Scheduled rows accept arbitrary drops; Activity only accepts a drop
+/// at the very top; Updates is not a drop target at all.
+bool sectionAcceptsArbitraryDrop(ActivitySection section) =>
+    section == ActivitySection.doing || section == ActivitySection.scheduled;
+
+/// True when the section is a valid drop target only at its very top
+/// (and clamps drops anywhere inside to that single slot).
+bool sectionDropsAtTopOnly(ActivitySection section) =>
+    section == ActivitySection.activity;
+
+/// True when the section accepts no drops at all. The drag dispatcher
+/// should fall through to the next section if the pointer is over one
+/// of these.
+bool sectionRejectsDrops(ActivitySection section) =>
+    section == ActivitySection.updates ||
+    section == ActivitySection.eventAgenda;
 
 /// Human-readable relative-date label for a Scheduled-section header.
 /// "Tomorrow" for today+1, weekday name for the next 6 days, "MMM d"
@@ -166,4 +180,14 @@ String relativeDateLabel(Date date) {
   final m = months[date.month - 1];
   if (date.year != today.year) return '$m ${date.day}, ${date.year}';
   return '$m ${date.day}';
+}
+
+/// Per-feed build output. Kept for callers that still expect a typed
+/// container; mirrors the pre-tab and tab-era shape.
+class ActivityFeedTabData {
+  const ActivityFeedTabData({required this.items});
+
+  final List<AgendaItem> items;
+
+  static const empty = ActivityFeedTabData(items: []);
 }
