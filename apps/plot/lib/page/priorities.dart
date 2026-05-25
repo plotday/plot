@@ -227,12 +227,14 @@ class _SearchMatchesList extends StatelessWidget {
   Widget build(BuildContext context) {
     final isLeftPanel =
         PanelPositionProvider.of(context) == HeaderPosition.left;
-    final itemStyle = (isLeftPanel
-            ? context.theme.typography.sm
-            : context.theme.typography.md)
-        .copyWith(fontWeight: FontWeight.w500);
-    final BorderRadius? itemBorderRadius =
-        isLeftPanel ? BorderRadius.circular(6) : null;
+    final itemStyle =
+        (isLeftPanel
+                ? context.theme.typography.sm
+                : context.theme.typography.md)
+            .copyWith(fontWeight: FontWeight.w500);
+    final BorderRadius? itemBorderRadius = isLeftPanel
+        ? BorderRadius.circular(6)
+        : null;
     final bool monochrome = isLeftPanel;
 
     // Pull the threads currently visible in the activity feed (after
@@ -255,6 +257,7 @@ class _SearchMatchesList extends StatelessWidget {
         matchPriorities.add(p);
       }
     }
+
     for (final item in feedItems) {
       if (item is AgendaThreadItem) addThread(item.thread);
     }
@@ -381,10 +384,7 @@ class LeftPanelFooter extends StatelessWidget {
                   icon: PlotIcon.account,
                   muted: true,
                   highlightColor: const Color(0x00000000),
-                  command: CommandWrapper(
-                    ShowSettings(),
-                    icon: Value(null),
-                  ),
+                  command: CommandWrapper(ShowSettings(), icon: Value(null)),
                 );
               }
               return const SizedBox.shrink();

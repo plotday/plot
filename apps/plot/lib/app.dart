@@ -89,6 +89,7 @@ class AppState extends State<App> {
                                 builder: (context) =>
                                     material.MaterialApp.router(
                                       title: 'Plot',
+                                      debugShowCheckedModeBanner: false,
                                       scrollBehavior:
                                           const PlotScrollBehavior(),
                                       localizationsDelegates:
