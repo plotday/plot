@@ -120,7 +120,7 @@ export class Gmail extends Connector<Gmail> {
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
-        { status: "starred", label: "Starred", tag: Tag.Star, todo: true },
+        { status: "starred", label: "Starred", tag: Tag.Star, active: true },
         { status: "archived", label: "Archived", tag: Tag.Done, done: true },
       ],
     },
