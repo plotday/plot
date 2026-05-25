@@ -2162,6 +2162,9 @@ export class Integrations extends Tool implements IAuth {
 
         if (linkTypeConfig?.targets === "contacts") {
           const contactIds = draft.contacts.map((c) => c.id);
+          // contact_external_account has no workspace_id column, so this returns any row for a given contact + provider.
+          // For users with multiple workspaces of the same provider (e.g. two Slack accounts), the picked externalAccountId
+          // may belong to a different workspace than the one we're dispatching to. Acceptable for v1; revisit when multi-workspace is needed.
           const rows = await this.db
             .selectFrom("contact_external_account")
             .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
