@@ -1247,6 +1247,34 @@ class _PriorityPageState extends State<PriorityPage>
                   scheduleAt: header.scheduleAt,
                 );
 
+                // "Reschedule all" affordance for the Doing block and
+                // every Scheduled-day block. Collect the threads that
+                // follow this header until the next AgendaHeaderItem and
+                // skip rendering the button when the block is empty.
+                final canRescheduleAll =
+                    marker != null &&
+                    (marker.section == ActivitySection.doing ||
+                        marker.section == ActivitySection.scheduled);
+                if (canRescheduleAll) {
+                  final sectionThreads = <Thread>[];
+                  for (var j = index + 1; j < displayItems.length; j++) {
+                    final next = displayItems[j];
+                    if (next is AgendaHeaderItem) break;
+                    if (next is AgendaThreadItem) {
+                      sectionThreads.add(next.thread);
+                    }
+                  }
+                  if (sectionThreads.isNotEmpty) {
+                    return [
+                      _SectionHeaderWithRescheduleAll(
+                        tile: tile,
+                        threads: sectionThreads,
+                        sectionLabel: marker.label,
+                      ),
+                    ];
+                  }
+                }
+
                 return [tile];
               },
               activity: (agendaActivity) {
@@ -1433,11 +1461,52 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   }
 }
 
-/// Section header (Today, a future Scheduled day, or New) overlaid with a
-/// small trailing-edge affordance ("Reschedule all" / "Mark all read").
-/// The underlying [AgendaTile] keeps its centered text and dark band; the
-/// button is laid out in a Row with an invisible mirror on the left so the
-/// centered title stays at the row's true horizontal midpoint.
+/// Section header (Doing or a Scheduled-day bucket) paired with a small
+/// trailing-edge "Reschedule all" button. The underlying [AgendaTile] keeps
+/// its centered text; the button sits in a Row with an invisible mirror on
+/// the left so the centered title stays at the row's true horizontal
+/// midpoint regardless of the button's width.
+class _SectionHeaderWithRescheduleAll extends StatelessWidget {
+  const _SectionHeaderWithRescheduleAll({
+    required this.tile,
+    required this.threads,
+    required this.sectionLabel,
+  });
+
+  final Widget tile;
+  final List<Thread> threads;
+  final String sectionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.theme.spacing;
+    final button = Padding(
+      padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+      child: Button.icon(
+        RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+      ),
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Invisible mirror on the left reserves the button's width so
+        // the centred tile text sits at the row's true horizontal
+        // midpoint. Using the same widget on both sides keeps the
+        // reserved widths identical down to anti-aliasing.
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: button,
+        ),
+        Expanded(child: tile),
+        button,
+      ],
+    );
+  }
+}
+
 /// Sticky tab header for the activity feed. Renders five tab labels —
 /// Catch up | Respond | Do | Read | All — centred and separated by
 /// `veryMuted` pipes. The active tab is in the foreground colour;
