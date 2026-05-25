@@ -69,9 +69,13 @@ SELECT
     COALESCE(ts.read_at IS NULL AND ts.user_id IS NOT NULL, FALSE) AS unread,
     -- Importance: 0 when there's no thread_state row (treat as low/not-active).
     COALESCE(ts.importance, 0::smallint) AS importance,
-    -- Action type: drives the activity-feed tab. NULL when no thread_state row
-    -- (e.g. clearly passive content the AI didn't bother to track).
-    ts.action_type,
+    -- Three independent state booleans (default FALSE when no thread_state row):
+    --   active  — Doing section (user is acting on this now).
+    --   task    — task list (set by Linear/Todoist-style connectors on assignment).
+    --   to_read — reading list (long-form content, AI- or user-flagged).
+    COALESCE(ts.active,  FALSE) AS active,
+    COALESCE(ts.task,    FALSE) AS task,
+    COALESCE(ts.to_read, FALSE) AS to_read,
     -- Urgent: AI/user flag that forces immediate notification (bypasses
     -- see_within delay). NULL when no thread_state row.
     ts.urgent,
@@ -240,7 +244,7 @@ WHERE
 --     the stub's seq and the cursor will not re-emit it after the client
 --     first picks it up. This is the leak-prevention mechanism.
 --   • Sensitive fields NULL: title, preview, icon, topic, contacts,
---     groups, last_note_*, bumped_at, action_type, urgent, state_*.
+--     groups, last_note_*, bumped_at, active/task/to_read, urgent, state_*.
 --     unread=false, importance=0.
 --   • priority_id kept (with root fallback) — the row's about to be
 --     hard-deleted client-side, but during the brief window it should
@@ -279,7 +283,9 @@ SELECT
     NULL::timestamptz AS bumped_at,
     FALSE AS unread,
     0::smallint AS importance,
-    NULL::text AS action_type,
+    FALSE AS active,
+    FALSE AS task,
+    FALSE AS to_read,
     NULL::boolean AS urgent,
     NULL::double precision AS state_order,
     NULL::daterange AS state_on,

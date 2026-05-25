@@ -77,7 +77,9 @@ class _NotificationLandingPageState extends State<NotificationLandingPage> {
     }
 
     if (!mounted) return;
-    PendingActivityFeedView.openCatchUpTab = true;
+    // The unified feed surfaces Updates at the top, so no special signal
+    // is needed — multi-thread notification taps land directly on the
+    // priority page.
     final multi = context.read<LayoutBloc>().state.multiPanel;
     context.router.replaceAll([
       PriorityRoute(

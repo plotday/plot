@@ -64,12 +64,18 @@ const RELATIONS_PAGE_ERROR_MAX_DELAY_MS = 8 * 60 * 60 * 1000;
 const RELATIONS_REFRESH_MIN_DELAY_MS = 18 * 60 * 60 * 1000;
 const RELATIONS_REFRESH_MAX_DELAY_MS = 30 * 60 * 60 * 1000;
 
+// Private connector — references the `"linkedin"` auth provider value
+// directly via a typecast since the OSS twister removed
+// `AuthProvider.LinkedIn` along with the OSS LinkedIn-messaging connector.
+// The runtime stored value is still the string `"linkedin"`.
+const LINKEDIN_PROVIDER = "linkedin" as AuthProvider;
+
 export class LinkedIn extends Connector<LinkedIn> {
-  static readonly PROVIDER = AuthProvider.LinkedIn;
+  static readonly PROVIDER = LINKEDIN_PROVIDER;
   static readonly SCOPES: string[] = [];
   static readonly handleReplies = true;
 
-  readonly provider = AuthProvider.LinkedIn;
+  readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
   readonly singleChannel = true;
   readonly linkTypes = [

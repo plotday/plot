@@ -312,7 +312,7 @@ notes.post("/sync/notes", async (c) => {
             }
           }
 
-          // 2. Try AI analysis first — creates targeted thread_state rows (skipped for action_type='none')
+          // 2. Try AI analysis first — creates targeted thread_state rows (skipped for AI=none output)
           let analysisHandledUnread = false;
           if (aiAllowed) {
             const isRecent =
@@ -429,8 +429,9 @@ notes.post("/sync/notes", async (c) => {
 
 /**
  * Mark a thread as unread for all priority members except the excluded user.
- * Uses the default action_type='update' (importance 50) — used as a fallback
- * when AI analysis doesn't run or fails.
+ * Creates a row with all three state booleans false and importance 50 —
+ * used as a fallback when AI analysis doesn't run or fails. The thread is
+ * still unread (read_at NULL) so it shows in Updates.
  * Returns the list of user IDs that were successfully marked unread.
  */
 export async function markThreadUnreadForOthers(
@@ -479,10 +480,14 @@ export async function markThreadUnreadForOthers(
       await rpcUser(db, "upsert_thread_state", {
         user_id: userId,
         p_thread_id: threadId,
-        p_action_type: "update",
+        p_active: false,
+        p_task: false,
+        p_to_read: false,
         p_urgent: false,
         p_importance: 50,
-        p_set_action_type: true,
+        p_set_active: false,
+        p_set_task: false,
+        p_set_to_read: false,
         p_set_urgent: true,
         p_set_importance: true,
         ...(noteCreatedAt ? { p_note_created_at: noteCreatedAt } : {}),

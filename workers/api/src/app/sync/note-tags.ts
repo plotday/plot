@@ -112,7 +112,7 @@ noteTags.post("/sync/note-tags", async (c) => {
           .executeTakeFirst();
 
         if (note?.thread_id) {
-          await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
+          await createSchedule(c.var.db, contact.user_id, note.thread_id, 'active');
         }
       }
     } catch (error) {
@@ -140,7 +140,7 @@ noteTags.post("/sync/note-tags/update", async (c) => {
   const priorityId2 = await getPriorityForNote(c.var.db, body.note_id, c.var.user.id);
   notifySync(c, priorityId2);
 
-  // File a 'do' thread_state when todo tags are added via update
+  // File active=true thread_state when todo tags are added via update
   if (body.tag_updates) {
     const todoEntries = Object.entries(body.tag_updates as Record<string, boolean>)
       .filter(([key, val]) => val === true && key.startsWith('1:'));
@@ -162,7 +162,7 @@ noteTags.post("/sync/note-tags/update", async (c) => {
               .where("id", "=", actorId)
               .executeTakeFirst();
             if (!contact?.user_id) continue;
-            await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
+            await createSchedule(c.var.db, contact.user_id, note.thread_id, 'active');
           }
         }
       } catch (error) {

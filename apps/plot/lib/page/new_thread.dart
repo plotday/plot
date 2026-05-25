@@ -4,11 +4,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/theme.dart' show ThemeBloc;
 
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
@@ -19,37 +17,11 @@ import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
-import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
-
-/// Tracks hover state and rebuilds its child via [builder]. Used to apply
-/// a "very muted until hovered" effect to unselected chips.
-class _HoverBuilder extends StatefulWidget {
-  const _HoverBuilder({required this.builder});
-
-  final Widget Function(BuildContext context, bool hovered) builder;
-
-  @override
-  State<_HoverBuilder> createState() => _HoverBuilderState();
-}
-
-class _HoverBuilderState extends State<_HoverBuilder> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: widget.builder(context, _hovered),
-    );
-  }
-}
 
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
@@ -85,8 +57,8 @@ class NewThreadPage extends StatefulWidget {
 class NewThreadPageState extends State<NewThreadPage> {
   final GlobalKey<NoteEditorState> _threadEditorKey =
       GlobalKey<NoteEditorState>();
-  final GlobalKey<InlineTitleInputState> _titleInputKey =
-      GlobalKey<InlineTitleInputState>();
+  final GlobalKey<TitleComposeFieldState> _titleFieldKey =
+      GlobalKey<TitleComposeFieldState>();
 
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
@@ -94,38 +66,13 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Cached so callbacks triggered during deactivate() (e.g. NoteEditor
   // saving its draft) don't call context.read once ancestors are detached.
   PriorityBloc? _priorityBloc;
+  LocalPreferencesBloc? _localPrefs;
   bool _hasAppliedQueryParams = false;
-
-  /// People + groups the user has recently shared threads with, ordered by
-  /// the same MRU sort the share modal uses. Drives the suggestion chips.
-  List<ShareCandidate> _recentCandidates = const [];
-
-  /// Selected actors pinned in the "with" chip row. Only updated when the
-  /// modal changes contacts — tapping a chip toggles selected state without
-  /// removing the chip, so the row stays stable.
-  List<Actor> _pinnedActors = const [];
-
-  /// Pinned email invites shown in the chip row. Same stability rule.
-  List<String> _pinnedEmails = const [];
-
-  /// Selected groups pinned in the chip row (from per-priority defaults, or
-  /// added via the share picker). Users can toggle them off on the draft.
-  List<GroupRow> _pinnedGroups = const [];
-
-  /// MRU-ordered suggestion chips appended after the selected groups,
-  /// actors, and emails. Mixes [ActorShareCandidate] and
-  /// [GroupShareCandidate] so a recently-used group can sit beside
-  /// recently-used contacts instead of always coming first.
-  List<ShareCandidate> _pinnedSuggestions = const [];
 
   /// All available create-targets for this user, loaded once on mount and
   /// rerun when the priority changes (so MRU rerank reflects the new
   /// priority).
   List<CreateTarget> _allConnectionTargets = const [];
-
-  /// The 3 chips shown in the connection row, ranked per-priority then
-  /// global by [LocalPreferencesBloc.rankConnectionsByMru].
-  List<CreateTarget> _pinnedConnections = const [];
 
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
@@ -137,6 +84,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _priorityBloc = context.read<PriorityBloc>();
+    _localPrefs = context.read<LocalPreferencesBloc>();
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     // We've arrived — clear the navigation-intent flag set by callers
@@ -196,9 +144,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     // auto — so the thread goes where the user is working.
     _applyDefaultAutoFile();
 
-    // Load recently shared people + groups for suggestion chips.
-    await _loadRecentCandidates();
-    if (!mounted) return;
     // Load available connection create-targets for the connection chip row.
     await _loadConnections();
   }
@@ -209,7 +154,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       if (!mounted) return;
       setState(() {
         _allConnectionTargets = targets;
-        _pinnedConnections = _rankConnections(targets);
       });
     } catch (e, t) {
       log.warning('[NewThreadPage._loadConnections] failed', e, t);
@@ -217,27 +161,21 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  void _refreshPinnedConnections() {
-    setState(() {
-      _pinnedConnections = _rankConnections(_allConnectionTargets);
-    });
-  }
-
   /// Pure helper that ranks [targets] using the per-priority MRU and returns
-  /// the top 3 chips to pin. Returns an empty list if [targets] is empty so
-  /// the chip row collapses cleanly.
+  /// the ranked list. Returns an empty list if [targets] is empty.
   List<CreateTarget> _rankConnections(List<CreateTarget> targets) {
     if (targets.isEmpty) return const [];
-    final bloc = context.read<PriorityBloc>();
+    final bloc = _priorityBloc;
+    final prefs = _localPrefs;
+    if (bloc == null || prefs == null) return targets;
     final priorityId = bloc.state.draft.priority.id.toString();
-    final prefs = context.read<LocalPreferencesBloc>();
     final keys = targets.map((t) => t.key).toList();
     final ranked = prefs.rankConnectionsByMru(
       keys: keys,
       priorityId: priorityId,
     );
     final byKey = {for (final t in targets) t.key: t};
-    return ranked.take(3).map((k) => byKey[k]!).toList(growable: false);
+    return ranked.map((k) => byKey[k]!).toList(growable: false);
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -383,306 +321,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     super.dispose();
   }
 
-  /// Loads people + groups for the "with" suggestion chips, sorted by the
-  /// shared MRU pass in [Actor.getSortedShareCandidates] so a recently-used
-  /// group can interleave with recently-used contacts. Scoped to the
-  /// draft's currently selected priority so suggestions reflect who the
-  /// user typically shares with there, falling back to cross-priority MRU
-  /// for candidates with no history in this priority.
-  Future<void> _loadRecentCandidates() async {
-    try {
-      final priority = context.read<PriorityBloc>().state.draft.priority;
-      final sorted = await Actor.getSortedShareCandidates(priority: priority);
-      final recent = sorted.take(10).toList();
-      if (mounted) {
-        setState(() => _recentCandidates = recent);
-        _refreshPinnedChips();
-      }
-    } catch (e, t) {
-      log.warning('[NewThreadPage._loadRecentCandidates] failed', e, t);
-    }
-  }
-
-  /// Rebuilds the pinned chip list from current draft state + recent contacts.
-  /// Call after modal changes or initial load — NOT after chip taps.
-  Future<void> _refreshPinnedChips() async {
-    final bloc = context.read<PriorityBloc>();
-    final draft = bloc.state.draft;
-    final selfUuids = Actor.getCurrentUserActorIds()
-        .map((a) => a.toUuid())
-        .toSet();
-    // Drop any contact linked to the current user — it can sneak into
-    // draft.contacts via inherited priority defaults or stale data. The
-    // user is implicitly part of every thread they author, so showing a
-    // self chip is always wrong.
-    final selectedIds = draft.contacts
-        .where((id) => !selfUuids.contains(id))
-        .toSet();
-    final pendingEmails = draft.inviteEmails;
-    final groupIds = draft.groups;
-
-    // Resolve selected contacts to actors.
-    // Note: If an actor isn't in cache, it's skipped here. _handleDraftChanged
-    // fetches missing actors before calling this to ensure immediate display.
-    final selected = selectedIds
-        .map((id) => Actor.fromCache(ActorId.fromUuid(id)))
-        .where((a) => a != null)
-        .cast<Actor>()
-        .toList();
-
-    // Resolve attached groups. Keep order from the draft so chips stay stable
-    // as toggles change which ones are selected.
-    final groups = <GroupRow>[];
-    for (final id in groupIds) {
-      final g = await Group.getOne(id);
-      if (g != null) groups.add(g);
-    }
-
-    // Budget: 3 total chips across selected groups + contacts + emails +
-    // suggestions. Selected items always win the leading slots so a
-    // newly-attached chip never gets bumped by a suggestion.
-    final groupChipCount = groups.length.clamp(0, 3);
-    final selectedChipCount = selected.length.clamp(0, 3 - groupChipCount);
-    final emailSlots = (3 - groupChipCount - selectedChipCount).clamp(0, 3);
-    final emailChipCount = pendingEmails.length.clamp(0, emailSlots);
-    final suggestionSlots =
-        (3 - groupChipCount - selectedChipCount - emailChipCount).clamp(0, 3);
-
-    // Pull from the merged MRU list so a recently-used group and a
-    // recently-used contact compete for the same suggestion slot.
-    final suggestions = <ShareCandidate>[];
-    for (final candidate in _recentCandidates) {
-      if (suggestions.length >= suggestionSlots) break;
-      switch (candidate) {
-        case ActorShareCandidate(:final actor):
-          final id = actor.id.toUuid();
-          if (selectedIds.contains(id) || selfUuids.contains(id)) continue;
-          suggestions.add(candidate);
-        case GroupShareCandidate(:final group):
-          if (groupIds.contains(group.id)) continue;
-          suggestions.add(candidate);
-      }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _pinnedGroups = groups.take(groupChipCount).toList();
-      _pinnedActors = selected.take(selectedChipCount).toList();
-      _pinnedEmails = pendingEmails.take(emailChipCount).toList();
-      _pinnedSuggestions = suggestions;
-    });
-  }
-
-  Widget _buildThreadTypeSelector(BuildContext context, PriorityState state) {
-    final connectionRow = _buildConnectionRow(context, state);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildPriorityChipRow(context, state),
-        if (connectionRow != null) ...[
-          SizedBox(height: context.theme.spacing.lg),
-          connectionRow,
-        ],
-        SizedBox(height: context.theme.spacing.lg),
-        _buildWithSelector(context, state),
-        SizedBox(height: context.theme.spacing.lg),
-        _buildTitleRow(context, state),
-      ],
-    );
-  }
-
-  Widget _buildTitleRow(BuildContext context, PriorityState state) {
-    return InlineTitleInput(
-      key: _titleInputKey,
-      title: state.draft.title,
-      onChanged: (next) async {
-        final bloc = _priorityBloc;
-        if (bloc == null) return;
-        try {
-          await bloc.updateDraft(
-            bloc.state.draft.copyWith(title: Value(next)),
-          );
-        } catch (e, t) {
-          Tracker.captureException(e, t);
-        }
-      },
-    );
-  }
-
-  /// Row of connection chips. Each chip toggles a [CreateLinkUserAction] on
-  /// the draft note (single-select: tapping a different chip replaces the
-  /// previous one). Hidden when the user has no enabled connections that
-  /// expose a create-default link type.
-  Widget? _buildConnectionRow(BuildContext context, PriorityState state) {
-    if (_allConnectionTargets.isEmpty) return null;
-    final hasMore = _allConnectionTargets.length > _pinnedConnections.length;
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final target in _pinnedConnections)
-          ConnectionChip(
-            target: target,
-            selected: _isConnectionActive(target),
-            onTap: () => _toggleConnection(target),
-          ),
-        Button.icon(
-          _ConnectionPickerCommand(
-            onOpen: _openConnectionPicker,
-            hasMore: hasMore,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Row containing the priority picker chip. In non-root contexts when the
-  /// thread is not already in Auto mode, a leading veryMuted sparkles icon
-  /// is shown that toggles the priority to Auto.
-  Widget _buildPriorityChipRow(BuildContext context, PriorityState state) {
-    final draftIdStr = state.draft.id.toString();
-    final auto = ThreadsBase.autoFileIds.contains(draftIdStr);
-    final showLeadingSparkles = !state.context.root && !auto;
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 4,
-      runSpacing: 8,
-      children: [
-        if (showLeadingSparkles) _buildAutoSparklesToggle(context),
-        _buildPriorityChip(context, state, auto: auto),
-      ],
-    );
-  }
-
-  Widget _buildAutoSparklesToggle(BuildContext context) {
-    final fontSize = context.theme.typography.sm.fontSize;
-    final button = FButton(
-      onPress: _switchToAuto,
-      variant: FButtonVariant.ghost,
-      style: FButtonStyleDelta.delta(
-        contentStyle: FButtonContentStyleDelta.delta(
-          padding: EdgeInsetsGeometryDelta.value(
-            EdgeInsets.symmetric(
-              horizontal: 6,
-              vertical: isMobilePlatform() ? 10 : 6,
-            ),
-          ),
-        ),
-      ),
-      mainAxisSize: MainAxisSize.min,
-      child: Icon(
-        PlotIcon.sparkles,
-        size: fontSize,
-        color: context.theme.plotColors.veryMuted,
-      ),
-    );
-    if (!hasPhysicalKeyboard()) return button;
-    return FTooltip(
-      tipBuilder: (context, controller) => const Text('Auto organize'),
-      child: button,
-    );
-  }
-
-  /// Tooltip shown on the priority/title/type chips. Shows the label on one
-  /// line and the platform-formatted shortcut below it when a physical
-  /// keyboard is available.
-  Widget _buildChipTooltip({
-    required BuildContext context,
-    required String label,
-    required ShortcutActivator shortcut,
-  }) {
-    final shortcutText = formatShortcut(shortcut);
-    if (shortcutText.isEmpty) return Text(label);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label),
-        Text(
-          shortcutText,
-          style: context.theme.typography.xs.copyWith(
-            color: context.theme.colors.mutedForeground,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPriorityChip(
-    BuildContext context,
-    PriorityState state, {
-    required bool auto,
-  }) {
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: isMobilePlatform() ? 10 : 6,
-    );
-    final styleDelta = FButtonStyleDelta.delta(
-      decoration: FVariantsDelta.delta([
-        FVariantOperation.all(
-          DecorationDelta.boxDelta(borderRadius: chipRadius),
-        ),
-      ]),
-      contentStyle: FButtonContentStyleDelta.delta(
-        padding: EdgeInsetsGeometryDelta.value(chipPadding),
-      ),
-    );
-
-    final labelStyle = context.theme.typography.sm.copyWith(height: 1);
-    final Widget label = auto
-        ? Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 6,
-            children: [
-              Icon(PlotIcon.sparkles, size: labelStyle.fontSize),
-              Text('Auto', style: labelStyle),
-            ],
-          )
-        : PriorityLabel(
-            priority: state.draft.priority,
-            fontSize: labelStyle.fontSize,
-            height: 1,
-          );
-
-    final button = FButton(
-      onPress: () => _selectPriority(context, state),
-      variant: FButtonVariant.secondary,
-      style: styleDelta,
-      mainAxisSize: MainAxisSize.min,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 6,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
-            child: label,
-          ),
-          Icon(
-            PlotIcon.verticalExpand,
-            size: context.theme.iconSizes.xs,
-            color: context.theme.plotColors.muted,
-          ),
-        ],
-      ),
-    );
-    if (!hasPhysicalKeyboard()) return button;
-    return FTooltip(
-      tipBuilder: (context, controller) => _buildChipTooltip(
-        context: context,
-        label: 'Change priority',
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.keyP,
-          shift: true,
-          alt: kIsWeb,
-        ),
-      ),
-      child: button,
-    );
-  }
-
   Future<void> _selectPriority(
     BuildContext context,
     PriorityState state,
@@ -719,11 +357,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       final updated = _applyChainDefaults(draft, root);
       await bloc.updateDraft(updated);
     }
-    if (mounted) {
-      _loadRecentCandidates();
-      _refreshPinnedChips();
-      _refreshPinnedConnections();
-    }
   }
 
   Future<void> _switchToPriority(Priority priority) async {
@@ -737,11 +370,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       await bloc.updateDraft(updated);
     }
     bloc.setNewThreadDefaultPriority(priority);
-    if (mounted) {
-      _loadRecentCandidates();
-      _refreshPinnedChips();
-      _refreshPinnedConnections();
-    }
   }
 
   /// Swap the draft's priority and merge in the new chain's default
@@ -795,328 +423,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Build the "With" chip row: the current user can tap recent contacts
-  /// to add or remove them from the thread, or tap the `+` button to open
-  /// a searchable picker modal. Selected contacts flow into
-  /// `state.draft.contacts`. Up to 3 chips are shown (selected actors +
-  /// pending email invites + recent suggestions), plus a more/add button.
-  Widget _buildWithSelector(BuildContext context, PriorityState state) {
-    // Self contacts are excluded from the chip row entirely (see
-    // [_refreshPinnedChips]), so exclude them here too — otherwise hasMore
-    // counts an invisible chip and the +more button shows incorrectly.
-    final selfUuids = Actor.getCurrentUserActorIds()
-        .map((a) => a.toUuid())
-        .toSet();
-    final selectedIds = state.draft.contacts
-        .where((id) => !selfUuids.contains(id))
-        .toSet();
-    final pendingEmails = state.draft.inviteEmails.toSet();
-
-    // Render from pinned lists so chips stay stable when toggled via tap.
-    // _pinnedGroups, _pinnedActors, _pinnedEmails, and _pinnedSuggestions
-    // are only updated by _refreshPinnedChips (called after modal changes
-    // and initial load).
-    final groupIds = state.draft.groups.toSet();
-    final hasMore =
-        selectedIds.length > _pinnedActors.length ||
-        pendingEmails.length > _pinnedEmails.length ||
-        groupIds.length > _pinnedGroups.length;
-    final isPrivate =
-        selectedIds.isEmpty && groupIds.isEmpty && pendingEmails.isEmpty;
-
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _buildLockChip(context, isPrivate: isPrivate),
-        for (final group in _pinnedGroups)
-          _buildGroupChip(
-            context,
-            group,
-            selected: groupIds.contains(group.id),
-          ),
-        for (final actor in _pinnedActors)
-          _buildContactChip(
-            context,
-            actor,
-            selected: selectedIds.contains(actor.id.toUuid()),
-          ),
-        for (final email in _pinnedEmails)
-          _buildEmailChip(
-            context,
-            email,
-            selected: pendingEmails.contains(email),
-          ),
-        for (final suggestion in _pinnedSuggestions)
-          switch (suggestion) {
-            ActorShareCandidate(:final actor) => _buildContactChip(
-              context,
-              actor,
-              selected: selectedIds.contains(actor.id.toUuid()),
-            ),
-            GroupShareCandidate(:final group) => _buildGroupChip(
-              context,
-              group,
-              selected: groupIds.contains(group.id),
-            ),
-          },
-        _buildAddContactChip(context, state, hasMore: hasMore),
-      ],
-    );
-  }
-
-  Widget _buildGroupChip(
-    BuildContext context,
-    GroupRow group, {
-    required bool selected,
-  }) {
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 10,
-      vertical: isMobilePlatform() ? 10 : 5,
-    );
-    Widget buildChip(bool hovered) {
-      return FButton(
-        onPress: () => _toggleWithGroup(group),
-        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(borderRadius: chipRadius),
-            ),
-          ]),
-          contentStyle: FButtonContentStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.value(chipPadding),
-          ),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        prefix: FaIcon(
-          FontAwesomeIcons.userGroup,
-          size: context.theme.iconSizes.sm,
-        ),
-        child: Text(
-          group.name,
-          style: (!selected && !hovered)
-              ? TextStyle(color: context.theme.plotColors.veryMuted)
-              : null,
-        ),
-      );
-    }
-
-    if (selected) return buildChip(false);
-    return _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
-  }
-
-  Future<void> _toggleWithGroup(GroupRow group) async {
-    final bloc = context.read<PriorityBloc>();
-    final current = bloc.state.draft.groups.toList();
-    if (current.contains(group.id)) {
-      current.remove(group.id);
-    } else {
-      current.add(group.id);
-    }
-    await bloc.updateDraft(
-      bloc.state.draft.copyWith(
-        groups: Value(current.isEmpty ? null : current),
-      ),
-    );
-  }
-
-  Widget _buildLockChip(BuildContext context, {required bool isPrivate}) {
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 10,
-      vertical: isMobilePlatform() ? 10 : 5,
-    );
-
-    Widget buildChip(bool hovered) {
-      return FButton(
-        onPress: isPrivate ? () {} : _clearShareTargets,
-        variant: isPrivate ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(borderRadius: chipRadius),
-            ),
-          ]),
-          contentStyle: FButtonContentStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.value(chipPadding),
-          ),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        child: FaIcon(
-          FontAwesomeIcons.lock,
-          size: context.theme.iconSizes.sm,
-          color: (isPrivate || hovered)
-              ? null
-              : context.theme.plotColors.veryMuted,
-        ),
-      );
-    }
-
-    final chip = isPrivate
-        ? buildChip(false)
-        : _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
-
-    if (!hasPhysicalKeyboard()) return chip;
-    return FTooltip(
-      tipBuilder: (context, controller) =>
-          Text(isPrivate ? 'Private' : 'Make private'),
-      child: chip,
-    );
-  }
-
-  Future<void> _clearShareTargets() async {
-    final bloc = _priorityBloc;
-    if (bloc == null) return;
-    await bloc.updateDraft(
-      bloc.state.draft.copyWith(
-        contacts: const Value(null),
-        groups: const Value(null),
-        inviteEmails: const Value(null),
-      ),
-    );
-  }
-
-  Widget _buildContactChip(
-    BuildContext context,
-    Actor actor, {
-    required bool selected,
-  }) {
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 10,
-      vertical: isMobilePlatform() ? 10 : 5,
-    );
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
-    Widget buildChip(bool hovered) {
-      return FButton(
-        onPress: () => _toggleWithContact(actor),
-        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(borderRadius: chipRadius),
-            ),
-          ]),
-          contentStyle: FButtonContentStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.value(chipPadding),
-          ),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        prefix: Opacity(
-          opacity: selected || hovered ? 1.0 : (isDark ? 0.5 : 0.9),
-          child: Avatar(
-            actor: actor,
-            size: context.theme.iconSizes.sm,
-            tooltip: false,
-          ),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 160),
-          child: Text(
-            actor.name ?? actor.email ?? 'Unknown',
-            overflow: TextOverflow.ellipsis,
-            style: (!selected && !hovered)
-                ? TextStyle(color: context.theme.plotColors.veryMuted)
-                : null,
-          ),
-        ),
-      );
-    }
-
-    final email = actor.email;
-    final showEmailTooltip = email != null && actor.name != null;
-    Widget chip = selected
-        ? buildChip(false)
-        : _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
-    if (showEmailTooltip) {
-      chip = FTooltip(
-        tipBuilder: (context, controller) => Text(email),
-        child: chip,
-      );
-    }
-    return chip;
-  }
-
-  Widget _buildEmailChip(
-    BuildContext context,
-    String email, {
-    bool selected = true,
-  }) {
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 10,
-      vertical: isMobilePlatform() ? 10 : 5,
-    );
-    return FTooltip(
-      tipBuilder: (context, controller) => Text(email),
-      child: FButton(
-        onPress: () => _toggleEmailInvite(email),
-        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(borderRadius: chipRadius),
-            ),
-          ]),
-          contentStyle: FButtonContentStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.value(chipPadding),
-          ),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        prefix: FaIcon(
-          FontAwesomeIcons.envelope,
-          size: context.theme.iconSizes.sm,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 160),
-          child: Text(email, overflow: TextOverflow.ellipsis),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddContactChip(
-    BuildContext context,
-    PriorityState state, {
-    required bool hasMore,
-  }) {
-    return Button.icon(
-      _ShareNewThread(
-        onOpen: () => _openSharedPicker(context),
-        hasMore: hasMore,
-      ),
-    );
-  }
-
-  CreateLinkUserAction? get _activeCreateAction {
-    final note = _priorityBloc?.state.draftNote;
-    return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
-  }
-
-  bool _isConnectionActive(CreateTarget target) {
-    final active = _activeCreateAction;
-    if (active == null) return false;
-    if (active.twistInstanceId != target.twist.id.toString()) return false;
-    if (active.linkType != target.linkType.type) return false;
-    // For DM-type targets both channelIds are null; for channel-type they must match.
-    return active.channelId == (target.isDmType ? null : target.channel?.channelId);
-  }
-
-  Future<void> _toggleConnection(CreateTarget target) async {
-    // Use the cached bloc: _openConnectionPicker awaits the modal before
-    // calling us, so context.read could read from a stale tree.
+  /// Routes a ConnectionChoice from the modal/dropdown into the draft note.
+  /// Plot thread clears any CreateLinkUserAction; a target replaces it.
+  Future<void> _applyConnectionChoice(ConnectionChoice choice) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
     final note = bloc.state.draftNote;
     final actions = List<UserAction>.from(note.actions ?? const []);
-    final wasActive = _isConnectionActive(target);
     actions.removeWhere((a) => a is CreateLinkUserAction);
-    if (!wasActive) {
-      actions.add(target.toUserAction());
-    }
+    final action = choice.toUserAction();
+    if (action != null) actions.add(action);
     await bloc.updateDraft(
       bloc.state.draft,
       note: note.copyWith(actions: actions.isEmpty ? null : actions),
@@ -1126,36 +442,204 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _openConnectionPicker() async {
     final picked = await ConnectionPickerModal.open(context);
     if (picked == null || !mounted) return;
-    await _toggleConnection(picked);
+    await _applyConnectionChoice(picked);
   }
 
-  Future<void> _toggleWithContact(Actor actor) async {
-    final bloc = context.read<PriorityBloc>();
-    final current = bloc.state.draft.contacts.toList();
-    final contactUuid = actor.id.toUuid();
-    if (current.contains(contactUuid)) {
-      current.remove(contactUuid);
-    } else {
-      current.add(contactUuid);
+  ConnectionChoice _resolveActiveConnectionChoice(PriorityState state) {
+    final active = state.draftNote.actions
+        ?.whereType<CreateLinkUserAction>()
+        .firstOrNull;
+    if (active == null) return ConnectionChoice.plotThread;
+    for (final target in _allConnectionTargets) {
+      // For DM/address-mode targets `target.channel` is null and the
+      // active CreateLinkUserAction's channelId is also null — the null
+      // == null comparison via `?.channelId` handles that case.
+      if (active.twistInstanceId == target.twist.id.toString() &&
+          active.channelId == target.channel?.channelId &&
+          active.linkType == target.linkType.type) {
+        return ConnectionChoice.target(target);
+      }
     }
-    await bloc.updateDraft(bloc.state.draft.copyWith(contacts: Value(current)));
+    // Target not yet loaded — fall back so the field always has a value.
+    return ConnectionChoice.plotThread;
   }
 
-  /// Toggle an email invite on/off from the chip row (no pin refresh).
-  Future<void> _toggleEmailInvite(String email) async {
-    final bloc = context.read<PriorityBloc>();
-    final thread = bloc.state.draft;
-    final current = thread.inviteEmails;
-    if (current.contains(email)) {
-      final updated = current.where((e) => e != email).toList();
-      await bloc.updateDraft(
-        thread.copyWith(inviteEmails: Value(updated.isEmpty ? null : updated)),
-      );
-    } else {
-      await bloc.updateDraft(
-        thread.copyWith(inviteEmails: Value([...current, email])),
-      );
+  /// The active create-link action attached to the draft note (if any).
+  /// Used by the contacts picker / submit validator to scope behavior by
+  /// `linkType.targets` mode (channels / contacts / addresses).
+  CreateLinkUserAction? get _activeCreateAction {
+    final note = _priorityBloc?.state.draftNote;
+    return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
+  }
+
+  List<ConnectionChoice> _rankConnectionChoices() {
+    final ranked = _rankConnections(_allConnectionTargets);
+    return [
+      ConnectionChoice.plotThread,
+      ...ranked.map(ConnectionChoice.target),
+    ];
+  }
+
+  List<ContactChipValue> _resolveContactChips(PriorityState state) {
+    final selfUuids = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    final draft = state.draft;
+    final chips = <ContactChipValue>[];
+    for (final id in draft.groups) {
+      final g = Group.fromCache(id);
+      if (g != null) chips.add(ContactChipGroup(g));
     }
+    for (final id in draft.contacts) {
+      if (selfUuids.contains(id)) continue;
+      final actor = Actor.fromCache(ActorId.fromUuid(id));
+      if (actor != null) chips.add(ContactChipActor(actor));
+    }
+    for (final email in draft.inviteEmails) {
+      chips.add(ContactChipEmail(email));
+    }
+    return chips;
+  }
+
+  // Cache the last sorted candidate list per priority so rapid typing
+  // doesn't re-hit Drift on every keystroke. Invalidated when the draft's
+  // priority or selection set changes (handled via the .toSet() comparisons
+  // inside the filter loop, which always run against the latest draft).
+  Priority? _candidatesPriorityCache;
+  List<ShareCandidate>? _candidatesCache;
+
+  Future<List<ContactCandidate>> _loadContactCandidates(String query) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return const [];
+    final priority = bloc.state.draft.priority;
+    List<ShareCandidate> sorted;
+    if (_candidatesCache != null &&
+        _candidatesPriorityCache?.id == priority.id) {
+      sorted = _candidatesCache!;
+    } else {
+      sorted = await Actor.getSortedShareCandidates(priority: priority);
+      if (!mounted) return const [];
+      _candidatesCache = sorted;
+      _candidatesPriorityCache = priority;
+    }
+    // Re-read draft after the (possible) await — selections may have changed
+    // while the candidate fetch was in flight.
+    final draft = bloc.state.draft;
+    final selectedActorIds = draft.contacts.toSet();
+    final selectedGroupIds = draft.groups.toSet();
+    final selectedEmails = draft.inviteEmails.toSet();
+    final selfUuids = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+
+    // Filter mode driven by the active CreateLinkUserAction's targets:
+    // - `"contacts"` (Slack DM, Teams DM, GChat DM): only actors with a
+    //   `contact_external_account` row for THIS connection; groups hidden;
+    //   email invites blocked (no row, no recipient).
+    // - `"addresses"` (Gmail): only actors with an email; groups hidden;
+    //   email invites still allowed.
+    // - default: full list, all candidate types.
+    final activeAction = _activeCreateAction;
+    final isContactsMode =
+        (activeAction?.isDmType ?? false) && !(activeAction?.isAddressesType ?? false);
+    final isAddressMode = activeAction?.isAddressesType ?? false;
+    final dmTwistInstanceId = isContactsMode
+        ? Uuid.fromString(activeAction!.twistInstanceId)
+        : null;
+    final hideGroups = isContactsMode || isAddressMode;
+
+    final lowered = query.trim().toLowerCase();
+    final candidates = <ContactCandidate>[];
+    for (final c in sorted) {
+      switch (c) {
+        case ActorShareCandidate(:final actor):
+          final id = actor.id.toUuid();
+          if (selectedActorIds.contains(id) || selfUuids.contains(id)) {
+            continue;
+          }
+          if (dmTwistInstanceId != null &&
+              !actor.hasExternalAccount(dmTwistInstanceId)) {
+            continue;
+          }
+          if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
+            continue;
+          }
+          if (lowered.isNotEmpty &&
+              !((actor.name?.toLowerCase().contains(lowered) ?? false) ||
+                  (actor.email?.toLowerCase().contains(lowered) ?? false))) {
+            continue;
+          }
+          candidates.add(ActorCandidate(actor));
+        case GroupShareCandidate(:final group):
+          if (hideGroups) continue;
+          if (selectedGroupIds.contains(group.id)) continue;
+          if (lowered.isNotEmpty &&
+              !group.name.toLowerCase().contains(lowered)) {
+            continue;
+          }
+          candidates.add(GroupCandidate(group));
+      }
+    }
+    // Email invites: allowed except in closed-roster contacts mode.
+    if (!isContactsMode &&
+        EmailParser.isEmail(query) &&
+        !selectedEmails.contains(EmailParser.normalize(query))) {
+      candidates.add(InviteEmailCandidate(EmailParser.normalize(query)));
+    }
+    return candidates;
+  }
+
+  Future<void> _applyContactCandidate(ContactCandidate candidate) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    final draft = bloc.state.draft;
+    switch (candidate) {
+      case ActorCandidate(:final actor):
+        final ids = [...draft.contacts, actor.id.toUuid()];
+        await bloc.updateDraft(draft.copyWith(contacts: Value(ids)));
+      case GroupCandidate(:final group):
+        final ids = [...draft.groups, group.id];
+        await bloc.updateDraft(draft.copyWith(groups: Value(ids)));
+      case InviteEmailCandidate(:final email):
+        final emails = [...draft.inviteEmails, email];
+        await bloc.updateDraft(
+          draft.copyWith(inviteEmails: Value(emails)),
+        );
+    }
+  }
+
+  Future<void> _removeContactChip(ContactChipValue chip) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    final draft = bloc.state.draft;
+    switch (chip) {
+      case ContactChipActor(:final actor):
+        final ids = draft.contacts
+            .where((id) => id != actor.id.toUuid())
+            .toList();
+        await bloc.updateDraft(draft.copyWith(contacts: Value(ids)));
+      case ContactChipGroup(:final group):
+        final ids = draft.groups.where((id) => id != group.id).toList();
+        await bloc.updateDraft(
+          draft.copyWith(groups: Value(ids.isEmpty ? null : ids)),
+        );
+      case ContactChipEmail(:final email):
+        final emails =
+            draft.inviteEmails.where((e) => e != email).toList();
+        await bloc.updateDraft(
+          draft.copyWith(
+            inviteEmails: Value(emails.isEmpty ? null : emails),
+          ),
+        );
+    }
+  }
+
+  Future<void> _updateTitle(String? next) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    await bloc.updateDraft(
+      bloc.state.draft.copyWith(title: Value(next)),
+    );
   }
 
   Future<void> _openSharedPicker(BuildContext context) async {
@@ -1182,8 +666,6 @@ class NewThreadPageState extends State<NewThreadPage> {
         },
       ),
     );
-    if (!context.mounted) return;
-    _refreshPinnedChips();
   }
 
   /// Returns a validation error message when submit should be blocked,
@@ -1276,7 +758,8 @@ class NewThreadPageState extends State<NewThreadPage> {
 
         if (nextContacts.add(mention.toUuid())) {
           contactsChanged = true;
-          // Pre-fetch missing actors so _refreshPinnedChips can show them immediately
+          // Pre-fetch missing actors so the contact chips can show them
+          // immediately on the next build.
           if (Actor.fromCache(mention) == null) {
             try {
               await Actor.getOne(mention);
@@ -1309,10 +792,6 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     // Update the bloc and persist changes.
     await bloc.updateDraft(updatedThread, note: note);
-
-    if (contactsChanged && mounted) {
-      _refreshPinnedChips();
-    }
   }
 
   void _onChatSubmitted() {
@@ -1323,6 +802,55 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
     // Clear global search so the new thread is visible in the list
     _provider?.tryCloseSearch();
+  }
+
+  Widget _buildComposeSurface(BuildContext context, PriorityState state) {
+    final isAuto = ThreadsBase.autoFileIds.contains(
+      state.draft.id.toString(),
+    );
+    final activeChoice = _resolveActiveConnectionChoice(state);
+    final connectionCandidates = _rankConnectionChoices();
+
+    // The field stack lives inside a container with a single bottom border
+    // that separates it from the note body. No dividers between fields.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: context.theme.colors.border),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PriorityComposeField(
+            currentPriority: state.draft.priority,
+            isAuto: isAuto,
+            onPickAuto: _switchToAuto,
+            onPickPriority: _switchToPriority,
+            openTouchModal: () => _selectPriority(context, state),
+          ),
+          ConnectionComposeField(
+            activeChoice: activeChoice,
+            candidates: connectionCandidates,
+            onPicked: _applyConnectionChoice,
+            openTouchModal: _openConnectionPicker,
+          ),
+          ContactsComposeField(
+            chips: _resolveContactChips(state),
+            loadCandidates: _loadContactCandidates,
+            onAdd: _applyContactCandidate,
+            onRemove: _removeContactChip,
+            openTouchModal: () => _openSharedPicker(context),
+          ),
+          TitleComposeField(
+            key: _titleFieldKey,
+            title: state.draft.title,
+            onChanged: _updateTitle,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1408,45 +936,51 @@ class NewThreadPageState extends State<NewThreadPage> {
                       builder: (context, constraints) {
                         // Single panel mode: editor at bottom, edge-to-edge
                         if (!layoutState.multiPanel) {
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (!isViewerMode) ...[
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.contentPaddingH,
-                                  ),
-                                  child: _buildThreadTypeSelector(
-                                    context,
-                                    state,
-                                  ),
-                                ),
-                                SizedBox(height: context.theme.spacing.lg),
-                              ],
-
-                              Flexible(
-                                child: NoteEditor(
-                                  key: _threadEditorKey,
-                                  draft: state.draftNote,
-                                  thread: state.draft,
-                                  onDraftChanged: _handleDraftChanged,
-                                  flushToBottom: true,
-                                  showScheduleActions: false,
-                                  hint: state.draft.priority.isPlotApp
-                                      ? 'Ask for help or share feedback'
-                                      : _editorHint,
-                                  additionalMentions: _twistMentions,
-                                  onSubmitted: _onChatSubmitted,
-                                  submitValidator: _validateDmSubmit,
-                                  viewerMode: isViewerMode,
-                                  selectedTwist: _selectedTwist,
-                                  onTwistSelected: _selectTwist,
-                                  onNavigateToThread: (thread) {
-                                    context.run(ChangeCurrentThread(thread));
-                                  },
+                          return Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: context.contentPaddingH,
+                            ),
+                            child: EditableArea(
+                              padding: false,
+                              position: EditableAreaPosition.bottom,
+                              flushToBottom: true,
+                              builder: (context, _) => FocusTraversalGroup(
+                                policy: WidgetOrderTraversalPolicy(),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (!isViewerMode)
+                                      _buildComposeSurface(context, state),
+                                    Flexible(
+                                      child: NoteEditor(
+                                        key: _threadEditorKey,
+                                        bodyOnly: true,
+                                        draft: state.draftNote,
+                                        thread: state.draft,
+                                        onDraftChanged: _handleDraftChanged,
+                                        flushToBottom: true,
+                                        showScheduleActions: false,
+                                        hint: state.draft.priority.isPlotApp
+                                            ? 'Ask for help or share feedback'
+                                            : _editorHint,
+                                        additionalMentions: _twistMentions,
+                                        onSubmitted: _onChatSubmitted,
+                                        submitValidator: _validateDmSubmit,
+                                        viewerMode: isViewerMode,
+                                        selectedTwist: _selectedTwist,
+                                        onTwistSelected: _selectTwist,
+                                        onNavigateToThread: (thread) {
+                                          context.run(
+                                            ChangeCurrentThread(thread),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
                           );
                         }
 
@@ -1461,47 +995,58 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   height: constraints.maxHeight * 0.25,
                                 ),
                               ),
-
-                              if (!isViewerMode) ...[
-                                _buildThreadTypeSelector(context, state),
-                                SizedBox(height: context.theme.spacing.lg),
-                              ],
-
                               Flexible(
                                 flex: 2,
                                 child: ConstrainedBox(
                                   constraints: BoxConstraints(
-                                    maxHeight: constraints.maxHeight * 0.5,
+                                    maxHeight: constraints.maxHeight * 0.6,
                                   ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: NoteEditor(
-                                          key: _threadEditorKey,
-                                          draft: state.draftNote,
-                                          thread: state.draft,
-                                          onDraftChanged: _handleDraftChanged,
-                                          flushToBottom: false,
-                                          showScheduleActions: false,
-                                          hint: state.draft.priority.isPlotApp
-                                              ? 'Ask for help or share feedback'
-                                              : _editorHint,
-                                          additionalMentions: _twistMentions,
-                                          onSubmitted: _onChatSubmitted,
-                                          submitValidator: _validateDmSubmit,
-                                          viewerMode: isViewerMode,
-                                          selectedTwist: _selectedTwist,
-                                          onTwistSelected: _selectTwist,
-                                          onNavigateToThread: (thread) {
-                                            context.run(
-                                              ChangeCurrentThread(thread),
-                                            );
-                                          },
-                                          autofocus: !isMobilePlatform(),
-                                        ),
+                                  child: EditableArea(
+                                    padding: false,
+                                    position: EditableAreaPosition.bottom,
+                                    flushToBottom: false,
+                                    builder: (context, _) => FocusTraversalGroup(
+                                      policy: WidgetOrderTraversalPolicy(),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (!isViewerMode)
+                                            _buildComposeSurface(
+                                              context,
+                                              state,
+                                            ),
+                                          Flexible(
+                                            child: NoteEditor(
+                                              key: _threadEditorKey,
+                                              bodyOnly: true,
+                                              draft: state.draftNote,
+                                              thread: state.draft,
+                                              onDraftChanged:
+                                                  _handleDraftChanged,
+                                              flushToBottom: false,
+                                              showScheduleActions: false,
+                                              hint:
+                                                  state.draft.priority.isPlotApp
+                                                  ? 'Ask for help or share feedback'
+                                                  : _editorHint,
+                                              additionalMentions:
+                                                  _twistMentions,
+                                              onSubmitted: _onChatSubmitted,
+                                              submitValidator: _validateDmSubmit,
+                                              viewerMode: isViewerMode,
+                                              selectedTwist: _selectedTwist,
+                                              onTwistSelected: _selectTwist,
+                                              onNavigateToThread: (thread) {
+                                                context.run(
+                                                  ChangeCurrentThread(thread),
+                                                );
+                                              },
+                                              autofocus: !isMobilePlatform(),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1534,7 +1079,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     return {
       // ⌘⇧S — share (contacts)
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
-        context.run(_ShareNewThread(onOpen: () => _openSharedPicker(context)));
+        _openSharedPicker(context);
       },
       // ⌘⇧P (⌘⌥⇧P on web) — change priority
       platformSingleActivator(
@@ -1546,50 +1091,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       },
       // ⌘⇧H — focus title input
       platformSingleActivator(LogicalKeyboardKey.keyH, shift: true): () {
-        _titleInputKey.currentState?.focus();
+        _titleFieldKey.currentState?.focus();
       },
     };
-  }
-}
-
-/// Opens the connection picker modal from the connection chip row's
-/// trailing button. Icon switches to a "more" ellipsis when there are
-/// additional create-targets beyond the pinned chips.
-class _ConnectionPickerCommand extends Command {
-  _ConnectionPickerCommand({required this.onOpen, bool hasMore = false})
-    : super(
-        title: 'Pick a connection',
-        icon: hasMore ? PlotIcon.more : PlotIcon.shareAdd,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-      );
-
-  final Future<void> Function() onOpen;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await onOpen();
-    return const CommandDone();
-  }
-}
-
-/// Opens the contact picker for the new-thread draft. Carries the ⌘⇧S
-/// shortcut metadata so `Button.icon` displays the shortcut hint.
-class _ShareNewThread extends Command {
-  _ShareNewThread({required this.onOpen, bool hasMore = false})
-    : super(
-        title: 'Share with more',
-        icon: hasMore ? PlotIcon.more : PlotIcon.shareAdd,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
-      );
-
-  final Future<void> Function() onOpen;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await onOpen();
-    return const CommandDone();
   }
 }

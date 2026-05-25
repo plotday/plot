@@ -11,7 +11,7 @@ import {
   updatedSinceCursor,
 } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
-import { isLinkStatusDone, propagateLinkStatusTagsFromDb } from "./link-tags";
+import { isLinkStatusDone, propagateLinkStateFlagsFromDb, propagateLinkStatusTagsFromDb } from "./link-tags";
 import { createSchedule } from "./smart-schedule";
 import { twistFactory } from "../../twist/factory";
 
@@ -116,6 +116,13 @@ links.post("/sync/links", async (c) => {
     } catch {
       // Non-critical: tag propagation failure shouldn't break the sync
     }
+    // Propagate active/task/toRead state flags declared on the LinkStatus
+    // to per-user thread_state. Best-effort.
+    try {
+      await propagateLinkStateFlagsFromDb(c.var.db, result);
+    } catch {
+      // Non-critical
+    }
   }
 
   // Create task schedule when link is assigned to a user
@@ -134,7 +141,7 @@ links.post("/sync/links", async (c) => {
             .executeTakeFirst();
           if (!contact?.user_id) return;
 
-          // Only file a 'do' thread_state if the link's status is not "done"
+          // Only file task=true thread_state if the link's status is not "done"
           const isDone = await isLinkStatusDone(db, result);
           if (!isDone) {
             await createSchedule(db, contact.user_id, linkThreadId, 'task');

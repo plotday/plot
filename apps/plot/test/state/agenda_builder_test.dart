@@ -271,7 +271,7 @@ void main() {
         title: 'pinned after yesterday\'s event',
         // startAt set + stateOn null → pinned todo (pinnedAfterTime
         // returns stateAt; isPinnedTodo == true).
-        actionType: 'do',
+        active: true,
         stateOrder: Order.first(),
         stateAt: yesterdayAfternoon,
       );
@@ -285,7 +285,7 @@ void main() {
       final anytimeToday = Thread(
         priority: priority,
         title: 'anytime today',
-        actionType: 'do',
+        active: true,
         stateOrder: Order.first(),
         stateOn: Thread.todoNowDate,
       );

@@ -1008,14 +1008,12 @@ abstract class _MoveThreadToTab extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Build the optimistic Thread with todo=true, read, AND the new
-    // schedule.action so the agenda re-classifies into the right tab on
-    // the next render. Without the action write the row would briefly
-    // pop into the Do tab (which is what bare todo+no-action implies in
-    // some legacy data) before settling.
+    // Tab-style action moves no longer exist — collapse to the unified
+    // Doing section (active = true). Subclasses' `action` is ignored for
+    // routing; preserved for analytics continuity.
     final order = thread.order;
     final restored = thread
-        .withScheduleRestored(order: order, action: action)
+        .withScheduleRestored(order: order)
         .copyWith(
           todo: true,
           unread: false,
@@ -2976,7 +2974,9 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
         case ActorShareCandidate(:final actor):
           if (excludedActorIds.contains(actor.id)) continue;
           if (twistInstanceId != null &&
-              !actor.hasExternalAccount(twistInstanceId)) continue;
+              !actor.hasExternalAccount(twistInstanceId)) {
+            continue;
+          }
           if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
             continue;
           }
@@ -3434,9 +3434,27 @@ List<Command> threadCommands(
   bool showEventTiming = false,
   PriorityBloc? priorityBloc,
 }) {
-  // Viewers can only open threads, not modify them
+  // Viewers can't edit shared thread metadata (title, sharing, merge/split,
+  // priority move, archive) but per-user filing (Finish / To respond /
+  // To do / To read / pick schedule) only mutates the user's own
+  // thread_state row — the same affordance the leading icon already
+  // exposes regardless of role.
   if (thread.priority.isViewer) {
-    return [if (open) ChangeCurrentThread(thread)];
+    Command? primary;
+    if (!skipPrimary) {
+      if (thread.todo) {
+        primary = FinishThread(thread, stateIcon: false);
+      } else if (thread.on != null) {
+        primary = PickScheduleThread(thread);
+      } else {
+        primary = MoveThreadToRespond(thread);
+      }
+    }
+    return [
+      if (open) ChangeCurrentThread(thread),
+      ?primary,
+      ...moveToTabCommands(thread),
+    ];
   }
 
   // Read-only viewers (announce-group-only access): no metadata edits, no

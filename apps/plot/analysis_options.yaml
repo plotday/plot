@@ -17,6 +17,7 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "third_party/**"
+    - "build/**"
 
 linter:
   # The lint rules applied to this project can be customized in the

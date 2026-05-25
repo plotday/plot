@@ -48,7 +48,9 @@ enum _OverrideField {
   at,
   on,
   order,
-  actionType,
+  active,
+  task,
+  toRead,
 }
 
 /// A per-thread optimistic override applied to stream results until the
@@ -120,8 +122,12 @@ class _OptimisticOverride {
         return actual.on == expected.on;
       case _OverrideField.order:
         return actual.order.value == expected.order.value;
-      case _OverrideField.actionType:
-        return actual.actionType == expected.actionType;
+      case _OverrideField.active:
+        return actual.active == expected.active;
+      case _OverrideField.task:
+        return actual.task == expected.task;
+      case _OverrideField.toRead:
+        return actual.toRead == expected.toRead;
     }
   }
 }
@@ -756,17 +762,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _actionTabAppendCursor = null;
     _overlay.clear();
 
-    final tab = state.activeTab;
-    switch (tab) {
-      case ActivityTab.catchUp:
-        _subscribeCatchUpHead();
-      case ActivityTab.all:
-        _subscribeAllTabHead();
-      case ActivityTab.respond:
-      case ActivityTab.doIt:
-      case ActivityTab.read:
-        _subscribeActionTabHead(tab);
-    }
+    // Unified feed: a single subscription returns every visible thread.
+    // The section structure (Updates / Doing / Scheduled / Activity) is
+    // applied client-side in _rebuildActiveTabSection.
+    _subscribeAllTabHead();
   }
 
   void _subscribeCatchUpHead() {
@@ -869,14 +868,20 @@ class PriorityBloc extends Cubit<PriorityState> {
     final merged = _applyOverlay(combined, tab);
 
     final eventPrefix = _buildEventAgendaItems();
+
+    // Search / filter mode: flat list, no sections (per spec).
+    final flatMode = state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+
     final List<AgendaItem> items;
-    if (tab.isActionTab) {
-      items = _buildActionTabItems(merged, eventPrefix);
-    } else {
+    if (flatMode) {
       items = <AgendaItem>[
         ...eventPrefix,
         for (final t in merged) AgendaThreadItem(t),
       ];
+    } else {
+      items = _buildUnifiedFeedItems(merged, eventPrefix);
     }
 
     final byTab = Map<ActivityTab, ActivityFeedTabData>.from(
@@ -890,6 +895,123 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedLoaded: true,
       ),
     );
+  }
+
+  /// Build the unified feed: Updates → Doing → Scheduled (per-day) →
+  /// Activity. The Updates section deliberately duplicates every unread
+  /// thread regardless of whether it's also in Doing or Scheduled.
+  List<AgendaItem> _buildUnifiedFeedItems(
+    List<Thread> merged,
+    List<AgendaItem> eventPrefix,
+  ) {
+    final unread = <Thread>[];
+    final doing = <Thread>[];
+    final scheduled = <Thread>[];
+    final activity = <Thread>[];
+
+    for (final t in merged) {
+      // Updates includes every unread (duplicates allowed).
+      if (t.unread) unread.add(t);
+
+      switch (primarySectionFor(t)) {
+        case ActivitySection.doing:
+          doing.add(t);
+        case ActivitySection.scheduled:
+          scheduled.add(t);
+        case ActivitySection.activity:
+          // Activity excludes unread (those are surfaced in Updates only,
+          // not duplicated to Activity).
+          if (!t.unread) activity.add(t);
+        case ActivitySection.updates:
+        case ActivitySection.eventAgenda:
+          break;
+      }
+    }
+
+    // Sort Updates by urgency (urgent first, then importance DESC, then
+    // activity_at DESC). Matches the pre-tab Catch-up ordering.
+    unread.sort((a, b) {
+      if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
+      final imp = b.importance.compareTo(a.importance);
+      if (imp != 0) return imp;
+      return b.contentTimestamp.compareTo(a.contentTimestamp);
+    });
+
+    // Doing: state_order ascending, then content time descending.
+    doing.sort((a, b) {
+      final cmp = a.order.compareTo(b.order);
+      if (cmp != 0) return cmp;
+      return b.contentTimestamp.compareTo(a.contentTimestamp);
+    });
+
+    // Scheduled: bucket date ASC, then state_order, then id.
+    scheduled.sort((a, b) {
+      final aDate = a.on?.start ?? a.at?.start?.toDate() ?? Date.today();
+      final bDate = b.on?.start ?? b.at?.start?.toDate() ?? Date.today();
+      final dateCmp = aDate.compareTo(bDate);
+      if (dateCmp != 0) return dateCmp;
+      final orderCmp = a.order.compareTo(b.order);
+      if (orderCmp != 0) return orderCmp;
+      return a.id.toString().compareTo(b.id.toString());
+    });
+
+    // Activity: activity_at DESC (newest first).
+    activity.sort((a, b) => b.contentTimestamp.compareTo(a.contentTimestamp));
+
+    final items = <AgendaItem>[...eventPrefix];
+
+    if (unread.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.updates),
+        ),
+      );
+      for (final t in unread) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    // Doing header is always emitted so it remains a drop target.
+    items.add(
+      AgendaHeaderItem(
+        text: ActivitySectionMarker.encode(ActivitySection.doing),
+      ),
+    );
+    for (final t in doing) {
+      items.add(AgendaThreadItem(t));
+    }
+
+    // Scheduled: per-day headers.
+    Date? lastBucket;
+    for (final t in scheduled) {
+      final date = t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
+      if (lastBucket == null || lastBucket != date) {
+        items.add(
+          AgendaHeaderItem(
+            date: date,
+            text: ActivitySectionMarker.encode(
+              ActivitySection.scheduled,
+              label: relativeDateLabel(date),
+            ),
+          ),
+        );
+        lastBucket = date;
+      }
+      items.add(AgendaThreadItem(t));
+    }
+
+    if (activity.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.activity),
+        ),
+      );
+      for (final t in activity) {
+        items.add(AgendaThreadItem(t));
+      }
+    }
+
+    return items;
   }
 
   /// Walk an action-tab's merged thread list (already re-sorted via
@@ -913,7 +1035,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       // Today header is always emitted (even when empty) so it remains a
       // valid drag-and-drop target for "make active".
       AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.today),
+        text: ActivitySectionMarker.encode(ActivitySection.doing),
       ),
     ];
 
@@ -1857,7 +1979,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     Order? newOrder;
-    if (targetSection == ActivitySection.today ||
+    if (targetSection == ActivitySection.doing ||
         targetSection == ActivitySection.scheduled) {
       Order? above;
       Order? below;
@@ -1873,7 +1995,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     switch (targetSection) {
       case ActivitySection.eventAgenda:
         return; // handled above
-      case ActivitySection.today:
+      case ActivitySection.doing:
         updated = dragged.asActiveToday(order: newOrder);
         break;
       case ActivitySection.scheduled:
@@ -1883,10 +2005,10 @@ class PriorityBloc extends Cubit<PriorityState> {
           order: newOrder,
         );
         break;
-      case ActivitySection.newSection:
+      case ActivitySection.updates:
         updated = dragged.asUnread();
         break;
-      case ActivitySection.done:
+      case ActivitySection.activity:
         updated = dragged.asInactive();
         // Sticky-unread keeps a thread pinned to the New section even
         // after its `unread` flag flips to false (so opening an unread
@@ -2082,10 +2204,17 @@ class PriorityBloc extends Cubit<PriorityState> {
           expected: finished!,
           fields: const {_OverrideField.todo},
         );
-        _overlay[id] = _Overlay(
-          expected: finished,
-          watched: const {_OverrideField.todo},
-        );
+        // Action tabs (Respond / Do / Read) filter out finished rows via
+        // `read_at IS NULL`, so substituting an `expected` overlay would
+        // re-render the thread under a fresh "Today" scheduled bucket for
+        // one frame before the SQL update arrives. Drop so the per-tab
+        // feed matches the post-write reality.
+        _overlay[id] = _activeTabSubscriptionTab?.isActionTab == true
+            ? const _Overlay.drop()
+            : _Overlay(
+                expected: finished,
+                watched: const {_OverrideField.todo},
+              );
       } else {
         _optimisticOverrides[id] = _OptimisticOverride.absent();
         _overlay[id] = const _Overlay.drop();
@@ -2223,7 +2352,9 @@ class PriorityBloc extends Cubit<PriorityState> {
             _OverrideField.at,
             _OverrideField.on,
             if (watchOrder) _OverrideField.order,
-            if (watchScheduleAction) _OverrideField.actionType,
+            if (watchScheduleAction) _OverrideField.active,
+            if (watchScheduleAction) _OverrideField.task,
+            if (watchScheduleAction) _OverrideField.toRead,
           }
         : null;
     _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(

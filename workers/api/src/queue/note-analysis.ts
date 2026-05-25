@@ -67,12 +67,19 @@ interface NoteContext {
   }>;
 }
 
-type ActionType = "respond" | "do" | "read" | "update" | "none";
-
 interface ThreadStateClassification {
-  action_type: ActionType;
+  // Independent state booleans. The AI sets at most one of `active` /
+  // `to_read` with high confidence; the user can flip flags themselves
+  // afterward. `task` is reserved for connectors (Linear/Todoist-style
+  // assignments) and is always false in AI output.
+  active: boolean;
+  to_read: boolean;
   urgent: boolean;
   importance: number; // 0-100
+  // When true the caller should NOT create a thread_state row for this
+  // member — clearly passive material (receipts, confirmations, system
+  // acks) the recipient doesn't need to process.
+  skip: boolean;
 }
 
 interface AnalysisResult {
@@ -300,33 +307,44 @@ async function classifyNote(
 
 All members are identified by sequential numbers (e.g. member #1).
 
-For each member, return:
-- action_type — where this thread belongs in their inbox
-- urgent — whether to notify before their next scheduled "response window"
-- importance — 0-100, drives whether the thread shows up proactively at all
+For each member, return five fields:
+- active — does the recipient need to act on this NOW? (Doing section.)
+- to_read — is this long-form material the recipient should set aside time to read? (Reading list.)
+- urgent — should we notify BEFORE their next scheduled response window?
+- importance — 0-100, drives whether the thread shows up proactively at all.
+- skip — clearly passive material no thread_state row should be created for.
 
-Return a "default" plus per-member "overrides" where needed (use member numbers as keys). NEVER include the note author (they are always classified as "none").
+Return a "default" plus per-member "overrides" where needed (use member numbers as keys). NEVER include the note author (skip=true for them; they are added automatically).
 
-action_type (assign "update" by default; only choose another with high confidence):
-- respond: the recipient needs to reply (question directed at them, request that requires their answer)
-- do: the recipient needs to take a concrete action (task assigned, a step that's clearly theirs to complete)
-- read: longer read-later material — newsletters, long corporate communications, documents the recipient should set aside time to read. NOT for short informational updates.
-- update: DEFAULT. The recipient should know about it but no follow-up is required. Status notes, FYIs, mentions without a clear ask, and all unsolicited material (cold outreach, pitches, marketing) belong here.
-- none: clearly passive records the recipient doesn't need to process — confirmation emails, account sign-in notifications, receipts, system acknowledgements. No thread_state row is created.
+The three state booleans (active / to_read / task) are independent — the user can also flip them themselves. ONLY flag with HIGH confidence; default each to false. \`task\` is reserved for connector-driven assignments (Linear/Todoist) and is NEVER set by you — leave it out of your output.
+
+active = true (be conservative — the user can set this themselves):
+- the recipient is being asked a direct question that needs their answer
+- the recipient has been explicitly asked to do something with a time pressure or response window
+- they are personally on the hook for the next step
+A short FYI, a status update, an @mention with no ask, an unsolicited pitch — none of these are active.
+
+to_read = true (be conservative):
+- longer-form material the recipient should set aside time to read — newsletters, long corporate communications, documents
+- NOT for short informational updates, status notes, or unsolicited material
+
+skip = true:
+- clearly passive records the recipient doesn't need to process — confirmation emails, account sign-in notifications, receipts, automated system acknowledgements
+- No thread_state row is created when skip=true.
 
 urgent (boolean): true only when the recipient should be notified BEFORE their next scheduled response window — time-sensitive items or messages clearly requiring a quick response. Most notes are not urgent.
 
 importance (0-100):
 - 50-100 means "this should surface to the recipient proactively" (drives push, email digest, priority unread indicators)
 - 0-49 means "this exists but won't push or trigger early response scheduling"
-- Score promotional / unsolicited / mass-distribution material BELOW 50 even if it's marked as 'update' — typically 5-30. Cold outreach with no relational signal: 10-25. Receipts/confirmations get action_type='none' and are not scored.
+- Score promotional / unsolicited / mass-distribution material BELOW 50 even when active/to_read are false — typically 5-30. Cold outreach with no relational signal: 10-25. Skipped material (skip=true) is ignored regardless of importance.
 - Personal direct messages between people who clearly know each other: 60-90.
 - Anything you flag urgent should also be >= 50.
 
 Respond with JSON only. No explanation.
 
 Output schema:
-{"state": {"default": {"action_type": "update", "urgent": false, "importance": 50}, "overrides": {"1": {"action_type": "respond", "urgent": false, "importance": 75}}}}`,
+{"state": {"default": {"active": false, "to_read": false, "urgent": false, "importance": 50, "skip": false}, "overrides": {"1": {"active": true, "urgent": false, "importance": 75}}}}`,
     },
     {
       role: "user" as const,
@@ -351,9 +369,11 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
   }
 
   const defaultClassification: ThreadStateClassification = {
-    action_type: "update",
+    active: false,
+    to_read: false,
     urgent: false,
     importance: 50,
+    skip: false,
   };
 
   const raw = response.response;
@@ -371,16 +391,14 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
-    const validActions = new Set<ActionType>(["respond", "do", "read", "update", "none"]);
-
-    const stateDefault = parseClassification(parsed.state?.default, validActions, defaultClassification);
+    const stateDefault = parseClassification(parsed.state?.default, defaultClassification);
     const overrides: Record<string, Partial<ThreadStateClassification>> = {};
     if (parsed.state?.overrides && typeof parsed.state.overrides === "object") {
       for (const [key, value] of Object.entries(parsed.state.overrides)) {
         // Resolve member number to real ID
         const memberId = memberNumToId.get(Number(key));
         if (!memberId) continue;
-        const override = parseClassificationOverride(value, validActions);
+        const override = parseClassificationOverride(value);
         if (override) {
           overrides[memberId] = override;
         }
@@ -396,44 +414,33 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
 
 function parseClassification(
   raw: any,
-  validActions: Set<string>,
   fallback: ThreadStateClassification
 ): ThreadStateClassification {
-  if (!raw) return fallback;
-  // Backward-compat: a bare string is treated as action_type only
-  if (typeof raw === "string") {
-    return {
-      action_type: validActions.has(raw) ? (raw as ActionType) : fallback.action_type,
-      urgent: fallback.urgent,
-      importance: fallback.importance,
-    };
-  }
-  if (typeof raw !== "object") return fallback;
+  if (!raw || typeof raw !== "object") return fallback;
   return {
-    action_type: validActions.has(raw.action_type) ? (raw.action_type as ActionType) : fallback.action_type,
+    active: typeof raw.active === "boolean" ? raw.active : fallback.active,
+    to_read: typeof raw.to_read === "boolean" ? raw.to_read : fallback.to_read,
     urgent: typeof raw.urgent === "boolean" ? raw.urgent : fallback.urgent,
     importance:
       typeof raw.importance === "number"
         ? Math.max(0, Math.min(100, Math.round(raw.importance)))
         : fallback.importance,
+    skip: typeof raw.skip === "boolean" ? raw.skip : fallback.skip,
   };
 }
 
 function parseClassificationOverride(
-  raw: any,
-  validActions: Set<string>
+  raw: any
 ): Partial<ThreadStateClassification> | null {
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    return validActions.has(raw) ? { action_type: raw as ActionType } : null;
-  }
-  if (typeof raw !== "object") return null;
+  if (!raw || typeof raw !== "object") return null;
   const result: Partial<ThreadStateClassification> = {};
-  if (validActions.has(raw.action_type)) result.action_type = raw.action_type as ActionType;
+  if (typeof raw.active === "boolean") result.active = raw.active;
+  if (typeof raw.to_read === "boolean") result.to_read = raw.to_read;
   if (typeof raw.urgent === "boolean") result.urgent = raw.urgent;
   if (typeof raw.importance === "number") {
     result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
   }
+  if (typeof raw.skip === "boolean") result.skip = raw.skip;
   return Object.keys(result).length > 0 ? result : null;
 }
 
@@ -451,20 +458,26 @@ async function applyThreadState(
     if (member.userId === noteAuthorUserId) continue; // Author is never in the inbox
 
     const override = state.overrides[member.id];
-    const actionType = override?.action_type ?? state.default.action_type;
+    const active = override?.active ?? state.default.active;
+    const toRead = override?.to_read ?? state.default.to_read;
     const urgent = override?.urgent ?? state.default.urgent;
     const importance = override?.importance ?? state.default.importance;
-    if (actionType === "none") continue; // No thread_state row for passive material
+    const skip = override?.skip ?? state.default.skip;
+    if (skip) continue; // No thread_state row for passive material
 
     try {
       await rpcUser(db, "upsert_thread_state", {
         user_id: member.userId,
         p_thread_id: threadId,
-        p_action_type: actionType,
+        p_active: active,
+        p_task: false, // AI never sets task — that's reserved for connectors.
+        p_to_read: toRead,
         p_urgent: urgent,
         p_importance: importance,
         p_note_created_at: noteSourceCreatedAt.toISOString(),
-        p_set_action_type: true,
+        p_set_active: true,
+        p_set_task: false,
+        p_set_to_read: true,
         p_set_urgent: true,
         p_set_importance: true,
       });

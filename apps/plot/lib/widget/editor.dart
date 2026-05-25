@@ -2641,37 +2641,66 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
       StyleRule(BlockSelector.all.first(), (doc, docNode) {
         return {Styles.padding: const CascadingPadding.only(top: 0)};
       }),
-      // Headers: larger top margin for visual separation, smaller bottom for grouping
+      // Headings — conservative sizing so they stand out within a thread
+      // without overwhelming the surrounding prose. Sizes scale off the base
+      // body size; bottom padding is intentionally 0 so the default block
+      // top padding (`spacing.md`) is the only gap before the following
+      // block, keeping heading + content visually grouped.
       StyleRule(const BlockSelector("header1"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(
-            top: spacing.xxl,
-            bottom: spacing.md,
+          Styles.textStyle: baseStyle.copyWith(
+            fontSize: (baseStyle.fontSize ?? 15) * 1.25,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
           ),
+          Styles.padding: CascadingPadding.only(top: spacing.xl),
         };
       }),
       StyleRule(const BlockSelector("header2"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(
-            top: spacing.xxl,
-            bottom: spacing.md,
+          Styles.textStyle: baseStyle.copyWith(
+            fontSize: (baseStyle.fontSize ?? 15) * 1.12,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
           ),
+          Styles.padding: CascadingPadding.only(top: spacing.lg),
         };
       }),
       StyleRule(const BlockSelector("header3"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(
-            top: spacing.xxl,
-            bottom: spacing.md,
+          Styles.textStyle: baseStyle.copyWith(
+            fontWeight: FontWeight.w700,
+            height: 1.35,
           ),
+          Styles.padding: CascadingPadding.only(top: spacing.lg),
         };
       }),
       StyleRule(const BlockSelector("header4"), (doc, docNode) {
         return {
-          Styles.padding: CascadingPadding.only(
-            top: spacing.xxl,
-            bottom: spacing.md,
+          Styles.textStyle: baseStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            height: 1.35,
           ),
+          Styles.padding: CascadingPadding.only(top: spacing.md),
+        };
+      }),
+      StyleRule(const BlockSelector("header5"), (doc, docNode) {
+        return {
+          Styles.textStyle: baseStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            height: 1.35,
+          ),
+          Styles.padding: CascadingPadding.only(top: spacing.md),
+        };
+      }),
+      StyleRule(const BlockSelector("header6"), (doc, docNode) {
+        return {
+          Styles.textStyle: baseStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            fontStyle: FontStyle.italic,
+            height: 1.35,
+          ),
+          Styles.padding: CascadingPadding.only(top: spacing.md),
         };
       }),
       StyleRule(const BlockSelector("listItem"), (doc, docNode) {

@@ -127,9 +127,19 @@ function stripHtmlToText(html: string): string {
   text = text.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "");
   text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
   text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  // Convert headings to Markdown-style prefixes so the AI-fallback path
+  // preserves the heading hierarchy when the structured converter fails.
+  text = text.replace(
+    /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi,
+    (_, level: string, inner: string) => {
+      const flat = inner.replace(/\s+/g, " ").trim();
+      if (!flat) return "";
+      return `\n\n${"#".repeat(Number(level))} ${flat}\n\n`;
+    }
+  );
   // Convert <br>, <p>, <div>, <tr>, <li> to newlines
   text = text.replace(/<br\s*\/?>/gi, "\n");
-  text = text.replace(/<\/(?:p|div|tr|li|h[1-6])>/gi, "\n");
+  text = text.replace(/<\/(?:p|div|tr|li)>/gi, "\n");
   // Convert <a href="url">text</a> to [text](url)
   text = text.replace(/<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)");
   // Remove all remaining HTML tags

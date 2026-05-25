@@ -279,7 +279,11 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
                 const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
               ),
             ),
-            decoration: FVariantsDelta.delta([
+            contentDecoration: FVariantsDelta<
+                FTappableVariantConstraint,
+                FTappableVariant,
+                Decoration,
+                DecorationDelta>.delta([
               FVariantOperation.all(
                 DecorationDelta.value(
                   BoxDecoration(

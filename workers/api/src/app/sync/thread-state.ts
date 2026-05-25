@@ -12,10 +12,12 @@ const threadState = new Hono<{ Bindings: Bindings }>();
 // Body fields (all optional unless noted):
 //   - thread_id (required)
 //   - read_at      → mark read (calls clear_thread_state; race-safe)
-//   - action_type  → 'respond' | 'do' | 'read' | 'update' (drives the tab)
+//   - active       → boolean (Doing section in the unified feed)
+//   - task         → boolean (task list — typically set by connectors)
+//   - to_read      → boolean (reading list)
 //   - urgent       → boolean
 //   - importance   → 0..100
-//   - order        → drag-to-reorder position within an action tab
+//   - order        → drag-to-reorder position within Doing / Scheduled
 //   - on           → "[date,date)" daterange — per-user "do on this date"
 //   - at           → "[ts,ts)"   tstzrange  — per-user "do at this time"
 //   - bumped_at    → user "bump to top" timestamp
@@ -45,7 +47,9 @@ threadState.post("/sync/thread-state", async (c) => {
 
       // Apply any remaining state fields. Skip the upsert entirely if the
       // record only carries a read_at (handled above).
-      const hasAction = record.action_type !== undefined;
+      const hasActive = record.active !== undefined;
+      const hasTask = record.task !== undefined;
+      const hasToRead = record.to_read !== undefined;
       const hasUrgent = record.urgent !== undefined;
       const hasImportance = record.importance !== undefined;
       const hasOrder = record.order !== undefined;
@@ -53,14 +57,18 @@ threadState.post("/sync/thread-state", async (c) => {
       const hasAt = record.at !== undefined;
       const hasBumped = record.bumped_at !== undefined && !record.read_at;
 
-      if (hasAction || hasUrgent || hasImportance || hasOrder || hasOn || hasAt || hasBumped) {
+      if (hasActive || hasTask || hasToRead || hasUrgent || hasImportance || hasOrder || hasOn || hasAt || hasBumped) {
         await rpcUser(c.var.db, "upsert_thread_state", {
           user_id: userId,
           p_thread_id: record.thread_id,
-          p_action_type: hasAction ? record.action_type : "update",
+          p_active: hasActive ? record.active : false,
+          p_task: hasTask ? record.task : false,
+          p_to_read: hasToRead ? record.to_read : false,
           p_urgent: hasUrgent ? record.urgent : false,
           p_importance: hasImportance ? record.importance : 50,
-          p_set_action_type: hasAction,
+          p_set_active: hasActive,
+          p_set_task: hasTask,
+          p_set_to_read: hasToRead,
           p_set_urgent: hasUrgent,
           p_set_importance: hasImportance,
           p_set_order: hasOrder,

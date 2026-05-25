@@ -260,17 +260,18 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final leadingHovered = _isBlockDragging ? false : _leadingHovered;
         final bool isTodo = activity.todo;
 
-        // Leading button: to-do state icon (shows calendar icon when scheduled)
+        // Leading button: unified-feed state icon.
+        //   - !active resting: nothing visible.
+        //   - !active hovered: `circlePlus` with "To do" tooltip; tap sets
+        //                      active=true (lands in Doing).
+        //   - active resting:  `circle`.
+        //   - active hovered:  `circleCheck` with "Mark done" tooltip; tap
+        //                      clears active and marks read (lands in
+        //                      Activity).
         final longPress = activity.priority.isViewer
             ? null
             : () => buildContext.run(PickScheduleThread(activity));
 
-        // The command that the leading tap target triggers.
-        // Associated threads use the same leading commands as regular
-        // (non-event) threads — adding to the agenda or finishing —
-        // because users still want to manage the thread's own todo
-        // state from this slot. Removing the thread from the event is
-        // surfaced as an X-icon at the trailing end on hover instead.
         final Command leadingCommand;
         if (!isTodo) {
           leadingCommand = MoveThreadToRespond(activity);
@@ -290,10 +291,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         }
 
-        // Leading column hugs a centred icon with horizontal padding that
-        // matches the trailing edge of the row: roomy on desktop, tight on
-        // mobile. The threads-in-agenda layout that needed an agenda-time-
-        // width gutter is no longer used here.
         final iconBaseSize = buildContext.theme.iconSizes.base;
         final leadingPad = buildContext.isMultiPanel
             ? buildContext.theme.spacing.lg
@@ -304,30 +301,30 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final String leadingTitle = !isTodo ? 'To respond' : 'Finish';
+        final String leadingTitle = !isTodo ? 'To do' : 'Mark done';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
         if (!isTodo) {
+          // Inactive: hidden at rest, circlePlus on hover.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
-              outlineIcon: PlotIcon.comment,
+              outlineIcon: FontAwesomeIcons.circlePlus,
               showEmpty: !activity.unread,
               dotColor: activity.unread
                   ? buildContext.colour.accent.withValues(alpha: 0.7)
                   : null,
               iconHoverColor: iconHoverColor,
-              hoverIcon: Value(PlotIcon.comment),
+              hoverIcon: Value(FontAwesomeIcons.circlePlus),
               title: leadingTitle,
             ),
             forceHover: isHovered,
             onLongPress: longPress,
           );
         } else {
-          // Active and scheduled threads both use the circle; hover swaps to
-          // a circle-with-check finish affordance. When unread, a centered
-          // dot overlays the circle instead of a shaded fill.
+          // Active: circle at rest; circleCheck on hover. Unread overlays
+          // a centered dot on the circle.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
@@ -493,20 +490,15 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                   if (activity.archivedAt != null &&
                                       activity.autoArchivedByThreadId != null)
                                     WidgetSpan(
-                                      alignment:
-                                          PlaceholderAlignment.middle,
+                                      alignment: PlaceholderAlignment.middle,
                                       child: Padding(
                                         padding: EdgeInsets.only(
-                                          right: buildContext
-                                              .theme
-                                              .spacing
-                                              .xs,
+                                          right: buildContext.theme.spacing.xs,
                                         ),
                                         child: Icon(
                                           PlotIcon.broom,
                                           size: 12,
-                                          color:
-                                              buildContext.colour.muted,
+                                          color: buildContext.colour.muted,
                                         ),
                                       ),
                                     ),
@@ -634,10 +626,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         ? MouseRegion(
             onEnter: (_) => setState(() => _rowHovered = true),
             onExit: (_) => setState(() => _rowHovered = false),
-            child: Opacity(
-              opacity: rowHovered ? 1.0 : 0.4,
-              child: rawListTile,
-            ),
+            child: Opacity(opacity: rowHovered ? 1.0 : 0.4, child: rawListTile),
           )
         : rawListTile;
 
@@ -648,10 +637,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // shed the priority page tree.
       final priorityBloc = buildContext.read<PriorityBloc?>();
       return ContextMenu(
-        items: (close) => threadCommands(
-          activity,
-          priorityBloc: priorityBloc,
-        )
+        items: (close) => threadCommands(activity, priorityBloc: priorityBloc)
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
@@ -1015,11 +1001,7 @@ class RsvpSummary extends StatelessWidget {
         if (counts.attend > 0)
           Text(
             '${counts.attend}✓',
-            style: TextStyle(
-              color: attendColor,
-              fontSize: fontSize,
-              height: 1,
-            ),
+            style: TextStyle(color: attendColor, fontSize: fontSize, height: 1),
           ),
         if (counts.skip > 0)
           Text(
@@ -1052,11 +1034,7 @@ class _ThreadLogo extends StatelessWidget {
     // Plot threads (system priorities like @plot.app) show the Plot mark
     // unless the thread has its own source icon (twist, connector, URL).
     if (activity.priority.isPlot && _hasNoExplicitSource) {
-      return SvgPicture.asset(
-        'assets/plot-icon.svg',
-        width: 16,
-        height: 16,
-      );
+      return SvgPicture.asset('assets/plot-icon.svg', width: 16, height: 16);
     }
 
     final resolved = Thread.resolveIcon(activity.icon);
@@ -1192,13 +1170,14 @@ class _EditHoverIconState extends State<_EditHoverIcon> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.run(command),
-          onLongPress: () =>
-              context.run(MoveThreadToPriority(widget.activity)),
+          onLongPress: () => context.run(MoveThreadToPriority(widget.activity)),
           child: Center(
             child: FaIcon(
               iconData,
               size: 14,
-              color: _hovered ? context.colour.foreground : context.colour.muted,
+              color: _hovered
+                  ? context.colour.foreground
+                  : context.colour.muted,
             ),
           ),
         ),

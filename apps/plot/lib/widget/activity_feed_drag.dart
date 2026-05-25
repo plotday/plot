@@ -24,13 +24,13 @@ DateTime? _sectionToMarker(ActivitySection section) {
   switch (section) {
     case ActivitySection.eventAgenda:
       return _eventAgendaSectionMarker;
-    case ActivitySection.today:
+    case ActivitySection.doing:
       return _todaySectionMarker;
     case ActivitySection.scheduled:
       return null; // disambiguated by targetDate
-    case ActivitySection.newSection:
+    case ActivitySection.updates:
       return _newSectionMarker;
-    case ActivitySection.done:
+    case ActivitySection.activity:
       return _doneSectionMarker;
   }
 }
@@ -39,9 +39,9 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
   if (target.targetDate != null) return ActivitySection.scheduled;
   final marker = target.targetPeriodStart;
   if (marker == _eventAgendaSectionMarker) return ActivitySection.eventAgenda;
-  if (marker == _todaySectionMarker) return ActivitySection.today;
-  if (marker == _newSectionMarker) return ActivitySection.newSection;
-  if (marker == _doneSectionMarker) return ActivitySection.done;
+  if (marker == _todaySectionMarker) return ActivitySection.doing;
+  if (marker == _newSectionMarker) return ActivitySection.updates;
+  if (marker == _doneSectionMarker) return ActivitySection.activity;
   return null;
 }
 
@@ -108,7 +108,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
 
   BlockDropTarget doneTopTarget() => BlockDropTarget(
     targetDate: null,
-    targetPeriodStart: _sectionToMarker(ActivitySection.done),
+    targetPeriodStart: _sectionToMarker(ActivitySection.activity),
     prevBlockId: null,
     prevPriorityId: null,
     nextBlockId: null,
@@ -135,11 +135,13 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
         // empty, emit the single Done top target here so the empty
         // section remains a valid drop site.
         if (currentSection != null) {
-          if (currentSection == ActivitySection.done) {
+          if (currentSection == ActivitySection.activity) {
             if (!doneBoundaryEmitted) {
               before[i] = (target: doneTopTarget(), silent: false);
               doneBoundaryEmitted = true;
             }
+          } else if (currentSection == ActivitySection.updates) {
+            // Updates accepts no drops; emit no tail boundary either.
           } else {
             before[i] = (
               target: BlockDropTarget(
@@ -164,15 +166,21 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
     }
     if (item is AgendaThreadItem) {
       if (currentSection == null) continue;
-      if (currentSection == ActivitySection.done) {
-        // Only the first done thread gets a drop zone — and the target
-        // is "top of Done" (prev/next null), not adjacent to the first
-        // done thread. Skip emitting a boundary for any subsequent
-        // done thread so the gap never opens between done rows.
+      if (currentSection == ActivitySection.activity) {
+        // Only the first activity thread gets a drop zone — and the
+        // target is "top of Activity" (prev/next null), not adjacent.
+        // Skip emitting a boundary for any subsequent activity thread
+        // so the gap never opens between activity rows.
         if (!doneBoundaryEmitted) {
           before[i] = (target: doneTopTarget(), silent: false);
           doneBoundaryEmitted = true;
         }
+        continue;
+      }
+      if (currentSection == ActivitySection.updates) {
+        // Updates is not a drop target — it's a derived projection over
+        // unread threads sorted by urgency. Drops over Updates should
+        // fall through; emit no boundaries here.
         continue;
       }
       final threadIdStr = item.thread.id.toString();
@@ -210,7 +218,7 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
   //     [BlockDropZone]'s target-equality check.
   //   * Other sections → ordinary tail target.
   if (currentSection != null) {
-    if (currentSection == ActivitySection.done) {
+    if (currentSection == ActivitySection.activity) {
       afterList = (
         target: doneTopTarget(),
         silent: doneBoundaryEmitted,
