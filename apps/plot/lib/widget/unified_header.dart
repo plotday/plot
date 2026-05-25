@@ -8,7 +8,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
-
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
@@ -243,8 +242,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   void _scheduleTrafficLightAlignment() {
     if (!Platform.instance.isMacOS) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final box =
-          _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
       if (box == null || !box.hasSize) return;
       final height = box.size.height;
       if (_lastMeasuredHeaderHeight != null &&
@@ -262,7 +260,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // height to the window-chrome aligner — single (single-panel mode) and
     // sidebar (multi-panel A column). [_kHeaderHeight] is the constant
     // they all hit thanks to the SizedBox wrapper below.
-    final bool ownsTrafficLights = widget.variant == HeaderVariant.single ||
+    final bool ownsTrafficLights =
+        widget.variant == HeaderVariant.single ||
         widget.variant == HeaderVariant.sidebar;
     if (ownsTrafficLights) {
       _scheduleTrafficLightAlignment();
@@ -281,14 +280,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             _buildNoPriorityHeaderChildren(context, layoutState),
             suffixes: <Widget>[
               Button.icon(_buildNoPriorityMenuCommand()),
-              if (Window.toolbarPadding
-                      .resolve(TextDirection.ltr)
-                      .right !=
-                  0)
+              if (Window.toolbarPadding.resolve(TextDirection.ltr).right != 0)
                 SizedBox(
-                  width: Window.toolbarPadding
-                      .resolve(TextDirection.ltr)
-                      .right,
+                  width: Window.toolbarPadding.resolve(TextDirection.ltr).right,
                 ),
             ],
           );
@@ -307,12 +301,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               case HeaderVariant.sidebar:
                 return _buildSidebarHeader(context, layoutState);
               case HeaderVariant.main:
-                return _buildMainHeader(
-                  context,
-                  layoutState,
-                  state,
-                  notifier,
-                );
+                return _buildMainHeader(context, layoutState, state, notifier);
             }
           },
         );
@@ -478,23 +467,16 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   // ---------------------------------------------------------------------------
   // Multi-panel sidebar header (left column).
 
-  Widget _buildSidebarHeader(
-    BuildContext context,
-    LayoutState layoutState,
-  ) {
+  Widget _buildSidebarHeader(BuildContext context, LayoutState layoutState) {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
-    return _wrapHeader(
-      context,
-      layoutState,
-      <Widget>[
-        if (resolvedToolbarPadding.left != 0)
-          SizedBox(width: resolvedToolbarPadding.left),
-        const Expanded(child: SizedBox.shrink()),
-        Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
-      ],
-    );
+    return _wrapHeader(context, layoutState, <Widget>[
+      if (resolvedToolbarPadding.left != 0)
+        SizedBox(width: resolvedToolbarPadding.left),
+      const Expanded(child: SizedBox.shrink()),
+      Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
+    ]);
   }
 
   // ---------------------------------------------------------------------------
@@ -525,12 +507,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     final Widget titleSection = _searchExpanded
         ? _buildSearchField(context, layoutState, state, notifier)
-        : _buildTitleSection(
-            context,
-            layoutState,
-            state,
-            alignLeft: true,
-          );
+        : _buildTitleSection(context, layoutState, state, alignLeft: true);
 
     final List<Widget> trailing = <Widget>[
       if (!state.context.isTwistDev) Button.icon(NewThread()),
@@ -539,12 +516,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         SizedBox(width: resolvedToolbarPadding.right),
     ];
 
-    return _wrapHeader(
-      context,
-      layoutState,
-      [...leading, titleSection],
-      suffixes: trailing,
-    );
+    return _wrapHeader(context, layoutState, [
+      ...leading,
+      titleSection,
+    ], suffixes: trailing);
   }
 
   /// Wraps a text-bearing widget so its bounding box hugs the actual
@@ -580,9 +555,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     PriorityState state, {
     required bool alignLeft,
   }) {
-    final alignment = alignLeft
-        ? Alignment.centerLeft
-        : Alignment.center;
+    final alignment = alignLeft ? Alignment.centerLeft : Alignment.center;
 
     Widget withTrackingPill(Widget title) {
       if (state.context.isTwistDev) return title;
@@ -606,9 +579,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final IconData scopeCaret = state.hideSubPriorities
         ? FontAwesomeIcons.chevronDown
         : FontAwesomeIcons.chevronRight;
-    void toggleScope() => context.run(
-      ToggleHideSubPriorities(context: context),
-    );
+    void toggleScope() =>
+        context.run(ToggleHideSubPriorities(context: context));
 
     return Expanded(
       child: Align(
@@ -617,12 +589,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           buildWhen: (prev, next) {
             final p = prev is NowLoaded ? prev.currentEvent : null;
             final n = next is NowLoaded ? next.currentEvent : null;
-            return p?.id != n?.id ||
-                p?.displayTitle != n?.displayTitle;
+            return p?.id != n?.id || p?.displayTitle != n?.displayTitle;
           },
           builder: (context, nowState) {
-            final currentEvent =
-                nowState is NowLoaded ? nowState.currentEvent : null;
+            final currentEvent = nowState is NowLoaded
+                ? nowState.currentEvent
+                : null;
             if (currentEvent != null) {
               return withTrackingPill(
                 Text(
@@ -809,10 +781,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(
-          MoveThreadToRespond(thread),
-          icon: Value(PlotIcon.comment),
-        ),
+        CommandWrapper(MoveThreadToRespond(thread), icon: Value(PlotIcon.send)),
       );
     } else {
       todoIcon = Button.icon(
@@ -893,14 +862,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           nowState: context.read<NowBloc?>()?.state,
         );
         final threadGroups = thread != null
-            ? await threadCommandGroups(
-                thread,
-                priorityBloc: priorityBloc,
-              )
+            ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
             : <StaticCommandGroup>[];
-        return Commands(
-          groups: [...threadGroups, ...priorityGroups],
-        );
+        return Commands(groups: [...threadGroups, ...priorityGroups]);
       },
     );
   }
@@ -1209,8 +1173,8 @@ class _PriorityHeaderTrackingControlState
                       tooltip: live.fromEvent
                           ? 'Shorten event'
                           : (live.remaining > kPomodoroStep
-                              ? 'Remove 15 minutes'
-                              : 'Set to 5 minutes'),
+                                ? 'Remove 15 minutes'
+                                : 'Set to 5 minutes'),
                       shortcut: live.fromEvent ? null : timerRemoveShortcut,
                       onTap: live.fromEvent
                           ? () => _shrinkEvent(live.event!)
@@ -1274,10 +1238,8 @@ class _PriorityHeaderTrackingControlState
     final stepSeconds = kPomodoroStep.inSeconds;
     final ceiledMinutes = (currentSeconds + 59) ~/ 60;
     final ceiledSeconds = ceiledMinutes * 60;
-    final nextSeconds =
-        ((ceiledSeconds ~/ stepSeconds) + 1) * stepSeconds;
-    await SetThreadDuration(event, Duration(seconds: nextSeconds))
-        .run(context);
+    final nextSeconds = ((ceiledSeconds ~/ stepSeconds) + 1) * stepSeconds;
+    await SetThreadDuration(event, Duration(seconds: nextSeconds)).run(context);
   }
 
   bool _canShrinkEvent(Thread event) {
@@ -1356,14 +1318,14 @@ class _LivePomodoro {
     final session = loaded.session;
     final ctx = loaded.context;
     final hasActiveSession =
-        session != null
-        && ctx != null
-        && session.archivedAt == null
-        && session.source == 'active'
-        && session.priority?.id == ctx.id
-        && session.at.isNow()
-        && session.pomodoroAt != null
-        && session.pomodoro != null;
+        session != null &&
+        ctx != null &&
+        session.archivedAt == null &&
+        session.source == 'active' &&
+        session.priority?.id == ctx.id &&
+        session.at.isNow() &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null;
     if (hasActiveSession) {
       final now = Time.now();
       final pomodoroAt = session.pomodoroAt!;
@@ -1388,8 +1350,7 @@ class _LivePomodoro {
       final remaining = end.difference(now);
       final totalMs = pomodoro.inMilliseconds;
       final elapsedMs = now.difference(pomodoroAt).inMilliseconds;
-      final ratio =
-          totalMs <= 0 ? 1.0 : (elapsedMs / totalMs).clamp(0.0, 1.0);
+      final ratio = totalMs <= 0 ? 1.0 : (elapsedMs / totalMs).clamp(0.0, 1.0);
       return _LivePomodoro(
         state: PomodoroState.active,
         remaining: remaining.isNegative ? Duration.zero : remaining,
@@ -1399,10 +1360,10 @@ class _LivePomodoro {
 
     // Auto-displayed event timer: synthesize from the in-progress event
     // when present and not opted out via a 'skip' marker.
-    if (inProgressEvent != null
-        && eventSkip == null
-        && inProgressEvent.at?.start != null
-        && inProgressEvent.at?.end != null) {
+    if (inProgressEvent != null &&
+        eventSkip == null &&
+        inProgressEvent.at?.start != null &&
+        inProgressEvent.at?.end != null) {
       final now = Time.now();
       final start = inProgressEvent.at!.start!;
       final end = inProgressEvent.at!.end!;
@@ -1466,10 +1427,7 @@ class _PillLabel extends StatelessWidget {
       duration: const Duration(milliseconds: 150),
       transitionBuilder: (child, animation) =>
           FadeTransition(opacity: animation, child: child),
-      child: KeyedSubtree(
-        key: ValueKey<bool>(centerHovered),
-        child: child,
-      ),
+      child: KeyedSubtree(key: ValueKey<bool>(centerHovered), child: child),
     );
   }
 
@@ -1545,8 +1503,7 @@ class _PillLabel extends StatelessWidget {
   /// Zero clamps to `0m` so the grace pulse always has text to lerp.
   static String _formatMinutes(Duration d) {
     if (d <= Duration.zero) return '0m';
-    final totalMinutes =
-        (d.inSeconds + 59) ~/ 60; // ceil
+    final totalMinutes = (d.inSeconds + 59) ~/ 60; // ceil
     final h = totalMinutes ~/ 60;
     final m = totalMinutes % 60;
     if (h == 0) return '${m}m';
@@ -1607,16 +1564,12 @@ class _HoverButtonState extends State<_HoverButton> {
           onEnter: (_) => setState(() => _selfHovered = true),
           onExit: (_) => setState(() => _selfHovered = false),
           child: FTooltip(
-            tipBuilder: (context, controller) => _TooltipText(
-              label: widget.tooltip,
-              shortcut: widget.shortcut,
-            ),
+            tipBuilder: (context, controller) =>
+                _TooltipText(label: widget.tooltip, shortcut: widget.shortcut),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.enabled ? widget.onTap : null,
-              child: Center(
-                child: Icon(widget.icon, size: 9, color: resolved),
-              ),
+              child: Center(child: Icon(widget.icon, size: 9, color: resolved)),
             ),
           ),
         ),

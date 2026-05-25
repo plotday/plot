@@ -406,27 +406,37 @@ class ThreadsBase extends BaseTable {
           .getSingleOrNull();
       var merged = activityRow;
 
-      // Conflict resolution: local has a pending read (readAt != null)
+      // Conflict resolution: local has a pending read (readAt != null).
       if (local != null && local.readAt != null) {
-        final serverContent =
-            activityRow.lastNoteSourceCreatedAt ?? activityRow.createdAt;
-
-        if (activityRow.unread == false) {
-          // Server agrees thread is read — clear local readAt
-          merged = merged.copyWith(readAt: const Value(null));
-        } else if (serverContent.isAfter(local.readAt!)) {
-          // Server says unread AND there's new content since we read
-          // → accept server's unread state, clear readAt
-          merged = merged.copyWith(readAt: const Value(null));
+        if (local.actionType != null) {
+          // Action-tab thread: read_at is the durable "finished" marker
+          // for the Respond / Do / Read tab filters. The user.thread server
+          // view does not expose read_at, so local is the source of truth.
+          // Preserve it through the merge — without this, insertOrReplace
+          // (store.dart:1381) overwrites local read_at with the server's
+          // null and the thread re-appears in its action tab.
+          merged = merged.copyWith(readAt: Value(local.readAt));
         } else {
-          // Server says unread but no new content — keep local read
-          merged = merged.copyWith(
-            unread: false,
-            importance: 0,
-            actionType: const Value(null),
-            urgent: const Value(null),
-            readAt: Value(local.readAt),
-          );
+          final serverContent =
+              activityRow.lastNoteSourceCreatedAt ?? activityRow.createdAt;
+
+          if (activityRow.unread == false) {
+            // Server agrees thread is read — clear local readAt
+            merged = merged.copyWith(readAt: const Value(null));
+          } else if (serverContent.isAfter(local.readAt!)) {
+            // Server says unread AND there's new content since we read
+            // → accept server's unread state, clear readAt
+            merged = merged.copyWith(readAt: const Value(null));
+          } else {
+            // Server says unread but no new content — keep local read
+            merged = merged.copyWith(
+              unread: false,
+              importance: 0,
+              actionType: const Value(null),
+              urgent: const Value(null),
+              readAt: Value(local.readAt),
+            );
+          }
         }
       }
 
@@ -947,10 +957,15 @@ class Thread extends Equatable implements Comparable<Thread> {
     ]);
     final success = results.every((r) => r);
 
-    // Push pending read changes (readAt != null means user read locally)
+    // Push pending read changes (readAt != null means user read locally).
+    // Action-tab threads (actionType != null) sync read_at via the per-user
+    // state endpoint (/sync/thread-state) and rely on local read_at as a
+    // durable "finished" marker for the Respond / Do / Read tab filters,
+    // so they must NOT go through this endpoint — it clears local read_at
+    // after push, which un-finishes them and makes them re-appear.
     final readActivities = await (Store.get.select(
       Store.get.threads,
-    )..where((t) => t.readAt.isNotNull()))
+    )..where((t) => t.readAt.isNotNull() & t.actionType.isNull()))
         .get();
 
     if (readActivities.isEmpty) {

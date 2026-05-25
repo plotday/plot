@@ -3385,9 +3385,27 @@ List<Command> threadCommands(
   bool showEventTiming = false,
   PriorityBloc? priorityBloc,
 }) {
-  // Viewers can only open threads, not modify them
+  // Viewers can't edit shared thread metadata (title, sharing, merge/split,
+  // priority move, archive) but per-user filing (Finish / To respond /
+  // To do / To read / pick schedule) only mutates the user's own
+  // thread_state row — the same affordance the leading icon already
+  // exposes regardless of role.
   if (thread.priority.isViewer) {
-    return [if (open) ChangeCurrentThread(thread)];
+    Command? primary;
+    if (!skipPrimary) {
+      if (thread.todo) {
+        primary = FinishThread(thread, stateIcon: false);
+      } else if (thread.on != null) {
+        primary = PickScheduleThread(thread);
+      } else {
+        primary = MoveThreadToRespond(thread);
+      }
+    }
+    return [
+      if (open) ChangeCurrentThread(thread),
+      ?primary,
+      ...moveToTabCommands(thread),
+    ];
   }
 
   // Read-only viewers (announce-group-only access): no metadata edits, no

@@ -1327,10 +1327,7 @@ class _ThreadActionsRow extends StatelessWidget {
     final Widget todoButton;
     if (!isTodo) {
       todoButton = Button.icon(
-        CommandWrapper(
-          MoveThreadToRespond(thread),
-          icon: Value(PlotIcon.comment),
-        ),
+        CommandWrapper(MoveThreadToRespond(thread), icon: Value(PlotIcon.send)),
       );
     } else {
       todoButton = Button.icon(

@@ -2082,10 +2082,17 @@ class PriorityBloc extends Cubit<PriorityState> {
           expected: finished!,
           fields: const {_OverrideField.todo},
         );
-        _overlay[id] = _Overlay(
-          expected: finished,
-          watched: const {_OverrideField.todo},
-        );
+        // Action tabs (Respond / Do / Read) filter out finished rows via
+        // `read_at IS NULL`, so substituting an `expected` overlay would
+        // re-render the thread under a fresh "Today" scheduled bucket for
+        // one frame before the SQL update arrives. Drop so the per-tab
+        // feed matches the post-write reality.
+        _overlay[id] = _activeTabSubscriptionTab?.isActionTab == true
+            ? const _Overlay.drop()
+            : _Overlay(
+                expected: finished,
+                watched: const {_OverrideField.todo},
+              );
       } else {
         _optimisticOverrides[id] = _OptimisticOverride.absent();
         _overlay[id] = const _Overlay.drop();
