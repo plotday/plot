@@ -1122,10 +1122,26 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Routes a ConnectionChoice from the modal/dropdown into the draft note.
+  /// Plot thread clears any CreateLinkUserAction; a target replaces it.
+  Future<void> _applyConnectionChoice(ConnectionChoice choice) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    final note = bloc.state.draftNote;
+    final actions = List<UserAction>.from(note.actions ?? const []);
+    actions.removeWhere((a) => a is CreateLinkUserAction);
+    final action = choice.toUserAction();
+    if (action != null) actions.add(action);
+    await bloc.updateDraft(
+      bloc.state.draft,
+      note: note.copyWith(actions: actions.isEmpty ? null : actions),
+    );
+  }
+
   Future<void> _openConnectionPicker() async {
     final picked = await ConnectionPickerModal.open(context);
     if (picked == null || !mounted) return;
-    await _toggleConnection(picked);
+    await _applyConnectionChoice(picked);
   }
 
   Future<void> _toggleWithContact(Actor actor) async {

@@ -100,24 +100,37 @@ class _ConnectionChipState extends State<ConnectionChip> {
   }
 }
 
-/// Modal listing every create-target. Result is the picked target or null.
+/// Modal listing every create-target plus the synthetic "Plot thread"
+/// row. Returns the picked ConnectionChoice or null on dismiss.
 class ConnectionPickerModal {
   ConnectionPickerModal._();
 
-  static Future<CreateTarget?> open(BuildContext context) async {
+  static Future<ConnectionChoice?> open(BuildContext context) async {
     final targets = await loadCreateTargets();
-    if (!context.mounted || targets.isEmpty) return null;
+    if (!context.mounted) return null;
 
-    final result = await SelectModal.open<CreateTarget>(
+    final choices = <ConnectionChoice>[
+      ConnectionChoice.plotThread,
+      ...targets.map(ConnectionChoice.target),
+    ];
+
+    final result = await SelectModal.open<ConnectionChoice>(
       context,
       items: (search) async {
         final text = search?.trim().toLowerCase() ?? '';
         final filtered = text.isEmpty
-            ? targets
-            : targets.where((t) => t.searchText.contains(text)).toList();
-        return [SelectGroup(title: 'Create new', items: filtered)];
+            ? choices
+            : choices.where((c) => c.searchText.contains(text)).toList();
+        return [SelectGroup(title: null, items: filtered)];
       },
-      itemBuilder: (target, _) => createTargetTile(context, target),
+      itemBuilder: (choice, _) => switch (choice) {
+        PlotThreadChoice() => ListTile(
+            icon: PlotIcon.note,
+            title: 'Plot thread',
+          ),
+        TargetConnectionChoice(:final target) =>
+          createTargetTile(context, target),
+      },
       prompt: 'Pick a connection',
       emptyMessage: 'No connections available',
       showFilter: true,
