@@ -2209,13 +2209,12 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// order.
   ///
   /// Variable order produced by this helper, in lookup order:
-  /// 1. (if [requireTodoPredicate]) user id  — for user_sched join
-  /// 2. (if [priorityPath] != null) path, pathPrefix
-  /// 3. (else if [priorityId] != null) priorityId
-  /// 4. draft flag
-  /// 5. (if [actionType] != null) action type
-  /// 6. iconFilter values, in order
-  /// 7. (if [requireTodoPredicate]) today, now, now, today, now, now
+  /// 1. (if [priorityPath] != null) path, pathPrefix
+  /// 2. (else if [priorityId] != null) priorityId
+  /// 3. draft flag
+  /// 4. (if [actionType] != null) action type
+  /// 5. iconFilter values, in order
+  /// 6. (if [requireTodoPredicate]) today, now, now, today, now, now
   ///
   /// The caller is responsible for any variables bound by its SELECT
   /// clause (e.g. the `now` for the activity_at end-of-window predicate)
@@ -2236,6 +2235,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<String>? iconFilter,
     bool requireTodoPredicate = false,
     bool requireUnread = false,
+    bool requireLinkSched = false,
     String? actionType,
   }) {
     // Extract special tags (mirrors [_getQuery] / [_watchActivityFeedIds]
@@ -2252,22 +2252,20 @@ class Thread extends Equatable implements Comparable<Thread> {
     final variables = <Variable>[];
     final sqlBuf = StringBuffer();
 
-    // FROM + standard joins.
+    // FROM + standard joins. Per-user state lives on `a.*` since the
+    // thread-state refactor, so there's no `user_sched` join. The shared
+    // schedule is distinguished from link schedules by `link_id IS NULL`.
     sqlBuf.writeln('''
 FROM threads a
-LEFT JOIN schedules sched ON sched.thread_id = a.id AND sched.user_id IS NULL
+LEFT JOIN schedules sched ON sched.thread_id = a.id AND sched.link_id IS NULL
 LEFT JOIN links l ON l.thread_id = a.id''');
 
-    // doTodo requires user_sched and link_sched joins.
-    if (doTodo) {
+    // Action-tab queries need link_sched for bucket-date fallback (a
+    // synced calendar event with an action set inherits its date from
+    // the link's schedule). doTodo also needs it for its predicate.
+    if (doTodo || requireLinkSched) {
       sqlBuf.writeln(
-        'LEFT JOIN schedules user_sched ON user_sched.thread_id = a.id '
-        'AND user_sched.user_id = ? AND user_sched.occurrence IS NULL',
-      );
-      variables.add(Variable.withBlob(Base.userId.toBytes()));
-      sqlBuf.writeln(
-        'LEFT JOIN schedules link_sched '
-        'ON link_sched.link_id = l.id AND link_sched.user_id IS NULL',
+        'LEFT JOIN schedules link_sched ON link_sched.link_id = l.id',
       );
     }
 
@@ -2379,15 +2377,15 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
     }
 
-    // doTodo: SQL form of [Thread.todo] — at least one of shared / per-user /
-    // link schedule must be active for the user right now.
+    // doTodo: SQL form of [Thread.todo] — at least one of shared schedule /
+    // per-user thread state / link schedule must be active right now.
     if (doTodo) {
       final today = Date.today().toString();
       final now = Time.now();
       wheres.add('''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
- (user_sched.id IS NOT NULL AND user_sched.archived_at IS NULL) OR
+ (a.action_type IS NOT NULL AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
  (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
       variables.add(Variable.withString(today));
@@ -3086,6 +3084,229 @@ SELECT
                 (row) => (
                   id: Uuid.fromBytes(row.read<Uint8List>('id')),
                   activityAt: row.read<String>('activity_at'),
+                ),
+              )
+              .toList(),
+        );
+  }
+
+  /// Page result for the Respond / Do / Read action tabs. Each row carries
+  /// the bucket assignment so the renderer can insert date headers at
+  /// transitions without re-bucketing in Dart. `isActive=true` rows render
+  /// in the Today bucket; `isActive=false` rows render under the scheduled
+  /// day named by `bucketDate`.
+  static Future<({
+    List<Thread> threads,
+    List<({ThreadId id, bool isActive, String? bucketDate, double order})> rows,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? nextCursor,
+    bool saturated,
+  })> fetchActionTabPage({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+  }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    final idRows = await _watchActionTabIds(
+      action: action,
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+      after: after,
+    ).first;
+
+    if (idRows.isEmpty) {
+      return (
+        threads: <Thread>[],
+        rows: <({ThreadId id, bool isActive, String? bucketDate, double order})>[],
+        nextCursor: null,
+        saturated: false,
+      );
+    }
+
+    final ids = idRows.map((r) => r.id).toList();
+    final detailRows = await _hydrateActivityFeedRows(ids);
+    final threads = await _mapResultsToThreads(detailRows);
+
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+    threads.sort(
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+    );
+
+    final last = idRows.last;
+    return (
+      threads: threads,
+      rows: idRows,
+      nextCursor: (
+        isActiveInv: last.isActive ? 0 : 1,
+        bucketKey: last.isActive ? '0000' : (last.bucketDate ?? '9999'),
+        order: last.order,
+        id: last.id,
+      ),
+      saturated: idRows.length >= limit,
+    );
+  }
+
+  /// Phase 1 of the action-tab query (Respond / Do / Read). Returns
+  /// `(id, is_active, bucket_date, state_order)` per row, ordered so that
+  /// active (today/past) threads come first followed by scheduled rows in
+  /// ascending date order, then by user-chosen `state_order`.
+  ///
+  /// `bucket_date` is `NULL` only when the thread has no schedule at all
+  /// AND no per-user state date — in which case it sorts as active (the
+  /// renderer's Today bucket). For scheduled rows it's the user state date
+  /// when set, falling back to the shared schedule, then to the link
+  /// schedule.
+  ///
+  /// Pair with [_hydrateActivityFeedRows] for detail hydration.
+  static Stream<
+    List<({
+      ThreadId id,
+      bool isActive,
+      String? bucketDate,
+      double order,
+    })>
+  >
+  _watchActionTabIds({
+    required String action,
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+    final today = Date.today().toString();
+
+    // SELECT: identity + the three sort keys plus the bucket-date that the
+    // renderer uses to insert headers. `is_active` is computed from the
+    // same date sources as the Dart `Thread.isActiveThread` predicate
+    // (state_on / state_at / sched / link_sched), with NULL bucket dates
+    // treated as active.
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  CASE WHEN
+    (a.state_on IS NOT NULL AND a.state_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NOT NULL AND DATE(a.state_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NOT NULL AND sched.start_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NOT NULL
+        AND DATE(sched.start_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NOT NULL AND link_sched.start_on <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NULL AND link_sched.start_at IS NOT NULL
+        AND DATE(link_sched.start_at) <= ?)
+    OR (a.state_on IS NULL AND a.state_at IS NULL
+        AND sched.start_on IS NULL AND sched.start_at IS NULL
+        AND link_sched.start_on IS NULL AND link_sched.start_at IS NULL)
+  THEN 1 ELSE 0 END AS is_active,
+  COALESCE(
+    a.state_on,
+    CASE WHEN a.state_at IS NOT NULL THEN DATE(a.state_at) ELSE NULL END,
+    sched.start_on,
+    CASE WHEN sched.start_at IS NOT NULL THEN DATE(sched.start_at) ELSE NULL END,
+    link_sched.start_on,
+    CASE WHEN link_sched.start_at IS NOT NULL
+         THEN DATE(link_sched.start_at) ELSE NULL END
+  ) AS bucket_date,
+  COALESCE(a.state_order, 0) AS state_order''');
+    // The six `<= today` comparisons in the is_active CASE.
+    for (var i = 0; i < 6; i++) {
+      variables.add(Variable.withString(today));
+    }
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      requireLinkSched: true,
+      actionType: action,
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    // Action tabs are todos by definition. The _buildFeedFilter actionType
+    // clause only constrains `a.action_type = ?`; pair it with the unread
+    // half of the todo predicate so threads the user has marked read drop
+    // out (they belong in the All / Catch up tabs, not action tabs).
+    sqlBuf.writeln('AND a.read_at IS NULL');
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    // Cursor predicate. The visible sort is
+    //   `is_active DESC, bucket_key ASC, state_order ASC, id ASC`
+    // expressed as ascending across `is_active_inv = (1 - is_active)`,
+    // a normalized bucket key ('0000' for active, COALESCE date for
+    // scheduled, '9999' for unscheduled), state_order, and id.
+    if (after != null) {
+      sqlBuf.writeln('''
+HAVING (
+  (1 - is_active),
+  CASE WHEN is_active = 1 THEN '0000' ELSE COALESCE(bucket_date, '9999') END,
+  state_order,
+  a.id
+) > (?, ?, ?, ?)''');
+      variables.add(Variable.withInt(after.isActiveInv));
+      variables.add(Variable.withString(after.bucketKey));
+      variables.add(Variable.withReal(after.order));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln('''
+ORDER BY
+  (1 - is_active) ASC,
+  CASE WHEN is_active = 1 THEN '0000' ELSE COALESCE(bucket_date, '9999') END ASC,
+  state_order ASC,
+  a.id ASC''');
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  isActive: row.read<int>('is_active') == 1,
+                  bucketDate: row.readNullable<String>('bucket_date'),
+                  order: row.read<double>('state_order'),
                 ),
               )
               .toList(),
