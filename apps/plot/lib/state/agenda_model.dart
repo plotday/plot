@@ -224,6 +224,7 @@ class PriorityBlock extends AgendaBlock {
     required this.windowEnd,
     this.isOutside = false,
     this.cascadeDuration,
+    this.overflow = false,
   });
 
   @override
@@ -252,9 +253,23 @@ class PriorityBlock extends AgendaBlock {
   /// row contributes to this block's window.
   final Duration? cascadeDuration;
 
+  /// True when this is an auto-placed respond block that the placer
+  /// could not fit before its deadline without overlapping busy time
+  /// (or whose deadline fell in a closed period). The agenda renders
+  /// such a block's duration in red so the user notices.
+  final bool overflow;
+
   @override
-  List<Object?> get props =>
-      [id, priority, threads, isOutside, cascadeDuration, windowStart, windowEnd];
+  List<Object?> get props => [
+        id,
+        priority,
+        threads,
+        isOutside,
+        cascadeDuration,
+        windowStart,
+        windowEnd,
+        overflow,
+      ];
 }
 
 /// A scheduled event thread together with any associated child threads,

@@ -17,6 +17,11 @@ Priority _testPriority({String path = 'p1', double order = 0}) {
     role: 'member',
     attentionWindowSet: false,
     seeWithinSet: false,
+    respondScheduleEnabledSet: false,
+    respondWindowSet: false,
+    respondWithinSet: false,
+    earlyNotificationsEnabledSet: false,
+    notifyWindowSet: false,
   );
   return Priority.fromStore(row, draft: true);
 }

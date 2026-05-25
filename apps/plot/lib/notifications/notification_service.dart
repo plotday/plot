@@ -15,7 +15,7 @@ import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/notifications/notification_display.dart';
-import 'package:plot/notifications/notification_quiet_hours.dart';
+import 'package:plot/notifications/notification_window.dart';
 import 'package:plot/store/attention.dart';
 import 'package:plot/store/store.dart';
 
@@ -160,7 +160,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('notification_user_id', userId);
-      await syncAttentionWindowsToPrefs(prefs);
+      await syncNotifyWindowsToPrefs(prefs);
       // Clear any stale "Plot signed out" notification the background handler
       // may have shown while the session was dead, and reset the cooldown so
       // the next real expiry can notify again.
@@ -249,18 +249,23 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
       if (batches.isEmpty) return;
 
-      // Check quiet hours — if active, schedule a retry when they end
+      // Check the notify window — if currently closed, schedule a retry
+      // for when it opens. Urgent threads bypass the window (see-within
+      // path only — block-start path is independent and not handled here).
       final prefs = await SharedPreferences.getInstance();
-      final scheduleAt = computeNotifyTime(prefs);
-      if (scheduleAt != null) {
-        final delay = scheduleAt.difference(DateTime.now());
-        if (delay > Duration.zero) {
-          _quietHoursRetryTimer?.cancel();
-          _quietHoursRetryTimer = Timer(delay, () {
-            _handleDesktopNotification();
-          });
+      final hasUrgent = batches.any((b) => b.highestUrgent);
+      if (!hasUrgent) {
+        final scheduleAt = computeWindowOpenTime(prefs);
+        if (scheduleAt != null) {
+          final delay = scheduleAt.difference(DateTime.now());
+          if (delay > Duration.zero) {
+            _quietHoursRetryTimer?.cancel();
+            _quietHoursRetryTimer = Timer(delay, () {
+              _handleDesktopNotification();
+            });
+          }
+          return;
         }
-        return;
       }
 
       // Check multi-device suppression, then show
@@ -794,8 +799,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
           priorityTitle: firstLevel.title,
           threads: [],
           highestUrgent: false,
-          attentionWindow: firstLevel.attentionWindow != null
-              ? AttentionWindow.fromJsonString(firstLevel.attentionWindow)
+          notifyWindow: firstLevel.notifyWindow != null
+              ? AttentionWindow.fromJsonString(firstLevel.notifyWindow)
               : null,
         ),
       );
@@ -1079,7 +1084,7 @@ class NotificationBatch {
   final List<NotificationThread> threads;
   bool highestUrgent;
   String? targetPriorityId;
-  final List<AttentionWindow>? attentionWindow;
+  final List<AttentionWindow>? notifyWindow;
 
   NotificationBatch({
     required this.firstLevelPriorityId,
@@ -1087,7 +1092,7 @@ class NotificationBatch {
     required this.threads,
     required this.highestUrgent,
     this.targetPriorityId,
-    this.attentionWindow,
+    this.notifyWindow,
   });
 }
 
@@ -1108,34 +1113,42 @@ class NotificationThread {
   });
 }
 
-/// Sync the root priority's attention windows to SharedPreferences so the
-/// background isolate can check quiet hours without Drift access.
+/// Sync the root priority's `notify_window` to SharedPreferences so the
+/// background isolate can check whether the user wants early notifications
+/// right now without Drift access.
 ///
-/// Uses the root priority's attention_window if explicitly set, otherwise
-/// leaves the key absent (background handler falls back to default quiet hours).
-Future<void> syncAttentionWindowsToPrefs([SharedPreferences? prefs]) async {
+/// Uses the root priority's `notify_window` if explicitly set, otherwise
+/// leaves the key absent so [computeWindowOpenTime] falls back to its
+/// always-open default.
+Future<void> syncNotifyWindowsToPrefs([SharedPreferences? prefs]) async {
   try {
     prefs ??= await SharedPreferences.getInstance();
     final store = Store.get;
 
-    // Find any priority with attention_window explicitly set
-    final priorities = await (store.select(store.priorities)
-          ..where((t) => t.attentionWindowSet.equals(true)))
+    // Prefer the root priority's `notify_window` (its inherited resolved
+    // value), and fall back to any explicit override if root isn't loaded.
+    final rootRows = await (store.select(store.priorities)
+          ..where((t) => t.root.equals(true))
+          ..limit(1))
         .get();
-
-    // Use the first explicitly-set attention window found
-    final window = priorities
-        .where((p) => p.attentionWindow != null)
-        .map((p) => p.attentionWindow!)
-        .firstOrNull;
+    String? window = rootRows.firstOrNull?.notifyWindow;
+    if (window == null) {
+      final overrides = await (store.select(store.priorities)
+            ..where((t) => t.notifyWindowSet.equals(true)))
+          .get();
+      window = overrides
+          .where((p) => p.notifyWindow != null)
+          .map((p) => p.notifyWindow!)
+          .firstOrNull;
+    }
 
     if (window != null) {
-      await prefs.setString('attention_windows', window);
+      await prefs.setString(notifyWindowsPrefsKey, window);
     } else {
-      await prefs.remove('attention_windows');
+      await prefs.remove(notifyWindowsPrefsKey);
     }
   } catch (e) {
-    log.warning('Failed to sync attention windows to prefs', e);
+    log.warning('Failed to sync notify windows to prefs', e);
   }
 }
 

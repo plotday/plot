@@ -9,7 +9,7 @@ export 'navigation.dart';
 export 'priority.dart';
 export 'timer.dart';
 export 'agenda.dart';
-export 'attention.dart';
+export 'response_times.dart';
 export 'thread.dart';
 export 'note.dart';
 export 'note_viewer.dart';
