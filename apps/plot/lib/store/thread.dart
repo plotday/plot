@@ -2793,6 +2793,68 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   // variables are bound by the shared [_buildFeedFilter].
   // ---------------------------------------------------------------------------
 
+  /// Live stream of the Catch up tab's head page. Returns hydrated
+  /// threads in display order along with the SQL-derived tail cursor
+  /// (for pagination beyond the head) and whether the head was saturated.
+  ///
+  /// The bloc subscribes to this when Catch up is the active tab; on
+  /// every emission it pairs the head with previously-fetched appended
+  /// pages (via [fetchCatchUpPage]) to render the visible list.
+  static Stream<({
+    List<Thread> threads,
+    ({int urgent, int importance, String activityAt, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchCatchUpHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchCatchUpIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (
+          threads: <Thread>[],
+          tailCursor: null,
+          saturated: false,
+        );
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (
+          urgent: last.urgent,
+          importance: last.importance,
+          activityAt: last.activityAt,
+          id: last.id,
+        ),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
   /// Page result for the Catch up tab's cursor pagination. Mirrors
   /// [ActivityFeedPage] but with the urgency-keyed cursor shape.
   static Future<({
