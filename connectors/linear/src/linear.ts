@@ -126,7 +126,7 @@ export class Linear extends Connector<Linear> {
         ...(user.email ? { email: user.email } : {}),
         name: user.name ?? "",
         avatar: user.avatarUrl ?? undefined,
-        source: { provider: AuthProvider.Linear, accountId: user.id },
+        source: { accountId: user.id },
       };
     }
 
@@ -545,7 +545,7 @@ export class Linear extends Connector<Linear> {
         ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
-        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
+        ...(assignee.id ? { source: { accountId: assignee.id } } : {}),
       };
     }
 
@@ -938,7 +938,7 @@ export class Linear extends Connector<Linear> {
         ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
-        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
+        ...(assignee.id ? { source: { accountId: assignee.id } } : {}),
       };
     }
 

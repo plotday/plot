@@ -189,7 +189,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           await this.tools.integrations.saveContacts([{
             email: authUser.email,
             name: authUser.name ?? undefined,
-            source: { provider: AuthProvider.Google, accountId: userInfo.sub },
+            source: { accountId: userInfo.sub },
           }]);
         }
       }
@@ -1558,7 +1558,7 @@ export class GoogleChat extends Connector<GoogleChat> {
             const contact: NewContact = {
               ...(email ? { email } : {}),
               ...(name ? { name } : {}),
-              source: { provider: AuthProvider.Google, accountId },
+              source: { accountId },
             } as NewContact;
             contacts.push(contact);
           }

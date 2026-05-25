@@ -111,14 +111,25 @@ export type CreateLinkDraft = {
    */
   contacts: Actor[];
   /**
-   * Pre-resolved recipients for `targets: "contacts"` link types.
+   * Pre-resolved recipients for `targets: "contacts"` or `"addresses"`
+   * link types.
    *
-   * Only populated when the picked link type has `targets: "contacts"`;
-   * otherwise undefined. Each entry contains the Plot contact UUID and
-   * the platform-specific account ID (`externalAccountId`) the connector
-   * should use to address the recipient without performing its own lookup.
+   * Only populated for link types with `targets: "contacts"` or
+   * `"addresses"`; otherwise undefined. Each entry contains the Plot
+   * contact UUID and the platform-specific account ID
+   * (`externalAccountId`) the connector should use to address the
+   * recipient without performing its own lookup. For `"addresses"` link
+   * types, contacts without a connection-scoped row fall back to
+   * `contact.email`.
    */
   recipients?: ResolvedRecipient[];
+  /**
+   * Free-form addresses the user typed into the picker (no Plot contact
+   * row). Only populated for `targets: "addresses"` link types; otherwise
+   * undefined. Connectors should append these alongside `recipients`
+   * when constructing the recipient list (e.g. `To:` header for Gmail).
+   */
+  inviteEmails?: string[];
 };
 
 /**

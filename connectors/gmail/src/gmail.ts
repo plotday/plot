@@ -131,7 +131,12 @@ export class Gmail extends Connector<Gmail> {
       label: "New email",
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
-      targets: "contacts" as const,
+      // Gmail composes can target any address: a Plot contact (with or
+      // without a Gmail-connection row) or a free-form typed email
+      // (delivered via the thread's inviteEmails). The runtime fills
+      // recipients from the connection-scoped row when available and
+      // falls back to contact.email otherwise.
+      targets: "addresses" as const,
       statuses: [
         { status: "sent", label: "Sent", createDefault: true },
       ],
@@ -1437,13 +1442,13 @@ export class Gmail extends Connector<Gmail> {
   /**
    * Creates a new outbound email from Plot.
    *
-   * Recipients are resolved via `draft.recipients` (pre-populated by the
-   * runtime from `contact_external_account` rows where the Gmail connector
-   * stored `source: { provider: Google, accountId: email }`). As a fallback,
-   * `draft.contacts[i].email` is used for any contact not yet represented in
-   * `recipients`, so the connector works even before membership sync has run.
+   * For the `targets: "addresses"` gmail-email link type, the runtime fills
+   * `draft.recipients` from the connection-scoped `contact_external_account`
+   * rows and falls back to `contact.email` for any picked contact without
+   * a row. Free-form addresses the user typed in arrive via
+   * `draft.inviteEmails`. The connector just merges and dedupes.
    *
-   * Returns a `NewLinkWithNotes` whose `meta` matches what `onNoteCreated`
+   * The returned `NewLinkWithNotes`'s `meta` matches what `onNoteCreated`
    * reads so replies work with zero extra wiring.
    */
   override async onCreateLink(
@@ -1451,31 +1456,20 @@ export class Gmail extends Connector<Gmail> {
   ): Promise<NewLinkWithNotes | null> {
     if (draft.type !== "gmail-email") return null;
 
-    // Collect recipient email addresses: prefer runtime-resolved
-    // externalAccountId (= email for Google contacts), then fall back to
-    // draft.contacts[i].email for contacts not yet in contact_external_account.
     const seenEmails = new Set<string>();
     const toEmails: string[] = [];
+    const addRecipient = (raw: string | null | undefined) => {
+      if (!raw) return;
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seenEmails.has(key)) return;
+      seenEmails.add(key);
+      toEmails.push(trimmed);
+    };
 
-    if (draft.recipients) {
-      for (const r of draft.recipients) {
-        const email = r.externalAccountId.trim().toLowerCase();
-        if (email && !seenEmails.has(email)) {
-          seenEmails.add(email);
-          toEmails.push(r.externalAccountId.trim());
-        }
-      }
-    }
-
-    // Fallback: contacts whose email wasn't resolved through externalAccountId.
-    for (const contact of draft.contacts) {
-      if (!contact.email) continue;
-      const email = contact.email.trim().toLowerCase();
-      if (email && !seenEmails.has(email)) {
-        seenEmails.add(email);
-        toEmails.push(contact.email.trim());
-      }
-    }
+    for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId);
+    for (const email of draft.inviteEmails ?? []) addRecipient(email);
 
     if (toEmails.length === 0) {
       console.error(

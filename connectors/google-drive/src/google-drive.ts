@@ -95,7 +95,7 @@ function userToContact(
     ...(user.displayName ? { name: user.displayName } : {}),
     ...(user.emailAddress ? { email: user.emailAddress } : {}),
     ...(user.permissionId
-      ? { source: { provider: AuthProvider.Google, accountId: user.permissionId } }
+      ? { source: { accountId: user.permissionId } }
       : {}),
   } as NewContact;
 }

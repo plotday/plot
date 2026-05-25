@@ -1,7 +1,6 @@
 import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
-import { type AuthProvider } from "./tools/integrations";
 import { type JSONValue } from "./utils/types";
 import { Uuid } from "./utils/uuid";
 
@@ -861,8 +860,14 @@ type NewContactBase = {
   /**
    * External provider account source. Used for identity resolution
    * when email is unavailable and for privacy compliance reporting.
+   *
+   * The runtime scopes the resulting `contact_external_account` row to
+   * the dispatching twist instance (i.e. one row per connection per
+   * contact), so the same Plot contact can have multiple rows when
+   * reachable through multiple connections (e.g. two Slack workspaces,
+   * Gmail + Google Chat sharing one Google account).
    */
-  source?: { provider: AuthProvider; accountId: string };
+  source?: { accountId: string };
 };
 
 /**

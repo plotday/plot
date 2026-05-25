@@ -223,7 +223,7 @@ export class GitHub extends Connector<GitHub> {
       email: `${user.id}+${user.login}@users.noreply.github.com`,
       name: user.login,
       avatar: user.avatar_url ?? undefined,
-      source: { provider: AuthProvider.GitHub, accountId: String(user.id) },
+      source: { accountId: String(user.id) },
     };
   }
 

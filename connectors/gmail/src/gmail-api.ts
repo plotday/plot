@@ -3,7 +3,6 @@ import type {
   NewActor,
   NewContact,
 } from "@plotday/twister/plot";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 
 export type GmailLabel = {
@@ -382,12 +381,10 @@ function parseEmailAddressesToContacts(headerValue: string | null): NewContact[]
       name: parsed.name || undefined,
       // NOTE: Gmail message headers don't expose a Google user id (sub/permissionId),
       // so we key contact_external_account on the lowercased email address. Google Chat
-      // and Drive connectors key on the numeric Google id, so cross-connector dedup won't
-      // match for the same person until headers expose it. Acceptable for v1.
-      source: {
-        provider: AuthProvider.Google,
-        accountId: parsed.email.toLowerCase(),
-      },
+      // and Drive connectors key on the numeric Google id; cross-connector dedup is
+      // also blocked by per-connection scoping, so the picker only surfaces a Gmail
+      // contact for Gmail composes regardless. Acceptable for v1.
+      source: { accountId: parsed.email.toLowerCase() },
     }));
 }
 
@@ -614,10 +611,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
               email: fromContact.email,
               name: fromContact.name || undefined,
               // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
-              source: {
-                provider: AuthProvider.Google,
-                accountId: fromContact.email.toLowerCase(),
-              },
+              source: { accountId: fromContact.email.toLowerCase() },
             } as NewContact,
           ]
         : []),
@@ -682,10 +676,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
         email: sender.email,
         name: sender.name || undefined,
         // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
-        source: {
-          provider: AuthProvider.Google,
-          accountId: sender.email.toLowerCase(),
-        },
+        source: { accountId: sender.email.toLowerCase() },
       },
       ...parseEmailAddressesToContacts(to),
       ...parseEmailAddressesToContacts(cc),

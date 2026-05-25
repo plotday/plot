@@ -622,10 +622,7 @@ export class MsTeams extends Connector<MsTeams> {
         .map((m) => ({
           name: m.displayName ?? m.userId!,
           email: m.email ?? undefined,
-          source: {
-            provider: AuthProvider.Microsoft,
-            accountId: m.userId!,
-          },
+          source: { accountId: m.userId! },
         }));
 
       await this.set(`chat_members_${chatId}`, actors);
@@ -833,7 +830,7 @@ export class MsTeams extends Connector<MsTeams> {
           const contact: NewContact = {
             ...(name ? { name } : {}),
             ...(email ? { email } : {}),
-            source: { provider: AuthProvider.Microsoft, accountId: user.id },
+            source: { accountId: user.id },
           } as NewContact;
 
           contacts.push(contact);

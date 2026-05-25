@@ -361,7 +361,7 @@ export class Asana extends Connector<Asana> {
         ...(createdBy.email ? { email: createdBy.email } : {}),
         name: createdBy.name,
         avatar: createdBy.photo?.image_128x128,
-        ...(createdBy.gid ? { source: { provider: AuthProvider.Asana, accountId: createdBy.gid } } : {}),
+        ...(createdBy.gid ? { source: { accountId: createdBy.gid } } : {}),
       };
     }
     if (assignee) {
@@ -369,7 +369,7 @@ export class Asana extends Connector<Asana> {
         ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.photo?.image_128x128,
-        ...(assignee.gid ? { source: { provider: AuthProvider.Asana, accountId: assignee.gid } } : {}),
+        ...(assignee.gid ? { source: { accountId: assignee.gid } } : {}),
       };
     }
 
@@ -620,7 +620,7 @@ export class Asana extends Connector<Asana> {
           ...(createdBy.email ? { email: createdBy.email } : {}),
           name: createdBy.name,
           avatar: createdBy.photo?.image_128x128,
-          ...(createdBy.gid ? { source: { provider: AuthProvider.Asana, accountId: createdBy.gid } } : {}),
+          ...(createdBy.gid ? { source: { accountId: createdBy.gid } } : {}),
         };
       }
       if (assignee) {
@@ -628,7 +628,7 @@ export class Asana extends Connector<Asana> {
           ...(assignee.email ? { email: assignee.email } : {}),
           name: assignee.name,
           avatar: assignee.photo?.image_128x128,
-          ...(assignee.gid ? { source: { provider: AuthProvider.Asana, accountId: assignee.gid } } : {}),
+          ...(assignee.gid ? { source: { accountId: assignee.gid } } : {}),
         };
       }
 
@@ -712,7 +712,7 @@ export class Asana extends Connector<Asana> {
           ...(author.email ? { email: author.email } : {}),
           name: author.name,
           avatar: author.photo?.image_128x128,
-          ...(author.gid ? { source: { provider: AuthProvider.Asana, accountId: author.gid } } : {}),
+          ...(author.gid ? { source: { accountId: author.gid } } : {}),
         };
       }
 

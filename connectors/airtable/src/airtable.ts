@@ -646,7 +646,7 @@ export class Airtable extends Connector<Airtable> {
       ...(c.email ? { email: c.email } : {}),
       name: c.name ?? "",
       ...(c.id
-        ? { source: { provider: AuthProvider.Airtable, accountId: c.id } }
+        ? { source: { accountId: c.id } }
         : {}),
     };
   }

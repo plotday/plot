@@ -3,7 +3,6 @@ import type {
   NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Microsoft Graph API types ----
 
@@ -398,7 +397,7 @@ function userToNewActor(user?: TeamsUser): NewActor | undefined {
   return {
     name: user.displayName ?? user.id,
     email: user.mail ?? undefined,
-    source: { provider: AuthProvider.Microsoft, accountId: user.id },
+    source: { accountId: user.id },
   };
 }
 
@@ -412,7 +411,7 @@ function extractMentions(message: TeamsMessage): NewActor[] {
     .map((m) => ({
       name: m.mentionText,
       source: m.mentioned.user?.id
-        ? { provider: AuthProvider.Microsoft, accountId: m.mentioned.user.id }
+        ? { accountId: m.mentioned.user.id }
         : undefined,
     }));
 }

@@ -497,7 +497,7 @@ export class LinkedInMessaging extends Connector<LinkedInMessaging> {
    * future, this method should:
    *  1. List connections via the partner endpoint.
    *  2. Call `this.tools.integrations.saveContacts(contacts)` with `source`
-   *     set to `{ provider: AuthProvider.LinkedIn, accountId: profileUrn }`.
+   *     set to `{ accountId: profileUrn }`.
    *  3. Schedule itself daily via `runTask({ runAt: nextRunAt })` in a
    *     `finally` block (defensive scheduling pattern — runs even if an error
    *     is thrown above).
@@ -630,10 +630,7 @@ function profileToContact(profile: LinkedInProfile | null): NewContact | null {
   // the DM recipient picker can resolve Plot contacts → LinkedIn profile URNs
   // without a separate lookup. This is the primary mechanism for building the
   // `externalAccountId` values that `onCreateLink` reads from `draft.recipients`.
-  const source = {
-    provider: AuthProvider.LinkedIn,
-    accountId: profile.urn,
-  };
+  const source = { accountId: profile.urn };
   const avatar = profile.pictureUrl ?? undefined;
   // Anchor the contact on email when available, otherwise on the LinkedIn
   // public identifier (slug). Profiles without either are surfaced as a

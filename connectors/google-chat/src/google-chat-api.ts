@@ -5,7 +5,6 @@ import type {
   NewTags,
 } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Google Chat API types ----
 
@@ -517,10 +516,7 @@ export function senderToNewActor(
   return {
     name,
     ...(email ? { email } : {}),
-    source: {
-      provider: AuthProvider.Google,
-      accountId: googleUserIdToAccountId(sender.name),
-    },
+    source: { accountId: googleUserIdToAccountId(sender.name) },
   };
 }
 
@@ -651,10 +647,7 @@ function reactionUserToNewActor(
   return {
     name: user.displayName || info?.displayName || user.name,
     ...(info?.email ? { email: info.email } : {}),
-    source: {
-      provider: AuthProvider.Google,
-      accountId: googleUserIdToAccountId(user.name),
-    },
+    source: { accountId: googleUserIdToAccountId(user.name) },
   };
 }
 

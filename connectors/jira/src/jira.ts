@@ -1022,7 +1022,7 @@ export class Jira extends Connector<Jira> {
  */
 function atlassianSource(accountId: string | undefined): Pick<NewContact, "source"> | {} {
   if (accountId && accountId !== "_unknown_") {
-    return { source: { provider: AuthProvider.Atlassian, accountId } };
+    return { source: { accountId } };
   }
   return {};
 }

@@ -971,7 +971,7 @@ export class Slack extends Connector<Slack> {
             ...(email ? { email } : {}),
             ...(name ? { name } : {}),
             ...(avatar ? { avatar } : {}),
-            source: { provider: AuthProvider.Slack, accountId: member.id },
+            source: { accountId: member.id },
           } as NewContact;
 
           contacts.push(contact);

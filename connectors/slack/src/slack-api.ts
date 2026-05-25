@@ -456,7 +456,7 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
  * should prefetch user info whenever possible.
  */
 function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
-  const source = { provider: AuthProvider.Slack, accountId: userId };
+  const source = { accountId: userId };
   if (info?.email && info.name) {
     return { name: info.name, email: info.email, source };
   }

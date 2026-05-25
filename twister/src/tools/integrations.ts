@@ -77,11 +77,21 @@ export type LinkTypeConfig = {
    *   enabled channel (e.g. a Linear workspace, a Slack channel). This is the
    *   existing behaviour for task-tracker and calendar connectors.
    * - `"contacts"`: The picker shows one chip per connection (account), and
-   *   the user picks recipients from their contacts before dispatching. The
-   *   runtime pre-resolves the chosen Plot contacts to platform account IDs
-   *   and delivers them as `CreateLinkDraft.recipients`.
+   *   the user picks recipients from their contacts. The runtime
+   *   pre-resolves the chosen Plot contacts to platform account IDs via the
+   *   per-connection `contact_external_account` rows and delivers them as
+   *   `CreateLinkDraft.recipients`. Contacts without a row for this specific
+   *   connection are filtered out of the picker — used by closed-roster
+   *   messaging platforms (Slack DM, Teams DM, Google Chat DM, LinkedIn DM).
+   * - `"addresses"`: One chip per connection, but the picker accepts any
+   *   contact with an addressable identifier (e.g. an email) or a
+   *   free-form typed address. The runtime fills `recipients` for contacts
+   *   with a connection-scoped row and falls back to the contact's primary
+   *   address (e.g. `contact.email`) when no row exists. Free-form
+   *   addresses arrive via the thread's `inviteEmails`. Used by open
+   *   address spaces like Gmail.
    */
-  targets?: "channels" | "contacts";
+  targets?: "channels" | "contacts" | "addresses";
 };
 
 /**
