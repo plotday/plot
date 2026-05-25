@@ -7,9 +7,10 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Shared row chrome for compose fields. Renders a leading icon with a
-/// tooltip (label + optional shortcut hint) and a content slot, with a
-/// hairline bottom divider matching the editor border. Tapping anywhere
-/// in the row invokes [onTapField] so the field can request focus.
+/// tooltip (label + optional shortcut hint) and a content slot. Tapping
+/// anywhere in the row invokes [onTapField] so the field can request focus.
+/// Rows have no dividers between them — the compose surface owns a single
+/// divider below the field stack.
 class ComposeFieldRow extends StatelessWidget {
   const ComposeFieldRow({
     super.key,
@@ -18,7 +19,6 @@ class ComposeFieldRow extends StatelessWidget {
     required this.child,
     this.shortcut,
     this.onTapField,
-    this.isLast = false,
   });
 
   final IconData icon;
@@ -26,7 +26,6 @@ class ComposeFieldRow extends StatelessWidget {
   final Widget child;
   final ShortcutActivator? shortcut;
   final VoidCallback? onTapField;
-  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
@@ -49,20 +48,10 @@ class ComposeFieldRow extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTapField,
-      child: Container(
+      child: ConstrainedBox(
         constraints: BoxConstraints(
           minHeight: isMobilePlatform() ? 48 : 40,
         ),
-        decoration: isLast
-            ? null
-            : BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: theme.colors.border,
-                    width: 1,
-                  ),
-                ),
-              ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [

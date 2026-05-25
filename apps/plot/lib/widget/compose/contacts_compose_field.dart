@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -95,7 +96,6 @@ class ContactsComposeField extends StatefulWidget {
     required this.onAdd,
     required this.onRemove,
     required this.openTouchModal,
-    this.isLast = false,
   });
 
   /// Currently selected chips.
@@ -115,10 +115,6 @@ class ContactsComposeField extends StatefulWidget {
   /// On touch platforms, open a full-screen contacts picker modal. The page
   /// owns this helper.
   final Future<void> Function() openTouchModal;
-
-  /// Whether this is the last row in the compose surface. Suppresses the
-  /// bottom hairline divider so the surface ends cleanly above the body.
-  final bool isLast;
 
   @override
   State<ContactsComposeField> createState() => _ContactsComposeFieldState();
@@ -299,73 +295,92 @@ class _ContactsComposeFieldState extends State<ContactsComposeField> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final placeholder = widget.chips.isEmpty ? 'Private — only you' : '';
+    final placeholder = widget.chips.isEmpty ? 'Add people' : '';
 
-    return ComposeFieldRow(
-      icon: FontAwesomeIcons.user,
-      tooltip: 'Share with',
-      shortcut: platformSingleActivator(
-        LogicalKeyboardKey.keyS,
-        shift: true,
-      ),
-      onTapField: _handleRowTap,
-      isLast: widget.isLast,
-      child: ComposeDropdown<ContactCandidate>(
-        key: _dropdownKey,
-        controller: _dropdown,
-        items: _candidates,
-        itemBuilder: (context, candidate, highlighted) {
-          return Container(
-            color: highlighted ? theme.plotColors.highlight : null,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
-            child: Text(candidate.label),
-          );
-        },
-        onSelected: _handlePicked,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              for (var i = 0; i < widget.chips.length; i++)
-                _ChipView(
-                  value: widget.chips[i],
-                  focused: i == _focusedChipIndex,
-                  onTap: () => _handleChipTap(i),
-                ),
-              IntrinsicWidth(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 80),
-                  child: Focus(
-                    onKeyEvent: _handleKey,
+    // Outer Focus catches arrow/Enter/Backspace events that bubble up from
+    // the FTextField. canRequestFocus: false + skipTraversal: true keep it
+    // out of tab order and from ever holding focus itself.
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _handleKey,
+      child: ComposeFieldRow(
+        icon: FontAwesomeIcons.user,
+        tooltip: 'Share with',
+        shortcut: platformSingleActivator(
+          LogicalKeyboardKey.keyS,
+          shift: true,
+        ),
+        onTapField: _handleRowTap,
+        // Don't share _inputFocus with the dropdown — FTextField wraps its
+        // own internal Focus(focusNode: _inputFocus), so giving Dropdown the
+        // same node creates a nested same-node cycle. autoFocusOnShow: false
+        // keeps the dropdown from stealing focus from the FTextField on open.
+        child: ComposeDropdown<ContactCandidate>(
+          key: _dropdownKey,
+          controller: _dropdown,
+          autoFocusOnShow: false,
+          items: _candidates,
+          itemBuilder: (context, candidate, highlighted) {
+            return Container(
+              color: highlighted ? theme.plotColors.highlight : null,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: Text(candidate.label),
+            );
+          },
+          onSelected: _handlePicked,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (var i = 0; i < widget.chips.length; i++)
+                  _ChipView(
+                    value: widget.chips[i],
+                    focused: i == _focusedChipIndex,
+                    onTap: () => _handleChipTap(i),
+                  ),
+                IntrinsicWidth(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 80),
                     child: FTextField(
                       control: .managed(controller: _controller),
                       focusNode: _inputFocus,
                       readOnly: isTouchPlatform(),
                       hint: placeholder,
-                      style: FTextFieldStyleDelta.delta(
-                        contentPadding: EdgeInsetsGeometryDelta.value(
-                          const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 6,
-                          ),
-                        ),
-                      ),
+                      style: _borderlessFieldStyle(),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Strips FTextField's chrome (border, padding) so the input blends into
+/// the surrounding compose row.
+FTextFieldStyleDelta _borderlessFieldStyle() {
+  return FTextFieldStyleDelta.delta(
+    contentPadding: EdgeInsetsGeometryDelta.value(
+      const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+    ),
+    border: FVariantsValueDelta.delta([
+      FVariantValueDeltaOperation.all(
+        const OutlineInputBorder(
+          borderSide: BorderSide(width: 0, style: BorderStyle.none),
+        ),
+      ),
+    ]),
+  );
 }
 
 class _ChipView extends StatelessWidget {

@@ -44,11 +44,18 @@ class Dropdown extends StatefulWidget {
   final DropdownController controller;
   final FocusNode? focusNode;
 
+  /// When true (default), focus is moved to this dropdown's internal node
+  /// when the overlay opens, so Escape can close it from anywhere inside.
+  /// Set to false when the caller already owns focus on a sibling widget
+  /// (e.g. an FTextField) and the dropdown shouldn't disrupt it.
+  final bool autoFocusOnShow;
+
   const Dropdown({
     required this.child,
     required this.dropdown,
     required this.controller,
     this.focusNode,
+    this.autoFocusOnShow = true,
     super.key,
   });
 
@@ -70,6 +77,17 @@ class DropdownState extends State<Dropdown> {
   }
 
   void _handleShowHide(bool isShowing) {
+    if (isShowing) {
+      // Re-measure on every open. The initState postFrame may have run
+      // before the child was laid out (resulting in an invisible (0,0)/
+      // zero-width overlay), and the trigger's size can change between
+      // opens (chips being added to a contacts field, etc.). Measure
+      // synchronously first (cheap if already laid out) and again next
+      // frame as a fallback.
+      _getChildSize(null);
+      WidgetsBinding.instance.addPostFrameCallback(_getChildSize);
+    }
+    if (!widget.autoFocusOnShow) return;
     if (isShowing) {
       _focusNode.requestFocus();
     } else {
@@ -111,7 +129,8 @@ class DropdownState extends State<Dropdown> {
         controller: widget.controller,
         overlayChildBuilder: (BuildContext context) {
           return Positioned(
-            top: _childOffset.dy,
+            // Sit just below the trigger so the trigger stays visible.
+            top: _childOffset.dy + _childSize.height,
             left: _childOffset.dx,
             width: _childSize.width,
             child: TapRegion(

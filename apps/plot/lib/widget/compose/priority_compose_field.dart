@@ -38,7 +38,6 @@ class PriorityComposeField extends StatefulWidget {
     required this.onPickAuto,
     required this.onPickPriority,
     required this.openTouchModal,
-    this.isLast = false,
   });
 
   /// Currently selected priority (irrelevant when [isAuto] is true).
@@ -56,8 +55,6 @@ class PriorityComposeField extends StatefulWidget {
   /// On touch, tapping the field invokes this to open the existing
   /// SelectModal. NewThreadPage owns the modal helper.
   final Future<void> Function() openTouchModal;
-
-  final bool isLast;
 
   @override
   State<PriorityComposeField> createState() => _PriorityComposeFieldState();
@@ -146,45 +143,49 @@ class _PriorityComposeFieldState extends State<PriorityComposeField> {
             fontSize: fontSize,
           );
 
-    return ComposeFieldRow(
-      icon: FontAwesomeIcons.folder,
-      tooltip: 'Priority',
-      shortcut: platformSingleActivator(
-        LogicalKeyboardKey.keyP,
-        shift: true,
-      ),
-      onTapField: _handleTap,
-      isLast: widget.isLast,
-      child: ComposeDropdown<PriorityChoice>(
-        key: _dropdownKey,
-        controller: _dropdown,
-        items: _candidates,
-        itemBuilder: (context, choice, highlighted) {
-          return Container(
-            color: highlighted ? theme.plotColors.highlight : null,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
-            child: switch (choice) {
-              AutoOrganizeChoice() => Row(
-                  children: [
-                    Icon(PlotIcon.sparkles, size: theme.iconSizes.sm),
-                    const SizedBox(width: 8),
-                    const Text('Auto-organize'),
-                  ],
-                ),
-              PickedPriorityChoice() => PriorityLabel(
-                  priority: choice.priority,
-                  fontSize: fontSize,
-                ),
-            },
-          );
-        },
-        onSelected: _handlePicked,
-        child: Focus(
+    // Outer Focus is skipped by tab traversal and never holds focus itself —
+    // it just catches arrow/Enter events that bubble up from the descendant
+    // (Dropdown's) Focus widget. The descendant Focus owns _focusNode.
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _handleKey,
+      child: ComposeFieldRow(
+        icon: FontAwesomeIcons.folder,
+        tooltip: 'Priority',
+        shortcut: platformSingleActivator(
+          LogicalKeyboardKey.keyP,
+          shift: true,
+        ),
+        onTapField: _handleTap,
+        child: ComposeDropdown<PriorityChoice>(
+          key: _dropdownKey,
+          controller: _dropdown,
           focusNode: _focusNode,
-          onKeyEvent: _handleKey,
+          items: _candidates,
+          itemBuilder: (context, choice, highlighted) {
+            return Container(
+              color: highlighted ? theme.plotColors.highlight : null,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: switch (choice) {
+                AutoOrganizeChoice() => Row(
+                    children: [
+                      Icon(PlotIcon.sparkles, size: theme.iconSizes.sm),
+                      const SizedBox(width: 8),
+                      const Text('Auto-organize'),
+                    ],
+                  ),
+                PickedPriorityChoice() => PriorityLabel(
+                    priority: choice.priority,
+                    fontSize: fontSize,
+                  ),
+              },
+            );
+          },
+          onSelected: _handlePicked,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: label,

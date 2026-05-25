@@ -711,37 +711,45 @@ class NewThreadPageState extends State<NewThreadPage> {
     final activeChoice = _resolveActiveConnectionChoice(state);
     final connectionCandidates = _rankConnectionChoices();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        PriorityComposeField(
-          currentPriority: state.draft.priority,
-          isAuto: isAuto,
-          onPickAuto: _switchToAuto,
-          onPickPriority: _switchToPriority,
-          openTouchModal: () => _selectPriority(context, state),
+    // The field stack lives inside a container with a single bottom border
+    // that separates it from the note body. No dividers between fields.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: context.theme.colors.border),
         ),
-        ConnectionComposeField(
-          activeChoice: activeChoice,
-          candidates: connectionCandidates,
-          onPicked: _applyConnectionChoice,
-          openTouchModal: _openConnectionPicker,
-        ),
-        ContactsComposeField(
-          chips: _resolveContactChips(state),
-          loadCandidates: _loadContactCandidates,
-          onAdd: _applyContactCandidate,
-          onRemove: _removeContactChip,
-          openTouchModal: () => _openSharedPicker(context),
-        ),
-        TitleComposeField(
-          key: _titleFieldKey,
-          title: state.draft.title,
-          onChanged: _updateTitle,
-          isLast: true,
-        ),
-      ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PriorityComposeField(
+            currentPriority: state.draft.priority,
+            isAuto: isAuto,
+            onPickAuto: _switchToAuto,
+            onPickPriority: _switchToPriority,
+            openTouchModal: () => _selectPriority(context, state),
+          ),
+          ConnectionComposeField(
+            activeChoice: activeChoice,
+            candidates: connectionCandidates,
+            onPicked: _applyConnectionChoice,
+            openTouchModal: _openConnectionPicker,
+          ),
+          ContactsComposeField(
+            chips: _resolveContactChips(state),
+            loadCandidates: _loadContactCandidates,
+            onAdd: _applyContactCandidate,
+            onRemove: _removeContactChip,
+            openTouchModal: () => _openSharedPicker(context),
+          ),
+          TitleComposeField(
+            key: _titleFieldKey,
+            title: state.draft.title,
+            onChanged: _updateTitle,
+          ),
+        ],
+      ),
     );
   }
 

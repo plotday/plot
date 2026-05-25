@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -11,7 +12,6 @@ class TitleComposeField extends StatefulWidget {
     super.key,
     required this.title,
     required this.onChanged,
-    this.isLast = false,
   });
 
   /// Current draft title (null when unset).
@@ -19,8 +19,6 @@ class TitleComposeField extends StatefulWidget {
 
   /// Persist a new value. Pass `null` to clear.
   final Future<void> Function(String? next) onChanged;
-
-  final bool isLast;
 
   @override
   State<TitleComposeField> createState() => TitleComposeFieldState();
@@ -83,7 +81,6 @@ class TitleComposeFieldState extends State<TitleComposeField> {
         shift: true,
       ),
       onTapField: focus,
-      isLast: widget.isLast,
       child: FTextField(
         control: .managed(controller: _controller),
         focusNode: _focusNode,
@@ -97,6 +94,14 @@ class TitleComposeFieldState extends State<TitleComposeField> {
           contentPadding: EdgeInsetsGeometryDelta.value(
             const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           ),
+          // Strip the FTextField's own border so it blends into the row.
+          border: FVariantsValueDelta.delta([
+            FVariantValueDeltaOperation.all(
+              const OutlineInputBorder(
+                borderSide: BorderSide(width: 0, style: BorderStyle.none),
+              ),
+            ),
+          ]),
         ),
       ),
     );

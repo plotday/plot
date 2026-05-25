@@ -18,12 +18,25 @@ class ComposeDropdown<T> extends StatefulWidget {
     required this.itemBuilder,
     required this.onSelected,
     required this.child,
+    this.focusNode,
+    this.autoFocusOnShow = true,
     this.maxHeight = 280,
     this.emptyBuilder,
   });
 
   final DropdownController controller;
   final List<T> items;
+
+  /// Shared with the inner [Dropdown]'s Focus widget so opening the dropdown
+  /// doesn't steal focus from the caller. When null, [Dropdown] creates its
+  /// own anonymous node (and may steal focus on show unless
+  /// [autoFocusOnShow] is also false).
+  final FocusNode? focusNode;
+
+  /// Forwarded to [Dropdown.autoFocusOnShow]. Set to false when the caller
+  /// already owns focus on a sibling input (e.g. an [FTextField] inside the
+  /// dropdown's [child] subtree).
+  final bool autoFocusOnShow;
 
   /// Builds a single dropdown row. [highlighted] is true when the cursor sits
   /// on this item (via arrow-key navigation).
@@ -98,6 +111,8 @@ class ComposeDropdownState<T> extends State<ComposeDropdown<T>> {
   Widget build(BuildContext context) {
     return Dropdown(
       controller: widget.controller,
+      focusNode: widget.focusNode,
+      autoFocusOnShow: widget.autoFocusOnShow,
       dropdown: _buildOverlay(context),
       child: widget.child,
     );

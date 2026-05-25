@@ -13,7 +13,6 @@ class ConnectionComposeField extends StatefulWidget {
     required this.candidates,
     required this.onPicked,
     required this.openTouchModal,
-    this.isLast = false,
   });
 
   /// Currently selected choice (always non-null — defaults to Plot thread).
@@ -28,8 +27,6 @@ class ConnectionComposeField extends StatefulWidget {
   /// On touch, opens the existing ConnectionPickerModal. NewThreadPage owns
   /// the modal helper.
   final Future<void> Function() openTouchModal;
-
-  final bool isLast;
 
   @override
   State<ConnectionComposeField> createState() =>
@@ -87,39 +84,40 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    return ComposeFieldRow(
-      icon: PlotIcon.link,
-      tooltip: 'Connection',
-      onTapField: _handleTap,
-      isLast: widget.isLast,
-      child: ComposeDropdown<ConnectionChoice>(
-        key: _dropdownKey,
-        controller: _dropdown,
-        items: widget.candidates,
-        itemBuilder: (context, choice, highlighted) {
-          return Container(
-            color: highlighted ? theme.plotColors.highlight : null,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
-            child: switch (choice) {
-              PlotThreadChoice() => Row(
-                  children: [
-                    Icon(PlotIcon.note, size: theme.iconSizes.sm),
-                    const SizedBox(width: 8),
-                    const Text('Plot thread'),
-                  ],
-                ),
-              TargetConnectionChoice(:final target) =>
-                createTargetTile(context, target),
-            },
-          );
-        },
-        onSelected: _handlePicked,
-        child: Focus(
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _handleKey,
+      child: ComposeFieldRow(
+        icon: PlotIcon.link,
+        tooltip: 'Connection',
+        onTapField: _handleTap,
+        child: ComposeDropdown<ConnectionChoice>(
+          key: _dropdownKey,
+          controller: _dropdown,
           focusNode: _focusNode,
-          onKeyEvent: _handleKey,
+          items: widget.candidates,
+          itemBuilder: (context, choice, highlighted) {
+            return Container(
+              color: highlighted ? theme.plotColors.highlight : null,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: switch (choice) {
+                PlotThreadChoice() => Row(
+                    children: [
+                      Icon(PlotIcon.note, size: theme.iconSizes.sm),
+                      const SizedBox(width: 8),
+                      const Text('Plot thread'),
+                    ],
+                  ),
+                TargetConnectionChoice(:final target) =>
+                  createTargetTile(context, target),
+              },
+            );
+          },
+          onSelected: _handlePicked,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: Text(
