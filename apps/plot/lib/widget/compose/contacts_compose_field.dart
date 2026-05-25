@@ -121,10 +121,10 @@ class ContactsComposeField extends StatefulWidget {
   final bool isLast;
 
   @override
-  State<ContactsComposeField> createState() => ContactsComposeFieldState();
+  State<ContactsComposeField> createState() => _ContactsComposeFieldState();
 }
 
-class ContactsComposeFieldState extends State<ContactsComposeField> {
+class _ContactsComposeFieldState extends State<ContactsComposeField> {
   final DropdownController _dropdown = DropdownController();
   final FocusNode _inputFocus = FocusNode();
   final GlobalKey<ComposeDropdownState<ContactCandidate>> _dropdownKey =
@@ -197,9 +197,11 @@ class ContactsComposeFieldState extends State<ContactsComposeField> {
       return KeyEventResult.ignored;
     }
 
-    // Let the dropdown consume arrows/Enter first when items are present.
+    // Let the dropdown consume ArrowUp/ArrowDown/Enter first, unless the
+    // user is navigating chips (left/right) — chip nav uses left/right while
+    // the dropdown uses up/down, so they never compete.
     final dropdownState = _dropdownKey.currentState;
-    if (dropdownState != null && _controller.text.isNotEmpty) {
+    if (dropdownState != null && _focusedChipIndex == null) {
       if (dropdownState.handleKey(event)) {
         return KeyEventResult.handled;
       }

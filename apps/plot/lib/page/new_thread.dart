@@ -490,15 +490,29 @@ class NewThreadPageState extends State<NewThreadPage> {
     return chips;
   }
 
+  // Cache the last sorted candidate list per priority so rapid typing
+  // doesn't re-hit Drift on every keystroke. Invalidated when the draft's
+  // priority or selection set changes (handled via the .toSet() comparisons
+  // inside the filter loop, which always run against the latest draft).
+  Priority? _candidatesPriorityCache;
+  List<ShareCandidate>? _candidatesCache;
+
   Future<List<ContactCandidate>> _loadContactCandidates(String query) async {
     final bloc = _priorityBloc;
     if (bloc == null) return const [];
     final priority = bloc.state.draft.priority;
-    final sorted =
-        await Actor.getSortedShareCandidates(priority: priority);
-    if (!mounted) return const [];
-    // Re-read draft after the await — selections may have changed while the
-    // candidate fetch was in flight.
+    List<ShareCandidate> sorted;
+    if (_candidatesCache != null &&
+        _candidatesPriorityCache?.id == priority.id) {
+      sorted = _candidatesCache!;
+    } else {
+      sorted = await Actor.getSortedShareCandidates(priority: priority);
+      if (!mounted) return const [];
+      _candidatesCache = sorted;
+      _candidatesPriorityCache = priority;
+    }
+    // Re-read draft after the (possible) await — selections may have changed
+    // while the candidate fetch was in flight.
     final draft = bloc.state.draft;
     final selectedActorIds = draft.contacts.toSet();
     final selectedGroupIds = draft.groups.toSet();
