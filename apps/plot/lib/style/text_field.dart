@@ -12,6 +12,12 @@ FTextFieldStyleDelta buildTextFieldStyleDelta(
 ) {
   return FTextFieldStyleDelta.delta(
     cursorColor: colourScheme.muted,
+    // forui 0.22 introduced a default minHeight (36 for desktop md).
+    // It expands the field beyond its intrinsic content and pushes the
+    // text off-center in fixed-height containers (e.g. the unified
+    // header) and modal search rows. Drop the floor — sizing is driven
+    // by content + contentPadding, as it was pre-0.22.
+    constraints: const BoxConstraints(),
     color: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.all(const Color(0x00000000)),
       FVariantValueDeltaOperation.exact({
