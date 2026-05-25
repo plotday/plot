@@ -2266,20 +2266,15 @@ SELECT
          ELSE '0000' END
   )) AS activity_at
 FROM threads a
-LEFT JOIN schedules sched ON sched.thread_id = a.id AND sched.user_id IS NULL
+LEFT JOIN schedules sched ON sched.thread_id = a.id AND sched.link_id IS NULL
 LEFT JOIN links l ON l.thread_id = a.id''');
     variables.add(Variable.withDateTime(now));
 
-    // doTodo requires user_sched and link_sched joins; otherwise drop them.
+    // doTodo also needs link_sched. Per-user state lives directly on `a.*`
+    // (action_type / read_at), so no user_sched join is required.
     if (doTodo) {
       sqlBuf.writeln(
-        'LEFT JOIN schedules user_sched ON user_sched.thread_id = a.id '
-        'AND user_sched.user_id = ? AND user_sched.occurrence IS NULL',
-      );
-      variables.add(Variable.withBlob(Base.userId.toBytes()));
-      sqlBuf.writeln(
-        'LEFT JOIN schedules link_sched '
-        'ON link_sched.link_id = l.id AND link_sched.user_id IS NULL',
+        'LEFT JOIN schedules link_sched ON link_sched.link_id = l.id',
       );
     }
 
@@ -2387,14 +2382,14 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
     }
 
-    // doTodo: SQL form of [Thread.todo] — at least one of shared / per-user /
-    // link schedule must be active for the user right now.
+    // doTodo: SQL form of [Thread.todo] — at least one of shared schedule /
+    // per-user thread state / link schedule must be active right now.
     if (doTodo) {
       final today = Date.today().toString();
       wheres.add('''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
- (user_sched.id IS NOT NULL AND user_sched.archived_at IS NULL) OR
+ (a.action_type IS NOT NULL AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
  (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
       variables.add(Variable.withString(today));
