@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.52.0
+
+### Added
+
+- `active`, `task`, and `toRead` flags on `LinkTypeConfig.statuses[]` so connectors can declare per-status intent for the unified Plot feed. `active` lands threads in Doing (use for messaging flags like Gmail star / Slack later), `task` lands them on the task list (use for tracker assignments like Linear / Todoist), `toRead` lands them on the reading list. The existing `todo` flag is deprecated and treated as `task: true` for backward compatibility. ([`a2e2815`](https://github.com/plotday/plot/commit/a2e2815cb6eb05fb50b5af231e2a62d9df47985a))
+
+### Removed
+
+- `AuthProvider.LinkedIn` and the built-in `LinkedIn` tool. LinkedIn requires a local connection. ([#143](https://github.com/plotday/plot/pull/143) [`0e54d71`](https://github.com/plotday/plot/commit/0e54d7131e45b76bca30bdadc84b5251735dda59))
+
 ## 0.51.0
 
 ### Added
