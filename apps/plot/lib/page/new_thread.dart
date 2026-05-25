@@ -1357,6 +1357,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                     state,
                                   ),
                                 ),
+                                SizedBox(height: context.theme.spacing.lg),
                               ],
 
                               Flexible(
@@ -1396,8 +1397,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 ),
                               ),
 
-                              if (!isViewerMode)
+                              if (!isViewerMode) ...[
                                 _buildThreadTypeSelector(context, state),
+                                SizedBox(height: context.theme.spacing.lg),
+                              ],
 
                               Flexible(
                                 flex: 2,
