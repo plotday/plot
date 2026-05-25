@@ -29,6 +29,22 @@ const MAX_SYNC_BATCHES = 50;
 /** Graph subscriptions for Teams channel messages max out at ~60 minutes. */
 const SUBSCRIPTION_EXPIRY_MINUTES = 55;
 
+/**
+ * Returns true when a Graph API error indicates missing OAuth scopes or a
+ * revoked/expired token — i.e. the user must re-authorize to fix it.
+ *
+ * Graph surfaces these as:
+ *   - HTTP 401 → "Authentication failed - token may be expired"
+ *   - HTTP 403 → "Access denied - insufficient permissions"
+ */
+function isGraphAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("Authentication failed") ||
+    error.message.includes("Access denied - insufficient permissions")
+  );
+}
+
 export class MsTeams extends Connector<MsTeams> {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly handleReplies = true;
@@ -662,7 +678,18 @@ export class MsTeams extends Connector<MsTeams> {
     }
 
     const api = await this.getApi(channelId);
-    const result = await api.sendChannelMessage(teamId, channelId, body);
+    let result: Awaited<ReturnType<typeof api.sendChannelMessage>>;
+    try {
+      result = await api.sendChannelMessage(teamId, channelId, body);
+    } catch (error) {
+      if (isGraphAuthError(error)) {
+        console.warn("[ms-teams] createChannelPost: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(channelId);
+      } else {
+        console.error("[ms-teams] createChannelPost: failed to send message", error);
+      }
+      return null;
+    }
     if (!result?.id) return null;
 
     return {
@@ -701,21 +728,37 @@ export class MsTeams extends Connector<MsTeams> {
     // the user has DMs enabled). If the user hasn't enabled DMs, fall back to
     // whatever enabled channel draft.channelId references.
     let api: GraphApi;
+    let tokenChannelId: string;
     try {
       api = await this.getApi(DM_CHANNEL_ID);
+      tokenChannelId = DM_CHANNEL_ID;
     } catch {
       api = await this.getApi(draft.channelId);
+      tokenChannelId = draft.channelId;
     }
 
     // Look up the caller's own AAD object id so we can include them in the
     // chat members list (required by Graph).
-    const me = await api.getMe();
-    const myAadId = me.id;
+    let me: Awaited<ReturnType<typeof api.getMe>>;
+    let chatId: string;
+    let result: Awaited<ReturnType<typeof api.sendChatMessage>>;
+    try {
+      me = await api.getMe();
+      const myAadId = me.id;
 
-    const aadUserIds = recipients.map((r) => r.externalAccountId);
-    const chatId = await api.createChat(aadUserIds, myAadId);
+      const aadUserIds = recipients.map((r) => r.externalAccountId);
+      chatId = await api.createChat(aadUserIds, myAadId);
 
-    const result = await api.sendChatMessage(chatId, body);
+      result = await api.sendChatMessage(chatId, body);
+    } catch (error) {
+      if (isGraphAuthError(error)) {
+        console.warn("[ms-teams] createDirectMessage: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(tokenChannelId);
+      } else {
+        console.error("[ms-teams] createDirectMessage: failed to send DM", error);
+      }
+      return null;
+    }
     if (!result?.id) return null;
 
     return {

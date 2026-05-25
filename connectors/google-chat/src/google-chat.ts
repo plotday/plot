@@ -38,6 +38,22 @@ import {
 const DM_CHANNEL_ID = "__direct_messages__";
 const MAX_SYNC_BATCHES = 50;
 
+/**
+ * Returns true when a Google Chat API error indicates missing OAuth scopes or
+ * a revoked/expired token — i.e. the user must re-authorize to fix it.
+ *
+ * The GoogleChatApi client throws errors with messages like:
+ *   "Google Chat API error: 401 Unauthorized - ..."
+ *   "Google Chat API error: 403 Forbidden - ... PERMISSION_DENIED ..."
+ */
+function isGoogleAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("Google Chat API error: 401") ||
+    error.message.includes("Google Chat API error: 403")
+  );
+}
+
 /** Workspace Events event types for Google Chat messages and reactions. */
 const CHAT_EVENT_TYPES = [
   "google.workspace.chat.message.v1.created",
@@ -1335,7 +1351,18 @@ export class GoogleChat extends Connector<GoogleChat> {
       return null;
     }
 
-    const result = await api.createMessage(spaceName, body);
+    let result: Awaited<ReturnType<typeof api.createMessage>>;
+    try {
+      result = await api.createMessage(spaceName, body);
+    } catch (error) {
+      if (isGoogleAuthError(error)) {
+        console.warn("[google-chat] createSpacePost: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(channelId);
+      } else {
+        console.error("[google-chat] createSpacePost: failed to send message", error);
+      }
+      return null;
+    }
     const msgId = `message-${extractMessageId(result.name)}`;
     // Store sent message ID for dedup when synced back
     await this.set(`sent:${msgId}`, true);
@@ -1390,35 +1417,50 @@ export class GoogleChat extends Connector<GoogleChat> {
     // Use the DM_CHANNEL_ID token if available, otherwise fall back to draft.channelId.
     // The DM channel is not a "space" channel but shares the same Google auth token.
     let api: GoogleChatApi;
+    let tokenChannelId: string;
     try {
       api = await this.getApi(DM_CHANNEL_ID);
+      tokenChannelId = DM_CHANNEL_ID;
     } catch {
       // Fall back to the picker's channelId token (any enabled space works).
       api = await this.getApi(draft.channelId);
+      tokenChannelId = draft.channelId;
     }
 
     let dmSpaceName: string;
+    let result: Awaited<ReturnType<typeof api.createMessage>>;
 
-    if (recipientIds.length === 1) {
-      // 1:1 DM — use spaces.setup to find or create the DM space.
-      const recipientName = `users/${recipientIds[0]}`;
-      const space = await api.setupDmSpace(callerName, recipientName);
-      dmSpaceName = space.name;
-    } else {
-      // Group DM (>1 recipient) — create a GROUP_CHAT space and add all members.
-      // Google Chat distinguishes unnamed group chats (spaceType=GROUP_CHAT) from
-      // named spaces (spaceType=SPACE). We use GROUP_CHAT here.
-      const membershipEntries = [
-        { member: { name: callerName, type: "HUMAN" as const } },
-        ...recipientIds.map((id) => ({
-          member: { name: `users/${id}`, type: "HUMAN" as const },
-        })),
-      ];
-      const space = await api.createSpace(undefined, "GROUP_CHAT", membershipEntries);
-      dmSpaceName = space.name;
+    try {
+      if (recipientIds.length === 1) {
+        // 1:1 DM — use spaces.setup to find or create the DM space.
+        const recipientName = `users/${recipientIds[0]}`;
+        const space = await api.setupDmSpace(callerName, recipientName);
+        dmSpaceName = space.name;
+      } else {
+        // Group DM (>1 recipient) — create a GROUP_CHAT space and add all members.
+        // Google Chat distinguishes unnamed group chats (spaceType=GROUP_CHAT) from
+        // named spaces (spaceType=SPACE). We use GROUP_CHAT here.
+        const membershipEntries = [
+          { member: { name: callerName, type: "HUMAN" as const } },
+          ...recipientIds.map((id) => ({
+            member: { name: `users/${id}`, type: "HUMAN" as const },
+          })),
+        ];
+        const space = await api.createSpace(undefined, "GROUP_CHAT", membershipEntries);
+        dmSpaceName = space.name;
+      }
+
+      result = await api.createMessage(dmSpaceName, body);
+    } catch (error) {
+      if (isGoogleAuthError(error)) {
+        console.warn("[google-chat] createDirectMessage: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(tokenChannelId);
+      } else {
+        console.error("[google-chat] createDirectMessage: failed to send DM", error);
+      }
+      return null;
     }
 
-    const result = await api.createMessage(dmSpaceName, body);
     const msgId = `message-${extractMessageId(result.name)}`;
     // Store sent message ID for dedup when synced back
     await this.set(`sent:${msgId}`, true);
@@ -1475,9 +1517,11 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
 
     // Prepare the daily callback token before any API calls so we can schedule
-    // it in a finally block even if the sync throws.
+    // it in a finally block even if the sync throws. Rate-limit and
+    // permanent-error branches set scheduleDaily = false to suppress reschedule.
     const nextRunAt = new Date(now + ONE_DAY_MS);
     const dailyCallback = await this.callback(this.syncMembers, channelId);
+    let scheduleDaily = true;
 
     try {
       // Enumerate members from all enabled named spaces.
@@ -1529,10 +1573,23 @@ export class GoogleChat extends Connector<GoogleChat> {
 
       await this.set("googleChatMembersSyncedAt", now);
     } catch (error) {
+      if (isGoogleAuthError(error)) {
+        // Permanent auth failure (revoked token or missing scope) — flag re-auth
+        // and suppress daily reschedule so we don't keep hammering a broken token.
+        scheduleDaily = false;
+        console.warn("[google-chat] syncMembers stopped: auth error; flagging re-auth", error);
+        const tokenChannelId = channelId !== DM_CHANNEL_ID ? channelId : DM_CHANNEL_ID;
+        await this.tools.integrations.markNeedsReauth(tokenChannelId);
+        return;
+      }
       console.error("[google-chat] syncMembers: unexpected error", error);
       throw error;
     } finally {
-      await this.runTask(dailyCallback, { runAt: nextRunAt });
+      // Permanent-error path sets scheduleDaily = false and returns early above,
+      // so it is not double-scheduled here.
+      if (scheduleDaily) {
+        await this.runTask(dailyCallback, { runAt: nextRunAt });
+      }
     }
   }
 }
