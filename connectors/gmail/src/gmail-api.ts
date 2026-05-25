@@ -380,6 +380,10 @@ function parseEmailAddressesToContacts(headerValue: string | null): NewContact[]
     .map((parsed) => ({
       email: parsed.email,
       name: parsed.name || undefined,
+      // NOTE: Gmail message headers don't expose a Google user id (sub/permissionId),
+      // so we key contact_external_account on the lowercased email address. Google Chat
+      // and Drive connectors key on the numeric Google id, so cross-connector dedup won't
+      // match for the same person until headers expose it. Acceptable for v1.
       source: {
         provider: AuthProvider.Google,
         accountId: parsed.email.toLowerCase(),
@@ -609,6 +613,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
             {
               email: fromContact.email,
               name: fromContact.name || undefined,
+              // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
               source: {
                 provider: AuthProvider.Google,
                 accountId: fromContact.email.toLowerCase(),
@@ -676,6 +681,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       {
         email: sender.email,
         name: sender.name || undefined,
+        // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
         source: {
           provider: AuthProvider.Google,
           accountId: sender.email.toLowerCase(),
