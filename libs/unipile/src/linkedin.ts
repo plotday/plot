@@ -92,4 +92,27 @@ export abstract class LinkedInMessaging extends ITool {
     invitationId: string;
     sharedSecret: string;
   }): Promise<void>;
+
+  /**
+   * Start a new LinkedIn DM conversation (1:1 or group) and send the first
+   * message atomically.
+   *
+   * - **1:1**: pass exactly one LinkedIn provider id in `recipientIds`.
+   * - **Group**: pass two or more LinkedIn provider ids in `recipientIds`.
+   *
+   * If a 1:1 conversation with the recipient already exists, Unipile
+   * reuses it. The returned `chatId` is stable and can be stored in
+   * `thread.meta.chatId` for the existing `onNoteCreated` reply path.
+   *
+   * @param params.recipientIds - Provider-side LinkedIn member ids (Unipile
+   *   `provider_id` values, which are LinkedIn URNs or numeric member ids
+   *   depending on the Unipile version).
+   * @param params.text - Message body (plain text).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract startChat(params: {
+    channelId: string;
+    recipientIds: string[];
+    text: string;
+  }): Promise<{ chatId: string; message: LinkedInMessage }>;
 }
