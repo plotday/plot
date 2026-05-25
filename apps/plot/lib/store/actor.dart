@@ -23,9 +23,10 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
 
   /// External messaging platform accounts mapped to this contact.
   /// Aggregated from the server's contact_external_account table and stored
-  /// as a JSON array of {provider, account_id} objects. Always an empty list
-  /// for twist instances. Used by the DM picker to filter contacts by
-  /// reachable messaging platform (Slack, Gmail, LinkedIn, Teams, etc.).
+  /// as a JSON array of {twist_instance_id, account_id, provider} objects.
+  /// Always an empty list for twist instances. Used by the DM picker to
+  /// filter contacts to those reachable via a specific connection
+  /// (twist_instance_id). `provider` is display-only.
   TextColumn get externalAccounts =>
       text().withDefault(const Constant('[]')).map(const ExternalAccountListConverter())();
 
@@ -871,17 +872,19 @@ class Actor extends ActorRow {
   }
 
   /// Returns true if this actor has at least one external account for the
-  /// given [provider] (e.g. 'slack', 'gmail', 'linkedin', 'teams', 'google_chat').
-  /// Used by the DM picker to filter contacts reachable on a given platform.
-  bool hasExternalAccount(String provider) {
-    return externalAccounts.any((a) => a.provider == provider);
+  /// given connection ([twistInstanceId]). Used by the DM picker to filter
+  /// contacts reachable via a specific connection (e.g. one Slack workspace).
+  bool hasExternalAccount(Uuid twistInstanceId) {
+    return externalAccounts.any((a) => a.twistInstanceId == twistInstanceId);
   }
 
-  /// Returns all external accounts for the given [provider], or all accounts
-  /// if [provider] is null.
-  List<ContactExternalAccount> externalAccountsFor([String? provider]) {
-    if (provider == null) return externalAccounts;
-    return externalAccounts.where((a) => a.provider == provider).toList();
+  /// Returns all external accounts for the given connection
+  /// ([twistInstanceId]), or all accounts if [twistInstanceId] is null.
+  List<ContactExternalAccount> externalAccountsFor([Uuid? twistInstanceId]) {
+    if (twistInstanceId == null) return externalAccounts;
+    return externalAccounts
+        .where((a) => a.twistInstanceId == twistInstanceId)
+        .toList();
   }
 }
 

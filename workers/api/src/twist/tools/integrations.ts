@@ -2119,6 +2119,7 @@ export class Integrations extends Tool implements IAuth {
             name: string | null;
           }>;
           recipients?: ResolvedRecipient[];
+          inviteEmails?: string[];
         };
       };
       if (!threadId || !draft) return [];
@@ -2160,15 +2161,19 @@ export class Integrations extends Tool implements IAuth {
           linkTypeConfig = sourceLinkTypes?.find((lt) => lt.type === draft.type);
         }
 
-        if (linkTypeConfig?.targets === "contacts") {
+        if (
+          linkTypeConfig?.targets === "contacts" ||
+          linkTypeConfig?.targets === "addresses"
+        ) {
           const contactIds = draft.contacts.map((c) => c.id);
-          // contact_external_account has no workspace_id column, so this returns any row for a given contact + provider.
-          // For users with multiple workspaces of the same provider (e.g. two Slack accounts), the picked externalAccountId
-          // may belong to a different workspace than the one we're dispatching to. Acceptable for v1; revisit when multi-workspace is needed.
+          // Scope by twist_instance_id (the connection): two Slack workspaces
+          // with the same Plot contact have separate `contact_external_account`
+          // rows, one per workspace. Returning only this connection's rows is
+          // what lets the dispatched message route to the right workspace.
           const rows = await this.db
             .selectFrom("contact_external_account")
             .innerJoin("contact", "contact.id", "contact_external_account.contact_id")
-            .where("contact_external_account.provider", "=", provider)
+            .where("contact_external_account.twist_instance_id", "=", this.twistInstanceId)
             .where("contact_external_account.contact_id", "in", contactIds)
             .select([
               "contact.id",
@@ -2176,11 +2181,49 @@ export class Integrations extends Tool implements IAuth {
               "contact_external_account.account_id",
             ])
             .execute();
-          draft.recipients = rows.map((r) => ({
-            id: r.id as Uuid,
-            name: r.name ?? null,
-            externalAccountId: r.account_id,
-          }));
+
+          if (linkTypeConfig.targets === "contacts") {
+            draft.recipients = rows.map((r) => ({
+              id: r.id as Uuid,
+              name: r.name ?? null,
+              externalAccountId: r.account_id,
+            }));
+          } else {
+            // "addresses": fall back to contact.email (lowercased) for any
+            // picked contact without a connection-scoped row. Contacts with
+            // neither a row nor an email are dropped silently.
+            const byContactId = new Map(rows.map((r) => [r.id, r] as const));
+            const missingIds = contactIds.filter((id) => !byContactId.has(id as Uuid));
+            const fallbackRows = missingIds.length
+              ? await this.db
+                  .selectFrom("contact")
+                  .select(["id", "name", "email"])
+                  .where("id", "in", missingIds)
+                  .execute()
+              : [];
+            const fallbackById = new Map(fallbackRows.map((r) => [r.id, r] as const));
+            const recipients: ResolvedRecipient[] = [];
+            for (const contactId of contactIds) {
+              const row = byContactId.get(contactId as Uuid);
+              if (row) {
+                recipients.push({
+                  id: row.id as Uuid,
+                  name: row.name ?? null,
+                  externalAccountId: row.account_id,
+                });
+                continue;
+              }
+              const fallback = fallbackById.get(contactId);
+              if (fallback?.email) {
+                recipients.push({
+                  id: fallback.id as Uuid,
+                  name: fallback.name ?? null,
+                  externalAccountId: fallback.email.toLowerCase(),
+                });
+              }
+            }
+            draft.recipients = recipients;
+          }
         }
       }
 
@@ -2652,19 +2695,23 @@ export class Integrations extends Tool implements IAuth {
       .where("id", "=", actor.id)
       .executeTakeFirst();
 
-    // Store provider ID mapping for source-based contact lookup
+    // Store provider ID mapping for source-based contact lookup. The row is
+    // scoped to (twist_instance_id, account_id) so the same OAuth account
+    // can be linked to multiple twist instances (e.g. one Slack workspace
+    // per Slack connection) without collision.
     if (providerUserId && contact) {
       try {
         await this.db
           .insertInto("contact_external_account")
           .values({
             contact_id: actor.id,
+            twist_instance_id: this.twistInstanceId,
             provider: tokenInfo.provider,
             account_id: providerUserId,
             data_fetched_at: new Date().toISOString(),
           })
           .onConflict((oc) =>
-            oc.columns(["provider", "account_id"]).doUpdateSet((eb) => ({
+            oc.columns(["twist_instance_id", "account_id"]).doUpdateSet((eb) => ({
               contact_id: eb.ref("excluded.contact_id"),
               data_fetched_at: eb.ref("excluded.data_fetched_at"),
             }))
@@ -3824,6 +3871,11 @@ export class Integrations extends Tool implements IAuth {
     if (!email) {
       if (provider && providerUserId) {
         try {
+          // Scope to this twist instance: re-auth on the same connection
+          // dedupes to the existing contact, while a brand-new connection
+          // with the same OAuth account creates its own row (and may
+          // resolve to a separate contact, since Slack-style platforms
+          // partition identity by workspace).
           const existing = await this.db
             .selectFrom("contact_external_account")
             .innerJoin(
@@ -3832,7 +3884,7 @@ export class Integrations extends Tool implements IAuth {
               "contact_external_account.contact_id"
             )
             .select(["contact.id", "contact.name"])
-            .where("contact_external_account.provider", "=", provider)
+            .where("contact_external_account.twist_instance_id", "=", this.twistInstanceId)
             .where("contact_external_account.account_id", "=", providerUserId)
             .executeTakeFirst();
           if (existing?.id) {

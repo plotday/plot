@@ -13,25 +13,26 @@ class CreateTarget {
     this.channel,
     required this.linkType,
     required this.defaultStatus,
-    this.provider,
   })  : connectorName =
             CreateLinkUserAction.parseTwistName(twist.name).connectorName,
         accountName =
             CreateLinkUserAction.parseTwistName(twist.name).accountName;
 
   final TwistInstance twist;
-  /// Null for DM-type link types (`linkType.targets == "contacts"`), where
-  /// the picker shows one chip per connection rather than per channel.
+  /// Null for connection-scoped link types (`linkType.targets` is
+  /// `"contacts"` or `"addresses"`), where the picker shows one chip per
+  /// connection rather than per channel.
   final Channel? channel;
   final LinkTypeConfig linkType;
   final LinkStatus defaultStatus;
   final String connectorName;
   final String? accountName;
-  /// Auth provider string (e.g. `"slack"`, `"google"`) derived at build time.
-  /// Used to filter the recipient picker to contacts reachable on the platform.
-  final String? provider;
 
-  bool get isDmType => linkType.targets == 'contacts';
+  /// True for link types that emit a single chip per connection
+  /// (`"contacts"` for closed-roster DMs, `"addresses"` for open address
+  /// spaces like Gmail) — i.e. anything that isn't channel-targeted.
+  bool get isDmType =>
+      linkType.targets == 'contacts' || linkType.targets == 'addresses';
 
   /// Stable identity for MRU keying and de-duping.
   String get key => isDmType
@@ -83,7 +84,6 @@ class CreateTarget {
         logo: linkType.logo,
         logoDark: linkType.logoDark,
         dmTargets: linkType.targets,
-        provider: provider,
       );
 }
 
@@ -134,21 +134,17 @@ Future<List<CreateTarget>> loadCreateTargets() async {
       }
       if (defaultStatus == null) continue;
 
-      if (linkType.targets == 'contacts') {
-        // DM-type: emit one target per twist instance (connection), not per channel.
+      if (linkType.targets == 'contacts' || linkType.targets == 'addresses') {
+        // Connection-scoped: emit one target per twist instance (connection),
+        // not per channel. The recipient picker filters / accepts inputs
+        // per the linkType.targets mode.
         final dmKey = '${twist.id}|${linkType.type}';
         if (!emittedDmKeys.add(dmKey)) continue;
-        // Derive the auth provider from the connectorName (maps connector brand
-        // names to the AuthProvider enum values used in contact_external_account).
-        final provider = _providerFromConnectorName(
-          CreateLinkUserAction.parseTwistName(twist.name).connectorName,
-        );
         result.add(CreateTarget(
           twist: twist,
           channel: null,
           linkType: linkType,
           defaultStatus: defaultStatus,
-          provider: provider,
         ));
       } else {
         // Channel-type: existing per-channel enumeration.
@@ -162,29 +158,6 @@ Future<List<CreateTarget>> loadCreateTargets() async {
     }
   }
   return result;
-}
-
-/// Maps a connector's display name to its [AuthProvider] string value, which
-/// is used as the `provider` key in `contact_external_account` rows. The
-/// mapping covers connectors that support DM-type link types.
-String? _providerFromConnectorName(String connectorName) {
-  switch (connectorName.toLowerCase()) {
-    case 'slack':
-      return 'slack';
-    case 'gmail':
-    case 'google chat':
-    case 'google workspace':
-      return 'google';
-    case 'linkedin':
-    case 'linkedin messaging':
-      return 'linkedin';
-    case 'microsoft teams':
-    case 'teams':
-    case 'outlook':
-      return 'microsoft';
-    default:
-      return null;
-  }
 }
 
 /// Shared list-tile builder for "Create new …" rows in pickers.

@@ -1160,14 +1160,22 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   Future<void> _openSharedPicker(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
-    // When a DM-type connection is active, pass the provider string so the
-    // picker can filter candidates to contacts reachable on that platform.
+    // Pass the active connection's twistInstanceId so the picker filters
+    // contacts to those reachable through THIS connection. For
+    // `targets: "addresses"` (Gmail), pass the address-mode flag instead
+    // and skip the connection filter — any contact with an email is
+    // valid, and free-form email invites are allowed.
     final activeAction = _activeCreateAction;
-    final dmProvider = (activeAction?.isDmType ?? false) ? activeAction?.provider : null;
+    final isDm = activeAction?.isDmType ?? false;
+    final isAddress = activeAction?.isAddressesType ?? false;
+    final dmTwistInstanceId = isDm && !isAddress
+        ? Uuid.fromString(activeAction!.twistInstanceId)
+        : null;
     await context.run(
       PickDraftThreadShared(
         thread: priorityBloc.state.draft,
-        dmProvider: dmProvider,
+        dmTwistInstanceId: dmTwistInstanceId,
+        isAddressMode: isAddress,
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);
@@ -1181,8 +1189,11 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Returns a validation error message when submit should be blocked,
   /// or null if submit is allowed.
   ///
-  /// When a DM-type connection is active, at least one contact with a
-  /// resolved external account for the target provider must be selected.
+  /// - `targets: "channels"`: no extra validation.
+  /// - `targets: "contacts"`: at least one selected contact must have a
+  ///   `contact_external_account` row for the active connection.
+  /// - `targets: "addresses"`: at least one recipient (contact with an
+  ///   email, or a free-form invite email) must be present.
   String? _validateDmSubmit() {
     final action = _activeCreateAction;
     if (action == null || !action.isDmType) return null;
@@ -1190,28 +1201,38 @@ class NewThreadPageState extends State<NewThreadPage> {
     final bloc = _priorityBloc;
     if (bloc == null) return null;
     final draft = bloc.state.draft;
-    final provider = action.provider;
 
     // Collect contacts selected on the draft (excluding self).
     final selfUuids = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
     final contactIds = draft.contacts.where((id) => !selfUuids.contains(id)).toList();
 
+    if (action.isAddressesType) {
+      final hasRecipient =
+          contactIds.any((id) {
+            final actor = Actor.fromCache(ActorId.fromUuid(id));
+            return actor?.email != null && actor!.email!.isNotEmpty;
+          }) ||
+              draft.inviteEmails.isNotEmpty;
+      if (!hasRecipient) {
+        return 'Add at least one recipient before sending.';
+      }
+      return null;
+    }
+
+    // `targets: "contacts"` — require a recipient reachable through this
+    // specific connection.
     if (contactIds.isEmpty) {
       return 'Add at least one recipient before sending.';
     }
-
-    // When we know the provider, verify at least one contact is reachable.
-    if (provider != null) {
-      final hasReachable = contactIds.any((id) {
-        final actor = Actor.fromCache(ActorId.fromUuid(id));
-        return actor != null && actor.hasExternalAccount(provider);
-      });
-      if (!hasReachable) {
-        return 'None of the selected recipients are reachable via this connection. '
-            'They appear here after the workspace member sync completes.';
-      }
+    final twistInstanceId = Uuid.fromString(action.twistInstanceId);
+    final hasReachable = contactIds.any((id) {
+      final actor = Actor.fromCache(ActorId.fromUuid(id));
+      return actor != null && actor.hasExternalAccount(twistInstanceId);
+    });
+    if (!hasReachable) {
+      return 'None of the selected recipients are reachable via this connection. '
+          'They appear here after the workspace member sync completes.';
     }
-
     return null;
   }
 

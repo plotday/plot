@@ -164,6 +164,7 @@ export function createTool(
         twistInstanceId,
         options,
         env,
+        sourceProvider,
       });
     case "AI":
       // Return disabled stub when AI is off and twist declared AI as optional

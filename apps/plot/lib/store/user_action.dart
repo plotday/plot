@@ -368,12 +368,11 @@ class CreateLinkUserAction extends UserAction {
     this.logo,
     this.logoDark,
     this.dmTargets = 'channels',
-    this.provider,
   }) : super(type: UserActionType.createLink);
 
   final String twistInstanceId;
-  /// Null for DM-type link types (`dmTargets == "contacts"`), where the picker
-  /// shows one chip per connection rather than per channel.
+  /// Null for connection-scoped link types (`dmTargets` is `"contacts"` or
+  /// `"addresses"`), where the picker shows one chip per connection.
   final String? channelId;
   final String linkType;
   final String status;
@@ -383,7 +382,7 @@ class CreateLinkUserAction extends UserAction {
   /// Human-readable link type label (e.g. "Issue"). Lowercased at render.
   final String linkTypeLabel;
   /// Channel title (e.g. the Linear team name "Plot"), or the connection
-  /// display name for DM-type targets (e.g. "Slack: Acme Workspace").
+  /// display name for connection-scoped targets (e.g. "Slack: Acme Workspace").
   final String channelName;
   /// The account portion parsed out of the twist instance name (e.g. "Kris
   /// Braun" from "Linear (Kris Braun)"). Null when the twist has no account
@@ -391,14 +390,12 @@ class CreateLinkUserAction extends UserAction {
   final String? accountName;
   final String? logo;
   final String? logoDark;
-  /// Whether this is a DM-type (`"contacts"`) or channel-type (`"channels"`)
-  /// target. Mirrors [LinkTypeConfig.targets].
+  /// Picker mode for this target — mirrors [LinkTypeConfig.targets]:
+  /// `"channels"` (default), `"contacts"`, or `"addresses"`.
   final String dmTargets;
-  /// Auth provider string (e.g. `"slack"`, `"google"`) for this connection.
-  /// Used to filter the recipient picker to contacts reachable on the platform.
-  final String? provider;
 
-  bool get isDmType => dmTargets == 'contacts';
+  bool get isDmType => dmTargets == 'contacts' || dmTargets == 'addresses';
+  bool get isAddressesType => dmTargets == 'addresses';
 
   /// Display for both the picker row and the note-editor attachment row.
   ///
@@ -441,7 +438,6 @@ class CreateLinkUserAction extends UserAction {
       logo: logo,
       logoDark: logoDark,
       dmTargets: dmTargets,
-      provider: provider,
     );
   }
 
@@ -458,7 +454,6 @@ class CreateLinkUserAction extends UserAction {
       logo: json['logo'] as String?,
       logoDark: json['logoDark'] as String?,
       dmTargets: json['dmTargets'] as String? ?? 'channels',
-      provider: json['provider'] as String?,
     );
   }
 
@@ -477,7 +472,6 @@ class CreateLinkUserAction extends UserAction {
       if (logo != null) 'logo': logo,
       if (logoDark != null) 'logoDark': logoDark,
       if (dmTargets != 'channels') 'dmTargets': dmTargets,
-      if (provider != null) 'provider': provider,
     };
   }
 
@@ -495,7 +489,6 @@ class CreateLinkUserAction extends UserAction {
     logo,
     logoDark,
     dmTargets,
-    provider,
   ];
 }
 

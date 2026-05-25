@@ -15,9 +15,12 @@
 -- unlinked external contacts and twist instances.
 --
 -- The "external_accounts" column aggregates contact_external_account rows
--- for this contact as a JSON array of {provider, account_id} objects.
--- Used by the DM picker to filter contacts by reachable messaging platform.
--- Always an empty array for twist instances (which are not contacts).
+-- for this contact as a JSON array of {twist_instance_id, provider,
+-- account_id} objects. The load-bearing key for the DM picker filter is
+-- twist_instance_id — it scopes a contact to a specific connection (one
+-- Slack workspace, one Gmail account, etc.). `provider` is kept for
+-- display only. Always an empty array for twist instances (which are
+-- not contacts).
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
 -- Contacts visible via user_contact (primary or external contacts).
@@ -49,7 +52,7 @@ SELECT
     c.user_id AS linked_user_id,
     COALESCE(
         (
-            SELECT json_agg(json_build_object('provider', cea.provider, 'account_id', cea.account_id))
+            SELECT json_agg(json_build_object('twist_instance_id', cea.twist_instance_id, 'provider', cea.provider, 'account_id', cea.account_id))
             FROM contact_external_account cea
             WHERE cea.contact_id = a.id
         ),
@@ -84,7 +87,7 @@ SELECT
     c.user_id AS linked_user_id,
     COALESCE(
         (
-            SELECT json_agg(json_build_object('provider', cea.provider, 'account_id', cea.account_id))
+            SELECT json_agg(json_build_object('twist_instance_id', cea.twist_instance_id, 'provider', cea.provider, 'account_id', cea.account_id))
             FROM contact_external_account cea
             WHERE cea.contact_id = a.id
         ),

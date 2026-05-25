@@ -157,6 +157,13 @@ export class Plot extends Tool implements IPlot {
   public env: Bindings;
   public ai: AI;
   public syncDepth: number = 1;
+  /**
+   * Provider config for connectors using the Source API. Allows
+   * Plot-side helpers (e.g. addContacts) to stamp the provider on
+   * `contact_external_account` rows without trusting caller-supplied
+   * values.
+   */
+  public sourceProvider: { provider?: string } | null = null;
   private _actor?: Actor;
   private _owner?: Actor;
   private _twistId?: number;
@@ -263,11 +270,13 @@ export class Plot extends Tool implements IPlot {
     twistInstanceId,
     options,
     env,
+    sourceProvider,
   }: {
     db: Kysely<DB>;
     twistInstanceId: string;
     options?: typeof IPlot.Options;
     env: Bindings;
+    sourceProvider?: { provider?: string } | null;
   }) {
     super();
     this.db = db;
@@ -275,6 +284,7 @@ export class Plot extends Tool implements IPlot {
     this.plotOptions = options;
     this.env = env;
     this.ai = new AI({ env, twistInstanceId });
+    this.sourceProvider = sourceProvider ?? null;
   }
 
   /**

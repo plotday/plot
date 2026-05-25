@@ -717,10 +717,7 @@ function buildNoteFromMessage(
 }
 
 function profileToContact(profile: LinkedInProfile): NewContact {
-  const source = {
-    provider: AuthProvider.LinkedIn,
-    accountId: profile.id,
-  };
+  const source = { accountId: profile.id };
   const avatar = profile.pictureUrl ?? undefined;
   if (profile.email) {
     return { email: profile.email, name: profile.fullName, avatar, source };
@@ -739,7 +736,7 @@ function profileToContact(profile: LinkedInProfile): NewContact {
 function senderFallbackContact(msg: LinkedInMessage): NewContact {
   return {
     name: msg.sentByMe ? "You" : "LinkedIn user",
-    source: { provider: AuthProvider.LinkedIn, accountId: msg.senderId },
+    source: { accountId: msg.senderId },
   };
 }
 

@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 339;
+  int get schemaVersion => 340;
 
   @override
   MigrationStrategy get migration {
@@ -3576,6 +3576,20 @@ class Store extends _$Store {
       // a network call. Resetting the actors cursor ensures every row is
       // re-pulled with the new column populated.
       await _safeAddColumn(m, actors, actors.externalAccounts);
+      await m.database.customStatement(
+        "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
+      );
+    }
+    if (from < 340) {
+      // external_accounts JSON shape changed: each entry now keys on
+      // `twist_instance_id` instead of just `provider`, so a Plot contact
+      // reachable through multiple connections (two Slack workspaces,
+      // Gmail + Google Chat sharing one Google account) has one entry per
+      // connection. Existing local JSON is for the old shape — drop it and
+      // re-pull from the server so every row arrives in the new shape.
+      await m.database.customStatement(
+        "UPDATE actors SET external_accounts = '[]'",
+      );
       await m.database.customStatement(
         "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
