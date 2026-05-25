@@ -66,6 +66,8 @@ export 'setup_source.dart';
 export 'twist_options.dart';
 
 
+export 'compose/compose.dart';
+
 // Style exports
 export 'package:plot/style/colors.dart';
 export 'package:plot/style/layout.dart';
