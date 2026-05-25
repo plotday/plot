@@ -33,22 +33,25 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
     editableBackground: colourScheme.editableBackground,
   );
 
+  // Override global style for warmer, softer appearance
+  final style = FStyle.inherit(
+    colors: colorScheme,
+    typography: typography,
+    touch: false,
+  ).copyWith(
+    borderRadius: const FBorderRadius(),
+    borderWidth: 0.5,
+    tappableStyle: FTappableStyleDelta.delta(
+      motion: FTappableMotion.none,
+    ),
+  );
+
   var theme = FThemeData(
     colors: colorScheme,
     typography: typography,
     touch: false,
+    style: style,
     extensions: [plotColors, iconSizes, spacing],
-  );
-
-  // Override global style for warmer, softer appearance
-  theme = theme.copyWith(
-    style: FStyleDelta.delta(
-      borderRadius: const FBorderRadius(),
-      borderWidth: 0.5,
-      tappableStyle: FTappableStyleDelta.delta(
-        motion: FTappableMotion.none,
-      ),
-    ),
   );
 
   final textFieldStyleDelta = buildTextFieldStyleDelta(
