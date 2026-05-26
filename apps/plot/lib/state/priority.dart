@@ -997,8 +997,18 @@ class PriorityBloc extends Cubit<PriorityState> {
       return a.id.toString().compareTo(b.id.toString());
     });
 
-    // Activity: activity_at DESC (newest first).
-    activity.sort((a, b) => b.contentTimestamp.compareTo(a.contentTimestamp));
+    // Activity: activity_at DESC, id DESC. Matches the Phase-1 SQL's
+    // `MAX(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt,
+    // pastScheduleEnd)` (see [Thread.activityAt]) so threads bumped via
+    // read / done transitions land at the top, then stay in stable
+    // order as new entries arrive above them. The in-memory sort is
+    // load-bearing only for overlay-substituted rows whose live
+    // `activityAt` differs from the SQL snapshot.
+    activity.sort((a, b) {
+      final at = b.activityAt.compareTo(a.activityAt);
+      if (at != 0) return at;
+      return b.id.toString().compareTo(a.id.toString());
+    });
 
     final items = <AgendaItem>[...eventPrefix];
 
@@ -2855,17 +2865,15 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Sticky-unread tracking: when navigating away from a thread, drop
     // the overlay entry so the thread can fall back to its natural
-    // position on the next emission. If the entry was a sticky pin,
-    // bump `bumped_at` so it floats back up in the next emission's
-    // ordering. When selecting an unread thread, pin it via the overlay
-    // so the per-tab Catch up subscription keeps it visible at its
-    // pre-read position even after `unread` flips to false.
+    // position on the next emission. When selecting an unread thread,
+    // pin it via the overlay so the per-tab Catch up subscription keeps
+    // it visible at its pre-read position even after `unread` flips to
+    // false. The bump itself is set inside `Thread.copyWith` when the
+    // unread → read transition happens (read-by-viewing in
+    // `page/thread.dart`), so no separate bump is needed here.
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
       final removed = _overlay.remove(oldThread.id);
-      if (removed?.sticky == true) {
-        oldThread.copyWith(bumpedAt: Value(DateTime.now())).save();
-      }
       if (removed != null &&
           _activeTabSubscriptionTab == ActivityTab.catchUp) {
         _rebuildActiveTabSection();

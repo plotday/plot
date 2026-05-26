@@ -5550,9 +5550,21 @@ ORDER BY
       stateDirty = true;
     }
 
-    // Set bumpedAt on the thread when bumping (agenda done)
-    // Also trigger thread-read sync so bumped_at gets pushed
-    if (bump && todo == false) {
+    // Bump rules — both place the thread at the top of Activity as it
+    // transitions in, then it drifts down naturally as newer activity
+    // lands above it:
+    //   1. Read transition (unread → read) while the thread will not be
+    //      active. Fires for every read path because the unread-clear is
+    //      what defines the transition, not the call site.
+    //   2. Done transition (active → inactive via `bump: true,
+    //      todo: false`).
+    // Synced via /sync/thread-unread (read-state fields), so this path
+    // does not need activityRemoteDirty.
+    final willBeActive = todo == false ? false : _thread.active;
+    final isReadTransition =
+        unread == false && _thread.unread && !willBeActive;
+    final isDoneTransition = bump && todo == false;
+    if (isReadTransition || isDoneTransition) {
       activityDirty = true;
       activity = activity.copyWith(
         bumpedAt: Value(DateTime.now()),
