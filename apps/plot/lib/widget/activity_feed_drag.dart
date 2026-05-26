@@ -16,7 +16,6 @@ import 'package:plot/widget/agenda_block_drag.dart';
 /// Only used for non-Scheduled sections; Scheduled is identified by
 /// `targetDate` being non-null.
 final DateTime _todaySectionMarker = DateTime.utc(1, 1, 1, 0, 0, 1);
-final DateTime _newSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 2);
 final DateTime _doneSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 3);
 final DateTime _eventAgendaSectionMarker = DateTime.utc(1, 1, 1, 0, 0, 4);
 
@@ -28,8 +27,6 @@ DateTime? _sectionToMarker(ActivitySection section) {
       return _todaySectionMarker;
     case ActivitySection.scheduled:
       return null; // disambiguated by targetDate
-    case ActivitySection.updates:
-      return _newSectionMarker;
     case ActivitySection.activity:
       return _doneSectionMarker;
   }
@@ -40,7 +37,6 @@ ActivitySection? _sectionFromTarget(BlockDropTarget target) {
   final marker = target.targetPeriodStart;
   if (marker == _eventAgendaSectionMarker) return ActivitySection.eventAgenda;
   if (marker == _todaySectionMarker) return ActivitySection.doing;
-  if (marker == _newSectionMarker) return ActivitySection.updates;
   if (marker == _doneSectionMarker) return ActivitySection.activity;
   return null;
 }
@@ -140,8 +136,6 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
               before[i] = (target: doneTopTarget(), silent: false);
               doneBoundaryEmitted = true;
             }
-          } else if (currentSection == ActivitySection.updates) {
-            // Updates accepts no drops; emit no tail boundary either.
           } else {
             before[i] = (
               target: BlockDropTarget(
@@ -175,12 +169,6 @@ typedef FeedDropSlot = ({BlockDropTarget target, bool silent});
           before[i] = (target: doneTopTarget(), silent: false);
           doneBoundaryEmitted = true;
         }
-        continue;
-      }
-      if (currentSection == ActivitySection.updates) {
-        // Updates is not a drop target — it's a derived projection over
-        // unread threads sorted by urgency. Drops over Updates should
-        // fall through; emit no boundaries here.
         continue;
       }
       final threadIdStr = item.thread.id.toString();

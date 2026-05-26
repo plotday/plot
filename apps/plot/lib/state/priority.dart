@@ -618,10 +618,22 @@ class PriorityBloc extends Cubit<PriorityState> {
       _catchUpAppendCursor;
 
   /// Tail cursor of the most recent head emission for the All tab.
-  ({String activityAt, ThreadId id})? _allTabHeadTailCursor;
+  ({
+    int unread,
+    int urgent,
+    int importance,
+    String activityAt,
+    ThreadId id,
+  })? _allTabHeadTailCursor;
 
   /// Cursor of the next All-tab append page.
-  ({String activityAt, ThreadId id})? _allTabAppendCursor;
+  ({
+    int unread,
+    int urgent,
+    int importance,
+    String activityAt,
+    ThreadId id,
+  })? _allTabAppendCursor;
 
   /// Tail cursor of the most recent head emission for an action tab.
   ({int isActiveInv, String bucketKey, double order, ThreadId id})?
@@ -916,51 +928,62 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  /// Build the unified feed: Updates → Doing → Scheduled (per-day) →
-  /// Activity. The Updates section deliberately duplicates every unread
-  /// thread regardless of whether it's also in Doing or Scheduled.
+  /// Build the unified feed: Doing → Scheduled (per-day) → Activity.
+  /// Unread threads project to the top of Doing (sorted by urgent,
+  /// importance, order) regardless of their underlying state, so each
+  /// thread appears exactly once. When an unread thread is marked read
+  /// it falls back to its natural primary section on the next rebuild
+  /// (handled by the sticky-unread overlay while the user is reading).
   List<AgendaItem> _buildUnifiedFeedItems(
     List<Thread> merged,
     List<AgendaItem> eventPrefix,
   ) {
-    final unread = <Thread>[];
-    final doing = <Thread>[];
+    final unreadDoing = <Thread>[];
+    final readDoing = <Thread>[];
     final scheduled = <Thread>[];
     final activity = <Thread>[];
 
     for (final t in merged) {
-      // Updates includes every unread (duplicates allowed).
-      if (t.unread) unread.add(t);
+      if (t.unread) {
+        // All unread threads cluster at the top of Doing — regardless
+        // of whether they would otherwise be active, scheduled, or
+        // inactive. Underlying state is preserved so the thread returns
+        // to its natural section once read.
+        unreadDoing.add(t);
+        continue;
+      }
 
       switch (primarySectionFor(t)) {
         case ActivitySection.doing:
-          doing.add(t);
+          readDoing.add(t);
         case ActivitySection.scheduled:
           scheduled.add(t);
         case ActivitySection.activity:
-          // Activity excludes unread (those are surfaced in Updates only,
-          // not duplicated to Activity).
-          if (!t.unread) activity.add(t);
-        case ActivitySection.updates:
+          activity.add(t);
         case ActivitySection.eventAgenda:
           break;
       }
     }
 
-    // Sort Updates by urgency (urgent first, then importance DESC, then
-    // activity_at DESC). Matches the pre-tab Catch-up ordering.
-    unread.sort((a, b) {
+    // Unread cluster: urgent DESC, importance DESC, order ASC, id ASC.
+    // Order is the tie-breaker so reorders within the same urgent /
+    // importance bucket are stable.
+    unreadDoing.sort((a, b) {
       if (a.urgent != b.urgent) return a.urgent ? -1 : 1;
       final imp = b.importance.compareTo(a.importance);
       if (imp != 0) return imp;
-      return b.contentTimestamp.compareTo(a.contentTimestamp);
+      final ord = a.order.compareTo(b.order);
+      if (ord != 0) return ord;
+      return a.id.toString().compareTo(b.id.toString());
     });
 
-    // Doing: state_order ascending, then content time descending.
-    doing.sort((a, b) {
-      final cmp = a.order.compareTo(b.order);
-      if (cmp != 0) return cmp;
-      return b.contentTimestamp.compareTo(a.contentTimestamp);
+    // Doing (read): order ASC, id ASC tie-break. Order is the sole
+    // visual driver for read-active threads; deterministic id tiebreak
+    // keeps the list stable across rebuilds.
+    readDoing.sort((a, b) {
+      final ord = a.order.compareTo(b.order);
+      if (ord != 0) return ord;
+      return a.id.toString().compareTo(b.id.toString());
     });
 
     // Scheduled: bucket date ASC, then state_order, then id.
@@ -979,24 +1002,16 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final items = <AgendaItem>[...eventPrefix];
 
-    if (unread.isNotEmpty) {
-      items.add(
-        AgendaHeaderItem(
-          text: ActivitySectionMarker.encode(ActivitySection.updates),
-        ),
-      );
-      for (final t in unread) {
-        items.add(AgendaThreadItem(t));
-      }
-    }
-
     // Doing header is always emitted so it remains a drop target.
     items.add(
       AgendaHeaderItem(
         text: ActivitySectionMarker.encode(ActivitySection.doing),
       ),
     );
-    for (final t in doing) {
+    for (final t in unreadDoing) {
+      items.add(AgendaThreadItem(t));
+    }
+    for (final t in readDoing) {
       items.add(AgendaThreadItem(t));
     }
 
@@ -1147,26 +1162,28 @@ class PriorityBloc extends Cubit<PriorityState> {
     return patched;
   }
 
-  /// Mirror of the SQL `ORDER BY urgent DESC, importance DESC,
-  /// activity_at DESC, id DESC` used by `_watchCatchUpIds`. When an entry
-  /// has cached pre-read sort keys (sticky-unread), those override the
-  /// thread's current fields so the row stays at its original position
-  /// even after `unread` flips to false.
+  /// Mirror of the SQL `ORDER BY unread DESC, urgent DESC,
+  /// importance DESC, activity_at DESC, id DESC` used by
+  /// [Thread.watchAllTabHead]. Used to position sticky-unread injections
+  /// (overlay entries whose live row fell past the SQL LIMIT) in the
+  /// merged list. The merger substitutes the live thread with the
+  /// overlay's `expected` thread, so the expected's cached fields
+  /// (including `unread = true` at sticky-creation time) keep the row
+  /// pinned in the unread cluster even after `unread` flips to false.
   int _catchUpCompare(Thread a, Thread b) {
-    final aO = _overlay[a.id]?.catchUpSortKeys;
-    final bO = _overlay[b.id]?.catchUpSortKeys;
+    final aUn = a.unread ? 1 : 0;
+    final bUn = b.unread ? 1 : 0;
+    if (aUn != bUn) return bUn.compareTo(aUn);
 
-    final aUrg = aO?.urgent ?? (a.urgent ? 1 : 0);
-    final bUrg = bO?.urgent ?? (b.urgent ? 1 : 0);
+    final aUrg = a.urgent ? 1 : 0;
+    final bUrg = b.urgent ? 1 : 0;
     if (aUrg != bUrg) return bUrg.compareTo(aUrg);
 
-    final aImp = aO?.importance ?? a.importance;
-    final bImp = bO?.importance ?? b.importance;
-    if (aImp != bImp) return bImp.compareTo(aImp);
+    if (a.importance != b.importance) {
+      return b.importance.compareTo(a.importance);
+    }
 
-    final aAt = aO?.activityAt ?? a.activityAt;
-    final bAt = bO?.activityAt ?? b.activityAt;
-    final atCmp = bAt.compareTo(aAt);
+    final atCmp = b.activityAt.compareTo(a.activityAt);
     if (atCmp != 0) return atCmp;
 
     return b.id.toString().compareTo(a.id.toString());
@@ -1339,7 +1356,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabAppendInFlight = completer.future;
       ({
         List<Thread> threads,
-        ({String activityAt, ThreadId id})? nextCursor,
+        ({
+          int unread,
+          int urgent,
+          int importance,
+          String activityAt,
+          ThreadId id,
+        })? nextCursor,
         bool saturated,
       })? page;
       try {
@@ -1997,25 +2020,61 @@ class PriorityBloc extends Cubit<PriorityState> {
       return;
     }
 
-    Order? newOrder;
+    // Resolve neighbouring thread refs from the rendered feed. Used
+    // both to compute the drop order and (for Doing) to absorb the
+    // neighbour's bucket (unread / urgent / importance) so the dropped
+    // thread lands exactly where the user released it.
+    Thread? prevThread;
+    Thread? nextThread;
     if (targetSection == ActivitySection.doing ||
         targetSection == ActivitySection.scheduled) {
-      Order? above;
-      Order? below;
       for (final item in state.activityFeedItems) {
         if (item is! AgendaThreadItem) continue;
-        if (item.thread.id == prevId) above = item.thread.order;
-        if (item.thread.id == nextId) below = item.thread.order;
+        if (item.thread.id == prevId) prevThread = item.thread;
+        if (item.thread.id == nextId) nextThread = item.thread;
       }
-      newOrder = Order.between(above, below);
     }
+    final newOrder = (targetSection == ActivitySection.doing ||
+            targetSection == ActivitySection.scheduled)
+        ? Order.between(prevThread?.order, nextThread?.order)
+        : null;
 
     Thread updated;
     switch (targetSection) {
       case ActivitySection.eventAgenda:
         return; // handled above
       case ActivitySection.doing:
-        updated = dragged.asActiveToday(order: newOrder);
+        // Absorb the bucket of the neighbour on the drop's anchor side:
+        // prev when present, else next. The absorbed bucket determines
+        // (unread, urgent, importance). When prev is unread we keep /
+        // make the dragged thread unread (preserving any active /
+        // scheduled state so it returns to its natural section once
+        // read); when prev is read we mark the dragged thread read
+        // and active-today.
+        final bucketSource = prevThread ?? nextThread;
+        if (bucketSource == null) {
+          // Empty Doing — make the dragged thread active-today and
+          // clear any sticky pin so it doesn't bounce back to the
+          // unread cluster.
+          updated = dragged.asActiveToday(order: newOrder);
+          _overlay.remove(draggedId);
+        } else if (bucketSource.unread) {
+          // Land in the unread cluster: mark unread (or keep unread),
+          // copy bucket fields, and place via stateOrder. Schedule
+          // state is preserved.
+          updated = dragged.asUnreadInDoing(
+            order: newOrder ?? Order.first(),
+            urgent: bucketSource.urgent,
+            importance: bucketSource.importance,
+          );
+        } else {
+          // Land in the read-active cluster: mark read (if unread),
+          // ensure active state, set order. Clear any sticky pin —
+          // an explicit drop into the read cluster is the user telling
+          // us this thread isn't pinned to the unread area any more.
+          updated = dragged.asActiveToday(order: newOrder);
+          _overlay.remove(draggedId);
+        }
         break;
       case ActivitySection.scheduled:
         if (targetScheduledDate == null) return;
@@ -2023,18 +2082,19 @@ class PriorityBloc extends Cubit<PriorityState> {
           targetScheduledDate,
           order: newOrder,
         );
-        break;
-      case ActivitySection.updates:
-        updated = dragged.asUnread();
+        // Dropping to a future day is a deliberate move out of the
+        // unread cluster — clear any sticky pin.
+        _overlay.remove(draggedId);
         break;
       case ActivitySection.activity:
         updated = dragged.asInactive();
-        // Sticky-unread keeps a thread pinned to the New section even
-        // after its `unread` flag flips to false (so opening an unread
-        // thread doesn't make it disappear from New mid-read). An
-        // explicit drop on Done is a deliberate move — clear the sticky
-        // overlay entry so the per-tab merger routes the thread to
-        // Done, not back to New.
+        // Sticky-unread keeps a thread pinned to the unread cluster
+        // even after its `unread` flag flips to false (so opening an
+        // unread thread doesn't make it disappear from the top of
+        // Doing mid-read). An explicit drop on Activity is a
+        // deliberate move — clear the sticky overlay entry so the
+        // merger routes the thread to Activity, not back to the
+        // unread cluster.
         _overlay.remove(draggedId);
         break;
     }

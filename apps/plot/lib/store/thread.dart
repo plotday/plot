@@ -3087,10 +3087,16 @@ SELECT
   }
 
   /// Live stream of the All tab's head page. Mirrors [watchCatchUpHead]
-  /// but with the activity-at-only cursor shape — see [_watchAllTabIds].
+  /// but with the unified-feed cursor shape — see [_watchAllTabIds].
   static Stream<({
     List<Thread> threads,
-    ({String activityAt, ThreadId id})? tailCursor,
+    ({
+      int unread,
+      int urgent,
+      int importance,
+      String activityAt,
+      ThreadId id,
+    })? tailCursor,
     bool saturated,
   })> watchAllTabHead({
     PriorityId? priorityId,
@@ -3132,7 +3138,13 @@ SELECT
       final last = idRows.last;
       return (
         threads: threads,
-        tailCursor: (activityAt: last.activityAt, id: last.id),
+        tailCursor: (
+          unread: last.unread,
+          urgent: last.urgent,
+          importance: last.importance,
+          activityAt: last.activityAt,
+          id: last.id,
+        ),
         saturated: idRows.length >= limit,
       );
     });
@@ -3141,7 +3153,13 @@ SELECT
   /// Page result for the All tab's cursor pagination.
   static Future<({
     List<Thread> threads,
-    ({String activityAt, ThreadId id})? nextCursor,
+    ({
+      int unread,
+      int urgent,
+      int importance,
+      String activityAt,
+      ThreadId id,
+    })? nextCursor,
     bool saturated,
   })> fetchAllTabPage({
     PriorityId? priorityId,
@@ -3152,7 +3170,13 @@ SELECT
     List<Tag>? filter,
     List<String>? iconFilter,
     required int limit,
-    ({String activityAt, ThreadId id})? after,
+    ({
+      int unread,
+      int urgent,
+      int importance,
+      String activityAt,
+      ThreadId id,
+    })? after,
   }) async {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchAllTabIds(
@@ -3185,16 +3209,32 @@ SELECT
     final last = idRows.last;
     return (
       threads: threads,
-      nextCursor: (activityAt: last.activityAt, id: last.id),
+      nextCursor: (
+        unread: last.unread,
+        urgent: last.urgent,
+        importance: last.importance,
+        activityAt: last.activityAt,
+        id: last.id,
+      ),
       saturated: idRows.length >= limit,
     );
   }
 
-  /// Phase 1 of the All tab's query. Returns `(id, activity_at)` per row
-  /// for every visible thread, ordered by `activity_at DESC, id DESC`.
-  /// This is `_watchActivityFeedIds` minus the unread-first sort key — the
-  /// unread-first slot is now Catch up's job.
-  static Stream<List<({ThreadId id, String activityAt})>> _watchAllTabIds({
+  /// Phase 1 of the All tab's query. Returns
+  /// `(id, unread, urgent, importance, activity_at)` per row for every
+  /// visible thread, ordered by
+  /// `unread DESC, urgent DESC, importance DESC, activity_at DESC, id DESC`.
+  /// The unread-first ordering ensures the head page always surfaces
+  /// unread threads (which cluster at the top of Doing in the client
+  /// builder) before any read thread, even when read threads have more
+  /// recent activity_at.
+  static Stream<List<({
+    ThreadId id,
+    int unread,
+    int urgent,
+    int importance,
+    String activityAt,
+  })>> _watchAllTabIds({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3205,7 +3245,13 @@ SELECT
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
-    ({String activityAt, ThreadId id})? after,
+    ({
+      int unread,
+      int urgent,
+      int importance,
+      String activityAt,
+      ThreadId id,
+    })? after,
   }) {
     final variables = <Variable>[];
     final sqlBuf = StringBuffer();
@@ -3214,6 +3260,9 @@ SELECT
     sqlBuf.writeln('''
 SELECT
   a.id AS id,
+  COALESCE(a.unread, 0) AS unread,
+  COALESCE(a.urgent, 0) AS urgent,
+  a.importance AS importance,
   MAX(MAX(
     COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
     COALESCE(a.bumped_at, '0000'),
@@ -3241,12 +3290,20 @@ SELECT
     sqlBuf.writeln('GROUP BY a.id');
 
     if (after != null) {
-      sqlBuf.writeln('HAVING (activity_at, a.id) < (?, ?)');
+      sqlBuf.writeln(
+        'HAVING (unread, urgent, importance, activity_at, a.id) < (?, ?, ?, ?, ?)',
+      );
+      variables.add(Variable.withInt(after.unread));
+      variables.add(Variable.withInt(after.urgent));
+      variables.add(Variable.withInt(after.importance));
       variables.add(Variable.withString(after.activityAt));
       variables.add(Variable.withBlob(after.id.toBytes()));
     }
 
-    sqlBuf.writeln('ORDER BY activity_at DESC, a.id DESC');
+    sqlBuf.writeln(
+      'ORDER BY unread DESC, urgent DESC, importance DESC, '
+      'activity_at DESC, a.id DESC',
+    );
     sqlBuf.writeln('LIMIT ? OFFSET ?');
     variables.add(Variable.withInt(limit));
     variables.add(Variable.withInt(offset));
@@ -3263,6 +3320,9 @@ SELECT
               .map(
                 (row) => (
                   id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  unread: row.read<int>('unread'),
+                  urgent: row.read<int>('urgent'),
+                  importance: row.read<int>('importance'),
                   activityAt: row.read<String>('activity_at'),
                 ),
               )
@@ -4974,6 +5034,30 @@ ORDER BY
     final hasState = _thread.active || _thread.task || _thread.toRead;
     final base = hasState ? withScheduleArchived() : this;
     return base.copyWith(unread: true, readAt: const Value(null));
+  }
+
+  /// Returns a copy positioned in the unread cluster at the top of the
+  /// Doing section. Marks unread and sets the bucket fields (urgent,
+  /// importance) plus stateOrder so the thread sorts to a specific slot
+  /// among the other unread threads. Preserves any existing active /
+  /// scheduled state so when the thread is later marked read it falls
+  /// back to its natural section (Doing-active, Scheduled day, or
+  /// Activity).
+  Thread asUnreadInDoing({
+    required Order order,
+    required bool urgent,
+    required int importance,
+  }) {
+    return _withThreadState(
+      _thread.copyWith(
+        unread: true,
+        readAt: const Value(null),
+        urgent: Value(urgent ? true : null),
+        importance: importance,
+        stateOrder: Value(order),
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   /// Returns a copy in the "inactive (done)" state. The

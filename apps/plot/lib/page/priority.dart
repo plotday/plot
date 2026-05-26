@@ -767,17 +767,15 @@ class _PriorityPageState extends State<PriorityPage>
     super.initState();
     // One-shot: when the user lands on this priority from a
     // multi-thread notification tap, [NotificationLandingPage] leaves
-    // `PendingActivityFeedView.openCatchUpTab` set. Consume and clear
+    // `PendingActivityFeedView.scrollToUpdates` set. Consume and clear
     // the flag in a post-frame callback so `PriorityBloc` is already
-    // available via context.read. Switches the active tab even when the
-    // user had previously navigated to a different action tab on this
-    // priority.
-    if (PendingActivityFeedView.openCatchUpTab) {
+    // available via context.read.
+    if (PendingActivityFeedView.scrollToUpdates) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (!PendingActivityFeedView.openCatchUpTab) return;
-        PendingActivityFeedView.openCatchUpTab = false;
-        context.read<PriorityBloc>().selectActivityTab(ActivityTab.catchUp);
+        if (!PendingActivityFeedView.scrollToUpdates) return;
+        PendingActivityFeedView.scrollToUpdates = false;
+        context.read<PriorityBloc>().selectActivityTab(ActivityTab.unified);
       });
     }
   }
