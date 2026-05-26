@@ -6,10 +6,10 @@ import 'package:plot/store/store.dart';
 /// (e.g. `"👍"`) or a provider-scoped custom-emoji ref (e.g.
 /// `"slack:T01/party_parrot"`).
 ///
-/// Unicode emoji are rendered via the platform's emoji font. Cross-OS visual
-/// consistency via a bundled Noto Color Emoji font is a planned follow-up;
-/// once that font is registered in `pubspec.yaml`, set [_fontFamily] below
-/// to `'NotoColorEmoji'` and every call site picks it up automatically.
+/// Unicode emoji render via the bundled Noto Emoji (monochrome line-art)
+/// font for cross-OS visual consistency. The color variant
+/// (`NotoColorEmoji`) is ~24MB and intentionally not bundled — line-art
+/// reads well at reaction-chip sizes and avoids the bloat.
 ///
 /// Custom-emoji refs are rendered via [Image.network] against the cached
 /// `image_url` from `custom_emoji`. When the cache misses, the raw emoji
@@ -28,9 +28,8 @@ class EmojiText extends StatelessWidget {
   /// Visual size of the emoji in logical pixels.
   final double size;
 
-  /// Set this to `'NotoColorEmoji'` once the font is bundled in
-  /// `pubspec.yaml` to get cross-OS-consistent rendering.
-  static const String? _fontFamily = null;
+  /// Font family registered in pubspec.yaml. See class doc for rationale.
+  static const String _fontFamily = 'NotoEmoji';
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +40,11 @@ class EmojiText extends StatelessWidget {
       emoji,
       style: TextStyle(
         fontSize: size,
-        // Avoid the figtree family clobbering glyphs that should fall back
-        // to the platform emoji font.
         fontFamily: _fontFamily,
-        // No fontFamilyFallback: we want the OS to pick its emoji renderer.
+        // Platform emoji font as a fallback for any glyph Noto Emoji
+        // doesn't cover (e.g. brand-new Unicode releases on older
+        // bundled fonts).
+        fontFamilyFallback: const ['AppleColorEmoji', 'Segoe UI Emoji', 'Noto Color Emoji'],
         height: 1.0,
       ),
       // Single-line; emoji shouldn't wrap.

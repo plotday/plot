@@ -230,6 +230,15 @@ flutter:
           weight: 700
           style: italic
 
+    # Noto Emoji — monochrome line-art variable font used by EmojiText
+    # for cross-OS-consistent reaction rendering. ~300KB; the color
+    # variant (NotoColorEmoji.ttf) is ~24MB and intentionally not
+    # bundled. The font is a "variable" axis ttf; Flutter loads it as
+    # weight 400 by default which renders fine for our usage.
+    - family: NotoEmoji
+      fonts:
+        - asset: assets/fonts/noto-emoji/NotoEmoji-VariableFont_wght.ttf
+
 scripts:
   build:
     watch: flutter pub run build_runner watch
