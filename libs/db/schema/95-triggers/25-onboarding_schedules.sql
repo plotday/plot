@@ -25,7 +25,7 @@ BEGIN
 
     SELECT key INTO v_thread_key FROM public.thread WHERE id = NEW.thread_id;
 
-    IF v_thread_key IN ('welcome', 'priorities', 'connections', 'getting-around', 'invest-your-time', 'twists', 'notifications', 'clean-up') THEN
+    IF v_thread_key IN ('welcome', 'priorities', 'connections', 'getting-around', 'twists', 'notifications', 'clean-up') THEN
         -- Onboarding partitions each thread into the unified feed:
         --   active=true  — threads that ask the user to take a concrete
         --                  action (matches the keys handled by
@@ -41,7 +41,6 @@ BEGIN
             WHEN 'priorities'        THEN v_date_offset := 0; v_order := 200; v_active := TRUE;  v_to_read := FALSE; v_importance := 90;
             WHEN 'connections'       THEN v_date_offset := 0; v_order := 300; v_active := TRUE;  v_to_read := FALSE; v_importance := 85;
             WHEN 'getting-around'    THEN v_date_offset := 0; v_order := 400; v_active := FALSE; v_to_read := TRUE;  v_importance := 80;
-            WHEN 'invest-your-time'  THEN v_date_offset := 1; v_order := 50;  v_active := FALSE; v_to_read := TRUE;  v_importance := 75;
             WHEN 'twists'            THEN v_date_offset := 1; v_order := 100; v_active := TRUE;  v_to_read := FALSE; v_importance := 70;
             WHEN 'notifications'     THEN v_date_offset := 2; v_order := 100; v_active := TRUE;  v_to_read := FALSE; v_importance := 65;
             WHEN 'clean-up'          THEN v_date_offset := 3; v_order := 100; v_active := FALSE; v_to_read := TRUE;  v_importance := 60;

@@ -150,9 +150,9 @@ class OnboardingSteps {
   // Momentum, Turning Point, Breakthrough, and Climax along the way.
   static List<OnboardingStep> get all => [
     const FullScreenStep(
-      title: 'Progress on priorities',
+      title: 'Collaborate and carry on',
       body:
-          "You choose where to invest.\nPlot surfaces your work, ready for action.",
+          "Every conversation in its place.\nThe best of your day stays yours to make progress on what matters.",
       background: ThemeColor(0), // Catalyst — opener
     ),
     const FullScreenStep(
@@ -172,7 +172,7 @@ class OnboardingSteps {
     FullScreenStep(
       title: 'Connect everything else',
       body:
-          'Bring your work into Plot so when you choose a focus, you have everything you need to make progress.',
+          'Email, chat, comments, issues — bring the conversations from your other tools into Plot so you have everything you need when you choose a focus.',
       background: const ThemeColor(3), // Momentum
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
@@ -191,7 +191,7 @@ class OnboardingSteps {
     const HighlightStep(
       title: 'Your agenda',
       body:
-          "Choose where to invest your focus each day. Plot fills in your scheduled events and adds blocks for each priority with active threads. Order and schedule them to create your best day.",
+          "Choose where to invest your focus each day. Plot fills in your scheduled events and the priorities you're actively working on, then groups everything by day so you can shape your best day.",
       target: PanelTarget.agenda,
       overlay: ThemeColor(5), // Breakthrough
       // Multi-panel: agenda sits at the top of the left panel, so anchor the
@@ -200,19 +200,20 @@ class OnboardingSteps {
       multiPanelAlignment: MultiPanelContentAlignment.top,
     ),
     const HighlightStep(
-      title: 'Your activity',
+      title: 'Your activity feed',
       body:
-          "Find everything you've done recently. Catch up on new activity from "
-          "others, whether they're working in Plot or in any of your connected apps.",
+          "What you're doing (new updates at the top), what's scheduled, and "
+          "recent activity — all in one feed. Catch up across every connected "
+          "app without losing your place.",
       target: PanelTarget.feed,
       overlay: ThemeColor(6), // Climax
     ),
     const HighlightStep(
       title: 'Everything is a thread',
       body:
-          'Anything you work on — messages, documents, events — is a thread with notes, so you can capture what you need to jump back in (including tasks for you and others). '
-          'Threads are shared automatically with everyone on the underlying item (e.g. event attendees), '
-          'and many connectors sync notes both ways (e.g. a note on a Linear thread posts a comment back to Linear).',
+          'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
+          'Threads are shared automatically with everyone on the underlying item, '
+          'and many connectors sync notes both ways (a note on a Linear thread posts a comment back to Linear).',
       target: NamedThreadTarget(
         priorityTitle: 'Using Plot',
         threadTitle: 'Everything in its place',
@@ -223,11 +224,11 @@ class OnboardingSteps {
       multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     FullScreenStep(
-      title: 'Ready for action',
+      title: 'Carry on',
       body:
-          "You're all set with your initial priorities and work. Start simple — focus on one or two areas you most want to invest in."
+          "You're set up with your initial priorities and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"
-          "If you have questions or need help, start a thread in the Using Plot priority.",
+          "Questions or stuck on something? Reply on the welcome thread in Using Plot — we read every one.",
       background: const ThemeColor(0), // Catalyst — bookend the opener
       contentBuilder: _buildClosingQuote,
     ),
