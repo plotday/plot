@@ -1486,23 +1486,30 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
         RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
       ),
     );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Invisible mirror on the left reserves the button's width so
-        // the centred tile text sits at the row's true horizontal
-        // midpoint. Using the same widget on both sides keeps the
-        // reserved widths identical down to anti-aliasing.
-        Visibility(
-          visible: false,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: button,
-        ),
-        Expanded(child: tile),
-        button,
-      ],
+    // AgendaTile paints its own `headerBackground` band but only across
+    // its own width — the mirror and button sit outside that band and
+    // would let the page background show through. Paint the same colour
+    // on the outer row so the tinted band runs edge to edge.
+    return ColoredBox(
+      color: context.colour.headerBackground,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Invisible mirror on the left reserves the button's width so
+          // the centred tile text sits at the row's true horizontal
+          // midpoint. Using the same widget on both sides keeps the
+          // reserved widths identical down to anti-aliasing.
+          Visibility(
+            visible: false,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: button,
+          ),
+          Expanded(child: tile),
+          button,
+        ],
+      ),
     );
   }
 }
