@@ -648,6 +648,50 @@ export async function createNote(
       }
     }
 
+    // Add reactions if provided. Parallel to tags above but keyed by
+    // emoji string (Unicode grapheme or `provider:workspace/name` ref).
+    if (note.reactions) {
+      const reactionInserts: Array<{
+        note_id: string;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(note.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            note_id: dbResult.id,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("note_reaction")
+          .values(reactionInserts)
+          .onConflict((oc) =>
+            oc
+              .columns(["actor_id", "note_id", "emoji"])
+              .doUpdateSet((eb) => ({
+                archived_at: null,
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+              }))
+          )
+          .execute();
+      }
+    }
+
     // Notify sync DOs since triggers skip HTTP calls for twist writes
     if (!skipNotify) {
       await plot.notifySyncDOs(new Set([priorityId]));
@@ -1052,6 +1096,48 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 
       if (newTags.length > 0) {
         await plot.db.insertInto("note_tag").values(newTags).execute();
+      }
+    }
+
+    // Handle reactions if provided. Mirrors the tag block above: passing
+    // `reactions` declares the full reaction state, so clear and replace.
+    // Connectors syncing platform reactions must pass the complete
+    // current reactor set per emoji.
+    if (note.reactions !== undefined) {
+      await plot.db
+        .deleteFrom("note_reaction")
+        .where("note_id", "=", noteId)
+        .execute();
+
+      const reactionInserts: Array<{
+        note_id: string;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(note.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            note_id: noteId,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("note_reaction")
+          .values(reactionInserts)
+          .execute();
       }
     }
 

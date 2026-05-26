@@ -26,6 +26,7 @@ import {
   handleDbOperationError,
   markThreadReadForAuthor,
   prepareThreadForDb,
+  processNewActorArray,
   processTagsActors,
   ThreadFilingSkippedError,
   type PreparedThread,
@@ -303,6 +304,54 @@ export async function createThread(
             oc
               .columns(["actor_id", "thread_id", "occurrence", "tag_id"])
               .doUpdateSet((eb) => ({
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+              }))
+          )
+          .execute();
+      }
+    }
+
+    // Add reactions if provided. Parallel to the tag block above but
+    // keyed by emoji string (Unicode grapheme or
+    // `provider:workspace/name` custom-emoji ref). Series-level
+    // reactions on regular threads have occurrence = null.
+    if (activity.reactions) {
+      const reactionInserts: Array<{
+        thread_id: string;
+        occurrence: string | null;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(activity.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            thread_id: dbResult.id,
+            occurrence: null,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("thread_reaction")
+          .values(reactionInserts)
+          .onConflict((oc) =>
+            oc
+              .columns(["actor_id", "thread_id", "occurrence", "emoji"])
+              .doUpdateSet((eb) => ({
+                archived_at: null,
                 updated_by: eb.ref("excluded.updated_by"),
                 sync_depth: eb.ref("excluded.sync_depth"),
               }))
@@ -735,6 +784,61 @@ export async function updateThread(
                 sync_depth: eb.ref("excluded.sync_depth"),
               }))
           )
+          .execute();
+      }
+    }
+
+    // Handle reactions if provided. Mirrors the tag block above: passing
+    // `reactions` declares the full reaction state, so clear and replace.
+    // Resolves priority for the connector locally — the tag branch's
+    // priorityId is scoped inside its own `if`.
+    if (activity.reactions !== undefined) {
+      const userId = await plot.getUserId();
+      const tpRow = await plot.db
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", activityId)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+      const reactionPriorityId =
+        tpRow?.priority_id ?? (await plot.getRootPriorityId(userId));
+
+      await plot.db
+        .deleteFrom("thread_reaction")
+        .where("thread_id", "=", activityId)
+        .where("occurrence", "is", null)
+        .execute();
+
+      const reactionInserts: Array<{
+        thread_id: string;
+        occurrence: string | null;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(activity.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          reactionPriorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            thread_id: activityId,
+            occurrence: null,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("thread_reaction")
+          .values(reactionInserts)
           .execute();
       }
     }
