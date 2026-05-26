@@ -28,8 +28,10 @@ class PickedPriorityChoice implements PriorityChoice {
   String get label => priority.title;
 }
 
-/// Compose-surface priority field. Reads the resolved priority (or "Auto"),
-/// opens a focus-driven dropdown on desktop, or the touch modal on tap.
+/// Compose-surface priority field. Renders as a ghost text field: shows
+/// the selected priority (or "Auto") when unfocused, and a borderless
+/// filter input + popover dropdown when focused. Selection commits and
+/// blurs the field.
 class PriorityComposeField extends StatefulWidget {
   const PriorityComposeField({
     super.key,
@@ -63,44 +65,66 @@ class PriorityComposeField extends StatefulWidget {
 class _PriorityComposeFieldState extends State<PriorityComposeField> {
   final DropdownController _dropdown = DropdownController();
   final FocusNode _focusNode = FocusNode();
+  final TextEditingController _controller = TextEditingController();
   final GlobalKey<ComposeDropdownState<PriorityChoice>> _dropdownKey =
       GlobalKey<ComposeDropdownState<PriorityChoice>>();
+  List<Priority> _allPriorities = const [];
   List<PriorityChoice> _candidates = const [];
 
   @override
   void initState() {
     super.initState();
     _focusNode.addListener(_handleFocusChange);
+    _controller.addListener(_refreshCandidates);
+    _loadPriorities();
   }
 
   @override
   void dispose() {
     _focusNode.removeListener(_handleFocusChange);
+    _controller.removeListener(_refreshCandidates);
     _focusNode.dispose();
+    _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPriorities() async {
+    final all = await Priority.get(order: PriorityOrder.nested);
+    if (!mounted) return;
+    setState(() {
+      _allPriorities = all;
+      _refreshCandidates();
+    });
+  }
+
+  void _refreshCandidates() {
+    final query = _controller.text.trim().toLowerCase();
+    final next = <PriorityChoice>[];
+    if (!widget.isAuto && (query.isEmpty || 'auto'.contains(query))) {
+      next.add(const AutoOrganizeChoice());
+    }
+    for (final p in _allPriorities) {
+      if (query.isEmpty || p.matchesSearch(_controller.text)) {
+        next.add(PickedPriorityChoice(p));
+      }
+    }
+    setState(() => _candidates = next);
   }
 
   void _handleFocusChange() {
     if (_focusNode.hasFocus && hasPhysicalKeyboard()) {
-      _loadCandidates();
+      _refreshCandidates();
       _dropdown.show();
     } else {
       _dropdown.hide();
+      // Reset the filter so the next focus starts from the full list.
+      if (_controller.text.isNotEmpty) _controller.clear();
     }
   }
 
-  Future<void> _loadCandidates() async {
-    final all = await Priority.get(order: PriorityOrder.nested);
-    if (!mounted) return;
-    setState(() {
-      _candidates = [
-        if (!widget.isAuto) const AutoOrganizeChoice(),
-        ...all.map(PickedPriorityChoice.new),
-      ];
-    });
-  }
-
   Future<void> _handlePicked(PriorityChoice choice) async {
+    _controller.clear();
+    _focusNode.unfocus();
     _dropdown.hide();
     if (choice is AutoOrganizeChoice) {
       await widget.onPickAuto();
@@ -128,14 +152,16 @@ class _PriorityComposeFieldState extends State<PriorityComposeField> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final fontSize = theme.typography.sm.fontSize;
-    final label = widget.isAuto
+    // Match the FTextField's md typography so the row height is the same
+    // whether the value label or the input is showing.
+    final fontSize = theme.typography.md.fontSize;
+    final valueLabel = widget.isAuto
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(PlotIcon.sparkles, size: theme.iconSizes.sm),
               const SizedBox(width: 6),
-              Text('Auto', style: theme.typography.sm),
+              const Text('Auto'),
             ],
           )
         : PriorityLabel(
@@ -143,9 +169,6 @@ class _PriorityComposeFieldState extends State<PriorityComposeField> {
             fontSize: fontSize,
           );
 
-    // Outer Focus is skipped by tab traversal and never holds focus itself —
-    // it just catches arrow/Enter events that bubble up from the descendant
-    // (Dropdown's) Focus widget. The descendant Focus owns _focusNode.
     return Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -161,7 +184,7 @@ class _PriorityComposeFieldState extends State<PriorityComposeField> {
         child: ComposeDropdown<PriorityChoice>(
           key: _dropdownKey,
           controller: _dropdown,
-          focusNode: _focusNode,
+          autoFocusOnShow: false,
           items: _candidates,
           itemBuilder: (context, choice, highlighted) {
             return Container(
@@ -186,9 +209,12 @@ class _PriorityComposeFieldState extends State<PriorityComposeField> {
             );
           },
           onSelected: _handlePicked,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: label,
+          child: ComposeValueInput(
+            controller: _controller,
+            focusNode: _focusNode,
+            hint: 'Select priority',
+            value: valueLabel,
+            readOnly: isTouchPlatform(),
           ),
         ),
       ),

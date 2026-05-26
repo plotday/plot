@@ -128,10 +128,20 @@ class DropdownState extends State<Dropdown> {
       child: OverlayPortal(
         controller: widget.controller,
         overlayChildBuilder: (BuildContext context) {
+          // The popover is mounted into the nearest [Overlay], whose Stack
+          // origin is the overlay's top-left in global space — NOT the
+          // screen origin. Convert the trigger's global offset to overlay-
+          // local so `Positioned` lands in the right place when the
+          // OverlayPortal's nearest Overlay is nested (Scaffold, AutoRouter,
+          // etc.). Without this the popover lands offscreen.
+          final overlayBox =
+              Overlay.of(context).context.findRenderObject() as RenderBox?;
+          final localOffset =
+              overlayBox?.globalToLocal(_childOffset) ?? _childOffset;
           return Positioned(
             // Sit just below the trigger so the trigger stays visible.
-            top: _childOffset.dy + _childSize.height,
-            left: _childOffset.dx,
+            top: localOffset.dy + _childSize.height,
+            left: localOffset.dx,
             width: _childSize.width,
             child: TapRegion(
               onTapOutside: (tap) {
