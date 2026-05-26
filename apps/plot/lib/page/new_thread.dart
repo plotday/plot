@@ -17,6 +17,7 @@ import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
@@ -820,48 +821,37 @@ class NewThreadPageState extends State<NewThreadPage> {
     final activeChoice = _resolveActiveConnectionChoice(state);
     final connectionCandidates = _rankConnectionChoices();
 
-    // The field stack lives in a single container with the editable
-    // background and a single bottom border separating it from the note
-    // body. No dividers between fields.
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.theme.plotColors.editableBackground,
-        border: Border(
-          bottom: BorderSide(color: context.theme.colors.border),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PriorityComposeField(
+          currentPriority: state.draft.priority,
+          isAuto: isAuto,
+          onPickAuto: _switchToAuto,
+          onPickPriority: _switchToPriority,
+          openTouchModal: () => _selectPriority(context, state),
         ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PriorityComposeField(
-            currentPriority: state.draft.priority,
-            isAuto: isAuto,
-            onPickAuto: _switchToAuto,
-            onPickPriority: _switchToPriority,
-            openTouchModal: () => _selectPriority(context, state),
-          ),
-          ConnectionComposeField(
-            activeChoice: activeChoice,
-            candidates: connectionCandidates,
-            onPicked: _applyConnectionChoice,
-            openTouchModal: _openConnectionPicker,
-          ),
-          ContactsComposeField(
-            chips: _resolveContactChips(state),
-            loadCandidates: _loadContactCandidates,
-            onAdd: _applyContactCandidate,
-            onRemove: _removeContactChip,
-            openTouchModal: () => _openSharedPicker(context),
-          ),
-          TitleComposeField(
-            key: _titleFieldKey,
-            title: state.draft.title,
-            onChanged: _updateTitle,
-            onTabForward: () => _threadEditorKey.currentState?.focus(),
-          ),
-        ],
-      ),
+        ConnectionComposeField(
+          activeChoice: activeChoice,
+          candidates: connectionCandidates,
+          onPicked: _applyConnectionChoice,
+          openTouchModal: _openConnectionPicker,
+        ),
+        ContactsComposeField(
+          chips: _resolveContactChips(state),
+          loadCandidates: _loadContactCandidates,
+          onAdd: _applyContactCandidate,
+          onRemove: _removeContactChip,
+          openTouchModal: () => _openSharedPicker(context),
+        ),
+        TitleComposeField(
+          key: _titleFieldKey,
+          title: state.draft.title,
+          onChanged: _updateTitle,
+          onTabForward: () => _threadEditorKey.currentState?.focus(),
+        ),
+      ],
     );
   }
 
@@ -952,20 +942,22 @@ class NewThreadPageState extends State<NewThreadPage> {
                             padding: EdgeInsets.symmetric(
                               horizontal: context.contentPaddingH,
                             ),
-                            child: EditableArea(
-                              padding: false,
-                              position: EditableAreaPosition.bottom,
-                              flushToBottom: true,
-                              builder: (context, _) => FocusTraversalGroup(
-                                policy: WidgetOrderTraversalPolicy(),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (!isViewerMode)
-                                      _buildComposeSurface(context, state),
-                                    Flexible(
-                                      child: Focus(
+                            child: FocusTraversalGroup(
+                              policy: WidgetOrderTraversalPolicy(),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!isViewerMode)
+                                    _buildComposeSurface(context, state),
+                                  if (!isViewerMode)
+                                    SizedBox(height: context.theme.spacing.md),
+                                  Flexible(
+                                    child: EditableArea(
+                                      padding: false,
+                                      position: EditableAreaPosition.bottom,
+                                      flushToBottom: true,
+                                      builder: (context, _) => Focus(
                                         canRequestFocus: false,
                                         skipTraversal: true,
                                         onKeyEvent: _handleEditorShiftTab,
@@ -994,8 +986,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -1018,22 +1010,24 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   constraints: BoxConstraints(
                                     maxHeight: constraints.maxHeight * 0.6,
                                   ),
-                                  child: EditableArea(
-                                    padding: false,
-                                    position: EditableAreaPosition.bottom,
-                                    flushToBottom: false,
-                                    builder: (context, _) => FocusTraversalGroup(
-                                      policy: WidgetOrderTraversalPolicy(),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (!isViewerMode)
-                                            _buildComposeSurface(
-                                              context,
-                                              state,
-                                            ),
-                                          Flexible(
-                                            child: Focus(
+                                  child: FocusTraversalGroup(
+                                    policy: WidgetOrderTraversalPolicy(),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (!isViewerMode)
+                                          _buildComposeSurface(context, state),
+                                        if (!isViewerMode)
+                                          SizedBox(
+                                            height: context.theme.spacing.md,
+                                          ),
+                                        Flexible(
+                                          child: EditableArea(
+                                            padding: false,
+                                            position:
+                                                EditableAreaPosition.bottom,
+                                            flushToBottom: false,
+                                            builder: (context, _) => Focus(
                                               canRequestFocus: false,
                                               skipTraversal: true,
                                               onKeyEvent:
@@ -1073,8 +1067,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
