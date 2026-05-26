@@ -451,7 +451,11 @@ export function extractUserId(provider: AuthProvider, providerData: ProviderData
       return (providerData as GitHubProviderData | LinearProviderData | AirtableProviderData).userId ?? null;
     case "slack":
       return (providerData as SlackProviderData).authed_user?.id ?? null;
-    case "linkedin":
+    // LinkedIn is referenced as a string here because upstream twister
+    // removed `AuthProvider.LinkedIn` along with the OSS LinkedIn
+    // connector. The private LinkedIn connector still stores
+    // `"linkedin"` as the provider value.
+    case "linkedin" as AuthProvider:
       return (providerData as HostedAccountProviderData).userId ?? null;
     default:
       return null;
@@ -621,14 +625,18 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     parseTokenResponse: parseAirtableTokenResponse,
     extractAccountLabel: (d) => (d as AirtableProviderData).email || null,
   },
-  linkedin: {
+  // Cast to `AuthProvider` because upstream twister removed
+  // `AuthProvider.LinkedIn` along with the OSS LinkedIn-messaging
+  // connector. The private LinkedIn connector stores `"linkedin"` and
+  // needs this config entry to keep working.
+  ["linkedin" as AuthProvider]: {
     name: "LinkedIn",
     authMode: "hosted",
     // parseTokenResponse is unused for hosted-auth providers; the webhook
     // handler builds HostedAccountProviderData directly from Unipile responses.
-    extractAccountLabel: (d) => {
+    extractAccountLabel: (d: unknown) => {
       const hosted = d as HostedAccountProviderData;
       return hosted.fullName || hosted.email || null;
     },
-  },
+  } as ProviderConfig,
 };

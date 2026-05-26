@@ -115,7 +115,12 @@ export async function addContacts(
     return actor;
   });
 
-  // Store external account mappings for email contacts
+  // Store external account mappings for email contacts. The
+  // `contact_external_account` row is scoped to the dispatching twist
+  // instance — provider is derived from it, not from the caller. The
+  // legacy `source.provider` field (if any) is ignored.
+  const twistInstanceId = plot.twistInstanceId;
+  const provider = plot.sourceProvider?.provider;
   const externalAccounts = normalizedContacts
     .filter((c) => c.source)
     .map((c) => {
@@ -123,31 +128,30 @@ export async function addContacts(
       return actor
         ? {
             contact_id: actor.id,
-            provider: c.source!.provider,
             account_id: c.source!.accountId,
           }
         : null;
     })
     .filter(Boolean) as Array<{
     contact_id: string;
-    provider: string;
     account_id: string;
   }>;
 
-  if (externalAccounts.length > 0) {
+  if (externalAccounts.length > 0 && provider) {
     try {
       await plot.db
         .insertInto("contact_external_account")
         .values(
           externalAccounts.map((ea) => ({
             contact_id: ea.contact_id,
-            provider: ea.provider,
+            twist_instance_id: twistInstanceId,
+            provider,
             account_id: ea.account_id,
             data_fetched_at: new Date().toISOString(),
           }))
         )
         .onConflict((oc) =>
-          oc.columns(["provider", "account_id"]).doUpdateSet((eb) => ({
+          oc.columns(["twist_instance_id", "account_id"]).doUpdateSet((eb) => ({
             contact_id: eb.ref("excluded.contact_id"),
             data_fetched_at: eb.ref("excluded.data_fetched_at"),
           }))
@@ -159,14 +163,18 @@ export async function addContacts(
         ceaError instanceof Error ? ceaError : new Error(String(ceaError))
       );
     }
-
-    // Email merge: the ON CONFLICT clause above already handles the case where
-    // a contact_external_account mapping previously pointed to a different (email-less)
-    // contact — it updates the mapping to point to the email-matched contact.
   }
 
   // --- Process source-only contacts (no email, has provider ID) ---
+  // Source-only contacts require both the active connector's provider and
+  // its twist_instance_id so `contact_external_account` rows are scoped to
+  // the originating connection (one Slack workspace, one Gmail account,
+  // etc.). Skip the source-only branch entirely if either is missing —
+  // contact deduplication is per-connection.
   const sourceActors: Actor[] = [];
+  if (!provider) {
+    return [...emailActors, ...sourceActors];
+  }
 
   for (const contact of sourceOnlyContacts) {
     const source = contact.source!;
@@ -175,7 +183,7 @@ export async function addContacts(
       const existingMapping = await plot.db
         .selectFrom("contact_external_account")
         .select("contact_id")
-        .where("provider", "=", source.provider)
+        .where("twist_instance_id", "=", twistInstanceId)
         .where("account_id", "=", source.accountId)
         .executeTakeFirst();
 
@@ -244,7 +252,8 @@ export async function addContacts(
               .insertInto("contact_external_account")
               .values({
                 contact_id: newContact.id,
-                provider: source.provider,
+                twist_instance_id: twistInstanceId,
+                provider,
                 account_id: source.accountId,
                 data_fetched_at: new Date().toISOString(),
               })
@@ -273,7 +282,7 @@ export async function addContacts(
           const winnerMapping = await plot.db
             .selectFrom("contact_external_account")
             .select("contact_id")
-            .where("provider", "=", source.provider)
+            .where("twist_instance_id", "=", twistInstanceId)
             .where("account_id", "=", source.accountId)
             .executeTakeFirst();
 

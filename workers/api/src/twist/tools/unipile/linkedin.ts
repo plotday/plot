@@ -194,6 +194,21 @@ export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
     });
   }
 
+  async startChat(params: {
+    channelId: string;
+    recipientIds: string[];
+    text: string;
+  }): Promise<{ chatId: string; message: LinkedInMessage }> {
+    await this.assertAccount(params.channelId);
+    const raw = await this.client.startChat({
+      accountId: params.channelId,
+      attendeeProviderIds: params.recipientIds,
+      text: params.text,
+    });
+    const message = normalizeMessage(raw);
+    return { chatId: message.chatId, message };
+  }
+
   /**
    * Look up the stored token for the channel's account so call sites have
    * a single rejection point when the connection is missing or revoked.

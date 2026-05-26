@@ -358,7 +358,7 @@ class PlanUserAction extends UserAction {
 class CreateLinkUserAction extends UserAction {
   const CreateLinkUserAction({
     required this.twistInstanceId,
-    required this.channelId,
+    this.channelId,
     required this.linkType,
     required this.status,
     required this.connectorName,
@@ -367,10 +367,13 @@ class CreateLinkUserAction extends UserAction {
     this.accountName,
     this.logo,
     this.logoDark,
+    this.dmTargets = 'channels',
   }) : super(type: UserActionType.createLink);
 
   final String twistInstanceId;
-  final String channelId;
+  /// Null for connection-scoped link types (`dmTargets` is `"contacts"` or
+  /// `"addresses"`), where the picker shows one chip per connection.
+  final String? channelId;
   final String linkType;
   final String status;
   /// Connector brand name (e.g. "Linear"), stripped of any " (account)"
@@ -378,8 +381,8 @@ class CreateLinkUserAction extends UserAction {
   final String connectorName;
   /// Human-readable link type label (e.g. "Issue"). Lowercased at render.
   final String linkTypeLabel;
-  /// Channel title (e.g. the Linear team name "Plot", or "My Tasks" for
-  /// Google Tasks).
+  /// Channel title (e.g. the Linear team name "Plot"), or the connection
+  /// display name for connection-scoped targets (e.g. "Slack: Acme Workspace").
   final String channelName;
   /// The account portion parsed out of the twist instance name (e.g. "Kris
   /// Braun" from "Linear (Kris Braun)"). Null when the twist has no account
@@ -387,6 +390,12 @@ class CreateLinkUserAction extends UserAction {
   final String? accountName;
   final String? logo;
   final String? logoDark;
+  /// Picker mode for this target — mirrors [LinkTypeConfig.targets]:
+  /// `"channels"` (default), `"contacts"`, or `"addresses"`.
+  final String dmTargets;
+
+  bool get isDmType => dmTargets == 'contacts' || dmTargets == 'addresses';
+  bool get isAddressesType => dmTargets == 'addresses';
 
   /// Display for both the picker row and the note-editor attachment row.
   ///
@@ -428,13 +437,14 @@ class CreateLinkUserAction extends UserAction {
       accountName: accountName,
       logo: logo,
       logoDark: logoDark,
+      dmTargets: dmTargets,
     );
   }
 
   factory CreateLinkUserAction.fromJson(Map<String, dynamic> json) {
     return CreateLinkUserAction(
       twistInstanceId: json['twistInstanceId'] as String,
-      channelId: json['channelId'] as String,
+      channelId: json['channelId'] as String?,
       linkType: json['linkType'] as String,
       status: json['status'] as String,
       connectorName: json['connectorName'] as String,
@@ -443,6 +453,7 @@ class CreateLinkUserAction extends UserAction {
       accountName: json['accountName'] as String?,
       logo: json['logo'] as String?,
       logoDark: json['logoDark'] as String?,
+      dmTargets: json['dmTargets'] as String? ?? 'channels',
     );
   }
 
@@ -451,7 +462,7 @@ class CreateLinkUserAction extends UserAction {
     return {
       'type': type.name,
       'twistInstanceId': twistInstanceId,
-      'channelId': channelId,
+      if (channelId != null) 'channelId': channelId,
       'linkType': linkType,
       'status': status,
       'connectorName': connectorName,
@@ -460,6 +471,7 @@ class CreateLinkUserAction extends UserAction {
       if (accountName != null) 'accountName': accountName,
       if (logo != null) 'logo': logo,
       if (logoDark != null) 'logoDark': logoDark,
+      if (dmTargets != 'channels') 'dmTargets': dmTargets,
     };
   }
 
@@ -476,6 +488,7 @@ class CreateLinkUserAction extends UserAction {
     accountName,
     logo,
     logoDark,
+    dmTargets,
   ];
 }
 

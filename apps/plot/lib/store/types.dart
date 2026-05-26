@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:change_case/change_case.dart';
 import 'package:logging/logging.dart';
 
+import '../util/uuid.dart';
 import 'enums.dart';
 
 final _serializerLog = Logger('plot.serializer');
@@ -94,6 +95,89 @@ class CustomSerializer extends ValueSerializer {
   }
 }
 
+
+/// A single external account mapping for a contact, scoped to one
+/// connection ([twistInstanceId]). The same Plot contact reachable through
+/// multiple connections (two Slack workspaces, Gmail + Google Chat, etc.)
+/// has multiple [ContactExternalAccount] entries. The DM picker filters by
+/// `twistInstanceId` so each connection only sees its own roster.
+///
+/// [provider] is kept for display only (the Flutter UI shows "Slack" /
+/// "Gmail" tags) and is not load-bearing for filtering.
+class ContactExternalAccount {
+  const ContactExternalAccount({
+    required this.twistInstanceId,
+    required this.accountId,
+    this.provider,
+  });
+
+  final Uuid twistInstanceId;
+  final String accountId;
+  final String? provider;
+
+  factory ContactExternalAccount.fromJson(Map<String, dynamic> json) {
+    return ContactExternalAccount(
+      twistInstanceId: Uuid.fromString(json['twist_instance_id'] as String),
+      accountId: json['account_id'] as String,
+      provider: json['provider'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'twist_instance_id': twistInstanceId.toString(),
+    'account_id': accountId,
+    if (provider != null) 'provider': provider,
+  };
+
+  @override
+  String toString() =>
+      'ContactExternalAccount($twistInstanceId, $accountId${provider == null ? '' : ', $provider'})';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContactExternalAccount &&
+      other.twistInstanceId == twistInstanceId &&
+      other.accountId == accountId;
+
+  @override
+  int get hashCode => Object.hash(twistInstanceId, accountId);
+}
+
+/// Drift converter for a list of [ContactExternalAccount] objects.
+/// Stored in SQLite as a JSON string. The sync layer sends a JSON array of
+/// {provider, account_id} objects (aggregated by the user.actor view).
+class ExternalAccountListConverter
+    extends TypeConverter<List<ContactExternalAccount>, String>
+    with JsonTypeConverter2<List<ContactExternalAccount>, String, List<dynamic>> {
+  const ExternalAccountListConverter();
+
+  @override
+  List<ContactExternalAccount> fromSql(String fromDb) {
+    if (fromDb.isEmpty || fromDb == '[]') return [];
+    final decoded = jsonDecode(fromDb);
+    if (decoded is! List) return [];
+    return decoded
+        .map((item) => ContactExternalAccount.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  String toSql(List<ContactExternalAccount> value) {
+    return jsonEncode(value.map((e) => e.toJson()).toList());
+  }
+
+  @override
+  List<ContactExternalAccount> fromJson(List<dynamic> json) {
+    return json
+        .map((item) => ContactExternalAccount.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  List<dynamic> toJson(List<ContactExternalAccount> value) {
+    return value.map((e) => e.toJson()).toList();
+  }
+}
 
 class LocalDateTimeConverter extends TypeConverter<DateTime, DateTime> {
   const LocalDateTimeConverter();

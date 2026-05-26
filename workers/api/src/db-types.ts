@@ -151,6 +151,7 @@ export interface ContactExternalAccount {
   data_fetched_at: Generated<Timestamp>;
   last_reported_at: Timestamp | null;
   provider: string;
+  twist_instance_id: string;
 }
 
 export interface ContactInvitation {
@@ -174,13 +175,10 @@ export interface Cost {
 
 export interface Device {
   app_version: string | null;
-  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
-  device_id: string | null;
   id: Generated<string>;
-  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string | null;
+  push_token: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -437,23 +435,6 @@ export interface LinkX {
   type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-}
-
-export interface LocalSyncLease {
-  attempt_id: string;
-  capability: string;
-  created_at: Generated<Timestamp>;
-  device_id: string;
-  fail_streak: Generated<number>;
-  last_completed_at: Timestamp | null;
-  last_error: string | null;
-  last_heartbeat_at: Timestamp;
-  last_result: string | null;
-  lease_token: string;
-  leased_until: Timestamp;
-  next_eligible_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
 }
 
 export interface Note {
@@ -752,7 +733,6 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
-  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -868,7 +848,6 @@ export interface ThreadX {
   merged_into_thread_id: string | null;
   pending_contacts: string[] | null;
   preview: string | null;
-  private_to_creator: boolean | null;
   seq: string | null;
   sync_depth: number | null;
   title: string | null;
@@ -1708,7 +1687,6 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
-  local_sync_lease: LocalSyncLease;
   note: Note;
   note_tag: NoteTag;
   note_tags: NoteTags;

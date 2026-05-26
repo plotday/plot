@@ -170,6 +170,34 @@ export class UnipileClient {
     );
   }
 
+  /**
+   * Start a new LinkedIn DM with one or more recipients and send the first
+   * message. Unipile's `POST /messages` endpoint creates the chat if one
+   * does not already exist; for 1:1 conversations it reuses the existing
+   * thread.
+   *
+   * @param accountId - Unipile account id for the sender.
+   * @param attendeeProviderIds - LinkedIn `provider_id` values for each
+   *   recipient (the `provider_id` field on `UnipileAttendee`). Pass one for
+   *   1:1, two or more for group.
+   * @param text - Plain-text message body.
+   */
+  startChat(input: {
+    accountId: string;
+    attendeeProviderIds: string[];
+    text: string;
+  }): Promise<UnipileMessage> {
+    // TODO: Endpoint and body shape are unverified against Unipile docs.
+    // If the endpoint differs (e.g. POST /chats with a participants array, or a
+    // LinkedIn-specific path), this will fail at runtime with a 404/422.
+    // Requires a local end-to-end test against a real Unipile account before shipping.
+    return this.post<UnipileMessage>("/messages", {
+      account_id: input.accountId,
+      attendees_ids: input.attendeeProviderIds,
+      text: input.text,
+    });
+  }
+
   async setChatRead(input: { chatId: string; read: boolean }): Promise<void> {
     await this.request(`/chats/${encodeURIComponent(input.chatId)}`, {
       method: "PATCH",

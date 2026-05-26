@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 339;
+  int get schemaVersion => 340;
 
   @override
   MigrationStrategy get migration {
@@ -3583,8 +3583,6 @@ class Store extends _$Store {
       await _safeAddColumn(m, threads, threads.active);
       await _safeAddColumn(m, threads, threads.task);
       await _safeAddColumn(m, threads, threads.toRead);
-      // Backfill from the legacy action_type column. SQLite SET clauses
-      // here are independent — boolean stored as 0/1.
       await _safeCustomStatement(
         m,
         "UPDATE threads SET active = 1 "
@@ -3594,12 +3592,33 @@ class Store extends _$Store {
         m,
         "UPDATE threads SET to_read = 1 WHERE action_type = 'read'",
       );
-      // Drop the legacy column. alterTable rebuilds the table keeping only
-      // current Drift columns.
       await m.alterTable(TableMigration(threads));
-      // Reset the threads cursor so we re-pull with the new view shape.
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'threads'",
+      );
+
+      // Add external_accounts column to actors. The server's user.actor
+      // view aggregates contact_external_account rows as a JSON array so
+      // the DM picker can filter contacts by reachable messaging platform
+      // without a network call. Resetting the actors cursor re-pulls every
+      // row with the new column populated.
+      await _safeAddColumn(m, actors, actors.externalAccounts);
+      await m.database.customStatement(
+        "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
+      );
+    }
+    if (from < 340) {
+      // external_accounts JSON shape changed: each entry now keys on
+      // `twist_instance_id` instead of just `provider`, so a Plot contact
+      // reachable through multiple connections (two Slack workspaces,
+      // Gmail + Google Chat sharing one Google account) has one entry per
+      // connection. Existing local JSON is for the old shape — drop it and
+      // re-pull from the server so every row arrives in the new shape.
+      await m.database.customStatement(
+        "UPDATE actors SET external_accounts = '[]'",
+      );
+      await m.database.customStatement(
+        "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
     }
   }

@@ -10,7 +10,7 @@ import 'package:plot/widget/widget.dart';
 class CreateTarget {
   CreateTarget({
     required this.twist,
-    required this.channel,
+    this.channel,
     required this.linkType,
     required this.defaultStatus,
   })  : connectorName =
@@ -19,40 +19,71 @@ class CreateTarget {
             CreateLinkUserAction.parseTwistName(twist.name).accountName;
 
   final TwistInstance twist;
-  final Channel channel;
+  /// Null for connection-scoped link types (`linkType.targets` is
+  /// `"contacts"` or `"addresses"`), where the picker shows one chip per
+  /// connection rather than per channel.
+  final Channel? channel;
   final LinkTypeConfig linkType;
   final LinkStatus defaultStatus;
   final String connectorName;
   final String? accountName;
 
+  /// True for link types that emit a single chip per connection
+  /// (`"contacts"` for closed-roster DMs, `"addresses"` for open address
+  /// spaces like Gmail) — i.e. anything that isn't channel-targeted.
+  bool get isDmType =>
+      linkType.targets == 'contacts' || linkType.targets == 'addresses';
+
   /// Stable identity for MRU keying and de-duping.
-  String get key => '${twist.id}|${channel.channelId}|${linkType.type}';
+  String get key => isDmType
+      ? '${twist.id}||${linkType.type}'
+      : '${twist.id}|${channel!.channelId}|${linkType.type}';
 
   String get title =>
       'Create new $connectorName ${linkType.label.toLowerCase()}';
 
-  String get subtitle =>
-      accountName == null ? channel.title : '${channel.title} ($accountName)';
+  /// For channel-type targets: "{channel}" or "{channel} ({account})".
+  /// For DM-type targets: the connection display name, e.g. "Slack: Acme Workspace".
+  String get subtitle {
+    if (isDmType) {
+      final label = accountName ?? twist.name;
+      return '$connectorName: $label';
+    }
+    final ch = channel!;
+    return accountName == null ? ch.title : '${ch.title} ($accountName)';
+  }
 
-  String get searchText =>
-      '$connectorName ${linkType.label} ${channel.title} ${accountName ?? ''}'
-          .toLowerCase();
+  String get searchText {
+    if (isDmType) {
+      return '$connectorName ${linkType.label} ${accountName ?? ''}'.toLowerCase();
+    }
+    return '$connectorName ${linkType.label} ${channel!.title} ${accountName ?? ''}'
+        .toLowerCase();
+  }
 
-  /// Short label for chip text: "Gmail · thread".
-  String get chipLabel =>
-      '$connectorName · ${linkType.label.toLowerCase()}';
+  /// Short label for chip text.
+  /// - Channel-type: "Gmail · thread"
+  /// - DM-type: "Slack: Acme Workspace · DM" (connection display name)
+  String get chipLabel {
+    if (isDmType) {
+      final label = accountName ?? connectorName;
+      return '$connectorName: $label · ${linkType.label.toLowerCase()}';
+    }
+    return '$connectorName · ${linkType.label.toLowerCase()}';
+  }
 
   CreateLinkUserAction toUserAction() => CreateLinkUserAction(
         twistInstanceId: twist.id.toString(),
-        channelId: channel.channelId,
+        channelId: isDmType ? null : channel!.channelId,
         linkType: linkType.type,
         status: defaultStatus.status,
         connectorName: connectorName,
         linkTypeLabel: linkType.label,
-        channelName: channel.title,
+        channelName: isDmType ? subtitle : channel!.title,
         accountName: accountName,
         logo: linkType.logo,
         logoDark: linkType.logoDark,
+        dmTargets: linkType.targets,
       );
 }
 
@@ -67,9 +98,20 @@ class CreateTarget {
 /// connector's `onCreateLink` must accept the resulting status id
 /// (Linear, for example, resolves a category like "unstarted" to a
 /// team-specific state UUID).
+///
+/// For link types with `targets: "contacts"` (DM-type), one [CreateTarget]
+/// is emitted per twist instance (connection/workspace) instead of per
+/// channel. This ensures the connection chip shows a single entry for the
+/// account (e.g. "Slack: Acme Workspace") from which the user selects
+/// individual recipients.
 Future<List<CreateTarget>> loadCreateTargets() async {
   final channels = await Channel.getAllEnabled();
   final result = <CreateTarget>[];
+  // Tracks which (twistId, linkTypeType) pairs have already been emitted as
+  // DM-type targets so we emit exactly one per twist instance, not one per
+  // enabled channel on that instance.
+  final emittedDmKeys = <String>{};
+
   for (final channel in channels) {
     final twist = TwistInstance.fromCache(channel.twistInstanceId);
     if (twist == null) continue;
@@ -91,12 +133,28 @@ Future<List<CreateTarget>> loadCreateTargets() async {
             .firstOrNull;
       }
       if (defaultStatus == null) continue;
-      result.add(CreateTarget(
-        twist: twist,
-        channel: channel,
-        linkType: linkType,
-        defaultStatus: defaultStatus,
-      ));
+
+      if (linkType.targets == 'contacts' || linkType.targets == 'addresses') {
+        // Connection-scoped: emit one target per twist instance (connection),
+        // not per channel. The recipient picker filters / accepts inputs
+        // per the linkType.targets mode.
+        final dmKey = '${twist.id}|${linkType.type}';
+        if (!emittedDmKeys.add(dmKey)) continue;
+        result.add(CreateTarget(
+          twist: twist,
+          channel: null,
+          linkType: linkType,
+          defaultStatus: defaultStatus,
+        ));
+      } else {
+        // Channel-type: existing per-channel enumeration.
+        result.add(CreateTarget(
+          twist: twist,
+          channel: channel,
+          linkType: linkType,
+          defaultStatus: defaultStatus,
+        ));
+      }
     }
   }
   return result;

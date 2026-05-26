@@ -820,6 +820,7 @@ threads.post("/sync/threads", async (c) => {
       : [];
     const dispatchTitle = threadData.title as string;
     const dispatchThreadId = result.id;
+    const dispatchInviteEmails = inviteEmails.slice();
 
     c.executionCtx.waitUntil(
       (async () => {
@@ -865,6 +866,7 @@ threads.post("/sync/threads", async (c) => {
             title: dispatchTitle,
             noteContent,
             contacts,
+            inviteEmails: dispatchInviteEmails,
           };
 
           const factory = twistFactory({

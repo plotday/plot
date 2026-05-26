@@ -11,6 +11,14 @@ class LinkTypeConfig {
   final String? logoMono;
   final List<LinkStatus>? statuses;
   final bool supportsAssignee;
+  /// Selects the destination model for the "Create new…" picker.
+  ///
+  /// - `"channels"` (default): one chip per enabled channel (workspace,
+  ///   calendar, etc.). The existing behaviour for task-tracker connectors.
+  /// - `"contacts"`: one chip per connection (account), and the user picks
+  ///   recipients from their contacts. The connector's `onCreateLink` receives
+  ///   pre-resolved recipients via `CreateLinkDraft.recipients`.
+  final String targets;
 
   const LinkTypeConfig({
     required this.type,
@@ -20,6 +28,7 @@ class LinkTypeConfig {
     this.logoMono,
     this.statuses,
     this.supportsAssignee = false,
+    this.targets = 'channels',
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -36,6 +45,7 @@ class LinkTypeConfig {
           json['supportsAssignee'] as bool? ??
           json['supports_assignee'] as bool? ??
           false,
+      targets: json['targets'] as String? ?? 'channels',
     );
   }
 }

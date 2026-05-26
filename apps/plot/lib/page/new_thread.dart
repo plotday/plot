@@ -451,14 +451,25 @@ class NewThreadPageState extends State<NewThreadPage> {
         .firstOrNull;
     if (active == null) return ConnectionChoice.plotThread;
     for (final target in _allConnectionTargets) {
+      // For DM/address-mode targets `target.channel` is null and the
+      // active CreateLinkUserAction's channelId is also null — the null
+      // == null comparison via `?.channelId` handles that case.
       if (active.twistInstanceId == target.twist.id.toString() &&
-          active.channelId == target.channel.channelId &&
+          active.channelId == target.channel?.channelId &&
           active.linkType == target.linkType.type) {
         return ConnectionChoice.target(target);
       }
     }
     // Target not yet loaded — fall back so the field always has a value.
     return ConnectionChoice.plotThread;
+  }
+
+  /// The active create-link action attached to the draft note (if any).
+  /// Used by the contacts picker / submit validator to scope behavior by
+  /// `linkType.targets` mode (channels / contacts / addresses).
+  CreateLinkUserAction? get _activeCreateAction {
+    final note = _priorityBloc?.state.draftNote;
+    return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
   }
 
   List<ConnectionChoice> _rankConnectionChoices() {
@@ -521,6 +532,22 @@ class NewThreadPageState extends State<NewThreadPage> {
         .map((a) => a.toUuid())
         .toSet();
 
+    // Filter mode driven by the active CreateLinkUserAction's targets:
+    // - `"contacts"` (Slack DM, Teams DM, GChat DM): only actors with a
+    //   `contact_external_account` row for THIS connection; groups hidden;
+    //   email invites blocked (no row, no recipient).
+    // - `"addresses"` (Gmail): only actors with an email; groups hidden;
+    //   email invites still allowed.
+    // - default: full list, all candidate types.
+    final activeAction = _activeCreateAction;
+    final isContactsMode =
+        (activeAction?.isDmType ?? false) && !(activeAction?.isAddressesType ?? false);
+    final isAddressMode = activeAction?.isAddressesType ?? false;
+    final dmTwistInstanceId = isContactsMode
+        ? Uuid.fromString(activeAction!.twistInstanceId)
+        : null;
+    final hideGroups = isContactsMode || isAddressMode;
+
     final lowered = query.trim().toLowerCase();
     final candidates = <ContactCandidate>[];
     for (final c in sorted) {
@@ -530,6 +557,13 @@ class NewThreadPageState extends State<NewThreadPage> {
           if (selectedActorIds.contains(id) || selfUuids.contains(id)) {
             continue;
           }
+          if (dmTwistInstanceId != null &&
+              !actor.hasExternalAccount(dmTwistInstanceId)) {
+            continue;
+          }
+          if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
+            continue;
+          }
           if (lowered.isNotEmpty &&
               !((actor.name?.toLowerCase().contains(lowered) ?? false) ||
                   (actor.email?.toLowerCase().contains(lowered) ?? false))) {
@@ -537,6 +571,7 @@ class NewThreadPageState extends State<NewThreadPage> {
           }
           candidates.add(ActorCandidate(actor));
         case GroupShareCandidate(:final group):
+          if (hideGroups) continue;
           if (selectedGroupIds.contains(group.id)) continue;
           if (lowered.isNotEmpty &&
               !group.name.toLowerCase().contains(lowered)) {
@@ -545,7 +580,9 @@ class NewThreadPageState extends State<NewThreadPage> {
           candidates.add(GroupCandidate(group));
       }
     }
-    if (EmailParser.isEmail(query) &&
+    // Email invites: allowed except in closed-roster contacts mode.
+    if (!isContactsMode &&
+        EmailParser.isEmail(query) &&
         !selectedEmails.contains(EmailParser.normalize(query))) {
       candidates.add(InviteEmailCandidate(EmailParser.normalize(query)));
     }
@@ -607,15 +644,78 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   Future<void> _openSharedPicker(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
+    // Pass the active connection's twistInstanceId so the picker filters
+    // contacts to those reachable through THIS connection. For
+    // `targets: "addresses"` (Gmail), pass the address-mode flag instead
+    // and skip the connection filter — any contact with an email is
+    // valid, and free-form email invites are allowed.
+    final activeAction = _activeCreateAction;
+    final isDm = activeAction?.isDmType ?? false;
+    final isAddress = activeAction?.isAddressesType ?? false;
+    final dmTwistInstanceId = isDm && !isAddress
+        ? Uuid.fromString(activeAction!.twistInstanceId)
+        : null;
     await context.run(
       PickDraftThreadShared(
         thread: priorityBloc.state.draft,
+        dmTwistInstanceId: dmTwistInstanceId,
+        isAddressMode: isAddress,
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);
         },
       ),
     );
+  }
+
+  /// Returns a validation error message when submit should be blocked,
+  /// or null if submit is allowed.
+  ///
+  /// - `targets: "channels"`: no extra validation.
+  /// - `targets: "contacts"`: at least one selected contact must have a
+  ///   `contact_external_account` row for the active connection.
+  /// - `targets: "addresses"`: at least one recipient (contact with an
+  ///   email, or a free-form invite email) must be present.
+  String? _validateDmSubmit() {
+    final action = _activeCreateAction;
+    if (action == null || !action.isDmType) return null;
+
+    final bloc = _priorityBloc;
+    if (bloc == null) return null;
+    final draft = bloc.state.draft;
+
+    // Collect contacts selected on the draft (excluding self).
+    final selfUuids = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    final contactIds = draft.contacts.where((id) => !selfUuids.contains(id)).toList();
+
+    if (action.isAddressesType) {
+      final hasRecipient =
+          contactIds.any((id) {
+            final actor = Actor.fromCache(ActorId.fromUuid(id));
+            return actor?.email != null && actor!.email!.isNotEmpty;
+          }) ||
+              draft.inviteEmails.isNotEmpty;
+      if (!hasRecipient) {
+        return 'Add at least one recipient before sending.';
+      }
+      return null;
+    }
+
+    // `targets: "contacts"` — require a recipient reachable through this
+    // specific connection.
+    if (contactIds.isEmpty) {
+      return 'Add at least one recipient before sending.';
+    }
+    final twistInstanceId = Uuid.fromString(action.twistInstanceId);
+    final hasReachable = contactIds.any((id) {
+      final actor = Actor.fromCache(ActorId.fromUuid(id));
+      return actor != null && actor.hasExternalAccount(twistInstanceId);
+    });
+    if (!hasReachable) {
+      return 'None of the selected recipients are reachable via this connection. '
+          'They appear here after the workspace member sync completes.';
+    }
+    return null;
   }
 
   void _selectTwist(TwistInstance twist) {
@@ -873,6 +973,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               : _editorHint,
                                           additionalMentions: _twistMentions,
                                           onSubmitted: _onChatSubmitted,
+                                          submitValidator: _validateDmSubmit,
                                           viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,
@@ -947,6 +1048,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                 additionalMentions:
                                                     _twistMentions,
                                                 onSubmitted: _onChatSubmitted,
+                                                submitValidator:
+                                                    _validateDmSubmit,
                                                 viewerMode: isViewerMode,
                                                 selectedTwist: _selectedTwist,
                                                 onTwistSelected: _selectTwist,

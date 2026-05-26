@@ -21,6 +21,15 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   BlobColumn get linkedUserId =>
       blob().nullable().map(const UuidConverter())();
 
+  /// External messaging platform accounts mapped to this contact.
+  /// Aggregated from the server's contact_external_account table and stored
+  /// as a JSON array of {twist_instance_id, account_id, provider} objects.
+  /// Always an empty list for twist instances. Used by the DM picker to
+  /// filter contacts to those reachable via a specific connection
+  /// (twist_instance_id). `provider` is display-only.
+  TextColumn get externalAccounts =>
+      text().withDefault(const Constant('[]')).map(const ExternalAccountListConverter())();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -816,6 +825,7 @@ class Actor extends ActorRow {
         inviteable: row.inviteable,
         primary: row.primary,
         linkedUserId: row.linkedUserId,
+        externalAccounts: row.externalAccounts,
       );
 
   @override
@@ -833,6 +843,7 @@ class Actor extends ActorRow {
     bool? primary,
     Value<Uuid?> linkedUserId = const Value.absent(),
     Value<int?> pending = const Value.absent(),
+    List<ContactExternalAccount>? externalAccounts,
   }) => Actor.fromStore(
     super.copyWith(
       id: id,
@@ -848,6 +859,7 @@ class Actor extends ActorRow {
       primary: primary,
       linkedUserId: linkedUserId,
       pending: pending,
+      externalAccounts: externalAccounts,
     ),
   );
 
@@ -857,6 +869,22 @@ class Actor extends ActorRow {
       return name!;
     }
     return email ?? 'Unknown';
+  }
+
+  /// Returns true if this actor has at least one external account for the
+  /// given connection ([twistInstanceId]). Used by the DM picker to filter
+  /// contacts reachable via a specific connection (e.g. one Slack workspace).
+  bool hasExternalAccount(Uuid twistInstanceId) {
+    return externalAccounts.any((a) => a.twistInstanceId == twistInstanceId);
+  }
+
+  /// Returns all external accounts for the given connection
+  /// ([twistInstanceId]), or all accounts if [twistInstanceId] is null.
+  List<ContactExternalAccount> externalAccountsFor([Uuid? twistInstanceId]) {
+    if (twistInstanceId == null) return externalAccounts;
+    return externalAccounts
+        .where((a) => a.twistInstanceId == twistInstanceId)
+        .toList();
   }
 }
 

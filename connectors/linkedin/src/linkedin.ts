@@ -1,5 +1,6 @@
 import {
   Connector,
+  type CreateLinkDraft,
   type Link,
   type NewLinkWithNotes,
   type NoteWriteBackResult,
@@ -32,11 +33,13 @@ import {
 
 const TYPE_CONVERSATION = "conversation"; // 1:1 chats + invitations
 const TYPE_GROUP = "group";
+const TYPE_DM = "linkedin-dm"; // Plot-composed outbound DMs
 
 const STATUS_PENDING  = "pending";
 const STATUS_INBOX    = "inbox";
 const STATUS_ARCHIVED = "archived";
 const STATUS_IGNORED  = "ignored";
+const STATUS_SENT     = "sent";
 
 const PROVIDER_KEY = "linkedin";
 
@@ -61,12 +64,18 @@ const RELATIONS_PAGE_ERROR_MAX_DELAY_MS = 8 * 60 * 60 * 1000;
 const RELATIONS_REFRESH_MIN_DELAY_MS = 18 * 60 * 60 * 1000;
 const RELATIONS_REFRESH_MAX_DELAY_MS = 30 * 60 * 60 * 1000;
 
+// Private connector — references the `"linkedin"` auth provider value
+// directly via a typecast since the OSS twister removed
+// `AuthProvider.LinkedIn` along with the OSS LinkedIn-messaging connector.
+// The runtime stored value is still the string `"linkedin"`.
+const LINKEDIN_PROVIDER = "linkedin" as AuthProvider;
+
 export class LinkedIn extends Connector<LinkedIn> {
-  static readonly PROVIDER = AuthProvider.LinkedIn;
+  static readonly PROVIDER = LINKEDIN_PROVIDER;
   static readonly SCOPES: string[] = [];
   static readonly handleReplies = true;
 
-  readonly provider = AuthProvider.LinkedIn;
+  readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
   readonly singleChannel = true;
   readonly linkTypes = [
@@ -90,6 +99,18 @@ export class LinkedIn extends Connector<LinkedIn> {
       statuses: [
         { status: STATUS_INBOX,    label: "Inbox" },
         { status: STATUS_ARCHIVED, label: "Archived", done: true },
+      ],
+    },
+    {
+      // Compose a new LinkedIn DM from Plot. Opts in to Plot-initiated
+      // creation via createDefault: true on the "sent" status.
+      type: TYPE_DM,
+      label: "New message",
+      logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+      logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: STATUS_SENT, label: "Sent", createDefault: true },
       ],
     },
   ];
@@ -422,6 +443,62 @@ export class LinkedIn extends Connector<LinkedIn> {
     }
   }
 
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== TYPE_DM) return null;
+
+    // Resolve recipient ids (LinkedIn provider_id / URN) from the
+    // pre-resolved recipients list. For `targets: "contacts"` link types
+    // the runtime populates `draft.recipients` with `externalAccountId`
+    // values from `contact_external_account` rows keyed on AuthProvider.LinkedIn.
+    const recipients = draft.recipients;
+    if (!recipients || recipients.length === 0) {
+      console.error(
+        "[linkedin] onCreateLink: no recipients resolved. LinkedIn DMs require " +
+          "a recipient provider id; cannot fall back to email. Ensure contacts " +
+          "were synced via the relations backfill or message-ingest profileToContact."
+      );
+      return null;
+    }
+
+    const recipientIds = recipients.map((r) => r.externalAccountId);
+
+    // LinkedIn DMs have no subject line — only a body.
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error(
+        "[linkedin] onCreateLink: message body is empty; cannot send."
+      );
+      return null;
+    }
+
+    const channelId = draft.channelId;
+    const { chatId, message } = await this.tools.linkedin.startChat({
+      channelId,
+      recipientIds,
+      text: body,
+    });
+
+    // The returned link must have meta.chatId so that subsequent replies
+    // via onNoteCreated can find the conversation without a lookup.
+    return {
+      source: `linkedin:chat:${chatId}`,
+      sources: [`linkedin:chat:${chatId}`],
+      type: TYPE_DM,
+      status: STATUS_SENT,
+      title: draft.title,
+      created: message.sentAt,
+      channelId,
+      meta: {
+        syncProvider: PROVIDER_KEY,
+        channelId,
+        chatId,
+        isGroup: recipientIds.length > 1,
+      },
+    } satisfies NewLinkWithNotes;
+  }
+
   override async onNoteCreated(
     note: Note,
     thread: Thread
@@ -646,10 +723,7 @@ function buildNoteFromMessage(
 }
 
 function profileToContact(profile: LinkedInProfile): NewContact {
-  const source = {
-    provider: AuthProvider.LinkedIn,
-    accountId: profile.id,
-  };
+  const source = { accountId: profile.id };
   const avatar = profile.pictureUrl ?? undefined;
   if (profile.email) {
     return { email: profile.email, name: profile.fullName, avatar, source };
@@ -668,7 +742,7 @@ function profileToContact(profile: LinkedInProfile): NewContact {
 function senderFallbackContact(msg: LinkedInMessage): NewContact {
   return {
     name: msg.sentByMe ? "You" : "LinkedIn user",
-    source: { provider: AuthProvider.LinkedIn, accountId: msg.senderId },
+    source: { accountId: msg.senderId },
   };
 }
 

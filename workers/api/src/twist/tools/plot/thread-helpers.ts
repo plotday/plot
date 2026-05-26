@@ -833,21 +833,21 @@ export async function processNewActorArray(
     for (const actor of actors) {
       if (actor.email) actorByEmail.set(actor.email.toLowerCase(), actor.id);
     }
-    // For source-only contacts, query their external account mapping
+    // For source-only contacts, query their external account mapping.
+    // Rows are scoped to this connector's twist_instance_id, so account_id
+    // alone is unique within this query.
     const sourceOnlyActorIds = actors
       .filter((a) => !a.email)
       .map((a) => a.id);
     if (sourceOnlyActorIds.length > 0) {
       const mappings = await plot.db
         .selectFrom("contact_external_account")
-        .select(["contact_id", "provider", "account_id"])
+        .select(["contact_id", "account_id"])
+        .where("twist_instance_id", "=", plot.twistInstanceId)
         .where("contact_id", "in", sourceOnlyActorIds)
         .execute();
       for (const m of mappings) {
-        actorBySource.set(
-          `${m.provider}:${m.account_id}`,
-          m.contact_id as ActorId
-        );
+        actorBySource.set(m.account_id, m.contact_id as ActorId);
       }
     }
     // Map each newContact index to its created actor
@@ -856,8 +856,7 @@ export async function processNewActorArray(
       const byEmail =
         contact.email && actorByEmail.get(contact.email.toLowerCase());
       const bySource =
-        contact.source &&
-        actorBySource.get(`${contact.source.provider}:${contact.source.accountId}`);
+        contact.source && actorBySource.get(contact.source.accountId);
       const actorId = byEmail || bySource;
       if (actorId) createdActorMap.set(i, actorId);
     }

@@ -2564,10 +2564,22 @@ Future<void> _persistSharedChange(Thread thread) async {
 
 /// Share picker for draft threads on NewThreadPage (uses callback instead of
 /// direct save).
+///
+/// When [dmTwistInstanceId] is non-null, the picker is in DM-mode
+/// (`targets: "contacts"`): only contacts with a
+/// `contact_external_account` row for that connection appear, groups are
+/// hidden, and free-form email invites are blocked.
+///
+/// When [isAddressMode] is true (`targets: "addresses"`, e.g. Gmail), the
+/// picker shows every contact with an email and allows free-form email
+/// invites. Groups are still hidden — you compose to addresses, not group
+/// rosters.
 class PickDraftThreadShared extends ShowCommands {
   factory PickDraftThreadShared({
     required Thread thread,
     required Future<void> Function(Thread thread) onUpdate,
+    Uuid? dmTwistInstanceId,
+    bool isAddressMode = false,
   }) {
     // Mutable reference so commandsBuilder always sees the latest thread
     final threadRef = [thread];
@@ -2586,6 +2598,8 @@ class PickDraftThreadShared extends ShowCommands {
         onUpdate: wrappedOnUpdate,
         isDraft: true,
         candidates: candidatesCache,
+        dmTwistInstanceId: dmTwistInstanceId,
+        isAddressMode: isAddressMode,
       ),
     );
   }
@@ -2779,6 +2793,8 @@ Future<Commands> _buildSharedCommands(
   required Future<void> Function(Thread) onUpdate,
   required bool isDraft,
   required _ShareCandidatesCache candidates,
+  Uuid? dmTwistInstanceId,
+  bool isAddressMode = false,
 }) async {
   // Resolve groups filed on the thread. Groups are shown in the "Shared"
   // list so the viewer can see (and remove) the team the thread is shared
@@ -2844,7 +2860,10 @@ Future<Commands> _buildSharedCommands(
 
   return Commands(
     prompt: 'Share with contact or email',
-    emptyMessage: 'Enter an email address to invite someone',
+    emptyMessage: dmTwistInstanceId != null
+        ? 'No contacts found for this connection. '
+          'They appear here after the workspace member sync completes.'
+        : 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||
           sharedGroups.isNotEmpty ||
@@ -2863,6 +2882,8 @@ Future<Commands> _buildSharedCommands(
         excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
+        dmTwistInstanceId: dmTwistInstanceId,
+        isAddressMode: isAddressMode,
         title: 'Share with',
       ),
     ],
@@ -2873,6 +2894,14 @@ Future<Commands> _buildSharedCommands(
 /// modal, ordered by the shared MRU sort from
 /// [Actor.getSortedShareCandidates] so a recently-used group can appear
 /// beside recently-used contacts instead of pushing them out of view.
+///
+/// Three modes determined by the constructor flags:
+/// - Default: all contacts + groups; email-invite path open.
+/// - [dmTwistInstanceId] set (`"contacts"` mode): only contacts with a
+///   `contact_external_account` row for that connection; groups hidden;
+///   email-invite path closed.
+/// - [isAddressMode] true (`"addresses"` mode, e.g. Gmail): only contacts
+///   with an email; groups hidden; email-invite path open.
 class _ThreadShareSuggestionsGroup extends CommandGroup {
   _ThreadShareSuggestionsGroup({
     required this.thread,
@@ -2881,6 +2910,8 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
     required this.onUpdate,
     required this.candidates,
     required String title,
+    this.dmTwistInstanceId,
+    this.isAddressMode = false,
   }) : super(title: title);
 
   final Thread thread;
@@ -2888,6 +2919,11 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
   final Set<Uuid> excludeGroupIds;
   final Future<void> Function(Thread) onUpdate;
   final _ShareCandidatesCache candidates;
+  /// When non-null, only contacts reachable through this connection are shown.
+  final Uuid? dmTwistInstanceId;
+  /// When true (`targets: "addresses"`), show all contacts with an email,
+  /// hide groups, and allow free-form email invites.
+  final bool isAddressMode;
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -2896,19 +2932,34 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
       priority: thread.priority,
     );
     final excludedActorIds = excludeActorIds.toSet();
+    final twistInstanceId = dmTwistInstanceId;
     final commands = <Command>[];
+    final hideGroups = twistInstanceId != null || isAddressMode;
     for (final candidate in sorted) {
       switch (candidate) {
         case ActorShareCandidate(:final actor):
           if (excludedActorIds.contains(actor.id)) continue;
+          if (twistInstanceId != null &&
+              !actor.hasExternalAccount(twistInstanceId)) {
+            continue;
+          }
+          if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
+            continue;
+          }
           commands.add(ShareThreadActor(thread, actor, onUpdate: onUpdate));
         case GroupShareCandidate(:final group):
+          if (hideGroups) continue;
           if (excludeGroupIds.contains(group.id)) continue;
           commands.add(ShareThreadGroup(thread, group, onUpdate: onUpdate));
       }
     }
 
-    if (search != null && _isValidShareEmail(search)) {
+    // Email invites: allowed in default mode and in address mode (Gmail
+    // happily accepts any RFC 822 address). Closed-roster DM mode
+    // (`dmTwistInstanceId` set) blocks invites — the recipient must
+    // already exist as a contact reached through that specific connection.
+    final allowEmailInvites = twistInstanceId == null;
+    if (allowEmailInvites && search != null && _isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
       final emailExists = sorted.any(
         (c) =>
