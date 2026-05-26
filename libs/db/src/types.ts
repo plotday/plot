@@ -2507,6 +2507,7 @@ export type Database = {
           options_schema: Json | null
           permissions: Json | null
           publisher_id: number | null
+          seq: unknown
           shared: boolean
           twist_package_id: string
           updated_at: string
@@ -2530,6 +2531,7 @@ export type Database = {
           options_schema?: Json | null
           permissions?: Json | null
           publisher_id?: number | null
+          seq?: unknown
           shared?: boolean
           twist_package_id: string
           updated_at?: string
@@ -2553,6 +2555,7 @@ export type Database = {
           options_schema?: Json | null
           permissions?: Json | null
           publisher_id?: number | null
+          seq?: unknown
           shared?: boolean
           twist_package_id?: string
           updated_at?: string

@@ -13,10 +13,11 @@ SELECT
         WHERE ptc2.twist_instance_id = pt.id
           AND ptc2.user_id = pt.owner_id
     )) AS updated_at,
-    -- seq: GREATEST across twist_instance + the owner's twist_instance_connection
-    -- rows, since user.twist_connection bumps user.twist surfaces (user_connected,
-    -- needs_reauth) need to drive incremental sync of this view.
-    GREATEST(pt.seq, COALESCE(
+    -- seq: GREATEST across twist_instance, the parent twist (so redeploys
+    -- that rewrite permissions/link_types propagate to clients), and the
+    -- owner's twist_instance_connection rows (so user_connected /
+    -- needs_reauth changes drive incremental sync of this view).
+    GREATEST(pt.seq, t.seq, COALESCE(
         (SELECT MAX(ptc2.seq) FROM twist_instance_connection ptc2
          WHERE ptc2.twist_instance_id = pt.id AND ptc2.user_id = pt.owner_id),
         '0'::xid8

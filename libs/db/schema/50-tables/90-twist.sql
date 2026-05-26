@@ -30,6 +30,12 @@ CREATE TABLE "public"."twist" (
     "execution_limit" integer,
     "multiple_instances" boolean NOT NULL DEFAULT false,
     "auto_approve" boolean NOT NULL DEFAULT FALSE,
+    -- Bumped on every UPDATE by `update_seq_and_updated_at` so that changes
+    -- to `permissions` (link_types, defaults) and other twist-level metadata
+    -- propagate through `user.twist` to clients via the seq-cursor sync.
+    -- Without this, redeploys that rewrite `permissions` are invisible to
+    -- existing client caches.
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     CONSTRAINT "twist_owner_check" CHECK (
         (environment = 'personal' AND user_id IS NOT NULL AND publisher_id IS NULL)
         OR
@@ -41,6 +47,8 @@ CREATE INDEX idx_twist_publisher_id ON "public"."twist" ("publisher_id") WHERE p
 CREATE INDEX idx_twist_user_id ON "public"."twist" ("user_id") WHERE user_id IS NOT NULL;
 CREATE INDEX idx_twist_environment ON "public"."twist" ("environment");
 CREATE INDEX idx_twist_package_id ON "public"."twist" ("twist_package_id");
+
+CREATE INDEX idx_twist_seq ON "public"."twist" ("seq");
 
 -- Personal twists: one per (package, user). Each user has their own personal deployment of a package.
 CREATE UNIQUE INDEX twist_personal_package_user_unique ON "public"."twist" ("twist_package_id", "user_id")
@@ -54,7 +62,7 @@ CREATE UNIQUE INDEX twist_non_personal_package_environment_unique ON "public"."t
 CREATE TRIGGER set_twist_updated_at
     BEFORE INSERT OR UPDATE ON "public"."twist"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_twist_created_at
     BEFORE INSERT ON "public"."twist"
