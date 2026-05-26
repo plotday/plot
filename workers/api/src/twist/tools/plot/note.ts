@@ -1168,6 +1168,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},
+        reactions: {},
       };
     });
   } catch (err) {

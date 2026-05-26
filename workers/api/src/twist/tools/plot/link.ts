@@ -638,6 +638,7 @@ export async function getLinks(
       reNote: n.re_note_id ? { id: n.re_note_id as Uuid } : null,
       mentions: (n.mentions as ActorId[]) || [],
       tags: {},
+      reactions: {},
       accessContacts: (n.access_contacts as ActorId[]) ?? null,
       archived: n.archived_at !== null,
       actions: n.actions as any,

@@ -988,6 +988,7 @@ export async function getNote(
       actions: data.actions as Action[] | null,
       mentions: (data.mentions as string[])?.map((m) => m as ActorId) ?? [],
       tags: (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},
+      reactions: {},
     };
   } catch (err) {
     const logger = createLogger({ twist_instance_id: plot.twistInstanceId });

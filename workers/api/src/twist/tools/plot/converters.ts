@@ -39,6 +39,7 @@ export async function fromDbThread(
       color: null,
     },
     tags: (dbThread.tags as Tags) || {},
+    reactions: {},
   };
 }
 
