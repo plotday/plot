@@ -1977,6 +1977,7 @@ export type Database = {
       thread: {
         Row: {
           archived_at: string | null
+          contact_meta: Json
           contacts: string[]
           created_at: string
           created_by: string
@@ -2003,6 +2004,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          contact_meta?: Json
           contacts?: string[]
           created_at?: string
           created_by: string
@@ -2029,6 +2031,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          contact_meta?: Json
           contacts?: string[]
           created_at?: string
           created_by?: string
@@ -2507,6 +2510,7 @@ export type Database = {
           options_schema: Json | null
           permissions: Json | null
           publisher_id: number | null
+          seq: unknown
           shared: boolean
           twist_package_id: string
           updated_at: string
@@ -2530,6 +2534,7 @@ export type Database = {
           options_schema?: Json | null
           permissions?: Json | null
           publisher_id?: number | null
+          seq?: unknown
           shared?: boolean
           twist_package_id: string
           updated_at?: string
@@ -2553,6 +2558,7 @@ export type Database = {
           options_schema?: Json | null
           permissions?: Json | null
           publisher_id?: number | null
+          seq?: unknown
           shared?: boolean
           twist_package_id?: string
           updated_at?: string
@@ -3352,6 +3358,7 @@ export type Database = {
       thread_x: {
         Row: {
           archived_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           created_by: string | null
@@ -3367,7 +3374,6 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[] | null
           preview: string | null
-          private_to_creator: boolean | null
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -3378,6 +3384,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
           created_by?: string | null
@@ -3393,7 +3400,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
-          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -3404,6 +3410,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
           created_by?: string | null
@@ -3419,7 +3426,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
-          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -4316,6 +4322,7 @@ export type Database = {
           options_schema: Json | null
           permissions: Json | null
           publisher_id: number | null
+          seq: unknown
           shared: boolean
           twist_package_id: string
           updated_at: string
@@ -4453,7 +4460,9 @@ export type Database = {
       share_thread: {
         Args: {
           p_add_contact_ids?: string[]
+          p_contact_roles?: Json
           p_remove_contact_ids?: string[]
+          p_role_changes?: Json
           p_thread_id: string
           p_user_id: string
         }
@@ -5175,6 +5184,7 @@ export type Database = {
           archived_at: string | null
           auto_archived_by_thread_id: string | null
           bumped_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           draft: boolean | null
@@ -5359,6 +5369,7 @@ export type Database = {
           archived_at: string | null
           auto_archived_by_thread_id: string | null
           bumped_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           draft: boolean | null
