@@ -7,6 +7,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/editor_clipboard.dart';
+import 'package:plot/widget/reaction_picker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
@@ -220,6 +221,51 @@ class ToggleSelfTask extends NoteCommand {
 /// server's `update_note_reactions` RPC enforces only-self ownership;
 /// matching client-side behaviour is implicit because we always toggle
 /// the current user's canonical actor.
+/// Opens the [ReactionPicker] and toggles the chosen emoji on the note.
+/// Routes through [ToggleNoteReaction] for the actual write so all the
+/// optimistic-local + sync-push logic stays in one place.
+///
+/// Filters the picker by the thread's primary connector capability when
+/// known — same lookup used by [_NoteReactionsRow] (see widget/note.dart).
+class AddNoteReaction extends NoteCommand {
+  AddNoteReaction(super.note, {this.activityBloc})
+      : super(
+          title: 'React',
+          eventObject: EventObject.note,
+          eventAction: EventAction.tagged,
+          icon: FontAwesomeIcons.faceSmile,
+        );
+
+  final ThreadBloc? activityBloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // Use the store's Link (the data row), not widget/link.dart (the
+      // URL widget) — both names exist in the imports above.
+      final links = activityBloc?.state.links ?? const [];
+      final source = links.isEmpty ? null : links.first.source;
+      final allowed = reactionCapabilitiesForLinkSource(source).allowed;
+
+      final emoji = await ReactionPicker.pick(
+        context,
+        allowed: allowed?.toSet(),
+      );
+      if (emoji == null) return const CommandDone();
+
+      // Reuse the existing toggle path. If the user already has this
+      // reaction it'll remove it; otherwise it adds. Matches the chip
+      // behaviour on _NoteReactionsRow.
+      if (!context.mounted) return const CommandDone();
+      return await ToggleNoteReaction(note, emoji).run(context);
+    } catch (e, stackTrace) {
+      log.severe('Error in AddNoteReaction: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to react', isError: true);
+    }
+  }
+}
+
 class ToggleNoteReaction extends NoteCommand {
   ToggleNoteReaction(super.note, this.emoji)
     : super(
@@ -954,6 +1000,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     SelfTaskAction(note),
     if (!note.draft && activityBloc != null)
       ReplyToNote(note, activityBloc: activityBloc),
+    if (!note.draft) AddNoteReaction(note, activityBloc: activityBloc),
     if (!note.draft &&
         note.authorId.isCurrentUser &&
         note.content != null &&
