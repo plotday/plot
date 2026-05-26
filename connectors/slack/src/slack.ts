@@ -224,6 +224,39 @@ export class Slack extends Connector<Slack> {
     return new SlackApi(token.token);
   }
 
+  /**
+   * Resolves a workspace-scoped Slack API client, falling back to any other
+   * currently-enabled channel's token if the preferred one is unavailable.
+   *
+   * Slack user-token scopes are workspace-wide: any token from the same OAuth
+   * grant can address any DM the user is in. So when the channel a DM was
+   * opened against is later disabled, we can still post by enumerating other
+   * enabled channels in this connector instance's store. Enabled channels are
+   * tracked under `sync_enabled_<channelId>` keys by `onChannelEnabled` /
+   * `onChannelDisabled`.
+   *
+   * Use this on DM write-back paths (where the original `tokenChannelId` is
+   * just a hint, not a hard binding). Regular per-channel paths should
+   * continue to use {@link getApi} — disabling a channel intentionally
+   * disables operations on threads from that channel.
+   */
+  private async getWorkspaceApi(preferredChannelId: string): Promise<SlackApi> {
+    const preferred = await this.tools.integrations.get(preferredChannelId);
+    if (preferred) return new SlackApi(preferred.token);
+
+    const keys = await this.tools.store.list("sync_enabled_");
+    for (const key of keys) {
+      const channelId = key.substring("sync_enabled_".length);
+      if (channelId === preferredChannelId) continue;
+      const token = await this.tools.integrations.get(channelId);
+      if (token) return new SlackApi(token.token);
+    }
+
+    throw new Error(
+      "No Slack authentication token available (no enabled channels for this workspace)"
+    );
+  }
+
   async listWorkspaceChannels(channelId: string): Promise<MessageChannel[]> {
     const api = await this.getApi(channelId);
     const channels = await api.getChannels();
@@ -861,7 +894,7 @@ export class Slack extends Connector<Slack> {
     const userIds = recipients.map((r) => r.externalAccountId);
 
     // Use any enabled channel's token to reach the workspace API.
-    const api = await this.getApi(draft.channelId);
+    const api = await this.getWorkspaceApi(draft.channelId);
 
     // Open (or retrieve existing) DM/MPIM conversation.
     const dmChannelId = await api.openConversation(userIds);
@@ -892,19 +925,14 @@ export class Slack extends Connector<Slack> {
         threadTs: ts,
         // tokenChannelId is an *enabled* workspace channel (C… / G…) whose
         // OAuth token grants workspace-wide access. DM channel ids (D… / G…
-        // for MPIMs) are not registered as "enabled" channels, so getApi()
-        // must resolve the token through a channel that is. We capture the
-        // channel the user selected when composing the DM and store it here.
-        //
-        // LIMITATION: if the user later disables this channel (onChannelDisabled
-        // clears its token), replies to this DM thread will fail with
-        // "No Slack authentication token available". onNoteCreated /
-        // onNoteUpdated fall back to getApi(channelId), which also lacks a
-        // token for DM ids. A future improvement could enumerate other enabled
-        // channels for this workspace and try each in turn, but that requires
-        // a way to list active channels from connector state (not available
-        // today). Users can work around this by re-enabling any channel to
-        // restore workspace token access.
+        // for MPIMs) are not registered as "enabled" channels, so the token
+        // must resolve through a channel that is. We capture the channel the
+        // user selected when composing the DM and store it as a preferred
+        // hint — onNoteCreated / onNoteUpdated use getWorkspaceApi(), which
+        // tries this channel first and falls back to any other enabled
+        // channel in the workspace if it's been disabled. Replies keep
+        // working as long as the user has at least one Slack channel
+        // enabled.
         tokenChannelId: draft.channelId,
         syncableId: draft.channelId,
       },
@@ -1049,7 +1077,7 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    const api = await this.getApi(tokenChannelId);
+    const api = await this.getWorkspaceApi(tokenChannelId);
 
     const body = note.content ?? "";
     const result = await api.postMessage(channelId, body, threadTs);
@@ -1076,7 +1104,7 @@ export class Slack extends Connector<Slack> {
     if (!note.key) return;
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
-    const api = await this.getApi(tokenChannelId);
+    const api = await this.getWorkspaceApi(tokenChannelId);
     const body = note.content ?? "";
     const result = await api.updateMessage(channelId, note.key, body);
     const externalContent = formatSlackText(result.text ?? body);
