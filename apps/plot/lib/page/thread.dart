@@ -504,13 +504,20 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                                 padding: EdgeInsets.symmetric(
                                   horizontal: context.isMultiPanel ? 20.0 : 0,
                                 ),
-                                child: ScrollEdgeFade(
-                                  background: context.colour.background,
-                                  child: _buildThreadList(
-                                    state,
-                                    listController,
-                                    context,
-                                  ),
+                                child: LayoutBuilder(
+                                  builder: (context, listConstraints) =>
+                                      NotePanelMetrics(
+                                        availableHeight:
+                                            listConstraints.maxHeight,
+                                        child: ScrollEdgeFade(
+                                          background: context.colour.background,
+                                          child: _buildThreadList(
+                                            state,
+                                            listController,
+                                            context,
+                                          ),
+                                        ),
+                                      ),
                                 ),
                               ),
                             ),

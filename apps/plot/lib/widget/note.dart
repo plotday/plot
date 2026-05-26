@@ -7,7 +7,6 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
-import 'package:plot/state/note_viewer.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/util/platform.dart';
 
@@ -338,10 +337,34 @@ class _NoteWidgetState extends State<NoteWidget> {
   }
 }
 
-/// Inline note content with a maximum height. When the rendered Viewer
-/// exceeds the cap, the bottom is faded out and a "View all" affordance
-/// appears on hover; tapping the fade or the affordance opens the full
-/// note in [NoteViewer] via [NoteViewerBloc].
+/// Exposes the height available for a single note's content inside the
+/// scrolling list — the panel height minus pinned headers and the
+/// composer. Consumed by [_TruncatedNoteContent] to size its truncation
+/// cap so a long note fills the visible panel without spilling into a
+/// scroll. Falls back to a sensible default when no ancestor provides it.
+class NotePanelMetrics extends InheritedWidget {
+  const NotePanelMetrics({
+    required this.availableHeight,
+    required super.child,
+    super.key,
+  });
+
+  final double availableHeight;
+
+  static double? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<NotePanelMetrics>()
+      ?.availableHeight;
+
+  @override
+  bool updateShouldNotify(NotePanelMetrics oldWidget) =>
+      availableHeight != oldWidget.availableHeight;
+}
+
+/// Inline note content sized to fill the visible panel. When the
+/// rendered Viewer exceeds the available height, the bottom is faded out
+/// and a "View all" affordance appears on hover; tapping the fade or the
+/// affordance expands the note inline (no separate viewer panel). Once
+/// expanded, the note stays expanded — there is no inline collapse.
 class _TruncatedNoteContent extends StatefulWidget {
   const _TruncatedNoteContent({
     required this.note,
@@ -357,16 +380,15 @@ class _TruncatedNoteContent extends StatefulWidget {
   /// so the inline view is uncluttered.
   final bool noteHovered;
 
-  /// Height a long note collapses to. Medium-length notes (between
-  /// [maxHeight] and [truncateAtHeight]) render in full — only notes
-  /// taller than [truncateAtHeight] get clipped to [maxHeight] and reveal
-  /// the rest via the full viewer.
-  static const double maxHeight = 360.0;
+  /// Fallback cap when no [NotePanelMetrics] ancestor is available
+  /// (e.g. previews, tests). Comfortably fits a screenful of prose.
+  static const double _fallbackMaxHeight = 600.0;
 
-  /// Trigger threshold for truncation. Content shorter than this renders
-  /// in full; content taller collapses to [maxHeight]. Doubling the
-  /// collapse height avoids hiding medium notes that read fine inline.
-  static const double truncateAtHeight = maxHeight * 2;
+  /// Approximate per-note chrome the truncation cap subtracts from the
+  /// panel's list area: 8px top padding + 30px footer row + breathing.
+  /// Slightly conservative so the truncated note stays under the
+  /// visible-without-scroll budget instead of nudging into a scroll.
+  static const double _noteChrome = 60.0;
 
   /// Height of the bottom fade gradient overlaid on truncated content.
   static const double fadeHeight = 80.0;
@@ -378,9 +400,47 @@ class _TruncatedNoteContent extends StatefulWidget {
 class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
   bool _overflow = false;
   bool _fadeHovered = false;
+  bool _expanded = false;
 
-  void _openViewer() {
-    context.read<NoteViewerBloc>().view(widget.note);
+  /// Identifies the [_OverflowAwareBox] render object so [_expandInline]
+  /// can read its already-measured natural height and predict the layout
+  /// delta synchronously, before the rebuild.
+  final GlobalKey _measureKey = GlobalKey();
+
+  /// Expand the note inline while keeping the visible content stationary.
+  /// In a reverse list the bottom is anchored, so growing a note pushes
+  /// the rest of its content visually upward — the user sees the END of
+  /// the note where they were reading the start.
+  ///
+  /// Doing the correction in a post-frame callback paints one frame with
+  /// the wrong scroll position (the visible flash). Instead, we ask the
+  /// already-laid-out [_OverflowAwareRenderBox] for its measured natural
+  /// height, derive the height delta the rebuild will produce, and apply
+  /// `pos.correctBy(delta)` _before_ the rebuild. `correctBy` adjusts
+  /// pixels without notifying or repainting; the next layout (triggered
+  /// by `setState`) validates the new pixels against the new max and
+  /// paints a single, correctly-positioned frame.
+  void _expandInline() {
+    final scrollable = Scrollable.maybeOf(context);
+    final pos = scrollable?.position;
+    final renderObject = _measureKey.currentContext?.findRenderObject();
+    double? delta;
+    if (renderObject is _OverflowAwareRenderBox && renderObject.attached) {
+      delta = renderObject.naturalHeight - renderObject.size.height;
+    }
+
+    if (pos != null &&
+        delta != null &&
+        delta > 0.5 &&
+        pos.axisDirection == AxisDirection.up) {
+      // Reverse-vertical scroll: growing an in-viewport item pushes
+      // older content upward. Scrolling forward by the same amount
+      // cancels the shift. Skip clamping — the next layout will apply
+      // the new max and validate.
+      pos.correctBy(delta);
+    }
+
+    setState(() => _expanded = true);
   }
 
   @override
@@ -391,6 +451,18 @@ class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
       searchHighlight: widget.searchHighlight,
     );
 
+    // Once expanded, render the note's full natural height inline —
+    // the parent list handles scrolling. No collapse for now.
+    if (_expanded) return viewer;
+
+    final available =
+        NotePanelMetrics.maybeOf(context) ??
+        _TruncatedNoteContent._fallbackMaxHeight;
+    final maxHeight = (available - _TruncatedNoteContent._noteChrome).clamp(
+      160.0,
+      double.infinity,
+    );
+
     final bg = context.colour.background;
     // The fade gradient is painted by the render layer in
     // [_OverflowAwareBox.paint] so it lands on the same frame as the
@@ -399,8 +471,11 @@ class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
     // so the widget tree on the first frame doesn't yet know overflow
     // happened).
     final measured = _OverflowAwareBox(
-      maxHeight: _TruncatedNoteContent.maxHeight,
-      truncateAt: _TruncatedNoteContent.truncateAtHeight,
+      key: _measureKey,
+      maxHeight: maxHeight,
+      // Truncate as soon as content exceeds the cap — the goal is to
+      // fill the panel, not to render extra inline.
+      truncateAt: maxHeight,
       fadeHeight: _TruncatedNoteContent.fadeHeight,
       fadeColor: bg,
       onOverflowChanged: (overflow) {
@@ -432,7 +507,7 @@ class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
             },
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: _openViewer,
+              onTap: _expandInline,
               child: const SizedBox.expand(),
             ),
           ),
@@ -503,6 +578,7 @@ class _ViewAllPill extends StatelessWidget {
 /// Reports whether truncation kicked in via [onOverflowChanged].
 class _OverflowAwareBox extends SingleChildRenderObjectWidget {
   const _OverflowAwareBox({
+    super.key,
     required this.maxHeight,
     required this.truncateAt,
     required this.fadeHeight,
@@ -589,6 +665,11 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
 
   bool? _lastOverflow;
 
+  /// Most recently measured natural height of the child. Used by callers
+  /// that want to predict how much the box will grow if its cap is lifted.
+  double _naturalHeight = 0;
+  double get naturalHeight => _naturalHeight;
+
   @override
   void performLayout() {
     final child = this.child;
@@ -604,6 +685,7 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
     );
     child.layout(childConstraints, parentUsesSize: true);
     final natural = child.size.height;
+    _naturalHeight = natural;
     final isOverflow = natural > _truncateAt + 0.5;
     final h = isOverflow ? _maxHeight : natural;
     size = constraints.constrain(Size(child.size.width, h));
