@@ -795,7 +795,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(MoveThreadToRespond(thread), icon: Value(PlotIcon.send)),
+        CommandWrapper(
+          ToggleThreadActive(thread),
+          icon: Value(FontAwesomeIcons.circle),
+          hoverIcon: Value(FontAwesomeIcons.circlePlus),
+          title: 'To do',
+        ),
       );
     } else {
       todoIcon = Button.icon(

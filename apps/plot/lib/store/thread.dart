@@ -1496,13 +1496,53 @@ class Thread extends Equatable implements Comparable<Thread> {
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
     );
 
-    return Rx.combineLatest5(
+    // COUNT query for Tag.task — threads on the per-user task list.
+    final taskQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    taskQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    taskQuery.where(a.archivedAt.isNull() & a.task.equals(true));
+    final taskCountStream = taskQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    // COUNT query for Tag.reading — threads on the per-user reading list.
+    final readingQuery = Store.get.selectOnly(a)..addColumns([a.id]);
+    readingQuery.join([
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+    readingQuery.where(a.archivedAt.isNull() & a.toRead.equals(true));
+    final readingCountStream = readingQuery.watch().map(
+      (rows) => rows.map((r) => r.read(a.id)).toSet().length,
+    );
+
+    return Rx.combineLatest7(
       tagsQuery.watch(),
       nowCountStream,
       archivedCountStream,
       unreadCountStream,
       archivedPriorityCountStream,
-      (rows, nowCount, archivedCount, unreadCount, archivedPriorityCount) {
+      taskCountStream,
+      readingCountStream,
+      (
+        rows,
+        nowCount,
+        archivedCount,
+        unreadCount,
+        archivedPriorityCount,
+        taskCount,
+        readingCount,
+      ) {
         final Map<Tag, int> tagCounts = {};
 
         // Count stored tags
@@ -1529,6 +1569,8 @@ class Thread extends Equatable implements Comparable<Thread> {
         final totalArchived = archivedCount + archivedPriorityCount;
         if (totalArchived > 0) tagCounts[Tag.archived] = totalArchived;
         if (unreadCount > 0) tagCounts[Tag.unread] = unreadCount;
+        if (taskCount > 0) tagCounts[Tag.task] = taskCount;
+        if (readingCount > 0) tagCounts[Tag.reading] = readingCount;
 
         // Convert to list of (Tag, count) and sort by count descending
         final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
@@ -4860,6 +4902,20 @@ ORDER BY
       ),
     );
   }
+
+  /// Returns a copy with `thread.task` set to [value]. Independent of
+  /// `active` / `toRead`. Marks state-dirty so [save] pushes via
+  /// /sync/thread-state.
+  Thread withTask(bool value) => _withThreadState(
+    _thread.copyWith(task: value, updatedAt: DateTime.now()),
+  );
+
+  /// Returns a copy with `thread.toRead` set to [value]. Independent of
+  /// `active` / `task`. Marks state-dirty so [save] pushes via
+  /// /sync/thread-state.
+  Thread withToRead(bool value) => _withThreadState(
+    _thread.copyWith(toRead: value, updatedAt: DateTime.now()),
+  );
 
   /// Returns a copy with the per-user state restored so the thread renders
   /// as a regular active item in the unified feed. Mirrors what

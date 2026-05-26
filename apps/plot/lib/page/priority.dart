@@ -513,7 +513,7 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                           if (thread.todo) {
                             FinishThread(thread).run(context);
                           } else {
-                            MoveThreadToRespond(thread).run(context);
+                            ToggleThreadActive(thread).run(context);
                           }
                         }
                         return null;
