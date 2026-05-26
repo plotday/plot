@@ -66,8 +66,19 @@ BEGIN
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM p_user_id
     LOOP
-        INSERT INTO thread_state (user_id, thread_id)
-        VALUES (r.peer_user_id, p_thread_id)
+        -- Assign a deterministic state_order on insert. NULL state_order
+        -- makes the Flutter Doing/unread-cluster drag-reorder land at the
+        -- end of the null-order group instead of where the user released
+        -- it (see Thread.order's doc for the full failure mode). Format
+        -- mirrors Flutter's Order.first(): `-millisecondsSinceEpoch +
+        -- random()` so new rows sort near the top of their cluster in
+        -- ascending order.
+        INSERT INTO thread_state (user_id, thread_id, "order")
+        VALUES (
+            r.peer_user_id,
+            p_thread_id,
+            (-EXTRACT(EPOCH FROM clock_timestamp()) * 1000) + random()
+        )
         ON CONFLICT (user_id, thread_id) DO NOTHING;
     END LOOP;
 

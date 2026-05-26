@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' hide Column;
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/state/activity_feed_drop.dart';
 import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/agenda_builder.dart';
 import 'package:plot/state/agenda_model.dart';
@@ -255,8 +256,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// (recurring instance moved, RSVP changed) transparently re-resolves
   /// — these are the same fields the old `_ActivityFeedItem.didUpdateWidget`
   /// watched.
-  final Map<(ThreadId, Uuid?, String?), Future<Thread?>>
-  _representativeCache = {};
+  final Map<(ThreadId, Uuid?, String?), Future<Thread?>> _representativeCache =
+      {};
 
   /// Returns the cached `Thread.loadRepresentativeForFeed` Future for the
   /// given base thread, creating one on first access. Cache lifetime is
@@ -279,11 +280,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       _agendaSubscription = null,
       _tagsSubscription = null,
       _draftModified = false,
-      super(PriorityState(
-        context: priority,
-        thread: thread,
-        hideSubPriorities: !_consumeFromAgendaFlag(),
-      )) {
+      super(
+        PriorityState(
+          context: priority,
+          thread: thread,
+          hideSubPriorities: !_consumeFromAgendaFlag(),
+        ),
+      ) {
     _allInstances.add(this);
     _loadPriority();
     _restartActiveTabSubscription();
@@ -316,12 +319,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   void toggleShowArchived() {
     final newShowArchived = !state.showArchived;
     log.info('Toggling showArchived to $newShowArchived');
-    emit(state.copyWith(
-      showArchived: newShowArchived,
-      // Drop the broom filter whenever we leave the archived view, so it
-      // doesn't quietly stay armed for the next time the user enables it.
-      autoArchiveOnly: newShowArchived ? null : false,
-    ));
+    emit(
+      state.copyWith(
+        showArchived: newShowArchived,
+        // Drop the broom filter whenever we leave the archived view, so it
+        // doesn't quietly stay armed for the next time the user enables it.
+        autoArchiveOnly: newShowArchived ? null : false,
+      ),
+    );
 
     // Reload agenda items with new archived filter
     _loadPriority();
@@ -496,10 +501,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (!showArchived) {
       unawaited(() async {
         try {
-          final count = await Thread.searchRemoteCount(
-            search,
-            archived: true,
-          );
+          final count = await Thread.searchRemoteCount(search, archived: true);
           if (gen != _searchGeneration || isClosed) return;
           emit(state.copyWith(hasArchivedMatches: count > 0));
         } on NetworkException {
@@ -609,39 +611,29 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Used to start the first append page from the right spot when the
   /// active tab is Catch up.
   ({int urgent, int importance, String activityAt, ThreadId id})?
-      _catchUpHeadTailCursor;
+  _catchUpHeadTailCursor;
 
   /// Cursor of the next Catch up append page, or `null` when no further
   /// append is available locally (last fetched page was non-saturated or
   /// no append has run yet — fall back to the head tail cursor).
   ({int urgent, int importance, String activityAt, ThreadId id})?
-      _catchUpAppendCursor;
+  _catchUpAppendCursor;
 
   /// Tail cursor of the most recent head emission for the All tab.
-  ({
-    int unread,
-    int urgent,
-    int importance,
-    String activityAt,
-    ThreadId id,
-  })? _allTabHeadTailCursor;
+  ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
+  _allTabHeadTailCursor;
 
   /// Cursor of the next All-tab append page.
-  ({
-    int unread,
-    int urgent,
-    int importance,
-    String activityAt,
-    ThreadId id,
-  })? _allTabAppendCursor;
+  ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
+  _allTabAppendCursor;
 
   /// Tail cursor of the most recent head emission for an action tab.
   ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-      _actionTabHeadTailCursor;
+  _actionTabHeadTailCursor;
 
   /// Cursor of the next action-tab append page.
   ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-      _actionTabAppendCursor;
+  _actionTabAppendCursor;
 
   /// Latest threads list emitted by the agenda subscription (after
   /// optimistic overrides). Optimistic mutation handlers transform
@@ -703,10 +695,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// (where todo changes originate for the bug this fixes) then the agenda.
   Thread? _findThreadInState(ThreadId id) {
     for (final item in state.activityFeedItems) {
-      final thread = item.when(
-        header: (_) => null,
-        activity: (a) => a.thread,
-      );
+      final thread = item.when(header: (_) => null, activity: (a) => a.thread);
       if (thread != null && thread.id == id) return thread;
     }
     for (final section in state.agenda.sections) {
@@ -793,30 +782,30 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _subscribeAllTabHead() {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
-    final scopeByPath = isSearching ||
-        state.hideSubPriorities ||
-        _currentEventForFeed != null;
+    final scopeByPath =
+        isSearching || state.hideSubPriorities || _currentEventForFeed != null;
     final searchGlobal = isSearching && priorityToLoad.root;
 
     _activeTabSubscriptionTab = ActivityTab.all;
-    _activeTabSubscription = Thread.watchAllTabHead(
-      priorityId: scopeByPath ? null : priorityToLoad.id,
-      priorityPath: scopeByPath
-          ? (searchGlobal ? null : priorityToLoad.path)
-          : null,
-      archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-      search: isSearching ? state.search : null,
-      limit: _activityFeedLimit,
-    ).listen((result) {
-      if (isClosed) return;
-      _activeTabHead = result.threads;
-      _activeTabHeadSaturated = result.saturated;
-      _allTabHeadTailCursor = result.tailCursor;
-      _activeTabHeadReceived = true;
-      _rebuildActiveTabSection();
-    });
+    _activeTabSubscription =
+        Thread.watchAllTabHead(
+          priorityId: scopeByPath ? null : priorityToLoad.id,
+          priorityPath: scopeByPath
+              ? (searchGlobal ? null : priorityToLoad.path)
+              : null,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+          search: isSearching ? state.search : null,
+          limit: _activityFeedLimit,
+        ).listen((result) {
+          if (isClosed) return;
+          _activeTabHead = result.threads;
+          _activeTabHeadSaturated = result.saturated;
+          _allTabHeadTailCursor = result.tailCursor;
+          _activeTabHeadReceived = true;
+          _rebuildActiveTabSection();
+        });
   }
 
   /// Recompose the active tab's items list from the per-tab subscription's
@@ -840,7 +829,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     final eventPrefix = _buildEventAgendaItems();
 
     // Search / filter mode: flat list, no sections (per spec).
-    final flatMode = state.search.isNotEmpty ||
+    final flatMode =
+        state.search.isNotEmpty ||
         state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty;
 
@@ -1120,7 +1110,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       final gen = _activeTabAppendGeneration;
       final priorityToLoad = state.context;
       final isSearching = state.search.isNotEmpty;
-      final scopeByPath = isSearching ||
+      final scopeByPath =
+          isSearching ||
           state.hideSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
@@ -1130,9 +1121,10 @@ class PriorityBloc extends Cubit<PriorityState> {
       ({
         List<Thread> threads,
         ({int urgent, int importance, String activityAt, ThreadId id})?
-            nextCursor,
+        nextCursor,
         bool saturated,
-      })? page;
+      })?
+      page;
       try {
         page = await Thread.fetchCatchUpPage(
           priorityId: scopeByPath ? null : priorityToLoad.id,
@@ -1155,8 +1147,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (gen != _activeTabAppendGeneration) return;
 
       final headIds = {for (final t in _activeTabHead) t.id};
-      final dedupedNew =
-          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      final dedupedNew = page.threads
+          .where((t) => !headIds.contains(t.id))
+          .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
       _catchUpAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
@@ -1209,7 +1202,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       final gen = _activeTabAppendGeneration;
       final priorityToLoad = state.context;
       final isSearching = state.search.isNotEmpty;
-      final scopeByPath = isSearching ||
+      final scopeByPath =
+          isSearching ||
           state.hideSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
@@ -1224,9 +1218,11 @@ class PriorityBloc extends Cubit<PriorityState> {
           int importance,
           String activityAt,
           ThreadId id,
-        })? nextCursor,
+        })?
+        nextCursor,
         bool saturated,
-      })? page;
+      })?
+      page;
       try {
         page = await Thread.fetchAllTabPage(
           priorityId: scopeByPath ? null : priorityToLoad.id,
@@ -1249,8 +1245,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (gen != _activeTabAppendGeneration) return;
 
       final headIds = {for (final t in _activeTabHead) t.id};
-      final dedupedNew =
-          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      final dedupedNew = page.threads
+          .where((t) => !headIds.contains(t.id))
+          .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
       _allTabAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
@@ -1265,7 +1262,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Fetch additional action-tab pages beyond the head. Same shape as
   /// [_fetchMoreCatchUp] but uses [Thread.fetchActionTabPage] and the
   /// action tab's `(isActiveInv, bucketKey, order, id)` cursor.
-  Future<void> _fetchMoreActionTab(ActivityTab tab, int first, int count) async {
+  Future<void> _fetchMoreActionTab(
+    ActivityTab tab,
+    int first,
+    int count,
+  ) async {
     final action = tab.actionFilter;
     if (action == null) return;
     final needed = first + count;
@@ -1305,7 +1306,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       final gen = _activeTabAppendGeneration;
       final priorityToLoad = state.context;
       final isSearching = state.search.isNotEmpty;
-      final scopeByPath = isSearching ||
+      final scopeByPath =
+          isSearching ||
           state.hideSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
@@ -1315,11 +1317,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       ({
         List<Thread> threads,
         List<({ThreadId id, bool isActive, String? bucketDate, double order})>
-            rows,
+        rows,
         ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-            nextCursor,
+        nextCursor,
         bool saturated,
-      })? page;
+      })?
+      page;
       try {
         page = await Thread.fetchActionTabPage(
           action: action,
@@ -1343,8 +1346,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (gen != _activeTabAppendGeneration) return;
 
       final headIds = {for (final t in _activeTabHead) t.id};
-      final dedupedNew =
-          page.threads.where((t) => !headIds.contains(t.id)).toList();
+      final dedupedNew = page.threads
+          .where((t) => !headIds.contains(t.id))
+          .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
       _actionTabAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
@@ -1402,8 +1406,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// that block ordering reflects user-driven reorders. Empty until the
   /// first stream emission; AgendaBuilder falls back to
   /// `priority.order` when a priority has no rows here.
-  Map<PriorityId, List<PriorityBlockRow>> _priorityBlocksByPriority =
-      const {};
+  Map<PriorityId, List<PriorityBlockRow>> _priorityBlocksByPriority = const {};
   StreamSubscription<Map<PriorityId, List<PriorityBlockRow>>>?
   _priorityBlocksSubscription;
 
@@ -1581,7 +1584,10 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final updated = <Thread>[];
     for (final t in threadsToMove) {
-      final moved = t.reorderToAfterEvent(t.order, eventEndTime: targetGapAnchorAt);
+      final moved = t.reorderToAfterEvent(
+        t.order,
+        eventEndTime: targetGapAnchorAt,
+      );
       updated.add(moved);
       _optimisticOverrides[t.id] = _OptimisticOverride.expect(expected: moved);
     }
@@ -1636,20 +1642,24 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (above != null) {
       final aboveBlocks = _priorityBlocksByPriority[above] ?? const [];
       final fallback = _findPriorityFallback(above);
-      aboveOrder = Order(effectivePriorityOrderAt(
-        moment: periodReferenceTime,
-        blocksForPriority: aboveBlocks,
-        fallback: fallback,
-      ));
+      aboveOrder = Order(
+        effectivePriorityOrderAt(
+          moment: periodReferenceTime,
+          blocksForPriority: aboveBlocks,
+          fallback: fallback,
+        ),
+      );
     }
     if (below != null) {
       final belowBlocks = _priorityBlocksByPriority[below] ?? const [];
       final fallback = _findPriorityFallback(below);
-      belowOrder = Order(effectivePriorityOrderAt(
-        moment: periodReferenceTime,
-        blocksForPriority: belowBlocks,
-        fallback: fallback,
-      ));
+      belowOrder = Order(
+        effectivePriorityOrderAt(
+          moment: periodReferenceTime,
+          blocksForPriority: belowBlocks,
+          fallback: fallback,
+        ),
+      );
     }
     final newOrder = Order.between(aboveOrder, belowOrder);
     final effectiveAt = periodReferenceTime;
@@ -1717,8 +1727,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     required DateTime blockStart,
     required Duration? newDuration,
   }) {
-    final normalized =
-        (newDuration == null || newDuration <= Duration.zero) ? null : newDuration;
+    final normalized = (newDuration == null || newDuration <= Duration.zero)
+        ? null
+        : newDuration;
     final now = DateTime.now();
 
     final updated = <PriorityId, List<PriorityBlockRow>>{
@@ -1757,17 +1768,19 @@ class PriorityBloc extends Cubit<PriorityState> {
           updatedAt: now,
         );
       } else {
-        list.add(PriorityBlockRow(
-          id: Uuid.generate(),
-          priorityId: priorityId,
-          createdBy: Base.userId,
-          orderValue: Order(inheritedOrder),
-          effectiveAt: blockStart,
-          duration: normalized,
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        ));
+        list.add(
+          PriorityBlockRow(
+            id: Uuid.generate(),
+            priorityId: priorityId,
+            createdBy: Base.userId,
+            orderValue: Order(inheritedOrder),
+            effectiveAt: blockStart,
+            duration: normalized,
+            archivedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
       }
     }
 
@@ -1872,10 +1885,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         if (a.childThreadId == nextId) below = a.order;
       }
       final assocOrder = Order.between(above, below);
-      await dragged.associateWith(
-        parentThreadId: parent.id,
-        order: assocOrder,
-      );
+      await dragged.associateWith(parentThreadId: parent.id, order: assocOrder);
       // No state change to `dragged` itself — the source row stays in
       // whichever section it was in. The activity feed rebuild fires
       // from the associations stream.
@@ -1896,8 +1906,13 @@ class PriorityBloc extends Cubit<PriorityState> {
         if (item.thread.id == nextId) nextThread = item.thread;
       }
     }
-    final newOrder = (targetSection == ActivitySection.doing ||
-            targetSection == ActivitySection.scheduled)
+    // Scheduled lives in a single order space per day, so a naive
+    // Order.between is fine here. Doing spans the unread/read boundary
+    // and its sub-clusters have independent order spaces — its newOrder
+    // is computed inside the Doing case below, after resolveDoingDrop
+    // tells us which neighbours are safe to use as bounds.
+    final Order? scheduledNewOrder =
+        targetSection == ActivitySection.scheduled
         ? Order.between(prevThread?.order, nextThread?.order)
         : null;
 
@@ -1906,35 +1921,41 @@ class PriorityBloc extends Cubit<PriorityState> {
       case ActivitySection.eventAgenda:
         return; // handled above
       case ActivitySection.doing:
-        // Absorb the bucket of the neighbour on the drop's anchor side:
-        // prev when present, else next. The absorbed bucket determines
-        // (unread, urgent, importance). When prev is unread we keep /
-        // make the dragged thread unread (preserving any active /
-        // scheduled state so it returns to its natural section once
-        // read); when prev is read we mark the dragged thread read
-        // and active-today.
-        final bucketSource = prevThread ?? nextThread;
-        if (bucketSource == null) {
-          // Empty Doing — make the dragged thread active-today and
-          // clear any sticky pin so it doesn't bounce back to the
-          // unread cluster.
-          updated = dragged.asActiveToday(order: newOrder);
-          _overlay.remove(draggedId);
-        } else if (bucketSource.unread) {
-          // Land in the unread cluster: mark unread (or keep unread),
-          // copy bucket fields, and place via stateOrder. Schedule
-          // state is preserved.
+        // The Doing section is sub-clustered by sort key: the unread
+        // cluster sorts urgent DESC, importance DESC, order ASC, so
+        // unread threads only share an order space with siblings of
+        // the same (urgent, importance) tuple; the read cluster is one
+        // order space. resolveDoingDrop picks the destination cluster
+        // (preserving the dragged row's own bucket at a boundary slot)
+        // and tells us which neighbours' orders we can use as bounds.
+        DoingCluster clusterOf(Thread t) => t.unread
+            ? DoingCluster.unread(urgent: t.urgent, importance: t.importance)
+            : const DoingCluster.read();
+        final resolution = resolveDoingDrop(
+          prev: prevThread == null ? null : clusterOf(prevThread),
+          next: nextThread == null ? null : clusterOf(nextThread),
+          dragged: clusterOf(dragged),
+        );
+        final destination = resolution.destination;
+        final Order doingNewOrder = Order.between(
+          resolution.usePrev ? prevThread?.order : null,
+          resolution.useNext ? nextThread?.order : null,
+        );
+        if (destination.unread) {
+          // Land in an unread sub-cluster: mark/keep unread, set the
+          // sub-cluster fields (urgent, importance), and place via
+          // stateOrder. Schedule state is preserved.
           updated = dragged.asUnreadInDoing(
-            order: newOrder ?? Order.first(),
-            urgent: bucketSource.urgent,
-            importance: bucketSource.importance,
+            order: doingNewOrder,
+            urgent: destination.urgent,
+            importance: destination.importance,
           );
         } else {
           // Land in the read-active cluster: mark read (if unread),
           // ensure active state, set order. Clear any sticky pin —
           // an explicit drop into the read cluster is the user telling
           // us this thread isn't pinned to the unread area any more.
-          updated = dragged.asActiveToday(order: newOrder);
+          updated = dragged.asActiveToday(order: doingNewOrder);
           _overlay.remove(draggedId);
         }
         break;
@@ -1942,7 +1963,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         if (targetScheduledDate == null) return;
         updated = dragged.asScheduled(
           targetScheduledDate,
-          order: newOrder,
+          order: scheduledNewOrder,
         );
         // Dropping to a future day is a deliberate move out of the
         // unread cluster — clear any sticky pin.
@@ -2035,7 +2056,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       'anchor=$gapAnchorAt',
     );
 
-    _optimisticOverrides[threadId] = _OptimisticOverride.expect(expected: anchored);
+    _optimisticOverrides[threadId] = _OptimisticOverride.expect(
+      expected: anchored,
+    );
     _lastAgendaThreads = _lastAgendaThreads
         .map((t) => t.id == threadId ? anchored : t)
         .toList();
@@ -2174,9 +2197,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         ) ??
         false;
     _lastAgendaThreads = _lastAgendaThreads
-        .where(
-          (t) => t.id != id || t.isLinkScheduleInstance || isAssociated,
-        )
+        .where((t) => t.id != id || t.isLinkScheduleInstance || isAssociated)
         .map((t) {
           if (!finishTodo || t.id != id) return t;
           return finished ?? t.copyWith(todo: false);
@@ -2410,7 +2431,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     final foundInAgenda = _lastAgendaThreads.any(
       (t) => t.id == updatedThread.id,
     );
-    final shouldRemove = !updatedThread.todo &&
+    final shouldRemove =
+        !updatedThread.todo &&
         updatedThread.at == null &&
         updatedThread.on == null;
 
@@ -2557,9 +2579,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // (registered inside _loadPriority) keeps state.context in sync with the
     // raw row, which is enough.
     final existingDraft = await Thread.getDraftInChain(newPriority);
-    profile.mark(
-      'chain draft lookup done (found=${existingDraft != null})',
-    );
+    profile.mark('chain draft lookup done (found=${existingDraft != null})');
 
     Thread newDraft;
     if (existingDraft != null) {
@@ -2726,8 +2746,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
       final removed = _overlay.remove(oldThread.id);
-      if (removed != null &&
-          _activeTabSubscriptionTab == ActivityTab.catchUp) {
+      if (removed != null && _activeTabSubscriptionTab == ActivityTab.catchUp) {
         _rebuildActiveTabSection();
       }
     }
@@ -3075,12 +3094,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     // `cascadeDuration` stays stale until some other event happens to
     // rebuild the agenda.
     _priorityBlocksSubscription?.cancel();
-    _priorityBlocksSubscription = streamPriorityBlocksGroupedByPriority().listen(
-      (grouped) {
-        _priorityBlocksByPriority = grouped;
-        _rebuildAgendaModel();
-      },
-    );
+    _priorityBlocksSubscription = streamPriorityBlocksGroupedByPriority()
+        .listen((grouped) {
+          _priorityBlocksByPriority = grouped;
+          _rebuildAgendaModel();
+        });
 
     // Watch tags for the priority
     _tagsSubscription?.cancel();
@@ -3111,8 +3129,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _iconCountsSubscription?.cancel();
     _iconCountsSubscription =
         Thread.watchIconCountsForPriority(priorityToLoad.path).listen((counts) {
-          final iconCounts = [...counts]
-            ..sort((a, b) => b.$2.compareTo(a.$2));
+          final iconCounts = [...counts]..sort((a, b) => b.$2.compareTo(a.$2));
           emit(state.copyWith(iconCounts: iconCounts));
         });
 
@@ -3183,12 +3200,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (isClosed) return;
 
       // Preserve the draft's filed priority — don't reassign to context.
-      emit(
-        state.copyWith(
-          draft: existingDraft,
-          draftNote: draftNote,
-        ),
-      );
+      emit(state.copyWith(draft: existingDraft, draftNote: draftNote));
     }
   }
 
@@ -3197,10 +3209,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// If note is provided, converts it from draft to published.
   /// AI title generation is handled by Thread.save().
   /// Returns the saved thread.
-  Future<Thread> add(
-    Thread thread, {
-    Note? note,
-  }) async {
+  Future<Thread> add(Thread thread, {Note? note}) async {
     // Convert the draft to a non-draft
     final savedThread = thread.copyWith(draft: false);
 
@@ -3327,8 +3336,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // events-only during every resubscribe; an in-flight ballistic
     // scroll would then clamp against a near-zero `maxScrollExtent` and
     // jump to the top by the time real data returned.
-    final associatedStream = Thread.watchAssociatedThreads()
-        .startWith(_seedAssociatedThreads);
+    final associatedStream = Thread.watchAssociatedThreads().startWith(
+      _seedAssociatedThreads,
+    );
 
     _agendaSubscription =
         Rx.combineLatest3<
@@ -3576,12 +3586,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               );
 
               if (suppressRebuild) {
-                emit(
-                  state.copyWith(
-                    agendaDoneEnd: false,
-                    agendaLoaded: true,
-                  ),
-                );
+                emit(state.copyWith(agendaDoneEnd: false, agendaLoaded: true));
                 return;
               }
               _lastAgendaThreads = patchedThreads;
@@ -3661,9 +3666,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       // Stop when the sync boundary covers the visible horizon — we've
       // fetched every event up to today + _agendaHorizonDays. Pagination
       // is by date range, not row count.
-      final horizonEnd = Date.today()
-          .addDays(_agendaHorizonDays)
-          .toDateTime();
+      final horizonEnd = Date.today().addDays(_agendaHorizonDays).toDateTime();
       final syncBoundary = syncState?.last != null
           ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
           : null;
@@ -3676,7 +3679,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Agenda is infinite — never mark it as done at the end.
     // fetchMoreAgendaItems will extend the horizon as the user scrolls.
   }
-
 
   /// Switch which activity-feed tab the user is viewing. Tears down the
   /// previous tab's per-tab subscription and starts the new tab's, also
@@ -3811,7 +3813,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     // guard so InfiniteList doesn't hang on an unmigrated tab.
   }
 
-
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<void>? _fullResyncSubscription;
   StreamSubscription<void>? _threadSubscription;
@@ -3828,6 +3829,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   // the user scrolls past the buffer so more empty days appear instead
   // of leaving the user on a stuck spinner.
   int _agendaFillDays = 0;
+
   /// Fixed page size for every activity-feed per-tab query. The watcher
   /// always covers the head (top [_activityFeedLimit] threads); scrolling
   /// past appends static pages via cursor pagination in
@@ -4026,9 +4028,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       // didUpdateWidget's pre-setPriority work takes so the [PriorityProfile]
       // timeline covers the full click-to-threads window.
       final didUpdateSw = Stopwatch()..start();
-      log.info(
-        '[PriorityProfile][didUpdate:${widget.priorityId}] start',
-      );
+      log.info('[PriorityProfile][didUpdate:${widget.priorityId}] start');
       _bloc.then((result) async {
         if (result.bloc == null) return;
         final priority = await Priority.getOne(widget.priorityId!);
