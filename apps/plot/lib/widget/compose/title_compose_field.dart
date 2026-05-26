@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -6,12 +5,13 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Title row inside the compose surface. Always-editable single-line
-/// FTextField with the shared [ComposeFieldRow] chrome.
+/// FTextField with the shared [ComposeFieldRow] chrome and ghost styling.
 class TitleComposeField extends StatefulWidget {
   const TitleComposeField({
     super.key,
     required this.title,
     required this.onChanged,
+    this.onTabForward,
   });
 
   /// Current draft title (null when unset).
@@ -19,6 +19,12 @@ class TitleComposeField extends StatefulWidget {
 
   /// Persist a new value. Pass `null` to clear.
   final Future<void> Function(String? next) onChanged;
+
+  /// Called when the user presses Tab (no Shift) inside the field. Page
+  /// wires this to focus the note editor so the compose-surface flow
+  /// continues into the body. Shift-Tab is left to the default focus
+  /// traversal so the user lands on the previous compose field.
+  final VoidCallback? onTabForward;
 
   @override
   State<TitleComposeField> createState() => TitleComposeFieldState();
@@ -33,7 +39,6 @@ class TitleComposeFieldState extends State<TitleComposeField> {
     super.initState();
     _controller = TextEditingController(text: widget.title ?? '');
     _focusNode = FocusNode();
-    // Commit on every keystroke (equivalent to onChange).
     _controller.addListener(_onControllerChanged);
   }
 
@@ -74,36 +79,43 @@ class TitleComposeFieldState extends State<TitleComposeField> {
   @override
   Widget build(BuildContext context) {
     return ComposeFieldRow(
-      icon: FontAwesomeIcons.pen,
+      icon: FontAwesomeIcons.t,
       tooltip: 'Title',
       shortcut: platformSingleActivator(
         LogicalKeyboardKey.keyH,
         shift: true,
       ),
       onTapField: focus,
-      child: FTextField(
-        control: .managed(controller: _controller),
-        focusNode: _focusNode,
-        hint: 'Title',
-        textInputAction: TextInputAction.next,
-        // onChange is not available in this forui version; commits are
-        // driven by the TextEditingController listener added in initState.
-        // onSubmit fires when the user presses Enter/next.
-        onSubmit: (v) => _commit(v),
-        style: FTextFieldStyleDelta.delta(
-          contentPadding: EdgeInsetsGeometryDelta.value(
-            const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          ),
-          // Strip the FTextField's own border so it blends into the row.
-          border: FVariantsValueDelta.delta([
-            FVariantValueDeltaOperation.all(
-              const OutlineInputBorder(
-                borderSide: BorderSide(width: 0, style: BorderStyle.none),
-              ),
-            ),
-          ]),
+      child: Focus(
+        // Intercept Tab BEFORE the FTextField sees it. Without an explicit
+        // hop into the note editor, default focus traversal lands inside
+        // the SuperEditor's internal focus group and the visual focus
+        // doesn't land on the editable body.
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleTabKey,
+        child: FTextField(
+          control: .managed(controller: _controller),
+          focusNode: _focusNode,
+          hint: 'Title',
+          textInputAction: TextInputAction.next,
+          onSubmit: _commit,
+          style: ghostFieldStyle(context),
         ),
       ),
     );
+  }
+
+  KeyEventResult _handleTabKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (shift) return KeyEventResult.ignored;
+    final cb = widget.onTabForward;
+    if (cb == null) return KeyEventResult.ignored;
+    cb();
+    return KeyEventResult.handled;
   }
 }

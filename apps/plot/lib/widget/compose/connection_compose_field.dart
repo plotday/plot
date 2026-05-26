@@ -3,9 +3,9 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
-/// Compose-surface connection field. Always shows the active
-/// [ConnectionChoice]. Desktop focus opens a dropdown of ranked
-/// candidates; touch tap opens the existing ConnectionPickerModal.
+/// Compose-surface connection field. Renders as a ghost text field with
+/// a popover dropdown of MRU-ranked candidates. Touch taps open the
+/// existing ConnectionPickerModal.
 class ConnectionComposeField extends StatefulWidget {
   const ConnectionComposeField({
     super.key,
@@ -36,6 +36,7 @@ class ConnectionComposeField extends StatefulWidget {
 class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
   final DropdownController _dropdown = DropdownController();
   final FocusNode _focusNode = FocusNode();
+  final TextEditingController _controller = TextEditingController();
   final GlobalKey<ComposeDropdownState<ConnectionChoice>> _dropdownKey =
       GlobalKey<ComposeDropdownState<ConnectionChoice>>();
 
@@ -43,12 +44,15 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
   void initState() {
     super.initState();
     _focusNode.addListener(_handleFocusChange);
+    _controller.addListener(_onTextChange);
   }
 
   @override
   void dispose() {
     _focusNode.removeListener(_handleFocusChange);
+    _controller.removeListener(_onTextChange);
     _focusNode.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -57,7 +61,21 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
       _dropdown.show();
     } else {
       _dropdown.hide();
+      if (_controller.text.isNotEmpty) _controller.clear();
     }
+  }
+
+  void _onTextChange() {
+    // Trigger a rebuild so the filtered candidates re-render.
+    setState(() {});
+  }
+
+  Iterable<ConnectionChoice> get _filteredCandidates {
+    final query = _controller.text.trim().toLowerCase();
+    if (query.isEmpty) return widget.candidates;
+    return widget.candidates.where(
+      (c) => c.searchText.toLowerCase().contains(query),
+    );
   }
 
   Future<void> _handleTap() async {
@@ -69,6 +87,8 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
   }
 
   Future<void> _handlePicked(ConnectionChoice choice) async {
+    _controller.clear();
+    _focusNode.unfocus();
     _dropdown.hide();
     await widget.onPicked(choice);
   }
@@ -95,8 +115,8 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
         child: ComposeDropdown<ConnectionChoice>(
           key: _dropdownKey,
           controller: _dropdown,
-          focusNode: _focusNode,
-          items: widget.candidates,
+          autoFocusOnShow: false,
+          items: _filteredCandidates.toList(growable: false),
           itemBuilder: (context, choice, highlighted) {
             return Container(
               color: highlighted ? theme.plotColors.highlight : null,
@@ -118,12 +138,12 @@ class _ConnectionComposeFieldState extends State<ConnectionComposeField> {
             );
           },
           onSelected: _handlePicked,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Text(
-              widget.activeChoice.label,
-              style: theme.typography.sm,
-            ),
+          child: ComposeValueInput(
+            controller: _controller,
+            focusNode: _focusNode,
+            hint: 'Plot thread',
+            value: Text(widget.activeChoice.label),
+            readOnly: isTouchPlatform(),
           ),
         ),
       ),

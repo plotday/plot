@@ -811,10 +811,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     final activeChoice = _resolveActiveConnectionChoice(state);
     final connectionCandidates = _rankConnectionChoices();
 
-    // The field stack lives inside a container with a single bottom border
-    // that separates it from the note body. No dividers between fields.
+    // The field stack lives in a single container with the editable
+    // background and a single bottom border separating it from the note
+    // body. No dividers between fields.
     return DecoratedBox(
       decoration: BoxDecoration(
+        color: context.theme.plotColors.editableBackground,
         border: Border(
           bottom: BorderSide(color: context.theme.colors.border),
         ),
@@ -847,6 +849,7 @@ class NewThreadPageState extends State<NewThreadPage> {
             key: _titleFieldKey,
             title: state.draft.title,
             onChanged: _updateTitle,
+            onTabForward: () => _threadEditorKey.currentState?.focus(),
           ),
         ],
       ),
@@ -953,28 +956,33 @@ class NewThreadPageState extends State<NewThreadPage> {
                                     if (!isViewerMode)
                                       _buildComposeSurface(context, state),
                                     Flexible(
-                                      child: NoteEditor(
-                                        key: _threadEditorKey,
-                                        bodyOnly: true,
-                                        draft: state.draftNote,
-                                        thread: state.draft,
-                                        onDraftChanged: _handleDraftChanged,
-                                        flushToBottom: true,
-                                        showScheduleActions: false,
-                                        hint: state.draft.priority.isPlotApp
-                                            ? 'Ask for help or share feedback'
-                                            : _editorHint,
-                                        additionalMentions: _twistMentions,
-                                        onSubmitted: _onChatSubmitted,
-                                        submitValidator: _validateDmSubmit,
-                                        viewerMode: isViewerMode,
-                                        selectedTwist: _selectedTwist,
-                                        onTwistSelected: _selectTwist,
-                                        onNavigateToThread: (thread) {
-                                          context.run(
-                                            ChangeCurrentThread(thread),
-                                          );
-                                        },
+                                      child: Focus(
+                                        canRequestFocus: false,
+                                        skipTraversal: true,
+                                        onKeyEvent: _handleEditorShiftTab,
+                                        child: NoteEditor(
+                                          key: _threadEditorKey,
+                                          bodyOnly: true,
+                                          draft: state.draftNote,
+                                          thread: state.draft,
+                                          onDraftChanged: _handleDraftChanged,
+                                          flushToBottom: true,
+                                          showScheduleActions: false,
+                                          hint: state.draft.priority.isPlotApp
+                                              ? 'Ask for help or share feedback'
+                                              : _editorHint,
+                                          additionalMentions: _twistMentions,
+                                          onSubmitted: _onChatSubmitted,
+                                          submitValidator: _validateDmSubmit,
+                                          viewerMode: isViewerMode,
+                                          selectedTwist: _selectedTwist,
+                                          onTwistSelected: _selectTwist,
+                                          onNavigateToThread: (thread) {
+                                            context.run(
+                                              ChangeCurrentThread(thread),
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1016,32 +1024,44 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               state,
                                             ),
                                           Flexible(
-                                            child: NoteEditor(
-                                              key: _threadEditorKey,
-                                              bodyOnly: true,
-                                              draft: state.draftNote,
-                                              thread: state.draft,
-                                              onDraftChanged:
-                                                  _handleDraftChanged,
-                                              flushToBottom: false,
-                                              showScheduleActions: false,
-                                              hint:
-                                                  state.draft.priority.isPlotApp
-                                                  ? 'Ask for help or share feedback'
-                                                  : _editorHint,
-                                              additionalMentions:
-                                                  _twistMentions,
-                                              onSubmitted: _onChatSubmitted,
-                                              submitValidator: _validateDmSubmit,
-                                              viewerMode: isViewerMode,
-                                              selectedTwist: _selectedTwist,
-                                              onTwistSelected: _selectTwist,
-                                              onNavigateToThread: (thread) {
-                                                context.run(
-                                                  ChangeCurrentThread(thread),
-                                                );
-                                              },
-                                              autofocus: !isMobilePlatform(),
+                                            child: Focus(
+                                              canRequestFocus: false,
+                                              skipTraversal: true,
+                                              onKeyEvent:
+                                                  _handleEditorShiftTab,
+                                              child: NoteEditor(
+                                                key: _threadEditorKey,
+                                                bodyOnly: true,
+                                                draft: state.draftNote,
+                                                thread: state.draft,
+                                                onDraftChanged:
+                                                    _handleDraftChanged,
+                                                flushToBottom: false,
+                                                showScheduleActions: false,
+                                                hint:
+                                                    state
+                                                        .draft
+                                                        .priority
+                                                        .isPlotApp
+                                                    ? 'Ask for help or share feedback'
+                                                    : _editorHint,
+                                                additionalMentions:
+                                                    _twistMentions,
+                                                onSubmitted: _onChatSubmitted,
+                                                submitValidator:
+                                                    _validateDmSubmit,
+                                                viewerMode: isViewerMode,
+                                                selectedTwist: _selectedTwist,
+                                                onTwistSelected: _selectTwist,
+                                                onNavigateToThread: (thread) {
+                                                  context.run(
+                                                    ChangeCurrentThread(
+                                                      thread,
+                                                    ),
+                                                  );
+                                                },
+                                                autofocus: !isMobilePlatform(),
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1063,6 +1083,24 @@ class NewThreadPageState extends State<NewThreadPage> {
         );
       },
     );
+  }
+
+  /// Intercepts Shift+Tab bubbling up from the focused note editor and
+  /// sends focus back to the title field. SuperEditor doesn't consume Tab
+  /// outside its mention popover, so the unhandled key reaches this Focus
+  /// ancestor; we only act on Shift+Tab so plain Tab inside the editor
+  /// remains available (currently the default focus traversal also leaves
+  /// the editor, which is fine).
+  KeyEventResult _handleEditorShiftTab(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    if (!HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    _titleFieldKey.currentState?.focus();
+    return KeyEventResult.handled;
   }
 
   /// Builds keyboard shortcut bindings for thread-level actions on the

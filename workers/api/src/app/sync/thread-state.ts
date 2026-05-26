@@ -47,6 +47,13 @@ threadState.post("/sync/thread-state", async (c) => {
 
       // Apply any remaining state fields. Skip the upsert entirely if the
       // record only carries a read_at (handled above).
+      //
+      // Note on read_at: the client's read marker is processed exclusively by
+      // the clear_thread_state branch above (race-safe). The upsert here
+      // never opts in to writing read_at (p_set_read_at: false) so a payload
+      // like {active: true} doesn't clobber the existing read marker — that
+      // was the source of the "click 'To do' on a read thread, then it
+      // becomes unread again" bug.
       const hasActive = record.active !== undefined;
       const hasTask = record.task !== undefined;
       const hasToRead = record.to_read !== undefined;
@@ -71,6 +78,7 @@ threadState.post("/sync/thread-state", async (c) => {
           p_set_to_read: hasToRead,
           p_set_urgent: hasUrgent,
           p_set_importance: hasImportance,
+          p_set_read_at: false,
           p_set_order: hasOrder,
           p_set_on: hasOn,
           p_set_at: hasAt,

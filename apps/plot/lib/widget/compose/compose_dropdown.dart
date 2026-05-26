@@ -128,13 +128,25 @@ class ComposeDropdownState<T> extends State<ComposeDropdown<T>> {
         shrinkWrap: true,
         itemCount: widget.items.length,
         itemBuilder: (context, i) {
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onSelected(widget.items[i]),
-            child: widget.itemBuilder(
-              context,
-              widget.items[i],
-              i == _highlightedIndex,
+          // Listener with onPointerUp instead of GestureDetector.onTap:
+          // the popover sits inside a Scrollable (ListView) and a
+          // [TapRegion] whose competing gesture recognizers can swallow
+          // the tap on some platforms, making clicks no-op. Raw pointer
+          // events sidestep the gesture arena entirely. The press hit-test
+          // guarantees onPointerUp only fires for pointers that went down
+          // on this item, which is the click semantics we want for a
+          // single-selection list.
+          final item = widget.items[i];
+          return MouseRegion(
+            cursor: SystemMouseCursors.basic,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerUp: (_) => widget.onSelected(item),
+              child: widget.itemBuilder(
+                context,
+                item,
+                i == _highlightedIndex,
+              ),
             ),
           );
         },

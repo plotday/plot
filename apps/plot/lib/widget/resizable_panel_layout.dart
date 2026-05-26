@@ -24,7 +24,7 @@ const double _outerInset = 14.0;
 /// (e.g. left sidebar squircle vs. main-panel squircle). Split evenly across
 /// the FResizable region boundary so the boundary — and its drag handle —
 /// lands at the visual center of the gap.
-const double _halfGap = 7.0;
+const double _halfGap = 12.0;
 
 /// Corner radius for the squircle panel cards.
 const double _panelRadius = 14.0;
@@ -369,8 +369,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                   buildWhen: (previous, current) =>
                       previous.multiPanel != current.multiPanel ||
                       previous.leftPanelVisible != current.leftPanelVisible ||
-                      previous.middlePanelVisible !=
-                          current.middlePanelVisible,
+                      previous.middlePanelVisible != current.middlePanelVisible,
                   builder: (context, layoutState) {
                     if (!layoutState.multiPanel) {
                       // Single-panel: the page-level header is rendered
@@ -418,8 +417,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
                       leftWidth: leftWidth,
                       totalWidth: totalWidth,
                       layoutState: layoutState,
-                      onLeftWidthChanged: (width) =>
-                          _leftPanelWidth = width,
+                      onLeftWidthChanged: (width) => _leftPanelWidth = width,
                       left: _buildSidebarColumn(context),
                       right: _buildMainColumn(
                         context,
@@ -494,9 +492,11 @@ class _OuterHoverableResizableState extends State<_OuterHoverableResizable> {
   @override
   void didUpdateWidget(covariant _OuterHoverableResizable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final dimsChanged = oldWidget.leftWidth != widget.leftWidth ||
+    final dimsChanged =
+        oldWidget.leftWidth != widget.leftWidth ||
         oldWidget.totalWidth != widget.totalWidth;
-    final childrenChanged = !identical(oldWidget.left, widget.left) ||
+    final childrenChanged =
+        !identical(oldWidget.left, widget.left) ||
         !identical(oldWidget.right, widget.right);
     if (dimsChanged) {
       _dividerOffset = widget.leftWidth;
@@ -581,9 +581,7 @@ class _OuterHoverableResizableState extends State<_OuterHoverableResizable> {
     final actual = _controller.regions[0].offset.max;
     final gap = desired - actual;
     if (gap.abs() > 0.5 && gap * delta < 0) return;
-    final adjusted = (gap.abs() > 0.5 && gap.abs() < delta.abs())
-        ? gap
-        : delta;
+    final adjusted = (gap.abs() > 0.5 && gap.abs() < delta.abs()) ? gap : delta;
     _controller.update(0, 1, adjusted);
   }
 
@@ -728,8 +726,10 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
   }
 
   List<FResizableRegion> _buildRegions(double totalWidth) {
-    final maxMiddle = (totalWidth - LayoutState.rightPanelMinWidth)
-        .clamp(0.0, double.infinity);
+    final maxMiddle = (totalWidth - LayoutState.rightPanelMinWidth).clamp(
+      0.0,
+      double.infinity,
+    );
     // Preserve the user's current middle pixel width across outer-drag
     // reflows: when totalWidth changes, the right panel absorbs the
     // delta rather than re-anchoring the divider against the persisted
@@ -746,8 +746,10 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
     initialMiddle = maxMiddle < LayoutState.middlePanelMinWidth
         ? maxMiddle
         : initialMiddle.clamp(LayoutState.middlePanelMinWidth, maxMiddle);
-    final initialRight =
-        (totalWidth - initialMiddle).clamp(0.0, double.infinity);
+    final initialRight = (totalWidth - initialMiddle).clamp(
+      0.0,
+      double.infinity,
+    );
     _dividerOffset = initialMiddle;
     final (minMiddle, minRight) = _resizableMinExtents(
       LayoutState.middlePanelMinWidth,
@@ -805,9 +807,7 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
     final actual = _controller.regions[0].offset.max;
     final gap = desired - actual;
     if (gap.abs() > 0.5 && gap * delta < 0) return;
-    final adjusted = (gap.abs() > 0.5 && gap.abs() < delta.abs())
-        ? gap
-        : delta;
+    final adjusted = (gap.abs() > 0.5 && gap.abs() < delta.abs()) ? gap : delta;
     _controller.update(0, 1, adjusted);
   }
 
@@ -848,8 +848,7 @@ class _InnerHoverableResizableState extends State<_InnerHoverableResizable> {
             _regions = _buildRegions(totalWidth);
           }
 
-          const sharedRadius =
-              BorderRadius.all(Radius.circular(_panelRadius));
+          const sharedRadius = BorderRadius.all(Radius.circular(_panelRadius));
 
           return Stack(
             children: [

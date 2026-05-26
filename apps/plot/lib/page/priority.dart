@@ -513,7 +513,7 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                           if (thread.todo) {
                             FinishThread(thread).run(context);
                           } else {
-                            MoveThreadToRespond(thread).run(context);
+                            ToggleThreadActive(thread).run(context);
                           }
                         }
                         return null;
@@ -767,17 +767,15 @@ class _PriorityPageState extends State<PriorityPage>
     super.initState();
     // One-shot: when the user lands on this priority from a
     // multi-thread notification tap, [NotificationLandingPage] leaves
-    // `PendingActivityFeedView.openCatchUpTab` set. Consume and clear
+    // `PendingActivityFeedView.scrollToUpdates` set. Consume and clear
     // the flag in a post-frame callback so `PriorityBloc` is already
-    // available via context.read. Switches the active tab even when the
-    // user had previously navigated to a different action tab on this
-    // priority.
-    if (PendingActivityFeedView.openCatchUpTab) {
+    // available via context.read.
+    if (PendingActivityFeedView.scrollToUpdates) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (!PendingActivityFeedView.openCatchUpTab) return;
-        PendingActivityFeedView.openCatchUpTab = false;
-        context.read<PriorityBloc>().selectActivityTab(ActivityTab.catchUp);
+        if (!PendingActivityFeedView.scrollToUpdates) return;
+        PendingActivityFeedView.scrollToUpdates = false;
+        context.read<PriorityBloc>().selectActivityTab(ActivityTab.unified);
       });
     }
   }
@@ -1035,26 +1033,10 @@ class _PriorityPageState extends State<PriorityPage>
     InfiniteListController controller,
   ) {
     final selectedId = state.thread?.id;
-    // In multi-panel mode the Today section marker renders as
-    // SizedBox.shrink (the sticky tab header above the list carries
-    // that label), so the separator slots both above and below that
-    // marker are pure dead space sitting under the sticky header's
-    // bottom border — the 1px above adds an extra-pixel band, and
-    // the 1px below would light up whenever the first thread is
-    // hovered, focused, or selected. Drop both so the header's
-    // divider is the only line above the first row.
-    //
-    // In single-panel mode the Today marker renders as a visible
-    // date header instead, so its separators behave normally.
-    final isMulti = context.isMultiPanel;
     final rawPrev = index > 0 && index - 1 < listItems.length
         ? listItems[index - 1]
         : null;
     final rawNext = index < listItems.length ? listItems[index] : null;
-    if (isMulti &&
-        (_isTodaySectionMarker(rawPrev) || _isTodaySectionMarker(rawNext))) {
-      return const SizedBox.shrink();
-    }
     return BlockListSeparator(
       prev: rawPrev,
       next: rawNext,
@@ -1076,14 +1058,6 @@ class _PriorityPageState extends State<PriorityPage>
       dragSourceId: (item) =>
           item is AgendaThreadItem ? item.thread.id.toString() : null,
     );
-  }
-
-  static bool _isTodaySectionMarker(AgendaItem? item) {
-    if (item is! AgendaHeaderItem) return false;
-    final text = item.text;
-    if (text == null) return false;
-    final marker = ActivitySectionMarker.tryDecode(text);
-    return marker?.section == ActivitySection.doing;
   }
 
   Widget _buildActivityFeed(
@@ -1121,6 +1095,16 @@ class _PriorityPageState extends State<PriorityPage>
             (state.hasArchivedMatches && !state.showArchived));
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
+
+    // Initial load / priority switch: the bloc has reset `activityFeedByTab`
+    // and `activityFeedLoaded` to wait for the new subscription's first
+    // emission. Show a LoadingPage so the user doesn't see the empty-state
+    // text flash before the real list arrives. Typing a search keeps
+    // `activityFeedLoaded == true` so the existing filtered list keeps
+    // rendering through the transition.
+    if (!hasAnyThread && !showFooter && !state.activityFeedLoaded) {
+      return const LoadingPage();
+    }
 
     if (!hasAnyThread &&
         !showFooter &&
@@ -1241,26 +1225,6 @@ class _PriorityPageState extends State<PriorityPage>
                     : ActivitySectionMarker.tryDecode(displayText);
                 if (marker != null) displayText = marker.label;
 
-                // The Today section header used to render the "Doing"
-                // label inline. In multi-panel mode the sticky tab
-                // header above the feed carries that label, so the
-                // marker renders zero-height (still emitted as a
-                // drag-drop target for "make active today"). In
-                // single-panel mode the tab header sits at the
-                // bottom — well below today's threads — so render
-                // the marker as a plain "Today" text label here,
-                // matching the appearance of scheduled-day headers
-                // like "Tomorrow" or "Monday" (which also flow
-                // through AgendaTile's text-only path with their
-                // relativeDateLabel as text).
-                final isTodayMarker = marker?.section == ActivitySection.doing;
-                if (isTodayMarker) {
-                  if (context.isMultiPanel) {
-                    return const [SizedBox.shrink()];
-                  }
-                  displayText = relativeDateLabel(Date.today());
-                }
-
                 // Activity-feed section headers (Today / New / Scheduled
                 // day buckets / Done) are all just text labels and must
                 // render through AgendaTile's text-only heading path so
@@ -1280,6 +1244,34 @@ class _PriorityPageState extends State<PriorityPage>
                   text: displayText,
                   scheduleAt: header.scheduleAt,
                 );
+
+                // "Reschedule all" affordance for the Doing block and
+                // every Scheduled-day block. Collect the threads that
+                // follow this header until the next AgendaHeaderItem and
+                // skip rendering the button when the block is empty.
+                final canRescheduleAll =
+                    marker != null &&
+                    (marker.section == ActivitySection.doing ||
+                        marker.section == ActivitySection.scheduled);
+                if (canRescheduleAll) {
+                  final sectionThreads = <Thread>[];
+                  for (var j = index + 1; j < displayItems.length; j++) {
+                    final next = displayItems[j];
+                    if (next is AgendaHeaderItem) break;
+                    if (next is AgendaThreadItem) {
+                      sectionThreads.add(next.thread);
+                    }
+                  }
+                  if (sectionThreads.isNotEmpty) {
+                    return [
+                      _SectionHeaderWithRescheduleAll(
+                        tile: tile,
+                        threads: sectionThreads,
+                        sectionLabel: marker.label,
+                      ),
+                    ];
+                  }
+                }
 
                 return [tile];
               },
@@ -1467,11 +1459,59 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   }
 }
 
-/// Section header (Today, a future Scheduled day, or New) overlaid with a
-/// small trailing-edge affordance ("Reschedule all" / "Mark all read").
-/// The underlying [AgendaTile] keeps its centered text and dark band; the
-/// button is laid out in a Row with an invisible mirror on the left so the
-/// centered title stays at the row's true horizontal midpoint.
+/// Section header (Doing or a Scheduled-day bucket) paired with a small
+/// trailing-edge "Reschedule all" button. The underlying [AgendaTile] keeps
+/// its centered text; the button sits in a Row with an invisible mirror on
+/// the left so the centered title stays at the row's true horizontal
+/// midpoint regardless of the button's width.
+class _SectionHeaderWithRescheduleAll extends StatelessWidget {
+  const _SectionHeaderWithRescheduleAll({
+    required this.tile,
+    required this.threads,
+    required this.sectionLabel,
+  });
+
+  final Widget tile;
+  final List<Thread> threads;
+  final String sectionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.theme.spacing;
+    final button = Padding(
+      padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+      child: Button.icon(
+        RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
+      ),
+    );
+    // AgendaTile paints its own `headerBackground` band but only across
+    // its own width — the mirror and button sit outside that band and
+    // would let the page background show through. Paint the same colour
+    // on the outer row so the tinted band runs edge to edge.
+    return ColoredBox(
+      color: context.colour.headerBackground,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Invisible mirror on the left reserves the button's width so
+          // the centred tile text sits at the row's true horizontal
+          // midpoint. Using the same widget on both sides keeps the
+          // reserved widths identical down to anti-aliasing.
+          Visibility(
+            visible: false,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: button,
+          ),
+          Expanded(child: tile),
+          button,
+        ],
+      ),
+    );
+  }
+}
+
 /// Sticky tab header for the activity feed. Renders five tab labels —
 /// Catch up | Respond | Do | Read | All — centred and separated by
 /// `veryMuted` pipes. The active tab is in the foreground colour;

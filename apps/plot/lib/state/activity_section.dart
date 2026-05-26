@@ -3,21 +3,13 @@ import 'package:plot/store/store.dart';
 
 /// Cross-component signal: when the user taps a multi-thread
 /// notification, [NotificationLandingPage] sets this to true. The
-/// matching priority page consumes it on mount and scrolls to the
-/// Updates section at the top of the unified feed, then clears the
-/// flag. Single-thread notifications still route through
-/// `ThreadLookupRoute` and never touch this signal.
+/// matching priority page consumes it on mount and scrolls to the top
+/// of the unified feed (where unread threads cluster at the top of
+/// Doing), then clears the flag. Single-thread notifications still
+/// route through `ThreadLookupRoute` and never touch this signal.
 class PendingActivityFeedView {
   /// Scroll-to-top hint for multi-thread notification taps.
   static bool scrollToUpdates = false;
-
-  /// Deprecated alias for [scrollToUpdates] retained for transitional
-  /// callers. The unified feed always shows Updates at the top, so the
-  /// old "open Catch up tab" semantics map cleanly onto the scroll hint.
-  @Deprecated('Use scrollToUpdates')
-  static bool get openCatchUpTab => scrollToUpdates;
-  @Deprecated('Use scrollToUpdates')
-  static set openCatchUpTab(bool value) => scrollToUpdates = value;
 }
 
 /// Transitional shim: the unified feed has only one "tab" (the whole
@@ -49,28 +41,33 @@ enum ActivityTab {
 
 /// The sections of the unified activity feed.
 ///
-/// The feed is built in this order; the Updates section explicitly
-/// duplicates: every unread thread appears in Updates in addition to
-/// whichever non-Updates section it would otherwise sit in.
+/// The feed is built in this order. There is no separate "Updates"
+/// section: every unread thread is projected to the top of [doing]
+/// (sorted by urgency, importance, order). When the user opens an
+/// unread thread it becomes sticky-pinned in the unread cluster until
+/// they navigate away, then falls back to its natural primary section
+/// (which may be [doing], [scheduled], or [activity]).
 ///
 /// - [eventAgenda] — Pinned event thread + associated threads. Only
 ///                   present when an event is currently selected.
-/// - [updates]    — All unread threads. Sorted by urgency, like the
-///                  pre-tab "Catch up" view. Not a drop target — drops
-///                  fall through to the section below.
-/// - [doing]      — Active threads not scheduled for the future.
+/// - [doing]      — Unread threads at the top (sorted by urgent,
+///                  importance, order), then active threads not
+///                  scheduled for the future (sorted by order).
 ///                  Reorderable end-to-end.
-/// - [scheduled]  — Active threads scheduled for a future day.
+/// - [scheduled]  — Read active threads scheduled for a future day.
 ///                  Per-day sub-sections, reorderable within a day.
-/// - [activity]   — Tail of history: everything that's not unread and
-///                  not active. Only the top is a valid drop target;
+/// - [activity]   — Tail of history: read threads with no active
+///                  state. Only the top is a valid drop target;
 ///                  drops there mark the thread done and bump it to
 ///                  the top of activity.
-enum ActivitySection { eventAgenda, updates, doing, scheduled, activity }
+enum ActivitySection { eventAgenda, doing, scheduled, activity }
 
-/// Classify a thread into its primary (non-Updates) section. The feed
-/// builder layers the Updates section on top by scanning for unread
-/// threads independently.
+/// Classify a thread into its natural primary section based on its
+/// underlying state. Unread threads are surfaced at the top of
+/// [doing] by the feed builder independently of this classification,
+/// so when an unread thread is later marked read it returns to the
+/// section this function would return for it (i.e. its scheduled day,
+/// or activity if it has no active state).
 ActivitySection primarySectionFor(Thread thread) {
   if (thread.isActiveThread) return ActivitySection.doing;
   if (thread.isScheduledThread) return ActivitySection.scheduled;
@@ -112,8 +109,6 @@ class ActivitySectionMarker {
     switch (section) {
       case ActivitySection.eventAgenda:
         return 'Event Agenda';
-      case ActivitySection.updates:
-        return 'Updates';
       case ActivitySection.doing:
         return 'Doing';
       case ActivitySection.scheduled:
@@ -127,7 +122,7 @@ class ActivitySectionMarker {
 /// True for sections where the user can drop a thread anywhere within
 /// the section's slot range to position it exactly. Doing and per-day
 /// Scheduled rows accept arbitrary drops; Activity only accepts a drop
-/// at the very top; Updates is not a drop target at all.
+/// at the very top.
 bool sectionAcceptsArbitraryDrop(ActivitySection section) =>
     section == ActivitySection.doing || section == ActivitySection.scheduled;
 
@@ -140,7 +135,6 @@ bool sectionDropsAtTopOnly(ActivitySection section) =>
 /// should fall through to the next section if the pointer is over one
 /// of these.
 bool sectionRejectsDrops(ActivitySection section) =>
-    section == ActivitySection.updates ||
     section == ActivitySection.eventAgenda;
 
 /// Human-readable relative-date label for a Scheduled-section header.

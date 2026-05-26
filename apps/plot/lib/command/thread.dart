@@ -915,8 +915,7 @@ abstract class _UpdateThreadCommand extends Command {
   ///
   /// [watchScheduleAction] forwards to [PriorityBloc.optimisticallyUpdateThread]
   /// so the override won't settle until the new `schedule.action` lands.
-  /// Pass `true` from commands that change which action tab the thread
-  /// belongs to (To respond / To do / To read).
+  /// Retained for the legacy action-tab path; no current command sets it.
   Future<void> saveOptimistically(
     BuildContext context,
     Thread updatedThread, {
@@ -957,18 +956,25 @@ abstract class _UpdateThreadCommand extends Command {
   }
 }
 
-class ToggleThreadToDo extends _UpdateThreadCommand {
-  ToggleThreadToDo(
-    super.thread, {
-    super.onUpdate,
-    bool stateIcon = false,
-    String? title,
-  }) : super(
-         title: title ?? (thread.todo ? 'Finish' : 'To do'),
-         eventObject: EventObject.activity,
-         eventAction: EventAction.started,
-         icon: stateIcon ? PlotIcon.note : PlotIcon.addTodo,
-       );
+/// Flips `thread.active`. When activating, marks the thread read (the
+/// leading icon's "mark done" branch handled by [FinishThread]). Used by:
+///   - leading-icon tap on non-active threads in the activity feed
+///   - swipe-right short on touch
+///   - ⌘D shortcut on ThreadPage
+///   - command palette
+class ToggleThreadActive extends _UpdateThreadCommand {
+  ToggleThreadActive(super.thread, {super.onUpdate})
+    : super(
+        title: thread.todo ? 'Mark done' : 'To do',
+        eventObject: EventObject.activity,
+        eventAction: thread.todo
+            ? EventAction.finished
+            : EventAction.started,
+        icon: thread.todo
+            ? FontAwesomeIcons.circleCheck
+            : FontAwesomeIcons.circlePlus,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
+      );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -986,86 +992,46 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
   }
 }
 
-/// Moves a thread into one of the action tabs (Respond / Do / Read) by
-/// making it a todo and writing the user schedule's `action` field. The
-/// three concrete subclasses below give each move-to-tab affordance its
-/// own title, icon, and shortcut.
-abstract class _MoveThreadToTab extends _UpdateThreadCommand {
-  _MoveThreadToTab(
-    super.thread,
-    this.action, {
-    super.onUpdate,
-    required super.title,
-    required super.icon,
-    super.shortcut,
-  }) : super(
-         eventObject: EventObject.activity,
-         eventAction: EventAction.started,
-       );
-
-  /// Schedule.action value the destination tab filters on.
-  final String action;
+/// Toggles `thread.task` — the per-user "task list" flag. Independent of
+/// `active` / `toRead`. Surfaced as a hover-row command that stays visible
+/// when the flag is set (like an enabled tag).
+class ToggleThreadTask extends _UpdateThreadCommand {
+  ToggleThreadTask(super.thread, {super.onUpdate})
+    : super(
+        title: thread.task ? 'Remove from task list' : 'Add to task list',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.activity,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
+      );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Tab-style action moves no longer exist — collapse to the unified
-    // Doing section (active = true). Subclasses' `action` is ignored for
-    // routing; preserved for analytics continuity.
-    final order = thread.order;
-    final restored = thread
-        .withScheduleRestored(order: order)
-        .copyWith(
-          todo: true,
-          unread: false,
-          readAt: thread.unread
-              ? Value(thread.contentTimestamp)
-              : const Value.absent(),
-        );
-    await saveOptimistically(context, restored, watchScheduleAction: true);
+    await saveOptimistically(context, thread.withTask(!thread.task));
     return const CommandDone();
   }
 }
 
-class MoveThreadToRespond extends _MoveThreadToTab {
-  MoveThreadToRespond(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'respond',
-         onUpdate: onUpdate,
-         title: 'To respond',
-         icon: PlotIcon.send,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyR),
-       );
-}
+/// Toggles `thread.toRead` — the per-user "reading list" flag. Independent
+/// of `active` / `task`. Surfaced as a hover-row command that stays
+/// visible when the flag is set (like an enabled tag).
+class ToggleThreadToRead extends _UpdateThreadCommand {
+  ToggleThreadToRead(super.thread, {super.onUpdate})
+    : super(
+        title: thread.toRead
+            ? 'Remove from reading list'
+            : 'Add to reading list',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.bookOpenLines,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
+      );
 
-class MoveThreadToDo extends _MoveThreadToTab {
-  MoveThreadToDo(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'do',
-         onUpdate: onUpdate,
-         title: 'To do',
-         icon: PlotIcon.clipboardCheck,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
-       );
-}
-
-class MoveThreadToRead extends _MoveThreadToTab {
-  MoveThreadToRead(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'read',
-         onUpdate: onUpdate,
-         title: 'To read',
-         icon: PlotIcon.bookOpenLines,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
-       );
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await saveOptimistically(context, thread.withToRead(!thread.toRead));
+    return const CommandDone();
+  }
 }
 
 class DisassociateThread extends Command {
@@ -2029,8 +1995,8 @@ class _ExecuteMerge extends ThreadCommand {
     );
     // urgent merges with OR: if either side flagged urgent, the merged
     // thread stays urgent. Null is treated as "no preference".
-    final mergedUrgent = (targetRow.urgent ?? false) ||
-        (sourceRow.urgent ?? false);
+    final mergedUrgent =
+        (targetRow.urgent ?? false) || (sourceRow.urgent ?? false);
     final newUrgent = (targetRow.urgent == null && sourceRow.urgent == null)
         ? null
         : mergedUrgent;
@@ -3409,21 +3375,15 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   ];
 }
 
-/// Returns the move-to-tab commands in tab order, omitting the one
-/// matching the thread's current state — that command is already
-/// represented elsewhere in the row. For non-todo threads the leading
-/// icon button is [MoveThreadToRespond] (regardless of which tab is
-/// active), so "To respond" would otherwise duplicate it in the hover
-/// secondaries. For todo threads the move command matching
-/// [Thread.scheduleAction] is the no-op for the row's current tab.
-List<Command> moveToTabCommands(Thread thread) {
-  final String? currentAction = thread.todo ? thread.scheduleAction : 'respond';
-  return [
-    if (currentAction != 'respond') MoveThreadToRespond(thread),
-    if (currentAction != 'do') MoveThreadToDo(thread),
-    if (currentAction != 'read') MoveThreadToRead(thread),
-  ];
-}
+/// Returns the per-user list-toggle commands ([ToggleThreadTask] and
+/// [ToggleThreadToRead]) in display order. These surface in the hover
+/// row and stay visible — like enabled tags — when their underlying
+/// flag is set. Both flags are independent of `active` and of each
+/// other.
+List<Command> threadListToggleCommands(Thread thread) => [
+  ToggleThreadTask(thread),
+  ToggleThreadToRead(thread),
+];
 
 List<Command> threadCommands(
   Thread thread, {
@@ -3447,13 +3407,13 @@ List<Command> threadCommands(
       } else if (thread.on != null) {
         primary = PickScheduleThread(thread);
       } else {
-        primary = MoveThreadToRespond(thread);
+        primary = ToggleThreadActive(thread);
       }
     }
     return [
       if (open) ChangeCurrentThread(thread),
       ?primary,
-      ...moveToTabCommands(thread),
+      ...threadListToggleCommands(thread),
     ];
   }
 
@@ -3476,15 +3436,14 @@ List<Command> threadCommands(
     } else if (thread.on != null) {
       primary = PickScheduleThread(thread);
     } else {
-      primary = MoveThreadToRespond(thread);
+      primary = ToggleThreadActive(thread);
     }
   }
 
-  // Move-to-tab affordances (To respond / To do / To read), minus the
-  // one matching the thread's current state — that command is already
-  // represented by the leading icon button (e.g. "To respond" on non-todo
-  // threads) or the action tab the thread already lives in.
-  final moveCommands = moveToTabCommands(thread);
+  // Per-user list-toggle commands (task list / reading list). Independent
+  // of `active` and of each other; they stay visible like enabled tags
+  // when the underlying flag is set (handled by the ThreadCommands widget).
+  final listToggleCommands = threadListToggleCommands(thread);
 
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;
@@ -3492,7 +3451,7 @@ List<Command> threadCommands(
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
-    ...moveCommands,
+    ...listToggleCommands,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
     if (!skipInfrequent) EditThread(thread),

@@ -4,7 +4,7 @@ import 'package:drift/drift.dart';
 
 extension type Order._(double value) {
   static final _random = Random();
-  static const lowerBound = -10_000_536_000_000;
+  static const lowerBound = -10_000_536_000_000.0;
   // `_step` is the fractional offset used by open-ended drops to guarantee
   // strict monotonicity vs an existing neighbour. `_random.nextDouble()` is
   // in [0, 1) so a 1.0 step is always strictly larger than any random tail

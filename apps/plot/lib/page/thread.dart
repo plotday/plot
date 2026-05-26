@@ -291,20 +291,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
-                  // ⌘R / Ctrl+R — move thread to Respond tab
-                  if (event.logicalKey == LogicalKeyboardKey.keyR &&
-                      (HardwareKeyboard.instance.isMetaPressed ||
-                          HardwareKeyboard.instance.isControlPressed) &&
-                      !HardwareKeyboard.instance.isShiftPressed &&
-                      !HardwareKeyboard.instance.isAltPressed) {
-                    final thread = context.read<PriorityBloc>().state.thread;
-                    if (thread != null) {
-                      MoveThreadToRespond(thread).run(context);
-                      return KeyEventResult.handled;
-                    }
-                  }
-
-                  // ⌘D / Ctrl+D — move thread to Do tab
+                  // ⌘D / Ctrl+D — toggle the active flag (Doing).
                   if (event.logicalKey == LogicalKeyboardKey.keyD &&
                       (HardwareKeyboard.instance.isMetaPressed ||
                           HardwareKeyboard.instance.isControlPressed) &&
@@ -312,12 +299,25 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       !HardwareKeyboard.instance.isAltPressed) {
                     final thread = context.read<PriorityBloc>().state.thread;
                     if (thread != null) {
-                      MoveThreadToDo(thread).run(context);
+                      ToggleThreadActive(thread).run(context);
                       return KeyEventResult.handled;
                     }
                   }
 
-                  // ⌘E / Ctrl+E — move thread to Read tab
+                  // ⌘T / Ctrl+T — toggle the task-list flag.
+                  if (event.logicalKey == LogicalKeyboardKey.keyT &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      ToggleThreadTask(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
+                  // ⌘E / Ctrl+E — toggle the reading-list flag.
                   if (event.logicalKey == LogicalKeyboardKey.keyE &&
                       (HardwareKeyboard.instance.isMetaPressed ||
                           HardwareKeyboard.instance.isControlPressed) &&
@@ -325,7 +325,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       !HardwareKeyboard.instance.isAltPressed) {
                     final thread = context.read<PriorityBloc>().state.thread;
                     if (thread != null) {
-                      MoveThreadToRead(thread).run(context);
+                      ToggleThreadToRead(thread).run(context);
                       return KeyEventResult.handled;
                     }
                   }
@@ -504,13 +504,20 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                                 padding: EdgeInsets.symmetric(
                                   horizontal: context.isMultiPanel ? 20.0 : 0,
                                 ),
-                                child: ScrollEdgeFade(
-                                  background: context.colour.background,
-                                  child: _buildThreadList(
-                                    state,
-                                    listController,
-                                    context,
-                                  ),
+                                child: LayoutBuilder(
+                                  builder: (context, listConstraints) =>
+                                      NotePanelMetrics(
+                                        availableHeight:
+                                            listConstraints.maxHeight,
+                                        child: ScrollEdgeFade(
+                                          background: context.colour.background,
+                                          child: _buildThreadList(
+                                            state,
+                                            listController,
+                                            context,
+                                          ),
+                                        ),
+                                      ),
                                 ),
                               ),
                             ),
@@ -1327,7 +1334,12 @@ class _ThreadActionsRow extends StatelessWidget {
     final Widget todoButton;
     if (!isTodo) {
       todoButton = Button.icon(
-        CommandWrapper(MoveThreadToRespond(thread), icon: Value(PlotIcon.send)),
+        CommandWrapper(
+          ToggleThreadActive(thread),
+          icon: Value(FontAwesomeIcons.circle),
+          hoverIcon: Value(FontAwesomeIcons.circlePlus),
+          title: 'To do',
+        ),
       );
     } else {
       todoButton = Button.icon(

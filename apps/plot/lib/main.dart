@@ -326,6 +326,9 @@ Future<void> run(List<String> args) async {
     // Initialize Env first so Tracker can be set up early
     await Env.init();
 
+    // AppInfo must be ready before Tracker so platform/version land on every event.
+    await AppInfo.init();
+
     // Initialize Tracker immediately after Env so it's ready to capture startup errors
     await Tracker.init();
 
@@ -406,7 +409,6 @@ Future<void> run(List<String> args) async {
     Time.init();
 
     await Window.init();
-    await AppInfo.init();
 
     await Base.init();
     await AutoSignIn.init();

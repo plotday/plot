@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
@@ -248,10 +248,11 @@ class _ContactsComposeFieldState extends State<ContactsComposeField> {
       }
     }
 
-    // Tab commits the first candidate (treat as accept), or is ignored when
-    // no candidates so focus traversal can proceed normally.
+    // Tab accepts the first candidate only while the dropdown is open
+    // with candidates. When the dropdown is closed, Tab / Shift-Tab fall
+    // through to normal focus traversal so the user can leave the field.
     if (event.logicalKey == LogicalKeyboardKey.tab) {
-      if (_candidates.isNotEmpty) {
+      if (_dropdown.isShowing && _candidates.isNotEmpty) {
         _handlePicked(_candidates.first);
         return KeyEventResult.handled;
       }
@@ -270,17 +271,27 @@ class _ContactsComposeFieldState extends State<ContactsComposeField> {
     return KeyEventResult.ignored;
   }
 
-  Future<void> _handleChipTap(int idx) async {
-    // Capture the chip before suspending — by the time the menu closes,
-    // the chip list may have changed and `idx` could point elsewhere.
-    final chip = widget.chips[idx];
-    final action = await showComposeChipMenu(
-      context,
-      chipLabel: chip.label,
-    );
+  void _handleChipTap(int idx) {
+    // Tapping a chip selects it for keyboard interaction (mirrors arrow
+    // navigation). The chip's × button is the explicit remove affordance.
+    if (!hasPhysicalKeyboard()) {
+      // On touch, focus is moot — just request the input focus and let the
+      // × button handle removal.
+      _inputFocus.requestFocus();
+      return;
+    }
+    _inputFocus.requestFocus();
+    setState(() => _focusedChipIndex = idx);
+  }
+
+  Future<void> _removeChip(ContactChipValue chip) async {
+    final idx = widget.chips.indexWhere((c) => c.key == chip.key);
+    await widget.onRemove(chip);
     if (!mounted) return;
-    if (action == ComposeChipAction.remove) {
-      await widget.onRemove(chip);
+    if (_focusedChipIndex != null && idx >= 0) {
+      setState(() {
+        _focusedChipIndex = idx == 0 ? null : idx - 1;
+      });
     }
   }
 
@@ -332,33 +343,31 @@ class _ContactsComposeFieldState extends State<ContactsComposeField> {
             );
           },
           onSelected: _handlePicked,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 4,
-              runSpacing: 4,
-              children: [
-                for (var i = 0; i < widget.chips.length; i++)
-                  _ChipView(
-                    value: widget.chips[i],
-                    focused: i == _focusedChipIndex,
-                    onTap: () => _handleChipTap(i),
-                  ),
-                IntrinsicWidth(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 80),
-                    child: FTextField(
-                      control: .managed(controller: _controller),
-                      focusNode: _inputFocus,
-                      readOnly: isTouchPlatform(),
-                      hint: placeholder,
-                      style: _borderlessFieldStyle(),
-                    ),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (var i = 0; i < widget.chips.length; i++)
+                _ChipView(
+                  value: widget.chips[i],
+                  focused: i == _focusedChipIndex,
+                  onTap: () => _handleChipTap(i),
+                  onRemove: () => _removeChip(widget.chips[i]),
+                ),
+              IntrinsicWidth(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 80),
+                  child: FTextField(
+                    control: .managed(controller: _controller),
+                    focusNode: _inputFocus,
+                    readOnly: isTouchPlatform(),
+                    hint: placeholder,
+                    style: ghostFieldStyle(context),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -366,51 +375,79 @@ class _ContactsComposeFieldState extends State<ContactsComposeField> {
   }
 }
 
-/// Strips FTextField's chrome (border, padding) so the input blends into
-/// the surrounding compose row.
-FTextFieldStyleDelta _borderlessFieldStyle() {
-  return FTextFieldStyleDelta.delta(
-    contentPadding: EdgeInsetsGeometryDelta.value(
-      const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-    ),
-    border: FVariantsValueDelta.delta([
-      FVariantValueDeltaOperation.all(
-        const OutlineInputBorder(
-          borderSide: BorderSide(width: 0, style: BorderStyle.none),
-        ),
-      ),
-    ]),
-  );
-}
-
 class _ChipView extends StatelessWidget {
   const _ChipView({
     required this.value,
     required this.focused,
     required this.onTap,
+    required this.onRemove,
   });
 
   final ContactChipValue value;
   final bool focused;
   final VoidCallback onTap;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final color = focused
+    final accent = focused
         ? theme.colors.primary
         : theme.plotColors.muted;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: color.withValues(alpha: focused ? 0.2 : 0.12),
+          color: accent.withValues(alpha: focused ? 0.2 : 0.12),
           borderRadius: BorderRadius.circular(12),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        child: Text(
-          value.label,
-          style: theme.typography.sm,
+        padding: const EdgeInsetsDirectional.only(
+          start: 8,
+          end: 3,
+          top: 2,
+          bottom: 2,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                value.label,
+                style: theme.typography.sm,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+            const SizedBox(width: 2),
+            _ChipRemoveButton(onTap: onRemove, color: theme.plotColors.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChipRemoveButton extends StatelessWidget {
+  const _ChipRemoveButton({required this.onTap, required this.color});
+
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return FTooltip(
+      tipBuilder: (context, _) => const Text('Remove'),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: FaIcon(
+            FontAwesomeIcons.xmark,
+            size: theme.iconSizes.xs,
+            color: color,
+          ),
         ),
       ),
     );

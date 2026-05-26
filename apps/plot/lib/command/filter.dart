@@ -357,25 +357,41 @@ class PickFilterCommand extends ShowCommands {
            final commands = filterCommandsBuilder(context);
            final iconFilters =
                commands.whereType<ToggleIconFilter>().toList();
-           // Exclude Tag.archived — archived visibility is toggled from the
-           // header menu, not the search filter modal.
+           // Filter tag commands. Hide:
+           //   - Tag.archived — archived visibility is toggled from the
+           //     header menu, not the search filter modal.
+           //   - Tag.todo / Tag.unread — thread-level state filters that
+           //     no longer surface in the search modal (the unified feed
+           //     already separates Updates / Doing / Activity).
+           const hiddenTags = {Tag.archived, Tag.todo, Tag.unread};
+           const listTags = {Tag.task, Tag.reading};
            final tagFilters = commands
                .whereType<ToggleActivityFilter>()
-               .where((c) => c.tag != Tag.archived)
+               .where((c) => !hiddenTags.contains(c.tag))
+               .toList();
+           final listFilters = tagFilters
+               .where((c) => listTags.contains(c.tag))
+               .toList();
+           final otherTagFilters = tagFilters
+               .where((c) => !listTags.contains(c.tag))
                .toList();
 
-           // Split active vs. inactive across both filter types. Active
+           // Split active vs. inactive across all filter types. Active
            // filters collect into a single "Filters" section at the top
            // (mirroring the share picker's "Shared" section). Inactive
-           // options stay grouped by type below.
+           // options stay grouped by type below — Lists first, then
+           // Thread type, then Tags.
            final activeFilters = <Command>[
              ...iconFilters.where((c) => c.on == true),
              ...tagFilters.where((c) => c.on == true),
            ];
+           final inactiveListFilters = listFilters
+               .where((c) => c.on != true)
+               .toList();
            final inactiveIconFilters = iconFilters
                .where((c) => c.on != true)
                .toList();
-           final inactiveTagFilters = tagFilters
+           final inactiveOtherTagFilters = otherTagFilters
                .where((c) => c.on != true)
                .toList();
 
@@ -386,15 +402,20 @@ class PickFilterCommand extends ShowCommands {
                    title: 'Filters',
                    commands: activeFilters,
                  ),
+               if (inactiveListFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Lists',
+                   commands: inactiveListFilters,
+                 ),
                if (inactiveIconFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Thread type',
                    commands: inactiveIconFilters,
                  ),
-               if (inactiveTagFilters.isNotEmpty)
+               if (inactiveOtherTagFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Tags',
-                   commands: inactiveTagFilters,
+                   commands: inactiveOtherTagFilters,
                  ),
              ],
            );

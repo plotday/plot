@@ -26,6 +26,7 @@ const AuthUrlRequestSchema = z.object({
   callback: z.string().optional(),
   redirectUri: z.url(),
   platform: z.enum(["ios", "android", "desktop"]).optional(),
+  forceBridge: z.coerce.boolean().optional(),
 });
 
 // POST /auth - Handle OAuth redirects
@@ -67,6 +68,7 @@ authRoutes.get("/auth", async (c) => {
       callback,
       redirectUri,
       platform,
+      forceBridge,
     } = parseResult.data;
 
     // Use the scopes from the request or from query parameters
@@ -78,6 +80,7 @@ authRoutes.get("/auth", async (c) => {
       callback: callback as Callback | undefined,
       redirectUri,
       platform,
+      forceBridge,
       env: c.env,
       storage: c.env.STORAGE, // DurableObject namespace for global storage
     });

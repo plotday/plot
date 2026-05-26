@@ -118,15 +118,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void Function(bool hovered)? get onHover => widget.onHover;
   int? get reorderableIndex => widget.reorderableIndex;
 
-  // Short right: Add to today. Universal "deal with this now" — works on
-  // unscheduled threads (adds them to today), future-scheduled threads
-  // (bumps to today), and already-today threads (no-op re-save). Routes
-  // through To respond since that's the default "make this actionable"
-  // affordance (was StartThread before the move-to-tab split).
+  // Short right: Toggle active. Universal "deal with this now" — flips
+  // active on so the thread lands in Doing (or off, mirroring the leading
+  // icon tap on desktop).
   Command? _getSwipeRightShortCommand() {
     if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
-    return MoveThreadToRespond(activity);
+    return ToggleThreadActive(activity);
   }
 
   // Long right: Schedule for another day.
@@ -274,7 +272,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
         final Command leadingCommand;
         if (!isTodo) {
-          leadingCommand = MoveThreadToRespond(activity);
+          leadingCommand = ToggleThreadActive(activity);
         } else {
           leadingCommand = FinishThread(
             activity,
@@ -730,8 +728,25 @@ class ThreadCommands extends HookWidget {
     final hoverCommands = rawHoverCommands.where(
       (cmd) => cmd is! PickScheduleThread && cmd is! PickThreadShared,
     );
+    Widget buildCommandButton(Command cmd) {
+      // Task / reading list toggles render in the accent color when their
+      // underlying per-user flag is set — the on-state matches an enabled
+      // tag.
+      final bool toggleActive =
+          (cmd is ToggleThreadTask && activity.task) ||
+          (cmd is ToggleThreadToRead && activity.toRead);
+      if (toggleActive) {
+        return Button.icon(
+          cmd,
+          selected: true,
+          selectedColor: context.colour.accent,
+        );
+      }
+      return Button.icon(cmd);
+    }
+
     final threadCommandButtons = showCommands
-        ? hoverCommands.map((cmd) => Button.icon(cmd)).toList()
+        ? hoverCommands.map(buildCommandButton).toList()
         : <Widget>[];
 
     // When the thread isn't shared, render the share command as an icon
@@ -792,7 +807,15 @@ class ThreadCommands extends HookWidget {
         if (trailingShareButton != null) trailingShareButton,
       ];
     } else {
-      allButtons = const <Widget>[];
+      // Task list / Reading list toggles are treated like enabled tags:
+      // when the underlying flag is set, the icon stays visible even
+      // when the row isn't hovered (hover surfaces the full command set,
+      // including these — so no duplication). Both render in the accent
+      // color since they only appear in their on-state here.
+      allButtons = [
+        if (activity.task) buildCommandButton(ToggleThreadTask(activity)),
+        if (activity.toRead) buildCommandButton(ToggleThreadToRead(activity)),
+      ];
     }
 
     return Row(
