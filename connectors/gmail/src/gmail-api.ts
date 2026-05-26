@@ -643,8 +643,11 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     preview,
   };
 
-  // Create Notes for all messages (including first)
+  // Create Notes for all messages (including first). Skip drafts: Gmail
+  // autosave replaces the draft message id on every keystroke, so without
+  // this filter each autosave creates a fresh note keyed on the new id.
   for (const message of thread.messages) {
+    if (message.labelIds?.includes("DRAFT")) continue;
     const from = getHeader(message, "From");
     const to = getHeader(message, "To");
     const cc = getHeader(message, "Cc");
