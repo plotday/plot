@@ -251,23 +251,31 @@ class Note extends Equatable implements Comparable<Note> {
       NoteTagsBase(threadId: threadId),
       initial: true,
     );
+
+    // Pull all note reactions for notes in this thread (parallel to noteTags).
+    await Store.get.pull(
+      Store.get.noteReactions,
+      NoteReactionsBase(threadId: threadId),
+      initial: true,
+    );
   }
 
-  /// Pull global updates for all notes and tags (updated since last sync).
+  /// Pull global updates for all notes, tags and reactions (updated since last sync).
   /// Tracked in SyncStates as "notes".
   static Future<void> pullUpdates() async {
     await Store.get.pull(Store.get.notes, NotesBase());
     await Store.get.pull(Store.get.noteTags, NoteTagsBase());
+    await Store.get.pull(Store.get.noteReactions, NoteReactionsBase());
   }
 
-  /// Push pending changes for both notes and note tags.
+  /// Push pending changes for notes, note tags, and note reactions.
   static Future<bool> push() async {
-    // Notes and note_tags are independent at the SQL level — push them
-    // in parallel so the slower of the two sets the wall-clock cost
-    // instead of their sum.
+    // All three are independent at the SQL level — push in parallel so the
+    // slowest dominates the wall clock instead of summing.
     final results = await Future.wait([
       Store.get.push(Store.get.notes, NotesBase()),
       Store.get.push(Store.get.noteTags, NoteTagsBase()),
+      Store.get.push(Store.get.noteReactions, NoteReactionsBase()),
     ]);
     return results.every((r) => r);
   }

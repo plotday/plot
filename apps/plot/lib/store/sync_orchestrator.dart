@@ -247,10 +247,12 @@ class SyncOrchestrator {
       'user_channel' || 'channel' => channel,
       'user_twist_connection' || 'twist_connection' => twistConnection,
       'user_thread' || 'user_link' || 'user_schedule' || 'user_thread_tags' ||
+      'user_thread_reactions' ||
       'thread' || 'thread_read' || 'schedule' =>
         thread,
       'session' => session,
-      'user_note' || 'user_note_tags' || 'note' => note,
+      'user_note' || 'user_note_tags' || 'user_note_reactions' || 'note' =>
+        note,
       _ => null,
     };
   }

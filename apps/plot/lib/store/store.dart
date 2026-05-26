@@ -72,6 +72,10 @@ part 'note.dart';
 part 'thread_exception.dart';
 part 'thread_tags.dart';
 part 'note_tags.dart';
+part 'reaction.dart';
+part 'thread_reactions.dart';
+part 'note_reactions.dart';
+part 'custom_emoji.dart';
 part 'thread_fts.dart';
 part 'note_fts.dart';
 part 'session.dart';
@@ -455,6 +459,9 @@ abstract class BaseTable {
     Schedules,
     ThreadTags,
     NoteTags,
+    ThreadReactions,
+    NoteReactions,
+    CustomEmojis,
     Sessions,
     UserSettings,
     Channels,
@@ -2381,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 340;
+  int get schemaVersion => 342;
 
   @override
   MigrationStrategy get migration {
@@ -3620,6 +3627,22 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
+    }
+    if (from < 341) {
+      // Per-contact role metadata on threads (To/CC/BCC, Required/Optional).
+      // Existing rows will pick up the column as null and treat every contact
+      // as the link type's default role.
+      await m.addColumn(threads, threads.contactMeta);
+    }
+    if (from < 342) {
+      // Emoji reactions: parallel to note_tags / thread_tags but keyed by
+      // emoji string (Unicode grapheme cluster or `<provider>:<ws>/<name>`
+      // custom-emoji ref). Adds three tables; sync state for the new
+      // endpoints will be initialized lazily on first pull. Strictly
+      // additive — count tags on existing rows keep working until Phase 6.
+      await m.createTable(noteReactions);
+      await m.createTable(threadReactions);
+      await m.createTable(customEmojis);
     }
   }
 
