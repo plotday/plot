@@ -8,14 +8,15 @@ import 'package:plot/widget/editor_clipboard.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/util/link_type_copy.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'logging.dart';
 
 class AddNote extends Command {
-  AddNote(this._note)
+  AddNote(this._note, {LinkTypeConfig? linkType})
     : super(
-        title: 'Add note',
+        title: commandTitleAddNote(linkType),
         eventObject: EventObject.note,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,

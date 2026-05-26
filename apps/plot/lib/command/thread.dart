@@ -9,6 +9,7 @@ import 'command.dart';
 import 'package:plot/command/thread_merge.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
@@ -398,9 +399,9 @@ class OpenPreviousThread extends Command {
 }
 
 class AddThread extends Command {
-  AddThread(this._thread, {this.navigate = true})
+  AddThread(this._thread, {this.navigate = true, LinkTypeConfig? linkType})
     : super(
-        title: 'Create thread',
+        title: commandTitleCreateThread(linkType),
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,

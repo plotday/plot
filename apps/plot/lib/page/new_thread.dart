@@ -17,6 +17,7 @@ import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
@@ -731,8 +732,16 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   String get _editorHint {
     if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
+    final cfg = _activeLinkTypeConfig;
+    if (cfg != null) return composerHintForNewThread(cfg);
     return 'Start a thread';
   }
+
+  /// LinkTypeConfig of the connection target the user has selected for this
+  /// new thread (e.g. "Linear issue"). Null when no target is selected or
+  /// the target's twist/linkType is not in cache.
+  LinkTypeConfig? get _activeLinkTypeConfig =>
+      linkTypeConfigForCreateAction(_activeCreateAction);
 
   List<ActorId>? get _twistMentions =>
       _selectedTwist != null ? [ActorId(_selectedTwist!.id)] : null;
