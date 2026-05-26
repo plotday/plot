@@ -174,9 +174,9 @@ class AgendaTile extends StatelessWidget {
 
     // No priority-context tint anymore — the universal agenda no longer
     // privileges a single priority for fallback time labels.
-    final nowColor = context.theme.colors.mutedForeground;
+    final nowColor = context.theme.plotColors.veryMuted;
 
-    final textColor = now ? nowColor : context.theme.colors.mutedForeground;
+    final textColor = now ? nowColor : context.theme.plotColors.veryMuted;
 
     // Detect gap headers (time gaps between scheduled events).
     // The now flag indicates the current time position but doesn't change
@@ -229,12 +229,12 @@ class AgendaTile extends StatelessWidget {
       // absolute horizontal center regardless of weekday/month width.
       // Weekday and month are muted; the day number is foreground.
       final mutedStyle = TextStyle(
-        color: context.theme.colors.mutedForeground,
+        color: context.theme.plotColors.veryMuted,
         fontSize: smSize,
         fontWeight: FontWeight.w500,
       );
       final dayStyle = TextStyle(
-        color: context.theme.colors.foreground,
+        color: context.theme.colors.mutedForeground,
         fontSize: smSize,
         fontWeight: FontWeight.w600,
       );
@@ -276,7 +276,7 @@ class AgendaTile extends StatelessWidget {
 
       return Container(
         color: headerBg,
-        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.lg),
+        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
         child: child,
       );
     }
@@ -689,11 +689,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
     final dateTimeRange = widget.dateTimeRange;
     final thread = widget.thread;
 
-    final fg = context.colour.colours.fromTheme(priority.displayColor);
     final mutedFg = context.colour.colours.fromTheme(
       priority.displayColor,
       muted: true,
     );
+    final fg = widget.selected
+        ? context.colour.colours.fromTheme(priority.displayColor)
+        : mutedFg;
     final bg = widget.selected
         ? context.colour.colours.backgroundFromTheme(priority.displayColor)
         : _isHovered
@@ -721,7 +723,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // render it in the priority's foreground color so it reads as the
     // primary label, with any associated threads following in the
     // neutral muted color used for non-event block summaries.
-    final mutedColor = context.theme.colors.mutedForeground;
+    final mutedColor = context.theme.plotColors.veryMuted;
     final TextSpan summarySpan;
     if (block is EventBlock) {
       final eventTitle = block.event.displayTitle;
@@ -734,7 +736,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           if (eventTitle.isNotEmpty)
             TextSpan(
               text: eventTitle,
-              style: TextStyle(color: context.theme.colors.foreground),
+              style: TextStyle(color: context.theme.colors.mutedForeground),
             ),
           if (eventTitle.isNotEmpty && associated.isNotEmpty)
             TextSpan(
@@ -877,7 +879,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: context.theme.colors.foreground,
+                              color: context.theme.colors.mutedForeground,
                               fontSize: secondarySize,
                               height: 1,
                             ),
