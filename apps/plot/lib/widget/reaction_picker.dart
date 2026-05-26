@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/widget/emoji.dart';
+import 'package:plot/widget/emoji_data.g.dart';
 import 'package:plot/widget/modal.dart';
 
 /// A picker that lets the user choose an emoji reaction. Shows a quick-picks
@@ -248,102 +249,12 @@ class _EmojiButton extends StatelessWidget {
   }
 }
 
-/// Curated set of common emoji organized by category. Not exhaustive of the
-/// full Unicode 15 emoji block — picked for breadth of common reactions
-/// users actually send in chat. Replacing this with a generated CLDR table
-/// is a follow-up.
-const Map<String, List<Reaction>> _kEmojiCategories = {
-  'Smileys & people': [
-    '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
-    '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😋',
-    '😛', '😜', '🤪', '😝', '🤔', '🤨', '😐', '😑', '😶', '🙄',
-    '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '🥱', '😴',
-    '😌', '😛', '😜', '🤤', '😒', '😓', '😔', '🙁', '☹️', '😖',
-    '😞', '😟', '😤', '😢', '😭', '😦', '😧', '😨', '😩', '🤯',
-    '😬', '😰', '😱', '🥵', '🥶', '😳', '🤪', '😵', '🥴', '😠',
-    '😡', '🤬', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '😈', '👿',
-    '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉',
-    '👆', '👇', '☝️', '✋', '🤚', '🖐️', '🖖', '👋', '🤝', '🙌',
-    '👏', '🙏', '✍️', '💪', '👀', '👁️',
-  ],
-  'Hearts & symbols': [
-    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
-    '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟',
-    '✨', '💯', '💥', '💫', '⭐', '🌟', '☄️', '🔥', '💧', '💦',
-    '⚡', '🌈', '🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🥈', '🥉',
-  ],
-  'Animals & nature': [
-    '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
-    '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🐣', '🦆',
-    '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🐛', '🦋',
-    '🐌', '🐞', '🐜', '🪲', '🦂', '🐢', '🐍', '🦎', '🐙', '🦑',
-    '🐠', '🐟', '🐬', '🐳', '🐋', '🦈',
-  ],
-  'Food & drink': [
-    '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍒',
-    '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🥑', '🍆', '🌽', '🥕',
-    '🧄', '🧅', '🥔', '🍞', '🥐', '🥖', '🧀', '🥚', '🍳', '🧈',
-    '🥞', '🧇', '🥓', '🥩', '🍗', '🍔', '🍟', '🍕', '🌭', '🥪',
-    '🌮', '🌯', '🍣', '🍙', '🍚', '🍝', '🍜', '🍲', '🍛', '🍱',
-    '🍰', '🎂', '🧁', '🍪', '🍩', '🍫', '🍬', '🍭', '🍿', '🍩',
-    '☕', '🍵', '🧃', '🥤', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃',
-    '🍸', '🍹', '🧉', '🍾',
-  ],
-  'Activity & objects': [
-    '⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🎱', '🏓',
-    '🏸', '🥅', '⛳', '🎯', '🪀', '🪁', '🎣', '🤿', '🎽', '🎿',
-    '⛷️', '🏂', '🪂', '🚀', '🛸', '🚁', '✈️', '🚂', '🚆', '🚄',
-    '🚌', '🚎', '🏎️', '🏍️', '🚲', '🛴', '🛹', '⛵', '🚤', '⛴️',
-    '🚢',
-    '💻', '🖥️', '🖨️', '⌨️', '🖱️', '💽', '💾', '💿', '📀', '📱',
-    '☎️', '📞', '📺', '📻', '🎙️', '🎚️', '🎛️', '⏱️', '⏲️', '⏰',
-    '🕰️', '🧭', '🔋', '🔌', '💡', '🔦', '🕯️',
-    '📚', '📖', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📰',
-    '📅', '📆', '🗓️', '📊', '📈', '📉', '📋', '📌', '📎', '🔗',
-  ],
-};
+/// Full Unicode 15.1 emoji set, sourced from
+/// `apps/plot/lib/widget/emoji_data.g.dart` (generated from
+/// `https://unicode.org/Public/emoji/15.1/emoji-test.txt`; regenerate via
+/// `apps/plot/scripts/gen_emoji_data.py`).
+const Map<String, List<Reaction>> _kEmojiCategories = kUnicodeEmojiCategories;
 
-/// Lower-case label substrings for searchable matching. Falls back to
-/// "no match" when an emoji isn't keyed here. Intentionally minimal — the
-/// goal is "the most common N work in search," not exhaustive coverage.
-const Map<Reaction, List<String>> _kEmojiLabels = {
-  '👍': ['thumbs up', 'yes', 'like', 'approve', '+1'],
-  '👎': ['thumbs down', 'no', 'dislike', '-1'],
-  '❤️': ['heart', 'love'],
-  '🧡': ['orange heart'],
-  '💛': ['yellow heart'],
-  '💚': ['green heart'],
-  '💙': ['blue heart'],
-  '💜': ['purple heart'],
-  '🖤': ['black heart'],
-  '🤍': ['white heart'],
-  '😂': ['laugh', 'joy', 'lol', 'crying laughing'],
-  '🤣': ['rofl', 'rolling laugh'],
-  '😍': ['heart eyes', 'love'],
-  '🥰': ['smiling face hearts', 'love'],
-  '🙏': ['pray', 'thanks', 'thank you'],
-  '🎉': ['party', 'tada', 'celebrate'],
-  '🎊': ['confetti', 'celebrate'],
-  '🔥': ['fire', 'hot', 'lit'],
-  '🚀': ['rocket', 'launch', 'ship'],
-  '✨': ['sparkles'],
-  '💯': ['hundred', 'totally', '100'],
-  '👀': ['eyes', 'looking', 'watching'],
-  '😢': ['cry', 'sad', 'tears'],
-  '😭': ['sob', 'cry', 'sad'],
-  '👏': ['clap', 'applause'],
-  '🙌': ['raise hands', 'praise'],
-  '😊': ['smile', 'blush'],
-  '😀': ['grin', 'smile'],
-  '😃': ['smile', 'happy'],
-  '😄': ['smile', 'happy'],
-  '😎': ['cool', 'sunglasses'],
-  '🤔': ['thinking'],
-  '😡': ['angry', 'mad'],
-  '🤯': ['mind blown'],
-  '😱': ['scream', 'shock'],
-  '🤝': ['handshake', 'agree', 'deal'],
-  '✅': ['check', 'done', 'ok'],
-  '⭐': ['star'],
-  '🌟': ['star', 'glow'],
-};
+/// Search keywords for every emoji in [_kEmojiCategories], from CLDR
+/// names + subgroup labels. Misses fall back to "no match" in the picker.
+const Map<Reaction, List<String>> _kEmojiLabels = kUnicodeEmojiLabels;
