@@ -34,6 +34,13 @@ export type LinkTypeConfig = {
   type: string;
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
+  /**
+   * Connector's word for a note on a linked item of this type — used by the
+   * Flutter app to adapt note/composer copy ("Add a comment" on Linear,
+   * "Add a message" on Slack, "Add a reply" on Gmail). Defaults to "note"
+   * when omitted. Use the singular noun in title case (e.g. "Comment").
+   */
+  noteLabel?: string;
   /** URL to an icon for this link type (light mode). Prefer Iconify `logos/*` URLs. */
   logo?: string;
   /** URL to an icon for dark mode. Use when the default logo is invisible on dark backgrounds (e.g., Iconify `simple-icons/*` with `?color=`). */

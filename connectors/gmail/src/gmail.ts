@@ -118,6 +118,7 @@ export class Gmail extends Connector<Gmail> {
     {
       type: "email",
       label: "Email",
+      noteLabel: "Reply",
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [
@@ -129,6 +130,7 @@ export class Gmail extends Connector<Gmail> {
     {
       type: "gmail-email",
       label: "New email",
+      noteLabel: "Reply",
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       // Gmail composes can target any address: a Plot contact (with or

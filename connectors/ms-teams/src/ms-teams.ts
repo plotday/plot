@@ -67,6 +67,7 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "message",
       label: "Message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
@@ -74,6 +75,7 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "teams-channel",
       label: "Channel message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
@@ -84,6 +86,7 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "teams-dm",
       label: "Direct message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",

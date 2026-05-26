@@ -93,6 +93,7 @@ export class Slack extends Connector<Slack> {
     {
       type: "message",
       label: "Message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
@@ -103,6 +104,7 @@ export class Slack extends Connector<Slack> {
     {
       type: "slack-channel",
       label: "Channel message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
@@ -112,6 +114,7 @@ export class Slack extends Connector<Slack> {
     {
       type: "slack-dm",
       label: "Direct message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       targets: "contacts" as const,

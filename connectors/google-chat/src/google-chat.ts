@@ -99,6 +99,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     {
       type: "message",
       label: "Message",
+      noteLabel: "Message",
       // Logo: full-color SVG from static assets (iconify has no logos/google-chat)
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
@@ -107,6 +108,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     {
       type: "google-chat-space",
       label: "Space message",
+      noteLabel: "Message",
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       statuses: [
@@ -116,6 +118,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     {
       type: "google-chat-dm",
       label: "Direct message",
+      noteLabel: "Message",
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       targets: "contacts" as const,

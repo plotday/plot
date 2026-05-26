@@ -104,6 +104,7 @@ export class Airtable extends Connector<Airtable> {
     {
       type: "task",
       label: "Task",
+      noteLabel: "Comment",
       logo: LOGO,
       logoDark: LOGO,
       logoMono: LOGO_MONO,
@@ -169,6 +170,7 @@ export class Airtable extends Connector<Airtable> {
                   {
                     type: "task",
                     label: "Task",
+                    noteLabel: "Comment",
                     logo: LOGO,
                     logoDark: LOGO,
                     logoMono: LOGO_MONO,

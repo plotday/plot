@@ -57,6 +57,7 @@ export class Jira extends Connector<Jira> {
     {
       type: "issue",
       label: "Issue",
+      noteLabel: "Comment",
       logo: "https://api.iconify.design/logos/jira.svg",
       logoMono: "https://api.iconify.design/simple-icons/jira.svg",
       statuses: [
