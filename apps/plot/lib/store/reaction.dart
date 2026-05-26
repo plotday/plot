@@ -41,6 +41,56 @@ bool isCustomEmojiRef(Reaction emoji) {
   return emoji.startsWith('slack:') || emoji.startsWith('google_chat:');
 }
 
+/// What reactions a connector's source platform supports.
+///
+/// Mirrors the Twister-side `ReactionCapabilities` discriminated union. The
+/// client uses this to filter the picker: `fixed` platforms (e.g. LinkedIn
+/// Messaging) show only the allowed set; `open` platforms (Slack, Teams,
+/// Google Chat, Plot-native) show the full picker.
+sealed class ReactionCapabilities {
+  const ReactionCapabilities();
+
+  /// Returns the allowed set as a flat list, or null when any emoji is
+  /// allowed (open). Used directly by the picker's `allowed` parameter.
+  List<Reaction>? get allowed;
+}
+
+class _OpenReactions extends ReactionCapabilities {
+  const _OpenReactions();
+  @override
+  List<Reaction>? get allowed => null;
+}
+
+class _FixedReactions extends ReactionCapabilities {
+  const _FixedReactions(this._set);
+  final List<Reaction> _set;
+  @override
+  List<Reaction>? get allowed => _set;
+}
+
+const ReactionCapabilities _kOpen = _OpenReactions();
+
+/// LinkedIn Messaging's fixed reaction set. Kept here (not on the
+/// connector) so the picker can enforce it before LinkedIn lands as a
+/// linked connector — and after, without a round-trip to the SDK.
+const ReactionCapabilities _kLinkedInReactions = _FixedReactions([
+  '👍', '❤️', '👏', '💡', '😂', '😮', '😢',
+]);
+
+/// Returns the reaction capabilities for a given link `source`. Recognizes
+/// the source-prefix conventions used by the existing connectors
+/// (`google-chat:`, `ms-teams:`, `slack.com/app_redirect`, `linkedin:`).
+/// Unknown sources and `null` (Plot-native threads) return open Unicode.
+ReactionCapabilities reactionCapabilitiesForLinkSource(String? source) {
+  if (source == null) return _kOpen;
+  if (source.startsWith('linkedin:')) return _kLinkedInReactions;
+  // Slack, Teams, Google Chat all accept open Unicode. Even if the
+  // source prefix is unrecognised, default to open — the picker stays
+  // permissive; outbound dispatch on the server already drops emoji
+  // the platform can't accept.
+  return _kOpen;
+}
+
 /// JSON ↔ SQLite converter for `{ <emoji>: [actorId, ...] }` shaped reactions.
 ///
 /// Mirrors [TagsConverter] but keyed by emoji string rather than [Tag]. The

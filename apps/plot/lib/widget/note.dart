@@ -1221,6 +1221,17 @@ class _NoteReactionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Picker filtering by connector capability — use the first link's
+    // `source` prefix to map to a ReactionCapabilities. Most threads
+    // have at most one link; when several exist (e.g. cross-poster
+    // syncing the same content from two providers), the first wins.
+    // Threads with no link or unknown prefixes fall through to open
+    // Unicode.
+    final links = context.watch<ThreadBloc>().state.links;
+    final source = links.isEmpty ? null : links.first.source;
+    final allowed = reactionCapabilitiesForLinkSource(source).allowed;
+    final allowedSet = allowed?.toSet();
+
     return StreamBuilder<NoteReactionsRow?>(
       stream: (Store.get.select(Store.get.noteReactions)
             ..where((t) => t.id.equalsValue(note.id))
@@ -1239,6 +1250,7 @@ class _NoteReactionsRow extends StatelessWidget {
           child: ReactionRow(
             reactions: reactions,
             selfActorId: selfActorId,
+            allowed: allowedSet,
             onToggle: (emoji) async {
               await ToggleNoteReaction(note, emoji).run(context);
             },
