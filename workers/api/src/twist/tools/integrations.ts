@@ -4403,6 +4403,7 @@ export class Integrations extends Tool implements IAuth {
     callback,
     redirectUri,
     platform,
+    forceBridge,
     env,
     storage,
     enabledScopeGroups,
@@ -4413,6 +4414,7 @@ export class Integrations extends Tool implements IAuth {
     callback?: Callback;
     redirectUri: string;
     platform?: "ios" | "android" | "desktop";
+    forceBridge?: boolean;
     env: Bindings;
     storage: DurableObjectNamespace<Storage>;
     enabledScopeGroups?: string[];
@@ -4490,10 +4492,19 @@ export class Integrations extends Tool implements IAuth {
     // registered with the provider; the bridge page then deep-links back to
     // whatever URI the client originally supplied (plotday://, https://app…,
     // or http://localhost:<port> loopback).
+    //
+    // `forceBridge` lets a client opt every provider into the bridge for its
+    // session — used by the Windows app, which can't receive a custom-scheme
+    // callback because the runner doesn't register `plotday://`. The bridge
+    // deep-links to the http://localhost:<port> URI the client passes in,
+    // which the FlutterWebAuth2 local server captures.
     let effectiveRedirectUri = redirectUri;
     let bridgeUri: string | undefined;
     const bridgeEndpoint = `${env.API_ROOT}/auth/bridge`;
-    if (config.requiresHttpsRedirect && redirectUri !== bridgeEndpoint) {
+    if (
+      (config.requiresHttpsRedirect || forceBridge) &&
+      redirectUri !== bridgeEndpoint
+    ) {
       bridgeUri = redirectUri;
       effectiveRedirectUri = bridgeEndpoint;
     }

@@ -58,6 +58,16 @@ class AuthButton extends StatefulWidget {
       defaultTargetPlatform == TargetPlatform.macOS ||
       defaultTargetPlatform == TargetPlatform.android);
 
+  /// Windows can't receive a custom-scheme callback because the runner
+  /// doesn't register `plotday://`. Instead the app receives OAuth callbacks
+  /// on `http://localhost:<port>` via FlutterWebAuth2's local server mode
+  /// (`useWebview: false`). For providers other than Google, we also force
+  /// the server to route through `/auth/bridge` so they don't have to accept
+  /// loopback redirects directly. Google's Desktop OAuth client accepts
+  /// loopback natively, so it skips the bridge.
+  static bool get _isWindows =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   static Future<void> init() async {
     if (_useNativeGoogleSignIn) {
       late final String clientId;
@@ -485,14 +495,22 @@ class _AuthButtonState extends State<AuthButton>
 
     // On non-web platforms, use the custom URL scheme so FlutterWebAuth2
     // intercepts the callback directly instead of navigating to a web page.
-    final redirectUri = kIsWeb ? Env.webAuthCallbackUrl : _appCallbackUrl;
+    // Windows is the exception: see [AuthButton._isWindows] for the loopback path.
+    final redirectUri = kIsWeb
+        ? Env.webAuthCallbackUrl
+        : (AuthButton._isWindows ? _desktopCallbackUrl : _appCallbackUrl);
 
     try {
       final authUrl = await _generateAuthUrl(redirectUri: redirectUri);
 
       final result = await FlutterWebAuth2.authenticate(
         url: authUrl.url,
-        callbackUrlScheme: redirectUri.split(':').first,
+        callbackUrlScheme: AuthButton._isWindows
+            ? _desktopCallbackUrl
+            : redirectUri.split(':').first,
+        options: AuthButton._isWindows
+            ? const FlutterWebAuth2Options(useWebview: false)
+            : const FlutterWebAuth2Options(),
       );
 
       final responseUri = Uri.parse(result);
@@ -548,6 +566,12 @@ class _AuthButtonState extends State<AuthButton>
     }
 
     final link = widget._link!;
+    // Windows can't receive a custom-scheme callback; route every provider
+    // except Google through the server bridge so the bridge can deep-link to
+    // the localhost loopback the FlutterWebAuth2 server is listening on.
+    // Google's Desktop client accepts loopback directly, so it skips this.
+    final forceBridge =
+        AuthButton._isWindows && widget.provider != AuthProvider.google;
     final uri = Uri(
       path: '/auth',
       queryParameters: {
@@ -556,6 +580,7 @@ class _AuthButtonState extends State<AuthButton>
         'callback': link.callback,
         'redirectUri': effectiveRedirectUri,
         if (platform != null) 'platform': platform,
+        if (forceBridge) 'forceBridge': 'true',
       },
     );
 
@@ -745,7 +770,11 @@ class _AuthButtonState extends State<AuthButton>
 
     final redirectUri = kIsWeb
         ? Env.webAuthCallbackUrl
-        : _appCallbackUrl;
+        : (AuthButton._isWindows ? _desktopCallbackUrl : _appCallbackUrl);
+    // See _generateAuthUrl: Google's Desktop client accepts the loopback
+    // directly, so skip the server bridge for it.
+    final forceBridge =
+        AuthButton._isWindows && widget.provider != AuthProvider.google;
 
     String? platform;
     if (!kIsWeb) {
@@ -764,6 +793,7 @@ class _AuthButtonState extends State<AuthButton>
         provider: widget.provider.name,
         redirectUri: redirectUri,
         platform: platform,
+        forceBridge: forceBridge,
         enabledScopeGroups: widget._enabledScopeGroups,
         accountHint: widget._accountHint,
       );
@@ -879,7 +909,12 @@ class _AuthButtonState extends State<AuthButton>
   ) async {
     final result = await FlutterWebAuth2.authenticate(
       url: authUrl.url,
-      callbackUrlScheme: redirectUri.split(':').first,
+      callbackUrlScheme: AuthButton._isWindows
+          ? _desktopCallbackUrl
+          : redirectUri.split(':').first,
+      options: AuthButton._isWindows
+          ? const FlutterWebAuth2Options(useWebview: false)
+          : const FlutterWebAuth2Options(),
     );
 
     final responseUri = Uri.parse(result);

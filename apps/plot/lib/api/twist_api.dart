@@ -272,6 +272,7 @@ class TwistApi {
     required String provider,
     required String redirectUri,
     String? platform,
+    bool forceBridge = false,
     List<String>? enabledScopeGroups,
     String? accountHint,
   }) async {
@@ -281,6 +282,7 @@ class TwistApi {
         'provider': provider,
         'redirectUri': redirectUri,
         if (platform != null) 'platform': platform,
+        if (forceBridge) 'forceBridge': true,
         if (enabledScopeGroups != null)
           'enabledScopeGroups': enabledScopeGroups,
         if (accountHint != null) 'accountHint': accountHint,

@@ -519,6 +519,7 @@ const AuthRequestSchema = z.object({
   provider: z.string(),
   redirectUri: z.string(),
   platform: z.enum(["ios", "android", "desktop"]).optional(),
+  forceBridge: z.boolean().optional(),
   enabledScopeGroups: z.array(z.string()).optional(),
   accountHint: z.string().optional(),
 });
@@ -539,7 +540,8 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   if (!parseResult.success) {
     return handleValidationError(parseResult.error);
   }
-  const { provider, redirectUri, platform, accountHint } = parseResult.data;
+  const { provider, redirectUri, platform, forceBridge, accountHint } =
+    parseResult.data;
 
   const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
   if (!twistInfo) {
@@ -607,6 +609,7 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     callback: callback as any,
     redirectUri,
     platform,
+    forceBridge,
     env: c.env,
     storage: c.env.STORAGE,
     accountHint,
