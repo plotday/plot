@@ -729,7 +729,7 @@ class PriorityState extends Equatable {
           }
         }
         remainingScheduled = [
-          if (currentEvent != null) currentEvent,
+          ?currentEvent,
           ...afterNowScheduled,
         ];
 

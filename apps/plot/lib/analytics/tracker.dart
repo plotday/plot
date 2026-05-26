@@ -127,7 +127,7 @@ class PostHogApiBackend implements AnalyticsBackend {
     final event = {
       'distinct_id': _distinctId ?? 'anonymous',
       'event': eventName,
-      if (properties != null) 'properties': properties,
+      'properties': ?properties,
       'timestamp': DateTime.now().toUtc().toIso8601String(),
     };
 
@@ -152,8 +152,8 @@ class PostHogApiBackend implements AnalyticsBackend {
       'distinct_id': userId,
       'event': '\$identify',
       'properties': {
-        if (properties != null) '\$set': properties,
-        if (propertiesSetOnce != null) '\$set_once': propertiesSetOnce,
+        '\$set': ?properties,
+        '\$set_once': ?propertiesSetOnce,
       },
       'timestamp': DateTime.now().toUtc().toIso8601String(),
     };

@@ -104,6 +104,7 @@ class AuthButton extends StatefulWidget {
   }) : _link = null,
        _onOIDCAuth = onAuth,
        _onLinkAuth = null,
+       // ignore: prefer_initializing_formals
        _onRedirectAuth = onRedirectAuth,
        _twistInstanceId = null,
        _enabledScopeGroups = null,
@@ -146,9 +147,13 @@ class AuthButton extends StatefulWidget {
        _onOIDCAuth = null,
        _onLinkAuth = null,
        _onRedirectAuth = null,
+       // ignore: prefer_initializing_formals
        _twistInstanceId = twistInstanceId,
+       // ignore: prefer_initializing_formals
        _enabledScopeGroups = enabledScopeGroups,
+       // ignore: prefer_initializing_formals
        _accountHint = accountHint,
+       // ignore: prefer_initializing_formals
        _onSuccess = onSuccess;
 
   Future<void> onComplete({
@@ -170,7 +175,7 @@ class AuthButton extends StatefulWidget {
           'clientId': clientId,
           'redirectUri': redirectUri,
           // For Google Sign-In, send auth parameters directly instead of state
-          if (state != null) 'state': state,
+          'state': ?state,
           if (state == null) ...{
             'provider': _link.provider.name,
             'scopes': _link.scopes.join(','),
@@ -579,7 +584,7 @@ class _AuthButtonState extends State<AuthButton>
         'scopes': link.scopes,
         'callback': link.callback,
         'redirectUri': effectiveRedirectUri,
-        if (platform != null) 'platform': platform,
+        'platform': ?platform,
         if (forceBridge) 'forceBridge': 'true',
       },
     );

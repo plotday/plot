@@ -4192,15 +4192,25 @@ ORDER BY
     bool scheduleDirty = false,
     bool stateDirty = false,
   }) : _thread = activity,
+       // ignore: prefer_initializing_formals
        _schedule = schedule,
+       // ignore: prefer_initializing_formals
        _tags = tags,
+       // ignore: prefer_initializing_formals
        _notes = notes,
+       // ignore: prefer_initializing_formals
        _active = active,
+       // ignore: prefer_initializing_formals
        _unreadComputed = unreadComputed,
+       // ignore: prefer_initializing_formals
        _linkSourceCreatedAt = linkSourceCreatedAt,
+       // ignore: prefer_initializing_formals
        _activityDirty = activityDirty,
+       // ignore: prefer_initializing_formals
        _activityRemoteDirty = activityRemoteDirty,
+       // ignore: prefer_initializing_formals
        _scheduleDirty = scheduleDirty,
+       // ignore: prefer_initializing_formals
        _stateDirty = stateDirty {
     assert(
       priority.id == activity.priorityId,

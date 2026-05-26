@@ -172,6 +172,7 @@ class Note extends Equatable implements Comparable<Note> {
     this.mergedFromThreadId,
     this.pending,
     NoteTagsRow? tags,
+    // ignore: prefer_initializing_formals
   }) : _tags = tags;
 
   factory Note._fromStore({required NoteRow noteRow, NoteTagsRow? tags}) {

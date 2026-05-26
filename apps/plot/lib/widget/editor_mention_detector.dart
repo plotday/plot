@@ -10,9 +10,9 @@ class EditorMentionDetector extends ChangeNotifier {
     required MutableDocument document,
     required MutableDocumentComposer composer,
     required Editor editor,
-  }) : _document = document,
-       _composer = composer,
-       _editor = editor {
+  }) : _document = document, // ignore: prefer_initializing_formals
+       _composer = composer, // ignore: prefer_initializing_formals
+       _editor = editor { // ignore: prefer_initializing_formals
     _composer.addListener(_onComposerChange);
     _document.addListener(_onDocumentChange);
   }

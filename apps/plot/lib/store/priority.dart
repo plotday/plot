@@ -1084,6 +1084,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
              isRoot: row.root,
            ),
        _activeComputed = active,
+       // ignore: prefer_initializing_formals
        _unreadComputed = unreadComputed,
        super(
          id: row.id,

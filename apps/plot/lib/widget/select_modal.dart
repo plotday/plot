@@ -1022,7 +1022,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         ),
                       ),
                     ),
-                  if (errorBox != null) errorBox,
+                  ?errorBox,
                   Flexible(
                     child: ListView.builder(
                       controller: _scrollController,
@@ -1103,7 +1103,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (infoHeader != null) infoHeader,
+                              ?infoHeader,
                               MouseRegion(
                                 onEnter: (_) {
                                   if (!_mouseHasMoved) return;
@@ -1231,8 +1231,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (header != null) header,
-                            if (info != null) info,
+                            ?header,
+                            ?info,
                             MouseRegion(
                               onEnter: (_) {
                                 if (!_mouseHasMoved) return;
@@ -1265,7 +1265,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       },
                     ),
                   ),
-                  if (loadingIndicator != null) loadingIndicator,
+                  ?loadingIndicator,
                   const SizedBox(height: 8),
                 ],
               ),

@@ -161,7 +161,7 @@ class _TagRowState extends State<TagRow> {
     final allButtons = [
       ...activeButtons,
       ...suggestedButtons,
-      if (moreButton != null) moreButton,
+      ?moreButton,
     ];
 
     final spacing = context.theme.spacing;

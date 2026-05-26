@@ -624,10 +624,10 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
     required double fadeHeight,
     required Color fadeColor,
     required this.onOverflowChanged,
-  }) : _maxHeight = maxHeight,
-       _truncateAt = truncateAt,
-       _fadeHeight = fadeHeight,
-       _fadeColor = fadeColor;
+  }) : _maxHeight = maxHeight, // ignore: prefer_initializing_formals
+       _truncateAt = truncateAt, // ignore: prefer_initializing_formals
+       _fadeHeight = fadeHeight, // ignore: prefer_initializing_formals
+       _fadeColor = fadeColor; // ignore: prefer_initializing_formals
 
   double _maxHeight;
   double get maxHeight => _maxHeight;

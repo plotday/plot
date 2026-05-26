@@ -501,7 +501,7 @@ Future<FormData> _buildNewPriorityForm(
         items: [
           FormTextInput(key: 'title', label: 'Priority Name', required: true),
           parentSelect,
-          if (teamSelect != null) teamSelect,
+          ?teamSelect,
           FormSelect<ThemeColor?>(
             key: 'color',
             label: 'Color',
@@ -764,7 +764,7 @@ class EditPriorityCommand extends ShowForm {
                     required: true,
                   ),
                   parentSelect,
-                  if (teamSelect != null) teamSelect,
+                  ?teamSelect,
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',

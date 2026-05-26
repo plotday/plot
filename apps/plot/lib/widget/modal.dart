@@ -176,7 +176,7 @@ class Modal extends StatelessWidget {
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (header != null) header!,
+                  ?header,
                   Flexible(
                     child: Container(padding: padding, child: builder(context)),
                   ),

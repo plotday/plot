@@ -1136,8 +1136,12 @@ class _SectionBuilder {
     required _SectionKind kind,
     DateSection? dateSeed,
     String? text,
-  })  : _kind = kind,
+  })  :
+        // ignore: prefer_initializing_formals
+        _kind = kind,
+        // ignore: prefer_initializing_formals
         _dateSeed = dateSeed,
+        // ignore: prefer_initializing_formals
         _text = text;
 
   factory _SectionBuilder.date(

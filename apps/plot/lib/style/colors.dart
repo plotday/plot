@@ -53,9 +53,9 @@ class OklchColours {
     required ThemeColor themeColor,
     required Brightness brightness,
     required double saturate,
-  }) : _themeColor = themeColor,
-       _brightness = brightness,
-       _saturate = saturate;
+  }) : _themeColor = themeColor, // ignore: prefer_initializing_formals
+       _brightness = brightness, // ignore: prefer_initializing_formals
+       _saturate = saturate; // ignore: prefer_initializing_formals
 
   /// Calculate accent lightness for a ThemeColor based on brightness.
   /// Per-color tuning: warm yellow/gold hues need higher lightness to avoid

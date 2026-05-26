@@ -20,7 +20,9 @@ import 'widget_data.dart';
 /// `RootProvider`) and dispose it on tear-down.
 class WidgetBridge {
   WidgetBridge({required UserBloc userBloc, required NowBloc nowBloc})
+    // ignore: prefer_initializing_formals
     : _userBloc = userBloc,
+      // ignore: prefer_initializing_formals
       _nowBloc = nowBloc;
 
   final UserBloc _userBloc;

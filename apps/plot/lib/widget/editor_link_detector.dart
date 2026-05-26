@@ -8,8 +8,8 @@ class EditorLinkDetector extends ChangeNotifier {
   EditorLinkDetector({
     required MutableDocument document,
     required MutableDocumentComposer composer,
-  }) : _document = document,
-       _composer = composer {
+  }) : _document = document, // ignore: prefer_initializing_formals
+       _composer = composer { // ignore: prefer_initializing_formals
     _composer.selectionNotifier.addListener(_onComposerChange);
     _document.addListener(_onDocumentChange);
   }

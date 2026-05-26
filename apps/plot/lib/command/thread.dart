@@ -584,6 +584,7 @@ class AddThreadWithLink extends Command {
 /// un-archived in one shot, server-side.
 class ArchiveSimilarThreads extends Command {
   ArchiveSimilarThreads(this._thread, {PriorityBloc? bloc})
+    // ignore: prefer_initializing_formals
     : _bloc = bloc,
       super(
         title: _thread.autoArchivedByThreadId == null
@@ -632,6 +633,7 @@ class ArchiveSimilarThreads extends Command {
 class ArchiveThread extends Command {
   ArchiveThread(Thread thread, {PriorityBloc? bloc})
     : _thread = Future.value(thread),
+      // ignore: prefer_initializing_formals
       _bloc = bloc,
       super(
         title: thread.archivedAt != null ? 'Un-archive' : 'Archive',
@@ -646,6 +648,7 @@ class ArchiveThread extends Command {
       );
 
   ArchiveThread.future(this._thread, {PriorityBloc? bloc})
+    // ignore: prefer_initializing_formals
     : _bloc = bloc,
       super(
         title: 'Archive',
@@ -1428,6 +1431,7 @@ class RescheduleEvent extends Command {
 
 class PickScheduleThread extends Command {
   PickScheduleThread(this._thread, {Future<void> Function(Thread)? onUpdate})
+    // ignore: prefer_initializing_formals
     : _onUpdate = onUpdate,
       super(
         title: _thread.on != null ? 'Reschedule' : 'Schedule',

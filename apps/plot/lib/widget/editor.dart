@@ -874,7 +874,7 @@ class EditorState extends State<Editor> {
                   documentLayoutKey: _docLayoutKey,
                   inputSource: _inputSource,
                   gestureMode: _gestureMode,
-                  plugins: {if (_spellingPlugin != null) _spellingPlugin!},
+                  plugins: {?_spellingPlugin},
                   documentOverlayBuilders: [
                     // Platform-specific overlays for mobile
                     if (defaultTargetPlatform == TargetPlatform.android) ...[
@@ -2767,7 +2767,7 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
     super.document, {
     required BuildContext context,
     void Function()? onTap,
-  }) : _context = context,
+  }) : _context = context, // ignore: prefer_initializing_formals
        _handler = onTap;
 
   final BuildContext _context;
