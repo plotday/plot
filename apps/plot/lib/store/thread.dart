@@ -4138,7 +4138,24 @@ ORDER BY
   Uuid get id => _thread.id;
   bool get recurring =>
       _schedule?.recurrenceRule != null && _schedule?.occurrence == null;
-  Order get order => _thread.stateOrder ?? Order.first();
+  /// Per-user reorder position within the Doing section and within a
+  /// single Scheduled day. Falls back to [Order.lowerBound] when no
+  /// per-user state row has assigned one, so null-state threads sort
+  /// first deterministically (matching the SQL `ORDER BY state_order
+  /// ASC` behavior — SQLite defaults to NULLS FIRST). An earlier
+  /// fallback of `Order.first()` returned a fresh `-now+random` value
+  /// on every call, which made the [doing.sort] in priority.dart
+  /// non-deterministic: a freshly computed `Order.between(null, X)`
+  /// for a drag-to-top above a null-state thread would compare against
+  /// a NEW `Order.first()` on the next sort pass, and because the new
+  /// fallback's `-now` was strictly more negative (later wall-clock),
+  /// the null-state thread re-sorted ahead of the dragged thread,
+  /// snapping it back to 2nd position.
+  Order get order => _thread.stateOrder ?? const Order(Order.lowerBound);
+  /// Raw underlying per-user state order. Null when no per-user state row
+  /// has assigned an order — exposed for callers that need to distinguish
+  /// "no order set" from the [order] getter's deterministic fallback.
+  Order? get rawStateOrder => _thread.stateOrder;
   DateTime get createdAt => _thread.createdAt;
   DateTime get updatedAt => _thread.updatedAt;
   DateTime? get archivedAt => _thread.archivedAt;
@@ -5347,6 +5364,14 @@ ORDER BY
         if (order != null) tsStateOrder = Value(order);
         if (!_thread.active && !_thread.task && !_thread.toRead) {
           tsActive = true;
+          // Promoting an inactive thread to active — populate state_order
+          // when the caller didn't pass one and no prior order exists, so
+          // Doing/Scheduled drag-reorders against this row sort
+          // deterministically. See [Thread.order] doc for the failure mode
+          // a NULL state_order causes.
+          if (order == null && _thread.stateOrder == null) {
+            tsStateOrder = Value(Order.first());
+          }
         }
         stateDirty = true;
       } else if (order != null) {

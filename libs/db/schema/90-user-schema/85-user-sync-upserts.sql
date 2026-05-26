@@ -866,7 +866,19 @@ BEGIN
             -- user.thread view would flip unread=true.
             CASE WHEN p_set_read_at THEN p_read_at ELSE now() END,
             p_bumped_at,
-            p_order,
+            -- Default state_order when a row is being created with active=true
+            -- and the caller didn't pass an order. NULL state_order makes the
+            -- Flutter Doing/Scheduled sort behave non-deterministically (see
+            -- Thread.order's doc) and prevents users from drag-reordering
+            -- above such rows. Format mirrors Flutter's Order.first():
+            -- `-millisecondsSinceEpoch + random()` so new rows sort at the top
+            -- of Doing in ascending order.
+            COALESCE(
+                p_order,
+                CASE WHEN COALESCE(p_active, FALSE)
+                    THEN (-EXTRACT(EPOCH FROM clock_timestamp()) * 1000) + random()
+                END
+            ),
             p_on,
             p_at
         )
@@ -877,7 +889,17 @@ BEGIN
             to_read = CASE WHEN p_set_to_read THEN EXCLUDED.to_read ELSE thread_state.to_read END,
             urgent = CASE WHEN p_set_urgent THEN EXCLUDED.urgent ELSE thread_state.urgent END,
             importance = CASE WHEN p_set_importance THEN EXCLUDED.importance ELSE thread_state.importance END,
-            "order" = CASE WHEN p_set_order THEN EXCLUDED."order" ELSE thread_state."order" END,
+            -- See INSERT branch above for why we default order on activation.
+            -- This UPDATE branch handles the case where an existing row is
+            -- being flipped from active=false to active=true without an
+            -- explicit order; if order is already set we keep it.
+            "order" = CASE
+                WHEN p_set_order THEN EXCLUDED."order"
+                WHEN p_set_active AND COALESCE(p_active, FALSE)
+                    AND thread_state."order" IS NULL
+                    THEN (-EXTRACT(EPOCH FROM clock_timestamp()) * 1000) + random()
+                ELSE thread_state."order"
+            END,
             "on" = CASE WHEN p_set_on THEN EXCLUDED."on" ELSE thread_state."on" END,
             "at" = CASE WHEN p_set_at THEN EXCLUDED."at" ELSE thread_state."at" END,
             read_at = CASE
