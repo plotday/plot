@@ -183,6 +183,8 @@ export enum ActionType {
   conferencing = "conferencing",
   /** File attachment links stored in R2 */
   file = "file",
+  /** Reference to an attachment hosted by a connector's source system */
+  fileRef = "fileRef",
   /** Thread reference links for navigating to related threads */
   thread = "thread",
   /** Structured plan of operations for user approval */
@@ -294,6 +296,22 @@ export type Action =
       /** File size in bytes */
       fileSize: number;
       /** MIME type of the file */
+      mimeType: string;
+      /** Intrinsic width of the image in pixels (only for image files) */
+      imageWidth?: number | null;
+      /** Intrinsic height of the image in pixels (only for image files) */
+      imageHeight?: number | null;
+    }
+  | {
+      /** Reference to an attachment hosted by a connector's source system */
+      type: ActionType.fileRef;
+      /** Opaque identifier interpreted only by the owning connector */
+      ref: string;
+      /** Display filename */
+      fileName: string;
+      /** File size in bytes if known */
+      fileSize: number | null;
+      /** MIME type */
       mimeType: string;
       /** Intrinsic width of the image in pixels (only for image files) */
       imageWidth?: number | null;
