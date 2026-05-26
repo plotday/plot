@@ -70,6 +70,11 @@
       "types": "./dist/tools/callbacks.d.ts",
       "default": "./dist/tools/callbacks.js"
     },
+    "./tools/files": {
+      "@plotday/connector": "./src/tools/files.ts",
+      "types": "./dist/tools/files.d.ts",
+      "default": "./dist/tools/files.js"
+    },
     "./tools/network": {
       "@plotday/connector": "./src/tools/network.ts",
       "types": "./dist/tools/network.d.ts",
