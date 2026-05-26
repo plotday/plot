@@ -110,11 +110,11 @@ class ActivitySectionMarker {
       case ActivitySection.eventAgenda:
         return 'Event Agenda';
       case ActivitySection.doing:
-        return 'Doing';
+        return 'Active';
       case ActivitySection.scheduled:
         return 'Scheduled';
       case ActivitySection.activity:
-        return 'Activity';
+        return 'Done';
     }
   }
 }

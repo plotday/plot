@@ -202,8 +202,8 @@ class OnboardingSteps {
     const HighlightStep(
       title: 'Your activity feed',
       body:
-          "What you're doing (new updates at the top), what's scheduled, and "
-          "recent activity — all in one feed. Catch up across every connected "
+          "What's active (new updates at the top), what's scheduled, and "
+          "what's done — all in one feed. Catch up across every connected "
           "app without losing your place.",
       target: PanelTarget.feed,
       overlay: ThemeColor(6), // Climax
