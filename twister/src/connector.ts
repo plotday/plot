@@ -442,6 +442,30 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   }
 
   /**
+   * Resolve a `fileRef` action's bytes for download. Called when a user opens
+   * an attachment in Plot. Return either a redirect URL (preferred for sources
+   * that issue signed URLs, like Linear S3 or Slack permalink_public) or a
+   * streamed body (required when bytes are only reachable through an
+   * authenticated API call, like Gmail attachments.get).
+   *
+   * @param ref Opaque value the connector previously emitted on a fileRef action.
+   * @returns Either `{ redirectUrl }` or `{ body, mimeType, fileName? }`.
+   * @throws If the source is unavailable, the connection is broken, or `ref` is invalid.
+   *
+   * If not overridden, fileRef actions on this connector's notes will return 410 Gone.
+   */
+  async downloadAttachment(
+    ref: string,
+  ): Promise<
+    | { redirectUrl: string }
+    | { body: ReadableStream | Uint8Array; mimeType: string; fileName?: string }
+  > {
+    throw new Error(
+      `downloadAttachment not implemented for ${this.constructor.name} (ref=${ref})`,
+    );
+  }
+
+  /**
    * Called when a note on a thread owned by this connector is updated.
    * Override to write back changes to the external service
    * (e.g., syncing reaction tags as emoji reactions, or editing a comment
