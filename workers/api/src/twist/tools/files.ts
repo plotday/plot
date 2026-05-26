@@ -77,9 +77,12 @@ export class Files extends Tool implements IFiles {
     //   twist_instance (this twist) → owner_id
     //   note.actions @> [{fileId}]  → find note containing this fileId
     //   thread_priority             → confirm the thread is in the owner's scope
+    //   priority                    → confirm the priority is not archived
     //
     // This is the same pattern as GET /files/:fileId but scoped to the
     // twist's owner rather than the HTTP request user.
+    // The priority join mirrors rpcUser("has_priority_access") which enforces
+    // priority.archived_at IS NULL — archived priorities are inaccessible.
     const accessRow = await this.db
       .selectFrom("twist_instance")
       .innerJoin("thread_priority", (join) =>
@@ -87,6 +90,11 @@ export class Files extends Tool implements IFiles {
       )
       .innerJoin("note", (join) =>
         join.onRef("note.thread_id", "=", "thread_priority.thread_id")
+      )
+      .innerJoin("priority", (join) =>
+        join
+          .onRef("priority.id", "=", "thread_priority.priority_id")
+          .on("priority.archived_at", "is", null)
       )
       .select(["thread_priority.priority_id"])
       .where("twist_instance.id", "=", this.twistInstanceId)
