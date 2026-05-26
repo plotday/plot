@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'command.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/router.dart';
@@ -207,6 +209,81 @@ class ToggleSelfTask extends NoteCommand {
     } catch (e, stackTrace) {
       log.severe('Error in ToggleSelfTask: $e', e, stackTrace);
       return CommandMessage('Failed to toggle task', isError: true);
+    }
+  }
+}
+
+/// Toggles an emoji reaction for the current user on a note.
+///
+/// Optimistically updates the local `note_reactions` row, marks the
+/// reaction as pending (`reactions_updated`), and schedules a push. The
+/// server's `update_note_reactions` RPC enforces only-self ownership;
+/// matching client-side behaviour is implicit because we always toggle
+/// the current user's canonical actor.
+class ToggleNoteReaction extends NoteCommand {
+  ToggleNoteReaction(super.note, this.emoji)
+    : super(
+        title: 'React',
+        eventObject: EventObject.note,
+        eventAction: EventAction.tagged,
+      );
+
+  final Reaction emoji;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final selfActorId = Base.actorId;
+      final canonical = Actor.canonicalId(selfActorId);
+      final db = Store.get;
+
+      // Read the current local reactions row (may not exist yet).
+      final current = await (db.select(db.noteReactions)
+            ..where((t) => t.id.equals(note.id.toBytes())))
+          .getSingleOrNull();
+
+      final reactionsNow = <Reaction, List<ActorId>>{
+        for (final entry in (current?.reactions ?? const {}).entries)
+          entry.key: List<ActorId>.from(entry.value),
+      };
+      final updatesNow = <String, bool>{
+        ...?current?.reactionsUpdated,
+      };
+
+      final actors = reactionsNow.putIfAbsent(emoji, () => <ActorId>[]);
+      final present = actors.any(
+        (id) => Actor.canonicalId(id) == canonical,
+      );
+      final nowPresent = !present;
+
+      if (nowPresent) {
+        actors.add(canonical);
+      } else {
+        actors.removeWhere((id) => Actor.canonicalId(id) == canonical);
+        if (actors.isEmpty) reactionsNow.remove(emoji);
+      }
+      updatesNow[emoji] = nowPresent;
+
+      // Write back to local Drift; mark pending so it's pushed.
+      final companion = NoteReactionsCompanion(
+        id: Value(note.id),
+        reactions: Value(reactionsNow.isEmpty ? null : reactionsNow),
+        reactionsUpdated: Value(updatesNow),
+        updatedAt: Value(DateTime.now()),
+        pending: const Value(2),
+      );
+      await db
+          .into(db.noteReactions)
+          .insertOnConflictUpdate(companion);
+
+      // Schedule a push.
+      unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleNoteReaction: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to react', isError: true);
     }
   }
 }

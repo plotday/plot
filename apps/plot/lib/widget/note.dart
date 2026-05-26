@@ -6,6 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/reaction_row.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/util/platform.dart';
@@ -920,8 +921,11 @@ class NoteCommands extends StatelessWidget {
     final activityBloc = context.watch<ThreadBloc>();
     final activityState = activityBloc.state;
 
+    // Build the reactions row (above the task/tag/command row).
+    final reactionsRow = _NoteReactionsRow(note: note, selfActorId: actorId);
+
     // Build the final row with tags and commands
-    return FutureBuilder<(List<Widget>, String)>(
+    final commandsRow = FutureBuilder<(List<Widget>, String)>(
       future: Future.wait([
         Future.wait(tagFutures),
         assigneeNamesFuture,
@@ -1119,6 +1123,15 @@ class NoteCommands extends StatelessWidget {
         );
       },
     );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        reactionsRow,
+        commandsRow,
+      ],
+    );
   }
 }
 
@@ -1188,6 +1201,50 @@ class _NoteActionsLayout extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: children,
+    );
+  }
+}
+
+/// Renders a note's emoji reactions, watching the local
+/// `note_reactions` row so optimistic toggles and incoming sync pulls
+/// repaint immediately. Empty until the user (or another user) has
+/// reacted; takes up no vertical space when there's nothing to show
+/// AND the row would only contain the add-reaction button.
+///
+/// Tapping a chip routes through [ToggleNoteReaction]. Picking an emoji
+/// in the picker routes through the same command.
+class _NoteReactionsRow extends StatelessWidget {
+  const _NoteReactionsRow({required this.note, required this.selfActorId});
+
+  final Note note;
+  final ActorId selfActorId;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<NoteReactionsRow?>(
+      stream: (Store.get.select(Store.get.noteReactions)
+            ..where((t) => t.id.equalsValue(note.id))
+            ..limit(1))
+          .watchSingleOrNull(),
+      builder: (context, snapshot) {
+        final row = snapshot.data;
+        final reactions = row?.reactions ?? const <Reaction, List<ActorId>>{};
+        // While we don't have a row at all, suppress the empty-state add
+        // button to avoid pushing every note's command row down by 24px
+        // for users who don't actively react. Once a single reaction
+        // exists we render the full row.
+        if (reactions.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          child: ReactionRow(
+            reactions: reactions,
+            selfActorId: selfActorId,
+            onToggle: (emoji) async {
+              await ToggleNoteReaction(note, emoji).run(context);
+            },
+          ),
+        );
+      },
     );
   }
 }
