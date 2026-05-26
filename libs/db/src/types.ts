@@ -5467,6 +5467,7 @@ export type Database = {
           p_set_importance?: boolean
           p_set_on?: boolean
           p_set_order?: boolean
+          p_set_read_at?: boolean
           p_set_task?: boolean
           p_set_to_read?: boolean
           p_set_urgent?: boolean

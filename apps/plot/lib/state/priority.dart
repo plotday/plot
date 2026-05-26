@@ -1120,27 +1120,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       byId[t.id] = t;
     }
 
-    _overlay.removeWhere((id, o) {
-      final settled = o.settled(byId[id]);
-      if (settled) {
-        final actual = byId[id];
-        log.info(
-          '[bug2] overlay SETTLED id=$id '
-          'expected: unread=${o.expected?.unread} active=${o.expected?.active} '
-          'actual: unread=${actual?.unread} active=${actual?.active}',
-        );
-      } else {
-        final actual = byId[id];
-        if (actual != null) {
-          log.info(
-            '[bug2] overlay HOLDS id=$id '
-            'expected: unread=${o.expected?.unread} active=${o.expected?.active} '
-            'actual: unread=${actual.unread} active=${actual.active}',
-          );
-        }
-      }
-      return settled;
-    });
+    _overlay.removeWhere((id, o) => o.settled(byId[id]));
     if (_overlay.isEmpty) return sqlThreads;
 
     final patched = <Thread>[];

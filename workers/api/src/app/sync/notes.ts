@@ -485,11 +485,15 @@ export async function markThreadUnreadForOthers(
         p_to_read: false,
         p_urgent: false,
         p_importance: 50,
+        // p_read_at omitted → defaults to NULL; combined with
+        // p_set_read_at: true this marks the thread unread (race-safe
+        // when p_note_created_at is set).
         p_set_active: false,
         p_set_task: false,
         p_set_to_read: false,
         p_set_urgent: true,
         p_set_importance: true,
+        p_set_read_at: true,
         ...(noteCreatedAt ? { p_note_created_at: noteCreatedAt } : {}),
       });
 

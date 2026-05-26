@@ -1027,45 +1027,39 @@ abstract class _MoveThreadToTab extends _UpdateThreadCommand {
 }
 
 class MoveThreadToRespond extends _MoveThreadToTab {
-  MoveThreadToRespond(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'respond',
-         onUpdate: onUpdate,
-         title: 'To respond',
-         icon: PlotIcon.send,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyR),
-       );
+  MoveThreadToRespond(Thread thread, {Future<void> Function(Thread)? onUpdate})
+    : super(
+        thread,
+        'respond',
+        onUpdate: onUpdate,
+        title: 'To respond',
+        icon: PlotIcon.send,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyR),
+      );
 }
 
 class MoveThreadToDo extends _MoveThreadToTab {
-  MoveThreadToDo(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'do',
-         onUpdate: onUpdate,
-         title: 'To do',
-         icon: PlotIcon.clipboardCheck,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
-       );
+  MoveThreadToDo(Thread thread, {Future<void> Function(Thread)? onUpdate})
+    : super(
+        thread,
+        'do',
+        onUpdate: onUpdate,
+        title: 'To do',
+        icon: PlotIcon.clipboardCheck,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
+      );
 }
 
 class MoveThreadToRead extends _MoveThreadToTab {
-  MoveThreadToRead(
-    Thread thread, {
-    Future<void> Function(Thread)? onUpdate,
-  }) : super(
-         thread,
-         'read',
-         onUpdate: onUpdate,
-         title: 'To read',
-         icon: PlotIcon.bookOpenLines,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
-       );
+  MoveThreadToRead(Thread thread, {Future<void> Function(Thread)? onUpdate})
+    : super(
+        thread,
+        'read',
+        onUpdate: onUpdate,
+        title: 'To read',
+        icon: PlotIcon.bookOpenLines,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
+      );
 }
 
 class DisassociateThread extends Command {
@@ -2029,8 +2023,8 @@ class _ExecuteMerge extends ThreadCommand {
     );
     // urgent merges with OR: if either side flagged urgent, the merged
     // thread stays urgent. Null is treated as "no preference".
-    final mergedUrgent = (targetRow.urgent ?? false) ||
-        (sourceRow.urgent ?? false);
+    final mergedUrgent =
+        (targetRow.urgent ?? false) || (sourceRow.urgent ?? false);
     final newUrgent = (targetRow.urgent == null && sourceRow.urgent == null)
         ? null
         : mergedUrgent;

@@ -4877,7 +4877,6 @@ ORDER BY
         stateOrder: Value(order),
         stateOn: Value(date ?? Thread.todoNowDate),
         stateAt: const Value(null),
-        readAt: const Value(null),
         updatedAt: now,
       ),
     );
@@ -4891,7 +4890,7 @@ ORDER BY
   Thread asActiveToday({Order? order}) {
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     return withScheduleRestored(order: effectiveOrder)
-        .copyWith(unread: false);
+        .copyWith(unread: false, readAt: Value(DateTime.now()));
   }
 
   /// Returns a copy in the "scheduled" state for [date]. Sets the
@@ -4901,7 +4900,7 @@ ORDER BY
   Thread asScheduled(Date date, {Order? order}) {
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     return withScheduleRestored(order: effectiveOrder, date: date)
-        .copyWith(unread: false);
+        .copyWith(unread: false, readAt: Value(DateTime.now()));
   }
 
   /// Returns a copy in the "new (unread-only)" state — flips `unread` to
@@ -5381,7 +5380,6 @@ ORDER BY
       tsStateOn = Value(Thread.todoNowDate);
       tsStateAt = const Value(null);
       tsStateOrder = Value(Order.first());
-      tsReadAt = const Value(null);
       stateDirty = true;
     }
 
