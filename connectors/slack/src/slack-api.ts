@@ -380,6 +380,43 @@ export class SlackApi {
       nextCursor: data.response_metadata?.next_cursor,
     };
   }
+
+  /**
+   * Opens or retrieves an existing DM (IM or MPIM) conversation with one or
+   * more Slack user IDs. Returns the channel id of the opened conversation.
+   *
+   * Slack's `conversations.open` is idempotent — passing the same user IDs
+   * always returns the same channel.
+   */
+  public async openConversation(userIds: string[]): Promise<string> {
+    const data = await this.call("conversations.open", {
+      users: userIds.join(","),
+    });
+    const channelId = data?.channel?.id as string | undefined;
+    if (!channelId) {
+      throw new Error(
+        `conversations.open did not return a channel id (users: ${userIds.join(",")})`
+      );
+    }
+    return channelId;
+  }
+
+  /**
+   * Paginated list of all non-bot, non-deleted workspace members.
+   * Caller is responsible for iterating pages via the returned `nextCursor`.
+   */
+  public async listUsers(cursor?: string): Promise<{
+    members: SlackUser[];
+    nextCursor?: string;
+  }> {
+    const params: Record<string, string | number> = { limit: 200 };
+    if (cursor) params.cursor = cursor;
+    const data = await this.call("users.list", params);
+    return {
+      members: (data.members ?? []) as SlackUser[],
+      nextCursor: data.response_metadata?.next_cursor,
+    };
+  }
 }
 
 /**
@@ -419,7 +456,7 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
  * should prefetch user info whenever possible.
  */
 function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
-  const source = { provider: AuthProvider.Slack, accountId: userId };
+  const source = { accountId: userId };
   if (info?.email && info.name) {
     return { name: info.name, email: info.email, source };
   }

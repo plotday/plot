@@ -104,6 +104,7 @@ export class Airtable extends Connector<Airtable> {
     {
       type: "task",
       label: "Task",
+      noteLabel: "Comment",
       logo: LOGO,
       logoDark: LOGO,
       logoMono: LOGO_MONO,
@@ -169,6 +170,7 @@ export class Airtable extends Connector<Airtable> {
                   {
                     type: "task",
                     label: "Task",
+                    noteLabel: "Comment",
                     logo: LOGO,
                     logoDark: LOGO,
                     logoMono: LOGO_MONO,
@@ -646,7 +648,7 @@ export class Airtable extends Connector<Airtable> {
       ...(c.email ? { email: c.email } : {}),
       name: c.name ?? "",
       ...(c.id
-        ? { source: { provider: AuthProvider.Airtable, accountId: c.id } }
+        ? { source: { accountId: c.id } }
         : {}),
     };
   }

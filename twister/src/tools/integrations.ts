@@ -34,6 +34,13 @@ export type LinkTypeConfig = {
   type: string;
   /** Human-readable label (e.g., "Issue", "Pull Request") */
   label: string;
+  /**
+   * Connector's word for a note on a linked item of this type — used by the
+   * Flutter app to adapt note/composer copy ("Add a comment" on Linear,
+   * "Add a message" on Slack, "Add a reply" on Gmail). Defaults to "note"
+   * when omitted. Use the singular noun in title case (e.g. "Comment").
+   */
+  noteLabel?: string;
   /** URL to an icon for this link type (light mode). Prefer Iconify `logos/*` URLs. */
   logo?: string;
   /** URL to an icon for dark mode. Use when the default logo is invisible on dark backgrounds (e.g., Iconify `simple-icons/*` with `?color=`). */
@@ -94,6 +101,28 @@ export type LinkTypeConfig = {
   supportsAssignee?: boolean;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
+  /**
+   * Selects the destination model for this link type's "Create new…" picker.
+   *
+   * - `"channels"` (default when omitted): The picker shows one chip per
+   *   enabled channel (e.g. a Linear workspace, a Slack channel). This is the
+   *   existing behaviour for task-tracker and calendar connectors.
+   * - `"contacts"`: The picker shows one chip per connection (account), and
+   *   the user picks recipients from their contacts. The runtime
+   *   pre-resolves the chosen Plot contacts to platform account IDs via the
+   *   per-connection `contact_external_account` rows and delivers them as
+   *   `CreateLinkDraft.recipients`. Contacts without a row for this specific
+   *   connection are filtered out of the picker — used by closed-roster
+   *   messaging platforms (Slack DM, Teams DM, Google Chat DM, LinkedIn DM).
+   * - `"addresses"`: One chip per connection, but the picker accepts any
+   *   contact with an addressable identifier (e.g. an email) or a
+   *   free-form typed address. The runtime fills `recipients` for contacts
+   *   with a connection-scoped row and falls back to the contact's primary
+   *   address (e.g. `contact.email`) when no row exists. Free-form
+   *   addresses arrive via the thread's `inviteEmails`. Used by open
+   *   address spaces like Gmail.
+   */
+  targets?: "channels" | "contacts" | "addresses";
 };
 
 /**
@@ -274,10 +303,15 @@ export abstract class Integrations extends ITool {
   abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
 
   /**
-   * Saves contacts to the connector's priority.
+   * Upserts contacts into the connector's priority without requiring a Link.
    *
-   * @param contacts - Array of contacts to save
-   * @returns Promise resolving to the saved actors
+   * Use this for messaging connectors to bulk-sync workspace members so the
+   * recipient picker can filter contacts by reachable platform account. Populate
+   * `NewContact.source` to persist `contact_external_account` rows (the platform
+   * identity used to address the contact). Returns one `Actor` per input, in order.
+   *
+   * @param contacts - Contacts to upsert, keyed by `source`/`key`
+   * @returns Promise resolving to the saved actors, 1:1 with input order
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;

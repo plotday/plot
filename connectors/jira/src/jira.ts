@@ -57,6 +57,7 @@ export class Jira extends Connector<Jira> {
     {
       type: "issue",
       label: "Issue",
+      noteLabel: "Comment",
       logo: "https://api.iconify.design/logos/jira.svg",
       logoMono: "https://api.iconify.design/simple-icons/jira.svg",
       statuses: [
@@ -1022,7 +1023,7 @@ export class Jira extends Connector<Jira> {
  */
 function atlassianSource(accountId: string | undefined): Pick<NewContact, "source"> | {} {
   if (accountId && accountId !== "_unknown_") {
-    return { source: { provider: AuthProvider.Atlassian, accountId } };
+    return { source: { accountId } };
   }
   return {};
 }

@@ -123,6 +123,7 @@ export class GitHub extends Connector<GitHub> {
     {
       type: "pull_request",
       label: "Pull Request",
+      noteLabel: "Comment",
       logo: "https://api.iconify.design/logos/github-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
@@ -136,6 +137,7 @@ export class GitHub extends Connector<GitHub> {
     {
       type: "issue",
       label: "Issue",
+      noteLabel: "Comment",
       logo: "https://api.iconify.design/logos/github-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
@@ -223,7 +225,7 @@ export class GitHub extends Connector<GitHub> {
       email: `${user.id}+${user.login}@users.noreply.github.com`,
       name: user.login,
       avatar: user.avatar_url ?? undefined,
-      source: { provider: AuthProvider.GitHub, accountId: String(user.id) },
+      source: { accountId: String(user.id) },
     };
   }
 

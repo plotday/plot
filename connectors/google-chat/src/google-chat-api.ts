@@ -5,7 +5,6 @@ import type {
   NewTags,
 } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Google Chat API types ----
 
@@ -332,6 +331,51 @@ export class GoogleChatApi {
   // ---- Read State ----
 
   /**
+   * Creates a new Google Chat space (for group DMs with >1 recipient).
+   * Used when there is no pre-existing space that can be found via setupSpace.
+   */
+  async createSpace(
+    displayName: string | undefined,
+    spaceType: "SPACE" | "GROUP_CHAT" | "DIRECT_MESSAGE",
+    members: Array<{ member: { name: string; type: "HUMAN" | "BOT" } }>
+  ): Promise<Space> {
+    return await this.call(`${this.chatBaseUrl}/spaces:setup`, {
+      method: "POST",
+      body: {
+        space: {
+          ...(displayName ? { displayName } : {}),
+          spaceType,
+        },
+        memberships: members,
+      },
+    });
+  }
+
+  /**
+   * Finds or creates a DM space for two users via `spaces.setup`.
+   * `callerName` is the authenticated user's resource name (e.g. "users/12345").
+   * `recipientName` is the target user's resource name (e.g. "users/67890").
+   * Returns the resulting space resource.
+   */
+  async setupDmSpace(
+    callerName: string,
+    recipientName: string
+  ): Promise<Space> {
+    return await this.call(`${this.chatBaseUrl}/spaces:setup`, {
+      method: "POST",
+      body: {
+        space: {
+          spaceType: "DIRECT_MESSAGE",
+        },
+        memberships: [
+          { member: { name: callerName, type: "HUMAN" } },
+          { member: { name: recipientName, type: "HUMAN" } },
+        ],
+      },
+    });
+  }
+
+  /**
    * Updates the calling user's read state for a space.
    * Sets the last read time to now (marking all messages as read)
    * or to a past time (effectively marking as unread).
@@ -472,10 +516,7 @@ export function senderToNewActor(
   return {
     name,
     ...(email ? { email } : {}),
-    source: {
-      provider: AuthProvider.Google,
-      accountId: googleUserIdToAccountId(sender.name),
-    },
+    source: { accountId: googleUserIdToAccountId(sender.name) },
   };
 }
 
@@ -606,10 +647,7 @@ function reactionUserToNewActor(
   return {
     name: user.displayName || info?.displayName || user.name,
     ...(info?.email ? { email: info.email } : {}),
-    source: {
-      provider: AuthProvider.Google,
-      accountId: googleUserIdToAccountId(user.name),
-    },
+    source: { accountId: googleUserIdToAccountId(user.name) },
   };
 }
 

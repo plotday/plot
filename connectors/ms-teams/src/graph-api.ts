@@ -3,7 +3,6 @@ import type {
   NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Microsoft Graph API types ----
 
@@ -78,6 +77,15 @@ export type Subscription = {
 export type PaginatedResponse<T> = {
   value: T[];
   "@odata.nextLink"?: string;
+};
+
+export type OrgUser = {
+  id: string;
+  displayName?: string;
+  mail?: string;
+  userPrincipalName?: string;
+  accountEnabled?: boolean;
+  userType?: string;
 };
 
 export type SyncState = {
@@ -191,6 +199,18 @@ export class GraphApi {
     return data?.value ?? [];
   }
 
+  async sendChannelMessage(
+    teamId: string,
+    channelId: string,
+    content: string
+  ): Promise<TeamsMessage | null> {
+    return this.call<TeamsMessage>(
+      "POST",
+      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages`,
+      { body: { contentType: "html", content } }
+    );
+  }
+
   async sendChannelReply(
     teamId: string,
     channelId: string,
@@ -277,6 +297,45 @@ export class GraphApi {
     return data?.value ?? [];
   }
 
+  /**
+   * Creates a new chat (oneOnOne or group) with the given AAD user ids.
+   * Returns the chat id to use with sendChatMessage.
+   */
+  async createChat(
+    aadUserIds: string[],
+    myAadUserId: string
+  ): Promise<string> {
+    const chatType = aadUserIds.length === 1 ? "oneOnOne" : "group";
+
+    // Build the members array — every member including the caller must be listed.
+    const allUserIds = [myAadUserId, ...aadUserIds.filter((id) => id !== myAadUserId)];
+    const members = allUserIds.map((userId) => ({
+      "@odata.type": "#microsoft.graph.aadUserConversationMember",
+      "user@odata.bind": `https://graph.microsoft.com/v1.0/users('${userId}')`,
+      roles: ["owner"],
+    }));
+
+    const data = await this.call<Chat>("POST", `${this.baseUrl}/chats`, {
+      chatType,
+      members,
+    });
+    if (!data?.id) throw new Error("Failed to create Teams chat");
+    return data.id;
+  }
+
+  // ---- Org users (for member sync) ----
+
+  async getOrgUsers(nextLink?: string): Promise<{ users: OrgUser[]; nextLink?: string }> {
+    const url =
+      nextLink ??
+      `${this.baseUrl}/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,userType&$top=999`;
+    const data = await this.call<PaginatedResponse<OrgUser>>("GET", url);
+    return {
+      users: data?.value ?? [],
+      nextLink: data?.["@odata.nextLink"],
+    };
+  }
+
   // ---- Subscriptions ----
 
   async createSubscription(
@@ -338,7 +397,7 @@ function userToNewActor(user?: TeamsUser): NewActor | undefined {
   return {
     name: user.displayName ?? user.id,
     email: user.mail ?? undefined,
-    source: { provider: AuthProvider.Microsoft, accountId: user.id },
+    source: { accountId: user.id },
   };
 }
 
@@ -352,7 +411,7 @@ function extractMentions(message: TeamsMessage): NewActor[] {
     .map((m) => ({
       name: m.mentionText,
       source: m.mentioned.user?.id
-        ? { provider: AuthProvider.Microsoft, accountId: m.mentioned.user.id }
+        ? { accountId: m.mentioned.user.id }
         : undefined,
     }));
 }

@@ -73,6 +73,7 @@ export class Linear extends Connector<Linear> {
     {
       type: "issue",
       label: "Issue",
+      noteLabel: "Comment",
       logo: "https://api.iconify.design/logos/linear-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
@@ -126,7 +127,7 @@ export class Linear extends Connector<Linear> {
         ...(user.email ? { email: user.email } : {}),
         name: user.name ?? "",
         avatar: user.avatarUrl ?? undefined,
-        source: { provider: AuthProvider.Linear, accountId: user.id },
+        source: { accountId: user.id },
       };
     }
 
@@ -192,6 +193,7 @@ export class Linear extends Connector<Linear> {
             {
               type: "issue",
               label: "Issue",
+              noteLabel: "Comment",
               logo: "https://api.iconify.design/logos/linear-icon.svg",
               logoDark:
                 "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
@@ -545,7 +547,7 @@ export class Linear extends Connector<Linear> {
         ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
-        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
+        ...(assignee.id ? { source: { accountId: assignee.id } } : {}),
       };
     }
 
@@ -938,7 +940,7 @@ export class Linear extends Connector<Linear> {
         ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
-        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
+        ...(assignee.id ? { source: { accountId: assignee.id } } : {}),
       };
     }
 

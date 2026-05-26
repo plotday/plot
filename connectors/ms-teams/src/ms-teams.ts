@@ -1,9 +1,10 @@
 import {
   Connector,
+  type CreateLinkDraft,
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { NewActor, Note, Thread } from "@plotday/twister/plot";
+import type { NewActor, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -15,6 +16,7 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   GraphApi,
+  type OrgUser,
   type SyncState,
   type TeamsMessage,
   syncChannelMessages,
@@ -27,6 +29,22 @@ const MAX_SYNC_BATCHES = 50;
 /** Graph subscriptions for Teams channel messages max out at ~60 minutes. */
 const SUBSCRIPTION_EXPIRY_MINUTES = 55;
 
+/**
+ * Returns true when a Graph API error indicates missing OAuth scopes or a
+ * revoked/expired token — i.e. the user must re-authorize to fix it.
+ *
+ * Graph surfaces these as:
+ *   - HTTP 401 → "Authentication failed - token may be expired"
+ *   - HTTP 403 → "Access denied - insufficient permissions"
+ */
+function isGraphAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("Authentication failed") ||
+    error.message.includes("Access denied - insufficient permissions")
+  );
+}
+
 export class MsTeams extends Connector<MsTeams> {
   static readonly PROVIDER = AuthProvider.Microsoft;
   static readonly handleReplies = true;
@@ -35,9 +53,12 @@ export class MsTeams extends Connector<MsTeams> {
     "https://graph.microsoft.com/Channel.ReadBasic.All",
     "https://graph.microsoft.com/ChannelMessage.Read.All",
     "https://graph.microsoft.com/ChannelMessage.Send",
+    "https://graph.microsoft.com/Chat.Create",
     "https://graph.microsoft.com/Chat.Read",
+    "https://graph.microsoft.com/Chat.ReadWrite",
     "https://graph.microsoft.com/ChatMessage.Send",
     "https://graph.microsoft.com/User.Read",
+    "https://graph.microsoft.com/User.Read.All",
   ];
 
   readonly provider = AuthProvider.Microsoft;
@@ -46,9 +67,33 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "message",
       label: "Message",
+      noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
+    },
+    {
+      type: "teams-channel",
+      label: "Channel message",
+      noteLabel: "Message",
+      logo: "https://api.iconify.design/logos/microsoft-teams.svg",
+      logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
+      logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
+      ],
+    },
+    {
+      type: "teams-dm",
+      label: "Direct message",
+      noteLabel: "Message",
+      logo: "https://api.iconify.design/logos/microsoft-teams.svg",
+      logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
+      logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
+      targets: "contacts" as const,
+      statuses: [
+        { status: "sent", label: "Sent", createDefault: true },
+      ],
     },
   ];
 
@@ -130,6 +175,12 @@ export class MsTeams extends Connector<MsTeams> {
       const initCallback = await this.callback(this.initChannel, channel.id);
       await this.runTask(initCallback);
     }
+
+    // Sync org members so the DM recipient picker can filter to reachable
+    // Teams contacts. Gated inside syncMembers to once per 24 hours, so
+    // repeated onChannelEnabled calls only hit /users once.
+    const membersCallback = await this.callback(this.syncMembers, channel.id);
+    await this.runTask(membersCallback);
   }
 
   /**
@@ -574,10 +625,7 @@ export class MsTeams extends Connector<MsTeams> {
         .map((m) => ({
           name: m.displayName ?? m.userId!,
           email: m.email ?? undefined,
-          source: {
-            provider: AuthProvider.Microsoft,
-            accountId: m.userId!,
-          },
+          source: { accountId: m.userId! },
         }));
 
       await this.set(`chat_members_${chatId}`, actors);
@@ -585,6 +633,242 @@ export class MsTeams extends Connector<MsTeams> {
     } catch (error) {
       console.error("Failed to fetch chat members:", error);
       return [];
+    }
+  }
+
+  // ---- Compose new messages from Plot ----
+
+  /**
+   * Creates a new Teams message from Plot via `onCreateLink`.
+   *
+   * - `teams-channel`: posts a new top-level message to the enabled channel.
+   * - `teams-dm`: opens (or creates) a 1:1 or group chat with the selected
+   *   recipients, then posts there.
+   *
+   * The returned `meta` matches exactly what `onNoteCreated` reads so replies
+   * work via the existing write-back path with zero extra wiring.
+   */
+  override async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type === "teams-channel") {
+      return this.createChannelPost(draft);
+    }
+    if (draft.type === "teams-dm") {
+      return this.createDirectMessage(draft);
+    }
+    return null;
+  }
+
+  private async createChannelPost(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const channelId = draft.channelId;
+
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[ms-teams] Cannot create channel post: body is empty");
+      return null;
+    }
+
+    const teamId = await this.findTeamForChannel(channelId);
+    if (!teamId) {
+      console.error(`[ms-teams] Cannot create channel post: no team for channel ${channelId}`);
+      return null;
+    }
+
+    const api = await this.getApi(channelId);
+    let result: Awaited<ReturnType<typeof api.sendChannelMessage>>;
+    try {
+      result = await api.sendChannelMessage(teamId, channelId, body);
+    } catch (error) {
+      if (isGraphAuthError(error)) {
+        console.warn("[ms-teams] createChannelPost: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(channelId);
+      } else {
+        console.error("[ms-teams] createChannelPost: failed to send message", error);
+      }
+      return null;
+    }
+    if (!result?.id) return null;
+
+    return {
+      source: `ms-teams:channel:${channelId}:message:${result.id}`,
+      type: "teams-channel",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(result.createdDateTime),
+      channelId,
+      meta: {
+        syncProvider: "teams",
+        syncableId: channelId,
+        teamId,
+        channelId,
+        messageId: result.id,
+      },
+    };
+  }
+
+  private async createDirectMessage(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    const recipients = draft.recipients;
+    if (!recipients || recipients.length === 0) {
+      console.error("[ms-teams] Cannot create DM: no recipients provided");
+      return null;
+    }
+
+    const body = (draft.noteContent ?? draft.title ?? "").trim();
+    if (!body) {
+      console.error("[ms-teams] Cannot create DM: body is empty");
+      return null;
+    }
+
+    // Resolve the token via the DM synthetic channel (always registered when
+    // the user has DMs enabled). If the user hasn't enabled DMs, fall back to
+    // whatever enabled channel draft.channelId references.
+    let api: GraphApi;
+    let tokenChannelId: string;
+    try {
+      api = await this.getApi(DM_CHANNEL_ID);
+      tokenChannelId = DM_CHANNEL_ID;
+    } catch {
+      api = await this.getApi(draft.channelId);
+      tokenChannelId = draft.channelId;
+    }
+
+    // Look up the caller's own AAD object id so we can include them in the
+    // chat members list (required by Graph).
+    let me: Awaited<ReturnType<typeof api.getMe>>;
+    let chatId: string;
+    let result: Awaited<ReturnType<typeof api.sendChatMessage>>;
+    try {
+      me = await api.getMe();
+      const myAadId = me.id;
+
+      const aadUserIds = recipients.map((r) => r.externalAccountId);
+      chatId = await api.createChat(aadUserIds, myAadId);
+
+      result = await api.sendChatMessage(chatId, body);
+    } catch (error) {
+      if (isGraphAuthError(error)) {
+        console.warn("[ms-teams] createDirectMessage: missing scope or revoked token; flagging re-auth", error);
+        await this.tools.integrations.markNeedsReauth(tokenChannelId);
+      } else {
+        console.error("[ms-teams] createDirectMessage: failed to send DM", error);
+      }
+      return null;
+    }
+    if (!result?.id) return null;
+
+    return {
+      source: `ms-teams:dm:${chatId}:message:${result.id}`,
+      type: "teams-dm",
+      title: draft.title,
+      status: draft.status,
+      created: new Date(result.createdDateTime),
+      // Store under the DM synthetic channel so token resolution works
+      // for future replies via onNoteCreated.
+      channelId: DM_CHANNEL_ID,
+      meta: {
+        syncProvider: "teams",
+        syncableId: DM_CHANNEL_ID,
+        chatId,
+      },
+    };
+  }
+
+  // ---- Workspace member sync ----
+
+  /**
+   * Syncs all active org users from Microsoft Graph as Plot contacts so the
+   * recipient picker can surface reachable Teams users.
+   *
+   * Gated to run at most once per 24 hours to avoid hammering /users on
+   * every onChannelEnabled call. Uses Graph pagination via @odata.nextLink.
+   * Rate-limit (HTTP 429 / Retry-After) reschedules via runTask in finally.
+   */
+  async syncMembers(channelId: string): Promise<void> {
+    const now = Date.now();
+    const lastSyncedAt = await this.get<number>("teamsMembersSyncedAt");
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (lastSyncedAt && now - lastSyncedAt < ONE_DAY_MS) {
+      return; // Already synced recently; skip.
+    }
+
+    let api: GraphApi;
+    try {
+      // Prefer any enabled channel's token; DM_CHANNEL_ID works if DMs are enabled.
+      api = await this.getApi(channelId);
+    } catch {
+      try {
+        api = await this.getApi(DM_CHANNEL_ID);
+      } catch (error) {
+        console.warn("[ms-teams] syncMembers: no token available", error);
+        return;
+      }
+    }
+
+    const nextRunAt = new Date(now + ONE_DAY_MS);
+    const dailyCallback = await this.callback(this.syncMembers, channelId);
+    let scheduleDaily = true;
+
+    const contacts: NewContact[] = [];
+
+    try {
+      let nextLink: string | undefined;
+      do {
+        const page = await api.getOrgUsers(nextLink);
+        nextLink = page.nextLink;
+
+        for (const user of page.users) {
+          // Skip disabled accounts.
+          if (user.accountEnabled === false) continue;
+
+          const name = user.displayName ?? null;
+          const email = user.mail ?? user.userPrincipalName ?? null;
+
+          if (!name && !email) continue;
+
+          const contact: NewContact = {
+            ...(name ? { name } : {}),
+            ...(email ? { email } : {}),
+            source: { accountId: user.id },
+          } as NewContact;
+
+          contacts.push(contact);
+        }
+      } while (nextLink);
+
+      if (contacts.length > 0) {
+        await this.tools.integrations.saveContacts(contacts);
+      }
+
+      await this.set("teamsMembersSyncedAt", now);
+    } catch (error) {
+      // Check for Graph rate-limit: HTTP 429 surfaces as an Error with message
+      // "Rate limit exceeded - too many requests".
+      const isRateLimit =
+        error instanceof Error &&
+        error.message.includes("Rate limit exceeded");
+
+      if (isRateLimit) {
+        // Retry after 60 seconds (Graph's Retry-After header is not directly
+        // available here; use a conservative default).
+        scheduleDaily = false;
+        const runAt = new Date(Date.now() + 60 * 1000);
+        console.log(`[ms-teams] syncMembers: rate limited; retrying at ${runAt.toISOString()}`);
+        const retry = await this.callback(this.syncMembers, channelId);
+        await this.runTask(retry, { runAt });
+        return;
+      }
+
+      console.error("[ms-teams] syncMembers: unexpected error", error);
+      throw error;
+    } finally {
+      if (scheduleDaily) {
+        await this.runTask(dailyCallback, { runAt: nextRunAt });
+      }
     }
   }
 

@@ -225,6 +225,18 @@ export class GmailApi {
     });
   }
 
+  /**
+   * Sends a brand-new email (not a reply). Gmail allocates a fresh threadId.
+   */
+  public async sendNewMessage(
+    raw: string
+  ): Promise<{ id: string; threadId: string }> {
+    return await this.call("/messages/send", {
+      method: "POST",
+      body: { raw },
+    });
+  }
+
   public async getProfile(): Promise<{ emailAddress: string }> {
     return await this.call("/profile");
   }
@@ -353,6 +365,10 @@ export function parseEmailAddresses(headerValue: string | null): string[] {
  * Parses email addresses from a header value into NewContact objects.
  * Used for thread/note accessContacts (visibility control).
  * Skips entries that are not valid email addresses.
+ *
+ * Always populates `source` with the email as the Google account ID so
+ * the DM recipient picker can resolve contacts to Gmail email addresses
+ * without requiring the Google Contacts connector to be installed.
  */
 function parseEmailAddressesToContacts(headerValue: string | null): NewContact[] {
   if (!headerValue) return [];
@@ -363,6 +379,12 @@ function parseEmailAddressesToContacts(headerValue: string | null): NewContact[]
     .map((parsed) => ({
       email: parsed.email,
       name: parsed.name || undefined,
+      // NOTE: Gmail message headers don't expose a Google user id (sub/permissionId),
+      // so we key contact_external_account on the lowercased email address. Google Chat
+      // and Drive connectors key on the numeric Google id; cross-connector dedup is
+      // also blocked by per-connection scoping, so the picker only surfaces a Gmail
+      // contact for Gmail composes regardless. Acceptable for v1.
+      source: { accountId: parsed.email.toLowerCase() },
     }));
 }
 
@@ -574,31 +596,32 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   // Use Gmail's plain-text snippet for preview (avoids HTML in previews)
   const preview = parentMessage.snippet || null;
 
-  // Collect all unique participants across messages for thread-level access
+  // Collect all unique participants across messages for thread-level access.
+  // source is populated so the DM recipient picker can resolve Gmail contacts.
   const participantsByEmail = new Map<string, NewContact>();
   for (const message of thread.messages) {
     const from = getHeader(message, "From");
     const to = getHeader(message, "To");
     const cc = getHeader(message, "Cc");
     const fromContact = from ? parseEmailAddress(from) : null;
-    const contacts: { email: string; name: string | null }[] = [
-      ...(fromContact ? [fromContact] : []),
-      ...parseEmailAddressesToContacts(to).map((c) => ({
-        email: c.email!,
-        name: c.name ?? null,
-      })),
-      ...parseEmailAddressesToContacts(cc).map((c) => ({
-        email: c.email!,
-        name: c.name ?? null,
-      })),
+    const allParticipants: NewContact[] = [
+      ...(fromContact
+        ? [
+            {
+              email: fromContact.email,
+              name: fromContact.name || undefined,
+              // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
+              source: { accountId: fromContact.email.toLowerCase() },
+            } as NewContact,
+          ]
+        : []),
+      ...parseEmailAddressesToContacts(to),
+      ...parseEmailAddressesToContacts(cc),
     ];
-    for (const actor of contacts) {
-      const email = actor.email.toLowerCase();
+    for (const contact of allParticipants) {
+      const email = contact.email!.toLowerCase();
       if (!participantsByEmail.has(email)) {
-        participantsByEmail.set(email, {
-          email: actor.email,
-          name: actor.name || undefined,
-        });
+        participantsByEmail.set(email, contact);
       }
     }
   }
@@ -645,13 +668,19 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       content = content + "\n\n" + attachmentLinks;
     }
 
-    // Note author (sender) and per-message recipients for visibility
+    // Note author (sender) and per-message recipients for visibility.
+    // source is populated so the DM recipient picker can resolve Gmail contacts.
     const senderActor: NewActor = {
       email: sender.email,
       name: sender.name || undefined,
     };
     const messageContacts: NewContact[] = [
-      { email: sender.email, name: sender.name || undefined },
+      {
+        email: sender.email,
+        name: sender.name || undefined,
+        // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
+        source: { accountId: sender.email.toLowerCase() },
+      },
       ...parseEmailAddressesToContacts(to),
       ...parseEmailAddressesToContacts(cc),
     ];
@@ -892,6 +921,44 @@ export async function syncGmailMailboxIncremental(
     historyId: historyResult.historyId,
     threads,
   };
+}
+
+/**
+ * Builds an RFC 2822 email message for a new (non-reply) email.
+ * Returns the base64url-encoded raw message string for the Gmail API.
+ */
+export function buildNewEmailMessage(options: {
+  to: string[];
+  cc?: string[];
+  from: string;
+  subject: string;
+  body: string;
+}): string {
+  const { to, cc = [], from, subject, body } = options;
+
+  const lines: string[] = [
+    `From: ${from}`,
+    `To: ${to.join(", ")}`,
+  ];
+
+  if (cc.length > 0) {
+    lines.push(`Cc: ${cc.join(", ")}`);
+  }
+
+  lines.push(`Subject: ${subject}`);
+  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
+  lines.push(""); // Empty line separates headers from body
+  lines.push(body);
+
+  const rawMessage = lines.join("\r\n");
+
+  // Base64url encode
+  return btoa(
+    String.fromCharCode(...new TextEncoder().encode(rawMessage))
+  )
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 /**

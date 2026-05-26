@@ -95,7 +95,7 @@ function userToContact(
     ...(user.displayName ? { name: user.displayName } : {}),
     ...(user.emailAddress ? { email: user.emailAddress } : {}),
     ...(user.permissionId
-      ? { source: { provider: AuthProvider.Google, accountId: user.permissionId } }
+      ? { source: { accountId: user.permissionId } }
       : {}),
   } as NewContact;
 }
@@ -132,11 +132,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   readonly provider = AuthProvider.Google;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
   readonly linkTypes = [
-    { type: "doc", label: "Document", logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
-    { type: "sheet", label: "Spreadsheet", logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },
-    { type: "slide", label: "Presentation", logo: "https://api.iconify.design/simple-icons/googleslides.svg?color=%23FBBC04", logoMono: "https://api.iconify.design/simple-icons/googleslides.svg" },
-    { type: "form", label: "Form", logo: "https://api.iconify.design/simple-icons/googleforms.svg?color=%23673AB7", logoMono: "https://api.iconify.design/simple-icons/googleforms.svg" },
-    { type: "document", label: "File", logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" },
+    { type: "doc", label: "Document", noteLabel: "Comment", logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
+    { type: "sheet", label: "Spreadsheet", noteLabel: "Comment", logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },
+    { type: "slide", label: "Presentation", noteLabel: "Comment", logo: "https://api.iconify.design/simple-icons/googleslides.svg?color=%23FBBC04", logoMono: "https://api.iconify.design/simple-icons/googleslides.svg" },
+    { type: "form", label: "Form", noteLabel: "Comment", logo: "https://api.iconify.design/simple-icons/googleforms.svg?color=%23673AB7", logoMono: "https://api.iconify.design/simple-icons/googleforms.svg" },
+    { type: "document", label: "File", noteLabel: "Comment", logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" },
   ];
 
   build(build: ToolBuilder) {
