@@ -1443,8 +1443,8 @@ class Thread extends Equatable implements Comparable<Thread> {
               // DateTime-based scheduling: startAt <= now AND endAt >= now
               (s.startAt.isSmallerOrEqualValue(now) &
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now))) |
-              // Per-user todo: thread has an unfinished active flag.
-              (a.active.equals(true) & a.readAt.isNull())),
+              // Per-user todo: thread has the active flag set.
+              a.active.equals(true)),
     );
     final nowCountStream = nowQuery.watch().map(
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
@@ -1799,8 +1799,8 @@ class Thread extends Equatable implements Comparable<Thread> {
             (sched.startAt.isSmallerOrEqualValue(now) &
                 (sched.endAt.isNull() |
                     sched.endAt.isBiggerOrEqualValue(now))) |
-            // Per-user todo: thread has an unfinished active flag.
-            (a.active.equals(true) & a.readAt.isNull()) |
+            // Per-user todo: thread has the active flag set.
+            a.active.equals(true) |
             // Link schedule date-based: startOn <= today
             (linkSched.startOn.isSmallerOrEqualValue(Date.today().toString()) &
                 linkSched.startAt.isNull()) |
@@ -1817,14 +1817,10 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
     if (todoOnly) {
-      // SQL translation of [Thread.isActive]:
-      //   active == true && readAt == null
-      //
-      // **Keep in lockstep with [Thread.isActive] and the fixture matrix
-      // in `test/store/thread_todo_predicate_test.dart`.**
-      query.where(
-        a.active.equals(true) & a.readAt.isNull(),
-      );
+      // SQL translation of [Thread.isActive]: just `active == true`.
+      // Reading or reordering doesn't remove from Doing — only flipping
+      // `active` off (via `todo: false`) does.
+      query.where(a.active.equals(true));
     }
     if (archived != null) {
       query.where(archived ? a.archivedAt.isNotNull() : a.archivedAt.isNull());
@@ -1957,14 +1953,12 @@ class Thread extends Equatable implements Comparable<Thread> {
         condition = condition | unscheduled;
       }
 
-      // Active todo: always include threads with an unfinished active flag.
+      // Active todo: always include threads with the active flag set.
       // Skip for linkScheduledOnly — we only want threads by their link
       // schedule, not by their per-user state.
       // Skip for eventsOnly — caller is running a separate todoOnly watch.
       if (!linkScheduledOnly && !eventsOnly) {
-        Expression<bool> activeTodo =
-            a.active.equals(true) & a.readAt.isNull();
-        condition = condition | activeTodo;
+        condition = condition | a.active.equals(true);
       }
 
       // Activity is scheduled within the range (Date-based)
@@ -2099,15 +2093,6 @@ class Thread extends Equatable implements Comparable<Thread> {
             linkSched.startAt.isSmallerThanValue(rangeEnd);
       }
       condition = condition | linkDateTimeScheduled;
-
-      // Exclude read-and-done threads (done items). Only include threads
-      // where there is no per-user flag, or it isn't yet read, or there's
-      // a link schedule to render.
-      final hasAnyStateFlag =
-          a.active.equals(true) | a.task.equals(true) | a.toRead.equals(true);
-      condition =
-          condition &
-          (hasAnyStateFlag.not() | a.readAt.isNull() | linkSched.id.isNotNull());
 
       query.where(condition);
     }
@@ -4432,7 +4417,7 @@ ORDER BY
     return (_schedule?.startAt != null
             ? DateTimeRange(_schedule!.startAt!, _schedule.endAt)
             : null) ??
-        (_thread.stateAt != null && _thread.readAt == null
+        (_thread.stateAt != null && active
             ? DateTimeRange(_thread.stateAt!, null)
             : null) ??
         on?.toDateTimeRange();
@@ -4448,7 +4433,7 @@ ORDER BY
             ? CustomDateRange(_schedule!.startOn!, _schedule.endOn)
             : null) ??
         (_thread.stateOn != null &&
-                _thread.readAt == null &&
+                active &&
                 _thread.stateOn != Thread.todoNowDate
             ? CustomDateRange(_thread.stateOn!, null)
             : null);
@@ -4594,7 +4579,11 @@ ORDER BY
 
   /// Whether the user is actively acting on this thread now (Doing section
   /// in the unified feed). Independent of `task` and `toRead`.
-  bool get active => _thread.active && _thread.readAt == null;
+  ///
+  /// `readAt` is the user's read marker, not a "finished" marker — finishing
+  /// flips `active` itself off (via the `todo: false` branch in copyWith).
+  /// Reading or reordering an active thread must leave it in Doing.
+  bool get active => _thread.active;
 
   /// Whether this thread is on the user's task list (typically set by a
   /// connector like Linear/Todoist on assignment). Independent flag.
@@ -4609,20 +4598,12 @@ ORDER BY
 
   /// Canonical "is this thread in the user's Doing list?" predicate,
   /// factored out so the Dart [active] getter and any SQL clause that
-  /// filters Doing share a single source of truth.
-  ///
-  /// **Keep this in lockstep with any SQL clause that mirrors it** and
-  /// with the fixtures in `test/store/thread_todo_predicate_test.dart`.
-  static bool isActive({
-    required bool active,
-    required DateTime? readAt,
-  }) {
-    return active && readAt == null;
-  }
+  /// filters Doing share a single source of truth. Just the `active`
+  /// boolean — `read_at` is the read marker, not a "finished" marker.
+  static bool isActive({required bool active}) => active;
 
   /// Backwards-compat alias for older call sites.
-  static bool isTodo({required bool active, required DateTime? readAt}) =>
-      isActive(active: active, readAt: readAt);
+  static bool isTodo({required bool active}) => isActive(active: active);
 
   /// Legacy helper retained for the predicate-matrix test fixtures. Mirrors
   /// the old schedule-shape rule: a user has a todo when the per-user
@@ -4680,7 +4661,7 @@ ORDER BY
 
   /// True when the current user has any per-user state on this thread.
   bool get hasUserSchedule =>
-      _thread.active || _thread.task || _thread.toRead || _thread.readAt != null;
+      _thread.active || _thread.task || _thread.toRead;
 
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
@@ -4845,17 +4826,19 @@ ORDER BY
     );
   }
 
-  /// Returns a copy with the per-user state marked read (mirroring the
-  /// pre-refactor "archive the user schedule" behaviour). Used to mirror
-  /// what `associateWith` will write to the DB so the optimistic agenda
-  /// model treats this thread as no longer todo. No-op when there's no
+  /// Returns a copy with all per-user state flags cleared so the thread
+  /// no longer renders in Doing / Task / Reading. No-op when there's no
   /// per-user state to clear.
   Thread withScheduleArchived() {
     if (!_thread.active && !_thread.task && !_thread.toRead) return this;
     final now = DateTime.now();
     return _withThreadState(
       _thread.copyWith(
-        readAt: Value(now),
+        active: false,
+        task: false,
+        toRead: false,
+        stateOn: const Value(null),
+        stateAt: const Value(null),
         updatedAt: now,
       ),
     );
@@ -4883,24 +4866,32 @@ ORDER BY
   }
 
   /// Returns a copy in the "active" state (todo with `todoNowDate` sentinel).
-  /// Preserves the existing state_order if [order] is null. Marks the
-  /// thread read (acknowledged) since the user is committing to work on
-  /// it now. Used by the Activity-tab drag dispatcher when a thread is
-  /// dropped in the Today section.
+  /// Preserves the existing state_order if [order] is null. When the thread
+  /// was unread, marks it acknowledged (so the user isn't shown an unread
+  /// dot on something they're already acting on). Used by the Activity-tab
+  /// drag dispatcher when a thread is dropped in the Today section.
   Thread asActiveToday({Order? order}) {
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
-    return withScheduleRestored(order: effectiveOrder)
-        .copyWith(unread: false, readAt: Value(DateTime.now()));
+    final restored = withScheduleRestored(order: effectiveOrder);
+    if (!unread) return restored;
+    return restored.copyWith(
+      unread: false,
+      readAt: Value(contentTimestamp),
+    );
   }
 
   /// Returns a copy in the "scheduled" state for [date]. Sets the
   /// per-user state's `stateOn` to the given date, clears time fields,
-  /// and marks the thread read (acknowledged) since the user has
+  /// and (when unread) marks the thread acknowledged since the user has
   /// committed it to a future day.
   Thread asScheduled(Date date, {Order? order}) {
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
-    return withScheduleRestored(order: effectiveOrder, date: date)
-        .copyWith(unread: false, readAt: Value(DateTime.now()));
+    final restored = withScheduleRestored(order: effectiveOrder, date: date);
+    if (!unread) return restored;
+    return restored.copyWith(
+      unread: false,
+      readAt: Value(contentTimestamp),
+    );
   }
 
   /// Returns a copy in the "new (unread-only)" state — flips `unread` to

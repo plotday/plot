@@ -103,7 +103,6 @@ class AgendaBuilder {
       if (t.archivedAt != null) continue;
       // "Respond" semantics collapsed into the single `active` flag.
       if (!t.active) continue;
-      if (t.readAt != null) continue;
       if (!t.urgent && t.importance < 50) continue;
       // Treat null (server-seeded default) as enabled. Only an explicit
       // `false` disables placement on this priority.
