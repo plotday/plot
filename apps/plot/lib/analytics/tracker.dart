@@ -14,7 +14,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpException, Platform, SocketException;
 import 'dart:ui' show PlatformDispatcher;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, kProfileMode;
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -22,6 +23,7 @@ import 'package:posthog_flutter/posthog_flutter.dart';
 
 import '../api/api_exception.dart';
 import '../api/network_exception.dart';
+import '../app_info.dart';
 import '../env.dart';
 import 'conventions.dart';
 import 'properties.dart';
@@ -44,6 +46,7 @@ abstract class AnalyticsBackend {
   Future<void> captureException({
     required Object error,
     StackTrace? stackTrace,
+    Map<String, dynamic>? properties,
   });
 }
 
@@ -88,8 +91,13 @@ class PostHogSdkBackend implements AnalyticsBackend {
   Future<void> captureException({
     required Object error,
     StackTrace? stackTrace,
+    Map<String, dynamic>? properties,
   }) async {
-    await Posthog().captureException(error: error, stackTrace: stackTrace);
+    await Posthog().captureException(
+      error: error,
+      stackTrace: stackTrace,
+      properties: properties?.cast<String, Object>(),
+    );
   }
 }
 
@@ -169,8 +177,10 @@ class PostHogApiBackend implements AnalyticsBackend {
   Future<void> captureException({
     required Object error,
     StackTrace? stackTrace,
+    Map<String, dynamic>? properties,
   }) async {
     await capture('\$exception', {
+      ...?properties,
       'error': error.toString(),
       if (stackTrace != null) 'stack_trace': stackTrace.toString(),
     });
@@ -215,6 +225,11 @@ class Tracker {
   late final AnalyticsBackend _backend;
   bool _initialized = false;
 
+  /// Properties merged into every event and onto the person profile on
+  /// identify. Built once from [AppInfo] at init time. Uses PostHog's
+  /// `$app_*` standard names where they apply so the UI surfaces them.
+  late final Map<String, dynamic> _superProperties;
+
   /// Initialize analytics with the appropriate backend for the platform
   static Future<void> init() async {
     await _instance._init();
@@ -222,6 +237,8 @@ class Tracker {
 
   Future<void> _init() async {
     if (_initialized) return;
+
+    _superProperties = _buildSuperProperties();
 
     // Select backend based on platform
     if (!kIsWeb && Platform.isWindows) {
@@ -237,12 +254,51 @@ class Tracker {
         ..captureApplicationLifecycleEvents = true
         ..personProfiles = PostHogPersonProfiles.identifiedOnly;
       await Posthog().setup(config);
+
+      // Also register on the SDK so its auto-captured lifecycle events
+      // pick up platform/version (those bypass our _track wrapper).
+      for (final entry in _superProperties.entries) {
+        final value = entry.value;
+        if (value != null) await Posthog().register(entry.key, value as Object);
+      }
     }
 
     // Setup error tracking
     _setupErrorTracking();
 
     _initialized = true;
+  }
+
+  Map<String, dynamic> _buildSuperProperties() {
+    final clientKind = kIsWeb ? 'web' : 'native';
+    String buildMode;
+    if (kDebugMode) {
+      buildMode = 'debug';
+    } else if (kProfileMode) {
+      buildMode = 'profile';
+    } else {
+      buildMode = 'release';
+    }
+    return <String, dynamic>{
+      // PostHog standard property names — surfaced by the UI.
+      '\$app_version': AppInfo.version,
+      '\$app_build': AppInfo.buildNumber,
+      '\$app_name': 'Plot',
+      // Our own readable names.
+      'platform': AppInfo.platform, // macOS / Windows / Linux / iOS / Android / Web
+      'client_kind': clientKind, // web | native
+      'build_mode': buildMode, // debug | profile | release
+    };
+  }
+
+  Map<String, dynamic> _mergeSuperProperties(
+    Map<String, dynamic>? properties,
+  ) {
+    if (properties == null || properties.isEmpty) {
+      return Map<String, dynamic>.from(_superProperties);
+    }
+    // Caller-provided properties win on key conflicts.
+    return {..._superProperties, ...properties};
   }
 
   void _setupErrorTracking() {
@@ -253,6 +309,7 @@ class Tracker {
         await _backend.captureException(
           error: details.exception,
           stackTrace: details.stack,
+          properties: _superProperties,
         );
       }
       FlutterError.presentError(details);
@@ -264,7 +321,11 @@ class Tracker {
         .onError = (Object error, StackTrace stackTrace) {
       if (!_shouldIgnore(error, stackTrace)) {
         _log.severe('Uncaught async error', error, stackTrace);
-        _backend.captureException(error: error, stackTrace: stackTrace);
+        _backend.captureException(
+          error: error,
+          stackTrace: stackTrace,
+          properties: _superProperties,
+        );
       }
       return true; // Marks the error as handled
     };
@@ -324,7 +385,7 @@ class Tracker {
     String eventName,
     Map<String, dynamic>? properties,
   ) async {
-    await _backend.capture(eventName, properties);
+    await _backend.capture(eventName, _mergeSuperProperties(properties));
   }
 
   /// Build and track an event using the naming convention
@@ -498,7 +559,13 @@ class Tracker {
     Map<String, dynamic>? properties,
     Map<String, dynamic>? propertiesSetOnce,
   }) async {
-    await _backend.identify(userId, properties, propertiesSetOnce);
+    // Stamp last-known platform/version on the person profile too, so we can
+    // see what an inactive user was last running without hunting for events.
+    await _backend.identify(
+      userId,
+      _mergeSuperProperties(properties),
+      propertiesSetOnce,
+    );
   }
 
   /// Reset user identity (on sign out)
@@ -519,6 +586,10 @@ class Tracker {
   }
 
   Future<void> _captureException(Object error, StackTrace? stackTrace) async {
-    await _backend.captureException(error: error, stackTrace: stackTrace);
+    await _backend.captureException(
+      error: error,
+      stackTrace: stackTrace,
+      properties: _superProperties,
+    );
   }
 }
