@@ -1189,22 +1189,23 @@ class _NoteActionsLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final externalLinks = <UserAction>[];
-    final others = <UserAction>[];
-    for (final action in actions) {
+    final externalLinks = <(int, UserAction)>[];
+    final others = <(int, UserAction)>[];
+    for (var i = 0; i < actions.length; i++) {
+      final action = actions[i];
       if (action.type == UserActionType.external) {
-        externalLinks.add(action);
+        externalLinks.add((i, action));
       } else {
-        others.add(action);
+        others.add((i, action));
       }
     }
 
     final children = <Widget>[];
-    for (final link in externalLinks) {
+    for (final (idx, link) in externalLinks) {
       children.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
-          child: NoteActionWidget(link: link, note: note),
+          child: NoteActionWidget(link: link, note: note, actionIndex: idx),
         ),
       );
     }
@@ -1215,9 +1216,10 @@ class _NoteActionsLayout extends StatelessWidget {
           runSpacing: 6,
           children: others
               .map(
-                (link) => NoteActionWidget(
-                  link: link,
+                ((int, UserAction) entry) => NoteActionWidget(
+                  link: entry.$2,
                   note: note,
+                  actionIndex: entry.$1,
                   variant: FButtonVariant.secondary,
                   style: FButtonStyleDelta.delta(
                     contentStyle: FButtonContentStyleDelta.delta(
