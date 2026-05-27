@@ -1,4 +1,4 @@
-import { type Issue, LinearClient } from "@linear/sdk";
+import { type Attachment, type Issue, LinearClient } from "@linear/sdk";
 import type {
   EntityWebhookPayloadWithCommentData,
   EntityWebhookPayloadWithIssueData,
@@ -28,6 +28,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { Files } from "@plotday/twister/tools/files";
 
 type Project = {
   id: string;
@@ -91,8 +92,9 @@ export class Linear extends Connector<Linear> {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
-      network: build(Network, { urls: ["https://api.linear.app/*"] }),
+      network: build(Network, { urls: ["https://api.linear.app/*", "https://uploads.linear.app/*"] }),
       tasks: build(Tasks),
+      files: build(Files),
     };
   }
 
@@ -495,6 +497,7 @@ export class Linear extends Connector<Linear> {
     initialSync: boolean
   ): Promise<NewLinkWithNotes | null> {
     let creator, assignee, state, comments;
+    let attachmentNodes: Attachment[] = [];
 
     try {
       creator = await issue.creator;
@@ -536,6 +539,17 @@ export class Linear extends Connector<Linear> {
       comments = { nodes: [] };
     }
 
+    // Fetch issue-level attachments for inbound fileRef actions
+    try {
+      const atts = await issue.attachments();
+      attachmentNodes = atts.nodes;
+    } catch (error) {
+      console.error(
+        "Error fetching attachments:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
     // Prepare author and assignee contacts - will be passed directly as NewContact
     const authorContact = this.resolveAuthorContact(creator);
     let assigneeContact: NewContact | undefined;
@@ -557,7 +571,7 @@ export class Linear extends Connector<Linear> {
     const description = issue.description || "";
     const hasDescription = description.trim().length > 0;
 
-    // Build thread-level actions
+    // Build thread-level actions: external link + inbound attachment fileRefs
     const threadActions: Action[] = [];
     if (issue.url) {
       threadActions.push({
@@ -565,6 +579,20 @@ export class Linear extends Connector<Linear> {
         title: `Open in Linear`,
         url: issue.url,
       });
+    }
+
+    // Emit fileRef actions for each attachment and cache the attachment → projectId
+    // mapping so downloadAttachment can retrieve the right client.
+    for (const att of attachmentNodes) {
+      await this.set(`linear:att-project:${att.id}`, projectId);
+
+      threadActions.push({
+        type: ActionType.fileRef,
+        ref: att.id,
+        fileName: att.title ?? "attachment",
+        fileSize: null,
+        mimeType: "application/octet-stream",
+      } as any);
     }
 
     // Build notes array: description note + comment notes
@@ -765,7 +793,11 @@ export class Linear extends Connector<Linear> {
    * side the hash matches and Plot's content is preserved.
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
-    return this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+    const fileActions = (note.actions ?? []).filter(
+      (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+        a.type === ActionType.file,
+    );
+    return this.addIssueComment(thread.meta ?? {}, note.content ?? "", fileActions);
   }
 
   /**
@@ -795,14 +827,19 @@ export class Linear extends Connector<Linear> {
   }
 
   /**
-   * Add a comment to a Linear issue
+   * Add a comment to a Linear issue, optionally uploading file attachments.
+   *
+   * File actions are uploaded via Linear's fileUpload mutation (S3 presigned
+   * URL), then embedded as markdown image references in the comment body.
    *
    * @param meta - Thread metadata containing linearId and projectId
    * @param body - Comment text (markdown supported)
+   * @param fileActions - Optional file actions to upload as attachments
    */
   async addIssueComment(
     meta: ThreadMeta,
-    body: string
+    body: string,
+    fileActions: Array<Extract<Action, { type: typeof ActionType.file }>> = [],
   ): Promise<NoteWriteBackResult | void> {
     const issueId = meta.linearId as string | undefined;
     if (!issueId) {
@@ -816,16 +853,58 @@ export class Linear extends Connector<Linear> {
 
     const client = await this.getClient(projectId);
 
+    // Upload files and collect markdown image references to append to body
+    const uploadedMarkdown: string[] = [];
+    for (const action of fileActions) {
+      try {
+        const file = await this.tools.files.read(action.fileId);
+        const uploadPayload = await client.fileUpload(
+          file.mimeType,
+          file.fileName,
+          file.fileSize,
+        );
+        const uploadFile = uploadPayload.uploadFile;
+        if (!uploadFile) {
+          console.error("Linear fileUpload returned no uploadFile", action.fileId);
+          continue;
+        }
+
+        // Convert headers array [{key, value}] to a plain object for fetch
+        const headers: Record<string, string> = {};
+        for (const h of uploadFile.headers) {
+          headers[h.key] = h.value;
+        }
+
+        const putRes = await fetch(uploadFile.uploadUrl, {
+          method: "PUT",
+          body: file.data as unknown as BodyInit,
+          headers,
+        });
+
+        if (!putRes.ok) {
+          console.error("Linear file PUT failed", action.fileId, putRes.status);
+          continue;
+        }
+
+        uploadedMarkdown.push(`![${file.fileName}](${uploadFile.assetUrl})`);
+      } catch (e) {
+        console.error("Linear file upload failed", action.fileId, e);
+      }
+    }
+
+    // Append uploaded image markdown to the comment body
+    const finalBody = [body, ...uploadedMarkdown].filter(Boolean).join("\n\n");
+
     const payload = await client.createComment({
       issueId,
-      body,
+      body: finalBody,
     });
 
     const comment = await payload.comment;
     if (comment?.id) {
       return {
         key: `comment-${comment.id}`,
-        externalContent: comment.body ?? body,
+        externalContent: comment.body ?? finalBody,
       };
     }
   }
@@ -1039,6 +1118,36 @@ export class Linear extends Connector<Linear> {
     };
 
     await this.tools.integrations.saveLink(newLink);
+  }
+
+  /**
+   * Downloads a Linear attachment identified by its attachment id (`ref`).
+   *
+   * The ref is emitted as an `ActionType.fileRef` action during inbound sync
+   * in `convertIssueToLink`. We look up the projectId from the store cache
+   * (written when the attachment was first emitted), fetch the attachment's
+   * URL via the Linear SDK, and redirect the client there.
+   *
+   * Linear attachment URLs are long-lived CDN URLs, so a redirect is safe.
+   * Refetching on every call keeps the URL fresh in case it ever expires.
+   */
+  override async downloadAttachment(ref: string): Promise<{ redirectUrl: string }> {
+    const projectId = await this.get<string>(`linear:att-project:${ref}`);
+    if (!projectId) {
+      throw new Error(
+        `Unknown Linear attachment: ${ref}. ` +
+        `The attachment may have been synced before file support was enabled. ` +
+        `Try re-syncing the Linear connection.`
+      );
+    }
+
+    const client = await this.getClient(projectId);
+    const att = await client.attachment(ref);
+    if (!att.url) {
+      throw new Error(`Linear attachment ${ref} has no URL`);
+    }
+
+    return { redirectUrl: att.url };
   }
 
   /**
