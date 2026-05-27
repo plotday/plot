@@ -4,13 +4,14 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 
 // --- Chip value ---
 
-/// One value currently shown as a chip in the contacts field.
+/// One value currently shown in the contacts field. The widget itself
+/// renders a summary (avatars + text); editing happens entirely in the
+/// share modal.
 sealed class ContactChipValue {
   String get key;
   String get label;
@@ -46,410 +47,95 @@ class ContactChipEmail implements ContactChipValue {
   String get label => email;
 }
 
-// --- Candidate ---
-
-/// One row in the autocomplete dropdown.
-sealed class ContactCandidate {
-  String get label;
-}
-
-/// A known [Actor] as a candidate.
-class ActorCandidate implements ContactCandidate {
-  ActorCandidate(this.actor);
-  final Actor actor;
-  @override
-  String get label => actor.name ?? actor.email ?? '';
-}
-
-/// A known [GroupRow] as a candidate.
-class GroupCandidate implements ContactCandidate {
-  GroupCandidate(this.group);
-  final GroupRow group;
-  @override
-  String get label => group.name;
-}
-
-/// A raw email address shown as "Invite {email}" in the dropdown.
-class InviteEmailCandidate implements ContactCandidate {
-  InviteEmailCandidate(this.email);
-  final String email;
-  @override
-  String get label => 'Invite $email';
-}
-
 // --- Widget ---
 
-/// Chip+text hybrid field for sharing/contact selection in the compose
-/// surface. Renders chips for selected contacts, an inline text input for
-/// search/type-ahead, and a floating dropdown of candidates. Supports:
-///
-/// - Keyboard chip navigation (arrow keys, backspace/delete to remove)
-/// - Email-pattern auto-commit (Enter, comma)
-/// - Tab to accept first candidate
-/// - Click/tap chip-action menu (remove, future: CC/BCC)
-/// - Touch: tapping the row opens [openTouchModal] instead of keyboard flow
-class ContactsComposeField extends StatefulWidget {
+/// Compose-surface contacts field. Modal-only: tapping the row (or pressing
+/// Enter when focused) opens the share modal. When no contacts are
+/// selected, the row shows a strike-through users icon and "Private".
+/// Otherwise it shows an avatar group followed by a text summary.
+class ContactsComposeField extends StatelessWidget {
   const ContactsComposeField({
     super.key,
     required this.chips,
-    required this.loadCandidates,
-    required this.onAdd,
-    required this.onRemove,
-    required this.openTouchModal,
+    required this.openModal,
   });
 
-  /// Currently selected chips.
+  /// Currently selected chips (actors, groups, and pending email invites).
   final List<ContactChipValue> chips;
 
-  /// Returns candidates filtered by [query], with already-selected values
-  /// excluded. Callers append [InviteEmailCandidate] when [query] is an
-  /// email pattern not already on the chip list.
-  final Future<List<ContactCandidate>> Function(String query) loadCandidates;
-
-  /// Persist adding a candidate as a chip.
-  final Future<void> Function(ContactCandidate candidate) onAdd;
-
-  /// Persist removing a chip.
-  final Future<void> Function(ContactChipValue chip) onRemove;
-
-  /// On touch platforms, open a full-screen contacts picker modal. The page
-  /// owns this helper.
-  final Future<void> Function() openTouchModal;
-
-  @override
-  State<ContactsComposeField> createState() => _ContactsComposeFieldState();
-}
-
-class _ContactsComposeFieldState extends State<ContactsComposeField> {
-  final DropdownController _dropdown = DropdownController();
-  final FocusNode _inputFocus = FocusNode();
-  final GlobalKey<ComposeDropdownState<ContactCandidate>> _dropdownKey =
-      GlobalKey<ComposeDropdownState<ContactCandidate>>();
-  late final TextEditingController _controller;
-  List<ContactCandidate> _candidates = const [];
-  int? _focusedChipIndex;
-  int _candidateGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController();
-    _inputFocus.addListener(_handleFocusChange);
-    _controller.addListener(_handleTextChange);
-  }
-
-  @override
-  void dispose() {
-    _inputFocus.removeListener(_handleFocusChange);
-    _controller.removeListener(_handleTextChange);
-    _inputFocus.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _handleFocusChange() {
-    if (_inputFocus.hasFocus && hasPhysicalKeyboard()) {
-      _refreshCandidates();
-      _dropdown.show();
-    } else {
-      _dropdown.hide();
-    }
-  }
-
-  void _handleTextChange() {
-    if (_controller.text.isNotEmpty && _focusedChipIndex != null) {
-      setState(() => _focusedChipIndex = null);
-    }
-    _refreshCandidates();
-  }
-
-  Future<void> _refreshCandidates() async {
-    // Rapid typing can fire several loadCandidates concurrently; stamp each
-    // call so a slower earlier result can't clobber a faster later one.
-    final generation = ++_candidateGeneration;
-    final results = await widget.loadCandidates(_controller.text);
-    if (!mounted || generation != _candidateGeneration) return;
-    setState(() => _candidates = results);
-  }
-
-  Future<void> _handlePicked(ContactCandidate candidate) async {
-    await widget.onAdd(candidate);
-    if (!mounted) return;
-    _controller.clear();
-    _refreshCandidates();
-  }
-
-  Future<void> _commitTypedEmail() async {
-    final text = EmailParser.normalize(_controller.text);
-    if (!EmailParser.isEmail(text)) return;
-    await widget.onAdd(InviteEmailCandidate(text));
-    if (!mounted) return;
-    _controller.clear();
-    _refreshCandidates();
-  }
-
-  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-
-    // Let the dropdown consume ArrowUp/ArrowDown/Enter first, unless the
-    // user is navigating chips (left/right) — chip nav uses left/right while
-    // the dropdown uses up/down, so they never compete.
-    final dropdownState = _dropdownKey.currentState;
-    if (dropdownState != null && _focusedChipIndex == null) {
-      if (dropdownState.handleKey(event)) {
-        return KeyEventResult.handled;
-      }
-    }
-
-    final isEmpty = _controller.text.isEmpty;
-
-    // Chip navigation only when the input is empty.
-    if (isEmpty) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-        if (widget.chips.isEmpty) return KeyEventResult.ignored;
-        setState(() {
-          _focusedChipIndex =
-              (_focusedChipIndex ?? widget.chips.length) - 1;
-          if (_focusedChipIndex! < 0) {
-            _focusedChipIndex = widget.chips.length - 1;
-          }
-        });
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-        if (_focusedChipIndex == null) return KeyEventResult.ignored;
-        setState(() {
-          final next = _focusedChipIndex! + 1;
-          _focusedChipIndex = next >= widget.chips.length ? null : next;
-        });
-        return KeyEventResult.handled;
-      }
-      // Backspace or Delete on a focused chip → remove it.
-      if ((event.logicalKey == LogicalKeyboardKey.backspace ||
-              event.logicalKey == LogicalKeyboardKey.delete) &&
-          _focusedChipIndex != null) {
-        final idx = _focusedChipIndex!;
-        if (idx < widget.chips.length) {
-          widget.onRemove(widget.chips[idx]);
-          setState(() {
-            _focusedChipIndex = idx == 0 ? null : idx - 1;
-          });
-        }
-        return KeyEventResult.handled;
-      }
-      // Backspace in empty input with no chip focused → focus the last chip.
-      if (event.logicalKey == LogicalKeyboardKey.backspace &&
-          widget.chips.isNotEmpty &&
-          _focusedChipIndex == null) {
-        setState(() => _focusedChipIndex = widget.chips.length - 1);
-        return KeyEventResult.handled;
-      }
-    }
-
-    // Tab accepts the first candidate only while the dropdown is open
-    // with candidates. When the dropdown is closed, Tab / Shift-Tab fall
-    // through to normal focus traversal so the user can leave the field.
-    if (event.logicalKey == LogicalKeyboardKey.tab) {
-      if (_dropdown.isShowing && _candidates.isNotEmpty) {
-        _handlePicked(_candidates.first);
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    }
-
-    // Enter/comma with email-format text → commit as invite.
-    if ((event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-            event.logicalKey == LogicalKeyboardKey.comma) &&
-        EmailParser.isEmail(_controller.text)) {
-      _commitTypedEmail();
-      return KeyEventResult.handled;
-    }
-
-    return KeyEventResult.ignored;
-  }
-
-  void _handleChipTap(int idx) {
-    // Tapping a chip selects it for keyboard interaction (mirrors arrow
-    // navigation). The chip's × button is the explicit remove affordance.
-    if (!hasPhysicalKeyboard()) {
-      // On touch, focus is moot — just request the input focus and let the
-      // × button handle removal.
-      _inputFocus.requestFocus();
-      return;
-    }
-    _inputFocus.requestFocus();
-    setState(() => _focusedChipIndex = idx);
-  }
-
-  Future<void> _removeChip(ContactChipValue chip) async {
-    final idx = widget.chips.indexWhere((c) => c.key == chip.key);
-    await widget.onRemove(chip);
-    if (!mounted) return;
-    if (_focusedChipIndex != null && idx >= 0) {
-      setState(() {
-        _focusedChipIndex = idx == 0 ? null : idx - 1;
-      });
-    }
-  }
-
-  Future<void> _handleRowTap() async {
-    if (hasPhysicalKeyboard()) {
-      _inputFocus.requestFocus();
-    } else {
-      await widget.openTouchModal();
-    }
-  }
+  /// Opens the share modal that owns all editing.
+  final Future<void> Function() openModal;
 
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final placeholder = widget.chips.isEmpty ? 'Add people' : '';
-
-    // Outer Focus catches arrow/Enter/Backspace events that bubble up from
-    // the FTextField. canRequestFocus: false + skipTraversal: true keep it
-    // out of tab order and from ever holding focus itself.
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onKeyEvent: _handleKey,
-      child: ComposeFieldRow(
-        icon: FontAwesomeIcons.user,
-        tooltip: 'Share with',
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.keyS,
-          shift: true,
-        ),
-        onTapField: _handleRowTap,
-        // Don't share _inputFocus with the dropdown — FTextField wraps its
-        // own internal Focus(focusNode: _inputFocus), so giving Dropdown the
-        // same node creates a nested same-node cycle. autoFocusOnShow: false
-        // keeps the dropdown from stealing focus from the FTextField on open.
-        child: ComposeDropdown<ContactCandidate>(
-          key: _dropdownKey,
-          controller: _dropdown,
-          autoFocusOnShow: false,
-          items: _candidates,
-          itemBuilder: (context, candidate, highlighted) {
-            return Container(
-              color: highlighted ? theme.plotColors.highlight : null,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              child: Text(candidate.label),
-            );
-          },
-          onSelected: _handlePicked,
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              for (var i = 0; i < widget.chips.length; i++)
-                _ChipView(
-                  value: widget.chips[i],
-                  focused: i == _focusedChipIndex,
-                  onTap: () => _handleChipTap(i),
-                  onRemove: () => _removeChip(widget.chips[i]),
-                ),
-              IntrinsicWidth(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 80),
-                  child: FTextField(
-                    control: .managed(controller: _controller),
-                    focusNode: _inputFocus,
-                    readOnly: isTouchPlatform(),
-                    hint: placeholder,
-                    style: ghostFieldStyle(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChipView extends StatelessWidget {
-  const _ChipView({
-    required this.value,
-    required this.focused,
-    required this.onTap,
-    required this.onRemove,
-  });
-
-  final ContactChipValue value;
-  final bool focused;
-  final VoidCallback onTap;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    final accent = focused
-        ? theme.colors.primary
-        : theme.plotColors.muted;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: focused ? 0.2 : 0.12),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsetsDirectional.only(
-          start: 8,
-          end: 3,
-          top: 2,
-          bottom: 2,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                value.label,
-                style: theme.typography.sm,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
+    final Widget label;
+    if (chips.isEmpty) {
+      label = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(FontAwesomeIcons.usersSlash, size: theme.iconSizes.sm),
+          const SizedBox(width: 6),
+          const Text('Private'),
+        ],
+      );
+    } else {
+      final actors =
+          chips.whereType<ContactChipActor>().map((c) => c.actor).toList();
+      label = Row(
+        mainAxisSize: MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (actors.isNotEmpty) ...[
+            AvatarGroup(
+              actors: actors,
+              totalCount: chips.length,
+              maxVisible: 3,
+              size: theme.iconSizes.lg,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              _summarize(chips),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.typography.md.copyWith(
+                color: theme.plotColors.muted,
               ),
             ),
-            const SizedBox(width: 2),
-            _ChipRemoveButton(onTap: onRemove, color: theme.plotColors.muted),
-          ],
-        ),
+          ),
+        ],
+      );
+    }
+
+    return ComposeSelectField(
+      tooltip: 'Share with',
+      shortcut: platformSingleActivator(
+        LogicalKeyboardKey.keyS,
+        shift: true,
       ),
+      label: label,
+      onOpen: openModal,
     );
   }
 }
 
-class _ChipRemoveButton extends StatelessWidget {
-  const _ChipRemoveButton({required this.onTap, required this.color});
-
-  final VoidCallback onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    return FTooltip(
-      tipBuilder: (context, _) => const Text('Remove'),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(3),
-          child: FaIcon(
-            FontAwesomeIcons.xmark,
-            size: theme.iconSizes.xs,
-            color: color,
-          ),
-        ),
-      ),
-    );
+/// Builds the readable summary shown next to the avatar group:
+/// "Alice", "Alice and Bob", "Alice, Bob, and Charlie", or
+/// "Alice, Bob, and 3 others" once the list overflows.
+String _summarize(List<ContactChipValue> chips) {
+  if (chips.isEmpty) return 'Private';
+  final labels = chips.map((c) => c.label).toList(growable: false);
+  switch (labels.length) {
+    case 1:
+      return labels[0];
+    case 2:
+      return '${labels[0]} and ${labels[1]}';
+    case 3:
+      return '${labels[0]}, ${labels[1]}, and ${labels[2]}';
+    default:
+      final remaining = labels.length - 2;
+      return '${labels[0]}, ${labels[1]}, and $remaining others';
   }
 }

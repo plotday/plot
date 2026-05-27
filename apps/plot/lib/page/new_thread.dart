@@ -68,7 +68,6 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Cached so callbacks triggered during deactivate() (e.g. NoteEditor
   // saving its draft) don't call context.read once ancestors are detached.
   PriorityBloc? _priorityBloc;
-  LocalPreferencesBloc? _localPrefs;
   bool _hasAppliedQueryParams = false;
 
   /// All available create-targets for this user, loaded once on mount and
@@ -86,7 +85,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _priorityBloc = context.read<PriorityBloc>();
-    _localPrefs = context.read<LocalPreferencesBloc>();
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     // We've arrived — clear the navigation-intent flag set by callers
@@ -161,23 +159,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       log.warning('[NewThreadPage._loadConnections] failed', e, t);
       Tracker.captureException(e, t);
     }
-  }
-
-  /// Pure helper that ranks [targets] using the per-priority MRU and returns
-  /// the ranked list. Returns an empty list if [targets] is empty.
-  List<CreateTarget> _rankConnections(List<CreateTarget> targets) {
-    if (targets.isEmpty) return const [];
-    final bloc = _priorityBloc;
-    final prefs = _localPrefs;
-    if (bloc == null || prefs == null) return targets;
-    final priorityId = bloc.state.draft.priority.id.toString();
-    final keys = targets.map((t) => t.key).toList();
-    final ranked = prefs.rankConnectionsByMru(
-      keys: keys,
-      priorityId: priorityId,
-    );
-    final byKey = {for (final t in targets) t.key: t};
-    return ranked.map((k) => byKey[k]!).toList(growable: false);
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -327,23 +308,53 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context,
     PriorityState state,
   ) async {
-    final result = await SelectModal.open<Priority>(
+    final isAuto = ThreadsBase.autoFileIds.contains(state.draft.id.toString());
+    final result = await SelectModal.open<PriorityChoice>(
       context,
       items: (search) async {
         final priorities = await Priority.get(order: PriorityOrder.nested);
-        return [SelectGroup(title: null, items: priorities)];
+        final query = search?.trim().toLowerCase() ?? '';
+        final includeAuto = query.isEmpty || 'auto'.contains(query);
+        final filteredPriorities = priorities
+            .where((p) => query.isEmpty || p.matchesSearch(search ?? ''))
+            .map<PriorityChoice>(PickedPriorityChoice.new)
+            .toList();
+        return [
+          SelectGroup<PriorityChoice>(
+            title: null,
+            items: [
+              if (includeAuto) const AutoOrganizeChoice(),
+              ...filteredPriorities,
+            ],
+          ),
+        ];
       },
-      itemBuilder: (priority, _) =>
-          ListTile(body: PriorityLabel(priority: priority)),
-      selectedValue: state.draft.priority,
+      itemBuilder: (choice, _) => switch (choice) {
+        AutoOrganizeChoice() => ListTile(
+          icon: PlotIcon.sparkles,
+          title: 'Auto-organize',
+        ),
+        PickedPriorityChoice(:final priority) => ListTile(
+          body: PriorityLabel(priority: priority),
+        ),
+      },
+      selectedValue: isAuto
+          ? const AutoOrganizeChoice()
+          : PickedPriorityChoice(state.draft.priority),
       prompt: 'Select priority',
-      onAdd: (ctx) => createPriorityInline(ctx, parent: state.draft.priority),
-      filter: (priority, search) => priority.matchesSearch(search),
+      onAdd: (ctx) => createPriorityInline(
+        ctx,
+        parent: state.draft.priority,
+      ).then((p) => p == null ? null : PickedPriorityChoice(p)),
     );
     if (!result.present) return;
     final picked = result.value;
     if (!mounted) return;
-    await _switchToPriority(picked);
+    if (picked is AutoOrganizeChoice) {
+      await _switchToAuto();
+    } else if (picked is PickedPriorityChoice) {
+      await _switchToPriority(picked.priority);
+    }
   }
 
   Future<void> _switchToAuto() async {
@@ -474,14 +485,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;
   }
 
-  List<ConnectionChoice> _rankConnectionChoices() {
-    final ranked = _rankConnections(_allConnectionTargets);
-    return [
-      ConnectionChoice.plotThread,
-      ...ranked.map(ConnectionChoice.target),
-    ];
-  }
-
   List<ContactChipValue> _resolveContactChips(PriorityState state) {
     final selfUuids = Actor.getCurrentUserActorIds()
         .map((a) => a.toUuid())
@@ -503,145 +506,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     return chips;
   }
 
-  // Cache the last sorted candidate list per priority so rapid typing
-  // doesn't re-hit Drift on every keystroke. Invalidated when the draft's
-  // priority or selection set changes (handled via the .toSet() comparisons
-  // inside the filter loop, which always run against the latest draft).
-  Priority? _candidatesPriorityCache;
-  List<ShareCandidate>? _candidatesCache;
-
-  Future<List<ContactCandidate>> _loadContactCandidates(String query) async {
-    final bloc = _priorityBloc;
-    if (bloc == null) return const [];
-    final priority = bloc.state.draft.priority;
-    List<ShareCandidate> sorted;
-    if (_candidatesCache != null &&
-        _candidatesPriorityCache?.id == priority.id) {
-      sorted = _candidatesCache!;
-    } else {
-      sorted = await Actor.getSortedShareCandidates(priority: priority);
-      if (!mounted) return const [];
-      _candidatesCache = sorted;
-      _candidatesPriorityCache = priority;
-    }
-    // Re-read draft after the (possible) await — selections may have changed
-    // while the candidate fetch was in flight.
-    final draft = bloc.state.draft;
-    final selectedActorIds = draft.contacts.toSet();
-    final selectedGroupIds = draft.groups.toSet();
-    final selectedEmails = draft.inviteEmails.toSet();
-    final selfUuids = Actor.getCurrentUserActorIds()
-        .map((a) => a.toUuid())
-        .toSet();
-
-    // Filter mode driven by the active CreateLinkUserAction's targets:
-    // - `"contacts"` (Slack DM, Teams DM, GChat DM): only actors with a
-    //   `contact_external_account` row for THIS connection; groups hidden;
-    //   email invites blocked (no row, no recipient).
-    // - `"addresses"` (Gmail): only actors with an email; groups hidden;
-    //   email invites still allowed.
-    // - default: full list, all candidate types.
-    final activeAction = _activeCreateAction;
-    final isContactsMode =
-        (activeAction?.isDmType ?? false) && !(activeAction?.isAddressesType ?? false);
-    final isAddressMode = activeAction?.isAddressesType ?? false;
-    final dmTwistInstanceId = isContactsMode
-        ? Uuid.fromString(activeAction!.twistInstanceId)
-        : null;
-    final hideGroups = isContactsMode || isAddressMode;
-
-    final lowered = query.trim().toLowerCase();
-    final candidates = <ContactCandidate>[];
-    for (final c in sorted) {
-      switch (c) {
-        case ActorShareCandidate(:final actor):
-          final id = actor.id.toUuid();
-          if (selectedActorIds.contains(id) || selfUuids.contains(id)) {
-            continue;
-          }
-          if (dmTwistInstanceId != null &&
-              !actor.hasExternalAccount(dmTwistInstanceId)) {
-            continue;
-          }
-          if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
-            continue;
-          }
-          if (lowered.isNotEmpty &&
-              !((actor.name?.toLowerCase().contains(lowered) ?? false) ||
-                  (actor.email?.toLowerCase().contains(lowered) ?? false))) {
-            continue;
-          }
-          candidates.add(ActorCandidate(actor));
-        case GroupShareCandidate(:final group):
-          if (hideGroups) continue;
-          if (selectedGroupIds.contains(group.id)) continue;
-          if (lowered.isNotEmpty &&
-              !group.name.toLowerCase().contains(lowered)) {
-            continue;
-          }
-          candidates.add(GroupCandidate(group));
-      }
-    }
-    // Email invites: allowed except in closed-roster contacts mode.
-    if (!isContactsMode &&
-        EmailParser.isEmail(query) &&
-        !selectedEmails.contains(EmailParser.normalize(query))) {
-      candidates.add(InviteEmailCandidate(EmailParser.normalize(query)));
-    }
-    return candidates;
-  }
-
-  Future<void> _applyContactCandidate(ContactCandidate candidate) async {
-    final bloc = _priorityBloc;
-    if (bloc == null) return;
-    final draft = bloc.state.draft;
-    switch (candidate) {
-      case ActorCandidate(:final actor):
-        final ids = [...draft.contacts, actor.id.toUuid()];
-        await bloc.updateDraft(draft.copyWith(contacts: Value(ids)));
-      case GroupCandidate(:final group):
-        final ids = [...draft.groups, group.id];
-        await bloc.updateDraft(draft.copyWith(groups: Value(ids)));
-      case InviteEmailCandidate(:final email):
-        final emails = [...draft.inviteEmails, email];
-        await bloc.updateDraft(
-          draft.copyWith(inviteEmails: Value(emails)),
-        );
-    }
-  }
-
-  Future<void> _removeContactChip(ContactChipValue chip) async {
-    final bloc = _priorityBloc;
-    if (bloc == null) return;
-    final draft = bloc.state.draft;
-    switch (chip) {
-      case ContactChipActor(:final actor):
-        final ids = draft.contacts
-            .where((id) => id != actor.id.toUuid())
-            .toList();
-        await bloc.updateDraft(draft.copyWith(contacts: Value(ids)));
-      case ContactChipGroup(:final group):
-        final ids = draft.groups.where((id) => id != group.id).toList();
-        await bloc.updateDraft(
-          draft.copyWith(groups: Value(ids.isEmpty ? null : ids)),
-        );
-      case ContactChipEmail(:final email):
-        final emails =
-            draft.inviteEmails.where((e) => e != email).toList();
-        await bloc.updateDraft(
-          draft.copyWith(
-            inviteEmails: Value(emails.isEmpty ? null : emails),
-          ),
-        );
-    }
-  }
-
   Future<void> _updateTitle(String? next) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
-    await bloc.updateDraft(
-      bloc.state.draft.copyWith(title: Value(next)),
-    );
+    await bloc.updateDraft(bloc.state.draft.copyWith(title: Value(next)));
   }
 
   Future<void> _openSharedPicker(BuildContext context) async {
@@ -687,8 +555,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     final draft = bloc.state.draft;
 
     // Collect contacts selected on the draft (excluding self).
-    final selfUuids = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-    final contactIds = draft.contacts.where((id) => !selfUuids.contains(id)).toList();
+    final selfUuids = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    final contactIds = draft.contacts
+        .where((id) => !selfUuids.contains(id))
+        .toList();
 
     if (action.isAddressesType) {
       final hasRecipient =
@@ -696,7 +568,7 @@ class NewThreadPageState extends State<NewThreadPage> {
             final actor = Actor.fromCache(ActorId.fromUuid(id));
             return actor?.email != null && actor!.email!.isNotEmpty;
           }) ||
-              draft.inviteEmails.isNotEmpty;
+          draft.inviteEmails.isNotEmpty;
       if (!hasRecipient) {
         return 'Add at least one recipient before sending.';
       }
@@ -815,11 +687,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Widget _buildComposeSurface(BuildContext context, PriorityState state) {
-    final isAuto = ThreadsBase.autoFileIds.contains(
-      state.draft.id.toString(),
-    );
+    final isAuto = ThreadsBase.autoFileIds.contains(state.draft.id.toString());
     final activeChoice = _resolveActiveConnectionChoice(state);
-    final connectionCandidates = _rankConnectionChoices();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -828,22 +697,15 @@ class NewThreadPageState extends State<NewThreadPage> {
         PriorityComposeField(
           currentPriority: state.draft.priority,
           isAuto: isAuto,
-          onPickAuto: _switchToAuto,
-          onPickPriority: _switchToPriority,
-          openTouchModal: () => _selectPriority(context, state),
+          openModal: () => _selectPriority(context, state),
         ),
         ConnectionComposeField(
           activeChoice: activeChoice,
-          candidates: connectionCandidates,
-          onPicked: _applyConnectionChoice,
-          openTouchModal: _openConnectionPicker,
+          openModal: _openConnectionPicker,
         ),
         ContactsComposeField(
           chips: _resolveContactChips(state),
-          loadCandidates: _loadContactCandidates,
-          onAdd: _applyContactCandidate,
-          onRemove: _removeContactChip,
-          openTouchModal: () => _openSharedPicker(context),
+          openModal: () => _openSharedPicker(context),
         ),
         TitleComposeField(
           key: _titleFieldKey,
@@ -1030,8 +892,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                             builder: (context, _) => Focus(
                                               canRequestFocus: false,
                                               skipTraversal: true,
-                                              onKeyEvent:
-                                                  _handleEditorShiftTab,
+                                              onKeyEvent: _handleEditorShiftTab,
                                               child: NoteEditor(
                                                 key: _threadEditorKey,
                                                 bodyOnly: true,
@@ -1058,9 +919,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                 onTwistSelected: _selectTwist,
                                                 onNavigateToThread: (thread) {
                                                   context.run(
-                                                    ChangeCurrentThread(
-                                                      thread,
-                                                    ),
+                                                    ChangeCurrentThread(thread),
                                                   );
                                                 },
                                                 autofocus: !isMobilePlatform(),

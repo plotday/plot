@@ -1,33 +1,25 @@
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-
-import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 
-/// Horizontal offset of the leading icon's left edge inside a compose row,
-/// chosen to align with where note-editor text starts (12 outer + 6 inner
-/// editor padding). Exposed so the [NewThreadPage] compose surface and any
-/// future compose-style rows stay consistent.
+/// Horizontal padding of compose-row content (the leading and trailing
+/// gutters). Chosen so the row's content starts at the same x as the
+/// NoteEditor's text (12 outer + 6 inner editor padding).
 const double composeIconLeft = 18;
 
-/// Shared row chrome for compose fields. Renders a leading icon with a
-/// tooltip (label + optional shortcut hint) and a content slot. Tapping
-/// anywhere in the row invokes [onTapField] so the field can request focus.
-/// Rows have no dividers, borders, or radius between them — the compose
-/// surface owns a single divider below the field stack.
+/// Shared chrome for compose-surface rows. Renders the row's [child]
+/// inside consistent horizontal gutters, wraps the whole row in an
+/// [FTooltip] that shows [tooltip] + optional [shortcut] on hover, and
+/// invokes [onTapField] when the row is tapped anywhere.
 class ComposeFieldRow extends StatelessWidget {
   const ComposeFieldRow({
     super.key,
-    required this.icon,
     required this.tooltip,
     required this.child,
     this.shortcut,
     this.onTapField,
   });
 
-  final IconData icon;
   final String tooltip;
   final Widget child;
   final ShortcutActivator? shortcut;
@@ -35,23 +27,7 @@ class ComposeFieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.theme;
-    final iconColor = theme.plotColors.muted;
-    final iconSize = theme.iconSizes.sm;
-
-    final Widget leadingIcon = SizedBox(
-      width: iconSize,
-      child: FaIcon(icon, size: iconSize, color: iconColor),
-    );
-
-    final Widget leading = hasPhysicalKeyboard()
-        ? FTooltip(
-            tipBuilder: (context, controller) => _buildTooltip(context),
-            child: leadingIcon,
-          )
-        : leadingIcon;
-
-    return GestureDetector(
+    final row = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTapField,
       child: ConstrainedBox(
@@ -61,16 +37,18 @@ class ComposeFieldRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Icon's left edge sits at [composeIconLeft] so it aligns with
-            // the note editor's text start.
             const SizedBox(width: composeIconLeft),
-            leading,
-            const SizedBox(width: 10),
             Expanded(child: child),
-            const SizedBox(width: 12),
+            const SizedBox(width: composeIconLeft),
           ],
         ),
       ),
+    );
+
+    if (!hasPhysicalKeyboard()) return row;
+    return FTooltip(
+      tipBuilder: (context, controller) => _buildTooltip(context),
+      child: row,
     );
   }
 
