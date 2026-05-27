@@ -70,17 +70,20 @@ BEGIN
             IF v_effective_role = 'viewer' AND current_tag_type != 'count' THEN
                 RAISE EXCEPTION 'Viewer members can only modify count tags (tag_id: %)', tag_id_int;
             END IF;
-            -- Validate computed tags for notes
-            -- Notes can have 'todo' (1) and 'done' (3) tags for per-user assignment/completion
-            -- But not 'archived' (4), 'attachment' (5), 'link' (6) - those are computed
-            IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3) THEN
+            -- Validate computed tags for notes. Writable compute tags:
+            --   1  = 'todo' (per-user assignment)
+            --   3  = 'done' (per-user completion)
+            --   12 = 'twist' (runtime-managed Twisting indicator)
+            -- Others (archived, attachment, link, private, unread, task, reading)
+            -- are calculated from note state and cannot be written directly.
+            IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3, 12) THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - this tag is calculated from note state', tag_id_int;
             END IF;
-            -- Validate cross-user targeting: only allow for compute tags 1, 3 (todo, done).
-            -- Treat any of the caller's linked contacts as "self" — a target is
-            -- another user iff none of its linked-contact siblings overlap the caller's.
+            -- Validate cross-user targeting: only allow for the per-user compute
+            -- tags 1 (todo), 3 (done), and 12 (twist — set with the twist_instance_id
+            -- as the target actor, not a user contact).
             IF NOT (target_sibling_ids && caller_sibling_ids)
-               AND (current_tag_type != 'compute' OR tag_id_int NOT IN (1, 3)) THEN
+               AND (current_tag_type != 'compute' OR tag_id_int NOT IN (1, 3, 12)) THEN
                 RAISE EXCEPTION 'Cannot modify this tag for other users (tag_id: %)', tag_id_int;
             END IF;
             IF is_adding THEN
@@ -127,33 +130,20 @@ BEGIN
                     DO UPDATE SET archived_at = NULL, updated_at = now(), updated_by = p_client_id;
                 END IF;
             ELSE
-                -- Removing a tag - use update to soft delete existing records
-                IF current_tag_type = 'toggle' THEN
-                    -- For toggle tags, remove all users' tags
-                    UPDATE
-                        note_tag
-                    SET
-                        archived_at = now(),
-                        updated_by = p_client_id
-                    WHERE
-                        note_id = p_note_id
-                        AND tag_id = tag_id_int
-                        AND archived_at IS NULL;
-                ELSE
-                    -- For count/compute tags, archive every row for the target
-                    -- actor's linked-contact siblings — clearing one alias must
-                    -- clear all of them.
-                    UPDATE
-                        note_tag
-                    SET
-                        archived_at = now(),
-                        updated_by = p_client_id
-                    WHERE
-                        note_id = p_note_id
-                        AND tag_id = tag_id_int
-                        AND actor_id = ANY(target_sibling_ids)
-                        AND archived_at IS NULL;
-                END IF;
+                -- Removing a tag - archive every row for the target actor's
+                -- linked-contact siblings. With toggle tags retired, every
+                -- remaining tag (count + the per-user compute set) is
+                -- per-actor, so this is the only branch we need.
+                UPDATE
+                    note_tag
+                SET
+                    archived_at = now(),
+                    updated_by = p_client_id
+                WHERE
+                    note_id = p_note_id
+                    AND tag_id = tag_id_int
+                    AND actor_id = ANY(target_sibling_ids)
+                    AND archived_at IS NULL;
                 -- Reply tag propagation: remove from thread if no other notes have it
                 IF tag_id_int = 1019 THEN
                     IF NOT EXISTS (

@@ -82,6 +82,7 @@ export async function buildThreadFromDbRecord(
     accessContacts: await resolveAccessContacts(plot, threadRecord.contacts as string[]),
     archived: threadRecord.archived_at !== null,
     tags: (threadRecord.tags as Partial<Record<number, ActorId[]>>) || {},
+    reactions: {},
   };
 }
 
@@ -122,6 +123,7 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     reNote: noteRecord.re_note_id ? { id: noteRecord.re_note_id as Uuid } : null,
     mentions: (noteRecord.mentions as ActorId[]) || [],
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
+    reactions: {},
     accessContacts: (noteRecord.access_contacts as ActorId[]) ?? null,
     archived: noteRecord.archived_at !== null,
     actions: noteRecord.actions as Array<Action> | null,

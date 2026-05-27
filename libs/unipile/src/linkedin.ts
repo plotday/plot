@@ -115,4 +115,34 @@ export abstract class LinkedInMessaging extends ITool {
     recipientIds: string[];
     text: string;
   }): Promise<{ chatId: string; message: LinkedInMessage }>;
+
+  /**
+   * Set the connected account's reaction on a LinkedIn message. LinkedIn
+   * allows each member at most one reaction per message, so calling this
+   * with a new emoji replaces any prior reaction the connected account had
+   * on the same message.
+   *
+   * @param params.reaction - One of LinkedIn's seven supported emoji:
+   *   `'👍' | '❤️' | '👏' | '💡' | '😂' | '😮' | '😢'`. Unipile rejects
+   *   anything outside this set; the connector filters before calling.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setMessageReaction(params: {
+    channelId: string;
+    messageId: string;
+    reaction: string;
+  }): Promise<void>;
+
+  /**
+   * Clear the connected account's reaction on a LinkedIn message. Best
+   * effort — Unipile's documented endpoint covers add only; removal
+   * support varies. Implementations should swallow `404`/`405` so an
+   * unsupported removal does not break note write-back. The next sync
+   * naturally reconciles state from LinkedIn.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract clearMessageReaction(params: {
+    channelId: string;
+    messageId: string;
+  }): Promise<void>;
 }

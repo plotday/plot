@@ -143,6 +143,7 @@ const String _kSubscriptionDisclosure =
 class ShowUpgradeOptions extends Command {
   ShowUpgradeOptions({String? title, String? subtitle})
     : _title = title ?? 'Upgrade your plan',
+      // ignore: prefer_initializing_formals
       _subtitle = subtitle,
       super(
         title: title ?? 'Upgrade your plan',

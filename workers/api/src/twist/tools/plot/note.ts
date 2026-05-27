@@ -342,15 +342,75 @@ export async function createNote(
       }
     }
 
-    // Serialize concurrent same-resource writers (e.g. two users' connections
-    // syncing the same calendar event in parallel). Without the lock, both
-    // could read "no existing row" and both insert, racing through different
-    // ON CONFLICT targets. Precedent: update_thread_on_note_change in
+    // Serialize all keyed writers on (thread_id, key). The lock is wider than
+    // either partial unique index so concurrent writers with mismatched
+    // canonical_source values (e.g. legacy NULL vs. a freshly populated source)
+    // still serialize. A narrower lock keyed on canonical_source let writers
+    // with different canonical_source values race and hit the per-link index
+    // as a hard duplicate. Precedent: update_thread_on_note_change in
     // libs/db/schema/50-tables/25-note.sql takes a per-thread advisory lock.
-    if (dbNote.canonical_source && dbNote.key) {
+    if (dbNote.key) {
       await sql`SELECT pg_advisory_xact_lock(hashtext(${
-        `${dbNote.thread_id}:${dbNote.canonical_source}:${dbNote.key}`
+        `${dbNote.thread_id}:${dbNote.key}`
       }))`.execute(plot.db);
+    }
+
+    // Pre-resolve cross-index conflicts before the upsert. The note table has
+    // two partial unique indexes — (thread_id, link_id, key) and
+    // (thread_id, canonical_source, key). The upsert below targets only one
+    // of them. If an existing per-link row has a NULL or different
+    // canonical_source from what we're about to insert, the canonical_source
+    // ON CONFLICT target doesn't match it but the per-link index still fires
+    // as a hard duplicate. Backfill canonical_source on the per-link row so
+    // the upsert merges via the canonical_source target, or archive it if a
+    // separate cross-user row already holds the canonical_source.
+    if (dbNote.canonical_source && dbNote.link_id && dbNote.key) {
+      const existingByLink = await plot.db
+        .selectFrom("note")
+        .select(["id", "canonical_source"])
+        .where("thread_id", "=", dbNote.thread_id)
+        .where("link_id", "=", dbNote.link_id)
+        .where("key", "=", dbNote.key)
+        .executeTakeFirst();
+
+      if (
+        existingByLink &&
+        existingByLink.canonical_source !== dbNote.canonical_source
+      ) {
+        const existingByCanonical = await plot.db
+          .selectFrom("note")
+          .select(["id"])
+          .where("thread_id", "=", dbNote.thread_id)
+          .where("canonical_source", "=", dbNote.canonical_source)
+          .where("key", "=", dbNote.key)
+          .executeTakeFirst();
+
+        if (existingByCanonical && existingByCanonical.id !== existingByLink.id) {
+          // Cross-user row already holds canonical_source; converge by
+          // archiving the per-link row.
+          await plot.db
+            .updateTable("note")
+            .set({
+              archived_at: new Date().toISOString(),
+              updated_by: plot.getUpdatedBy(),
+              sync_depth: plot.syncDepth + 1,
+            })
+            .where("id", "=", existingByLink.id)
+            .execute();
+        } else {
+          // No cross-user row; backfill canonical_source on the per-link row
+          // so the upcoming upsert merges via the canonical_source target.
+          await plot.db
+            .updateTable("note")
+            .set({
+              canonical_source: dbNote.canonical_source,
+              updated_by: plot.getUpdatedBy(),
+              sync_depth: plot.syncDepth + 1,
+            })
+            .where("id", "=", existingByLink.id)
+            .execute();
+        }
+      }
     }
 
     // Insert or upsert note based on whether key is provided.
@@ -585,6 +645,50 @@ export async function createNote(
 
       if (tagInserts.length > 0) {
         await plot.db.insertInto("note_tag").values(tagInserts).execute();
+      }
+    }
+
+    // Add reactions if provided. Parallel to tags above but keyed by
+    // emoji string (Unicode grapheme or `provider:workspace/name` ref).
+    if (note.reactions) {
+      const reactionInserts: Array<{
+        note_id: string;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(note.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            note_id: dbResult.id,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("note_reaction")
+          .values(reactionInserts)
+          .onConflict((oc) =>
+            oc
+              .columns(["actor_id", "note_id", "emoji"])
+              .doUpdateSet((eb) => ({
+                archived_at: null,
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+              }))
+          )
+          .execute();
       }
     }
 
@@ -995,6 +1099,48 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       }
     }
 
+    // Handle reactions if provided. Mirrors the tag block above: passing
+    // `reactions` declares the full reaction state, so clear and replace.
+    // Connectors syncing platform reactions must pass the complete
+    // current reactor set per emoji.
+    if (note.reactions !== undefined) {
+      await plot.db
+        .deleteFrom("note_reaction")
+        .where("note_id", "=", noteId)
+        .execute();
+
+      const reactionInserts: Array<{
+        note_id: string;
+        emoji: string;
+        actor_id: string;
+        updated_by: number;
+        sync_depth: number;
+      }> = [];
+      for (const [emoji, newActors] of Object.entries(note.reactions)) {
+        if (!newActors || newActors.length === 0) continue;
+        const actorIds = await processNewActorArray(
+          plot,
+          newActors,
+          priorityId
+        );
+        for (const actorId of actorIds) {
+          reactionInserts.push({
+            note_id: noteId,
+            emoji,
+            actor_id: actorId,
+            updated_by: plot.getUpdatedBy(),
+            sync_depth: plot.syncDepth + 1,
+          });
+        }
+      }
+      if (reactionInserts.length > 0) {
+        await plot.db
+          .insertInto("note_reaction")
+          .values(reactionInserts)
+          .execute();
+      }
+    }
+
     // Notify sync DOs since triggers skip HTTP calls for twist writes
     await plot.notifySyncDOs(new Set([priorityId]));
   } catch (error) {
@@ -1108,6 +1254,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
         mentions: (row.mentions as string[])?.map((m) => m as ActorId) ?? [],
         tags:
           (tagsMap.get(row.id) as Partial<Record<Tag, ActorId[]>> | null) || {},
+        reactions: {},
       };
     });
   } catch (err) {

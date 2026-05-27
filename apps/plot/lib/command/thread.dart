@@ -9,6 +9,7 @@ import 'command.dart';
 import 'package:plot/command/thread_merge.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
@@ -398,9 +399,9 @@ class OpenPreviousThread extends Command {
 }
 
 class AddThread extends Command {
-  AddThread(this._thread, {this.navigate = true})
+  AddThread(this._thread, {this.navigate = true, LinkTypeConfig? linkType})
     : super(
-        title: 'Create thread',
+        title: commandTitleCreateThread(linkType),
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,
@@ -583,6 +584,7 @@ class AddThreadWithLink extends Command {
 /// un-archived in one shot, server-side.
 class ArchiveSimilarThreads extends Command {
   ArchiveSimilarThreads(this._thread, {PriorityBloc? bloc})
+    // ignore: prefer_initializing_formals
     : _bloc = bloc,
       super(
         title: _thread.autoArchivedByThreadId == null
@@ -631,6 +633,7 @@ class ArchiveSimilarThreads extends Command {
 class ArchiveThread extends Command {
   ArchiveThread(Thread thread, {PriorityBloc? bloc})
     : _thread = Future.value(thread),
+      // ignore: prefer_initializing_formals
       _bloc = bloc,
       super(
         title: thread.archivedAt != null ? 'Un-archive' : 'Archive',
@@ -645,6 +648,7 @@ class ArchiveThread extends Command {
       );
 
   ArchiveThread.future(this._thread, {PriorityBloc? bloc})
+    // ignore: prefer_initializing_formals
     : _bloc = bloc,
       super(
         title: 'Archive',
@@ -1427,6 +1431,7 @@ class RescheduleEvent extends Command {
 
 class PickScheduleThread extends Command {
   PickScheduleThread(this._thread, {Future<void> Function(Thread)? onUpdate})
+    // ignore: prefer_initializing_formals
     : _onUpdate = onUpdate,
       super(
         title: _thread.on != null ? 'Reschedule' : 'Schedule',

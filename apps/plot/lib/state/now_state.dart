@@ -61,6 +61,7 @@ final class NowLoaded extends NowState {
     this.trackingPausedAt,
     this.previewPomodoro,
   }) : now = Time.now(),
+       // ignore: prefer_initializing_formals
        _day = day;
 
   final DateTime now;

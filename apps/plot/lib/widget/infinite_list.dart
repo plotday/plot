@@ -807,16 +807,13 @@ class InfiniteListState extends State<InfiniteList> {
         }
         return child;
       },
-      onReorder: (oldReorderIndex, newReorderIndex) {
-        final adjustedNewIndex = newReorderIndex > oldReorderIndex
-            ? newReorderIndex - 1
-            : newReorderIndex;
+      onReorderItem: (oldReorderIndex, newReorderIndex) {
         log.info(
-          '[InfiniteList.onReorder] old=$oldReorderIndex new=$adjustedNewIndex '
+          '[InfiniteList.onReorder] old=$oldReorderIndex new=$newReorderIndex '
           'count=$count offset=$offset',
         );
         final onReorder = widget.onReorder?.call(oldReorderIndex + offset);
-        onReorder?.call(adjustedNewIndex + offset);
+        onReorder?.call(newReorderIndex + offset);
         log.info('[InfiniteList.onReorder] parent callback returned');
       },
     );
@@ -847,7 +844,9 @@ class InfiniteListState extends State<InfiniteList> {
             key: widget.scrollStorageKey,
             controller: _scrollController,
             reverse: widget.reverse,
-            cacheExtent: widget.cacheExtent,
+            scrollCacheExtent: widget.cacheExtent != null
+                ? ScrollCacheExtent.pixels(widget.cacheExtent!)
+                : null,
             keyboardDismissBehavior: widget.keyboardDismissBehavior,
             slivers: [
               if (_prefixCount > 0) _buildFixedPrefix(),

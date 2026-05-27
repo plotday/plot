@@ -6,6 +6,10 @@ typedef LinkId = Uuid;
 class LinkTypeConfig {
   final String type;
   final String label;
+  /// Connector's word for a note on a linked item of this type (e.g. "Comment"
+  /// on Linear, "Message" on Slack, "Reply" on Gmail). Drives adaptive
+  /// composer hints and command titles. Null falls back to "note".
+  final String? noteLabel;
   final String? logo;
   final String? logoDark;
   final String? logoMono;
@@ -23,6 +27,7 @@ class LinkTypeConfig {
   const LinkTypeConfig({
     required this.type,
     required this.label,
+    this.noteLabel,
     this.logo,
     this.logoDark,
     this.logoMono,
@@ -35,6 +40,8 @@ class LinkTypeConfig {
     return LinkTypeConfig(
       type: json['type'] as String,
       label: json['label'] as String,
+      noteLabel:
+          json['noteLabel'] as String? ?? json['note_label'] as String?,
       logo: json['logo'] as String?,
       logoDark: json['logoDark'] as String? ?? json['logo_dark'] as String?,
       logoMono: json['logoMono'] as String? ?? json['logo_mono'] as String?,

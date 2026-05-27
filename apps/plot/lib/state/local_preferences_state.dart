@@ -45,6 +45,7 @@ class LocalPreferencesState extends Equatable {
     required this.mentionMruIds,
     this.showAllPriorities = false,
     this.connectionMru = const {},
+    this.reactionMru = const [],
   });
 
   /// Most-recently-used mention IDs (TwistInstance IDs), ordered with most recent first
@@ -57,19 +58,27 @@ class LocalPreferencesState extends Equatable {
   /// MRU of connection channel keys (`CreateTarget.key`), keyed by channel key.
   final Map<String, ConnectionMruEntry> connectionMru;
 
+  /// Most-recently-used emoji reactions, ordered with most recent first.
+  /// Each entry is a Unicode grapheme cluster (or provider-scoped custom-emoji
+  /// ref). Seeds the hover-toolbar quick row and the picker's "Recent" group.
+  final List<Reaction> reactionMru;
+
   /// Create a copy with updated properties
   LocalPreferencesState copyWith({
     List<String>? mentionMruIds,
     bool? showAllPriorities,
     Map<String, ConnectionMruEntry>? connectionMru,
+    List<Reaction>? reactionMru,
   }) {
     return LocalPreferencesState(
       mentionMruIds: mentionMruIds ?? this.mentionMruIds,
       showAllPriorities: showAllPriorities ?? this.showAllPriorities,
       connectionMru: connectionMru ?? this.connectionMru,
+      reactionMru: reactionMru ?? this.reactionMru,
     );
   }
 
   @override
-  List<Object?> get props => [mentionMruIds, showAllPriorities, connectionMru];
+  List<Object?> get props =>
+      [mentionMruIds, showAllPriorities, connectionMru, reactionMru];
 }

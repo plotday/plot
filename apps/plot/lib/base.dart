@@ -588,8 +588,8 @@ class Base {
     await Tracker.identify(
       userId,
       properties: {
-        if (email != null) "email": email,
-        if (name != null) "name": name,
+        "email": ?email,
+        "name": ?name,
       },
       propertiesSetOnce: {
         "signed_up_time": DateTime.now().toUtc().toIso8601String(),

@@ -230,6 +230,19 @@ flutter:
           weight: 700
           style: italic
 
+    # Noto Emoji — monochrome line-art font used by EmojiText for
+    # cross-OS-consistent reaction rendering. Downloaded from the
+    # Google Fonts CDN (the googlefonts/noto-emoji repo no longer ships
+    # the static monochrome ttf in /fonts/ — only color variants live
+    # there). Refresh URL via:
+    #   curl -sSL -A 'Mozilla/5.0' \
+    #     'https://fonts.googleapis.com/css2?family=Noto+Emoji'
+    # The color variant (NotoColorEmoji.ttf) is ~10MB and intentionally
+    # not bundled — line-art reads well at chip size.
+    - family: NotoEmoji
+      fonts:
+        - asset: assets/fonts/noto-emoji/NotoEmoji-Regular.ttf
+
 scripts:
   build:
     watch: flutter pub run build_runner watch

@@ -476,10 +476,9 @@ class ClerkJsAuthService implements AuthService {
             final result = _asSignUp(await su
                 .update(jsObj({
                   'password': password,
-                  if (passwordConfirmation != null)
-                    'passwordConfirmation': passwordConfirmation,
-                  if (firstName != null) 'firstName': firstName,
-                  if (lastName != null) 'lastName': lastName,
+                  'passwordConfirmation': ?passwordConfirmation,
+                  'firstName': ?firstName,
+                  'lastName': ?lastName,
                 }))
                 .toDart);
             _pendingSignUp = result;
@@ -557,8 +556,8 @@ class ClerkJsAuthService implements AuthService {
         }
         await user
             .update(jsObj({
-              if (firstName != null) 'firstName': firstName,
-              if (lastName != null) 'lastName': lastName,
+              'firstName': ?firstName,
+              'lastName': ?lastName,
             }))
             .toDart;
       });

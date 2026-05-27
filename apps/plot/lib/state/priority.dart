@@ -278,6 +278,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _threadSubscription = null,
       _agendaSubscription = null,
       _tagsSubscription = null,
+      _reactionsSubscription = null,
       _draftModified = false,
       super(PriorityState(
         context: priority,
@@ -359,6 +360,20 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // The agenda is universal and ignores filters; only the activity
     // feed needs to refresh.
+    _loadPriority(reloadAgenda: false);
+    _restartActiveTabSubscription();
+  }
+
+  void updateReactionFilter(List<Reaction> reactionFilter) {
+    log.info('Updating reaction filter to $reactionFilter');
+    emit(state.copyWith(reactionFilter: reactionFilter));
+
+    if (reactionFilter.isNotEmpty) {
+      threadListSource = ThreadListSource.activityFeed;
+    } else if (state.filter.isEmpty) {
+      threadListSource = null;
+    }
+
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
   }
@@ -790,67 +805,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscribeAllTabHead();
   }
 
-  void _subscribeCatchUpHead() {
-    final priorityToLoad = state.context;
-    final isSearching = state.search.isNotEmpty;
-    final scopeByPath = isSearching ||
-        state.hideSubPriorities ||
-        _currentEventForFeed != null;
-    final searchGlobal = isSearching && priorityToLoad.root;
-
-    _activeTabSubscriptionTab = ActivityTab.catchUp;
-    _activeTabSubscription = Thread.watchCatchUpHead(
-      priorityId: scopeByPath ? null : priorityToLoad.id,
-      priorityPath: scopeByPath
-          ? (searchGlobal ? null : priorityToLoad.path)
-          : null,
-      archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-      search: isSearching ? state.search : null,
-      limit: _activityFeedLimit,
-    ).listen((result) {
-      if (isClosed) return;
-      _activeTabHead = result.threads;
-      _activeTabHeadSaturated = result.saturated;
-      _catchUpHeadTailCursor = result.tailCursor;
-      _activeTabHeadReceived = true;
-      _rebuildActiveTabSection();
-    });
-  }
-
-  void _subscribeActionTabHead(ActivityTab tab) {
-    final action = tab.actionFilter;
-    if (action == null) return;
-    final priorityToLoad = state.context;
-    final isSearching = state.search.isNotEmpty;
-    final scopeByPath = isSearching ||
-        state.hideSubPriorities ||
-        _currentEventForFeed != null;
-    final searchGlobal = isSearching && priorityToLoad.root;
-
-    _activeTabSubscriptionTab = tab;
-    _activeTabSubscription = Thread.watchActionTabHead(
-      action: action,
-      priorityId: scopeByPath ? null : priorityToLoad.id,
-      priorityPath: scopeByPath
-          ? (searchGlobal ? null : priorityToLoad.path)
-          : null,
-      archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-      search: isSearching ? state.search : null,
-      limit: _activityFeedLimit,
-    ).listen((result) {
-      if (isClosed) return;
-      _activeTabHead = result.threads;
-      _activeTabHeadSaturated = result.saturated;
-      _actionTabHeadTailCursor = result.tailCursor;
-      _activeTabHeadReceived = true;
-      _rebuildActiveTabSection();
-    });
-  }
-
   void _subscribeAllTabHead() {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
@@ -867,6 +821,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           : null,
       archived: state.showArchived,
       filter: state.filter.isNotEmpty ? state.filter : null,
+      reactionFilter:
+          state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
       iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
       search: isSearching ? state.search : null,
       limit: _activityFeedLimit,
@@ -1058,79 +1014,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     return items;
   }
 
-  /// Walk an action-tab's merged thread list (already re-sorted via
-  /// [_actionTabCompare] for overlay-affected positions) and emit the
-  /// interleaved AgendaHeaderItem / AgendaThreadItem sequence. The Today
-  /// header is always emitted (drop target); per-day Scheduled headers
-  /// follow bucket transitions. The multi-panel header-suppression rule
-  /// is a render-time concern handled by `page/priority.dart`.
-  List<AgendaItem> _buildActionTabItems(
-    List<Thread> merged,
-    List<AgendaItem> eventPrefix,
-  ) {
-    // Sort the merged list using the same key order as the SQL ORDER BY,
-    // so overlay-substituted rows whose bucket / order changed land in
-    // the right slot. Stable Dart sort preserves SQL order for rows the
-    // overlay didn't touch.
-    final sorted = List<Thread>.from(merged)..sort(_actionTabCompare);
-
-    final items = <AgendaItem>[
-      ...eventPrefix,
-      // Today header is always emitted (even when empty) so it remains a
-      // valid drag-and-drop target for "make active".
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.doing),
-      ),
-    ];
-
-    Date? lastBucket;
-    bool sawActive = false;
-    for (final t in sorted) {
-      if (t.isActiveThread) {
-        items.add(AgendaThreadItem(t));
-        sawActive = true;
-        continue;
-      }
-      // Scheduled bucket — emit header when entering a new day.
-      final date = t.on?.start ?? t.at?.start?.toDate() ?? Date.today();
-      if (lastBucket == null || lastBucket != date || sawActive) {
-        items.add(
-          AgendaHeaderItem(
-            date: date,
-            text: ActivitySectionMarker.encode(
-              ActivitySection.scheduled,
-              label: relativeDateLabel(date),
-            ),
-          ),
-        );
-        lastBucket = date;
-        sawActive = false;
-      }
-      items.add(AgendaThreadItem(t));
-    }
-    return items;
-  }
-
-  /// Comparator mirroring the SQL ORDER BY in `_watchActionTabIds`:
-  /// active rows first, then scheduled rows by bucket date ascending,
-  /// finally by `state_order` (Thread.order.value) and id ascending.
-  int _actionTabCompare(Thread a, Thread b) {
-    final aActive = a.isActiveThread;
-    final bActive = b.isActiveThread;
-    if (aActive != bActive) return aActive ? -1 : 1;
-
-    if (!aActive) {
-      final aDate = a.on?.start ?? a.at?.start?.toDate() ?? Date.today();
-      final bDate = b.on?.start ?? b.at?.start?.toDate() ?? Date.today();
-      final dateCmp = aDate.compareTo(bDate);
-      if (dateCmp != 0) return dateCmp;
-    }
-
-    final orderCmp = a.order.compareTo(b.order);
-    if (orderCmp != 0) return orderCmp;
-    return a.id.toString().compareTo(b.id.toString());
-  }
-
   /// Apply the activity-feed overlay to a per-tab SQL result. Substitutes
   /// or drops rows that have overlay entries; for Catch up, also injects
   /// overlay entries whose expected thread is missing from the SQL result
@@ -1207,23 +1090,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (tab == null) return false;
     final isSearching = state.search.isNotEmpty;
     final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
-    bool localExhausted;
-    switch (tab) {
-      case ActivityTab.catchUp:
-        localExhausted = _activeTabAppended.isEmpty
-            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
-            : _catchUpAppendCursor == null;
-      case ActivityTab.all:
-        localExhausted = _activeTabAppended.isEmpty
-            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
-            : _allTabAppendCursor == null;
-      case ActivityTab.respond:
-      case ActivityTab.doIt:
-      case ActivityTab.read:
-        localExhausted = _activeTabAppended.isEmpty
-            ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
-            : _actionTabAppendCursor == null;
-    }
+    final localExhausted = _activeTabAppended.isEmpty
+        ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
+        : _catchUpAppendCursor == null;
     return localExhausted && exhaustedRemote;
   }
 
@@ -1289,6 +1158,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -1383,6 +1254,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -1477,6 +1350,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -2264,6 +2139,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _associationsSubscription?.cancel();
     _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
+    _reactionsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     _activeTabSubscription?.cancel();
     return super.close();
@@ -2625,6 +2501,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _watchingThreadId = null;
     _tagsSubscription?.cancel();
+    _reactionsSubscription?.cancel();
 
     // Drop optimistic overrides — they apply to the old priority's streams
     // and won't naturally settle in the new one. The per-tab overlay is
@@ -3254,6 +3131,14 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
       },
     );
+
+    // Watch reactions for the priority (thread-level only).
+    _reactionsSubscription?.cancel();
+    _reactionsSubscription = Thread.watchReactionsForPriority(
+      priorityToLoad.path,
+    ).listen((reactions) {
+      emit(state.copyWith(reactions: reactions));
+    });
 
     // Watch icon counts for the priority
     _iconCountsSubscription?.cancel();
@@ -3965,6 +3850,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
+  StreamSubscription<List<(Reaction, int)>>? _reactionsSubscription;
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
 
   // Initial cold-start window kept small for fast first paint; grows via

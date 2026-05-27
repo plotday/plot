@@ -173,12 +173,27 @@ export interface Cost {
   updated_at: Generated<Timestamp>;
 }
 
+export interface CustomEmoji {
+  alias_of: string | null;
+  archived_at: Timestamp | null;
+  id: string;
+  image_url: string;
+  name: string;
+  provider: string;
+  seq: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface Device {
   app_version: string | null;
+  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
+  device_id: string | null;
   id: Generated<string>;
+  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string;
+  push_token: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -437,6 +452,23 @@ export interface LinkX {
   updated_by: number | null;
 }
 
+export interface LocalSyncLease {
+  attempt_id: string;
+  capability: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  fail_streak: Generated<number>;
+  last_completed_at: Timestamp | null;
+  last_error: string | null;
+  last_heartbeat_at: Timestamp;
+  last_result: string | null;
+  lease_token: string;
+  leased_until: Timestamp;
+  next_eligible_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Note {
   /**
    * Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.
@@ -488,6 +520,26 @@ export interface Note {
   thread_id: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
+}
+
+export interface NoteReaction {
+  actor_id: string;
+  archived_at: Timestamp | null;
+  emoji: string;
+  id: Generated<Int8>;
+  note_id: string;
+  seq: Generated<string>;
+  sync_depth: number | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+}
+
+export interface NoteReactions {
+  note_id: string | null;
+  reactions: Json | null;
+  seq: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
 }
 
 export interface NoteTag {
@@ -694,6 +746,7 @@ export interface TeamUser {
 
 export interface Thread {
   archived_at: Timestamp | null;
+  contact_meta: Generated<Json>;
   /**
    * Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester's sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.
    */
@@ -733,6 +786,7 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
+  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -778,6 +832,31 @@ export interface ThreadPriority {
   updated_at: Generated<Timestamp>;
   user_id: string;
   user_moved: Generated<boolean>;
+}
+
+export interface ThreadReaction {
+  actor_id: string;
+  archived_at: Timestamp | null;
+  emoji: string;
+  id: Generated<Int8>;
+  /**
+   * Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM
+   */
+  occurrence: string | null;
+  seq: Generated<string>;
+  sync_depth: number | null;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+}
+
+export interface ThreadReactions {
+  occurrence: string | null;
+  reactions: Json | null;
+  seq: string | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
 }
 
 export interface ThreadRead {
@@ -833,6 +912,7 @@ export interface ThreadTags {
 
 export interface ThreadX {
   archived_at: Timestamp | null;
+  contact_meta: Json | null;
   contacts: string[] | null;
   created_at: Timestamp | null;
   created_by: string | null;
@@ -1351,6 +1431,17 @@ export interface UserNote {
   user_id: string | null;
 }
 
+export interface UserNoteReactions {
+  archived_at: Timestamp | null;
+  id: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  reactions: Json | null;
+  seq: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserNoteRedacted {
   access_contacts: string[] | null;
   actions: Json | null;
@@ -1531,6 +1622,7 @@ export interface UserThread {
   archived_at: Timestamp | null;
   auto_archived_by_thread_id: string | null;
   bumped_at: Timestamp | null;
+  contact_meta: Json | null;
   contacts: string[] | null;
   created_at: Timestamp | null;
   draft: boolean | null;
@@ -1573,6 +1665,18 @@ export interface UserThreadAssociation {
   user_id: string | null;
 }
 
+export interface UserThreadReactions {
+  archived_at: Timestamp | null;
+  id: string | null;
+  occurrence: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  reactions: Json | null;
+  seq: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserThreadRedacted {
   active: boolean | null;
   activity_at: Timestamp | null;
@@ -1580,6 +1684,7 @@ export interface UserThreadRedacted {
   archived_at: Timestamp | null;
   auto_archived_by_thread_id: string | null;
   bumped_at: Timestamp | null;
+  contact_meta: Json | null;
   contacts: string[] | null;
   created_at: Timestamp | null;
   draft: boolean | null;
@@ -1674,6 +1779,7 @@ export interface DB {
   contact_external_account: ContactExternalAccount;
   contact_invitation: ContactInvitation;
   cost: Cost;
+  custom_emoji: CustomEmoji;
   device: Device;
   domain: Domain;
   email_claim: EmailClaim;
@@ -1687,7 +1793,10 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
+  local_sync_lease: LocalSyncLease;
   note: Note;
+  note_reaction: NoteReaction;
+  note_reactions: NoteReactions;
   note_tag: NoteTag;
   note_tags: NoteTags;
   priority: Priority;
@@ -1708,6 +1817,8 @@ export interface DB {
   thread: Thread;
   thread_association: ThreadAssociation;
   thread_priority: ThreadPriority;
+  thread_reaction: ThreadReaction;
+  thread_reactions: ThreadReactions;
   thread_read: ThreadRead;
   thread_state: ThreadState;
   thread_tag: ThreadTag;
@@ -1743,6 +1854,7 @@ export interface DB {
   "user.group": UserGroup;
   "user.link": UserLink;
   "user.note": UserNote;
+  "user.note_reactions": UserNoteReactions;
   "user.note_redacted": UserNoteRedacted;
   "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
@@ -1753,6 +1865,7 @@ export interface DB {
   "user.team_user": UserTeamUser;
   "user.thread": UserThread;
   "user.thread_association": UserThreadAssociation;
+  "user.thread_reactions": UserThreadReactions;
   "user.thread_redacted": UserThreadRedacted;
   "user.thread_tags": UserThreadTags;
   "user.twist": UserTwist;

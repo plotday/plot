@@ -139,6 +139,7 @@ class CommandWrapper extends Command {
     Value<IconData?> hoverIcon = const Value<IconData?>.absent(),
     String? title,
     Value<String?> subtitle = const Value<String?>.absent(),
+    // ignore: prefer_initializing_formals
   }) : _run = run,
        _iconOverridden = icon.present,
        super(

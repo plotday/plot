@@ -744,7 +744,7 @@ class _AnimatedPriorityChildren extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizeTransition(
       sizeFactor: CurvedAnimation(parent: controller, curve: Curves.easeInOut),
-      axisAlignment: -1.0,
+      alignment: const Alignment(-1.0, -1.0),
       child: ClipRect(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

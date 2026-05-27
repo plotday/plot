@@ -299,7 +299,7 @@ async function scheduled(
   // webhook (trial_settings.end_behavior='cancel'). No fallback sweep needed.
 
   // Fail-closed belt-and-suspenders: archive any stuck Twisting tag (tag_id
-  // 109) whose row hasn't been touched in over an hour. The queue handler's
+  // 12) whose row hasn't been touched in over an hour. The queue handler's
   // per-batch `finally` in workers/api/src/queue/updates.ts is the primary
   // cleanup path; this only fires when a worker crashed or a message was lost
   // mid-dispatch. 1 hour is well beyond any realistic twist runtime (including
@@ -310,7 +310,7 @@ async function scheduled(
       const result = await db
         .updateTable("note_tag")
         .set({ archived_at: new Date() as any, updated_by: 0 })
-        .where("tag_id", "=", 109)
+        .where("tag_id", "=", 12)
         .where("archived_at", "is", null)
         .where(
           "updated_at",

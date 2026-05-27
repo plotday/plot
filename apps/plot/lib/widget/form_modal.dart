@@ -859,7 +859,7 @@ class FormModalState extends State<_FormModal> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      if (header != null) header,
+                                      ?header,
                                       item.build(
                                         context,
                                         highlightedSubIndex,

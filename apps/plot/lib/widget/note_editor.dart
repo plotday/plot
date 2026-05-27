@@ -11,6 +11,7 @@ import 'package:plot/command/command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/image_utils.dart';
+import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
@@ -520,7 +521,10 @@ class NoteEditorState extends State<NoteEditor> {
         final activityBloc = context.read<ThreadBloc>();
         final editingNote = activityBloc.state.editingNote;
         isEditing = editingNote != null;
-        hint = isEditing ? 'Edit note' : 'Add a note';
+        final cfg = activityBloc.state.primaryLinkTypeConfig;
+        hint = isEditing
+            ? composerHintForEditNote(cfg)
+            : composerHintForNote(cfg);
       }
 
       // Contacts already on this thread are surfaced first in @-mention
@@ -1131,7 +1135,10 @@ class NoteEditorState extends State<NoteEditor> {
             Button.icon(
               isCurrentlyEditing
                   ? CommandWrapper(
-                      AddNote(Future.value(widget.draft)),
+                      AddNote(
+                        Future.value(widget.draft),
+                        linkType: threadState.primaryLinkTypeConfig,
+                      ),
                       title: 'Save changes',
                       icon: Value(PlotIcon.save),
                       run: (action, context) async {
@@ -1140,7 +1147,10 @@ class NoteEditorState extends State<NoteEditor> {
                       },
                     )
                   : CommandWrapper(
-                      AddNote(Future.value(widget.draft)),
+                      AddNote(
+                        Future.value(widget.draft),
+                        linkType: threadState.primaryLinkTypeConfig,
+                      ),
                       run: (action, context) async {
                         _editorKey.currentState?.submit(false);
                         return const CommandDone();
@@ -1252,7 +1262,14 @@ class NoteEditorState extends State<NoteEditor> {
         // Right side: Save button (always visible)
         Button.icon(
           CommandWrapper(
-            AddThread(Future.value(thread)),
+            AddThread(
+              Future.value(thread),
+              linkType: linkTypeConfigForCreateAction(
+                draftNote.actions
+                    ?.whereType<CreateLinkUserAction>()
+                    .firstOrNull,
+              ),
+            ),
             run: (action, context) async {
               _editorKey.currentState?.submit(false);
               return const CommandDone();
@@ -1606,11 +1623,12 @@ class NoteEditorState extends State<NoteEditor> {
       // Normal mode: add a new note
       final note = _finalizeNoteDraft(body, alt: alt);
       if (!context.mounted) return;
+      final threadCfg = context.read<ThreadBloc>().state.primaryLinkTypeConfig;
       setState(() {
         _saving = true;
       });
       try {
-        await context.run(AddNote(note));
+        await context.run(AddNote(note, linkType: threadCfg));
       } finally {
         if (mounted) {
           setState(() {

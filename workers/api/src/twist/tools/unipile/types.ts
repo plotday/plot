@@ -49,6 +49,15 @@ export type UnipileChatList = {
   cursor: string | null;
 };
 
+export type UnipileMessageReaction = {
+  /** Reaction emoji (Unicode). */
+  value: string;
+  /** Provider id of the reactor. */
+  sender_id: string;
+  /** True iff the reactor is the connected account. */
+  is_sender: boolean;
+};
+
 export type UnipileMessage = {
   object: "Message";
   id: string;
@@ -60,9 +69,17 @@ export type UnipileMessage = {
   timestamp: string;
   is_sender: 0 | 1;
   is_event: 0 | 1;
+  /**
+   * Sub-type for `is_event === 1` messages. Unipile uses small string
+   * tokens like `"reaction"`, `"group-create"`, `"group-rename"`,
+   * `"call-missed-voice"`. Absent on regular chat messages.
+   */
+  event_type?: string;
   seen: 0 | 1;
   text: string | null;
   attachments?: UnipileAttachment[];
+  /** Aggregate of every reactor's current reaction. */
+  reactions?: UnipileMessageReaction[];
 };
 
 export type UnipileAttachment = {

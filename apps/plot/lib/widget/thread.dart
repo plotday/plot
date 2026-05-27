@@ -804,7 +804,7 @@ class ThreadCommands extends HookWidget {
         ),
         // When the thread isn't shared, the share affordance sits to
         // the right of the more-commands menu so it's always visible.
-        if (trailingShareButton != null) trailingShareButton,
+        ?trailingShareButton,
       ];
     } else {
       // Task list / Reading list toggles are treated like enabled tags:
@@ -824,9 +824,9 @@ class ThreadCommands extends HookWidget {
         ...allButtons,
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
-        if (attendButton != null) attendButton,
-        if (skipButton != null) skipButton,
-        if (rsvpButton != null) rsvpButton,
+        ?attendButton,
+        ?skipButton,
+        ?rsvpButton,
         // Trailing AvatarGroup slot — only present when the thread is
         // actually shared. When not shared we leave the slot empty (no
         // padding, no tooltip); the share command is reachable via the

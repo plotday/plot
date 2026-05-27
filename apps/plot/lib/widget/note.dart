@@ -624,10 +624,10 @@ class _OverflowAwareRenderBox extends RenderProxyBox {
     required double fadeHeight,
     required Color fadeColor,
     required this.onOverflowChanged,
-  }) : _maxHeight = maxHeight,
-       _truncateAt = truncateAt,
-       _fadeHeight = fadeHeight,
-       _fadeColor = fadeColor;
+  }) : _maxHeight = maxHeight, // ignore: prefer_initializing_formals
+       _truncateAt = truncateAt, // ignore: prefer_initializing_formals
+       _fadeHeight = fadeHeight, // ignore: prefer_initializing_formals
+       _fadeColor = fadeColor; // ignore: prefer_initializing_formals
 
   double _maxHeight;
   double get maxHeight => _maxHeight;
@@ -920,8 +920,44 @@ class NoteCommands extends StatelessWidget {
     final activityBloc = context.watch<ThreadBloc>();
     final activityState = activityBloc.state;
 
+    // Watch the local note_reactions row so active emojis render inline
+    // with the other always-visible task buttons (no separate row), and
+    // the hover-toolbar MRU can dedupe against the active set + shrink
+    // its slot count so the total emoji slot count stays bounded.
+    const kHoverEmojiSlots = 5;
+
     // Build the final row with tags and commands
-    return FutureBuilder<(List<Widget>, String)>(
+    final commandsRow = StreamBuilder<NoteReactionsRow?>(
+      stream: (Store.get.select(Store.get.noteReactions)
+            ..where((t) => t.id.equalsValue(note.id))
+            ..limit(1))
+          .watchSingleOrNull(),
+      builder: (context, reactionSnap) {
+        final reactions =
+            reactionSnap.data?.reactions ?? const <Reaction, List<ActorId>>{};
+        final activeEntries = reactions.entries
+            .where((e) => e.value.isNotEmpty)
+            .toList(growable: false);
+        // Active reactions render with the same accent-color "selected"
+        // treatment as count-tags — no border, no background.
+        final activeReactionButtons = <Widget>[
+          for (final entry in activeEntries)
+            () {
+              final btn = Button.icon(
+                ActiveNoteReaction(note, entry.key),
+                key: ValueKey(Object.hash(note.id, entry.key)),
+                selected: true,
+              );
+              return entry.value.length > 1
+                  ? CountBadge(count: entry.value.length, child: btn)
+                  : btn;
+            }(),
+        ];
+        final excludedReactions = {for (final e in activeEntries) e.key};
+        final remainingMruSlots = (kHoverEmojiSlots - activeEntries.length)
+            .clamp(0, kHoverEmojiSlots);
+
+        return FutureBuilder<(List<Widget>, String)>(
       future: Future.wait([
         Future.wait(tagFutures),
         assigneeNamesFuture,
@@ -998,12 +1034,21 @@ class NoteCommands extends StatelessWidget {
                 if (!note.draft && !isViewer)
                   Button.icon(ReplyToNote(note, activityBloc: activityBloc)),
 
-                // Add top tag buttons
-                ...topNoteTags(
-                  note,
-                  activityState.tagSuggestions,
-                  actorId,
-                ).map((cmd) => Button.icon(cmd)),
+                // MRU emoji reactions, deduped against active emojis and
+                // shrunk by their count so the row's total emoji slots
+                // stay at `kHoverEmojiSlots` (unless the user already has
+                // more active reactions than slots).
+                if (!note.draft && !isViewer)
+                  ...mruReactionsForToolbar(
+                    context,
+                    note,
+                    source: activityState.links.isEmpty
+                        ? null
+                        : activityState.links.first.source,
+                    actorId: actorId,
+                    limit: remainingMruSlots,
+                    exclude: excludedReactions,
+                  ).map((cmd) => Button.icon(cmd)),
                 Button.icon(
                   CommandWrapper(
                     ShowNoteCommands(note, activityBloc: activityBloc),
@@ -1056,9 +1101,13 @@ class NoteCommands extends StatelessWidget {
                   })
                   .toList();
 
-        // Combine task tags, generic tags, and commands
+        // Combine task tags, active emoji reactions (always visible),
+        // generic tags, and commands (hover-only). Active emojis sit
+        // between task tags and the rest so they don't displace the
+        // todo/done buttons but always read before hover-only chrome.
         final allButtons = [
           ...taskTagWidgets,
+          ...activeReactionButtons,
           ...genericTagButtons,
           ...commandButtons,
         ];
@@ -1119,6 +1168,10 @@ class NoteCommands extends StatelessWidget {
         );
       },
     );
+      },
+    );
+
+    return commandsRow;
   }
 }
 
@@ -1191,3 +1244,4 @@ class _NoteActionsLayout extends StatelessWidget {
     );
   }
 }
+

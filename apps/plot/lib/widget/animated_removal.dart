@@ -117,7 +117,7 @@ class AnimatedRemovalState extends State<AnimatedRemoval>
     // Apply height collapse
     return SizeTransition(
       sizeFactor: ReverseAnimation(_collapseAnimation),
-      axisAlignment: -1.0,
+      alignment: const Alignment(-1.0, -1.0),
       child: child,
     );
   }

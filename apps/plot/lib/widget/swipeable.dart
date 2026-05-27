@@ -110,8 +110,9 @@ class _SwipeableState extends State<Swipeable> with TickerProviderStateMixin {
 
   /// Whether a given direction has any command at all.
   bool _hasAnyCommand({required bool right}) {
-    if (right)
+    if (right) {
       return widget.startCommand != null || widget.startLongCommand != null;
+    }
     return widget.endCommand != null || widget.endLongCommand != null;
   }
 

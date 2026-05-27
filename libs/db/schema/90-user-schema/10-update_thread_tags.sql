@@ -61,9 +61,11 @@ BEGIN
             IF v_effective_role = 'viewer' AND current_tag_type != 'count' THEN
                 RAISE EXCEPTION 'Viewer members can only modify count tags (tag_id: %)', tag_id_int;
             END IF;
-            -- Prevent insertion of computed tags (tag_id 1-99)
-            -- Exception: 'done' (3) acts as a toggle tag on threads
-            IF current_tag_type = 'compute' AND tag_id_int != 3 THEN
+            -- Prevent insertion of computed tags (tag_id 1-99) except those
+            -- whitelisted as writable:
+            --   3  = 'done' (acts as a toggle on threads)
+            --   12 = 'twist' (runtime-managed Twisting indicator)
+            IF current_tag_type = 'compute' AND tag_id_int NOT IN (3, 12) THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - these tags are calculated from thread state', tag_id_int;
             END IF;
             -- For count tags, enforce that users can only modify their own tags.
@@ -96,8 +98,9 @@ BEGIN
                 END IF;
         ELSE
             -- Removing a tag - use update to soft delete existing records
-            IF current_tag_type = 'toggle' OR tag_id_int = 3 THEN
-                -- For toggle tags, remove all users' tags
+            IF tag_id_int = 3 THEN
+                -- 'done' acts as a toggle on threads: clearing it clears
+                -- the row for every actor.
                 UPDATE
                     thread_tag
                 SET

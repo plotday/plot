@@ -146,14 +146,32 @@ class Window extends StatefulWidget {
       final savedWidth = prefs.getDouble('window_width');
       final savedHeight = prefs.getDouble('window_height');
 
+      // Find the display the saved position lands on. We clamp against that
+      // display's visible size rather than the primary's — on macOS the
+      // built-in screen is usually primary even when the window lives on a
+      // taller external monitor, so primary-based clamping would trim the
+      // height on every restart.
+      Display? savedDisplay;
+      if (savedX != null && savedY != null) {
+        for (final d in displays) {
+          final pos = d.visiblePosition;
+          final size = d.visibleSize;
+          if (pos == null || size == null) continue;
+          final bounds = Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height);
+          if (bounds.contains(Offset(savedX, savedY))) {
+            savedDisplay = d;
+            break;
+          }
+        }
+      }
+
       // Set default size if no saved state
       double width = savedWidth ?? 1200;
       double height = savedHeight ?? 800;
 
-      // Validate and adjust size based on current screen's visible area
-      // Use visibleSize to properly handle full-height tiled windows
-      final maxWidth = primaryDisplay.visibleSize!.width;
-      final maxHeight = primaryDisplay.visibleSize!.height;
+      final clampDisplay = savedDisplay ?? primaryDisplay;
+      final maxWidth = clampDisplay.visibleSize!.width;
+      final maxHeight = clampDisplay.visibleSize!.height;
       width = width.clamp(400, maxWidth);
       height = height.clamp(300, maxHeight);
 

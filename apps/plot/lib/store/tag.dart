@@ -59,53 +59,16 @@ enum Tag {
     addable: false,
     shortcodes: ['reading', 'readinglist'],
   ),
-
-  // Toggle tags
-  pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),
-  decision(
-    104,
-    PlotIcon.decision,
-    'Decision',
-    shortcodes: ['decision', 'thinking_face'],
-    addable: false,
-  ),
-  goal(
-    103,
-    PlotIcon.goal,
-    'Goal',
-    shortcodes: ['goal', 'dart'],
-    addable: false,
-  ),
-  urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
-  waiting(
-    105,
-    PlotIcon.waiting,
-    'Waiting',
-    shortcodes: ['waiting', 'hourglass'],
-  ),
-  blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
-  warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
-  question(
-    108,
-    PlotIcon.question,
-    'Question',
-    shortcodes: ['question'],
-    addable: false,
-  ),
+  /// Runtime-managed Twisting indicator — the twist runtime sets this on
+  /// notes it's currently processing. Reassigned from legacy id 109 to 12
+  /// (compute range) when toggle tags were retired.
   twist(
-    109,
+    12,
     PlotIcon.twist,
     'Twisting',
+    type: TagType.compute,
+    addable: false,
     shortcodes: ['twist', 'twisting'],
-    addable: false,
-  ),
-  star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
-  idea(
-    111,
-    PlotIcon.idea,
-    'Idea',
-    shortcodes: ['idea', 'bulb', 'lightbulb'],
-    addable: false,
   ),
 
   // Count tags

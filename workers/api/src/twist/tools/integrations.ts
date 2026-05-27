@@ -1174,9 +1174,6 @@ export class Integrations extends Tool implements IAuth {
       throw error;
     }
 
-    // Propagate status tags to the thread
-    await this.propagateLinkStatusTags(plot, threadId);
-
     // Create task schedule for assigned links
     await this.createTaskScheduleForLink(threadId);
 
@@ -1336,9 +1333,7 @@ export class Integrations extends Tool implements IAuth {
         .execute();
     }
 
-    // Propagate status tags, create task schedule for assignee, and notify.
-    const plot = this.getPlot();
-    await this.propagateLinkStatusTags(plot, threadId);
+    // Create task schedule for assignee, and notify.
     await this.createTaskScheduleForLink(threadId);
 
     // Notify sync DOs so the user sees the link appear.
@@ -1349,7 +1344,7 @@ export class Integrations extends Tool implements IAuth {
         .where("thread_id", "=", threadId as string)
         .executeTakeFirst();
       if (tp?.priority_id) {
-        await plot.notifySyncDOs(new Set([tp.priority_id]));
+        await this.getPlot().notifySyncDOs(new Set([tp.priority_id]));
       }
     } catch (error) {
       console.error("[saveCreatedLink] notifySyncDOs failed:", error);
@@ -1602,106 +1597,6 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Propagate status tags from link statuses to the parent thread.
-   * Uses union semantics: a tag is present if ANY link on the thread (from this twist)
-   * has a status that maps to that tag. Removes the tag only when no links contribute it.
-   * Checks channel-level linkTypes first, falling back to twist-level.
-   */
-  private async propagateLinkStatusTags(
-    plot: Plot,
-    threadId: Uuid
-  ): Promise<void> {
-    // Collect all linkTypes — check channel-level first, then twist-level
-    let allLinkTypes: LinkTypeConfig[] = await this.getChannelLinkTypesForThread(threadId);
-    if (allLinkTypes.length === 0) {
-      allLinkTypes = this.providerConfigs.flatMap(
-        (p) => p.linkTypes ?? []
-      );
-    }
-    if (allLinkTypes.length === 0) return;
-
-    // Collect all possible tags from all status definitions
-    const allPossibleTags = new Set<number>();
-    for (const lt of allLinkTypes) {
-      for (const s of lt.statuses ?? []) {
-        if (s.tag !== undefined) allPossibleTags.add(s.tag);
-      }
-    }
-    if (allPossibleTags.size === 0) return;
-
-    // Query all links on this thread from this twist to compute union of contributed tags
-    const siblingLinks = await this.db
-      .selectFrom("link")
-      .select(["type", "status"])
-      .where("thread_id", "=", threadId as string)
-      .where("created_by", "=", this.twistInstanceId)
-      .execute();
-
-    const contributedTags = new Set<number>();
-    for (const sibling of siblingLinks) {
-      const tag = this.getStatusTag(allLinkTypes, sibling.type, sibling.status);
-      if (tag !== undefined) contributedTags.add(tag);
-    }
-
-    const updatedBy = plot.getUpdatedBy();
-    const syncDepth = plot.syncDepth + 1;
-
-    // Batch insert tags that should be present
-    if (contributedTags.size > 0) {
-      const tagValues = [...contributedTags].map((tagId) => ({
-        thread_id: threadId as string,
-        occurrence: null,
-        tag_id: tagId,
-        actor_id: this.twistInstanceId,
-        updated_by: updatedBy,
-        sync_depth: syncDepth,
-      }));
-
-      await this.db
-        .insertInto("thread_tag")
-        .values(tagValues)
-        .onConflict((oc) =>
-          oc
-            .columns(["actor_id", "thread_id", "occurrence", "tag_id"])
-            .doUpdateSet((eb) => ({
-              updated_by: eb.ref("excluded.updated_by"),
-              sync_depth: eb.ref("excluded.sync_depth"),
-              archived_at: null,
-            }))
-        )
-        .execute();
-    }
-
-    // Batch archive tags that are no longer contributed
-    const tagsToArchive = [...allPossibleTags].filter((t) => !contributedTags.has(t));
-    if (tagsToArchive.length > 0) {
-      await this.db
-        .updateTable("thread_tag")
-        .set({ archived_at: new Date(), updated_by: updatedBy, sync_depth: syncDepth })
-        .where("thread_id", "=", threadId as string)
-        .where("actor_id", "=", this.twistInstanceId)
-        .where("tag_id", "in", tagsToArchive)
-        .where("archived_at", "is", null)
-        .execute();
-    }
-  }
-
-  /**
-   * Look up the tag for a given link type + status from linkType configs.
-   */
-  private getStatusTag(
-    linkTypes: LinkTypeConfig[],
-    type: string | null | undefined,
-    status: string | null | undefined
-  ): number | undefined {
-    if (!type || !status) return undefined;
-    const typeConfig = linkTypes.find((lt) => lt.type === type);
-    if (!typeConfig?.statuses) return undefined;
-    const statusDef = typeConfig.statuses.find((s) => s.status === status);
-    return statusDef?.tag;
-  }
-
-  /**
    * Look up channel-level linkTypes for a thread's links.
    * Queries the first link on this thread from this twist, resolves its channel_id,
    * then looks up link_types from channel.
@@ -1774,6 +1669,7 @@ export class Integrations extends Tool implements IAuth {
       reNote: item.re_note_id ? { id: item.re_note_id } : null,
       mentions: item.mentions || [],
       tags: item.tags || {},
+      reactions: {},
       accessContacts: (item.access_contacts as any) ?? null,
       archived: item.archived_at !== null,
       actions: item.actions,
@@ -1906,6 +1802,7 @@ export class Integrations extends Tool implements IAuth {
         reNote: item.re_note_id ? { id: item.re_note_id } : null,
         mentions: item.mentions || [],
         tags: item.tags || {},
+        reactions: {},
         accessContacts: (item.access_contacts as any) ?? null,
         archived: item.archived_at !== null,
         actions: item.actions,

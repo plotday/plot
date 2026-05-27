@@ -72,6 +72,10 @@ part 'note.dart';
 part 'thread_exception.dart';
 part 'thread_tags.dart';
 part 'note_tags.dart';
+part 'reaction.dart';
+part 'thread_reactions.dart';
+part 'note_reactions.dart';
+part 'custom_emoji.dart';
 part 'thread_fts.dart';
 part 'note_fts.dart';
 part 'session.dart';
@@ -455,6 +459,9 @@ abstract class BaseTable {
     Schedules,
     ThreadTags,
     NoteTags,
+    ThreadReactions,
+    NoteReactions,
+    CustomEmojis,
     Sessions,
     UserSettings,
     Channels,
@@ -2381,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 340;
+  int get schemaVersion => 343;
 
   @override
   MigrationStrategy get migration {
@@ -3620,6 +3627,56 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
+    }
+    if (from < 341) {
+      // Per-contact role metadata on threads (To/CC/BCC, Required/Optional).
+      // Existing rows will pick up the column as null and treat every contact
+      // as the link type's default role.
+      await m.addColumn(threads, threads.contactMeta);
+    }
+    if (from < 342) {
+      // Emoji reactions: parallel to note_tags / thread_tags but keyed by
+      // emoji string (Unicode grapheme cluster or `<provider>:<ws>/<name>`
+      // custom-emoji ref). Adds three tables; sync state for the new
+      // endpoints will be initialized lazily on first pull. Strictly
+      // additive — count tags on existing rows keep working until Phase 6.
+      await m.createTable(noteReactions);
+      await m.createTable(threadReactions);
+      await m.createTable(customEmojis);
+    }
+    if (from < 343) {
+      // Toggle-tag retirement (mirrors server migration
+      // 20260527023511_drop_toggle_tags). Strip the 10 retired tag ids
+      // (100, 101, 103-108, 110, 111) from each row's tags JSON, and
+      // rename Tag.twist's id from 109 to 12 (compute range).
+      //
+      // The local schema stores tags as a single JSON blob keyed by tag id
+      // (e.g. `{"1":["actorA"], "110":["actorB"]}`), not row-per-(note, tag,
+      // actor) like the server. So we patch the JSON instead of updating
+      // `tag_id` / `archived_at` columns — those don't exist locally.
+      const stripRetired = '{"100":null,"101":null,"103":null,"104":null,'
+          '"105":null,"106":null,"107":null,"108":null,"110":null,"111":null}';
+      for (final tbl in const ['note_tags', 'thread_tags']) {
+        // Remove retired keys from `tags` (RFC 7396 merge patch: null keys
+        // are deleted).
+        await m.database.customStatement(
+          "UPDATE $tbl SET tags = json_patch(tags, '$stripRetired') "
+          'WHERE tags IS NOT NULL',
+        );
+        // Rename "109" → "12" by re-keying the existing value.
+        await m.database.customStatement(
+          'UPDATE $tbl '
+          r'''SET tags = json_set(json_remove(tags, '$."109"'), '''
+          r''''$."12"', json_extract(tags, '$."109"')) '''
+          'WHERE tags IS NOT NULL '
+          r'''AND json_extract(tags, '$."109"') IS NOT NULL''',
+        );
+        // Collapse an emptied object back to NULL so the UI doesn't try to
+        // render a blank chip row before the next sync arrives.
+        await m.database.customStatement(
+          "UPDATE $tbl SET tags = NULL WHERE tags = '{}'",
+        );
+      }
     }
   }
 

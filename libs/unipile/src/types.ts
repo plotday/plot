@@ -35,6 +35,22 @@ export type LinkedInAttachment = {
   byteSize: number | null;
 };
 
+/**
+ * A single reaction on a LinkedIn message.
+ *
+ * LinkedIn DMs allow each member at most one reaction per message, drawn
+ * from a fixed seven-emoji set. Multiple members each contribute one entry
+ * to a message's `reactions` array.
+ */
+export type LinkedInMessageReaction = {
+  /** The reaction emoji (Unicode), e.g. `'👍'`. */
+  value: string;
+  /** Provider id of the reactor (a chat participant's `LinkedInProfile.id`). */
+  senderId: string;
+  /** True iff the reactor is the connected account. */
+  sentByMe: boolean;
+};
+
 export type LinkedInMessage = {
   /** Unipile message id (opaque). */
   id: string;
@@ -44,10 +60,29 @@ export type LinkedInMessage = {
   senderId: string;
   /** True iff the sender is the connected account. */
   sentByMe: boolean;
+  /**
+   * Unipile event-type code for synthetic "event" messages — e.g. a
+   * reaction, a group rename, a participant add/remove. Null for regular
+   * chat messages. Connectors should skip these when building Plot notes;
+   * the underlying state changes are already reflected on the parent
+   * message (reactions) or chat (title, participants) on the next sync.
+   *
+   * Values currently surfaced by Unipile (subset):
+   *   `'reaction'` — someone added or changed a reaction.
+   *   `'group-create' | 'group-rename' | 'group-add' | 'group-remove'`.
+   *   `'call-missed-voice' | 'call-missed-video'`.
+   */
+  eventType: string | null;
   sentAt: Date;
   /** Plain-text body (Unipile returns the canonical text form). */
   text: string;
   attachments: LinkedInAttachment[];
+  /**
+   * All current reactions on this message, one entry per reactor.
+   * Empty when the message has no reactions. The connector should
+   * aggregate by `value` when mapping to Plot's emoji→actors model.
+   */
+  reactions: LinkedInMessageReaction[];
 };
 
 export type LinkedInChat = {

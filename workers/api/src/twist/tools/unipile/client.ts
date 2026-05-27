@@ -198,6 +198,50 @@ export class UnipileClient {
     });
   }
 
+  /**
+   * Add (or replace) the connected account's reaction on a LinkedIn message.
+   * LinkedIn DMs allow at most one reaction per member per message — posting
+   * a new value replaces any prior reaction the account had on that message.
+   *
+   * Endpoint: `POST /messages/{id}/reactions` with body `{ reaction: "👍" }`.
+   * See <https://developer.unipile.com/reference/messagescontroller_addreaction>.
+   */
+  async addMessageReaction(input: {
+    messageId: string;
+    reaction: string;
+  }): Promise<void> {
+    await this.post<unknown>(
+      `/messages/${encodeURIComponent(input.messageId)}/reactions`,
+      { reaction: input.reaction }
+    );
+  }
+
+  /**
+   * Remove the connected account's reaction from a LinkedIn message.
+   * Unipile only documents the add endpoint; this attempts a `DELETE` on the
+   * mirror path and treats `404`/`405` as "removal unsupported" so the
+   * caller does not blow up. The next inbound sync of the message
+   * reconciles state if Unipile silently rejects the call.
+   */
+  async removeMessageReaction(input: { messageId: string }): Promise<void> {
+    try {
+      await this.request(
+        `/messages/${encodeURIComponent(input.messageId)}/reactions`,
+        { method: "DELETE" }
+      );
+    } catch (error) {
+      if (
+        error instanceof UnipileApiError &&
+        (error.status === 404 || error.status === 405)
+      ) {
+        // Unipile doesn't expose a removal endpoint for this provider.
+        // The next sync of the message will reconcile actual state.
+        return;
+      }
+      throw error;
+    }
+  }
+
   async setChatRead(input: { chatId: string; read: boolean }): Promise<void> {
     await this.request(`/chats/${encodeURIComponent(input.chatId)}`, {
       method: "PATCH",

@@ -92,12 +92,9 @@ FVariants<FTappableVariantConstraint, FTappableVariant, Decoration,
       DecorationDelta>(
     base,
     variants: {
-      if (disabled != null)
-        [FTappableVariantConstraint.disabled]: disabled,
-      if (hovered != null)
-        [FTappableVariantConstraint.hovered]: hovered,
-      if (pressed != null)
-        [FTappableVariantConstraint.pressed]: pressed,
+      [FTappableVariantConstraint.disabled]: ?disabled,
+      [FTappableVariantConstraint.hovered]: ?hovered,
+      [FTappableVariantConstraint.pressed]: ?pressed,
     },
   );
 }
@@ -114,12 +111,9 @@ FVariants<FTappableVariantConstraint, FTappableVariant, TextStyle,
       TextStyleDelta>(
     base,
     variants: {
-      if (disabled != null)
-        [FTappableVariantConstraint.disabled]: disabled,
-      if (hovered != null)
-        [FTappableVariantConstraint.hovered]: hovered,
-      if (pressed != null)
-        [FTappableVariantConstraint.pressed]: pressed,
+      [FTappableVariantConstraint.disabled]: ?disabled,
+      [FTappableVariantConstraint.hovered]: ?hovered,
+      [FTappableVariantConstraint.pressed]: ?pressed,
     },
   );
 }
@@ -136,12 +130,9 @@ FVariants<FTappableVariantConstraint, FTappableVariant, IconThemeData,
       IconThemeDataDelta>(
     base,
     variants: {
-      if (disabled != null)
-        [FTappableVariantConstraint.disabled]: disabled,
-      if (hovered != null)
-        [FTappableVariantConstraint.hovered]: hovered,
-      if (pressed != null)
-        [FTappableVariantConstraint.pressed]: pressed,
+      [FTappableVariantConstraint.disabled]: ?disabled,
+      [FTappableVariantConstraint.hovered]: ?hovered,
+      [FTappableVariantConstraint.pressed]: ?pressed,
     },
   );
 }

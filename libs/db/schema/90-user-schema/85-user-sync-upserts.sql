@@ -54,7 +54,10 @@ BEGIN
     PERFORM "user".assert_priority_access(upsert_thread_tag.user_id, v_priority_id);
 
     v_tag_type := get_tag_type(p_tag_id);
-    IF v_tag_type = 'compute' THEN
+    -- Tag 12 (Twist) is runtime-managed indicator state. It lives in the
+    -- compute range but is written by the twist runtime to mark a note as
+    -- in-progress; it is not a user-set computed tag. Allow it through.
+    IF v_tag_type = 'compute' AND p_tag_id != 12 THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
     END IF;
     -- Viewer enforcement: viewers can only modify count tags
@@ -136,7 +139,10 @@ BEGIN
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
     v_tag_type := get_tag_type(p_tag_id);
-    IF v_tag_type = 'compute' THEN
+    -- Tag 12 (Twist) is runtime-managed indicator state. It lives in the
+    -- compute range but is written by the twist runtime to mark a note as
+    -- in-progress; it is not a user-set computed tag. Allow it through.
+    IF v_tag_type = 'compute' AND p_tag_id != 12 THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
     END IF;
     -- Resolve actor to canonical primary id and full linked-contact sibling

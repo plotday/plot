@@ -123,10 +123,13 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
           context.read<ThreadBloc>().updateSearch(search),
       onSearchClosed: () {
         context.read<ThreadBloc>().updateFilter([]);
+        context.read<ThreadBloc>().updateReactionFilter([]);
         context.read<ThreadBloc>().setThreadFilter(null);
       },
       tags: state.tags,
       filter: state.filter,
+      reactions: state.reactions,
+      reactionFilter: state.reactionFilter,
     );
 
     // Apply current search from PriorityBloc so notes are filtered
@@ -188,11 +191,18 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       ),
       child: BlocListener<ThreadBloc, ThreadState>(
         listener: (context, state) {
-          // Update header notifier when tags/filter change
+          // Update header notifier when tags/filter/reactions change
           _headerNotifier?.updateTags(state.tags, state.filter);
+          _headerNotifier?.updateReactions(
+            state.reactions,
+            state.reactionFilter,
+          );
         },
         listenWhen: (previous, current) =>
-            previous.tags != current.tags || previous.filter != current.filter,
+            previous.tags != current.tags ||
+            previous.filter != current.filter ||
+            previous.reactions != current.reactions ||
+            previous.reactionFilter != current.reactionFilter,
         child: BlocListener<ThreadBloc, ThreadState>(
           listener: (context, state) {
             // Reschedule mark as read when new notes are synced

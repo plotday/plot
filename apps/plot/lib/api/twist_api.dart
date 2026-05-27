@@ -187,8 +187,8 @@ class TwistApi {
     await api.patch<Map<String, dynamic>>(
       '/twist/$twistInstanceId',
       body: {
-        if (name != null) 'name': name,
-        if (config != null) 'config': config,
+        'name': ?name,
+        'config': ?config,
         if (teamId.present) 'teamId': teamId.value,
         if (accountLabel.present) 'accountLabel': accountLabel.value,
       },
@@ -207,8 +207,8 @@ class TwistApi {
       body: {
         'twistId': twistId,
         'twistEnvironment': twistEnvironment,
-        if (name != null) 'name': name,
-        if (config != null) 'config': config,
+        'name': ?name,
+        'config': ?config,
       },
     );
 
@@ -226,7 +226,7 @@ class TwistApi {
       body: {
         'twistId': twistId,
         'twistEnvironment': twistEnvironment,
-        if (name != null) 'name': name,
+        'name': ?name,
       },
     );
     return response['id'].toString();
@@ -244,9 +244,9 @@ class TwistApi {
       '/twist/draft/$draftId/activate',
       body: {
         'name': name,
-        if (config != null) 'config': config,
-        if (channels != null) 'syncables': channels,
-        if (teamId != null) 'teamId': teamId,
+        'config': ?config,
+        'syncables': ?channels,
+        'teamId': ?teamId,
       },
     );
   }
@@ -281,11 +281,10 @@ class TwistApi {
       body: {
         'provider': provider,
         'redirectUri': redirectUri,
-        if (platform != null) 'platform': platform,
+        'platform': ?platform,
         if (forceBridge) 'forceBridge': true,
-        if (enabledScopeGroups != null)
-          'enabledScopeGroups': enabledScopeGroups,
-        if (accountHint != null) 'accountHint': accountHint,
+        'enabledScopeGroups': ?enabledScopeGroups,
+        'accountHint': ?accountHint,
       },
     );
     return TwistAuthUrl.fromJson(response);

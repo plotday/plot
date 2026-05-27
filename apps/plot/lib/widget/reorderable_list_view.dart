@@ -88,11 +88,8 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
           child: widget.itemBuilder(context, item, null),
         );
       },
-      onReorder: (int oldIndex, int newIndex) {
+      onReorderItem: (int oldIndex, int newIndex) {
         setState(() {
-          if (oldIndex < newIndex) {
-            newIndex -= 1;
-          }
           final item = list.removeAt(oldIndex);
           list.insert(newIndex, item);
         });

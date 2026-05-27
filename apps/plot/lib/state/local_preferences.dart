@@ -4,7 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:plot/store/store.dart' show ThreadSubType;
+import 'package:plot/store/store.dart' show Reaction, ThreadSubType;
 import 'package:plot/util/profile_preferences.dart';
 
 part 'local_preferences_state.dart';
@@ -20,7 +20,9 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   static const String _kShowAllPrioritiesKey = 'show_all_priorities';
   static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
   static const String _kConnectionMruKey = 'connection_mru';
+  static const String _kReactionMruKey = 'reaction_mru';
   static const int _maxMruItems = 50;
+  static const int _maxReactionMruItems = 40;
 
   /// Record usage of a mention, moving it to the front of the MRU list
   Future<void> recordMentionUsage(String twistInstanceId) async {
@@ -129,6 +131,19 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       });
   }
 
+  /// Record usage of an emoji reaction, moving it to the front of the MRU.
+  /// Persists to profile preferences as a CSV of grapheme clusters.
+  Future<void> recordReactionUsage(Reaction emoji) async {
+    final current = List<Reaction>.from(state.reactionMru);
+    current.remove(emoji);
+    current.insert(0, emoji);
+    if (current.length > _maxReactionMruItems) {
+      current.removeRange(_maxReactionMruItems, current.length);
+    }
+    emit(state.copyWith(reactionMru: current));
+    await _persistReactionMru();
+  }
+
   /// Toggle showing all priorities (active + archived) vs active only
   Future<void> toggleShowAllPriorities() async {
     emit(state.copyWith(showAllPriorities: !state.showAllPriorities));
@@ -195,12 +210,26 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       }
     }
 
+    final reactionString = prefs.getString(_kReactionMruKey);
+    List<Reaction> reactionMru = const [];
+    if (reactionString != null && reactionString.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(reactionString);
+        if (decoded is List) {
+          reactionMru = decoded.whereType<Reaction>().toList();
+        }
+      } catch (_) {
+        reactionMru = const [];
+      }
+    }
+
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
           : null,
       showAllPriorities: showAllPriorities,
       connectionMru: connectionMru,
+      reactionMru: reactionMru,
     ));
   }
 
@@ -219,5 +248,10 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
         state.connectionMru.map((k, v) => MapEntry(k, v.toJson())),
       ),
     );
+  }
+
+  Future<void> _persistReactionMru() async {
+    final prefs = ProfilePreferences.instance;
+    await prefs.setString(_kReactionMruKey, jsonEncode(state.reactionMru));
   }
 }

@@ -22,6 +22,8 @@ class ThreadHeaderNotifier extends ChangeNotifier {
   void Function()? onSearchClosed;
   List<(Tag, int)> tags = const [];
   List<Tag> filter = const [];
+  List<(Reaction, int)> reactions = const [];
+  List<Reaction> reactionFilter = const [];
   bool isThreadVisible = false;
   bool isNewThread = false;
 
@@ -30,12 +32,16 @@ class ThreadHeaderNotifier extends ChangeNotifier {
     required void Function() onSearchClosed,
     required List<(Tag, int)> tags,
     required List<Tag> filter,
+    List<(Reaction, int)> reactions = const [],
+    List<Reaction> reactionFilter = const [],
     bool isNewThread = false,
   }) {
     this.onSearchChanged = onSearchChanged;
     this.onSearchClosed = onSearchClosed;
     this.tags = tags;
     this.filter = filter;
+    this.reactions = reactions;
+    this.reactionFilter = reactionFilter;
     isThreadVisible = true;
     this.isNewThread = isNewThread;
     notifyListeners();
@@ -46,6 +52,8 @@ class ThreadHeaderNotifier extends ChangeNotifier {
     onSearchClosed = null;
     tags = const [];
     filter = const [];
+    reactions = const [];
+    reactionFilter = const [];
     isThreadVisible = false;
     isNewThread = false;
     // Defer notification to avoid calling notifyListeners during dispose/unmount
@@ -58,6 +66,15 @@ class ThreadHeaderNotifier extends ChangeNotifier {
   void updateTags(List<(Tag, int)> tags, List<Tag> filter) {
     this.tags = tags;
     this.filter = filter;
+    notifyListeners();
+  }
+
+  void updateReactions(
+    List<(Reaction, int)> reactions,
+    List<Reaction> reactionFilter,
+  ) {
+    this.reactions = reactions;
+    this.reactionFilter = reactionFilter;
     notifyListeners();
   }
 }

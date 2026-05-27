@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'command.dart';
 import 'package:flutter/services.dart';
 import 'package:plot/router.dart';
@@ -5,17 +7,19 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/editor_clipboard.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
+import 'package:plot/util/link_type_copy.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'logging.dart';
 
 class AddNote extends Command {
-  AddNote(this._note)
+  AddNote(this._note, {LinkTypeConfig? linkType})
     : super(
-        title: 'Add note',
+        title: commandTitleAddNote(linkType),
         eventObject: EventObject.note,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,
@@ -208,6 +212,213 @@ class ToggleSelfTask extends NoteCommand {
       return CommandMessage('Failed to toggle task', isError: true);
     }
   }
+}
+
+/// Toggles an emoji reaction for the current user on a note.
+///
+/// Optimistically updates the local `note_reactions` row, marks the
+/// reaction as pending (`reactions_updated`), and schedules a push. The
+/// server's `update_note_reactions` RPC enforces only-self ownership;
+/// matching client-side behaviour is implicit because we always toggle
+/// the current user's canonical actor.
+/// Opens the [EmojiPicker] and toggles the chosen emoji on the note.
+/// Routes through [ToggleNoteReaction] for the actual write so all the
+/// optimistic-local + sync-push logic stays in one place.
+///
+/// Filters the picker by the thread's primary connector capability when
+/// known — same lookup used by [_NoteReactionsRow] (see widget/note.dart).
+class AddNoteReaction extends NoteCommand {
+  AddNoteReaction(super.note, {this.activityBloc})
+      : super(
+          title: 'React',
+          eventObject: EventObject.note,
+          eventAction: EventAction.tagged,
+          icon: FontAwesomeIcons.faceSmile,
+        );
+
+  final ThreadBloc? activityBloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      // Use the store's Link (the data row), not widget/link.dart (the
+      // URL widget) — both names exist in the imports above.
+      final links = activityBloc?.state.links ?? const [];
+      final source = links.isEmpty ? null : links.first.source;
+      final allowed = reactionCapabilitiesForLinkSource(source).allowed;
+
+      final prefs = context.read<LocalPreferencesBloc>();
+      final emoji = await EmojiPicker.pick(
+        context,
+        allowed: allowed?.toSet(),
+        mru: prefs.state.reactionMru,
+      );
+      if (emoji == null) return const CommandDone();
+
+      // Record before delegating so the MRU reflects the just-picked emoji
+      // for the next hover-toolbar render.
+      await prefs.recordReactionUsage(emoji);
+
+      // Reuse the existing toggle path. If the user already has this
+      // reaction it'll remove it; otherwise it adds. Matches the chip
+      // behaviour on _NoteReactionsRow.
+      if (!context.mounted) return const CommandDone();
+      return await ToggleNoteReaction(note, emoji).run(context);
+    } catch (e, stackTrace) {
+      log.severe('Error in AddNoteReaction: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to react', isError: true);
+    }
+  }
+}
+
+class ToggleNoteReaction extends NoteCommand {
+  ToggleNoteReaction(super.note, this.emoji)
+    : super(
+        title: 'React',
+        eventObject: EventObject.note,
+        eventAction: EventAction.tagged,
+      );
+
+  final Reaction emoji;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final selfActorId = Base.actorId;
+      final canonical = Actor.canonicalId(selfActorId);
+      final db = Store.get;
+
+      // Read the current local reactions row (may not exist yet).
+      final current = await (db.select(db.noteReactions)
+            ..where((t) => t.id.equals(note.id.toBytes())))
+          .getSingleOrNull();
+
+      final reactionsNow = <Reaction, List<ActorId>>{
+        for (final entry in (current?.reactions ?? const {}).entries)
+          entry.key: List<ActorId>.from(entry.value),
+      };
+      final updatesNow = <String, bool>{
+        ...?current?.reactionsUpdated,
+      };
+
+      final actors = reactionsNow.putIfAbsent(emoji, () => <ActorId>[]);
+      final present = actors.any(
+        (id) => Actor.canonicalId(id) == canonical,
+      );
+      final nowPresent = !present;
+
+      if (nowPresent) {
+        actors.add(canonical);
+      } else {
+        actors.removeWhere((id) => Actor.canonicalId(id) == canonical);
+        if (actors.isEmpty) reactionsNow.remove(emoji);
+      }
+      updatesNow[emoji] = nowPresent;
+
+      // Write back to local Drift; mark pending so it's pushed.
+      final companion = NoteReactionsCompanion(
+        id: Value(note.id),
+        reactions: Value(reactionsNow.isEmpty ? null : reactionsNow),
+        reactionsUpdated: Value(updatesNow),
+        updatedAt: Value(DateTime.now()),
+        pending: const Value(2),
+      );
+      await db
+          .into(db.noteReactions)
+          .insertOnConflictUpdate(companion);
+
+      // Schedule a push.
+      unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
+
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleNoteReaction: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to react', isError: true);
+    }
+  }
+}
+
+/// Returns up to [limit] MRU emoji reactions to render inline on the hover
+/// toolbar. Falls back to [kDefaultReactionMru] when the user has not yet
+/// reacted, so the toolbar always offers something. Filtered by the
+/// connector's reaction capabilities and by [exclude] (typically the
+/// emojis already active on this note, so the inline row never shows the
+/// same glyph twice). Callers shrink [limit] by the active-reaction count
+/// so the total emoji slots stay constant regardless of how many active
+/// reactions exist.
+List<Command> mruReactionsForToolbar(
+  BuildContext context,
+  Note note, {
+  required String? source,
+  required ActorId actorId,
+  int limit = 5,
+  Set<Reaction>? exclude,
+}) {
+  if (limit <= 0) return const [];
+  final stored = context.read<LocalPreferencesBloc>().state.reactionMru;
+  final mru = stored.isEmpty ? kDefaultReactionMru : stored;
+  final allowed = reactionCapabilitiesForLinkSource(source).allowed?.toSet();
+
+  final result = <Command>[];
+  for (final emoji in mru) {
+    if (allowed != null && !allowed.contains(emoji)) continue;
+    if (exclude != null && exclude.contains(emoji)) continue;
+    result.add(_QuickReactionCommand(note, emoji));
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+/// Renders an active emoji reaction inline in the note's command row.
+/// Uses the same `Button.icon(selected: true)` accent-color treatment as
+/// selected count-tags: no border, no background, just the glyph in
+/// accent. Tap toggles the reaction off via [ToggleNoteReaction].
+class ActiveNoteReaction extends NoteCommand {
+  ActiveNoteReaction(super.note, this.emoji)
+      : super(
+          title: emojiDisplayName(emoji),
+          eventObject: EventObject.note,
+          eventAction: EventAction.untagged,
+        );
+
+  final Reaction emoji;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      _emojiButtonIcon(context, emoji);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) =>
+      ToggleNoteReaction(note, emoji).run(context);
+}
+
+Widget _emojiButtonIcon(BuildContext _, Reaction emoji) => EmojiCommandIcon(emoji);
+
+/// Hover-toolbar wrapper around [ToggleNoteReaction] that renders an emoji
+/// glyph instead of an icon and skips MRU bookkeeping (the user is reusing
+/// an already-recent emoji; no MRU change to make).
+class _QuickReactionCommand extends NoteCommand {
+  _QuickReactionCommand(super.note, this.emoji)
+      : super(
+          // Tooltip text. Human-readable CLDR name when known (e.g.
+          // "grinning face"); falls back to the raw emoji for custom-emoji
+          // refs and any Unicode glyph not in the names map.
+          title: emojiDisplayName(emoji),
+          eventObject: EventObject.note,
+          eventAction: EventAction.tagged,
+        );
+
+  final Reaction emoji;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      _emojiButtonIcon(context, emoji);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) =>
+      ToggleNoteReaction(note, emoji).run(context);
 }
 
 class ToggleNoteTag extends NoteCommand {
@@ -754,102 +965,13 @@ List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
 }) {
-  final actorId = Base.actorId;
   final isViewer =
       (activityBloc?.state.thread.priority.isViewer ?? false) ||
       (activityBloc?.state.thread.isReadOnly ?? false);
-  final tags = Tag.getAll()
-      .where((tag) => !isViewer || tag.type == TagType.count)
-      .map((tag) => ToggleNoteTag(note, tag, actorId))
-      .toList();
   final commands = noteCommands(note, activityBloc: activityBloc);
-  final remove = tags
-      .where(
-        (cmd) =>
-            cmd.tag.type != TagType.compute && note.hasTag(cmd.tag, actorId),
-      )
-      .toList();
-  final add = tags
-      .where(
-        (cmd) =>
-            cmd.tag.addable == true &&
-            cmd.tag.type != TagType.compute &&
-            !note.hasTag(cmd.tag, actorId),
-      )
-      .toList();
-
-  final activeTags = remove.map((cmd) => cmd.tag).toList();
-  final suggestedTags = add.map((cmd) => cmd.tag).toList();
-  final activeTagCounts = {
-    for (final tag in activeTags) tag: TagActors.countOf(note.tags[tag]),
-  };
-
-  ShowCommands makeShowAll() => ShowCommands(
-    title: 'All tags',
-    icon: PlotIcon.more,
-    commandsBuilder: (_) async {
-      // Fetch fresh tag state when opened
-      final freshTags = Tag.getAll()
-          .where((tag) => !isViewer || tag.type == TagType.count)
-          .map((tag) => ToggleNoteTag(note, tag, actorId))
-          .toList();
-      final freshRemove = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.type != TagType.compute &&
-                note.hasTag(cmd.tag, actorId),
-          )
-          .toList();
-      final freshAdd = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.addable == true &&
-                cmd.tag.type != TagType.compute &&
-                !note.hasTag(cmd.tag, actorId),
-          )
-          .toList();
-      return Commands(
-        groups: [
-          if (freshRemove.isNotEmpty)
-            StaticCommandGroup(title: 'Remove tag', commands: freshRemove),
-          if (freshAdd.isNotEmpty)
-            StaticCommandGroup(title: 'Add tag', commands: freshAdd),
-        ],
-      );
-    },
-  );
-
   if (!note.draft && !isViewer) commands.add(ArchiveNote(note));
-
-  return [
-    if (commands.isNotEmpty)
-      StaticCommandGroup(title: 'Note', commands: commands),
-    StaticCommandGroup(
-      title: 'Note',
-      commands: [],
-      infoBuilder: (context, search) {
-        final hasSearch = search != null && search.isNotEmpty;
-        final filteredActive = hasSearch
-            ? activeTags.where((t) => t.matchesSearch(search)).toList()
-            : activeTags;
-        final filteredSuggested = hasSearch
-            ? suggestedTags.where((t) => t.matchesSearch(search)).toList()
-            : suggestedTags;
-        if (hasSearch && filteredActive.isEmpty && filteredSuggested.isEmpty) {
-          return null;
-        }
-        return TagRow(
-          activeTags: filteredActive,
-          suggestedTags: filteredSuggested,
-          activeTagCounts: activeTagCounts,
-          commandBuilder: (tag) => ToggleNoteTag(note, tag, actorId),
-          showAllBuilder: makeShowAll,
-          showMore: !hasSearch,
-        );
-      },
-      onActivate: (ctx) => makeShowAll().run(ctx),
-    ),
-  ];
+  if (commands.isEmpty) return const [];
+  return [StaticCommandGroup(title: 'Note', commands: commands)];
 }
 
 List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
@@ -876,6 +998,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     SelfTaskAction(note),
     if (!note.draft && activityBloc != null)
       ReplyToNote(note, activityBloc: activityBloc),
+    if (!note.draft) AddNoteReaction(note, activityBloc: activityBloc),
     if (!note.draft &&
         note.authorId.isCurrentUser &&
         note.content != null &&
@@ -894,37 +1017,6 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       ChangeNotePrivacy(note, threadBloc: activityBloc),
     ];
 
-}
-
-/// Returns up to 6 tag suggestions for quick actions.
-/// The number shown is reduced by the count of non-hardcoded tags already on the note.
-/// Takes from tagSuggestions list which is pre-sorted (common tags first, then all others).
-List<Command> topNoteTags(
-  Note note,
-  List<Tag> tagSuggestions,
-  ActorId actorId,
-) {
-  // Count non-hardcoded tags already on note
-  final activeNonHardcodedCount = tagSuggestions
-      .where((tag) => note.hasTag(tag, actorId))
-      .length;
-
-  // Calculate how many tags to show: 6 minus active non-hardcoded tags
-  final maxToShow = 4 - activeNonHardcodedCount;
-  if (maxToShow <= 0) return [];
-
-  // Filter to count tags not already on note (excluding archived/done)
-  return tagSuggestions
-      .where(
-        (tag) =>
-            tag.type == TagType.count &&
-            tag != Tag.archived &&
-            tag != Tag.done &&
-            !note.hasTag(tag, actorId),
-      )
-      .take(maxToShow)
-      .map((tag) => ToggleNoteTag(note, tag, actorId))
-      .toList();
 }
 
 class CopyNoteContent extends NoteCommand {
