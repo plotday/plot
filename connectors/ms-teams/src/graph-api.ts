@@ -1,7 +1,8 @@
 import type {
+  NewActor,
   NewContact,
   NewLinkWithNotes,
-  NewActor,
+  NewReactions,
 } from "@plotday/twister/plot";
 
 // ---- Microsoft Graph API types ----
@@ -31,6 +32,23 @@ export type TeamsMessageBody = {
   content: string;
 };
 
+/**
+ * A reaction on a Teams `chatMessage`. `reactionType` can be either:
+ *   - A legacy enum: "like" | "heart" | "laugh" | "surprised" | "sad" |
+ *     "angry" (older Teams clients still emit these), or
+ *   - A Unicode emoji string (e.g. "💯", "🎉") — Graph accepts and
+ *     returns these on newer Teams clients.
+ *
+ * `user.user.id` is the Microsoft Graph user GUID of the reactor.
+ */
+export type TeamsReaction = {
+  reactionType: string;
+  createdDateTime?: string;
+  user?: {
+    user?: TeamsUser;
+  };
+};
+
 export type TeamsMessage = {
   id: string;
   createdDateTime: string;
@@ -49,6 +67,7 @@ export type TeamsMessage = {
       user?: TeamsUser;
     };
   }>;
+  reactions?: TeamsReaction[];
   replies?: TeamsMessage[];
 };
 
@@ -241,6 +260,64 @@ export class GraphApi {
     );
   }
 
+  /**
+   * Set a reaction on a Teams channel message. `reactionType` is either
+   * a Unicode emoji ("💯") or a legacy enum value ("like", "heart",
+   * "laugh", "surprised", "sad", "angry"). Graph allows one reaction per
+   * user per message; calling setReaction with a different type replaces
+   * the user's prior reaction.
+   */
+  async setChannelReaction(
+    teamId: string,
+    channelId: string,
+    messageId: string,
+    reactionType: string
+  ): Promise<void> {
+    await this.call(
+      "POST",
+      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}/setReaction`,
+      { reactionType }
+    );
+  }
+
+  async unsetChannelReaction(
+    teamId: string,
+    channelId: string,
+    messageId: string,
+    reactionType: string
+  ): Promise<void> {
+    await this.call(
+      "POST",
+      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}/unsetReaction`,
+      { reactionType }
+    );
+  }
+
+  /** Same set/unset shape for chat (DM) messages. */
+  async setChatReaction(
+    chatId: string,
+    messageId: string,
+    reactionType: string
+  ): Promise<void> {
+    await this.call(
+      "POST",
+      `${this.baseUrl}/chats/${chatId}/messages/${messageId}/setReaction`,
+      { reactionType }
+    );
+  }
+
+  async unsetChatReaction(
+    chatId: string,
+    messageId: string,
+    reactionType: string
+  ): Promise<void> {
+    await this.call(
+      "POST",
+      `${this.baseUrl}/chats/${chatId}/messages/${messageId}/unsetReaction`,
+      { reactionType }
+    );
+  }
+
   // ---- Chats (DMs) ----
 
   async getChats(): Promise<Chat[]> {
@@ -402,6 +479,69 @@ function userToNewActor(user?: TeamsUser): NewActor | undefined {
 }
 
 /**
+ * Maps Teams legacy reaction enum values to Unicode emoji. Any
+ * non-legacy `reactionType` is assumed to already be Unicode (newer
+ * Teams clients emit emoji directly).
+ */
+export const TEAMS_LEGACY_REACTIONS: Record<string, string> = {
+  like: "👍",
+  heart: "❤️",
+  laugh: "😂",
+  surprised: "😮",
+  sad: "😢",
+  angry: "😠",
+};
+
+/** Reverse mapping for write-back (kept for parity; Graph also accepts
+ * Unicode directly, so most callers should just pass the emoji). */
+export const TEAMS_REACTION_LEGACY_KEYS: Record<string, string> = {};
+for (const [legacy, unicode] of Object.entries(TEAMS_LEGACY_REACTIONS)) {
+  if (!TEAMS_REACTION_LEGACY_KEYS[unicode]) {
+    TEAMS_REACTION_LEGACY_KEYS[unicode] = legacy;
+  }
+}
+
+/** Normalize a TeamsReaction's `reactionType` to a Unicode emoji. */
+export function normalizeTeamsReactionEmoji(reactionType: string): string {
+  return TEAMS_LEGACY_REACTIONS[reactionType] ?? reactionType;
+}
+
+/**
+ * Extract per-message reactions as NewReactions. Aggregates reactors
+ * per emoji and dedups by source.accountId.
+ */
+export function extractTeamsMessageReactions(
+  message: TeamsMessage
+): NewReactions | undefined {
+  if (!message.reactions || message.reactions.length === 0) return undefined;
+  const byEmoji = new Map<string, NewActor[]>();
+
+  for (const reaction of message.reactions) {
+    const emoji = normalizeTeamsReactionEmoji(reaction.reactionType);
+    if (!emoji) continue;
+    const actor = userToNewActor(reaction.user?.user);
+    if (!actor) continue;
+    const existing = byEmoji.get(emoji) ?? [];
+    existing.push(actor);
+    byEmoji.set(emoji, existing);
+  }
+
+  if (byEmoji.size === 0) return undefined;
+
+  const out: NewReactions = {};
+  for (const [emoji, actors] of byEmoji) {
+    const seen = new Set<string>();
+    out[emoji] = actors.filter((a) => {
+      const key = "source" in a && a.source ? a.source.accountId : "";
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return out;
+}
+
+/**
  * Extracts @mentions from a Teams message as NewActor[].
  */
 function extractMentions(message: TeamsMessage): NewActor[] {
@@ -461,14 +601,18 @@ export function transformChannelThread(
     },
     notes: allMessages
       .filter((msg) => msg.messageType === "message")
-      .map((msg) => ({
-        key: msg.id,
-        author: userToNewActor(msg.from?.user),
-        content: msg.body.content,
-        contentType: msg.body.contentType === "html" ? ("html" as const) : ("text" as const),
-        created: new Date(msg.createdDateTime),
-        mentions: extractMentions(msg),
-      })),
+      .map((msg) => {
+        const reactions = extractTeamsMessageReactions(msg);
+        return {
+          key: msg.id,
+          author: userToNewActor(msg.from?.user),
+          content: msg.body.content,
+          contentType: msg.body.contentType === "html" ? ("html" as const) : ("text" as const),
+          created: new Date(msg.createdDateTime),
+          mentions: extractMentions(msg),
+          ...(reactions ? { reactions } : {}),
+        };
+      }),
     ...(initialSync ? { unread: false, archived: false } : {}),
   };
 }
@@ -515,14 +659,18 @@ export function transformDmThread(
     },
     notes: messages
       .filter((msg) => msg.messageType === "message")
-      .map((msg) => ({
-        key: msg.id,
-        author: userToNewActor(msg.from?.user),
-        content: msg.body.content,
-        contentType: msg.body.contentType === "html" ? ("html" as const) : ("text" as const),
-        created: new Date(msg.createdDateTime),
-        mentions: members, // All participants for private thread visibility
-      })),
+      .map((msg) => {
+        const reactions = extractTeamsMessageReactions(msg);
+        return {
+          key: msg.id,
+          author: userToNewActor(msg.from?.user),
+          content: msg.body.content,
+          contentType: msg.body.contentType === "html" ? ("html" as const) : ("text" as const),
+          created: new Date(msg.createdDateTime),
+          mentions: members, // All participants for private thread visibility
+          ...(reactions ? { reactions } : {}),
+        };
+      }),
     ...(initialSync ? { unread: false, archived: false } : {}),
   };
 }

@@ -117,14 +117,14 @@ export class Gmail extends Connector<Gmail> {
   readonly linkTypes = [
     {
       type: "email",
-      label: "Email",
+      label: "Thread",
       noteLabel: "Reply",
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
-        { status: "starred", label: "Starred", tag: Tag.Star, active: true },
-        { status: "archived", label: "Archived", tag: Tag.Done, done: true },
+        { status: "starred", label: "Starred", active: true },
+        { status: "archived", label: "Archived", done: true },
       ],
       contactRoles: [
         { id: "to", label: "To", default: true },

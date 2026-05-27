@@ -8,7 +8,6 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 import { Options } from "@plotday/twister/options";
 import {
   AuthProvider,
@@ -129,8 +128,8 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open", task: true },
-        { status: "closed", label: "Closed", tag: Tag.Done, done: true },
-        { status: "merged", label: "Merged", tag: Tag.Done, done: true },
+        { status: "closed", label: "Closed", done: true },
+        { status: "merged", label: "Merged", done: true },
       ],
       supportsAssignee: true,
     },
@@ -143,7 +142,7 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open", task: true },
-        { status: "closed", label: "Closed", tag: Tag.Done, done: true },
+        { status: "closed", label: "Closed", done: true },
       ],
       supportsAssignee: true,
     },

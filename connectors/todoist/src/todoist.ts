@@ -67,7 +67,7 @@ export class Todoist extends Connector<Todoist> {
       logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
       statuses: [
         { status: "open", label: "Open", task: true },
-        { status: "done", label: "Done", tag: Tag.Done, done: true },
+        { status: "done", label: "Done", done: true },
       ],
       supportsAssignee: true,
     },
@@ -460,11 +460,9 @@ export class Todoist extends Connector<Todoist> {
       notes.push(subtaskNote);
     }
 
-    // Build tags for priority
-    const tags: Tag[] = [];
-    if (task.priority === 4) {
-      tags.push(Tag.Urgent);
-    }
+    // Priority-4 Todoist tasks no longer auto-tag as urgent. The user
+    // can react with 🚨 themselves; auto-marking caused noise on
+    // priorities the user didn't actually consider urgent.
 
     return {
       source,
@@ -494,7 +492,7 @@ export class Todoist extends Connector<Todoist> {
             ],
           }
         : {}),
-      ...(tags.length > 0 ? { tags: { add: tags } } : {}),
+
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
     };

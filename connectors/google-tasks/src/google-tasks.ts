@@ -70,7 +70,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
         { status: "open", label: "Open", task: true, createDefault: true },
-        { status: "done", label: "Done", tag: Tag.Done, done: true },
+        { status: "done", label: "Done", done: true },
       ],
       supportsAssignee: false,
     },

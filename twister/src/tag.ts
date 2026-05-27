@@ -1,54 +1,23 @@
 /**
- * Thread tags. Three types:
- * 1. Special tags, which trigger other behaviors
- * 2. Toggle tags, which anyone can toggle a shared value on or off
- * 3. Count tags, where everyone can add or remove their own
+ * Compute tags — system state the runtime auto-manages on threads and
+ * notes (`todo`, `done`, `twist` activity marker, …).
+ *
+ * The toggle range (100–999) and count range (1000–1027) have been
+ * retired in favour of the open Unicode emoji `Reaction` type — see
+ * `@plotday/twister/plot`'s `Reactions` / `NewReactions` and the
+ * per-row `note.reactions` / `thread.reactions` fields. Connectors
+ * route emoji reactions through `reactions`, not `tags`.
+ *
+ * `Tag.Twist` is the surviving non-trivial tag: a system marker the
+ * runtime adds to a note while a twist is processing it, and clears
+ * once the twist returns. It's not user-facing and not a reaction.
  */
 export enum Tag {
-  // Special tags
   Todo = 1,
   Done = 3,
-
-  // Toggle tags
-  Pinned = 100,
-  Urgent = 101,
-  Goal = 103,
-  Decision = 104,
-  Waiting = 105,
-  Blocked = 106,
-  Warning = 107,
-  Question = 108,
-  Twist = 109,
-  Star = 110,
-  Idea = 111,
-
-  // Count tags
-  Yes = 1000,
-  No = 1001,
-  Volunteer = 1002,
-  Tada = 1003,
-  Fire = 1004,
-  Totally = 1005,
-  Looking = 1006,
-  Love = 1007,
-  Rocket = 1008,
-  Sparkles = 1009,
-  Thanks = 1010,
-  Smile = 1011,
-  Wave = 1012,
-  Praise = 1015,
-  Applause = 1016,
-  Cool = 1017,
-  Sad = 1018,
-  Reply = 1019,
-  Thinking = 1013,
-  Remember = 1014,
-  Agreed = 1020,
-  Relieved = 1021,
-  Send = 1022,
-  Noted = 1023,
-  Laugh = 1024,
-  Surprised = 1025,
-  Confused = 1026,
-  Dismayed = 1027,
+  /** System marker for "a twist is processing this note." Set by the
+   * runtime when a twist callback fires, cleared on return. Twists
+   * may still write `{ [Tag.Twist]: true | false }` to twistTags to
+   * mark/unmark a note explicitly. */
+  Twist = 12,
 }

@@ -16,7 +16,6 @@ import {
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 import { Connector, type CreateLinkDraft, type NoteWriteBackResult } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -86,7 +85,7 @@ export class Linear extends Connector<Linear> {
           createDefault: true,
         },
         { status: "started", label: "In Progress" },
-        { status: "completed", label: "Done", tag: Tag.Done, done: true },
+        { status: "completed", label: "Done", done: true },
         { status: "cancelled", label: "Cancelled", done: true },
       ],
       supportsAssignee: true,
@@ -181,9 +180,7 @@ export class Linear extends Connector<Linear> {
             ...(s.type === "unstarted"
               ? { task: true as const, createDefault: true as const }
               : {}),
-            ...(s.type === "completed"
-              ? { tag: Tag.Done, done: true as const }
-              : {}),
+            ...(s.type === "completed" ? { done: true as const } : {}),
             ...(s.type === "cancelled" ? { done: true as const } : {}),
           }));
         return {

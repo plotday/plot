@@ -11,6 +11,29 @@ import {
 import { Twist } from "./twist";
 
 /**
+ * Declares how a connector's platform handles emoji reactions.
+ *
+ * Drives Plot UI behavior (e.g. the picker filters the available
+ * reactions on notes whose primary connector declares `fixed`) and
+ * outbound dispatch (Plot won't try to push an emoji the platform
+ * can't accept).
+ *
+ * Variants:
+ * - `open-unicode`: Platform accepts any Unicode emoji. `customEmoji`
+ *   indicates whether the platform additionally supports workspace
+ *   custom emoji (Slack, Google Chat).
+ * - `unicode-subset`: Platform accepts Unicode but only a finite set.
+ *   `subset` lists the allowed emoji (omit for "currently full Unicode
+ *   per docs, future-proofed for shrinkage").
+ * - `fixed`: Platform only accepts a fixed set (e.g. LinkedIn
+ *   Messaging's 7-reaction set). `allowed` lists every supported emoji.
+ */
+export type ReactionCapabilities =
+  | { mode: "open-unicode"; customEmoji?: "workspace" | "none" }
+  | { mode: "unicode-subset"; subset?: readonly string[] }
+  | { mode: "fixed"; allowed: readonly string[] };
+
+/**
  * Result returned from {@link Connector.onNoteCreated} and
  * {@link Connector.onNoteUpdated} to report what the external system now
  * has stored for the note.
@@ -231,6 +254,17 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * Used for display in the UI (icons, labels, statuses).
    */
   readonly linkTypes?: LinkTypeConfig[];
+
+  /**
+   * Declares how this connector's platform handles emoji reactions.
+   * Used to filter the reaction picker for notes whose primary connector
+   * is this one, and to guard outbound dispatch from sending emoji the
+   * platform can't accept.
+   *
+   * Leave undefined for connectors whose platform has no concept of
+   * reactions (calendar, file storage, issue trackers without reactions).
+   */
+  readonly reactionCapabilities?: ReactionCapabilities;
 
   /**
    * When true, this connector is mentioned by default on replies to threads it created.

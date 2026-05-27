@@ -63,6 +63,16 @@ export class MsTeams extends Connector<MsTeams> {
 
   readonly provider = AuthProvider.Microsoft;
   readonly scopes = MsTeams.SCOPES;
+  // Teams Graph API accepts both legacy enum reaction types (like,
+  // heart, laugh, surprised, sad, angry) and Unicode emoji directly.
+  // Teams allows only one reaction per user per message; bidirectional
+  // write-back is wired through inbound today, outbound (set/unset
+  // via the new GraphApi reaction helpers) is left for a per-actor
+  // actAs() follow-up — see onNoteUpdated.
+  readonly reactionCapabilities = {
+    mode: "open-unicode" as const,
+    customEmoji: "none" as const,
+  };
   readonly linkTypes = [
     {
       type: "message",
@@ -957,6 +967,13 @@ export class MsTeams extends Connector<MsTeams> {
     thread: Thread
   ): Promise<NoteWriteBackResult | void> {
     if (!note.key) return;
+
+    // Reaction write-back: deferred to a follow-up. Teams allows only
+    // one reaction per user per message via Graph, so a diff-and-apply
+    // pass needs per-actor `actAs()` write-back tokens to attribute
+    // reactions correctly. The new
+    // GraphApi.setChannelReaction / setChatReaction / unset* helpers
+    // are in place; wire them when actAs lands.
 
     const meta = thread.meta ?? {};
     const syncableId = meta.syncableId as string;
