@@ -1346,8 +1346,7 @@ class _ThreadActionsRow extends StatelessWidget {
       todoButton = Button.icon(
         CommandWrapper(
           ToggleThreadActive(thread),
-          icon: Value(FontAwesomeIcons.circle),
-          hoverIcon: Value(FontAwesomeIcons.circlePlus),
+          icon: Value(FontAwesomeIcons.circlePlus),
           title: 'To do',
         ),
       );
@@ -1374,7 +1373,23 @@ class _ThreadActionsRow extends StatelessWidget {
       selectedColor: threadColor,
     );
 
-    final startGroup = <Widget>[todoButton, scheduleButton];
+    final taskListButton = Button.icon(
+      ToggleThreadTask(thread),
+      selected: thread.task,
+      selectedColor: context.colour.accent,
+    );
+    final readingListButton = Button.icon(
+      ToggleThreadToRead(thread),
+      selected: thread.toRead,
+      selectedColor: context.colour.accent,
+    );
+
+    final startGroup = <Widget>[
+      todoButton,
+      scheduleButton,
+      taskListButton,
+      readingListButton,
+    ];
 
     final endGroup = <Widget>[
       if (!readOnly) Button.icon(EditThread(thread)),

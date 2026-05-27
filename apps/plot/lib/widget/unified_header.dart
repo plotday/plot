@@ -560,6 +560,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
+  /// Task list / Reading list filter toggle. The two are mutually
+  /// exclusive ([ToggleListFilter] enforces it); tapping an active one
+  /// clears it. Matches the shared "active filter" styling used in the
+  /// search field's suffix row (selected + accent color).
+  Widget _listFilterButton(BuildContext context, Tag tag) {
+    final isOn =
+        context.read<PriorityBloc>().state.filter.contains(tag);
+    return Button.icon(
+      ToggleListFilter(tag, context: context),
+      selected: isOn,
+      selectedColor: context.colour.accent,
+    );
+  }
+
   /// Builds the title widget (priority/event title + tracking pill).
   /// When [alignLeft] is true the title hugs the start of its slot;
   /// otherwise it centers.
@@ -585,6 +599,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           Flexible(child: _tightTextBox(child: title)),
           SizedBox(width: layoutState.multiPanel ? 4 : 8),
           if (layoutState.multiPanel) _searchButton(),
+          if (layoutState.multiPanel) _listFilterButton(context, Tag.task),
+          if (layoutState.multiPanel) _listFilterButton(context, Tag.reading),
           _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
@@ -827,8 +843,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       todoIcon = Button.icon(
         CommandWrapper(
           ToggleThreadActive(thread),
-          icon: Value(FontAwesomeIcons.circle),
-          hoverIcon: Value(FontAwesomeIcons.circlePlus),
+          icon: Value(FontAwesomeIcons.circlePlus),
           title: 'To do',
         ),
       );
@@ -845,9 +860,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
+    final taskListButton = Button.icon(
+      ToggleThreadTask(thread),
+      selected: thread.task,
+      selectedColor: context.colour.accent,
+    );
+    final readingListButton = Button.icon(
+      ToggleThreadToRead(thread),
+      selected: thread.toRead,
+      selectedColor: context.colour.accent,
+    );
+
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [todoIcon, calendarIcon],
+      children: [todoIcon, calendarIcon, taskListButton, readingListButton],
     );
   }
 
