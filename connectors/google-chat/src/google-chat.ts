@@ -6,7 +6,6 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import type { Actor, ContentType, NewActor, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 import {
   AuthProvider,
   type AuthToken,
@@ -19,8 +18,6 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   GoogleChatApi,
-  EMOJI_TO_TAG,
-  TAG_TO_EMOJI,
   type EmojiReaction,
   type Message,
   type MemberInfo,
@@ -95,6 +92,13 @@ export class GoogleChat extends Connector<GoogleChat> {
     GoogleChat.SCOPES,
     GoogleContacts.SCOPES
   );
+  readonly reactionCapabilities = {
+    mode: "open-unicode" as const,
+    // Custom workspace emojis are skipped on sync-in and not yet pushed
+    // on write-back; flip to "workspace" once the custom_emoji image
+    // cache lands.
+    customEmoji: "none" as const,
+  };
   readonly linkTypes = [
     {
       type: "message",
@@ -1227,32 +1231,31 @@ export class GoogleChat extends Connector<GoogleChat> {
       return writeBack; // Message may not exist anymore
     }
 
-    // Build set of Plot tags that have emoji mappings (any actor)
-    const plotTags = new Set<Tag>();
-    for (const [tagIdStr, actorIds] of Object.entries(note.tags)) {
-      const tagId = parseInt(tagIdStr) as Tag;
-      if (!TAG_TO_EMOJI[tagId]) continue;
-      if (actorIds && actorIds.length > 0) {
-        plotTags.add(tagId);
-      }
+    // Plot-side: any emoji with at least one reactor is "present in Plot".
+    // Pre-existing behavior is to write back as the authenticated user
+    // regardless of which actor reacted in Plot; per-actor write-back
+    // via actAs() can be a follow-up.
+    const plotEmojis = new Set<string>();
+    for (const [emoji, actorIds] of Object.entries(note.reactions)) {
+      // Only Unicode emoji round-trip today (custom emoji are skipped
+      // on sync-in and have no createReaction path here yet).
+      if (emoji.includes(":")) continue;
+      if (actorIds && actorIds.length > 0) plotEmojis.add(emoji);
     }
 
-    // Build set of the authenticated user's current reactions in Google Chat
-    const chatTags = new Map<Tag, string>(); // Tag → reaction resource name
+    // Google Chat side: the authenticated user's existing reactions on
+    // this message, keyed by unicode → reaction resource name.
+    const chatEmojis = new Map<string, string>();
     for (const reaction of currentReactions) {
       if (reaction.user.name !== authUser.googleUserId) continue;
       const unicode = reaction.emoji.unicode;
       if (!unicode) continue;
-      const tag = EMOJI_TO_TAG[unicode];
-      if (!tag) continue;
-      chatTags.set(tag, reaction.name);
+      chatEmojis.set(unicode, reaction.name);
     }
 
     // Add reactions present in Plot but not in Google Chat
-    for (const tag of plotTags) {
-      if (chatTags.has(tag)) continue;
-      const emoji = TAG_TO_EMOJI[tag];
-      if (!emoji) continue;
+    for (const emoji of plotEmojis) {
+      if (chatEmojis.has(emoji)) continue;
       try {
         await api.createReaction(messageName, emoji);
       } catch (error) {
@@ -1261,8 +1264,8 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
 
     // Remove reactions present in Google Chat but not in Plot
-    for (const [tag, reactionName] of chatTags) {
-      if (plotTags.has(tag)) continue;
+    for (const [emoji, reactionName] of chatEmojis) {
+      if (plotEmojis.has(emoji)) continue;
       try {
         await api.deleteReaction(reactionName);
       } catch (error) {

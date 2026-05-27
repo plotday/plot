@@ -2,9 +2,8 @@ import type {
   NewLinkWithNotes,
   NewActor,
   NewContact,
-  NewTags,
+  NewReactions,
 } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 
 // ---- Google Chat API types ----
 
@@ -539,101 +538,68 @@ export function groupMessagesByThread(
   return groups;
 }
 
-/**
- * Maps common Unicode emoji to Plot Count Tags.
- */
-export const EMOJI_TO_TAG: Record<string, Tag> = {
-  "👍": Tag.Yes,
-  "👎": Tag.No,
-  "🎉": Tag.Tada,
-  "🔥": Tag.Fire,
-  "❤️": Tag.Love,
-  "❤": Tag.Love,
-  "🚀": Tag.Rocket,
-  "✨": Tag.Sparkles,
-  "🙏": Tag.Thanks,
-  "😊": Tag.Smile,
-  "👋": Tag.Wave,
-  "👏": Tag.Applause,
-  "😎": Tag.Cool,
-  "😢": Tag.Sad,
-  "👀": Tag.Looking,
-  "💯": Tag.Totally,
-};
-
-/**
- * Reverse mapping: Plot Count Tag → Unicode emoji.
- * Derived from EMOJI_TO_TAG, preferring the first match for duplicates.
- */
-export const TAG_TO_EMOJI: Partial<Record<Tag, string>> = {};
-for (const [emoji, tag] of Object.entries(EMOJI_TO_TAG)) {
-  if (!TAG_TO_EMOJI[tag as Tag]) TAG_TO_EMOJI[tag as Tag] = emoji;
-}
-
 // Note: mentions on notes are for twist/connector dispatch routing only.
 // Person contacts should NOT be in mentions — use thread-level accessContacts
 // for visibility. The thread already has accessContacts set to space members.
 
 /**
- * Builds note-level tags for a single message from its reactions.
+ * Builds note-level reactions for a single message from Google Chat's
+ * reaction data. Unicode emoji pass through directly; custom workspace
+ * emojis are skipped for now (cached image_url support is a follow-up).
+ *
  * When per-user reaction data is available (from listReactions API),
- * uses that for accurate actor attribution. Otherwise falls back to
+ * each reactor is attributed individually. Otherwise falls back to
  * emojiReactionSummaries and attributes to the message sender as a proxy.
  */
-function extractMessageReactionTags(
+export function extractMessageReactions(
   msg: Message,
   reactions?: EmojiReaction[],
   memberInfo?: Map<string, MemberInfo>,
-): NewTags | undefined {
-  const tagActors = new Map<Tag, NewActor[]>();
+): NewReactions | undefined {
+  const byEmoji = new Map<string, NewActor[]>();
 
   if (reactions && reactions.length > 0) {
     // Per-user reaction data available — filter to this message
     const msgId = msg.name;
     for (const reaction of reactions) {
       // Reaction name: spaces/{spaceId}/messages/{messageId}/reactions/{reactionId}
-      // Check if this reaction belongs to this message
       if (reaction.name && !reaction.name.startsWith(msgId + "/")) continue;
 
       const unicode = reaction.emoji.unicode;
-      if (!unicode) continue;
-      const tag = EMOJI_TO_TAG[unicode];
-      if (!tag) continue;
+      if (!unicode) continue; // skip custom emojis until image caching lands
 
       const actor = reactionUserToNewActor(reaction.user, memberInfo);
-      const existing = tagActors.get(tag) ?? [];
+      const existing = byEmoji.get(unicode) ?? [];
       existing.push(actor);
-      tagActors.set(tag, existing);
+      byEmoji.set(unicode, existing);
     }
   } else if (msg.emojiReactionSummaries) {
     // Fall back to summary data — attribute to message sender as a proxy
     for (const summary of msg.emojiReactionSummaries) {
       const unicode = summary.emoji.unicode;
       if (!unicode) continue;
-      const tag = EMOJI_TO_TAG[unicode];
-      if (!tag) continue;
 
       const actor = senderToNewActor(msg.sender, memberInfo);
-      const existing = tagActors.get(tag) ?? [];
+      const existing = byEmoji.get(unicode) ?? [];
       existing.push(actor);
-      tagActors.set(tag, existing);
+      byEmoji.set(unicode, existing);
     }
   }
 
-  if (tagActors.size === 0) return undefined;
+  if (byEmoji.size === 0) return undefined;
 
-  const tags: NewTags = {};
-  for (const [tag, actors] of tagActors) {
+  const out: NewReactions = {};
+  for (const [emoji, actors] of byEmoji) {
     // Deduplicate actors by source accountId
     const seen = new Set<string>();
-    tags[tag] = actors.filter((a) => {
+    out[emoji] = actors.filter((a) => {
       const key = "source" in a && a.source ? a.source.accountId : "name" in a ? a.name : "";
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }
-  return tags;
+  return out;
 }
 
 /**
@@ -711,7 +677,7 @@ export function transformChatThread(
       const content = baseContent && attachmentMarkdown
         ? baseContent + attachmentMarkdown
         : baseContent;
-      const reactionTags = extractMessageReactionTags(msg, reactions, memberInfo);
+      const messageReactions = extractMessageReactions(msg, reactions, memberInfo);
 
       return {
         key: `message-${extractMessageId(msg.name)}`,
@@ -719,7 +685,7 @@ export function transformChatThread(
         contentType: msg.formattedText ? ("html" as const) : ("text" as const),
         created: new Date(msg.createTime),
         author: senderToNewActor(msg.sender, memberInfo),
-        ...(reactionTags ? { tags: reactionTags } : {}),
+        ...(messageReactions ? { reactions: messageReactions } : {}),
         checkForTasks: true,
       };
     }),
