@@ -400,6 +400,13 @@ class ActiveNoteReaction extends NoteCommand {
 /// inheriting their foreground color. Shared between [ActiveNoteReaction]
 /// and [_QuickReactionCommand] so the visual treatment matches across the
 /// hover row regardless of selected state.
+///
+/// NotoEmoji glyphs paint a fair bit smaller than their line box (room
+/// reserved for ascent/descent), so at the same `fontSize` they read as
+/// visibly smaller than the surrounding FaIcons. Render the emoji at a
+/// slightly larger `fontSize` and use an `OverflowBox` so the larger line
+/// box doesn't push the surrounding button taller / get clipped by the
+/// parent — the glyph's painted area still fits within `iconSize`.
 Widget _emojiButtonIcon(BuildContext _, Reaction emoji) {
   return Builder(
     builder: (ctx) {
@@ -409,11 +416,15 @@ Widget _emojiButtonIcon(BuildContext _, Reaction emoji) {
       return SizedBox(
         width: iconSize,
         height: iconSize,
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: DefaultTextStyle.merge(
-            style: TextStyle(color: color),
-            child: EmojiText(emoji, size: iconSize),
+        child: Center(
+          child: OverflowBox(
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            alignment: Alignment.center,
+            child: DefaultTextStyle.merge(
+              style: TextStyle(color: color),
+              child: EmojiText(emoji, size: iconSize * 1.1),
+            ),
           ),
         ),
       );
