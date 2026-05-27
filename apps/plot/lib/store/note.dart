@@ -361,6 +361,7 @@ class Note extends Equatable implements Comparable<Note> {
     bool? archived = false,
     bool? draft = false,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     NoteId? threadNoteId,
   }) {
     // Check if notes for this activity have been loaded, if not trigger pull
@@ -384,13 +385,22 @@ class Note extends Equatable implements Comparable<Note> {
 
     final n = Store.get.notes;
     final tags = Store.get.alias(Store.get.noteTags, 'tags');
+    final reactions = Store.get.alias(Store.get.noteReactions, 'reactions');
+    final hasReactionFilter =
+        reactionFilter != null && reactionFilter.isNotEmpty;
 
-    // Build query with joins
-    var query =
-        Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
-          ..where(n.threadId.equalsValue(threadId))
-          ..orderBy([OrderingTerm.desc(n.sourceCreatedAt)])
-          ..addColumns([tags.tags]);
+    // Build query with joins. JOIN noteReactions only when filtering by them
+    // so the unfiltered path stays as cheap as before.
+    var query = Store.get
+        .select(n)
+        .join([
+          leftOuterJoin(tags, tags.id.equalsExp(n.id)),
+          if (hasReactionFilter)
+            leftOuterJoin(reactions, reactions.id.equalsExp(n.id)),
+        ])
+      ..where(n.threadId.equalsValue(threadId))
+      ..orderBy([OrderingTerm.desc(n.sourceCreatedAt)])
+      ..addColumns([tags.tags]);
 
     // Filter by archived status if archived parameter is provided
     if (archived != null) {
@@ -410,15 +420,24 @@ class Note extends Equatable implements Comparable<Note> {
     }
 
     // Add tag filtering if filter list is provided
-    // This must happen AFTER the tags table is joined
+    // This must happen AFTER the tags table is joined.
+    // OR-within-section: any selected tag matches. `tag.id` is a UUID,
+    // safe to inline.
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
-      for (final tag in mutableFilter) {
-        query.where(
-          CustomExpression<bool>(
-            'JSON_EXTRACT(tags.tags, \'\$.${tag.id}\') IS NOT NULL',
-          ),
-        );
-      }
+      final orClause = mutableFilter
+          .map((t) => "JSON_EXTRACT(tags.tags, '\$.${t.id}') IS NOT NULL")
+          .join(' OR ');
+      query.where(CustomExpression<bool>('($orClause)'));
+    }
+
+    // Reaction filter: OR-within-section, AND'd against the tag predicate
+    // via Drift's separate .where call.
+    if (hasReactionFilter) {
+      final orClause = reactionFilter
+          .map((e) =>
+              "JSON_EXTRACT(reactions.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .join(' OR ');
+      query.where(CustomExpression<bool>('($orClause)'));
     }
 
 // Watch the query and transform results to Note objects
@@ -527,6 +546,52 @@ class Note extends Equatable implements Comparable<Note> {
         final result = tagCounts.entries.map((e) => (e.key, e.value)).toList()
           ..sort((a, b) => b.$2.compareTo(a.$2));
 
+        return result;
+      },
+    );
+  }
+
+  /// Watch all reactions present on a thread's notes and the thread itself.
+  /// Returns (Reaction, count) tuples sorted by occurrence descending. Used
+  /// to populate the reaction-filter picker on the thread page.
+  static Stream<List<(Reaction, int)>> watchReactionsForActivity(
+    ThreadId threadId,
+  ) {
+    final tr = Store.get.threadReactions;
+    final nr = Store.get.noteReactions;
+    final n = Store.get.notes;
+
+    final threadReactionsQuery = Store.get.select(tr)
+      ..where((t) => t.id.equalsValue(threadId));
+
+    final noteReactionsQuery = Store.get.select(nr).join([
+      innerJoin(n, n.id.equalsExp(nr.id) & n.archivedAt.isNull()),
+    ])..where(n.threadId.equalsValue(threadId));
+
+    return Rx.combineLatest2(
+      threadReactionsQuery.watch(),
+      noteReactionsQuery.watch(),
+      (List<ThreadReactionsRow> threadRows, List<TypedResult> noteRows) {
+        final counts = <Reaction, Set<Uuid>>{};
+        for (final row in threadRows) {
+          final reactions = row.reactions;
+          if (reactions == null) continue;
+          for (final emoji in reactions.keys) {
+            counts.putIfAbsent(emoji, () => <Uuid>{}).add(threadId);
+          }
+        }
+        for (final row in noteRows) {
+          final noteRow = row.readTable(nr);
+          final reactions = noteRow.reactions;
+          if (reactions == null) continue;
+          for (final emoji in reactions.keys) {
+            counts.putIfAbsent(emoji, () => <Uuid>{}).add(noteRow.id);
+          }
+        }
+        final result = counts.entries
+            .map((e) => (e.key, e.value.length))
+            .toList()
+          ..sort((a, b) => b.$2.compareTo(a.$2));
         return result;
       },
     );

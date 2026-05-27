@@ -9,19 +9,27 @@ class ThreadState extends Equatable {
     List<Link> links = const [],
     this.showArchived = false,
     List<Tag> filter = const [],
+    List<Reaction> reactionFilter = const [],
     this.search = '',
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
+    List<(Reaction, int)> reactions = const [],
     this.replyTo,
     this.editingNote,
     this.threadNoteId,
   }) : notes = notes.isNotEmpty ? List.unmodifiable(notes) : notes,
        links = links.isNotEmpty ? List.unmodifiable(links) : links,
        filter = filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+       reactionFilter = reactionFilter.isNotEmpty
+           ? List.unmodifiable(reactionFilter)
+           : reactionFilter,
        tags = tags.isNotEmpty ? List.unmodifiable(tags) : tags,
        tagSuggestions = tagSuggestions.isNotEmpty
            ? List.unmodifiable(tagSuggestions)
            : tagSuggestions,
+       reactions = reactions.isNotEmpty
+           ? List.unmodifiable(reactions)
+           : reactions,
        hasOtherAuthors =
            notes.firstWhereOrNull((note) => !note.authorId.isCurrentUser) !=
            null,
@@ -33,9 +41,11 @@ class ThreadState extends Equatable {
   final List<Link> links;
   final bool showArchived;
   final List<Tag> filter;
+  final List<Reaction> reactionFilter;
   final String search;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
+  final List<(Reaction, int)> reactions;
   final Note? replyTo;
   final Note? editingNote;
   final NoteId? threadNoteId;
@@ -85,9 +95,11 @@ class ThreadState extends Equatable {
     List<Link>? links,
     bool? showArchived,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     String? search,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
+    List<(Reaction, int)>? reactions,
     Note? replyTo,
     bool clearReplyTo = false,
     Note? editingNote,
@@ -108,6 +120,11 @@ class ThreadState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
+      reactionFilter: reactionFilter != null
+          ? (reactionFilter.isNotEmpty
+                ? List.unmodifiable(reactionFilter)
+                : reactionFilter)
+          : this.reactionFilter,
       search: search ?? this.search,
       tags: tags != null
           ? (tags.isNotEmpty ? List.unmodifiable(tags) : tags)
@@ -117,6 +134,9 @@ class ThreadState extends Equatable {
                 ? List.unmodifiable(tagSuggestions)
                 : tagSuggestions)
           : this.tagSuggestions,
+      reactions: reactions != null
+          ? (reactions.isNotEmpty ? List.unmodifiable(reactions) : reactions)
+          : this.reactions,
       replyTo: clearReplyTo ? null : (replyTo ?? this.replyTo),
       editingNote: clearEditingNote
           ? null
@@ -135,9 +155,11 @@ class ThreadState extends Equatable {
     links,
     showArchived,
     filter,
+    reactionFilter,
     search,
     tags,
     tagSuggestions,
+    reactions,
     replyTo,
     editingNote,
     threadNoteId,

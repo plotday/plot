@@ -10,6 +10,7 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/emoji.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'logging.dart';
@@ -347,6 +348,117 @@ class ToggleIconFilter extends Command {
   }
 }
 
+/// Replace the reaction filter set across whichever bloc is in scope.
+class SetReactionFilters extends Command {
+  SetReactionFilters({required this.emojis, String? title})
+    : super(
+        title: title ?? _generateTitle(emojis),
+        subtitle: _generateSubtitle(emojis),
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+      );
+
+  final List<Reaction> emojis;
+
+  static String _generateTitle(List<Reaction> emojis) {
+    if (emojis.isEmpty) return 'Clear reaction filters';
+    if (emojis.length == 1) return emojis.first;
+    return '${emojis.length} reactions';
+  }
+
+  static String _generateSubtitle(List<Reaction> emojis) {
+    if (emojis.isEmpty) return 'Show all threads';
+    if (emojis.length == 1) {
+      return 'Show threads reacted with ${emojis.first}';
+    }
+    return 'Show threads reacted with ${emojis.join(' ')}';
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      context.read<PriorityBloc>().updateReactionFilter(emojis);
+    } on ProviderNotFoundException {
+      // not in scope
+    }
+    try {
+      context.read<ThreadBloc>().updateReactionFilter(emojis);
+    } on ProviderNotFoundException {
+      // not in scope
+    }
+    return const CommandDone();
+  }
+}
+
+/// Toggle a single emoji in the reaction filter for the active bloc(s).
+class ToggleReactionFilter extends Command {
+  ToggleReactionFilter._({required this.emoji, super.on})
+    : super(
+        title: emojiDisplayName(emoji),
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+      );
+
+  factory ToggleReactionFilter(
+    Reaction emoji, {
+    required BuildContext context,
+  }) {
+    return ToggleReactionFilter._(emoji: emoji, on: _isActive(context, emoji));
+  }
+
+  final Reaction emoji;
+
+  static bool? _isActive(BuildContext context, Reaction emoji) {
+    try {
+      return context.read<ThreadBloc>().state.reactionFilter.contains(emoji);
+    } on ProviderNotFoundException {
+      try {
+        return context
+            .read<PriorityBloc>()
+            .state
+            .reactionFilter
+            .contains(emoji);
+      } on ProviderNotFoundException {
+        return null;
+      }
+    }
+  }
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    return EmojiCommandIcon(emoji);
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    void toggleIn(List<Reaction> current) {
+      if (current.contains(emoji)) {
+        current.remove(emoji);
+      } else {
+        current.add(emoji);
+      }
+    }
+
+    try {
+      final bloc = context.read<ThreadBloc>();
+      final next = List<Reaction>.from(bloc.state.reactionFilter);
+      toggleIn(next);
+      bloc.updateReactionFilter(next);
+    } on ProviderNotFoundException {
+      // not in scope
+    }
+    try {
+      final bloc = context.read<PriorityBloc>();
+      final next = List<Reaction>.from(bloc.state.reactionFilter);
+      toggleIn(next);
+      bloc.updateReactionFilter(next);
+    } on ProviderNotFoundException {
+      // not in scope
+    }
+    return const CommandDone();
+  }
+}
+
 class PickFilterCommand extends ShowCommands {
   PickFilterCommand({
     required List<Command> Function(BuildContext) filterCommandsBuilder,
@@ -375,15 +487,18 @@ class PickFilterCommand extends ShowCommands {
            final otherTagFilters = tagFilters
                .where((c) => !listTags.contains(c.tag))
                .toList();
+           final reactionFilters =
+               commands.whereType<ToggleReactionFilter>().toList();
 
            // Split active vs. inactive across all filter types. Active
            // filters collect into a single "Filters" section at the top
            // (mirroring the share picker's "Shared" section). Inactive
            // options stay grouped by type below — Lists first, then
-           // Thread type, then Tags.
+           // Thread type, then Tags, then Reactions.
            final activeFilters = <Command>[
              ...iconFilters.where((c) => c.on == true),
              ...tagFilters.where((c) => c.on == true),
+             ...reactionFilters.where((c) => c.on == true),
            ];
            final inactiveListFilters = listFilters
                .where((c) => c.on != true)
@@ -392,6 +507,9 @@ class PickFilterCommand extends ShowCommands {
                .where((c) => c.on != true)
                .toList();
            final inactiveOtherTagFilters = otherTagFilters
+               .where((c) => c.on != true)
+               .toList();
+           final inactiveReactionFilters = reactionFilters
                .where((c) => c.on != true)
                .toList();
 
@@ -416,6 +534,11 @@ class PickFilterCommand extends ShowCommands {
                  StaticCommandGroup(
                    title: 'Tags',
                    commands: inactiveOtherTagFilters,
+                 ),
+               if (inactiveReactionFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Reactions',
+                   commands: inactiveReactionFilters,
                  ),
              ],
            );

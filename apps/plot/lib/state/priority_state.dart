@@ -18,11 +18,13 @@ class PriorityState extends Equatable {
     bool agendaDoneEnd = false,
     bool agendaLoaded = false,
     List<Tag> filter = const [],
+    List<Reaction> reactionFilter = const [],
     String search = '',
     List<TwistInstance> twists = const [],
     List<Actor> actors = const [],
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
+    List<(Reaction, int)> reactions = const [],
     Map<ActivityTab, ActivityFeedTabData> activityFeedByTab = const {},
     ActivityTab activeTab = ActivityTab.catchUp,
     bool activityFeedDoneEnd = false,
@@ -52,6 +54,9 @@ class PriorityState extends Equatable {
       showArchived: showArchived,
       autoArchiveOnly: autoArchiveOnly,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
+      reactionFilter: reactionFilter.isNotEmpty
+          ? List.unmodifiable(reactionFilter)
+          : reactionFilter,
       search: search,
       twists: twists.isNotEmpty ? List.unmodifiable(twists) : twists,
       actors: actors.isNotEmpty ? List.unmodifiable(actors) : actors,
@@ -59,6 +64,7 @@ class PriorityState extends Equatable {
       tagSuggestions: tagSuggestions.isNotEmpty
           ? List.unmodifiable(tagSuggestions)
           : tagSuggestions,
+      reactions: reactions.isNotEmpty ? List.unmodifiable(reactions) : reactions,
       activityFeedByTab: activityFeedByTab.isNotEmpty
           ? Map.unmodifiable(activityFeedByTab)
           : activityFeedByTab,
@@ -96,11 +102,13 @@ class PriorityState extends Equatable {
     this.showArchived = false,
     this.autoArchiveOnly = false,
     this.filter = const [],
+    this.reactionFilter = const [],
     this.search = '',
     this.twists = const [],
     this.actors = const [],
     this.tags = const [],
     this.tagSuggestions = const [],
+    this.reactions = const [],
     this.activityFeedByTab = const {},
     this.activeTab = ActivityTab.catchUp,
     this.activityFeedDoneEnd = false,
@@ -136,11 +144,13 @@ class PriorityState extends Equatable {
   final bool agendaDoneEnd;
   final bool agendaLoaded;
   final List<Tag> filter;
+  final List<Reaction> reactionFilter;
   final String search;
   final List<TwistInstance> twists;
   final List<Actor> actors;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
+  final List<(Reaction, int)> reactions;
   /// Per-tab build output for the activity feed. Each tab's data carries
   /// the flat `AgendaItem` list the widget renders for it, plus the
   /// pre-cascade native-by-date map used by Reschedule All (only
@@ -1180,11 +1190,13 @@ class PriorityState extends Equatable {
     bool? agendaDoneEnd,
     bool? agendaLoaded,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     String? search,
     List<TwistInstance>? twists,
     List<Actor>? actors,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
+    List<(Reaction, int)>? reactions,
     Map<ActivityTab, ActivityFeedTabData>? activityFeedByTab,
     ActivityTab? activeTab,
     bool? activityFeedDoneEnd,
@@ -1213,6 +1225,11 @@ class PriorityState extends Equatable {
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
+      reactionFilter: reactionFilter != null
+          ? (reactionFilter.isNotEmpty
+                ? List.unmodifiable(reactionFilter)
+                : reactionFilter)
+          : this.reactionFilter,
       search: search ?? this.search,
       twists: twists != null
           ? (twists.isNotEmpty ? List.unmodifiable(twists) : twists)
@@ -1228,6 +1245,9 @@ class PriorityState extends Equatable {
                 ? List.unmodifiable(tagSuggestions)
                 : tagSuggestions)
           : this.tagSuggestions,
+      reactions: reactions != null
+          ? (reactions.isNotEmpty ? List.unmodifiable(reactions) : reactions)
+          : this.reactions,
       activityFeedByTab: activityFeedByTab != null
           ? (activityFeedByTab.isNotEmpty
                 ? Map.unmodifiable(activityFeedByTab)
@@ -1264,11 +1284,13 @@ class PriorityState extends Equatable {
     agendaDoneEnd,
     agendaLoaded,
     filter,
+    reactionFilter,
     search,
     twists,
     actors,
     tags,
     tagSuggestions,
+    reactions,
     activityFeedByTab,
     activeTab,
     activityFeedDoneEnd,

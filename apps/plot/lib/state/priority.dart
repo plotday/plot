@@ -278,6 +278,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _threadSubscription = null,
       _agendaSubscription = null,
       _tagsSubscription = null,
+      _reactionsSubscription = null,
       _draftModified = false,
       super(PriorityState(
         context: priority,
@@ -359,6 +360,20 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // The agenda is universal and ignores filters; only the activity
     // feed needs to refresh.
+    _loadPriority(reloadAgenda: false);
+    _restartActiveTabSubscription();
+  }
+
+  void updateReactionFilter(List<Reaction> reactionFilter) {
+    log.info('Updating reaction filter to $reactionFilter');
+    emit(state.copyWith(reactionFilter: reactionFilter));
+
+    if (reactionFilter.isNotEmpty) {
+      threadListSource = ThreadListSource.activityFeed;
+    } else if (state.filter.isEmpty) {
+      threadListSource = null;
+    }
+
     _loadPriority(reloadAgenda: false);
     _restartActiveTabSubscription();
   }
@@ -806,6 +821,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           : null,
       archived: state.showArchived,
       filter: state.filter.isNotEmpty ? state.filter : null,
+      reactionFilter:
+          state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
       iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
       search: isSearching ? state.search : null,
       limit: _activityFeedLimit,
@@ -1141,6 +1158,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -1235,6 +1254,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -1329,6 +1350,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               : null,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter:
+              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
@@ -2116,6 +2139,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _associationsSubscription?.cancel();
     _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
+    _reactionsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     _activeTabSubscription?.cancel();
     return super.close();
@@ -2477,6 +2501,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _watchingThreadId = null;
     _tagsSubscription?.cancel();
+    _reactionsSubscription?.cancel();
 
     // Drop optimistic overrides — they apply to the old priority's streams
     // and won't naturally settle in the new one. The per-tab overlay is
@@ -3106,6 +3131,14 @@ class PriorityBloc extends Cubit<PriorityState> {
         emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
       },
     );
+
+    // Watch reactions for the priority (thread-level only).
+    _reactionsSubscription?.cancel();
+    _reactionsSubscription = Thread.watchReactionsForPriority(
+      priorityToLoad.path,
+    ).listen((reactions) {
+      emit(state.copyWith(reactions: reactions));
+    });
 
     // Watch icon counts for the priority
     _iconCountsSubscription?.cancel();
@@ -3817,6 +3850,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
+  StreamSubscription<List<(Reaction, int)>>? _reactionsSubscription;
   StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
 
   // Initial cold-start window kept small for fast first paint; grows via

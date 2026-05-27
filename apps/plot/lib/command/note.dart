@@ -7,8 +7,6 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/editor_clipboard.dart';
-import 'package:plot/widget/emoji_data.g.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
@@ -380,7 +378,7 @@ List<Command> mruReactionsForToolbar(
 class ActiveNoteReaction extends NoteCommand {
   ActiveNoteReaction(super.note, this.emoji)
       : super(
-          title: kUnicodeEmojiNames[emoji] ?? emoji,
+          title: emojiDisplayName(emoji),
           eventObject: EventObject.note,
           eventAction: EventAction.untagged,
         );
@@ -396,41 +394,7 @@ class ActiveNoteReaction extends NoteCommand {
       ToggleNoteReaction(note, emoji).run(context);
 }
 
-/// Square emoji-icon widget sized to the surrounding `FaIcon` metric and
-/// inheriting their foreground color. Shared between [ActiveNoteReaction]
-/// and [_QuickReactionCommand] so the visual treatment matches across the
-/// hover row regardless of selected state.
-///
-/// NotoEmoji glyphs paint a fair bit smaller than their line box (room
-/// reserved for ascent/descent), so at the same `fontSize` they read as
-/// visibly smaller than the surrounding FaIcons. Render the emoji at a
-/// slightly larger `fontSize` and use an `OverflowBox` so the larger line
-/// box doesn't push the surrounding button taller / get clipped by the
-/// parent — the glyph's painted area still fits within `iconSize`.
-Widget _emojiButtonIcon(BuildContext _, Reaction emoji) {
-  return Builder(
-    builder: (ctx) {
-      final iconSize = ctx.theme.iconSizes.base;
-      final color =
-          IconTheme.of(ctx).color ?? DefaultTextStyle.of(ctx).style.color;
-      return SizedBox(
-        width: iconSize,
-        height: iconSize,
-        child: Center(
-          child: OverflowBox(
-            maxWidth: double.infinity,
-            maxHeight: double.infinity,
-            alignment: Alignment.center,
-            child: DefaultTextStyle.merge(
-              style: TextStyle(color: color),
-              child: EmojiText(emoji, size: iconSize * 1.1),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
+Widget _emojiButtonIcon(BuildContext _, Reaction emoji) => EmojiCommandIcon(emoji);
 
 /// Hover-toolbar wrapper around [ToggleNoteReaction] that renders an emoji
 /// glyph instead of an icon and skips MRU bookkeeping (the user is reusing
@@ -441,7 +405,7 @@ class _QuickReactionCommand extends NoteCommand {
           // Tooltip text. Human-readable CLDR name when known (e.g.
           // "grinning face"); falls back to the raw emoji for custom-emoji
           // refs and any Unicode glyph not in the names map.
-          title: kUnicodeEmojiNames[emoji] ?? emoji,
+          title: emojiDisplayName(emoji),
           eventObject: EventObject.note,
           eventAction: EventAction.tagged,
         );

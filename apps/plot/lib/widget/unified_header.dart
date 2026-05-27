@@ -694,19 +694,43 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           allTags.putIfAbsent(tagData.$1, () => tagData);
         }
       }
+      // Union of reactions visible from either bloc, preserving order by
+      // count (state.reactions is already count-sorted) and merging thread-
+      // notifier reactions that aren't in the priority's set.
+      final allReactions = <Reaction, (Reaction, int)>{};
+      for (final r in state.reactions) {
+        allReactions[r.$1] = r;
+      }
+      if (notifier?.isThreadVisible == true) {
+        for (final r in notifier!.reactions) {
+          allReactions.putIfAbsent(r.$1, () => r);
+        }
+      }
       return [
         ...state.iconCounts.map((d) => ToggleIconFilter(d.$1, context: ctx)),
         ...allTags.keys.map((tag) => ToggleActivityFilter(tag, context: ctx)),
         ...state.filter
             .where((tag) => !allTags.containsKey(tag))
             .map((tag) => ToggleActivityFilter(tag, context: ctx)),
+        ...allReactions.keys.map(
+          (e) => ToggleReactionFilter(e, context: ctx),
+        ),
+        // Active filters that aren't present in this scope's enumeration
+        // (e.g. the user reacted from a thread page so the priority's
+        // reaction list hasn't refreshed yet) still need an entry so they
+        // can be toggled off from the modal.
+        ...state.reactionFilter
+            .where((e) => !allReactions.containsKey(e))
+            .map((e) => ToggleReactionFilter(e, context: ctx)),
       ];
     }
 
     final hasActiveFilters =
         state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty ||
-        (notifier?.filter.isNotEmpty == true);
+        state.reactionFilter.isNotEmpty ||
+        (notifier?.filter.isNotEmpty == true) ||
+        (notifier?.reactionFilter.isNotEmpty == true);
 
     return Expanded(
       child: Align(
@@ -743,6 +767,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                       for (final tag in notifier!.filter)
                         if (!state.filter.contains(tag))
                           ToggleActivityFilter(tag, context: context),
+                    for (final emoji in state.reactionFilter)
+                      ToggleReactionFilter(emoji, context: context),
+                    if (notifier?.isThreadVisible == true)
+                      for (final emoji in notifier!.reactionFilter)
+                        if (!state.reactionFilter.contains(emoji))
+                          ToggleReactionFilter(emoji, context: context),
                   ];
                   return Row(
                     mainAxisSize: MainAxisSize.min,

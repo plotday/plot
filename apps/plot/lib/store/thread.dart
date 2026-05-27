@@ -1,5 +1,13 @@
 part of 'store.dart';
 
+/// SQLite JSON path for an emoji key, e.g. `'$."🔥"'`. Emoji content is
+/// user-controlled (custom-emoji refs include arbitrary names), so escape
+/// backslash and double-quote before inlining.
+String emojiJsonPath(Reaction emoji) {
+  final escaped = emoji.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+  return "'\$.\"$escaped\"'";
+}
+
 typedef ThreadId = Uuid;
 typedef ThreadWatchResult = ({
   List<Thread> threads,
@@ -1121,6 +1129,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool self = true,
     ThreadOrder order = ThreadOrder.sorted,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
@@ -1139,6 +1148,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       search: search,
       self: self,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
       includeUnscheduled: includeUnscheduled,
@@ -1160,6 +1170,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool self = true,
     ThreadOrder order = ThreadOrder.sorted,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
@@ -1196,6 +1207,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           search: search,
           contactIdMatchesPerWord: contactIdMatchesPerWord,
           filter: filter,
+          reactionFilter: reactionFilter,
           iconFilter: iconFilter,
           limit: limit,
           offset: offset ?? 0,
@@ -1263,6 +1275,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         contactIdMatchesPerWord: contactIdMatchesPerWord,
         self: self,
         filter: filter,
+        reactionFilter: reactionFilter,
         iconFilter: iconFilter,
         includeAllFutureEvents: includeAllFutureEvents,
         includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
@@ -1593,6 +1606,46 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
+  /// Watch all reactions present on threads within a priority and its
+  /// descendants. Returns a stream of (Reaction, count) tuples sorted by
+  /// thread count descending. Scoped to thread-level reactions only —
+  /// note-level reaction filtering is handled by [Note.watch].
+  static Stream<List<(Reaction, int)>> watchReactionsForPriority(
+    Path priorityPath,
+  ) {
+    final tr = Store.get.threadReactions;
+    final a = Store.get.threads;
+    final p = Store.get.priorities;
+    final priorityPathLike = '$priorityPath.%';
+
+    final query = Store.get.select(tr).join([
+      innerJoin(a, a.id.equalsExp(tr.id) & a.archivedAt.isNull()),
+      innerJoin(
+        p,
+        p.id.equalsExp(a.priorityId) &
+            (p.path.equalsValue(priorityPath) |
+                p.path.likeExp(Constant(priorityPathLike))),
+      ),
+    ]);
+
+    return query.watch().map((rows) {
+      final counts = <Reaction, Set<ThreadId>>{};
+      for (final row in rows) {
+        final reactions = row.readTable(tr).reactions;
+        if (reactions == null) continue;
+        final threadId = row.readTable(a).id;
+        for (final emoji in reactions.keys) {
+          counts.putIfAbsent(emoji, () => <ThreadId>{}).add(threadId);
+        }
+      }
+      final result = counts.entries
+          .map((e) => (e.key, e.value.length))
+          .toList()
+        ..sort((a, b) => b.$2.compareTo(a.$2));
+      return result;
+    });
+  }
+
   /// Watches icon value counts for non-archived threads in a priority subtree.
   static Stream<List<(String, int)>> watchIconCountsForPriority(
     Path priorityPath,
@@ -1666,6 +1719,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool eventsOnly = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
 
     /* Sorting */
@@ -1695,6 +1749,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       order: order,
       limit: limit,
@@ -1757,6 +1812,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     /// [_resolveContactIdMatches] before the query is built.
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
 
     /* Sorting */
@@ -2230,6 +2286,9 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Add join for tags (sched already joined above)
     final tags = Store.get.alias(Store.get.threadTags, 'tags');
+    final reactions = Store.get.alias(Store.get.threadReactions, 'reactions');
+    final hasReactionFilter =
+        reactionFilter != null && reactionFilter.isNotEmpty;
 
     query = query.join([
       leftOuterJoin(
@@ -2238,18 +2297,36 @@ class Thread extends Equatable implements Comparable<Thread> {
             (tags.occurrence.equalsExp(sched.occurrence) |
                 (tags.occurrence.equals('') & sched.occurrence.isNull())),
       ),
+      // Only join reactions when filtering — keeps the unfiltered path cheap.
+      if (hasReactionFilter)
+        leftOuterJoin(
+          reactions,
+          reactions.id.equalsExp(a.id) &
+              (reactions.occurrence.equalsExp(sched.occurrence) |
+                  (reactions.occurrence.equals('') &
+                      sched.occurrence.isNull())),
+        ),
     ]);
 
     // Add tag filtering if filter list is provided
-    // This must happen AFTER the tags table is joined
+    // This must happen AFTER the tags table is joined.
+    // OR-within-section: any selected tag matches. `tag.id` is a UUID,
+    // safe to inline.
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
-      for (final tag in mutableFilter) {
-        query.where(
-          CustomExpression<bool>(
-            'JSON_EXTRACT(tags.tags, \'\$.${tag.id}\') IS NOT NULL',
-          ),
-        );
-      }
+      final orClause = mutableFilter
+          .map((t) => "JSON_EXTRACT(tags.tags, '\$.${t.id}') IS NOT NULL")
+          .join(' OR ');
+      query.where(CustomExpression<bool>('($orClause)'));
+    }
+
+    // Reaction filter: OR-within-section, AND'd against the tag predicate
+    // via Drift's separate .where call.
+    if (hasReactionFilter) {
+      final orClause = reactionFilter
+          .map((e) =>
+              "JSON_EXTRACT(reactions.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .join(' OR ');
+      query.where(CustomExpression<bool>('($orClause)'));
     }
 
     return query;
@@ -2298,6 +2375,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     String? search,
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     bool requireTodoPredicate = false,
     bool requireUnread = false,
@@ -2443,14 +2521,30 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     // Tag filter — hoist out of the join via EXISTS subqueries so tag rows
     // don't multiply the join. `tag.id` is a UUID, safe to interpolate.
+    // OR-within-section: a single EXISTS with OR'd JSON_EXTRACTs.
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
-      for (final tag in mutableFilter) {
-        wheres.add(
-          "EXISTS (SELECT 1 FROM thread_tags tt "
-          "WHERE tt.id = a.id AND tt.occurrence = '' "
-          "AND JSON_EXTRACT(tt.tags, '\$.${tag.id}') IS NOT NULL)",
-        );
-      }
+      final orClause = mutableFilter
+          .map((t) => "JSON_EXTRACT(tt.tags, '\$.${t.id}') IS NOT NULL")
+          .join(' OR ');
+      wheres.add(
+        "EXISTS (SELECT 1 FROM thread_tags tt "
+        "WHERE tt.id = a.id AND tt.occurrence = '' "
+        "AND ($orClause))",
+      );
+    }
+
+    // Reaction filter — same EXISTS pattern over thread_reactions.
+    // OR-within-section across emojis; AND across sections (via wheres).
+    if (reactionFilter != null && reactionFilter.isNotEmpty) {
+      final orClause = reactionFilter
+          .map((e) =>
+              "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .join(' OR ');
+      wheres.add(
+        "EXISTS (SELECT 1 FROM thread_reactions tr "
+        "WHERE tr.id = a.id AND tr.occurrence = '' "
+        "AND ($orClause))",
+      );
     }
 
     // doTodo: SQL form of [Thread.active] — at least one of shared schedule
@@ -2488,6 +2582,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);
     }
+    if (reactionFilter != null && reactionFilter.isNotEmpty) {
+      readsFrom.add(Store.get.threadReactions);
+    }
     if (search?.isNotEmpty == true) {
       // FTS shadow tables are driven by triggers on threads and notes;
       // adding notes here ensures the watcher fires on new note content too.
@@ -2522,6 +2619,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     String? search,
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
@@ -2667,14 +2765,30 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     // Tag filter — hoist out of the join via EXISTS subqueries so tag rows
     // don't multiply the join. `tag.id` is a UUID, safe to interpolate.
+    // OR-within-section: a single EXISTS with OR'd JSON_EXTRACTs.
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
-      for (final tag in mutableFilter) {
-        wheres.add(
-          "EXISTS (SELECT 1 FROM thread_tags tt "
-          "WHERE tt.id = a.id AND tt.occurrence = '' "
-          "AND JSON_EXTRACT(tt.tags, '\$.${tag.id}') IS NOT NULL)",
-        );
-      }
+      final orClause = mutableFilter
+          .map((t) => "JSON_EXTRACT(tt.tags, '\$.${t.id}') IS NOT NULL")
+          .join(' OR ');
+      wheres.add(
+        "EXISTS (SELECT 1 FROM thread_tags tt "
+        "WHERE tt.id = a.id AND tt.occurrence = '' "
+        "AND ($orClause))",
+      );
+    }
+
+    // Reaction filter — same EXISTS pattern over thread_reactions.
+    // OR-within-section across emojis; AND across sections (via wheres).
+    if (reactionFilter != null && reactionFilter.isNotEmpty) {
+      final orClause = reactionFilter
+          .map((e) =>
+              "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .join(' OR ');
+      wheres.add(
+        "EXISTS (SELECT 1 FROM thread_reactions tr "
+        "WHERE tr.id = a.id AND tr.occurrence = '' "
+        "AND ($orClause))",
+      );
     }
 
     // doTodo: SQL form of [Thread.active] — at least one of shared schedule
@@ -2731,6 +2845,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     if (mutableFilter != null && mutableFilter.isNotEmpty) {
       readsFrom.add(Store.get.threadTags);
     }
+    if (reactionFilter != null && reactionFilter.isNotEmpty) {
+      readsFrom.add(Store.get.threadReactions);
+    }
     if (search?.isNotEmpty == true) {
       // FTS shadow tables are driven by triggers on threads and notes;
       // adding notes here ensures the watcher fires on new note content too.
@@ -2773,6 +2890,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     ({int unreadSort, String activityAt, ThreadId id})? after,
@@ -2786,6 +2904,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
       after: after,
@@ -2889,6 +3008,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
   }) async* {
@@ -2901,6 +3021,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
     ).asyncMap((idRows) async {
@@ -2946,6 +3067,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     ({int urgent, int importance, String activityAt, ThreadId id})? after,
@@ -2959,6 +3081,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
       after: after,
@@ -3013,6 +3136,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     String? search,
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
@@ -3049,6 +3173,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       requireUnread: true,
     );
@@ -3117,6 +3242,7 @@ SELECT
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
   }) async* {
@@ -3129,6 +3255,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
     ).asyncMap((idRows) async {
@@ -3180,6 +3307,7 @@ SELECT
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     ({
@@ -3199,6 +3327,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
       after: after,
@@ -3254,6 +3383,7 @@ SELECT
     String? search,
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
@@ -3294,6 +3424,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
     );
     sqlBuf.write(parts.sql);
@@ -3358,6 +3489,7 @@ SELECT
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
   }) async* {
@@ -3371,6 +3503,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
     ).asyncMap((idRows) async {
@@ -3421,6 +3554,7 @@ SELECT
     bool draft = false,
     String? search,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
@@ -3435,6 +3569,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
       after: after,
@@ -3502,6 +3637,7 @@ SELECT
     String? search,
     List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
+    List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
@@ -3561,6 +3697,7 @@ SELECT
       search: search,
       contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
+      reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       requireLinkSched: true,
       stateFlag: action,

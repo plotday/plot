@@ -18,6 +18,7 @@ class ThreadBloc extends Cubit<ThreadState> {
   ThreadBloc({required Thread thread})
     : _subscriptions = [],
       _tagsSubscription = null,
+      _reactionsSubscription = null,
       super(ThreadState(thread: thread)) {
     _loadThread();
   }
@@ -35,6 +36,12 @@ class ThreadBloc extends Cubit<ThreadState> {
     _loadNotes();
   }
 
+  void updateReactionFilter(List<Reaction> reactionFilter) {
+    log.info('Updating reaction filter to $reactionFilter');
+    emit(state.copyWith(reactionFilter: reactionFilter));
+    _loadNotes();
+  }
+
   void updateSearch(String search) {
     log.info('Updating search to "$search"');
     emit(state.copyWith(search: search));
@@ -46,6 +53,7 @@ class ThreadBloc extends Cubit<ThreadState> {
       subscription.cancel();
     }
     _tagsSubscription?.cancel();
+    _reactionsSubscription?.cancel();
     _notesSubscription?.cancel();
     return super.close();
   }
@@ -231,6 +239,14 @@ class ThreadBloc extends Cubit<ThreadState> {
       emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
     });
 
+    // Watch reactions for the thread (thread-level + note-level union).
+    _reactionsSubscription?.cancel();
+    _reactionsSubscription = Note.watchReactionsForActivity(
+      state.thread.id,
+    ).listen((reactions) {
+      emit(state.copyWith(reactions: reactions));
+    });
+
     _loadNotes();
   }
 
@@ -260,6 +276,8 @@ class ThreadBloc extends Cubit<ThreadState> {
       archived: state.showArchived,
       draft: false,
       filter: state.filter.isNotEmpty ? state.filter : null,
+      reactionFilter:
+          state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
       threadNoteId: state.threadNoteId,
     ).listen((notes) {
       emit(state.copyWith(notes: notes));
@@ -268,6 +286,7 @@ class ThreadBloc extends Cubit<ThreadState> {
 
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
+  StreamSubscription<List<(Reaction, int)>>? _reactionsSubscription;
   StreamSubscription<List<Note>>? _notesSubscription;
 }
 

@@ -82,9 +82,8 @@ class EmojiPicker {
       context,
       items: (search) async => buildGroups(search),
       itemBuilder: (emoji, _) {
-        final name = kUnicodeEmojiNames[emoji] ?? emoji;
         return FTooltip(
-          tipBuilder: (ctx, _) => Text(name),
+          tipBuilder: (ctx, _) => Text(emojiDisplayName(emoji)),
           child: EmojiText(emoji, size: 22),
         );
       },

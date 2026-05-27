@@ -1,6 +1,18 @@
 import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/emoji_data.g.dart';
+
+/// Human-readable display label for an emoji: the CLDR name with its first
+/// letter capitalized (e.g. `"😂"` → `"Face with tears of joy"`). Falls back
+/// to the raw emoji string when no name is known (custom-emoji refs etc.).
+String emojiDisplayName(Reaction emoji) {
+  final name = kUnicodeEmojiNames[emoji];
+  if (name == null || name.isEmpty) return emoji;
+  return '${name[0].toUpperCase()}${name.substring(1)}';
+}
 
 /// Renders an emoji [Reaction] string — either a Unicode grapheme cluster
 /// (e.g. `"👍"`) or a provider-scoped custom-emoji ref (e.g.
@@ -121,5 +133,40 @@ class _CustomEmojiImage extends StatelessWidget {
       return aliasedRow ?? row;
     }
     return row;
+  }
+}
+
+/// Square emoji icon sized to the theme's `iconSizes.base` and inheriting
+/// the surrounding foreground color. NotoEmoji glyphs paint smaller than
+/// their line box, so the emoji is rendered at a slightly larger fontSize
+/// inside an [OverflowBox] — keeps it visually equivalent in size to a
+/// neighboring icon without the larger line box pushing the parent taller
+/// or getting clipped. Use this anywhere a [Command.icon] would normally
+/// sit (filter rows, hover toolbar, picker chips).
+class EmojiCommandIcon extends StatelessWidget {
+  const EmojiCommandIcon(this.emoji, {super.key});
+
+  final Reaction emoji;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconSize = context.theme.iconSizes.base;
+    final color =
+        IconTheme.of(context).color ?? DefaultTextStyle.of(context).style.color;
+    return SizedBox(
+      width: iconSize,
+      height: iconSize,
+      child: Center(
+        child: OverflowBox(
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          alignment: Alignment.center,
+          child: DefaultTextStyle.merge(
+            style: TextStyle(color: color),
+            child: EmojiText(emoji, size: iconSize * 1.1),
+          ),
+        ),
+      ),
+    );
   }
 }
