@@ -214,7 +214,7 @@ export async function deployTwist({
   // (and user_id for personal).
   let existingTwistQuery = db
     .selectFrom("twist")
-    .select(["id", "name", "version"])
+    .select(["id", "name", "version", "handle", "thread_type"])
     .where("twist_package_id", "=", twistPackageId)
     .where("environment", "=", environment);
   if (environment === "personal") {
@@ -258,8 +258,11 @@ export async function deployTwist({
       .updateTable("twist")
       .set({
         name,
-        handle: handle ?? name,
-        thread_type: threadType ?? null,
+        // Preserve existing handle/thread_type when caller doesn't supply them
+        // (e.g. AI-driven self-redeploys via the Twists tool). Falls back to
+        // `name` only when there's truly no existing value.
+        handle: handle ?? existingTwist!.handle ?? name,
+        thread_type: threadType !== undefined ? threadType : (existingTwist!.thread_type ?? null),
         description,
         version,
         permissions: JSON.stringify(twistPermissions),
