@@ -868,6 +868,14 @@ type NewContactBase = {
    * Gmail + Google Chat sharing one Google account).
    */
   source?: { accountId: string };
+  /**
+   * Optional connector-defined role for this contact on the thread, matching
+   * a `LinkTypeConfig.contactRoles[].id` (e.g. "to" / "cc" / "bcc" for
+   * email, "required" / "optional" for calendar). Omitted ⇒ default role.
+   * Connectors set this on inbound sync; the runtime persists it under
+   * `thread.contact_meta[contact_id].role`.
+   */
+  role?: string;
 };
 
 /**

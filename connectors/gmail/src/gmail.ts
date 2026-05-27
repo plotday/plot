@@ -126,6 +126,12 @@ export class Gmail extends Connector<Gmail> {
         { status: "starred", label: "Starred", tag: Tag.Star, active: true },
         { status: "archived", label: "Archived", tag: Tag.Done, done: true },
       ],
+      contactRoles: [
+        { id: "to", label: "To", default: true },
+        { id: "cc", label: "CC" },
+        { id: "bcc", label: "BCC", hidden: true },
+      ],
+      supportsContactChanges: true,
     },
     {
       type: "gmail-email",
@@ -142,6 +148,12 @@ export class Gmail extends Connector<Gmail> {
       statuses: [
         { status: "sent", label: "Sent", createDefault: true },
       ],
+      contactRoles: [
+        { id: "to", label: "To", default: true },
+        { id: "cc", label: "CC" },
+        { id: "bcc", label: "BCC", hidden: true },
+      ],
+      supportsContactChanges: true,
     },
   ];
 

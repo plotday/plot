@@ -123,6 +123,44 @@ export type LinkTypeConfig = {
    *   address spaces like Gmail.
    */
   targets?: "channels" | "contacts" | "addresses";
+  /**
+   * Per-connector contact roles. Examples:
+   *   email   → [{id:"to",label:"To",default:true},{id:"cc",label:"CC"},{id:"bcc",label:"BCC",hidden:true}]
+   *   calendar → [{id:"required",label:"Required",default:true},{id:"optional",label:"Optional"}]
+   *
+   * Plot uses this list to render a role picker on each contact chip in the
+   * composer and to label non-default roles on existing threads. Exactly one
+   * role should be marked `default: true`. Connectors that don't distinguish
+   * roles (Slack, Linear) omit this field entirely.
+   */
+  contactRoles?: ContactRoleConfig[];
+  /**
+   * Whether contacts on an existing thread can be added, removed, or have
+   * their role changed (email-style mid-thread recipient changes). When
+   * false, the thread's contact list is fixed after creation. Defaults to
+   * false when omitted.
+   */
+  supportsContactChanges?: boolean;
+};
+
+/**
+ * Declares one contact role for a connector's link type. See
+ * `LinkTypeConfig.contactRoles`.
+ */
+export type ContactRoleConfig = {
+  /** Stable machine id, e.g. "to" / "cc" / "bcc" / "required" / "optional". */
+  id: string;
+  /** Display label shown next to a contact chip, e.g. "To", "CC", "Required". */
+  label: string;
+  /** Exactly one role per linkType should be marked default. */
+  default?: boolean;
+  /**
+   * Hidden roles are visible only to (a) the contact themselves and
+   * (b) the user who added them. The API filters them out of every other
+   * viewer's `thread.contacts` and `thread.contactMeta`. Use for BCC-style
+   * semantics where other recipients must not see the hidden contact.
+   */
+  hidden?: boolean;
 };
 
 /**
