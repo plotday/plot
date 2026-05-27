@@ -1696,37 +1696,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   }
 
   /**
-   * Sync a schedule contact RSVP change back to Google Calendar.
-   * Called via actAs() which provides the actor's auth token.
-   */
-  async syncActorRSVP(
-    token: AuthToken,
-    calendarId: string,
-    eventId: string,
-    status: "accepted" | "declined" | "tentative" | "needsAction",
-    _actorId: string
-  ): Promise<void> {
-    try {
-      const api = new GoogleApi(token.token);
-      await this.updateEventRSVPWithApi(api, calendarId, eventId, status);
-    } catch (error) {
-      console.error("[RSVP Sync] Failed to sync RSVP", {
-        event_id: eventId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /**
-   * Called when a user changes their RSVP status in Plot.
-   * Syncs the change back to Google Calendar via actAs().
+   * Called when a user changes their RSVP status in Plot. The dispatch is
+   * routed (via `twist_instance_for_actor` in `twist_instance_schedule_contact`)
+   * to the RSVPing user's own connector instance, so this method already runs
+   * under that user's auth — no actAs needed.
    */
   async onScheduleContactUpdated(
     thread: Thread,
     _scheduleId: string,
     _contactId: ActorId,
     status: ScheduleContactStatus | null,
-    actor: Actor
+    _actor: Actor
   ): Promise<void> {
     const meta = thread.meta as Record<string, unknown> | null;
     const calendarId = meta?.syncableId as string | null;
@@ -1737,7 +1717,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
     if (!eventId || !calendarId) return;
 
-    // Map Plot status to Google Calendar status
     const googleStatus =
       status === "attend"
         ? ("accepted" as const)
@@ -1745,16 +1724,15 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         ? ("declined" as const)
         : ("needsAction" as const);
 
-    await this.tools.integrations.actAs(
-      AuthProvider.Google,
-      actor.id,
-      thread.id,
-      this.syncActorRSVP,
-      calendarId,
-      eventId,
-      googleStatus,
-      actor.id as string
-    );
+    try {
+      const api = await this.getApi(calendarId);
+      await this.updateEventRSVPWithApi(api, calendarId, eventId, googleStatus);
+    } catch (error) {
+      console.error("[RSVP Sync] Failed to sync RSVP", {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

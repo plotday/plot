@@ -66,9 +66,11 @@ export class MsTeams extends Connector<MsTeams> {
   // Teams Graph API accepts both legacy enum reaction types (like,
   // heart, laugh, surprised, sad, angry) and Unicode emoji directly.
   // Teams allows only one reaction per user per message; bidirectional
-  // write-back is wired through inbound today, outbound (set/unset
-  // via the new GraphApi reaction helpers) is left for a per-actor
-  // actAs() follow-up — see onNoteUpdated.
+  // write-back is wired through inbound today. For outbound, implement
+  // `onNoteReactionChanged` — it dispatches per (note, actor, emoji)
+  // on the reacting user's own connector instance, so the new
+  // GraphApi.setChannelReaction / setChatReaction / unset* helpers
+  // can be called under the right user's token.
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     customEmoji: "none" as const,
@@ -970,10 +972,11 @@ export class MsTeams extends Connector<MsTeams> {
 
     // Reaction write-back: deferred to a follow-up. Teams allows only
     // one reaction per user per message via Graph, so a diff-and-apply
-    // pass needs per-actor `actAs()` write-back tokens to attribute
-    // reactions correctly. The new
+    // pass needs each reaction dispatched on the acting user's own
+    // connector instance to attribute it correctly. Wire the new
     // GraphApi.setChannelReaction / setChatReaction / unset* helpers
-    // are in place; wire them when actAs lands.
+    // once note-reaction dispatch is routed per-actor (parallel to
+    // the schedule_contact → twist_instance_for_actor pattern).
 
     const meta = thread.meta ?? {};
     const syncableId = meta.syncableId as string;

@@ -535,6 +535,33 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
     return Promise.resolve();
   }
 
+  /**
+   * Called when a user adds or removes a single emoji reaction on a note
+   * (one event per `(note, actor, emoji)` state transition).
+   *
+   * Dispatch is routed to the reacting user's own connector instance via
+   * `twist_instance_for_actor` on `note_reaction.actor_id`, so this method
+   * already runs under the reactor's auth. Fetch the API client with the
+   * connector's normal token-fetch path (`this.tools.integrations.get(...)`)
+   * and the external write — e.g. Slack `reactions.add` — will be attributed
+   * to the correct user. No `actAs` step required.
+   *
+   * If the reacting user has no connection of this type, no dispatch fires
+   * for that reaction (it stays in Plot only).
+   *
+   * Override to sync per-actor reactions back to the external system.
+   *
+   * @param note  - The note that was reacted on (partial; `id`, `key`, `content` populated)
+   * @param thread - The thread the note belongs to (partial; `id`, `title`, `archived`, `meta` populated)
+   * @param actor - The contact who added/removed the reaction
+   * @param emoji - The emoji (Unicode grapheme or `provider:workspace/name` custom-emoji ref)
+   * @param added - `true` if the reaction is now present, `false` if it was removed
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onNoteReactionChanged(note: Note, thread: Thread, actor: Actor, emoji: string, added: boolean): Promise<void> {
+    return Promise.resolve();
+  }
+
   // ---- Activation ----
 
   /**

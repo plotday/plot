@@ -310,16 +310,12 @@ const client = new ApiClient({ accessToken: token.token });
 ```
 
 For per-user write-backs (e.g., RSVP, comments attributed to the acting user):
-
-```typescript
-await this.tools.integrations.actAs(
-  AuthProvider.Google,
-  actorId,       // The user who performed the action
-  threadId,      // Thread to prompt for auth if needed
-  this.performWriteBack,
-  ...extraArgs
-);
-```
+the dispatch runtime routes the change to the acting user's own connector
+instance, so your callback (`onScheduleContactUpdated`, etc.) already runs
+under that user's auth. Just call `this.tools.integrations.get(channelId)`
+to fetch the token and the write-back is attributed correctly. If the
+acting user has no connection of this type, the change lives in Plot but
+is not dispatched.
 
 ## Sync Pattern
 

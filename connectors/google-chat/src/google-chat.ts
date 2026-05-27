@@ -1232,9 +1232,11 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
 
     // Plot-side: any emoji with at least one reactor is "present in Plot".
-    // Pre-existing behavior is to write back as the authenticated user
-    // regardless of which actor reacted in Plot; per-actor write-back
-    // via actAs() can be a follow-up.
+    // Currently writes back as the connected (authenticated) user for every
+    // reaction. For correct per-actor attribution, migrate to
+    // `onNoteReactionChanged` — that callback is dispatched on the reacting
+    // user's own connector instance via `twist_instance_for_actor`, so each
+    // emoji add/remove runs under the right user's token.
     const plotEmojis = new Set<string>();
     for (const [emoji, actorIds] of Object.entries(note.reactions)) {
       // Only Unicode emoji round-trip today (custom emoji are skipped

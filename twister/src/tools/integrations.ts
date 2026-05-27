@@ -4,7 +4,6 @@ import {
   type NewContact,
   type NewLinkWithNotes,
   ITool,
-  Serializable,
 } from "..";
 import type { JSONValue } from "../utils/types";
 import type { Uuid } from "../utils/uuid";
@@ -272,31 +271,6 @@ export abstract class Integrations extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
-
-  /**
-   * Execute a callback as a specific actor, requesting auth if needed.
-   *
-   * If the actor has a valid token, calls the callback immediately with it.
-   * If the actor has no token, creates a private auth note in the specified
-   * activity prompting them to connect. Once they authorize, this callback fires.
-   *
-   * @param provider - The OAuth provider
-   * @param actorId - The actor to act as
-   * @param activityId - The activity to create an auth note in (if needed)
-   * @param callback - Function to call with the token
-   * @param extraArgs - Additional arguments to pass to the callback
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract actAs<
-    TArgs extends Serializable[],
-    TCallback extends (token: AuthToken, ...args: TArgs) => any
-  >(
-    provider: AuthProvider,
-    actorId: ActorId,
-    activityId: Uuid,
-    callback: TCallback,
-    ...extraArgs: TArgs
-  ): Promise<void>;
 
   /**
    * Saves a link with notes to the connector's priority.

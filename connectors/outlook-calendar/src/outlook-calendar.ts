@@ -1520,8 +1520,10 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   }
 
   /**
-   * Called when a user changes their RSVP status in Plot.
-   * Syncs the change back to Outlook Calendar via actAs().
+   * Called when a user changes their RSVP status in Plot. The dispatch is
+   * routed (via `twist_instance_for_actor` in `twist_instance_schedule_contact`)
+   * to the RSVPing user's own connector instance, so this method already runs
+   * under that user's auth — no actAs needed.
    */
   async onScheduleContactUpdated(
     thread: Thread,
@@ -1540,42 +1542,18 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
     if (!eventId || !calendarId) return;
 
-    // Map Plot status to Outlook Calendar status
     const outlookStatus = status === "attend" ? "accepted" as const
       : status === "skip" ? "declined" as const
       : "tentativelyAccepted" as const;
 
-    await this.tools.integrations.actAs(
-      AuthProvider.Microsoft,
-      actor.id,
-      thread.id,
-      this.syncActorRSVP,
-      calendarId,
-      eventId,
-      outlookStatus,
-      actor.id as string
-    );
-  }
-
-  /**
-   * Sync a schedule contact RSVP change back to Outlook Calendar.
-   * Called via actAs() which provides the actor's auth token.
-   */
-  async syncActorRSVP(
-    token: AuthToken,
-    calendarId: string,
-    eventId: string,
-    status: "accepted" | "declined" | "tentativelyAccepted",
-    actorId: string
-  ): Promise<void> {
     try {
-      const api = new GraphApi(token.token);
+      const api = await this.getApi(calendarId);
       await this.updateEventRSVPWithApi(
         api,
         calendarId,
         eventId,
-        status,
-        actorId as ActorId
+        outlookStatus,
+        actor.id as ActorId
       );
     } catch (error) {
       console.error("[RSVP Sync] Failed to sync RSVP", {

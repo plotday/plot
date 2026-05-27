@@ -134,13 +134,14 @@ Auth is handled in the Flutter edit modal — you declare providers in `build()`
 
 ### Per-user auth for write-backs
 
-```typescript
-await this.tools.integrations.actAs(MyConnector.PROVIDER, actorId, activityId, this.performWriteBack, ...args);
+User-initiated changes are dispatched to the acting user's own connector
+instance — only that instance has their OAuth token. Your callback runs
+under that user's auth, so use the connector's normal token-fetch path
+(`this.tools.integrations.get(channelId)` or your `getApi(channelId)` helper)
+and the write-back will be attributed to the acting user automatically.
 
-async performWriteBack(token: AuthToken, ...args: any[]): Promise<void> {
-  // token is the acting user's token
-}
-```
+If the acting user has no connection of this type, the change lives in
+Plot but is not dispatched — there is no instance to deliver to.
 
 ### Cross-connector auth sharing (Google)
 
