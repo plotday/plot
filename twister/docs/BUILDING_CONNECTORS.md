@@ -426,7 +426,7 @@ readonly linkTypes = [{
   statuses: [
     { status: "backlog", label: "Backlog" },
     { status: "unstarted", label: "To Do", todo: true, createDefault: true },
-    { status: "completed", label: "Done", tag: Tag.Done, done: true },
+    { status: "completed", label: "Done", done: true },
   ],
 }];
 ```
