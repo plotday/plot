@@ -382,6 +382,35 @@ export type Tags = { [K in Tag]?: ActorId[] };
 export type NewTags = { [K in Tag]?: NewActor[] };
 
 /**
+ * A single emoji reaction key. Either:
+ * - A Unicode emoji grapheme cluster (e.g. `"👍"`, `"👨‍👩‍👧"`), or
+ * - A provider-scoped custom-emoji ref of the form
+ *   `"<provider>:<workspaceId>/<name>"` (e.g. `"slack:T0123/party_parrot"`).
+ *
+ * Anything matching a known provider prefix is treated as a custom-emoji
+ * reference; everything else is rendered as the Unicode it contains.
+ *
+ * Reactions are the open-set counterpart to {@link Tag}'s count range
+ * (`1000+`). Use reactions for emoji that round-trip with chat platforms;
+ * use tags for Plot-managed compute/toggle state (todo, pinned, urgent,
+ * ...).
+ */
+export type Reaction = string;
+
+/**
+ * Emoji reactions on an item, keyed by emoji string, with the list of
+ * actors who added each reaction.
+ */
+export type Reactions = Record<Reaction, ActorId[]>;
+
+/**
+ * A set of reactions to add to an item, along with the actors adding each
+ * reaction. To remove a reaction for a given actor, omit them from the
+ * `NewActor[]` list — passing an empty list removes the reaction entirely.
+ */
+export type NewReactions = Record<Reaction, NewActor[]>;
+
+/**
  * Thread access level determining visibility.
  * - "public": Visible to all users with priority access
  * - "members": Visible to priority members (default for shared priorities)
@@ -407,6 +436,12 @@ export type ThreadCommon = {
   archived: boolean;
   /** Tags attached to this thread. Maps tag ID to array of actor IDs who added that tag. */
   tags: Tags;
+  /**
+   * Emoji reactions on this item. Maps each emoji (Unicode grapheme or
+   * `provider:workspace/name` custom-emoji ref) to the list of actor IDs
+   * who reacted with it.
+   */
+  reactions: Reactions;
 };
 
 /**
@@ -453,7 +488,7 @@ export type NewThreadWithNotes = NewThread & {
  * ```
  */
 export type NewThread = Partial<
-  Omit<ThreadFields, "priority" | "tags" | "id" | "accessContacts">
+  Omit<ThreadFields, "priority" | "tags" | "reactions" | "id" | "accessContacts">
 > &
   (
     | {
@@ -472,6 +507,12 @@ export type NewThread = Partial<
      * All tags to set on the new thread.
      */
     tags?: NewTags;
+
+    /**
+     * Emoji reactions to set on the new thread.
+     * Each emoji maps to the list of actors who reacted with it.
+     */
+    reactions?: NewReactions;
 
     /**
      * The thread's sub-type/category. Sets the thread's icon.
@@ -547,6 +588,12 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
    * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
    */
   tags?: NewTags;
+
+  /**
+   * Emoji reactions to change on the thread. Pass an empty `NewActor[]` to
+   * remove a reaction entirely; omit an emoji to leave it untouched.
+   */
+  reactions?: NewReactions;
 
   /**
    * Add or remove the twist's tags.
@@ -650,7 +697,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "mentions" | "accessContacts" | "id" | "key" | "reNote"
+    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "id" | "key" | "reNote"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -679,6 +726,12 @@ export type NewNote = Partial<
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
     tags?: NewTags;
+
+    /**
+     * Emoji reactions to set on the note. Pass an empty `NewActor[]` to
+     * remove a reaction entirely; omit an emoji to leave it untouched.
+     */
+    reactions?: NewReactions;
 
     /**
      * Contacts who can see this note, or null/undefined to inherit thread visibility.
@@ -746,6 +799,12 @@ export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
      * Use twistTags to add/remove the twist from tags to avoid clearing other actors' tags.
      */
     tags?: NewTags;
+
+    /**
+     * Emoji reactions to change on the note. Pass an empty `NewActor[]` to
+     * remove a reaction entirely; omit an emoji to leave it untouched.
+     */
+    reactions?: NewReactions;
 
     /**
      * Add or remove the twist's tags.
