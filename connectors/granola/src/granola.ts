@@ -100,7 +100,7 @@ export class Granola extends Connector<Granola> {
         linkTypes: [
           {
             type: "meeting",
-            label: "Meeting",
+            label: "Notes",
             logo: "/assets/logo-granola.png",
           },
         ],
