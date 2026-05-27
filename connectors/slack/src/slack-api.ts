@@ -1,10 +1,8 @@
 import type {
   NewLinkWithNotes,
   NewActor,
-  NewTags,
+  NewReactions,
 } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
-import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 export type SlackChannel = {
   id: string;
@@ -357,6 +355,44 @@ export class SlackApi {
     await this.call("stars.add", { channel: channelId, timestamp });
   }
 
+  /** Add a reaction. `name` is a Slack shortcode (no surrounding colons). */
+  public async addReaction(
+    channelId: string,
+    timestamp: string,
+    name: string
+  ): Promise<void> {
+    try {
+      await this.call("reactions.add", {
+        channel: channelId,
+        timestamp,
+        name,
+      });
+    } catch (error) {
+      // `already_reacted` is idempotent success.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("already_reacted")) throw error;
+    }
+  }
+
+  /** Remove a reaction. `name` is a Slack shortcode (no surrounding colons). */
+  public async removeReaction(
+    channelId: string,
+    timestamp: string,
+    name: string
+  ): Promise<void> {
+    try {
+      await this.call("reactions.remove", {
+        channel: channelId,
+        timestamp,
+        name,
+      });
+    } catch (error) {
+      // `no_reaction` is idempotent success — there was nothing to remove.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("no_reaction")) throw error;
+    }
+  }
+
   public async removeStar(channelId: string, timestamp: string): Promise<void> {
     try {
       await this.call("stars.remove", { channel: channelId, timestamp });
@@ -500,70 +536,117 @@ export function formatSlackText(text: string): string {
 }
 
 /**
- * Maps common Slack reaction names to Plot Count Tags.
+ * Maps common Slack reaction shortcodes to Unicode emoji. Curated subset
+ * of the CLDR mapping covering the long-tail of frequently-used reactions.
+ * Unmapped shortcodes (incl. workspace custom emoji) are skipped on
+ * sync for v1; a follow-up will route them via the custom_emoji image
+ * cache as `slack:<teamId>/<name>` refs.
  */
-const SLACK_REACTION_TO_TAG: Record<string, Tag> = {
-  "+1": Tag.Yes,
-  thumbsup: Tag.Yes,
-  "-1": Tag.No,
-  thumbsdown: Tag.No,
-  tada: Tag.Tada,
-  fire: Tag.Fire,
-  heart: Tag.Love,
-  rocket: Tag.Rocket,
-  sparkles: Tag.Sparkles,
-  pray: Tag.Thanks,
-  raised_hands: Tag.Thanks,
-  smile: Tag.Smile,
-  grinning: Tag.Smile,
-  wave: Tag.Wave,
-  clap: Tag.Applause,
-  sunglasses: Tag.Cool,
-  cry: Tag.Sad,
-  sob: Tag.Sad,
-  eyes: Tag.Looking,
-  "100": Tag.Totally,
-  star: Tag.Star,
-  bulb: Tag.Idea,
+export const SLACK_SHORTCODE_TO_UNICODE: Record<string, string> = {
+  "+1": "👍", thumbsup: "👍",
+  "-1": "👎", thumbsdown: "👎",
+  tada: "🎉", party: "🎉",
+  fire: "🔥",
+  heart: "❤️", heart_eyes: "😍", heartpulse: "💗",
+  rocket: "🚀",
+  sparkles: "✨", star2: "🌟",
+  pray: "🙏", folded_hands: "🙏",
+  raised_hands: "🙌",
+  smile: "😄", grinning: "😀", grin: "😁", smiley: "😃",
+  joy: "😂", rofl: "🤣", laughing: "😆",
+  wave: "👋",
+  clap: "👏",
+  sunglasses: "😎",
+  cry: "😢", sob: "😭",
+  eyes: "👀",
+  "100": "💯",
+  star: "⭐",
+  bulb: "💡", light_bulb: "💡",
+  ok_hand: "👌",
+  muscle: "💪",
+  rolling_on_the_floor_laughing: "🤣",
+  white_check_mark: "✅", heavy_check_mark: "✔️", check: "✔️",
+  x: "❌", negative_squared_cross_mark: "❎",
+  warning: "⚠️",
+  question: "❓", grey_question: "❔",
+  exclamation: "❗",
+  thinking_face: "🤔",
+  raised_hand: "✋",
+  raised_back_of_hand: "🤚",
+  point_up: "☝️", point_down: "👇", point_left: "👈", point_right: "👉",
+  facepalm: "🤦", person_facepalming: "🤦",
+  shrug: "🤷", person_shrugging: "🤷",
+  see_no_evil: "🙈",
+  speech_balloon: "💬",
+  bell: "🔔", no_bell: "🔕",
+  zap: "⚡",
+  bug: "🐛",
+  hammer: "🔨", hammer_and_wrench: "🛠️",
+  art: "🎨",
+  lock: "🔒", unlock: "🔓",
+  key: "🔑",
+  rotating_light: "🚨",
+  hourglass: "⌛", hourglass_flowing_sand: "⏳",
+  alarm_clock: "⏰",
+  chart_with_upwards_trend: "📈", chart_with_downwards_trend: "📉",
+  bar_chart: "📊",
+  bookmark: "🔖",
+  pushpin: "📌",
+  link: "🔗",
+  package: "📦",
+  email: "📧", mailbox: "📬",
+  calendar: "📅",
+  pencil: "📝", memo: "📝",
 };
 
 /**
- * Extracts reaction tags from all messages in a thread.
+ * Extract per-message Slack reactions as Plot reactions. Unmapped
+ * shortcodes are skipped; deduplication is by source.accountId so
+ * repeated reactors don't double-count.
  */
-function extractSlackReactionTags(
-  messages: SlackMessage[],
+function extractSlackMessageReactions(
+  msg: SlackMessage,
   userInfos?: SlackUserInfoMap
-): NewTags | undefined {
-  const tagActors = new Map<Tag, NewActor[]>();
+): NewReactions | undefined {
+  if (!msg.reactions || msg.reactions.length === 0) return undefined;
+  const byEmoji = new Map<string, NewActor[]>();
 
-  for (const msg of messages) {
-    if (!msg.reactions) continue;
-    for (const reaction of msg.reactions) {
-      const tag = SLACK_REACTION_TO_TAG[reaction.name];
-      if (!tag) continue;
+  for (const reaction of msg.reactions) {
+    const unicode = SLACK_SHORTCODE_TO_UNICODE[reaction.name];
+    if (!unicode) continue;
 
-      const actors = reaction.users.map((userId) =>
-        slackUserToNewActor(userId, userInfos?.get(userId))
-      );
-      const existing = tagActors.get(tag) ?? [];
-      tagActors.set(tag, [...existing, ...actors]);
-    }
+    const actors = reaction.users.map((userId) =>
+      slackUserToNewActor(userId, userInfos?.get(userId))
+    );
+    const existing = byEmoji.get(unicode) ?? [];
+    byEmoji.set(unicode, [...existing, ...actors]);
   }
 
-  if (tagActors.size === 0) return undefined;
+  if (byEmoji.size === 0) return undefined;
 
-  const tags: NewTags = {};
-  for (const [tag, actors] of tagActors) {
-    // Deduplicate actors by source accountId
+  const out: NewReactions = {};
+  for (const [emoji, actors] of byEmoji) {
     const seen = new Set<string>();
-    tags[tag] = actors.filter((a) => {
+    out[emoji] = actors.filter((a) => {
       const key = "source" in a ? a.source?.accountId : "id" in a ? a.id : "";
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }
-  return tags;
+  return out;
+}
+
+/**
+ * Reverse mapping for write-back: Unicode → preferred Slack shortcode.
+ * Built from SLACK_SHORTCODE_TO_UNICODE; first shortcode wins on
+ * collisions (e.g. `thumbsup` over `+1`).
+ */
+export const SLACK_UNICODE_TO_SHORTCODE: Record<string, string> = {};
+for (const [shortcode, unicode] of Object.entries(SLACK_SHORTCODE_TO_UNICODE)) {
+  if (!SLACK_UNICODE_TO_SHORTCODE[unicode]) {
+    SLACK_UNICODE_TO_SHORTCODE[unicode] = shortcode;
+  }
 }
 
 /**
@@ -594,9 +677,6 @@ export function transformSlackThread(
   // Canonical URL using Slack's app_redirect (works across all workspaces)
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
-  // Extract reaction tags from all messages
-  const reactionTags = extractSlackReactionTags(messages, userInfos);
-
   // Create link
   const thread: NewLinkWithNotes = {
     source: canonicalUrl,
@@ -609,17 +689,18 @@ export function transformSlackThread(
     },
     sourceUrl: canonicalUrl,
     notes: [],
-    ...(reactionTags ? { tags: reactionTags } : {}),
     preview: firstText || null,
     ...(initialSync ? { unread: false, archived: false } : {}),
   };
 
-  // Create Notes for all messages (including first)
+  // Create Notes for all messages (including first). Reactions live
+  // per-message in Slack, so each note carries its own reaction set.
   for (const message of messages) {
     const userId = message.user || message.bot_id;
     if (!userId) continue; // Skip messages without user
 
     const text = formatSlackText(message.text);
+    const reactions = extractSlackMessageReactions(message, userInfos);
 
     // Create NewNote with idempotent key
     const note = {
@@ -628,6 +709,7 @@ export function transformSlackThread(
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
       checkForTasks: true,
+      ...(reactions ? { reactions } : {}),
     };
 
     thread.notes!.push(note);

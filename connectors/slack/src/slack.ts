@@ -4,7 +4,6 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import { Tag } from "@plotday/twister/tag";
 import type { Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
@@ -25,6 +24,8 @@ type MessageChannel = {
 
 import {
   SLACK_AUTH_ERRORS,
+  SLACK_SHORTCODE_TO_UNICODE,
+  SLACK_UNICODE_TO_SHORTCODE,
   SlackApi,
   SlackPermanentError,
   SlackRateLimitedError,
@@ -88,6 +89,12 @@ export class Slack extends Connector<Slack> {
   ];
 
   readonly provider = AuthProvider.Slack;
+  readonly reactionCapabilities = {
+    mode: "open-unicode" as const,
+    // Custom workspace emoji are skipped on both sync directions for
+    // v1; flip to "workspace" once the custom_emoji image cache lands.
+    customEmoji: "none" as const,
+  };
   readonly scopes = Slack.SCOPES;
   readonly linkTypes = [
     {
@@ -98,7 +105,7 @@ export class Slack extends Connector<Slack> {
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", tag: Tag.Star, active: true },
+        { status: "later", label: "Later", active: true },
       ],
     },
     {
@@ -521,6 +528,11 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
+    if (event.type === "reaction_added" || event.type === "reaction_removed") {
+      await this.handleReactionEvent(event);
+      return;
+    }
+
     if (
       event.type === "message" &&
       event.channel === channelId &&
@@ -528,6 +540,106 @@ export class Slack extends Connector<Slack> {
     ) {
       await this.startIncrementalSync(channelId);
     }
+  }
+
+  /**
+   * Re-sync a single Slack thread on reaction_added / reaction_removed.
+   *
+   * The reaction event payload only carries the reacted message's ts.
+   * Resolve its parent thread_ts via `conversations.history` so
+   * `getThread` walks the right tree; fall back to the message ts as
+   * thread_ts if the lookup fails (covers top-level messages).
+   */
+  private async handleReactionEvent(event: any): Promise<void> {
+    const item = event.item;
+    if (!item || item.type !== "message") return;
+
+    const channelId = item.channel as string | undefined;
+    const messageTs = item.ts as string | undefined;
+    if (!channelId || !messageTs) return;
+
+    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch {
+      return;
+    }
+
+    let parentTs = messageTs;
+    try {
+      const { messages } = await api.getConversationHistory(
+        channelId,
+        undefined,
+        messageTs,
+        messageTs
+      );
+      const m = messages.find((x) => x.ts === messageTs);
+      if (m?.thread_ts) parentTs = m.thread_ts;
+    } catch {
+      // Continue with messageTs — top-level messages match this anyway.
+    }
+
+    try {
+      await this.refreshSlackThread(api, channelId, parentTs);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        console.warn(
+          `handleReactionEvent: rate limited on ${error.method}; dropping ${channelId}/${parentTs}`
+        );
+        return;
+      }
+      console.warn(
+        `handleReactionEvent failed for ${channelId}/${parentTs}`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Re-fetch a Slack thread and upsert it (notes + per-message reactions).
+   * Idempotent via `source`/`key` upsert; safe to call repeatedly.
+   * Unlike {@link saveStarredThread} this does not touch the link's
+   * status or set the skipKey echo guard — it's purely a refresh path.
+   */
+  private async refreshSlackThread(
+    api: SlackApi,
+    channelId: string,
+    threadTs: string
+  ): Promise<void> {
+    const messages = await api.getThread(channelId, threadTs);
+    if (messages.length === 0) return;
+
+    const userIds = new Set<string>();
+    for (const message of messages) {
+      if (message.user) userIds.add(message.user);
+      if (message.reactions) {
+        for (const reaction of message.reactions) {
+          for (const userId of reaction.users) userIds.add(userId);
+        }
+      }
+    }
+
+    let userInfos: SlackUserInfoMap | undefined;
+    try {
+      userInfos = await this.resolveUserInfos(api, [...userIds]);
+    } catch (error) {
+      console.warn(
+        "refreshSlackThread: resolveUserInfos failed; proceeding without real names",
+        error
+      );
+    }
+
+    const link = transformSlackThread(messages, channelId, userInfos, false);
+    if (!link.notes || link.notes.length === 0) return;
+    link.channelId = channelId;
+    link.meta = {
+      ...link.meta,
+      syncProvider: "slack",
+      syncableId: channelId,
+    };
+    await this.tools.integrations.saveLink(link);
   }
 
   private async handleStarEvent(event: any, isStarred: boolean): Promise<void> {
@@ -1092,7 +1204,10 @@ export class Slack extends Connector<Slack> {
 
   /**
    * Pushes an edited Plot note to Slack via `chat.update` and refreshes
-   * the sync baseline from Slack's echoed `text`.
+   * the sync baseline from Slack's echoed `text`. Also reconciles
+   * reactions: any emoji present in `note.reactions` but missing on the
+   * Slack message is added; any reaction on the Slack message not
+   * present in Plot is removed.
    *
    * The note's `key` is the Slack `ts` (set on create). If it's missing
    * or the thread lacks routing metadata we no-op.
@@ -1105,12 +1220,105 @@ export class Slack extends Connector<Slack> {
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
     const api = await this.getWorkspaceApi(tokenChannelId);
-    const body = note.content ?? "";
-    const result = await api.updateMessage(channelId, note.key, body);
-    const externalContent = formatSlackText(result.text ?? body);
-    return {
-      externalContent,
-    };
+
+    // --- Content sync (best-effort; only the author can edit) ---
+    let writeBack: NoteWriteBackResult | undefined;
+    if (note.content !== null && note.content !== undefined) {
+      try {
+        const body = note.content ?? "";
+        const result = await api.updateMessage(channelId, note.key, body);
+        const externalContent = formatSlackText(result.text ?? body);
+        writeBack = { externalContent };
+      } catch (error) {
+        console.warn(
+          "[slack] chat.update failed; skipping content baseline:",
+          error
+        );
+      }
+    }
+
+    // --- Reaction sync ---
+    // Acts as the connected (authenticated) user for every reaction
+    // diff — v1 limitation; per-actor `actAs()` write-back can follow.
+    await this.syncReactionsToSlack(api, channelId, note.key, note);
+
+    return writeBack;
+  }
+
+  /**
+   * Reconcile Plot's `note.reactions` against the Slack message's
+   * current reactions. Skips emoji that aren't in
+   * SLACK_UNICODE_TO_SHORTCODE (custom workspace emoji live there
+   * once the cache lands).
+   */
+  private async syncReactionsToSlack(
+    api: SlackApi,
+    channelId: string,
+    messageTs: string,
+    note: Note
+  ): Promise<void> {
+    // Plot-side: emoji that have at least one reactor in Plot.
+    const plotShortcodes = new Set<string>();
+    for (const [emoji, actorIds] of Object.entries(note.reactions ?? {})) {
+      if (!actorIds || actorIds.length === 0) continue;
+      const shortcode = SLACK_UNICODE_TO_SHORTCODE[emoji];
+      if (!shortcode) continue; // unmapped Unicode / custom emoji — skip
+      plotShortcodes.add(shortcode);
+    }
+
+    // Slack-side: current reactions on the message. One call to
+    // conversations.history with oldest=latest=ts is cheaper than
+    // re-fetching the whole thread.
+    let currentReactions: SlackMessage["reactions"] = [];
+    try {
+      const { messages } = await api.getConversationHistory(
+        channelId,
+        undefined,
+        messageTs,
+        messageTs
+      );
+      currentReactions = messages.find((m) => m.ts === messageTs)?.reactions ?? [];
+    } catch (error) {
+      console.warn(
+        "[slack] conversations.history failed for reaction diff; skipping",
+        error
+      );
+      return;
+    }
+
+    const slackShortcodes = new Set<string>();
+    for (const r of currentReactions ?? []) slackShortcodes.add(r.name);
+
+    // Add reactions present in Plot but missing in Slack.
+    for (const shortcode of plotShortcodes) {
+      if (slackShortcodes.has(shortcode)) continue;
+      try {
+        await api.addReaction(channelId, messageTs, shortcode);
+      } catch (error) {
+        console.warn(
+          `[slack] reactions.add failed for ${shortcode}`,
+          error
+        );
+      }
+    }
+
+    // Remove reactions present in Slack but missing in Plot.
+    for (const shortcode of slackShortcodes) {
+      if (plotShortcodes.has(shortcode)) continue;
+      // Only remove shortcodes we'd have mapped on inbound; that's the
+      // round-trip surface we can safely reconcile. Leaves custom /
+      // unmapped emoji alone — they aren't represented in Plot, so we
+      // have no way to know if the user "removed" them.
+      if (!SLACK_SHORTCODE_TO_UNICODE[shortcode]) continue;
+      try {
+        await api.removeReaction(channelId, messageTs, shortcode);
+      } catch (error) {
+        console.warn(
+          `[slack] reactions.remove failed for ${shortcode}`,
+          error
+        );
+      }
+    }
   }
 }
 
