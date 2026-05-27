@@ -1422,6 +1422,7 @@ class _ThreadActionsRow extends StatelessWidget {
         final priorityBloc = context.read<PriorityBloc?>();
         final groups = await threadCommandGroups(
           thread,
+          open: false,
           priorityBloc: priorityBloc,
         );
         return Commands(groups: groups);
