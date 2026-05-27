@@ -119,9 +119,17 @@ export function actorTypeToString(type: ActorType): string {
 /**
  * Fallback HTML-to-text conversion when ai.toMarkdown() fails.
  * Strips tags, decodes entities, and preserves readable text content.
+ *
+ * The output is passed through `cleanConvertedMarkdown` at the call site so
+ * the fallback path gets the same blank-line collapsing and empty-link
+ * stripping as the AI success path.
  */
 function stripHtmlToText(html: string): string {
-  let text = html;
+  // Normalize line endings up front. Outlook/Exchange HTML commonly mixes
+  // \r\n with \n inside text content; the `\n{3,}` collapse below (and the
+  // line-by-line cleanup in cleanConvertedMarkdown) only sees \n, so an
+  // unnormalized `\r\n\r\n\r\n` run survives as multiple blank paragraphs.
+  let text = html.replace(/\r\n?/g, "\n");
   // Remove doctype, head, style, script blocks entirely
   text = text.replace(/<!DOCTYPE[^>]*>/gi, "");
   text = text.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "");
@@ -616,18 +624,18 @@ export async function convertNoteToMarkdown(
             "Failed to convert HTML to Markdown",
             new Error(String(result.error))
           );
-          return stripHtmlToText(preprocessed);
+          return cleanConvertedMarkdown(stripHtmlToText(preprocessed));
         }
 
         // Fallback for unexpected format
         const logger = createLogger();
         logger.error("Unexpected toMarkdown response format", { result });
-        return stripHtmlToText(note);
+        return cleanConvertedMarkdown(stripHtmlToText(note));
       } catch (error) {
         // If conversion fails, strip HTML tags as fallback
         const logger = createLogger();
         logger.error("Failed to convert HTML to Markdown", error as Error);
-        return stripHtmlToText(note);
+        return cleanConvertedMarkdown(stripHtmlToText(note));
       }
     }
 

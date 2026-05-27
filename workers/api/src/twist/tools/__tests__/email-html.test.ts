@@ -186,6 +186,17 @@ describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
     const out = cleanConvertedMarkdown(input);
     expect(out).toBe("Hello");
   });
+
+  it("collapses CRLF/CR blank-line runs the same as LF runs", () => {
+    // Outlook/Exchange HTML emits CRLF inside text content. When
+    // `ai.toMarkdown` falls back to `stripHtmlToText`, the stripped text
+    // ends up with mixed `\n` and `\r\n` separators. Each \r-only line
+    // counts as visually empty (\r is trimmed by .trim()), so the run
+    // should still collapse to a single blank separator.
+    const input = "Best,\n\r\nShanzay\n\r\n \n\r\n\r\n\r\n\r\n\r\nShanzay Amjad";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("Best,\n\nShanzay\n\nShanzay Amjad");
+  });
 });
 
 describe("cleanConvertedMarkdown \u2014 multi-line links", () => {
