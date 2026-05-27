@@ -683,6 +683,30 @@ export function twistFactory({
           { env, id, version, environment, ctx: operationCtx }
         );
       },
+
+      /**
+       * Call a method directly on the connector/twist instance and return its
+       * result. Used for request/response patterns such as `downloadAttachment`.
+       *
+       * Calls `callCallback` with an empty path so the method is invoked on the
+       * twist root (i.e. the Connector class instance) rather than on a built-in
+       * tool. Errors propagate to the caller unmodified.
+       *
+       * @param methodName - Name of the method to call on the connector instance.
+       * @param args - Arguments forwarded to the method.
+       * @returns Whatever the method returns.
+       */
+      runConnectorMethod: async (
+        methodName: string,
+        ...args: unknown[]
+      ): Promise<unknown> => {
+        return await handleTwistOperation(
+          methodName,
+          // @ts-ignore - Type instantiation is excessively deep and possibly infinite
+          () => twist.callCallback(twistInit, [], methodName, ...args),
+          { env, id, version, environment, ctx: operationCtx }
+        );
+      },
     };
   };
 }
