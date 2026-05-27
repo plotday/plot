@@ -29,7 +29,6 @@ import {
   type SyncState,
   buildNewEmailMessage,
   buildReplyMessage,
-  collectAttachments,
   getHeader,
   parseEmailAddresses,
   syncGmailChannel,
