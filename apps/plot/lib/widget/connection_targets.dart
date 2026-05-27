@@ -15,7 +15,7 @@ class CreateTarget {
     required this.defaultStatus,
   })  : connectorName =
             CreateLinkUserAction.parseTwistName(twist.name).connectorName,
-        accountName =
+        accountName = twist.accountLabel ??
             CreateLinkUserAction.parseTwistName(twist.name).accountName;
 
   final TwistInstance twist;
