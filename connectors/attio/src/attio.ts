@@ -6,7 +6,6 @@ import {
   type Thread,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 import { Connector } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -121,7 +120,6 @@ export class Attio extends Connector<Attio> {
     let dealStatuses: Array<{
       status: string;
       label: string;
-      tag?: Tag;
       done?: true;
       todo?: true;
     }> = [];
@@ -138,9 +136,7 @@ export class Attio extends Connector<Attio> {
         status: stage.title,
         label: stage.title,
         ...(i === firstActiveIndex ? { task: true as const } : {}),
-        ...(isWonStage(stage.title)
-          ? { tag: Tag.Done, done: true as const }
-          : {}),
+        ...(isWonStage(stage.title) ? { done: true as const } : {}),
         ...(isLostStage(stage.title) ? { done: true as const } : {}),
       }));
     } catch (error) {

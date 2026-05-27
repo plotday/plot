@@ -1,35 +1,23 @@
 /**
- * Thread / note tags. Two remaining types:
- * 1. Compute tags (1–99) — system state (Todo, Done, …) that the runtime
- *    auto-manages.
- * 2. Toggle tags (100–999) — shared boolean state on a thread/note
- *    (Pinned, Urgent, Goal, Decision, Waiting, Blocked, Warning,
- *    Question, Twist, Star, Idea) that any member can flip.
+ * Compute tags — system state the runtime auto-manages on threads and
+ * notes (`todo`, `done`, `twist` activity marker, …).
  *
- * The count-tag range (1000–1027) was retired in favour of the open
- * Unicode emoji `Reaction` type — see `@plotday/twister/plot`'s
- * `Reactions` / `NewReactions` and the per-row `note.reactions` /
- * `thread.reactions` fields. Connectors should route emoji reactions
- * through `reactions`, not `tags`.
+ * The toggle range (100–999) and count range (1000–1027) have been
+ * retired in favour of the open Unicode emoji `Reaction` type — see
+ * `@plotday/twister/plot`'s `Reactions` / `NewReactions` and the
+ * per-row `note.reactions` / `thread.reactions` fields. Connectors
+ * route emoji reactions through `reactions`, not `tags`.
  *
- * Migration of existing data is handled server-side; old clients still
- * reading archived count-tag rows from local caches degrade gracefully.
+ * `Tag.Twist` is the surviving non-trivial tag: a system marker the
+ * runtime adds to a note while a twist is processing it, and clears
+ * once the twist returns. It's not user-facing and not a reaction.
  */
 export enum Tag {
-  // Compute tags
   Todo = 1,
   Done = 3,
-
-  // Toggle tags
-  Pinned = 100,
-  Urgent = 101,
-  Goal = 103,
-  Decision = 104,
-  Waiting = 105,
-  Blocked = 106,
-  Warning = 107,
-  Question = 108,
-  Twist = 109,
-  Star = 110,
-  Idea = 111,
+  /** System marker for "a twist is processing this note." Set by the
+   * runtime when a twist callback fires, cleared on return. Twists
+   * may still write `{ [Tag.Twist]: true | false }` to twistTags to
+   * mark/unmark a note explicitly. */
+  Twist = 12,
 }

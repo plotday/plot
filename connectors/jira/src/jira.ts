@@ -8,7 +8,6 @@ import {
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
-import { Tag } from "@plotday/twister/tag";
 import { Connector, type NoteWriteBackResult } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -62,7 +61,7 @@ export class Jira extends Connector<Jira> {
       logoMono: "https://api.iconify.design/simple-icons/jira.svg",
       statuses: [
         { status: "open", label: "Open", task: true },
-        { status: "done", label: "Done", tag: Tag.Done, done: true },
+        { status: "done", label: "Done", done: true },
       ],
       supportsAssignee: true,
     },

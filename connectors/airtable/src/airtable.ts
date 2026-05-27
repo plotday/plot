@@ -5,7 +5,6 @@ import {
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
-import { Tag } from "@plotday/twister/tag";
 import { Connector } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -118,7 +117,6 @@ export class Airtable extends Connector<Airtable> {
         {
           status: STATUS_DONE,
           label: "Done",
-          tag: Tag.Done,
           done: true as const,
         },
       ],
@@ -225,7 +223,7 @@ export class Airtable extends Connector<Airtable> {
     const pushStatus = (status: string, label: string) => {
       const isDone = DONE_OPTION_MATCHERS.test(status);
       if (isDone) {
-        statuses.push({ status, label, done: true, tag: Tag.Done });
+        statuses.push({ status, label, done: true });
       } else if (!createDefaultAssigned) {
         statuses.push({ status, label, task: true, createDefault: true });
         createDefaultAssigned = true;
