@@ -27,7 +27,8 @@ vi.mock("../twist/factory", () => ({
 }));
 
 vi.mock("../rpc", () => ({
-  rpcUser: (...args: unknown[]) => rpcUserMock(...args),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rpcUser: (...args: unknown[]) => (rpcUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 
 // ---- Helpers ----
@@ -144,7 +145,7 @@ describe("GET /files/ref/:noteId/:actionIndex", () => {
     };
     const res = await get(`/files/ref/${TEST_NOTE_ID}/0`, ctx);
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as { message: string };
     expect(body.message).toMatch(/not found at index/i);
   });
 
@@ -161,7 +162,7 @@ describe("GET /files/ref/:noteId/:actionIndex", () => {
     };
     const res = await get(`/files/ref/${TEST_NOTE_ID}/0`, ctx);
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as { message: string };
     expect(body.message).toMatch(/not a fileRef/i);
   });
 
@@ -246,7 +247,7 @@ describe("GET /files/ref/:noteId/:actionIndex", () => {
     const res = await get(`/files/ref/${TEST_NOTE_ID}/0`, ctx);
 
     expect(res.status).toBe(502);
-    const body = await res.json();
+    const body = (await res.json()) as { message: string };
     expect(body.message).toMatch(/unavailable/i);
     expect(captureExceptionMock).toHaveBeenCalledWith(
       expect.any(Error),
