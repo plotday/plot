@@ -1,5 +1,6 @@
 export 'compose_dropdown.dart';
 export 'compose_field_row.dart';
+export 'compose_select_field.dart';
 export 'compose_value_input.dart';
 export 'connection_choice.dart';
 export 'connection_compose_field.dart';

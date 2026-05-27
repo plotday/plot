@@ -7,7 +7,18 @@ CREATE OR REPLACE FUNCTION public.share_thread (
     p_user_id uuid,
     p_thread_id uuid,
     p_add_contact_ids uuid[] DEFAULT ARRAY[]::uuid[],
-    p_remove_contact_ids uuid[] DEFAULT ARRAY[]::uuid[]
+    p_remove_contact_ids uuid[] DEFAULT ARRAY[]::uuid[],
+    -- Optional per-contact role assignments. Shape:
+    --   [ { "contactId": "<uuid>", "role": "<role_id>" }, ... ]
+    -- Applied to thread.contact_meta as { role, addedBy = p_user_id } for
+    -- each entry. Entries whose role is the link type's default may be
+    -- omitted by the caller (the API layer normalizes this). Entries for
+    -- contacts being removed are ignored.
+    p_contact_roles jsonb DEFAULT '[]'::jsonb,
+    -- Optional role changes on existing contacts. Same shape as
+    -- p_contact_roles. Applied after add/remove. Caller is responsible for
+    -- ensuring contactIds are already in thread.contacts.
+    p_role_changes jsonb DEFAULT '[]'::jsonb
 )
     RETURNS jsonb
     LANGUAGE plpgsql
@@ -16,8 +27,11 @@ CREATE OR REPLACE FUNCTION public.share_thread (
 DECLARE
     v_current_contacts uuid[];
     v_new_contacts uuid[];
+    v_current_meta jsonb;
+    v_new_meta jsonb;
     v_needs_invitation uuid[];
     r RECORD;
+    v_role RECORD;
 BEGIN
     -- Validate caller has access to this thread
     IF NOT EXISTS (
@@ -29,13 +43,16 @@ BEGIN
         RAISE EXCEPTION 'User does not have access to this thread';
     END IF;
 
-    -- Fetch current contacts
-    SELECT contacts INTO v_current_contacts
+    -- Fetch current contacts and meta
+    SELECT contacts, contact_meta INTO v_current_contacts, v_current_meta
     FROM thread
     WHERE id = p_thread_id;
 
     IF v_current_contacts IS NULL THEN
         v_current_contacts := ARRAY[]::uuid[];
+    END IF;
+    IF v_current_meta IS NULL THEN
+        v_current_meta := '{}'::jsonb;
     END IF;
 
     -- Compute new contacts: (current + add) - remove, deduplicated
@@ -48,9 +65,58 @@ BEGIN
     ) all_contacts
     WHERE cid != ALL(COALESCE(p_remove_contact_ids, ARRAY[]::uuid[]));
 
-    -- Update thread.contacts — fires file_thread_priority_peers trigger
+    -- Compute new contact_meta:
+    --   1. Drop entries for removed contacts.
+    --   2. Apply p_contact_roles for added contacts.
+    --   3. Apply p_role_changes for existing contacts.
+    v_new_meta := v_current_meta;
+
+    -- Strip removed contacts' meta entries
+    IF array_length(p_remove_contact_ids, 1) > 0 THEN
+        FOR v_role IN SELECT unnest(p_remove_contact_ids) AS cid LOOP
+            v_new_meta := v_new_meta - (v_role.cid::text);
+        END LOOP;
+    END IF;
+
+    -- Apply add-time role assignments
+    FOR v_role IN
+        SELECT
+            (entry->>'contactId')::uuid AS contact_id,
+            entry->>'role' AS role
+        FROM jsonb_array_elements(COALESCE(p_contact_roles, '[]'::jsonb)) AS entry
+        WHERE entry->>'contactId' IS NOT NULL AND entry->>'role' IS NOT NULL
+    LOOP
+        v_new_meta := v_new_meta || jsonb_build_object(
+            v_role.contact_id::text,
+            jsonb_build_object('role', v_role.role, 'addedBy', p_user_id::text)
+        );
+    END LOOP;
+
+    -- Apply role changes on existing contacts. addedBy is preserved from
+    -- the existing entry when present, otherwise falls back to caller.
+    FOR v_role IN
+        SELECT
+            (entry->>'contactId')::uuid AS contact_id,
+            entry->>'role' AS role
+        FROM jsonb_array_elements(COALESCE(p_role_changes, '[]'::jsonb)) AS entry
+        WHERE entry->>'contactId' IS NOT NULL AND entry->>'role' IS NOT NULL
+    LOOP
+        v_new_meta := v_new_meta || jsonb_build_object(
+            v_role.contact_id::text,
+            jsonb_build_object(
+                'role', v_role.role,
+                'addedBy', COALESCE(
+                    v_new_meta->(v_role.contact_id::text)->>'addedBy',
+                    p_user_id::text
+                )
+            )
+        );
+    END LOOP;
+
+    -- Update thread — fires file_thread_priority_peers trigger
     UPDATE thread
-    SET contacts = v_new_contacts
+    SET contacts = v_new_contacts,
+        contact_meta = v_new_meta
     WHERE id = p_thread_id;
 
     -- For each newly-added contact linked to a user, create thread_state
@@ -66,8 +132,19 @@ BEGIN
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM p_user_id
     LOOP
-        INSERT INTO thread_state (user_id, thread_id)
-        VALUES (r.peer_user_id, p_thread_id)
+        -- Assign a deterministic state_order on insert. NULL state_order
+        -- makes the Flutter Doing/unread-cluster drag-reorder land at the
+        -- end of the null-order group instead of where the user released
+        -- it (see Thread.order's doc for the full failure mode). Format
+        -- mirrors Flutter's Order.first(): `-millisecondsSinceEpoch +
+        -- random()` so new rows sort near the top of their cluster in
+        -- ascending order.
+        INSERT INTO thread_state (user_id, thread_id, "order")
+        VALUES (
+            r.peer_user_id,
+            p_thread_id,
+            (-EXTRACT(EPOCH FROM clock_timestamp()) * 1000) + random()
+        )
         ON CONFLICT (user_id, thread_id) DO NOTHING;
     END LOOP;
 
@@ -85,6 +162,7 @@ BEGIN
 
     RETURN jsonb_build_object(
         'contacts', to_jsonb(v_new_contacts),
+        'contact_meta', v_new_meta,
         'needs_invitation', to_jsonb(v_needs_invitation)
     );
 END;

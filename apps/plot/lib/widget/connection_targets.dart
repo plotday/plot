@@ -15,7 +15,7 @@ class CreateTarget {
     required this.defaultStatus,
   })  : connectorName =
             CreateLinkUserAction.parseTwistName(twist.name).connectorName,
-        accountName =
+        accountName = twist.accountLabel ??
             CreateLinkUserAction.parseTwistName(twist.name).accountName;
 
   final TwistInstance twist;
@@ -158,6 +158,37 @@ Future<List<CreateTarget>> loadCreateTargets() async {
     }
   }
   return result;
+}
+
+/// List-tile builder for the NewThreadPage connection picker. Displays
+/// the connector logo, the normalized link-type label as the title
+/// ("Gmail email"), and the connection / account as the subtitle.
+ListTile connectionTargetTile(BuildContext context, CreateTarget target) {
+  final isDark = context.read<ThemeBloc>().isDarkMode(context);
+  final logo = isDark
+      ? (target.linkType.logoDark ?? target.linkType.logo)
+      : target.linkType.logo;
+  final subtitle = connectionTargetSubtitle(target);
+  return ListTile(
+    leadingBuilder: logo != null
+        ? (_, _) => Builder(
+              builder: (context) => Padding(
+                padding: EdgeInsets.only(
+                  left: context.theme.spacing.lg,
+                  right: 8,
+                ),
+                child: LogoImage(
+                  url: logo,
+                  size: 16,
+                  fallback: const Icon(PlotIcon.link, size: 16),
+                ),
+              ),
+            )
+        : null,
+    icon: logo == null ? PlotIcon.link : null,
+    title: connectionTargetTitle(target),
+    subtitle: subtitle.isEmpty ? null : subtitle,
+  );
 }
 
 /// Shared list-tile builder for "Create new …" rows in pickers.

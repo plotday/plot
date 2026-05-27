@@ -1,9 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
@@ -130,11 +132,23 @@ class ConnectionPickerModal {
       },
       itemBuilder: (choice, _) => switch (choice) {
         PlotThreadChoice() => ListTile(
-            icon: PlotIcon.note,
+            leadingBuilder: (_, _) => Builder(
+              builder: (context) => Padding(
+                padding: EdgeInsets.only(
+                  left: context.theme.spacing.lg,
+                  right: 8,
+                ),
+                child: SvgPicture.asset(
+                  'assets/plot-icon.svg',
+                  width: 16,
+                  height: 16,
+                ),
+              ),
+            ),
             title: 'Plot thread',
           ),
         TargetConnectionChoice(:final target) =>
-          createTargetTile(context, target),
+          connectionTargetTile(context, target),
       },
       prompt: 'Pick a connection',
       emptyMessage: 'No connections available',
