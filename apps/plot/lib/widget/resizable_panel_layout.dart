@@ -103,13 +103,11 @@ class ResizablePanelLayout extends StatefulWidget {
 
   /// Optional bottom section of the left panel. When provided, the left
   /// column is split vertically with [left] on top (plain, capped) and
-  /// [leftBottom] below (wrapped in a squircle card, fills remaining
-  /// space).
+  /// [leftBottom] below (plain, fills remaining space).
   final Widget? leftBottom;
 
-  /// Optional footer rendered below the [leftBottom] squircle in the left
-  /// column. Shares the column's horizontal padding but sits outside the
-  /// squircle so the card naturally separates it from the agenda above.
+  /// Optional footer rendered below [leftBottom] in the left column.
+  /// Shares the column's horizontal padding.
   final Widget? leftFooter;
 
   /// Middle panel when all three are shown.
@@ -211,16 +209,10 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         child: widget.left,
       );
     }
-    const bottomRadius = BorderRadius.all(Radius.circular(_panelRadius));
     final agendaGap = context.theme.spacing.xl;
     final top = Padding(
       padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
       child: widget.left,
-    );
-    final squircle = _squircleCard(
-      context,
-      widget.leftBottom!,
-      borderRadius: bottomRadius,
     );
     final bottom = Padding(
       padding: EdgeInsets.fromLTRB(
@@ -230,11 +222,11 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         _outerInset,
       ),
       child: widget.leftFooter == null
-          ? squircle
+          ? widget.leftBottom!
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: squircle),
+                Expanded(child: widget.leftBottom!),
                 SizedBox(height: agendaGap),
                 widget.leftFooter!,
               ],
