@@ -55,6 +55,19 @@ class ConnectionComposeField extends StatelessWidget {
             : const Icon(PlotIcon.link);
         title = connectionTargetTitle(target);
         subtitle = connectionTargetSubtitle(target);
+      case TwistConnectionChoice():
+        final url = isDark
+            ? (activeChoice.logoDark ?? activeChoice.logo)
+            : activeChoice.logo;
+        logo = url != null
+            ? LogoImage(
+                url: url,
+                size: theme.iconSizes.sm,
+                fallback: const Icon(PlotIcon.twist),
+              )
+            : const Icon(PlotIcon.twist);
+        title = activeChoice.label;
+        subtitle = '';
     }
 
     return ComposeSelectField(
