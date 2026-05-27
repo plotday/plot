@@ -78,17 +78,13 @@ export class Linear extends Connector<Linear> {
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
         { status: "backlog", label: "Backlog" },
-        {
-          status: "unstarted",
-          label: "To Do",
-          task: true,
-          createDefault: true,
-        },
+        { status: "unstarted", label: "To Do", task: true },
         { status: "started", label: "In Progress" },
         { status: "completed", label: "Done", done: true },
         { status: "cancelled", label: "Cancelled", done: true },
       ],
       supportsAssignee: true,
+      compose: { status: "unstarted" },
     },
   ];
 
@@ -172,17 +168,21 @@ export class Linear extends Connector<Linear> {
     return Promise.all(
       teams.nodes.map(async (team) => {
         const states = await team.states();
-        const statuses = states.nodes
-          .sort((a, b) => a.position - b.position)
-          .map((s) => ({
-            status: s.id,
-            label: s.name,
-            ...(s.type === "unstarted"
-              ? { task: true as const, createDefault: true as const }
-              : {}),
-            ...(s.type === "completed" ? { done: true as const } : {}),
-            ...(s.type === "cancelled" ? { done: true as const } : {}),
-          }));
+        const sortedStates = states.nodes.sort(
+          (a, b) => a.position - b.position
+        );
+        const statuses = sortedStates.map((s) => ({
+          status: s.id,
+          label: s.name,
+          ...(s.type === "unstarted" ? { task: true as const } : {}),
+          ...(s.type === "completed" ? { done: true as const } : {}),
+          ...(s.type === "cancelled" ? { done: true as const } : {}),
+        }));
+        // Pick the team's "unstarted" state UUID for new-issue creation.
+        // Falls back to the connector-level "unstarted" category, which
+        // `onCreateLink` resolves per-team via `resolveStateId`.
+        const unstartedStateId =
+          sortedStates.find((s) => s.type === "unstarted")?.id ?? "unstarted";
         return {
           id: team.id,
           title: team.name,
@@ -198,6 +198,7 @@ export class Linear extends Connector<Linear> {
                 "https://api.iconify.design/simple-icons/linear.svg",
               statuses,
               supportsAssignee: true,
+              compose: { status: unstartedStateId },
             },
           ],
         };

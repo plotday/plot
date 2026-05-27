@@ -97,36 +97,36 @@ export class Slack extends Connector<Slack> {
   readonly scopes = Slack.SCOPES;
   readonly linkTypes = [
     {
-      type: "message",
-      label: "Message",
+      type: "thread",
+      label: "Thread",
       noteLabel: "Message",
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
         { status: "inbox", label: "Inbox" },
         { status: "later", label: "Later", active: true },
+        { status: "sent", label: "Sent" },
       ],
+      compose: {
+        targets: "channels" as const,
+        status: "sent",
+      },
     },
     {
-      type: "slack-channel",
-      label: "Channel message",
+      type: "dm",
+      label: "Direct messages",
       noteLabel: "Message",
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
+        { status: "inbox", label: "Inbox" },
+        { status: "later", label: "Later", active: true },
+        { status: "sent", label: "Sent" },
       ],
-    },
-    {
-      type: "slack-dm",
-      label: "Direct message",
-      noteLabel: "Message",
-      logo: "https://api.iconify.design/logos/slack-icon.svg",
-      logoMono: "https://api.iconify.design/simple-icons/slack.svg",
-      targets: "contacts" as const,
-      statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
-      ],
+      compose: {
+        targets: "contacts" as const,
+        status: "sent",
+      },
     },
   ];
 
@@ -940,8 +940,8 @@ export class Slack extends Connector<Slack> {
   /**
    * Creates a new Slack message from Plot via `onCreateLink`.
    *
-   * - `slack-channel`: posts to the enabled channel (`draft.channelId`).
-   * - `slack-dm`: opens or retrieves the DM/MPIM channel for the selected
+   * - `thread`: posts to the enabled channel (`draft.channelId`).
+   * - `dm`: opens or retrieves the DM/MPIM channel for the selected
    *   recipients, then posts there.
    *
    * The returned `meta` matches what `onNoteCreated` reads so replies via
@@ -950,10 +950,10 @@ export class Slack extends Connector<Slack> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
-    if (draft.type === "slack-channel") {
+    if (draft.type === "thread") {
       return this.createChannelPost(draft);
     }
-    if (draft.type === "slack-dm") {
+    if (draft.type === "dm") {
       return this.createDirectMessage(draft);
     }
     return null;
@@ -978,7 +978,7 @@ export class Slack extends Connector<Slack> {
 
     return {
       source: `slack:channel:${channelId}:ts:${ts}`,
-      type: "slack-channel",
+      type: "thread",
       title: draft.title,
       status: draft.status,
       created: new Date(parseFloat(ts) * 1000),
@@ -998,7 +998,7 @@ export class Slack extends Connector<Slack> {
   ): Promise<NewLinkWithNotes | null> {
     const recipients = draft.recipients;
     if (!recipients || recipients.length === 0) {
-      console.error("slack-dm onCreateLink: no recipients provided");
+      console.error("slack dm onCreateLink: no recipients provided");
       return null;
     }
 
@@ -1023,7 +1023,7 @@ export class Slack extends Connector<Slack> {
 
     return {
       source: `slack:channel:${dmChannelId}:ts:${ts}`,
-      type: "slack-dm",
+      type: "dm",
       title: draft.title,
       status: draft.status,
       created: new Date(parseFloat(ts) * 1000),
@@ -1178,7 +1178,7 @@ export class Slack extends Connector<Slack> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string;
     const threadTs = meta.threadTs as string;
-    // For slack-dm threads, tokenChannelId is an enabled workspace channel
+    // For dm threads, tokenChannelId is an enabled workspace channel
     // whose OAuth token grants workspace access. Falls back to channelId for
     // regular channel threads where the channel IS the enabled resource.
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;

@@ -85,40 +85,22 @@ export type LinkTypeConfig = {
      * Gmail's "starred", Linear's "todo").
      */
     todo?: boolean;
-    /**
-     * Default status applied when Plot asks the connector to create a new
-     * item of this type via `Connector.onCreateLink`. Declaring at least one
-     * status with `createDefault: true` is how a link type opts in to
-     * Plot-initiated creation. At most one status per type should set this.
-     */
-    createDefault?: boolean;
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
   /**
-   * Selects the destination model for this link type's "Create new…" picker.
+   * Opt-in: declares this link type is composable from Plot via
+   * `Connector.onCreateLink`. Omit to make the link type sync-only (no
+   * "Create new …" picker entry).
    *
-   * - `"channels"` (default when omitted): The picker shows one chip per
-   *   enabled channel (e.g. a Linear workspace, a Slack channel). This is the
-   *   existing behaviour for task-tracker and calendar connectors.
-   * - `"contacts"`: The picker shows one chip per connection (account), and
-   *   the user picks recipients from their contacts. The runtime
-   *   pre-resolves the chosen Plot contacts to platform account IDs via the
-   *   per-connection `contact_external_account` rows and delivers them as
-   *   `CreateLinkDraft.recipients`. Contacts without a row for this specific
-   *   connection are filtered out of the picker — used by closed-roster
-   *   messaging platforms (Slack DM, Teams DM, Google Chat DM, LinkedIn DM).
-   * - `"addresses"`: One chip per connection, but the picker accepts any
-   *   contact with an addressable identifier (e.g. an email) or a
-   *   free-form typed address. The runtime fills `recipients` for contacts
-   *   with a connection-scoped row and falls back to the contact's primary
-   *   address (e.g. `contact.email`) when no row exists. Free-form
-   *   addresses arrive via the thread's `inviteEmails`. Used by open
-   *   address spaces like Gmail.
+   * Connectors that need multiple compose modes for what users perceive as
+   * the same kind of thing (e.g. Slack channel post vs DM) should declare
+   * **separate linkTypes**, one per user-facing thread type. That keeps
+   * each linkType isomorphic to one filter chip.
    */
-  targets?: "channels" | "contacts" | "addresses";
+  compose?: ComposeConfig;
   /**
    * Per-connector contact roles. Examples:
    *   email   → [{id:"to",label:"To",default:true},{id:"cc",label:"CC"},{id:"bcc",label:"BCC",hidden:true}]
@@ -137,6 +119,50 @@ export type LinkTypeConfig = {
    * false when omitted.
    */
   supportsContactChanges?: boolean;
+};
+
+/**
+ * Declares how a link type is composable from Plot via
+ * `Connector.onCreateLink`. Attached to {@link LinkTypeConfig.compose}.
+ */
+export type ComposeConfig = {
+  /**
+   * Selects the destination model for the "Create new …" picker.
+   *
+   * - `"channels"` (default): one chip per enabled channel (e.g. a Linear
+   *   team, a Slack channel). Existing behaviour for task-tracker / calendar
+   *   connectors.
+   * - `"contacts"`: one chip per connection (account); the user picks
+   *   recipients from their contacts. The runtime pre-resolves the chosen
+   *   Plot contacts to platform account IDs via the per-connection
+   *   `contact_external_account` rows and delivers them as
+   *   `CreateLinkDraft.recipients`. Contacts without a row for this specific
+   *   connection are filtered out of the picker — used by closed-roster
+   *   messaging platforms (Slack DM, Teams DM, Google Chat DM, LinkedIn DM).
+   * - `"addresses"`: one chip per connection; the picker accepts any
+   *   contact with an addressable identifier (e.g. an email) or a free-form
+   *   typed address. The runtime fills `recipients` for contacts with a
+   *   connection-scoped row and falls back to the contact's primary address
+   *   (e.g. `contact.email`) when no row exists. Free-form addresses arrive
+   *   via the thread's `inviteEmails`. Used by open address spaces like
+   *   Gmail.
+   */
+  targets?: "channels" | "contacts" | "addresses";
+  /**
+   * Status to assign newly-created links. Should match an entry in the
+   * parent linkType's `statuses[]`, OR a symbolic id that the connector's
+   * `onCreateLink` resolves itself (e.g. Linear's `"unstarted"` category is
+   * resolved per-team to a state UUID inside the connector — see
+   * `connectors/linear/src/linear.ts`).
+   */
+  status: string;
+  /**
+   * Optional override for the picker chip / "Create new …" copy. Defaults
+   * to the parent linkType's `label`. Use to disambiguate compose entries
+   * when the parent label alone isn't specific enough (e.g. "Direct
+   * messages" for a DM-mode compose on a chat connector).
+   */
+  label?: string;
 };
 
 /**

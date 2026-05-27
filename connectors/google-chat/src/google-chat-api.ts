@@ -658,7 +658,7 @@ export function transformChatThread(
 
   return {
     source: `google-chat:${spaceId}:thread:${threadKey}`,
-    type: "message",
+    type: "thread",
     title,
     access: "private",
     accessContacts: members?.filter((m): m is NewContact => !("id" in m)) ?? [],

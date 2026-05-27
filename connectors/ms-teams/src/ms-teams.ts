@@ -77,35 +77,34 @@ export class MsTeams extends Connector<MsTeams> {
   };
   readonly linkTypes = [
     {
-      type: "message",
-      label: "Message",
-      noteLabel: "Message",
-      logo: "https://api.iconify.design/logos/microsoft-teams.svg",
-      logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
-      logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-    },
-    {
-      type: "teams-channel",
-      label: "Channel message",
+      type: "thread",
+      label: "Thread",
       noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
       statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
+        { status: "sent", label: "Sent" },
       ],
+      compose: {
+        targets: "channels" as const,
+        status: "sent",
+      },
     },
     {
-      type: "teams-dm",
-      label: "Direct message",
+      type: "dm",
+      label: "Direct messages",
       noteLabel: "Message",
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-      targets: "contacts" as const,
       statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
+        { status: "sent", label: "Sent" },
       ],
+      compose: {
+        targets: "contacts" as const,
+        status: "sent",
+      },
     },
   ];
 
@@ -653,8 +652,8 @@ export class MsTeams extends Connector<MsTeams> {
   /**
    * Creates a new Teams message from Plot via `onCreateLink`.
    *
-   * - `teams-channel`: posts a new top-level message to the enabled channel.
-   * - `teams-dm`: opens (or creates) a 1:1 or group chat with the selected
+   * - `thread`: posts a new top-level message to the enabled channel.
+   * - `dm`: opens (or creates) a 1:1 or group chat with the selected
    *   recipients, then posts there.
    *
    * The returned `meta` matches exactly what `onNoteCreated` reads so replies
@@ -663,10 +662,10 @@ export class MsTeams extends Connector<MsTeams> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
-    if (draft.type === "teams-channel") {
+    if (draft.type === "thread") {
       return this.createChannelPost(draft);
     }
-    if (draft.type === "teams-dm") {
+    if (draft.type === "dm") {
       return this.createDirectMessage(draft);
     }
     return null;
@@ -706,7 +705,7 @@ export class MsTeams extends Connector<MsTeams> {
 
     return {
       source: `ms-teams:channel:${channelId}:message:${result.id}`,
-      type: "teams-channel",
+      type: "thread",
       title: draft.title,
       status: draft.status,
       created: new Date(result.createdDateTime),
@@ -775,7 +774,7 @@ export class MsTeams extends Connector<MsTeams> {
 
     return {
       source: `ms-teams:dm:${chatId}:message:${result.id}`,
-      type: "teams-dm",
+      type: "dm",
       title: draft.title,
       status: draft.status,
       created: new Date(result.createdDateTime),

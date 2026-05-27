@@ -112,7 +112,6 @@ export class Airtable extends Connector<Airtable> {
           status: STATUS_TODO,
           label: "To Do",
           task: true as const,
-          createDefault: true as const,
         },
         {
           status: STATUS_DONE,
@@ -121,6 +120,7 @@ export class Airtable extends Connector<Airtable> {
         },
       ],
       supportsAssignee: true,
+      compose: { status: STATUS_TODO },
     },
   ];
 
@@ -174,6 +174,7 @@ export class Airtable extends Connector<Airtable> {
                     logoMono: LOGO_MONO,
                     statuses,
                     supportsAssignee: true,
+                    compose: { status: STATUS_TODO },
                   },
                 ],
               }
@@ -219,14 +220,10 @@ export class Airtable extends Connector<Airtable> {
     }
 
     const statuses: LinkStatus[] = [];
-    let createDefaultAssigned = false;
     const pushStatus = (status: string, label: string) => {
       const isDone = DONE_OPTION_MATCHERS.test(status);
       if (isDone) {
         statuses.push({ status, label, done: true });
-      } else if (!createDefaultAssigned) {
-        statuses.push({ status, label, task: true, createDefault: true });
-        createDefaultAssigned = true;
       } else {
         statuses.push({ status, label, task: true });
       }

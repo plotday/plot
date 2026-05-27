@@ -589,7 +589,7 @@ export function transformChannelThread(
 
   return {
     source: `ms-teams:channel:${channelId}:message:${parentMessage.id}`,
-    type: "message",
+    type: "thread",
     title,
     created: new Date(parentMessage.createdDateTime),
     author: userToNewActor(parentMessage.from?.user),
@@ -634,7 +634,7 @@ export function transformDmThread(
   if (!firstMessage) {
     return {
       source: `ms-teams:dm:${chatId}`,
-      type: "message",
+      type: "dm",
       title: "Empty chat",
       access: "private",
       accessContacts,
@@ -647,7 +647,7 @@ export function transformDmThread(
 
   return {
     source: `ms-teams:dm:${chatId}`,
-    type: "message",
+    type: "dm",
     title,
     access: "private",
     accessContacts,
