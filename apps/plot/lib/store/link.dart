@@ -15,14 +15,9 @@ class LinkTypeConfig {
   final String? logoMono;
   final List<LinkStatus>? statuses;
   final bool supportsAssignee;
-  /// Selects the destination model for the "Create new…" picker.
-  ///
-  /// - `"channels"` (default): one chip per enabled channel (workspace,
-  ///   calendar, etc.). The existing behaviour for task-tracker connectors.
-  /// - `"contacts"`: one chip per connection (account), and the user picks
-  ///   recipients from their contacts. The connector's `onCreateLink` receives
-  ///   pre-resolved recipients via `CreateLinkDraft.recipients`.
-  final String targets;
+  /// Opt-in: declares this link type is composable from Plot via
+  /// `Connector.onCreateLink`. Null = sync-only (no Create entry).
+  final ComposeConfig? compose;
   /// Per-connector contact roles for this link type. Email connectors declare
   /// To/CC/BCC, calendar connectors declare Required/Optional, etc. Empty or
   /// null when the connector does not distinguish roles (Slack, Linear).
@@ -41,7 +36,7 @@ class LinkTypeConfig {
     this.logoMono,
     this.statuses,
     this.supportsAssignee = false,
-    this.targets = 'channels',
+    this.compose,
     this.contactRoles,
     this.supportsContactChanges = false,
   });
@@ -62,7 +57,7 @@ class LinkTypeConfig {
           json['supportsAssignee'] as bool? ??
           json['supports_assignee'] as bool? ??
           false,
-      targets: json['targets'] as String? ?? 'channels',
+      compose: ComposeConfig.fromJson(json),
       contactRoles: (json['contactRoles'] as List<dynamic>? ??
               json['contact_roles'] as List<dynamic>?)
           ?.map((r) => ContactRoleConfig.fromJson(r as Map<String, dynamic>))
@@ -130,11 +125,6 @@ class LinkStatus {
   final int? tag;
   final bool done;
   final bool todo;
-  /// When true, this status is the default applied to items created via the
-  /// connector's `onCreateLink`. At most one status per link type should
-  /// set this. A link type opts in to Plot-initiated creation by declaring
-  /// at least one status with `createDefault: true`.
-  final bool createDefault;
 
   const LinkStatus({
     required this.status,
@@ -142,7 +132,6 @@ class LinkStatus {
     this.tag,
     this.done = false,
     this.todo = false,
-    this.createDefault = false,
   });
 
   factory LinkStatus.fromJson(Map<String, dynamic> json) {
@@ -152,11 +141,49 @@ class LinkStatus {
       tag: json['tag'] as int?,
       done: json['done'] as bool? ?? false,
       todo: json['todo'] as bool? ?? false,
-      createDefault: json['createDefault'] as bool? ??
-          json['create_default'] as bool? ??
-          false,
     );
   }
+}
+
+/// Declares how a [LinkTypeConfig] is composable from Plot.
+///
+/// Mirrors the Twister SDK's `ComposeConfig`. Attached to
+/// [LinkTypeConfig.compose] — when null, the link type is sync-only and no
+/// "Create new …" picker entry is emitted for it.
+class ComposeConfig extends Equatable {
+  /// Picker mode:
+  /// - `'channels'` (default): one chip per enabled channel.
+  /// - `'contacts'`: one chip per connection; user picks contacts.
+  /// - `'addresses'`: one chip per connection; user types addresses.
+  final String targets;
+  /// Status to assign newly-created links. Should match an entry in the
+  /// parent linkType's `statuses[]`, OR a symbolic id the connector
+  /// resolves itself (e.g. Linear's per-team UUIDs).
+  final String status;
+  /// Picker chip / "Create new …" override. Null falls back to
+  /// [LinkTypeConfig.label].
+  final String? label;
+
+  const ComposeConfig({
+    this.targets = 'channels',
+    required this.status,
+    this.label,
+  });
+
+  /// Parse from a [LinkTypeConfig] JSON map. The compose block is a nested
+  /// object at `compose`. Returns null when absent (sync-only link type).
+  static ComposeConfig? fromJson(Map<String, dynamic> linkTypeJson) {
+    final raw = linkTypeJson['compose'];
+    if (raw is! Map<String, dynamic>) return null;
+    return ComposeConfig(
+      targets: raw['targets'] as String? ?? 'channels',
+      status: raw['status'] as String,
+      label: raw['label'] as String?,
+    );
+  }
+
+  @override
+  List<Object?> get props => [targets, status, label];
 }
 
 @DataClassName('LinkRow')

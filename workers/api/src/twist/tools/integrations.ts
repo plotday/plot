@@ -1986,11 +1986,12 @@ export class Integrations extends Tool implements IAuth {
       };
       if (!threadId || !draft) return [];
 
-      // For link types with targets === "contacts", pre-resolve the picked
-      // contacts to their platform account IDs so connectors don't need to
-      // do their own contact lookup in onCreateLink. Contacts without a
-      // matching contact_external_account row are silently dropped — the
-      // connector can detect the gap via contacts.length vs recipients.length.
+      // For link types whose compose.targets is "contacts" or "addresses",
+      // pre-resolve the picked contacts to their platform account IDs so
+      // connectors don't need to do their own contact lookup in onCreateLink.
+      // Contacts without a matching contact_external_account row are silently
+      // dropped — the connector can detect the gap via
+      // contacts.length vs recipients.length.
       //
       // Resolution is skipped (recipients stays undefined) for channel-target
       // link types and when no contacts were picked.
@@ -2023,9 +2024,10 @@ export class Integrations extends Tool implements IAuth {
           linkTypeConfig = sourceLinkTypes?.find((lt) => lt.type === draft.type);
         }
 
+        const composeTargets = linkTypeConfig?.compose?.targets;
         if (
-          linkTypeConfig?.targets === "contacts" ||
-          linkTypeConfig?.targets === "addresses"
+          composeTargets === "contacts" ||
+          composeTargets === "addresses"
         ) {
           const contactIds = draft.contacts.map((c) => c.id);
           // Scope by twist_instance_id (the connection): two Slack workspaces
@@ -2044,7 +2046,7 @@ export class Integrations extends Tool implements IAuth {
             ])
             .execute();
 
-          if (linkTypeConfig.targets === "contacts") {
+          if (composeTargets === "contacts") {
             draft.recipients = rows.map((r) => ({
               id: r.id as Uuid,
               name: r.name ?? null,

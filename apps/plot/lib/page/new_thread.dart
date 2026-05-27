@@ -482,7 +482,7 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// The active create-link action attached to the draft note (if any).
   /// Used by the contacts picker / submit validator to scope behavior by
-  /// `linkType.targets` mode (channels / contacts / addresses).
+  /// `compose.targets` mode (channels / contacts / addresses).
   CreateLinkUserAction? get _activeCreateAction {
     final note = _priorityBloc?.state.draftNote;
     return note?.actions?.whereType<CreateLinkUserAction>().firstOrNull;

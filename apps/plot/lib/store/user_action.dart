@@ -441,11 +441,28 @@ class CreateLinkUserAction extends UserAction {
     );
   }
 
+  /// Map of legacy linkType ids → unified ids. Absorbs in-flight thread
+  /// drafts persisted before the sync/compose linkType merge so they
+  /// resolve to the new picker entry instead of silently falling back to
+  /// "Plot thread". Keep until the cleanup window closes.
+  static const _legacyLinkTypeIds = <String, String>{
+    'gmail-email': 'email',
+    'message': 'thread',
+    'slack-channel': 'thread',
+    'slack-dm': 'dm',
+    'google-chat-space': 'thread',
+    'google-chat-dm': 'dm',
+    'teams-channel': 'thread',
+    'teams-dm': 'dm',
+  };
+
   factory CreateLinkUserAction.fromJson(Map<String, dynamic> json) {
+    final rawLinkType = json['linkType'] as String;
+    final linkType = _legacyLinkTypeIds[rawLinkType] ?? rawLinkType;
     return CreateLinkUserAction(
       twistInstanceId: json['twistInstanceId'] as String,
       channelId: json['channelId'] as String?,
-      linkType: json['linkType'] as String,
+      linkType: linkType,
       status: json['status'] as String,
       connectorName: json['connectorName'] as String,
       linkTypeLabel: json['linkTypeLabel'] as String,

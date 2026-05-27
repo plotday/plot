@@ -46,8 +46,8 @@ class LinkModal {
     String? fetchedTitle;
     String? fetchedFavicon;
 
-    // Enabled channels whose link types declare a `createDefault` status
-    // become "Create new …" picker entries. Loaded on first items() call.
+    // Enabled channels whose link types declare a `compose` block become
+    // "Create new …" picker entries. Loaded on first items() call.
     List<CreateTarget>? createTargets;
 
     final result = await SelectModal.open<_LinkItem>(
