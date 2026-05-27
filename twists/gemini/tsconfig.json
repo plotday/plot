@@ -1,5 +1,0 @@
-{
-  "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@plotday/twister/tsconfig.base.json",
-  "include": ["src/**/*.ts"]
-}
