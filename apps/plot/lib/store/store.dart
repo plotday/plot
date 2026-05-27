@@ -2388,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 342;
+  int get schemaVersion => 343;
 
   @override
   MigrationStrategy get migration {
@@ -3643,6 +3643,31 @@ class Store extends _$Store {
       await m.createTable(noteReactions);
       await m.createTable(threadReactions);
       await m.createTable(customEmojis);
+    }
+    if (from < 343) {
+      // Toggle tags retirement: mirror the server migration so local caches
+      // don't keep the deprecated chip alive. Archive the 10 retired toggle
+      // tags (100, 101, 103-108, 110, 111) and reassign Tag.twist's id from
+      // 109 to 12 (compute range).
+      final nowIso = DateTime.now().toIso8601String();
+      await m.database.customStatement(
+        'UPDATE note_tags SET archived_at = ? '
+        'WHERE tag_id IN (100, 101, 103, 104, 105, 106, 107, 108, 110, 111) '
+        'AND archived_at IS NULL',
+        [nowIso],
+      );
+      await m.database.customStatement(
+        'UPDATE thread_tags SET archived_at = ? '
+        'WHERE tag_id IN (100, 101, 103, 104, 105, 106, 107, 108, 110, 111) '
+        'AND archived_at IS NULL',
+        [nowIso],
+      );
+      await m.database.customStatement(
+        'UPDATE note_tags SET tag_id = 12 WHERE tag_id = 109',
+      );
+      await m.database.customStatement(
+        'UPDATE thread_tags SET tag_id = 12 WHERE tag_id = 109',
+      );
     }
   }
 
