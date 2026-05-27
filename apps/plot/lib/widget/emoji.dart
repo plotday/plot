@@ -36,15 +36,18 @@ class EmojiText extends StatelessWidget {
     if (isCustomEmojiRef(emoji)) {
       return _CustomEmojiImage(refId: emoji, size: size);
     }
+    // No fontFamilyFallback. On macOS/iOS, listing AppleColorEmoji as a
+    // fallback causes Flutter's text engine to substitute color emoji
+    // glyphs for codepoints the primary font *does* contain — defeating
+    // the whole point of bundling a monochrome font. Noto Emoji covers
+    // the entire Unicode 15.1 spec, so missing glyphs are rare; for
+    // them, Flutter's default platform chain still picks up the system
+    // emoji font as a last resort.
     return Text(
       emoji,
       style: TextStyle(
-        fontSize: size,
         fontFamily: _fontFamily,
-        // Platform emoji font as a fallback for any glyph Noto Emoji
-        // doesn't cover (e.g. brand-new Unicode releases on older
-        // bundled fonts).
-        fontFamilyFallback: const ['AppleColorEmoji', 'Segoe UI Emoji', 'Noto Color Emoji'],
+        fontSize: size,
         height: 1.0,
       ),
       // Single-line; emoji shouldn't wrap.
