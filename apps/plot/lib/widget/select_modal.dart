@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
@@ -65,7 +66,11 @@ class SelectModal<T> extends Modal {
     this.onAdd,
     this.addTooltip,
     this.filter,
+    this.gridColumns,
+    this.gridCellSize = 36,
+    this.gridCellSpacing = 4,
     super.key,
+    super.constraints,
   }) : super(
          padding: const EdgeInsets.all(0),
          builder: (_) => _SelectModal<T>(
@@ -83,6 +88,9 @@ class SelectModal<T> extends Modal {
            onAdd: onAdd,
            addTooltip: addTooltip,
            filter: filter,
+           gridColumns: gridColumns,
+           gridCellSize: gridCellSize,
+           gridCellSpacing: gridCellSpacing,
          ),
        );
 
@@ -146,6 +154,20 @@ class SelectModal<T> extends Modal {
   /// only re-issued when the search text is cleared.
   final bool Function(T item, String search)? filter;
 
+  /// When non-null, items render in a grid with this many columns instead of
+  /// the default list. Group headers and infoBuilder rows stay full-width.
+  /// Arrow up/down move ±[gridColumns] in the flat highlight index; left/right
+  /// move ±1.
+  final int? gridColumns;
+
+  /// Edge length of each grid cell in logical pixels. Only used when
+  /// [gridColumns] is set.
+  final double gridCellSize;
+
+  /// Spacing between grid cells in logical pixels. Only used when
+  /// [gridColumns] is set.
+  final double gridCellSpacing;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -164,6 +186,10 @@ class SelectModal<T> extends Modal {
     Future<T?> Function(BuildContext context)? onAdd,
     String? addTooltip,
     bool Function(T item, String search)? filter,
+    int? gridColumns,
+    double gridCellSize = 36,
+    double gridCellSpacing = 4,
+    BoxConstraints? constraints,
   }) async {
     // Pre-fetch items for empty search so the modal opens fully populated.
     // Callers typically invoke this from inside a Command run, so the trigger
@@ -196,6 +222,11 @@ class SelectModal<T> extends Modal {
       onAdd: onAdd,
       addTooltip: addTooltip,
       filter: filter,
+      gridColumns: gridColumns,
+      gridCellSize: gridCellSize,
+      gridCellSpacing: gridCellSpacing,
+      constraints: constraints ??
+          const BoxConstraints(maxHeight: 640, maxWidth: 750),
     ).show<T>(context);
 
     return result;
@@ -218,6 +249,9 @@ class _SelectModal<T> extends StatefulWidget {
     this.onAdd,
     this.addTooltip,
     this.filter,
+    this.gridColumns,
+    this.gridCellSize = 36,
+    this.gridCellSpacing = 4,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -235,12 +269,20 @@ class _SelectModal<T> extends StatefulWidget {
   final Future<T?> Function(BuildContext context)? onAdd;
   final String? addTooltip;
   final bool Function(T item, String search)? filter;
+  final int? gridColumns;
+  final double gridCellSize;
+  final double gridCellSpacing;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
 }
 
 class _SelectModalState<T> extends State<_SelectModal<T>> {
+  /// Per-flat-index GlobalKeys for grid-mode rows. Used by [_scrollToIndex]
+  /// to call [Scrollable.ensureVisible] on the actual rendered row, which
+  /// counts headers from real layout rather than estimating their height.
+  final Map<int, GlobalKey> _gridCellKeys = {};
+
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _listFocusNode = FocusNode(debugLabel: 'SelectModal-list');
@@ -642,6 +684,98 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     _scrollToIndex(_highlightedIndex);
   }
 
+  /// Move the highlight along the grid's vertical axis. The flat-index step
+  /// equals the cell count of the row we're leaving (down) or entering
+  /// (up), so a partial trailing row of N < cols cells advances by N — not
+  /// by cols — and the cursor lands on the same column in the adjacent
+  /// row instead of skipping it.
+  void _moveHighlightGridVertical(int rowOffset) {
+    final cols = widget.gridColumns;
+    if (cols == null || cols < 1) {
+      _moveHighlight(rowOffset);
+      return;
+    }
+    final totalDisplay = _getTotalDisplayCount();
+    if (totalDisplay == 0) return;
+
+    int target = _highlightedIndex;
+    final direction = rowOffset.sign;
+    var remaining = rowOffset.abs();
+    while (remaining > 0) {
+      final step = _gridVerticalStep(target, direction, cols);
+      if (step == 0) break;
+      target += direction * step;
+      remaining--;
+      if (target < 0 || target >= totalDisplay) break;
+    }
+    target = target.clamp(0, totalDisplay - 1);
+    if (target == _highlightedIndex) return;
+    setState(() => _highlightedIndex = target);
+    _scrollToIndex(_highlightedIndex);
+  }
+
+  /// How many flat indices to advance when moving vertically from [index]
+  /// in [direction] (`+1` down, `-1` up). Returns 0 when there's nothing
+  /// to step into.
+  ///
+  /// - Down: step = cells in the row containing [index].
+  /// - Up:   step = cells in the row immediately above the row containing
+  ///   [index] (or 1 for an info-only slot above).
+  /// - Info-only slots are treated as full-width rows of size 1.
+  int _gridVerticalStep(int index, int direction, int cols) {
+    final totalDisplay = _getTotalDisplayCount();
+    if (index < 0 || index >= totalDisplay) return 0;
+    if (direction > 0) {
+      if (_isInfoOnlySlot(index)) return 1;
+      return _gridRowCellCount(index, cols);
+    } else {
+      final rowFirst = _gridRowFirstIndex(index, cols);
+      if (rowFirst == 0) return 0;
+      final prevIndex = rowFirst - 1;
+      if (_isInfoOnlySlot(prevIndex)) return 1;
+      return _gridRowCellCount(prevIndex, cols);
+    }
+  }
+
+  /// Number of cells in the grid row that contains [index]. Partial
+  /// trailing rows return their actual cell count, not [cols].
+  int _gridRowCellCount(int index, int cols) {
+    int cursor = 0;
+    for (final group in _groups) {
+      if (group.items.isEmpty && group.infoBuilder != null) {
+        if (index == cursor) return 1;
+        cursor++;
+        continue;
+      }
+      if (index < cursor + group.items.length) {
+        final positionInGroup = index - cursor;
+        final rowStartInGroup = (positionInGroup ~/ cols) * cols;
+        return math.min(cols, group.items.length - rowStartInGroup);
+      }
+      cursor += group.items.length;
+    }
+    return cols;
+  }
+
+  /// Flat index of the first cell in the grid row that contains [index].
+  int _gridRowFirstIndex(int index, int cols) {
+    int cursor = 0;
+    for (final group in _groups) {
+      if (group.items.isEmpty && group.infoBuilder != null) {
+        if (index == cursor) return cursor;
+        cursor++;
+        continue;
+      }
+      if (index < cursor + group.items.length) {
+        final positionInGroup = index - cursor;
+        final rowStartInGroup = (positionInGroup ~/ cols) * cols;
+        return cursor + rowStartInGroup;
+      }
+      cursor += group.items.length;
+    }
+    return index;
+  }
+
   /// Scrolls to ensure the item at the given index is visible.
   /// Only scrolls if the item is outside or near the viewport edges.
   /// When scrolling down, ensures the next item is also visible for better UX.
@@ -651,7 +785,54 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
 
-      const estimatedItemHeight = 50.0;
+      // Grid mode: when the target cell is built, use its real RenderBox
+      // position so headers (variable height) and any future intra-list
+      // chrome are accounted for from layout, not estimated. Falls through
+      // to the estimate path when the cell isn't currently in the tree
+      // (e.g. far off-screen jumps after search clear).
+      final cols = widget.gridColumns;
+      if (cols != null) {
+        final ctx = _gridCellKeys[index]?.currentContext;
+        final cellBox = ctx?.findRenderObject() as RenderBox?;
+        final viewportCtx =
+            _scrollController.position.context.notificationContext;
+        final viewportBox = viewportCtx?.findRenderObject() as RenderBox?;
+        if (cellBox != null && viewportBox != null) {
+          final cellTopInViewport =
+              cellBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+          final cellHeight = cellBox.size.height;
+          final viewportHeight = _scrollController.position.viewportDimension;
+          final currentOffset = _scrollController.offset;
+          final maxScroll = _scrollController.position.maxScrollExtent;
+
+          double? target;
+          if (cellTopInViewport < 0) {
+            // Cell is above viewport — scroll up so its top sits at the
+            // viewport top.
+            target = currentOffset + cellTopInViewport;
+          } else if (cellTopInViewport + cellHeight > viewportHeight) {
+            // Cell is below viewport — scroll down so its bottom sits at
+            // the viewport bottom.
+            target = currentOffset +
+                (cellTopInViewport + cellHeight - viewportHeight);
+          }
+          if (target != null) {
+            _scrollController.animateTo(
+              target.clamp(0.0, maxScroll),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            );
+          }
+          return;
+        }
+      }
+
+      // List mode (or grid fallback): estimate row pixel position from a
+      // fixed per-row height.
+      final double estimatedItemHeight = cols != null
+          ? (widget.gridCellSize + widget.gridCellSpacing)
+          : 50.0;
+      final int rowIndex = cols != null ? (index ~/ cols) : index;
 
       // Special case: scroll to top for first item to show headers/info
       if (index == 0) {
@@ -663,7 +844,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         return;
       }
 
-      final estimatedOffset = index * estimatedItemHeight;
+      final estimatedOffset = rowIndex * estimatedItemHeight;
       final viewportHeight = _scrollController.position.viewportDimension;
       final currentScroll = _scrollController.offset;
       final maxScroll = _scrollController.position.maxScrollExtent;
@@ -716,6 +897,215 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     } else {
       _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
     }
+  }
+
+  /// Build the grid-mode list. Each entry in the flat plan is either a
+  /// header / info row (full-width) or a "row of cells" containing up to
+  /// `gridColumns` items. The flat highlight index still addresses items
+  /// (matching list mode), so the same scroll-to-index logic works after
+  /// translating flat-index → row-index.
+  Widget _buildGridList(ListViewSelectorController listController) {
+    final cols = widget.gridColumns!;
+    final cellSize = widget.gridCellSize;
+    final cellSpacing = widget.gridCellSpacing;
+
+    final entries = <_GridPlanEntry<T>>[];
+    int flatIdx = 0;
+    String? prevTitle;
+    for (final group in _groups) {
+      if (group.title != null && group.title != prevTitle) {
+        entries.add(_GridHeaderEntry<T>(group));
+      }
+      prevTitle = group.title;
+      if (group.items.isEmpty && group.infoBuilder != null) {
+        entries.add(_GridInfoEntry<T>(group, flatIdx));
+        flatIdx++;
+        continue;
+      }
+      for (var i = 0; i < group.items.length; i += cols) {
+        final rowItems = <(T, int)>[];
+        for (var j = i; j < math.min(i + cols, group.items.length); j++) {
+          rowItems.add((group.items[j], flatIdx));
+          flatIdx++;
+        }
+        entries.add(_GridRowEntry<T>(rowItems));
+      }
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      shrinkWrap: true,
+      itemCount: entries.length,
+      itemBuilder: (context, rowIndex) {
+        final entry = entries[rowIndex];
+        switch (entry) {
+          case _GridHeaderEntry<T>():
+            return _buildGroupHeader(entry.group);
+          case _GridInfoEntry<T>():
+            return _buildGridInfoSlot(entry.group, entry.flatIndex,
+                listController, cellSize);
+          case _GridRowEntry<T>():
+            // Symmetric vertical padding keeps the actual row height equal
+            // to (cellSize + cellSpacing) — the same value `_scrollToIndex`
+            // uses to estimate position, so keyboard scroll-into-view lands
+            // exactly on the cell.
+            //
+            // Each row is rendered inside a fixed-width SizedBox sized to a
+            // full row (cols * cellSize + gaps) and centered. Within that
+            // block, cells stack from the left, so a short trailing row
+            // (e.g. last 3 emoji in a category) lines up with the rows
+            // above instead of drifting to the visual centre.
+            final blockWidth =
+                cols * cellSize + (cols - 1) * cellSpacing;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                12,
+                cellSpacing / 2,
+                12,
+                cellSpacing / 2,
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: blockWidth,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < entry.cells.length; i++) ...[
+                        if (i > 0) SizedBox(width: cellSpacing),
+                        _buildGridCell(
+                          entry.cells[i].$1,
+                          entry.cells[i].$2,
+                          listController,
+                          cellSize,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  Widget _buildGroupHeader(SelectGroup<T> group) {
+    return Padding(
+      padding: context.theme.spacing.paddingSm.copyWith(
+        right: context.theme.spacing.xxl,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              group.title!,
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.sm.fontSize,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (group.hint != null && hasPhysicalKeyboard())
+            Text(
+              group.hint!,
+              style: TextStyle(
+                color: context.theme.colors.mutedForeground,
+                fontSize: context.theme.typography.xs.fontSize,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGridInfoSlot(
+    SelectGroup<T> group,
+    int flatIndex,
+    ListViewSelectorController listController,
+    double cellSize,
+  ) {
+    final info = group.infoBuilder!(context);
+    if (info == null) return const SizedBox.shrink();
+    final isHighlighted = flatIndex == _highlightedIndex;
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_mouseHasMoved) return;
+        listController.setHovered(flatIndex);
+        setState(() => _highlightedIndex = flatIndex);
+      },
+      onExit: (_) {
+        if (!_mouseHasMoved) return;
+        listController.setHovered(null);
+        setState(() => _highlightedIndex = -1);
+      },
+      onHover: (_) {
+        if (!_mouseHasMoved) {
+          setState(() => _mouseHasMoved = true);
+          listController.setHovered(flatIndex);
+          setState(() => _highlightedIndex = flatIndex);
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: group.onActivate != null
+            ? () => group.onActivate!(context)
+            : null,
+        child: Container(
+          decoration: BoxDecoration(
+            color: isHighlighted ? context.theme.colors.secondary : null,
+          ),
+          child: info,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridCell(
+    T item,
+    int flatIndex,
+    ListViewSelectorController listController,
+    double cellSize,
+  ) {
+    final isItemLoading = _loadingIndex == flatIndex;
+    final highlighted = flatIndex == _highlightedIndex;
+    final inner = widget.itemBuilder(item, isItemLoading);
+    final cellKey = _gridCellKeys.putIfAbsent(flatIndex, () => GlobalKey());
+    return MouseRegion(
+      key: cellKey,
+      onEnter: (_) {
+        if (!_mouseHasMoved) return;
+        listController.setHovered(flatIndex);
+        setState(() => _highlightedIndex = flatIndex);
+      },
+      onExit: (_) {
+        if (!_mouseHasMoved) return;
+        listController.setHovered(null);
+        setState(() => _highlightedIndex = -1);
+      },
+      onHover: (_) {
+        if (!_mouseHasMoved) {
+          setState(() => _mouseHasMoved = true);
+          listController.setHovered(flatIndex);
+          setState(() => _highlightedIndex = flatIndex);
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: isItemLoading ? null : () => _selectItem(item),
+        child: Container(
+          width: cellSize,
+          height: cellSize,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            color: highlighted ? context.theme.colors.secondary : null,
+          ),
+          child: inner,
+        ),
+      ),
+    );
   }
 
   Future<void> _selectItem(T item) async {
@@ -799,21 +1189,51 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         // Set bounds for the controller
         listController.clamp(0, displayCount - 1);
 
+        final isGrid = widget.gridColumns != null;
         return Shortcuts(
-          shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.arrowUp):
-                MoveListSelectionIntent(-1),
-            SingleActivator(LogicalKeyboardKey.arrowDown):
-                MoveListSelectionIntent(1),
-            SingleActivator(LogicalKeyboardKey.enter):
-                ActivateListSelectionIntent(),
-            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-          },
+          shortcuts: isGrid
+              ? const {
+                  SingleActivator(LogicalKeyboardKey.arrowUp):
+                      _GridMoveIntent.up,
+                  SingleActivator(LogicalKeyboardKey.arrowDown):
+                      _GridMoveIntent.down,
+                  SingleActivator(LogicalKeyboardKey.arrowLeft):
+                      _GridMoveIntent.left,
+                  SingleActivator(LogicalKeyboardKey.arrowRight):
+                      _GridMoveIntent.right,
+                  SingleActivator(LogicalKeyboardKey.enter):
+                      ActivateListSelectionIntent(),
+                  SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+                }
+              : const {
+                  SingleActivator(LogicalKeyboardKey.arrowUp):
+                      MoveListSelectionIntent(-1),
+                  SingleActivator(LogicalKeyboardKey.arrowDown):
+                      MoveListSelectionIntent(1),
+                  SingleActivator(LogicalKeyboardKey.enter):
+                      ActivateListSelectionIntent(),
+                  SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+                },
           child: Actions(
             actions: {
               MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
                 onInvoke: (intent) {
                   _moveHighlight(intent.offset);
+                  return KeyEventResult.handled;
+                },
+              ),
+              _GridMoveIntent: CallbackAction<_GridMoveIntent>(
+                onInvoke: (intent) {
+                  switch (intent.direction) {
+                    case 'left':
+                      _moveHighlight(-1);
+                    case 'right':
+                      _moveHighlight(1);
+                    case 'up':
+                      _moveHighlightGridVertical(-1);
+                    case 'down':
+                      _moveHighlightGridVertical(1);
+                  }
                   return KeyEventResult.handled;
                 },
               ),
@@ -1024,7 +1444,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     ),
                   ?errorBox,
                   Flexible(
-                    child: ListView.builder(
+                    child: widget.gridColumns != null
+                        ? _buildGridList(listController)
+                        : ListView.builder(
                       controller: _scrollController,
                       shrinkWrap: true,
                       itemCount: displayCount,
@@ -1266,6 +1688,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     ),
                   ),
                   ?loadingIndicator,
+
                   const SizedBox(height: 8),
                 ],
               ),
@@ -1275,4 +1698,40 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       },
     );
   }
+}
+
+/// Directional move within a grid-mode SelectModal. List mode reuses the
+/// existing [MoveListSelectionIntent] with ±1 offsets. The unique [direction]
+/// value gives each constant a distinct identity so `Shortcuts`/`Actions`
+/// dispatch can pick the right callback.
+class _GridMoveIntent extends Intent {
+  const _GridMoveIntent._(this.direction);
+  final String direction;
+
+  static const _GridMoveIntent up = _GridMoveIntent._('up');
+  static const _GridMoveIntent down = _GridMoveIntent._('down');
+  static const _GridMoveIntent left = _GridMoveIntent._('left');
+  static const _GridMoveIntent right = _GridMoveIntent._('right');
+}
+
+/// Render plan for grid mode. Each ListView row is one entry.
+sealed class _GridPlanEntry<T> {
+  const _GridPlanEntry();
+}
+
+class _GridHeaderEntry<T> extends _GridPlanEntry<T> {
+  const _GridHeaderEntry(this.group);
+  final SelectGroup<T> group;
+}
+
+class _GridInfoEntry<T> extends _GridPlanEntry<T> {
+  const _GridInfoEntry(this.group, this.flatIndex);
+  final SelectGroup<T> group;
+  final int flatIndex;
+}
+
+class _GridRowEntry<T> extends _GridPlanEntry<T> {
+  const _GridRowEntry(this.cells);
+  /// Pairs of (item, flatIndex). Length ≤ gridColumns.
+  final List<(T, int)> cells;
 }

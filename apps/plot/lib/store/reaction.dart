@@ -13,11 +13,11 @@ typedef Reaction = String;
 /// Stored on a [Note] / [Thread] as `{ <emoji>: [actorId, ...] }`.
 typedef Reactions = Map<Reaction, List<ActorId>>;
 
-/// Curated default "quick-picks" row for the reaction picker. These are the
-/// emoji we expect users to reach for most often. Pulled in part from the
-/// 19 legacy count tags so that the new picker is at least as discoverable as
-/// the old chip menu.
-const List<Reaction> kReactionQuickPicks = <Reaction>[
+/// Default fallback for the MRU. Shown on the hover toolbar and as the
+/// "Quick picks" group in [EmojiPicker] when the user has not yet reacted
+/// with anything (so `LocalPreferencesBloc.state.reactionMru` is empty).
+/// Once the user picks even one emoji the real MRU takes over.
+const List<Reaction> kDefaultReactionMru = <Reaction>[
   '👍',
   '❤️',
   '😂',

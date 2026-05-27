@@ -7,7 +7,9 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/editor_clipboard.dart';
-import 'package:plot/widget/reaction_picker.dart';
+import 'package:plot/widget/emoji_data.g.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
@@ -221,7 +223,7 @@ class ToggleSelfTask extends NoteCommand {
 /// server's `update_note_reactions` RPC enforces only-self ownership;
 /// matching client-side behaviour is implicit because we always toggle
 /// the current user's canonical actor.
-/// Opens the [ReactionPicker] and toggles the chosen emoji on the note.
+/// Opens the [EmojiPicker] and toggles the chosen emoji on the note.
 /// Routes through [ToggleNoteReaction] for the actual write so all the
 /// optimistic-local + sync-push logic stays in one place.
 ///
@@ -247,11 +249,17 @@ class AddNoteReaction extends NoteCommand {
       final source = links.isEmpty ? null : links.first.source;
       final allowed = reactionCapabilitiesForLinkSource(source).allowed;
 
-      final emoji = await ReactionPicker.pick(
+      final prefs = context.read<LocalPreferencesBloc>();
+      final emoji = await EmojiPicker.pick(
         context,
         allowed: allowed?.toSet(),
+        mru: prefs.state.reactionMru,
       );
       if (emoji == null) return const CommandDone();
+
+      // Record before delegating so the MRU reflects the just-picked emoji
+      // for the next hover-toolbar render.
+      await prefs.recordReactionUsage(emoji);
 
       // Reuse the existing toggle path. If the user already has this
       // reaction it'll remove it; otherwise it adds. Matches the chip
@@ -332,6 +340,110 @@ class ToggleNoteReaction extends NoteCommand {
       return CommandMessage('Failed to react', isError: true);
     }
   }
+}
+
+/// Returns up to [limit] MRU emoji reactions to render inline on the hover
+/// toolbar. Falls back to [kDefaultReactionMru] when the user has not yet
+/// reacted, so the toolbar always offers something. Filtered by the
+/// connector's reaction capabilities and by [exclude] (typically the
+/// emojis already active on this note, so the inline row never shows the
+/// same glyph twice). Callers shrink [limit] by the active-reaction count
+/// so the total emoji slots stay constant regardless of how many active
+/// reactions exist.
+List<Command> mruReactionsForToolbar(
+  BuildContext context,
+  Note note, {
+  required String? source,
+  required ActorId actorId,
+  int limit = 5,
+  Set<Reaction>? exclude,
+}) {
+  if (limit <= 0) return const [];
+  final stored = context.read<LocalPreferencesBloc>().state.reactionMru;
+  final mru = stored.isEmpty ? kDefaultReactionMru : stored;
+  final allowed = reactionCapabilitiesForLinkSource(source).allowed?.toSet();
+
+  final result = <Command>[];
+  for (final emoji in mru) {
+    if (allowed != null && !allowed.contains(emoji)) continue;
+    if (exclude != null && exclude.contains(emoji)) continue;
+    result.add(_QuickReactionCommand(note, emoji));
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+/// Renders an active emoji reaction inline in the note's command row.
+/// Uses the same `Button.icon(selected: true)` accent-color treatment as
+/// selected count-tags: no border, no background, just the glyph in
+/// accent. Tap toggles the reaction off via [ToggleNoteReaction].
+class ActiveNoteReaction extends NoteCommand {
+  ActiveNoteReaction(super.note, this.emoji)
+      : super(
+          title: kUnicodeEmojiNames[emoji] ?? emoji,
+          eventObject: EventObject.note,
+          eventAction: EventAction.untagged,
+        );
+
+  final Reaction emoji;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      _emojiButtonIcon(context, emoji);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) =>
+      ToggleNoteReaction(note, emoji).run(context);
+}
+
+/// Square emoji-icon widget sized to the surrounding `FaIcon` metric and
+/// inheriting their foreground color. Shared between [ActiveNoteReaction]
+/// and [_QuickReactionCommand] so the visual treatment matches across the
+/// hover row regardless of selected state.
+Widget _emojiButtonIcon(BuildContext _, Reaction emoji) {
+  return Builder(
+    builder: (ctx) {
+      final iconSize = ctx.theme.iconSizes.base;
+      final color =
+          IconTheme.of(ctx).color ?? DefaultTextStyle.of(ctx).style.color;
+      return SizedBox(
+        width: iconSize,
+        height: iconSize,
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: DefaultTextStyle.merge(
+            style: TextStyle(color: color),
+            child: EmojiText(emoji, size: iconSize),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// Hover-toolbar wrapper around [ToggleNoteReaction] that renders an emoji
+/// glyph instead of an icon and skips MRU bookkeeping (the user is reusing
+/// an already-recent emoji; no MRU change to make).
+class _QuickReactionCommand extends NoteCommand {
+  _QuickReactionCommand(super.note, this.emoji)
+      : super(
+          // Tooltip text. Human-readable CLDR name when known (e.g.
+          // "grinning face"); falls back to the raw emoji for custom-emoji
+          // refs and any Unicode glyph not in the names map.
+          title: kUnicodeEmojiNames[emoji] ?? emoji,
+          eventObject: EventObject.note,
+          eventAction: EventAction.tagged,
+        );
+
+  final Reaction emoji;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      _emojiButtonIcon(context, emoji);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) =>
+      ToggleNoteReaction(note, emoji).run(context);
 }
 
 class ToggleNoteTag extends NoteCommand {
@@ -878,102 +990,13 @@ List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
 }) {
-  final actorId = Base.actorId;
   final isViewer =
       (activityBloc?.state.thread.priority.isViewer ?? false) ||
       (activityBloc?.state.thread.isReadOnly ?? false);
-  final tags = Tag.getAll()
-      .where((tag) => !isViewer || tag.type == TagType.count)
-      .map((tag) => ToggleNoteTag(note, tag, actorId))
-      .toList();
   final commands = noteCommands(note, activityBloc: activityBloc);
-  final remove = tags
-      .where(
-        (cmd) =>
-            cmd.tag.type != TagType.compute && note.hasTag(cmd.tag, actorId),
-      )
-      .toList();
-  final add = tags
-      .where(
-        (cmd) =>
-            cmd.tag.addable == true &&
-            cmd.tag.type != TagType.compute &&
-            !note.hasTag(cmd.tag, actorId),
-      )
-      .toList();
-
-  final activeTags = remove.map((cmd) => cmd.tag).toList();
-  final suggestedTags = add.map((cmd) => cmd.tag).toList();
-  final activeTagCounts = {
-    for (final tag in activeTags) tag: TagActors.countOf(note.tags[tag]),
-  };
-
-  ShowCommands makeShowAll() => ShowCommands(
-    title: 'All tags',
-    icon: PlotIcon.more,
-    commandsBuilder: (_) async {
-      // Fetch fresh tag state when opened
-      final freshTags = Tag.getAll()
-          .where((tag) => !isViewer || tag.type == TagType.count)
-          .map((tag) => ToggleNoteTag(note, tag, actorId))
-          .toList();
-      final freshRemove = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.type != TagType.compute &&
-                note.hasTag(cmd.tag, actorId),
-          )
-          .toList();
-      final freshAdd = freshTags
-          .where(
-            (cmd) =>
-                cmd.tag.addable == true &&
-                cmd.tag.type != TagType.compute &&
-                !note.hasTag(cmd.tag, actorId),
-          )
-          .toList();
-      return Commands(
-        groups: [
-          if (freshRemove.isNotEmpty)
-            StaticCommandGroup(title: 'Remove tag', commands: freshRemove),
-          if (freshAdd.isNotEmpty)
-            StaticCommandGroup(title: 'Add tag', commands: freshAdd),
-        ],
-      );
-    },
-  );
-
   if (!note.draft && !isViewer) commands.add(ArchiveNote(note));
-
-  return [
-    if (commands.isNotEmpty)
-      StaticCommandGroup(title: 'Note', commands: commands),
-    StaticCommandGroup(
-      title: 'Note',
-      commands: [],
-      infoBuilder: (context, search) {
-        final hasSearch = search != null && search.isNotEmpty;
-        final filteredActive = hasSearch
-            ? activeTags.where((t) => t.matchesSearch(search)).toList()
-            : activeTags;
-        final filteredSuggested = hasSearch
-            ? suggestedTags.where((t) => t.matchesSearch(search)).toList()
-            : suggestedTags;
-        if (hasSearch && filteredActive.isEmpty && filteredSuggested.isEmpty) {
-          return null;
-        }
-        return TagRow(
-          activeTags: filteredActive,
-          suggestedTags: filteredSuggested,
-          activeTagCounts: activeTagCounts,
-          commandBuilder: (tag) => ToggleNoteTag(note, tag, actorId),
-          showAllBuilder: makeShowAll,
-          showMore: !hasSearch,
-        );
-      },
-      onActivate: (ctx) => makeShowAll().run(ctx),
-    ),
-  ];
+  if (commands.isEmpty) return const [];
+  return [StaticCommandGroup(title: 'Note', commands: commands)];
 }
 
 List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
@@ -1019,37 +1042,6 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       ChangeNotePrivacy(note, threadBloc: activityBloc),
     ];
 
-}
-
-/// Returns up to 6 tag suggestions for quick actions.
-/// The number shown is reduced by the count of non-hardcoded tags already on the note.
-/// Takes from tagSuggestions list which is pre-sorted (common tags first, then all others).
-List<Command> topNoteTags(
-  Note note,
-  List<Tag> tagSuggestions,
-  ActorId actorId,
-) {
-  // Count non-hardcoded tags already on note
-  final activeNonHardcodedCount = tagSuggestions
-      .where((tag) => note.hasTag(tag, actorId))
-      .length;
-
-  // Calculate how many tags to show: 6 minus active non-hardcoded tags
-  final maxToShow = 4 - activeNonHardcodedCount;
-  if (maxToShow <= 0) return [];
-
-  // Filter to count tags not already on note (excluding archived/done)
-  return tagSuggestions
-      .where(
-        (tag) =>
-            tag.type == TagType.count &&
-            tag != Tag.archived &&
-            tag != Tag.done &&
-            !note.hasTag(tag, actorId),
-      )
-      .take(maxToShow)
-      .map((tag) => ToggleNoteTag(note, tag, actorId))
-      .toList();
 }
 
 class CopyNoteContent extends NoteCommand {

@@ -97,8 +97,9 @@ def emit(data: dict[str, list[tuple[str, str, list[str]]]], version: str) -> str
     )
     out.append("// Regenerate via apps/plot/scripts/gen_emoji_data.py.")
     out.append("//")
-    out.append("// Emits two constants used by reaction_picker.dart:")
+    out.append("// Emits three constants used by emoji_picker.dart:")
     out.append("//  - kUnicodeEmojiCategories: ordered category -> list of emoji.")
+    out.append("//  - kUnicodeEmojiNames:      emoji -> canonical CLDR name (e.g. 'grinning face').")
     out.append("//  - kUnicodeEmojiLabels:     emoji -> search keywords (CLDR name words).")
     out.append("//")
     out.append("// Skin-tone variants and the \"Component\" group are intentionally")
@@ -114,6 +115,16 @@ def emit(data: dict[str, list[tuple[str, str, list[str]]]], version: str) -> str
                 "    " + ", ".join(dart_str(e[0]) for e in chunk) + ","
             )
         out.append("  ],")
+    out.append("};")
+    out.append("")
+    out.append("const Map<String, String> kUnicodeEmojiNames = {")
+    seen_names: set[str] = set()
+    for g in ordered:
+        for emoji, name, _ in data[g]:
+            if emoji in seen_names:
+                continue
+            seen_names.add(emoji)
+            out.append("  " + dart_str(emoji) + ": " + dart_str(name) + ",")
     out.append("};")
     out.append("")
     out.append("const Map<String, List<String>> kUnicodeEmojiLabels = {")
