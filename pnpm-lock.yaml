@@ -669,45 +669,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  public/twists/chatgpt:
-    dependencies:
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  public/twists/claude:
-    dependencies:
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  public/twists/gemini:
-    dependencies:
-      '@plotday/twister':
-        specifier: workspace:^
-        version: link:../../twister
-      typebox:
-        specifier: ^1.0.35
-        version: 1.0.35
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   public/twists/message-tasks:
     dependencies:
       '@plotday/twister':

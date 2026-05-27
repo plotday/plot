@@ -263,9 +263,9 @@ class ToggleIconFilter extends Command {
               pt.id,
             )?.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
         final typeLabel = config?.label ?? type;
-        title = '${pt.name} $typeLabel';
+        title = '${pt.name} ${typeLabel.toLowerCase()}';
       } else if (pt != null) {
-        title = pt.name;
+        title = '${pt.name} thread';
       } else {
         title = 'Link';
       }
@@ -285,7 +285,7 @@ class ToggleIconFilter extends Command {
           : null;
       final resolved = Thread.resolveIcon(iconValue);
       return (
-        title: pt?.name ?? 'Twist',
+        title: pt != null ? '${pt.name} thread' : 'Twist',
         icon: resolved.fallbackIcon,
         logoUrl: resolved.logoUrl,
         logoDarkUrl: resolved.logoDarkUrl,
