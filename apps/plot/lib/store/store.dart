@@ -2381,7 +2381,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 340;
+  int get schemaVersion => 341;
 
   @override
   MigrationStrategy get migration {
@@ -3620,6 +3620,12 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET last_horizon = 0, pulled_at = 0 WHERE entity LIKE 'user_actors%'",
       );
+    }
+    if (from < 341) {
+      // Per-contact role metadata on threads (To/CC/BCC, Required/Optional).
+      // Existing rows pick up the column as null and treat every contact as
+      // the link type's default role.
+      await m.addColumn(threads, threads.contactMeta);
     }
   }
 

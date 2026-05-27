@@ -35,6 +35,13 @@ class Threads extends Table
   /// `thread.contacts` on the server.
   TextColumn get contacts => text().nullable().map(const UuidListConverter())();
 
+  /// Per-contact descriptive metadata, keyed by contact id. Shape (JSON):
+  ///   `{ "<contact_uuid>": { "role": "<role_id>", "addedBy": "<user_id>" } }`
+  /// Populated from `thread.contact_meta` on the server. Contacts not in the
+  /// map use the link type's default role. Hidden roles are filtered
+  /// server-side before sync.
+  TextColumn get contactMeta => text().nullable().map(const JsonConverter())();
+
   /// Group IDs attached to this thread for dynamic visibility.
   TextColumn get groups => text().nullable().map(const UuidListConverter())();
 
@@ -4273,6 +4280,12 @@ ORDER BY
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
   List<Uuid> get contacts => _thread.contacts ?? const [];
+  /// Per-contact metadata (role assignments, etc) keyed by contact uuid
+  /// (string). Empty when no roles are set; contacts not in the map use the
+  /// link type's default role. See `ContactRoleConfig` and
+  /// `thread.contact_meta` on the server.
+  Map<String, dynamic> get contactMeta =>
+      (_thread.contactMeta ?? const {}).cast<String, dynamic>();
   List<Uuid> get groups => _thread.groups ?? const [];
   String? get topic => _thread.topic;
   /// Pending email invitations that haven't been synced yet.
@@ -5309,6 +5322,7 @@ ORDER BY
     Order? order,
     bool? draft,
     Value<List<Uuid>?> contacts = const Value.absent(),
+    Value<Map<String, dynamic>?> contactMeta = const Value.absent(),
     Value<List<Uuid>?> groups = const Value.absent(),
     Value<List<String>?> inviteEmails = const Value.absent(),
     bool? unread,
@@ -5360,6 +5374,7 @@ ORDER BY
     if (priority != null ||
         draft != null ||
         contacts.present ||
+        contactMeta.present ||
         groups.present ||
         inviteEmails.present ||
         unread != null ||
@@ -5378,6 +5393,7 @@ ORDER BY
       activityRemoteDirty = priority != null ||
           draft != null ||
           contacts.present ||
+          contactMeta.present ||
           groups.present ||
           inviteEmails.present ||
           preview.present ||
@@ -5390,6 +5406,7 @@ ORDER BY
         priorityId: priority?.id,
         draft: draft,
         contacts: contacts,
+        contactMeta: contactMeta,
         groups: groups,
         inviteEmails: inviteEmails.present
             ? Value(inviteEmails.value != null && inviteEmails.value!.isNotEmpty

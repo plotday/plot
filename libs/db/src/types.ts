@@ -1977,6 +1977,7 @@ export type Database = {
       thread: {
         Row: {
           archived_at: string | null
+          contact_meta: Json
           contacts: string[]
           created_at: string
           created_by: string
@@ -2003,6 +2004,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          contact_meta?: Json
           contacts?: string[]
           created_at?: string
           created_by: string
@@ -2029,6 +2031,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          contact_meta?: Json
           contacts?: string[]
           created_at?: string
           created_by?: string
@@ -3355,6 +3358,7 @@ export type Database = {
       thread_x: {
         Row: {
           archived_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           created_by: string | null
@@ -3370,7 +3374,6 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[] | null
           preview: string | null
-          private_to_creator: boolean | null
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -3381,6 +3384,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
           created_by?: string | null
@@ -3396,7 +3400,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
-          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -3407,6 +3410,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
           created_by?: string | null
@@ -3422,7 +3426,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
-          private_to_creator?: boolean | null
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -4319,6 +4322,7 @@ export type Database = {
           options_schema: Json | null
           permissions: Json | null
           publisher_id: number | null
+          seq: unknown
           shared: boolean
           twist_package_id: string
           updated_at: string
@@ -4456,7 +4460,9 @@ export type Database = {
       share_thread: {
         Args: {
           p_add_contact_ids?: string[]
+          p_contact_roles?: Json
           p_remove_contact_ids?: string[]
+          p_role_changes?: Json
           p_thread_id: string
           p_user_id: string
         }
@@ -4631,6 +4637,12 @@ export type Database = {
           {
             foreignKeyName: "link_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -4644,6 +4656,12 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
             referencedColumns: ["id"]
           },
           {
@@ -4691,6 +4709,12 @@ export type Database = {
           {
             foreignKeyName: "note_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -4704,6 +4728,12 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note_reactions"
             referencedColumns: ["id"]
           },
           {
@@ -4727,6 +4757,12 @@ export type Database = {
           {
             foreignKeyName: "note_thread_id_fkey"
             columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -4736,6 +4772,26 @@ export type Database = {
             referencedRelation: "thread_tags"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      note_reactions: {
+        Row: {
+          archived_at: string | null
+          id: string | null
+          priority_id: string | null
+          priority_path: unknown
+          reactions: Json | null
+          seq: unknown
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
           {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
@@ -4775,6 +4831,12 @@ export type Database = {
           {
             foreignKeyName: "note_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -4793,6 +4855,12 @@ export type Database = {
           {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
+            referencedRelation: "note_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
             referencedRelation: "note_redacted"
             referencedColumns: ["id"]
           },
@@ -4806,6 +4874,12 @@ export type Database = {
             foreignKeyName: "note_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
             referencedColumns: ["id"]
           },
           {
@@ -5060,6 +5134,12 @@ export type Database = {
           {
             foreignKeyName: "schedule_thread_id_fkey"
             columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_thread_id_fkey"
+            columns: ["thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -5104,6 +5184,7 @@ export type Database = {
           archived_at: string | null
           auto_archived_by_thread_id: string | null
           bumped_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           draft: boolean | null
@@ -5143,6 +5224,12 @@ export type Database = {
           {
             foreignKeyName: "thread_merged_into_thread_id_fkey"
             columns: ["merged_into_thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_merged_into_thread_id_fkey"
+            columns: ["merged_into_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -5156,6 +5243,12 @@ export type Database = {
             foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
             columns: ["auto_archived_by_thread_id"]
             referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
+            columns: ["auto_archived_by_thread_id"]
+            referencedRelation: "thread_reactions"
             referencedColumns: ["id"]
           },
           {
@@ -5200,6 +5293,12 @@ export type Database = {
           {
             foreignKeyName: "thread_association_child_thread_id_fkey"
             columns: ["child_thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_child_thread_id_fkey"
+            columns: ["child_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
@@ -5213,6 +5312,12 @@ export type Database = {
             foreignKeyName: "thread_association_parent_thread_id_fkey"
             columns: ["parent_thread_id"]
             referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_parent_thread_id_fkey"
+            columns: ["parent_thread_id"]
+            referencedRelation: "thread_reactions"
             referencedColumns: ["id"]
           },
           {
@@ -5235,6 +5340,27 @@ export type Database = {
           },
         ]
       }
+      thread_reactions: {
+        Row: {
+          archived_at: string | null
+          id: string | null
+          occurrence: string | null
+          priority_id: string | null
+          priority_path: unknown
+          reactions: Json | null
+          seq: unknown
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       thread_redacted: {
         Row: {
           active: boolean | null
@@ -5243,6 +5369,7 @@ export type Database = {
           archived_at: string | null
           auto_archived_by_thread_id: string | null
           bumped_at: string | null
+          contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
           draft: boolean | null
@@ -5334,13 +5461,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

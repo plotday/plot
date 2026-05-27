@@ -186,6 +186,12 @@ threads.get("/sync/threads", async (c) => {
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
 
+  // TODO(contact-roles): when a connector starts emitting hidden roles (e.g.
+  // Gmail BCC), filter contact_meta entries here based on the role config's
+  // `hidden` flag — keep the entry only when the requesting user is either
+  // the contact (linked via user_contact) or the `addedBy` user. Until then
+  // every entry is visible to every viewer.
+
   // Version-gated serialization: apiVersion < 3 clients expect a `topics`
   // array (the legacy name for what is now `groups`). Map groups → topics
   // and drop the new `topic` / `groups` fields for those clients.

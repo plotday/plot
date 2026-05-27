@@ -23,6 +23,14 @@ class LinkTypeConfig {
   ///   recipients from their contacts. The connector's `onCreateLink` receives
   ///   pre-resolved recipients via `CreateLinkDraft.recipients`.
   final String targets;
+  /// Per-connector contact roles for this link type. Email connectors declare
+  /// To/CC/BCC, calendar connectors declare Required/Optional, etc. Empty or
+  /// null when the connector does not distinguish roles (Slack, Linear).
+  final List<ContactRoleConfig>? contactRoles;
+  /// Whether contacts on an existing thread can be added/removed or have their
+  /// role changed. Email-style threads set this true; messaging connectors
+  /// where the recipient list is fixed at creation set it false.
+  final bool supportsContactChanges;
 
   const LinkTypeConfig({
     required this.type,
@@ -34,6 +42,8 @@ class LinkTypeConfig {
     this.statuses,
     this.supportsAssignee = false,
     this.targets = 'channels',
+    this.contactRoles,
+    this.supportsContactChanges = false,
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -53,8 +63,64 @@ class LinkTypeConfig {
           json['supports_assignee'] as bool? ??
           false,
       targets: json['targets'] as String? ?? 'channels',
+      contactRoles: (json['contactRoles'] as List<dynamic>? ??
+              json['contact_roles'] as List<dynamic>?)
+          ?.map((r) => ContactRoleConfig.fromJson(r as Map<String, dynamic>))
+          .toList(),
+      supportsContactChanges:
+          json['supportsContactChanges'] as bool? ??
+              json['supports_contact_changes'] as bool? ??
+              false,
     );
   }
+
+  /// The default role for newly-added contacts, or null when no roles are
+  /// declared. Returns the explicit `default: true` role when present,
+  /// otherwise the first role in the list.
+  ContactRoleConfig? get defaultContactRole {
+    final roles = contactRoles;
+    if (roles == null || roles.isEmpty) return null;
+    return roles.firstWhere(
+      (r) => r.isDefault,
+      orElse: () => roles.first,
+    );
+  }
+}
+
+/// One role a connector defines for contacts on a thread. See
+/// [LinkTypeConfig.contactRoles].
+class ContactRoleConfig extends Equatable {
+  /// Machine id, e.g. "to" / "cc" / "bcc" / "required" / "optional".
+  final String id;
+  /// Display label shown next to the contact chip.
+  final String label;
+  /// Whether this is the default role for newly-added contacts. Exactly one
+  /// role per link type should set this; if none do, the first role in
+  /// `contactRoles` is treated as default.
+  final bool isDefault;
+  /// Hidden roles (BCC-style) are visible only to the contact themselves and
+  /// the user who added them. The Flutter UI uses this to warn the user when
+  /// picking a hidden role; the server enforces actual filtering.
+  final bool hidden;
+
+  const ContactRoleConfig({
+    required this.id,
+    required this.label,
+    this.isDefault = false,
+    this.hidden = false,
+  });
+
+  factory ContactRoleConfig.fromJson(Map<String, dynamic> json) {
+    return ContactRoleConfig(
+      id: json['id'] as String,
+      label: json['label'] as String,
+      isDefault: json['default'] as bool? ?? false,
+      hidden: json['hidden'] as bool? ?? false,
+    );
+  }
+
+  @override
+  List<Object?> get props => [id, label, isDefault, hidden];
 }
 
 /// A possible status value within a LinkTypeConfig.

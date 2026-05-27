@@ -16,9 +16,26 @@ const uuidRegex =
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// An add-target can be:
+//   - a plain string (UUID or email) — back-compat, no role
+//   - { value, role } — UUID/email plus an optional connector role id
+const AddTargetSchema = z.union([
+  z.string(),
+  z.object({ value: z.string(), role: z.string().optional() }),
+]);
+
 const ShareRequestSchema = z.object({
-  add: z.array(z.string()).default([]),
+  add: z.array(AddTargetSchema).default([]),
   remove: z.array(z.string().uuid()).default([]),
+  // Optional role changes on contacts already on the thread.
+  roleChanges: z
+    .array(
+      z.object({
+        contactId: z.string().uuid(),
+        role: z.string(),
+      }),
+    )
+    .default([]),
   // Accept new `addGroups`/`removeGroups` (apiVersion >= 3) or old
   // `addTopics`/`removeTopics` (apiVersion < 3) — both map to the same RPC.
   addGroups: z.array(z.string().uuid()).optional(),
@@ -51,55 +68,83 @@ threadShare.post("/thread/:id/share", async (c) => {
     return handleValidationError(parseResult.error);
   }
 
-  const { add, remove } = parseResult.data;
+  const { add, remove, roleChanges } = parseResult.data;
   const addGroups = parseResult.data.addGroups ?? parseResult.data.addTopics ?? [];
   const removeGroups = parseResult.data.removeGroups ?? parseResult.data.removeTopics ?? [];
 
-  if (add.length === 0 && remove.length === 0 && addGroups.length === 0 && removeGroups.length === 0) {
+  if (
+    add.length === 0 &&
+    remove.length === 0 &&
+    roleChanges.length === 0 &&
+    addGroups.length === 0 &&
+    removeGroups.length === 0
+  ) {
     return c.json({ message: "No changes to make" }, 400);
   }
 
-  if (add.length > 0 || remove.length > 0) {
-    // Partition add array into UUIDs and emails
-    const addUuids: string[] = [];
-    const addEmails: string[] = [];
+  if (add.length > 0 || remove.length > 0 || roleChanges.length > 0) {
+    // Partition add array into UUIDs and emails, carrying per-target role.
+    const addUuids: Array<{ value: string; role?: string }> = [];
+    const addEmails: Array<{ value: string; role?: string }> = [];
 
     for (const item of add) {
-      if (uuidRegex.test(item)) {
-        addUuids.push(item);
-      } else if (emailRegex.test(item)) {
-        addEmails.push(item.toLowerCase());
+      const value = typeof item === "string" ? item : item.value;
+      const role = typeof item === "string" ? undefined : item.role;
+      if (uuidRegex.test(value)) {
+        addUuids.push({ value, role });
+      } else if (emailRegex.test(value)) {
+        addEmails.push({ value: value.toLowerCase(), role });
       } else {
         return c.json(
-          { message: `Invalid identifier: ${item}. Must be a UUID or email address.` },
+          { message: `Invalid identifier: ${value}. Must be a UUID or email address.` },
           400
         );
       }
     }
 
-    // Upsert contacts from emails
-    let contactIdsFromEmails: string[] = [];
+    // Upsert contacts from emails — map email back to (resolved id, role).
+    const contactsByEmail = new Map<string, string>();
     if (addEmails.length > 0) {
       try {
         const contacts = await rpc(c.var.db, "upsert_contacts", {
-          contacts: JSON.stringify(addEmails.map((email) => ({ email }))),
+          contacts: JSON.stringify(addEmails.map((e) => ({ email: e.value }))),
         });
         const contactRows = Array.isArray(contacts) ? contacts : [contacts];
-        contactIdsFromEmails = contactRows.map((row: { id: string }) => row.id);
+        // Server preserves input order; map by index.
+        addEmails.forEach((entry, i) => {
+          const row = contactRows[i] as { id: string } | undefined;
+          if (row) contactsByEmail.set(entry.value, row.id);
+        });
       } catch (upsertError) {
         return captureServerError(
           c,
           upsertError as Error,
           "Failed to create contacts",
-          { thread_id: threadId, user_id: user.id, emails: addEmails }
+          { thread_id: threadId, user_id: user.id, emails: addEmails.map((e) => e.value) }
         );
       }
     }
 
-    const allAddIds = [...addUuids, ...contactIdsFromEmails];
+    // Build the final (contactId, role) list and the flat id list.
+    const addEntries: Array<{ contactId: string; role?: string }> = [];
+    for (const entry of addUuids) {
+      addEntries.push({ contactId: entry.value, role: entry.role });
+    }
+    for (const entry of addEmails) {
+      const contactId = contactsByEmail.get(entry.value);
+      if (contactId) addEntries.push({ contactId, role: entry.role });
+    }
+    const allAddIds = addEntries.map((e) => e.contactId);
+    const contactRoles = addEntries
+      .filter((e) => e.role)
+      .map((e) => ({ contactId: e.contactId, role: e.role }));
 
     // Call share_thread RPC
-    let shareResult: { contacts: string[]; needs_invitation: string[] };
+    let shareResult: {
+      contacts: string[];
+      contact_meta?: Record<string, { role?: string; addedBy?: string }>;
+      needs_invitation: string[];
+    };
     try {
       const data = await c.var.db.transaction().execute(async (trx) => {
         return rpc(trx, "share_thread", {
@@ -107,6 +152,8 @@ threadShare.post("/thread/:id/share", async (c) => {
           p_thread_id: threadId,
           p_add_contact_ids: `{${allAddIds.join(",")}}` as any,
           p_remove_contact_ids: `{${remove.join(",")}}` as any,
+          p_contact_roles: JSON.stringify(contactRoles),
+          p_role_changes: JSON.stringify(roleChanges),
         });
       });
       shareResult = data as unknown as typeof shareResult;

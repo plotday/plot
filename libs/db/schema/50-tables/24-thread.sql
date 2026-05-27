@@ -26,6 +26,17 @@ CREATE TABLE "public"."thread" (
     -- attested by another user's sync. Promoted into `contacts` when an
     -- attester's upsert includes them. See upsert_thread + file_thread_priority_peers.
     "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    -- Per-contact descriptive metadata, keyed by contact_id. Shape:
+    --   { "<contact_uuid>": { "role": "<role_id>", "addedBy": "<user_uuid>" }, ... }
+    -- `role` is a LinkTypeConfig.contactRoles[].id declared by the owning
+    -- connector (e.g. "to"/"cc"/"bcc" for email, "required"/"optional" for
+    -- calendar). Contacts absent from the map are treated as the link
+    -- type's default role. `addedBy` is the user who attributed that
+    -- contact; used by the API sync layer to gate visibility of hidden
+    -- roles (BCC) so only the sender and the contact themselves see them.
+    -- Does not affect access control — thread.contacts remains the source
+    -- of truth for visibility.
+    "contact_meta" jsonb NOT NULL DEFAULT '{}'::jsonb,
     -- Monotonic sync cursor (writing transaction's xid8). Maintained by the
     -- update_seq_and_updated_at BEFORE INSERT/UPDATE trigger. Sync queries
     -- gate on `seq < pg_snapshot_xmin(pg_current_snapshot())` to skip rows
