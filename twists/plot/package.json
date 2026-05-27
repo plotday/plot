@@ -2,6 +2,8 @@
   "name": "@plotday/twist-plot",
   "plotTwistId": "0199b6f4-ae64-7718-8a02-44716f30358f",
   "displayName": "Plot",
+  "handle": "Plot",
+  "threadType": "Plot AI chat",
   "description": "Support setting up, using, and automating Plot",
   "logoUrl": "https://plot.day/assets/plot-icon.svg",
   "publisher": "Plot",
