@@ -291,6 +291,21 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final currentEventId =
         nowState is NowLoaded ? nowState.currentEvent?.id : null;
 
+    // Only the first matching block gets the priority-tinted highlight —
+    // multiple siblings of the same priority would otherwise all light up
+    // and dilute the "this is where you are" affordance.
+    AgendaHeaderItem? firstSelectedItem;
+    int? firstSelectedIndex;
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      if (item is! AgendaHeaderItem) continue;
+      if (item.blockPriority?.id != currentPriorityId) continue;
+      if (currentEventId != null && item.thread?.id != currentEventId) continue;
+      firstSelectedItem = item;
+      firstSelectedIndex = i;
+      break;
+    }
+
     final ({
       Map<int, BlockDropTarget> before,
       Map<int, BlockDropTarget> after,
@@ -338,13 +353,9 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         dragController: _dragController,
         index: index,
         selectedAccent: (item) {
-          if (item is! AgendaHeaderItem) return null;
-          if (item.blockPriority?.id != currentPriorityId) return null;
-          if (currentEventId != null && item.thread?.id != currentEventId) {
-            return null;
-          }
+          if (!identical(item, firstSelectedItem)) return null;
           return context.colour.colours.fromTheme(
-            item.blockPriority!.displayColor,
+            firstSelectedItem!.blockPriority!.displayColor,
           );
         },
         // Block headers carry their own hover affordance (the drag grip
@@ -394,8 +405,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
             current.sourcePeriodStart != null &&
             current.blockPriority == null;
 
-        final selected = current.blockPriority?.id == currentPriorityId &&
-            (currentEventId == null || current.thread?.id == currentEventId);
+        final selected = index == firstSelectedIndex;
 
         return Column(
           mainAxisSize: MainAxisSize.min,

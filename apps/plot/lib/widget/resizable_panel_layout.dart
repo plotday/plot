@@ -103,11 +103,13 @@ class ResizablePanelLayout extends StatefulWidget {
 
   /// Optional bottom section of the left panel. When provided, the left
   /// column is split vertically with [left] on top (plain, capped) and
-  /// [leftBottom] below (plain, fills remaining space).
+  /// [leftBottom] below (wrapped in a hairline-outlined squircle that
+  /// fills the remaining space).
   final Widget? leftBottom;
 
-  /// Optional footer rendered below [leftBottom] in the left column.
-  /// Shares the column's horizontal padding.
+  /// Optional footer rendered below the [leftBottom] outline in the left
+  /// column. Shares the column's horizontal padding but sits outside the
+  /// outline.
   final Widget? leftFooter;
 
   /// Middle panel when all three are shown.
@@ -196,7 +198,7 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   }
 
   /// Body content of the left column (priorities list on top + agenda
-  /// squircle below). The sidebar header sits above this in the column.
+  /// outline below). The sidebar header sits above this in the column.
   Widget _buildSidebarBody(BuildContext context) {
     if (widget.leftBottom == null) {
       return Padding(
@@ -209,10 +211,16 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         child: widget.left,
       );
     }
+    const bottomRadius = BorderRadius.all(Radius.circular(_panelRadius));
     final agendaGap = context.theme.spacing.xl;
     final top = Padding(
       padding: const EdgeInsets.fromLTRB(_outerInset, 0, _halfGap, 0),
       child: widget.left,
+    );
+    final outlined = _outlinedSquircle(
+      context,
+      widget.leftBottom!,
+      borderRadius: bottomRadius,
     );
     final bottom = Padding(
       padding: EdgeInsets.fromLTRB(
@@ -222,17 +230,42 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
         _outerInset,
       ),
       child: widget.leftFooter == null
-          ? widget.leftBottom!
+          ? outlined
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: widget.leftBottom!),
+                Expanded(child: outlined),
                 SizedBox(height: agendaGap),
                 widget.leftFooter!,
               ],
             ),
     );
     return _LeftPanelVerticalSplit(top: top, bottom: bottom);
+  }
+
+  /// A hairline-outlined squircle with no shadow and no separate background
+  /// fill — the priority-tinted sidebar frame shows through, so the agenda
+  /// reads as a quietly delineated region of the sidebar rather than a
+  /// floating card.
+  Widget _outlinedSquircle(
+    BuildContext context,
+    Widget child, {
+    required BorderRadiusGeometry borderRadius,
+  }) {
+    return DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(
+          side: BorderSide(color: _squircleBorderColor(context), width: 1),
+          borderRadius: borderRadius,
+        ),
+      ),
+      child: ClipRSuperellipse(
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
   }
 
   /// Body content of the main column (middle + right panels sharing one
