@@ -2388,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 343;
+  int get schemaVersion => 344;
 
   @override
   MigrationStrategy get migration {
@@ -3677,6 +3677,10 @@ class Store extends _$Store {
           "UPDATE $tbl SET tags = NULL WHERE tags = '{}'",
         );
       }
+    }
+    if (from < 344) {
+      await m.addColumn(twistInstances, twistInstances.handle);
+      await m.addColumn(twistInstances, twistInstances.threadType);
     }
   }
 
