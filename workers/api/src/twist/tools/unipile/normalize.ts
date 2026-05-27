@@ -3,6 +3,7 @@ import type {
   LinkedInChat,
   LinkedInInvitation,
   LinkedInMessage,
+  LinkedInMessageReaction,
   LinkedInProfile,
 } from "@plotday/unipile";
 
@@ -12,6 +13,7 @@ import type {
   UnipileChat,
   UnipileInvitation,
   UnipileMessage,
+  UnipileMessageReaction,
   UnipileRelation,
 } from "./types";
 
@@ -64,9 +66,19 @@ export function normalizeMessage(msg: UnipileMessage): LinkedInMessage {
     chatId: msg.chat_id,
     senderId: msg.sender_id,
     sentByMe: msg.is_sender === 1,
+    eventType: msg.is_event === 1 ? msg.event_type ?? "unknown" : null,
     sentAt: new Date(msg.timestamp),
     text: msg.text ?? "",
     attachments: (msg.attachments ?? []).map(normalizeAttachment),
+    reactions: (msg.reactions ?? []).map(normalizeReaction),
+  };
+}
+
+function normalizeReaction(r: UnipileMessageReaction): LinkedInMessageReaction {
+  return {
+    value: r.value,
+    senderId: r.sender_id,
+    sentByMe: r.is_sender === true,
   };
 }
 

@@ -81,6 +81,55 @@ describe("normalize", () => {
     expect(msg.text).toBe("Hello");
     expect(msg.sentAt.toISOString()).toBe("2026-05-22T10:05:00.000Z");
     expect(msg.attachments).toEqual([]);
+    expect(msg.eventType).toBeNull();
+    expect(msg.reactions).toEqual([]);
+  });
+
+  it("normalizes message reactions and flags sent-by-me reactor", () => {
+    const msg = normalizeMessage({
+      object: "Message",
+      id: "m2",
+      chat_id: "c1",
+      chat_provider_id: "linkedin-thread-xyz",
+      provider_id: "lnk-msg-2",
+      sender_id: "ACoAA12345",
+      sender_attendee_id: "att-1",
+      timestamp: "2026-05-22T10:06:00.000Z",
+      is_sender: 0,
+      is_event: 0,
+      seen: 1,
+      text: "Nice",
+      attachments: [],
+      reactions: [
+        { value: "👍", sender_id: "ACoAAme00", is_sender: true },
+        { value: "❤️", sender_id: "ACoAA12345", is_sender: false },
+      ],
+    });
+    expect(msg.reactions).toEqual([
+      { value: "👍", senderId: "ACoAAme00", sentByMe: true },
+      { value: "❤️", senderId: "ACoAA12345", sentByMe: false },
+    ]);
+  });
+
+  it("surfaces eventType for is_event=1 messages so connectors can skip them", () => {
+    const msg = normalizeMessage({
+      object: "Message",
+      id: "m3",
+      chat_id: "c1",
+      chat_provider_id: "linkedin-thread-xyz",
+      provider_id: "lnk-msg-3",
+      sender_id: "ACoAAme00",
+      sender_attendee_id: "att-self",
+      timestamp: "2026-05-22T10:07:00.000Z",
+      is_sender: 1,
+      is_event: 1,
+      event_type: "reaction",
+      seen: 1,
+      text: null,
+      attachments: [],
+    });
+    expect(msg.eventType).toBe("reaction");
+    expect(msg.text).toBe("");
   });
 
   it("normalizes an invitation with inviter profile", () => {

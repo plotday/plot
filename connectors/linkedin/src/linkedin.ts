@@ -4,13 +4,17 @@ import {
   type Link,
   type NewLinkWithNotes,
   type NoteWriteBackResult,
+  type ReactionCapabilities,
   type ToolBuilder,
 } from "@plotday/twister";
 import type {
   Actor,
+  NewActor,
   NewContact,
   NewNote,
+  NewReactions,
   Note,
+  Reactions,
   Thread,
 } from "@plotday/twister/plot";
 import { Callbacks } from "@plotday/twister/tools/callbacks";
@@ -42,6 +46,21 @@ const STATUS_IGNORED  = "ignored";
 const STATUS_SENT     = "sent";
 
 const PROVIDER_KEY = "linkedin";
+
+/**
+ * LinkedIn DMs accept exactly these seven emoji as message reactions; the
+ * platform does not expose a custom-reaction picker. The connector declares
+ * this via `reactionCapabilities` so the Plot reaction picker (see
+ * `reactionCapabilitiesForLinkSource` in
+ * `apps/plot/lib/store/reaction.dart`) filters out anything else before the
+ * user can attempt to react.
+ *
+ * The order doubles as the deterministic tiebreaker when multiple Plot
+ * users have reacted with different allowed emoji on the same note —
+ * LinkedIn only lets each member set one reaction, so the connector picks
+ * the first match in this list as the one to push.
+ */
+const LINKEDIN_REACTIONS = ["👍", "❤️", "👏", "💡", "😂", "😮", "😢"] as const;
 
 type SyncState = {
   initialSync: boolean;
@@ -78,6 +97,10 @@ export class LinkedIn extends Connector<LinkedIn> {
   readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
   readonly singleChannel = true;
+  readonly reactionCapabilities: ReactionCapabilities = {
+    mode: "fixed",
+    allowed: LINKEDIN_REACTIONS,
+  };
   readonly linkTypes = [
     {
       type: TYPE_CONVERSATION,
@@ -518,6 +541,65 @@ export class LinkedIn extends Connector<LinkedIn> {
     };
   }
 
+  /**
+   * Push reaction changes back to LinkedIn. Content edits are not
+   * supported by Unipile for LinkedIn messages, so this only reconciles
+   * reactions.
+   *
+   * LinkedIn allows each member at most one reaction per message, while
+   * Plot's model is multi-emoji × multi-reactor. The connector resolves
+   * the mismatch by picking exactly one emoji to push as the connected
+   * account's reaction (deterministic — first allowed emoji that has any
+   * reactor in Plot, in the order declared by `LINKEDIN_REACTIONS`).
+   * That matches the Slack v1 pattern of acting as the connected user for
+   * every diff; per-actor `actAs()` write-back can follow once Plot
+   * exposes the relevant hook.
+   *
+   * The last reaction this connector pushed for each message is tracked
+   * in connector state so we only call LinkedIn when the desired value
+   * actually changes. If the user clears the reaction in Plot we attempt
+   * a removal (best effort — `LinkedInMessaging.clearMessageReaction`
+   * swallows `404/405`).
+   */
+  override async onNoteUpdated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    const meta = (thread.meta ?? {}) as Record<string, unknown>;
+    const channelId = meta.channelId as string | undefined;
+    if (!channelId) return;
+    if (!note.key || !note.key.startsWith("message-")) return;
+    const messageId = note.key.slice("message-".length);
+    if (!messageId) return;
+
+    const desired = pickDesiredLinkedInReaction(note.reactions ?? {});
+    const stateKey = `reaction_sent:${messageId}`;
+    const lastSent = (await this.get<string>(stateKey)) ?? null;
+    if (desired === lastSent) return;
+
+    try {
+      if (desired) {
+        await this.tools.linkedin.setMessageReaction({
+          channelId,
+          messageId,
+          reaction: desired,
+        });
+        await this.set(stateKey, desired);
+      } else {
+        await this.tools.linkedin.clearMessageReaction({
+          channelId,
+          messageId,
+        });
+        await this.clear(stateKey);
+      }
+    } catch (error) {
+      console.warn(
+        `LinkedIn reaction write-back failed for message ${messageId}`,
+        error
+      );
+    }
+  }
+
   override async onLinkUpdated(link: Link): Promise<void> {
     if (link.type !== TYPE_CONVERSATION) return;
 
@@ -606,7 +688,12 @@ export class LinkedIn extends Connector<LinkedIn> {
       limit: 20,
       since: initialSync ? undefined : since,
     });
-    const notes: NewNote[] = messages.messages
+    // Drop synthetic events (reaction notifications, group renames, missed
+    // calls). The state they represent is already reflected on the parent
+    // message's reactions array or on the chat itself; turning them into
+    // notes would create empty/noise rows.
+    const messageItems = messages.messages.filter((m) => m.eventType === null);
+    const notes: NewNote[] = messageItems
       .slice()
       .reverse()
       .map((msg) => buildNoteFromMessage(msg, chat, other.id));
@@ -651,9 +738,14 @@ export class LinkedIn extends Connector<LinkedIn> {
       limit: 20,
       since: initialSync ? undefined : since,
     });
+    // Drop synthetic events (reaction notifications, group renames, missed
+    // calls). The state they represent is already reflected on the parent
+    // message's reactions array or on the chat itself; turning them into
+    // notes would create empty/noise rows.
+    const messageItems = messages.messages.filter((m) => m.eventType === null);
 
     const others = chat.participants.filter((p) => !p.isSelf);
-    const notes: NewNote[] = messages.messages
+    const notes: NewNote[] = messageItems
       .slice()
       .reverse()
       .map((msg) => buildNoteFromMessage(msg, chat));
@@ -687,6 +779,23 @@ export class LinkedIn extends Connector<LinkedIn> {
 
 export default LinkedIn;
 
+/**
+ * Pick the emoji to push as the connected account's reaction on a
+ * LinkedIn message, given Plot's current `note.reactions` map. Returns
+ * `null` when no allowed emoji has any reactor in Plot — that's the
+ * signal to clear the reaction on LinkedIn.
+ *
+ * Iterates `LINKEDIN_REACTIONS` (declared order) so the result is
+ * deterministic even when multiple allowed emoji are present.
+ */
+function pickDesiredLinkedInReaction(reactions: Reactions): string | null {
+  for (const emoji of LINKEDIN_REACTIONS) {
+    const reactors = reactions[emoji];
+    if (reactors && reactors.length > 0) return emoji;
+  }
+  return null;
+}
+
 function buildNoteFromMessage(
   msg: LinkedInMessage,
   chat: LinkedInChat,
@@ -712,6 +821,8 @@ function buildNoteFromMessage(
     ? `linkedin:person:${threadPersonId}`
     : `linkedin:chat:${chat.id}`;
 
+  const reactions = buildReactionsFromMessage(msg, chat);
+
   return {
     thread: { source: threadSource },
     key: `message-${msg.id}`,
@@ -719,7 +830,37 @@ function buildNoteFromMessage(
     content: msg.text + attachmentSuffix,
     contentType: "text",
     author,
+    ...(reactions ? { reactions } : {}),
   };
+}
+
+/**
+ * Aggregate a message's reactions into Plot's `emoji → NewActor[]` shape.
+ * Reactors are resolved against `chat.participants` so the runtime can
+ * attribute them via `contact_external_account`; reactors that aren't a
+ * known chat participant fall back to a stub contact keyed on their
+ * LinkedIn provider id.
+ */
+function buildReactionsFromMessage(
+  msg: LinkedInMessage,
+  chat: LinkedInChat,
+): NewReactions | undefined {
+  if (!msg.reactions || msg.reactions.length === 0) return undefined;
+
+  const byEmoji = new Map<string, NewActor[]>();
+  for (const r of msg.reactions) {
+    const participant = chat.participants.find((p) => p.id === r.senderId);
+    const actor: NewActor = participant
+      ? profileToContact(participant)
+      : { name: "LinkedIn user", source: { accountId: r.senderId } };
+    const existing = byEmoji.get(r.value);
+    if (existing) existing.push(actor);
+    else byEmoji.set(r.value, [actor]);
+  }
+
+  const out: NewReactions = {};
+  for (const [emoji, actors] of byEmoji) out[emoji] = actors;
+  return out;
 }
 
 function profileToContact(profile: LinkedInProfile): NewContact {

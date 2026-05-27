@@ -127,6 +127,26 @@ export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
     await this.client.setChatRead({ chatId: params.chatId, read: params.read });
   }
 
+  async setMessageReaction(params: {
+    channelId: string;
+    messageId: string;
+    reaction: string;
+  }): Promise<void> {
+    await this.assertAccount(params.channelId);
+    await this.client.addMessageReaction({
+      messageId: params.messageId,
+      reaction: params.reaction,
+    });
+  }
+
+  async clearMessageReaction(params: {
+    channelId: string;
+    messageId: string;
+  }): Promise<void> {
+    await this.assertAccount(params.channelId);
+    await this.client.removeMessageReaction({ messageId: params.messageId });
+  }
+
   async listReceivedInvitations(params: {
     channelId: string;
     cursor?: string | null;
