@@ -50,7 +50,26 @@ export abstract class LinkedInMessaging extends ITool {
     channelId: string;
     chatId: string;
     text: string;
+    attachments?: Array<{
+      buffer: Uint8Array;
+      filename: string;
+      mimeType: string;
+    }>;
   }): Promise<LinkedInMessage>;
+
+  /**
+   * Download an attachment from a LinkedIn message by its Unipile attachment id.
+   *
+   * @param params.channelId - The Unipile account id (channel) that owns the message.
+   * @param params.messageId - The Unipile message id the attachment belongs to.
+   * @param params.attachmentId - The Unipile attachment id.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract downloadAttachment(params: {
+    channelId: string;
+    messageId: string;
+    attachmentId: string;
+  }): Promise<{ body: ReadableStream; mimeType: string; fileName?: string }>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract setChatRead(params: {

@@ -171,6 +171,57 @@ export class UnipileClient {
   }
 
   /**
+   * Send a message with file attachments via multipart/form-data.
+   * Used when the caller has one or more files to attach alongside the text.
+   */
+  async sendMessageMultipart(input: {
+    chatId: string;
+    text: string;
+    attachments: Array<{ buffer: Uint8Array; filename: string; mimeType: string }>;
+  }): Promise<UnipileMessage> {
+    const form = new FormData();
+    form.append("text", input.text);
+    for (const att of input.attachments) {
+      form.append(
+        "files[]",
+        new Blob([att.buffer], { type: att.mimeType }),
+        att.filename
+      );
+    }
+    return this.requestFormData<UnipileMessage>(
+      `/chats/${encodeURIComponent(input.chatId)}/messages`,
+      form
+    );
+  }
+
+  /**
+   * Download an attachment from a message by its Unipile attachment id.
+   * Returns the raw Response so the caller can stream bytes or redirect.
+   */
+  async downloadAttachmentRaw(input: {
+    messageId: string;
+    attachmentId: string;
+  }): Promise<Response> {
+    const url = `${this.base}/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(input.attachmentId)}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-API-KEY": this.env.UNIPILE_API_KEY,
+        accept: "*/*",
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new UnipileApiError(
+        `Unipile GET attachment returned ${response.status}`,
+        response.status,
+        text
+      );
+    }
+    return response;
+  }
+
+  /**
    * Start a new LinkedIn DM with one or more recipients and send the first
    * message. Unipile's `POST /messages` endpoint creates the chat if one
    * does not already exist; for 1:1 conversations it reuses the existing
@@ -329,6 +380,25 @@ export class UnipileClient {
   }
 
   // ---------- Internals ----------
+
+  private async requestFormData<T>(path: string, form: FormData): Promise<T> {
+    const url = `${this.base}${path}`;
+    const headers = {
+      "X-API-KEY": this.env.UNIPILE_API_KEY,
+      accept: "application/json",
+      // Do NOT set content-type — browser/runtime sets it with the boundary
+    };
+    const response = await fetch(url, { method: "POST", body: form, headers });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new UnipileApiError(
+        `Unipile POST ${path} returned ${response.status}`,
+        response.status,
+        text
+      );
+    }
+    return (await response.json()) as T;
+  }
 
   private get<T>(path: string, query?: Record<string, string>): Promise<T> {
     const qs =
