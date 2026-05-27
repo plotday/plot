@@ -49,6 +49,10 @@ class TwistInstancesBase extends BaseTable {
     }
     // Default missing boolean fields not present in the view
     json['draft'] ??= false;
+    // Default missing handle so clients on a new schema can still sync from
+    // a server that hasn't deployed the handle/thread_type columns yet.
+    // The mentionLabel getter falls back to `name` when handle is empty.
+    json['handle'] ??= '';
     // Serialize link_types JSON to string for text column storage
     if (json['link_types'] != null && json['link_types'] is! String) {
       json['link_types'] = jsonEncode(json['link_types']);
