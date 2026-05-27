@@ -956,6 +956,7 @@ export interface Twist {
   description: string | null;
   environment: Generated<TwistEnvironment>;
   execution_limit: number | null;
+  handle: string;
   id: Generated<Int8>;
   is_source: Generated<boolean>;
   key_option: string | null;
@@ -966,7 +967,9 @@ export interface Twist {
   options_schema: Json | null;
   permissions: Json | null;
   publisher_id: Int8 | null;
+  seq: Generated<string>;
   shared: Generated<boolean>;
+  thread_type: string | null;
   twist_package_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
@@ -1733,6 +1736,7 @@ export interface UserTwist {
   created_at: Timestamp | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
+  handle: string | null;
   id: string | null;
   is_builtin: boolean | null;
   is_source: boolean | null;
@@ -1747,6 +1751,7 @@ export interface UserTwist {
   seq: string | null;
   shared: boolean | null;
   team_id: Int8 | null;
+  thread_type: string | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;

@@ -26,6 +26,11 @@ export interface DeployTwistOptions {
   input: DeploymentInput;
   environment: TwistEnvironment;
   name: string;
+  /** At-mention / attribution label. Defaults to `name`. */
+  handle?: string;
+  /** Optional connection-picker label. When set the twist appears in the
+   * new-thread connection picker. */
+  threadType?: string | null;
   description?: string;
   logoUrl?: string;
   logoUrlDark?: string;
@@ -66,6 +71,8 @@ export async function deployTwist({
   input,
   environment,
   name,
+  handle,
+  threadType,
   description,
   logoUrl,
   logoUrlDark,
@@ -251,6 +258,8 @@ export async function deployTwist({
       .updateTable("twist")
       .set({
         name,
+        handle: handle ?? name,
+        thread_type: threadType ?? null,
         description,
         version,
         permissions: JSON.stringify(twistPermissions),
@@ -280,6 +289,8 @@ export async function deployTwist({
         user_id: environment === "personal" ? userId : null,
         environment,
         name,
+        handle: handle ?? name,
+        thread_type: threadType ?? null,
         description,
         version,
         permissions: JSON.stringify(newTwistPermissions),
@@ -404,6 +415,8 @@ export async function deployTwist({
           user_id: null,
           environment: "public",
           name,
+          handle: handle ?? name,
+          thread_type: threadType ?? null,
           description,
           version,
           permissions: JSON.stringify(publicPermissions),
@@ -421,6 +434,8 @@ export async function deployTwist({
             .where("environment", "<>", "personal")
             .doUpdateSet({
               name,
+              handle: handle ?? name,
+              thread_type: threadType ?? null,
               description,
               version,
               permissions: JSON.stringify(publicPermissions),
