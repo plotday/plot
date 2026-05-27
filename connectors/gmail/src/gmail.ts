@@ -4,6 +4,7 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
+import { ActionType } from "@plotday/twister/plot";
 import type { Actor, ActorId, NewLinkWithNotes, Note, Thread, Link } from "@plotday/twister/plot";
 import {
   AuthProvider,
@@ -14,6 +15,7 @@ import {
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Files } from "@plotday/twister/tools/files";
 
 import {
   GOOGLE_PEOPLE_SCOPES,
@@ -23,9 +25,11 @@ import {
 import {
   GmailApi,
   type GmailThread,
+  type AttachmentData,
   type SyncState,
   buildNewEmailMessage,
   buildReplyMessage,
+  collectAttachments,
   getHeader,
   parseEmailAddresses,
   syncGmailChannel,
@@ -153,6 +157,7 @@ export class Gmail extends Connector<Gmail> {
           "https://people.googleapis.com/v1/*",
         ],
       }),
+      files: build(Files),
     };
   }
 
@@ -1170,6 +1175,12 @@ export class Gmail extends Connector<Gmail> {
       try {
         if (!plotThread.notes || plotThread.notes.length === 0) continue;
 
+        // Cache message → channel mapping so downloadAttachment can look up
+        // which channel owns a given Gmail message ID.
+        for (const message of thread.messages ?? []) {
+          await this.set(`gmail:msg-channel:${message.id}`, channelId);
+        }
+
         // Filter out notes for messages we sent (dedup)
         const filtered = [];
         for (const note of plotThread.notes) {
@@ -1341,7 +1352,28 @@ export class Gmail extends Connector<Gmail> {
       return;
     }
 
-    // Build and send the reply
+    // Collect file attachments from note actions
+    const attachments: AttachmentData[] = [];
+    for (const action of note.actions ?? []) {
+      if (action.type === ActionType.file) {
+        try {
+          const file = await this.tools.files.read(action.fileId);
+          attachments.push({
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            data: file.data,
+          });
+        } catch (err) {
+          console.error(
+            `[gmail] onNoteCreated: failed to read file ${action.fileId}:`,
+            err
+          );
+          // Skip this attachment rather than failing the whole send
+        }
+      }
+    }
+
+    // Build and send the reply (with attachments if any)
     const raw = buildReplyMessage({
       to,
       cc,
@@ -1350,6 +1382,7 @@ export class Gmail extends Connector<Gmail> {
       body: note.content ?? "",
       messageId,
       references: references ?? "",
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     const result = await api.sendMessage(raw, threadId);
@@ -1666,6 +1699,87 @@ export class Gmail extends Connector<Gmail> {
       if (token?.token) return new GmailApi(token.token);
     }
     return null;
+  }
+
+  /**
+   * Finds the channelId that owns a given Gmail message.
+   *
+   * Strategy:
+   * 1. Check the store cache populated during inbound sync (fast path).
+   * 2. On cache miss, probe each enabled channel by fetching the message with
+   *    format=minimal; the first channel whose token can retrieve it wins.
+   *    Cache the result for future calls.
+   *
+   * Returns null if no channel owns the message (e.g., the channel was
+   * disabled, or the message predates the sync window).
+   */
+  private async findChannelForMessage(messageId: string): Promise<string | null> {
+    // Fast path: check store cache
+    const cached = await this.get<string>(`gmail:msg-channel:${messageId}`);
+    if (cached) return cached;
+
+    // Slow path: probe enabled channels
+    const enabled = await this.getEnabledChannels();
+    for (const channelId of enabled) {
+      try {
+        const token = await this.tools.integrations.get(channelId);
+        if (!token?.token) continue;
+        const api = new GmailApi(token.token);
+        // Probe with minimal format (just confirms the message exists for this auth)
+        await api.call(`/messages/${messageId}`, { params: { format: "minimal" } });
+        // Found it — cache and return
+        await this.set(`gmail:msg-channel:${messageId}`, channelId);
+        return channelId;
+      } catch {
+        // This channel can't access the message — try next
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Downloads an attachment from Gmail identified by the opaque `ref` string
+   * emitted during inbound sync. The ref format is `${messageId}:${attachmentId}`.
+   */
+  override async downloadAttachment(ref: string): Promise<
+    | { redirectUrl: string }
+    | { body: Uint8Array; mimeType: string; fileName?: string }
+  > {
+    const colon = ref.indexOf(":");
+    if (colon < 0) {
+      throw new Error(`Invalid Gmail attachment ref: ${ref}`);
+    }
+    const messageId = ref.slice(0, colon);
+    const attachmentId = ref.slice(colon + 1);
+
+    const channelId = await this.findChannelForMessage(messageId);
+    if (!channelId) {
+      throw new Error(
+        `No Gmail channel found for message ${messageId}. ` +
+        `The channel may have been disabled or the message is outside the sync window. ` +
+        `Try refreshing the Gmail connection.`
+      );
+    }
+
+    const api = await this.getApi(channelId);
+    const att = await api.getAttachment(messageId, attachmentId);
+
+    // Gmail returns base64url-encoded data
+    const b64 = (att.data ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64.padEnd(Math.ceil(b64.length / 4) * 4, "=");
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    return {
+      body: bytes,
+      // Real MIME type comes from the fileRef action stored on the note.
+      // We return a fallback here; the runtime uses the action's mimeType for
+      // the Content-Type response header.
+      mimeType: "application/octet-stream",
+    };
   }
 }
 

@@ -1,7 +1,9 @@
+import { ActionType } from "@plotday/twister/plot";
 import type {
   NewLinkWithNotes,
   NewActor,
   NewContact,
+  Action,
 } from "@plotday/twister/plot";
 
 
@@ -239,6 +241,17 @@ export class GmailApi {
 
   public async getProfile(): Promise<{ emailAddress: string }> {
     return await this.call("/profile");
+  }
+
+  /**
+   * Fetches a message attachment by its attachment ID.
+   * Returns the base64url-encoded attachment data.
+   */
+  public async getAttachment(
+    messageId: string,
+    attachmentId: string
+  ): Promise<{ data: string; size: number }> {
+    return await this.call(`/messages/${messageId}/attachments/${attachmentId}`);
   }
 
   public async modifyThread(
@@ -574,30 +587,31 @@ export function stripQuotedReply(
 }
 
 /**
- * Extracts attachment information from a Gmail message
+ * Recursively collects attachment parts from a Gmail message payload.
+ * An attachment part has a non-empty filename and a body.attachmentId.
  */
-function extractAttachments(
-  message: GmailMessage
-): Array<{ filename: string; url: string }> {
-  const attachments: Array<{ filename: string; url: string }> = [];
-
-  function processPart(part: GmailMessagePart) {
-    // Check if this part is an attachment
-    if (part.filename && part.body?.attachmentId) {
-      attachments.push({
-        filename: part.filename,
-        url: `https://mail.google.com/mail/u/0/#inbox/${message.id}`,
-      });
-    }
-
-    // Recursively process sub-parts
-    if (part.parts) {
-      part.parts.forEach(processPart);
-    }
-  }
-
-  processPart(message.payload);
-  return attachments;
+export function collectAttachments(
+  part: GmailMessagePart | undefined
+): Array<{
+  partId: string;
+  fileName: string;
+  fileSize: number | null;
+  mimeType: string;
+}> {
+  if (!part) return [];
+  const here =
+    part.filename && part.body?.attachmentId
+      ? [
+          {
+            partId: part.body.attachmentId,
+            fileName: part.filename,
+            fileSize: part.body?.size ?? null,
+            mimeType: part.mimeType ?? "application/octet-stream",
+          },
+        ]
+      : [];
+  const children = (part.parts ?? []).flatMap(collectAttachments);
+  return [...here, ...children];
 }
 
 /**
@@ -684,16 +698,18 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
 
     const { content: rawBody, contentType } = extractBody(message.payload);
     const body = stripQuotedReply(rawBody, contentType);
-    const attachments = extractAttachments(message);
+    const attachmentParts = collectAttachments(message.payload);
 
-    // Append attachment links to body
-    let content = body || message.snippet;
-    if (attachments.length > 0 && content) {
-      const attachmentLinks = attachments
-        .map((a) => `[${a.filename}](${a.url})`)
-        .join("\n");
-      content = content + "\n\n" + attachmentLinks;
-    }
+    const content = body || message.snippet;
+
+    // Build fileRef actions for each attachment part
+    const actions: Action[] = attachmentParts.map((a) => ({
+      type: ActionType.fileRef as ActionType.fileRef,
+      ref: `${message.id}:${a.partId}`,
+      fileName: a.fileName,
+      fileSize: a.fileSize,
+      mimeType: a.mimeType,
+    }));
 
     // Note author (sender) and per-message recipients for visibility.
     // source is populated so the DM recipient picker can resolve Gmail contacts.
@@ -718,6 +734,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       author: senderActor,
       content,
       contentType,
+      actions: actions.length > 0 ? actions : null,
       accessContacts: messageContacts,
       created: new Date(parseInt(message.internalDate)),
       checkForTasks: true,
@@ -989,6 +1006,38 @@ export function buildNewEmailMessage(options: {
 }
 
 /**
+ * Encodes a Uint8Array to a standard base64 string in 76-character lines
+ * (MIME line length limit). Uses chunked processing to avoid stack overflow
+ * on large files (avoids String.fromCharCode(...buffer) spread).
+ */
+function uint8ArrayToBase64Lines(bytes: Uint8Array): string {
+  const CHUNK = 32768;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, i + CHUNK);
+    for (let j = 0; j < slice.length; j++) {
+      binary += String.fromCharCode(slice[j]);
+    }
+  }
+  const b64 = btoa(binary);
+  // Split into 76-character MIME lines
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) {
+    lines.push(b64.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
+}
+
+/**
+ * Attachment data for building MIME messages.
+ */
+export type AttachmentData = {
+  fileName: string;
+  mimeType: string;
+  data: Uint8Array;
+};
+
+/**
  * Builds an RFC 2822 email message for replying to a Gmail thread.
  * Returns the base64url-encoded raw message string for the Gmail API.
  */
@@ -1000,41 +1049,101 @@ export function buildReplyMessage(options: {
   body: string;
   messageId: string;
   references: string;
+  attachments?: AttachmentData[];
 }): string {
-  const { to, cc, from, subject, body, messageId, references } = options;
+  const { to, cc, from, subject, body, messageId, references, attachments } = options;
 
   // Ensure subject has "Re:" prefix
   const reSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
 
-  // Build RFC 2822 headers
-  const lines: string[] = [
-    `From: ${from}`,
-    `To: ${to.join(", ")}`,
-  ];
+  let rawMessage: string;
 
-  if (cc.length > 0) {
-    lines.push(`Cc: ${cc.join(", ")}`);
+  if (attachments && attachments.length > 0) {
+    // Build multipart/mixed message with text body + attachment parts
+    const boundary = `----=_PlotBoundary_${Date.now().toString(16)}`;
+
+    const headerLines: string[] = [
+      `From: ${from}`,
+      `To: ${to.join(", ")}`,
+    ];
+    if (cc.length > 0) headerLines.push(`Cc: ${cc.join(", ")}`);
+    headerLines.push(`Subject: ${reSubject}`);
+    headerLines.push(`In-Reply-To: ${messageId}`);
+    const refChain = references ? `${references} ${messageId}` : messageId;
+    headerLines.push(`References: ${refChain}`);
+    headerLines.push(`MIME-Version: 1.0`);
+    headerLines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+    headerLines.push(""); // end of headers
+
+    // Text body part
+    const bodyPart = [
+      `--${boundary}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `Content-Transfer-Encoding: quoted-printable`,
+      "",
+      body,
+    ];
+
+    // Attachment parts
+    const attachmentParts: string[] = [];
+    for (const att of attachments) {
+      const b64Lines = uint8ArrayToBase64Lines(att.data);
+      // Encode filename for Content-Disposition
+      const safeFileName = att.fileName.replace(/[\r\n"]/g, "_");
+      attachmentParts.push(
+        `--${boundary}`,
+        `Content-Type: ${att.mimeType}; name="${safeFileName}"`,
+        `Content-Transfer-Encoding: base64`,
+        `Content-Disposition: attachment; filename="${safeFileName}"`,
+        "",
+        b64Lines,
+      );
+    }
+
+    rawMessage = [
+      headerLines.join("\r\n"),
+      bodyPart.join("\r\n"),
+      ...attachmentParts.map((p) => p),
+      `--${boundary}--`,
+    ].join("\r\n");
+  } else {
+    // Simple text-only message (existing path)
+    const lines: string[] = [
+      `From: ${from}`,
+      `To: ${to.join(", ")}`,
+    ];
+
+    if (cc.length > 0) {
+      lines.push(`Cc: ${cc.join(", ")}`);
+    }
+
+    lines.push(`Subject: ${reSubject}`);
+    lines.push(`In-Reply-To: ${messageId}`);
+
+    // Build References chain
+    const refChain = references
+      ? `${references} ${messageId}`
+      : messageId;
+    lines.push(`References: ${refChain}`);
+
+    lines.push(`Content-Type: text/plain; charset="UTF-8"`);
+    lines.push(""); // Empty line separates headers from body
+    lines.push(body);
+
+    rawMessage = lines.join("\r\n");
   }
 
-  lines.push(`Subject: ${reSubject}`);
-  lines.push(`In-Reply-To: ${messageId}`);
-
-  // Build References chain
-  const refChain = references
-    ? `${references} ${messageId}`
-    : messageId;
-  lines.push(`References: ${refChain}`);
-
-  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
-  lines.push(""); // Empty line separates headers from body
-  lines.push(body);
-
-  const rawMessage = lines.join("\r\n");
-
-  // Base64url encode
-  const encoded = btoa(
-    String.fromCharCode(...new TextEncoder().encode(rawMessage))
-  )
+  // Base64url encode the entire raw message
+  const msgBytes = new TextEncoder().encode(rawMessage);
+  const CHUNK = 32768;
+  let binary = "";
+  for (let i = 0; i < msgBytes.length; i += CHUNK) {
+    const slice = msgBytes.subarray(i, i + CHUNK);
+    for (let j = 0; j < slice.length; j++) {
+      binary += String.fromCharCode(slice[j]);
+    }
+  }
+  const encoded = btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
