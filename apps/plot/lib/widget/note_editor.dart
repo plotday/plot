@@ -38,6 +38,7 @@ class NoteEditor extends StatefulWidget {
     // Twist selection (new-thread mode)
     this.selectedTwist,
     this.onTwistSelected,
+    this.onTwistMentioned,
     // Link/navigation callbacks
     this.onNavigateToThread,
     this.autofocus,
@@ -84,6 +85,12 @@ class NoteEditor extends StatefulWidget {
 
   /// Called when user selects a twist from the picker modal.
   final ValueChanged<TwistInstance>? onTwistSelected;
+
+  /// Called when the user completes an @-mention of a twist in the editor
+  /// body. Parent should treat as a connection-target pick (parallel to
+  /// the contact-mention → add-to-thread behavior). The mention text is
+  /// still inserted; this is an additive signal.
+  final void Function(String twistId)? onTwistMentioned;
 
   /// Called when user selects an existing thread from the link modal.
   final void Function(Thread thread)? onNavigateToThread;
@@ -554,6 +561,7 @@ class NoteEditorState extends State<NoteEditor> {
         threadContactIds: threadContactIds,
         shrinkWrap: true,
         initialContent: widget.draft.content,
+        onTwistMentioned: widget.onTwistMentioned,
         onIsEmptyChanged: (isEmpty) {
           // Defer setState to avoid calling it during build
           WidgetsBinding.instance.addPostFrameCallback((_) {

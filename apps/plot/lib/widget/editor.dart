@@ -325,6 +325,7 @@ class Editor extends StatefulWidget {
     this.onIsEmptyChanged,
     this.onImagePasted,
     this.onUrlPastedWhenEmpty,
+    this.onTwistMentioned,
     this.focusNode,
     this.twists = const [],
     this.actors = const [],
@@ -348,6 +349,13 @@ class Editor extends StatefulWidget {
   /// When set and invoked, the URL is NOT inserted into the editor body —
   /// the host is expected to attach it as a link (e.g. as an action row).
   final void Function(String url)? onUrlPastedWhenEmpty;
+
+  /// Fires when the user completes an @-mention of a twist from the
+  /// suggestion popover. The receiver should treat the selection as a
+  /// connection-target pick (parallel to how contact mentions add the
+  /// person to the thread). The mention text is still inserted in the
+  /// body — this is an additive signal.
+  final void Function(String twistId)? onTwistMentioned;
   final FocusNode? focusNode;
   final List<TwistInstance> twists;
   final List<Actor> actors;
@@ -1418,6 +1426,10 @@ class EditorState extends State<Editor> {
 
         _mentionDetector.completeMention(actorId: item.id, username: item.name);
         _editorFocusNode.requestFocus();
+
+        if (item.isTwist) {
+          widget.onTwistMentioned?.call(item.id);
+        }
 
         // Notify immediately so thread sharing chips update without debounce delay
         notify();

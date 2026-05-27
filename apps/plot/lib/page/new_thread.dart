@@ -629,6 +629,22 @@ class NewThreadPageState extends State<NewThreadPage> {
     return null;
   }
 
+  void _onTwistMentioned(String twistId) {
+    final id = TwistInstanceId.fromString(twistId);
+    final twist = TwistInstance.fromCache(id);
+    if (twist == null) return;
+    // Use the same connection-application path the picker uses so the
+    // CreateLinkUserAction (if any) is cleared.
+    unawaited(
+      _applyConnectionChoice(
+        ConnectionChoice.twist(
+          twist,
+          allInstances: context.read<PriorityBloc>().state.twists,
+        ),
+      ),
+    );
+  }
+
   void _selectTwist(TwistInstance twist) {
     setState(() => _selectedTwist = twist);
     final bloc = context.read<PriorityBloc>();
@@ -877,6 +893,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                           viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,
+                                          onTwistMentioned: _onTwistMentioned,
                                           onNavigateToThread: (thread) {
                                             context.run(
                                               ChangeCurrentThread(thread),
@@ -954,6 +971,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                 viewerMode: isViewerMode,
                                                 selectedTwist: _selectedTwist,
                                                 onTwistSelected: _selectTwist,
+                                                onTwistMentioned:
+                                                    _onTwistMentioned,
                                                 onNavigateToThread: (thread) {
                                                   context.run(
                                                     ChangeCurrentThread(thread),
