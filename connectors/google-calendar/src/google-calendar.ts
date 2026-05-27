@@ -160,6 +160,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         { status: "Tentative", label: "Tentative" },
         { status: "Cancelled", label: "Cancelled" },
       ],
+      // Attendee participation. Organizer membership is tracked separately
+      // on schedule_contact.role and isn't exposed as a thread-level role.
+      contactRoles: [
+        { id: "required", label: "Required", default: true },
+        { id: "optional", label: "Optional" },
+      ],
     },
   ];
 

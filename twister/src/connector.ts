@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
+import { type Actor, type ActorId, type Contact, type Link, type NewLinkWithNotes, type Note, type Thread, type Uuid } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
 import {
   type AuthProvider,
@@ -440,6 +440,35 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   onThreadRead(thread: Thread, actor: Actor, unread: boolean): Promise<void> {
     return Promise.resolve();
   }
+
+  /**
+   * Called when a user adds, removes, or changes the role of contacts on a
+   * thread owned by this connector. Override on connectors whose source
+   * supports mid-thread recipient changes (Gmail, IMAP, etc.). Connectors
+   * that can't change recipients per-message (Slack, Linear) leave this as
+   * the default no-op and should also declare
+   * `LinkTypeConfig.supportsContactChanges: false`.
+   *
+   * The dispatch fires after Plot has persisted the change. Connectors are
+   * expected to reflect it on the next outbound note (e.g. building To/Cc/Bcc
+   * headers from the current `thread.contacts` × `thread.contactMeta`) — this
+   * callback is not the right place to send a standalone notification.
+   *
+   * @param thread - The thread whose contacts changed
+   * @param changes - The added/removed contacts and any role transitions on existing contacts
+   */
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  onContactsChanged(
+    thread: Thread,
+    changes: {
+      added: Array<{ contact: Contact; role: string }>;
+      removed: Array<{ contact: Contact; role: string }>;
+      changed: Array<{ contact: Contact; from: string; to: string }>;
+    },
+  ): Promise<void> {
+    return Promise.resolve();
+  }
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   /**
    * Called when a user marks or unmarks a thread as todo.
