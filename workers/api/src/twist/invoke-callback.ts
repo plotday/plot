@@ -21,8 +21,7 @@ import { invokeWebhookCallback } from "./invoke-webhook";
  * queries (Cloudflare resets the DO when the gate stalls).
  *
  * Runtime args come first in the resulting call, extraArgs last — matching
- * the shape used everywhere else in the callback system (e.g. the slow path
- * in `Integrations.actAs` and `Tasks.runTask`).
+ * the shape used everywhere else in the callback system (e.g. `Tasks.runTask`).
  *
  * @param env            Worker bindings (needed for the worker-side twist RPC).
  * @param ctx            Worker execution context (carries `exports`).

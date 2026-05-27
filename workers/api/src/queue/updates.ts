@@ -740,6 +740,33 @@ async function processTwistBatch(
       }
     }
 
+    // Process per-actor note reaction changes (for onNoteReactionChanged callback).
+    // Each row is one (note, actor, emoji) state transition pre-routed to the
+    // reactor's connector instance, so we just hand it to the Integrations
+    // dispatch path.
+    for (const noteReaction of batchData.noteReactions ?? []) {
+      if (!noteReaction.note_id || !noteReaction.emoji) continue;
+      try {
+        const noteReactionDispatchArgs = {
+          itemType: "note_reaction" as const,
+          item: noteReaction,
+        };
+        await twistWrapper.dispatch("Integrations", noteReactionDispatchArgs);
+      } catch (error) {
+        logger.error("Error processing note reaction", error as Error, {
+          note_id: noteReaction.note_id,
+          actor_id: noteReaction.actor_id ?? undefined,
+          emoji: noteReaction.emoji,
+        });
+        postHog.captureException(error as Error, ownerId, {
+          twist_id: String(twistId),
+          twist_instance_id: twistInstanceId,
+          note_id: noteReaction.note_id,
+          queue,
+        });
+      }
+    }
+
     // Process thread schedule changes (for onThreadToDo callback)
     for (const threadSchedule of threadSchedules ?? []) {
       if (!threadSchedule.thread_id) continue;
@@ -809,6 +836,7 @@ async function processTwistBatch(
       thread_read_count: threadReads.length,
       thread_schedule_count: threadSchedules?.length ?? 0,
       schedule_contact_count: batchData.scheduleContacts?.length ?? 0,
+      note_reaction_count: batchData.noteReactions?.length ?? 0,
       has_twist_instance_update: !!twistInstance,
     });
   } catch (error) {

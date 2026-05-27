@@ -245,6 +245,7 @@ export class TwistSync extends DurableObject<Bindings> {
         "twist_instance_thread_read",
         "twist_instance_thread_schedule",
         "twist_instance_schedule_contact",
+        "twist_instance_note_reaction_change",
       ] as const;
 
       const results = await Promise.allSettled([
@@ -360,6 +361,20 @@ export class TwistSync extends DurableObject<Bindings> {
           .orderBy("schedule_contact_id", "asc")
           .limit(100)
           .execute(),
+
+        // Query note reaction changes (for onNoteReactionChanged callback).
+        // Routed per-actor — only this twist_instance_id's rows come back,
+        // and only when the reactor is the owner of this connector instance.
+        db
+          .selectFrom("twist_instance_note_reaction_change")
+          .selectAll()
+          .where("twist_instance_id", "=", twistInstanceId)
+          .where("seq", ">=", getSyncSeqExpr("note_reaction", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
+          .limit(100)
+          .execute(),
       ]);
 
       // Extract successful results, defaulting to [] for failures
@@ -401,6 +416,7 @@ export class TwistSync extends DurableObject<Bindings> {
       const threadReads = extractResult(results[6], 6);
       const threadSchedules = extractResult(results[7], 7);
       const scheduleContacts = extractResult(results[8], 8);
+      const noteReactions = extractResult(results[9], 9);
 
       // Query tag changes for the thread update seq range
       // This provides tagsAdded/tagsRemoved data for the thread.updated callback
@@ -453,7 +469,8 @@ export class TwistSync extends DurableObject<Bindings> {
         | { array: "channelNewNotes"; item: (typeof channelNewNotes)[number]; size: number }
         | { array: "threadReads"; item: (typeof threadReads)[number]; size: number }
         | { array: "threadSchedules"; item: (typeof threadSchedules)[number]; size: number }
-        | { array: "scheduleContacts"; item: (typeof scheduleContacts)[number]; size: number };
+        | { array: "scheduleContacts"; item: (typeof scheduleContacts)[number]; size: number }
+        | { array: "noteReactions"; item: (typeof noteReactions)[number]; size: number };
 
       let taggedItems: TaggedItem[] = [
         ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
@@ -465,6 +482,7 @@ export class TwistSync extends DurableObject<Bindings> {
         ...threadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
         ...threadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
         ...scheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
+        ...noteReactions.map((item) => ({ array: "noteReactions" as const, item, size: JSON.stringify(item).length })),
       ];
 
       // Loop detection: if we keep fetching the same items, skip processing to break the loop.
@@ -480,6 +498,8 @@ export class TwistSync extends DurableObject<Bindings> {
             return String(item.schedule_id ?? "");
           case "scheduleContacts":
             return String(item.schedule_contact_id ?? "");
+          case "noteReactions":
+            return `${item.note_id ?? ""}:${item.actor_id ?? ""}:${item.emoji ?? ""}:${item.archived_at ? "removed" : "added"}`;
           default:
             return String(item.id ?? "");
         }
@@ -538,6 +558,7 @@ export class TwistSync extends DurableObject<Bindings> {
         const batchThreadReads = batch.filter((t) => t.array === "threadReads").map((t) => t.item);
         const batchThreadSchedules = batch.filter((t) => t.array === "threadSchedules").map((t) => t.item);
         const batchScheduleContacts = batch.filter((t) => t.array === "scheduleContacts").map((t) => t.item);
+        const batchNoteReactions = batch.filter((t) => t.array === "noteReactions").map((t) => t.item);
 
         // Filter tag changes to only include those relevant to activities in this batch
         const batchActivityIds = new Set([
@@ -566,6 +587,7 @@ export class TwistSync extends DurableObject<Bindings> {
           threadReads: batchThreadReads,
           threadSchedules: batchThreadSchedules,
           scheduleContacts: batchScheduleContacts,
+          noteReactions: batchNoteReactions,
           twistInstance: null, // TODO: Handle twist_instance config updates
         } as TwistBatchMessage;
 
@@ -605,6 +627,7 @@ export class TwistSync extends DurableObject<Bindings> {
         ["thread_read", "update", threadReads.length],
         ["thread_schedule", "update", threadSchedules.length],
         ["schedule_contact", "update", scheduleContacts.length],
+        ["note_reaction", "update", noteReactions.length],
       ];
 
       const horizonSeqBig = BigInt(horizonSeq);

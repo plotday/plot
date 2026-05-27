@@ -409,27 +409,34 @@ schedules.post("/sync/schedule/status", async (c) => {
       }
     }
 
-    // Notify the twist that created the link directly for the
-    // onScheduleContactUpdated callback. Link-authoring twists (connectors)
-    // would otherwise miss this notification.
+    // Notify the RSVPing user's own connector instance for the
+    // onScheduleContactUpdated callback. The link's first-writer twist
+    // (a different user's connector) cannot write the RSVP back — only the
+    // acting user's connector instance has their OAuth token. Resolve to a
+    // twist_instance of the same connector type (twist_id) owned by the
+    // acting user. If the user has no matching connection, the RSVP lives
+    // in Plot but does not propagate to their external calendar.
     if (schedule.link_id) {
-      const sourceTwists = await c.var.db
+      const actorTwist = await c.var.db
         .selectFrom("twist_instance as pt")
-        .innerJoin("link as l", "l.created_by", "pt.id")
+        .innerJoin("twist_instance as creator", "creator.twist_id", "pt.twist_id")
+        .innerJoin("link as l", "l.created_by", "creator.id")
         .select("pt.id")
         .where("l.id", "=", schedule.link_id)
+        .where("pt.owner_id", "=", c.var.user.id)
         .where("pt.archived_at", "is", null)
-        .execute();
+        .where("pt.draft", "=", false)
+        .executeTakeFirst();
 
-      for (const twist of sourceTwists) {
-        const twistSyncId = c.env.TWIST_SYNC.idFromName(twist.id);
+      if (actorTwist) {
+        const twistSyncId = c.env.TWIST_SYNC.idFromName(actorTwist.id);
         const twistSyncDO = c.env.TWIST_SYNC.get(twistSyncId);
         c.executionCtx.waitUntil(
           twistSyncDO
             .fetch(
               new Request("http://do/notify", {
                 method: "POST",
-                body: JSON.stringify({ id: twist.id }),
+                body: JSON.stringify({ id: actorTwist.id }),
               })
             )
             .catch(() => {})

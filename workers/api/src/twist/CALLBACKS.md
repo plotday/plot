@@ -8,12 +8,13 @@ runs on Cloudflare Workers or that RPC boundaries exist.
 ## The rule
 
 **Never invoke a callback RPC stub directly.** When a twist or connector
-passes a method reference to a built-in tool (e.g. `this.tools.integrations
-.actAs(provider, actorId, threadId, this.syncActorRSVP, ...args)`), that
-reference crosses the Cloudflare Workers RPC boundary and arrives as an
-`Rpc.Stub<Function>`. Calling the stub executes only the function body —
-the enclosing class instance is not reachable, so `this.X` inside the
-method resolves to `undefined` for any sibling method or private field.
+passes a method reference to a built-in tool (e.g. as a callback handed
+to `this.tools.tasks.runTask` or `this.tools.network.createWebhook`),
+that reference crosses the Cloudflare Workers RPC boundary and arrives
+as an `Rpc.Stub<Function>`. Calling the stub executes only the function
+body — the enclosing class instance is not reachable, so `this.X`
+inside the method resolves to `undefined` for any sibling method or
+private field.
 
 Symptom when violated: `TypeError: this.X is not a function`, thrown from
 inside the twist worker, wrapped as a TwistError.
@@ -66,12 +67,12 @@ or (b) route through the existing token-based dispatch APIs.
 
 ## Historical note
 
-The bug that motivated this helper: `Integrations.actAs()` had a fast path
+The bug that motivated this helper was a fast path in `Integrations.actAs()`
 that called `await callback(token, ...extraArgs)` directly when the actor
-already had a valid token. The slow path (no token) already did the right
-thing by registering a callback via `this.callbacks.create({...,
-functionName})` and invoking it post-auth through
-`CallbacksState.callCallback`. The fast path was the only outlier, and it
-manifested as `TypeError: this.updateEventRSVPWithApi is not a function`
-when the Google Calendar connector's `syncActorRSVP` tried to call its own
-private helper. The fix was to route both paths through `invokeCallback`.
+already had a valid token, instead of routing through the named-dispatch
+path. It manifested as `TypeError: this.updateEventRSVPWithApi is not a
+function` from inside the Google Calendar connector's RSVP write-back.
+`actAs()` itself has since been removed — dispatch is now routed to the
+acting user's own connector instance via `twist_instance_for_actor` — but
+the rule (`invokeCallback` for any callback the platform receives from a
+twist) still applies to the remaining callback-accepting tools.

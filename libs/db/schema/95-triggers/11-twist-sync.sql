@@ -52,6 +52,20 @@ CREATE TRIGGER twist_sync_note_tag_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_twist_for_note_tag();
 
+-- Twist sync triggers for note_reaction table.
+-- Routes per-actor so reactions sync via the reactor's own connector instance.
+CREATE TRIGGER twist_sync_note_reaction_insert
+  AFTER INSERT ON note_reaction
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_twist_for_note_reaction();
+
+CREATE TRIGGER twist_sync_note_reaction_update
+  AFTER UPDATE ON note_reaction
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_twist_for_note_reaction();
+
 -- Twist sync triggers for link table
 CREATE TRIGGER twist_sync_link_insert
   AFTER INSERT ON link

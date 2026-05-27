@@ -25,6 +25,7 @@ import type {
   ThreadReadChange,
   ThreadScheduleChange,
   ScheduleContactChange,
+  NoteReactionChange,
   ChannelLinkCreate,
   ChannelLinkUpdate,
   ChannelNoteCreate,
@@ -101,6 +102,8 @@ export type TwistBatchMessage = {
   threadSchedules: ThreadScheduleChange[];
   // Schedule contact changes for link schedules created by this twist (for onScheduleContactUpdated callback)
   scheduleContacts: ScheduleContactChange[];
+  // Per-actor emoji reaction changes routed to the reactor's connector instance (for onNoteReactionChanged callback)
+  noteReactions: NoteReactionChange[];
   // Priority twist config changes
   twistInstance: any | null;
 };

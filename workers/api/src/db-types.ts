@@ -1184,6 +1184,19 @@ export interface TwistInstanceNoteCreate {
   updated_by: number | null;
 }
 
+export interface TwistInstanceNoteReactionChange {
+  actor_id: string | null;
+  archived_at: Timestamp | null;
+  change_type: string | null;
+  emoji: string | null;
+  id: Int8 | null;
+  note_id: string | null;
+  seq: string | null;
+  thread_id: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+}
+
 export interface TwistInstanceNoteUpdate {
   access_contacts: string[] | null;
   actions: Json | null;
@@ -1835,6 +1848,7 @@ export interface DB {
   twist_instance_details: TwistInstanceDetails;
   twist_instance_link_update: TwistInstanceLinkUpdate;
   twist_instance_note_create: TwistInstanceNoteCreate;
+  twist_instance_note_reaction_change: TwistInstanceNoteReactionChange;
   twist_instance_note_update: TwistInstanceNoteUpdate;
   twist_instance_schedule_contact: TwistInstanceScheduleContact;
   twist_instance_sync: TwistInstanceSync;

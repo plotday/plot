@@ -100,3 +100,10 @@ export type ThreadScheduleChange = Database["public"]["Views"]["twist_instance_t
  * Used for dispatching onScheduleContactUpdated callbacks to sources.
  */
 export type ScheduleContactChange = Database["public"]["Views"]["twist_instance_schedule_contact"]["Row"];
+
+/**
+ * Note reaction change from twist_instance_note_reaction_change view.
+ * One row per per-actor emoji add/remove event, routed to the reactor's
+ * own connector instance. Used for dispatching onNoteReactionChanged.
+ */
+export type NoteReactionChange = Database["public"]["Views"]["twist_instance_note_reaction_change"]["Row"];

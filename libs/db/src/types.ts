@@ -208,6 +208,18 @@ export type Database = {
             referencedRelation: "twist_instance_note_create"
             referencedColumns: ["twist_instance_id"]
           },
+          {
+            foreignKeyName: "channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
+            referencedColumns: ["twist_instance_id"]
+          },
         ]
       }
       contact: {
@@ -307,6 +319,18 @@ export type Database = {
             foreignKeyName: "contact_external_account_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "contact_external_account_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "contact_external_account_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -427,28 +451,37 @@ export type Database = {
       device: {
         Row: {
           app_version: string | null
+          capabilities: Json
           created_at: string
+          device_id: string | null
           id: string
+          last_seen_at: string
           platform: string
-          push_token: string
+          push_token: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform: string
-          push_token: string
+          push_token?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform?: string
-          push_token?: string
+          push_token?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -859,6 +892,64 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      local_sync_lease: {
+        Row: {
+          attempt_id: string
+          capability: string
+          created_at: string
+          device_id: string
+          fail_streak: number
+          last_completed_at: string | null
+          last_error: string | null
+          last_heartbeat_at: string
+          last_result: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id: string
+          capability: string
+          created_at?: string
+          device_id: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at: string
+          last_result?: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          capability?: string
+          created_at?: string
+          device_id?: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at?: string
+          last_result?: string | null
+          lease_token?: string
+          leased_until?: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "local_sync_lease_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1598,6 +1689,18 @@ export type Database = {
             referencedColumns: ["twist_instance_id"]
           },
           {
+            foreignKeyName: "secure_option_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "secure_option_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
             foreignKeyName: "secure_option_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
@@ -1926,6 +2029,7 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[]
           preview: string | null
+          private_to_creator: boolean
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -1952,6 +2056,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -1978,6 +2083,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -2430,6 +2536,7 @@ export type Database = {
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
           execution_limit: number | null
+          handle: string
           id: number
           is_source: boolean
           key_option: string | null
@@ -2442,6 +2549,7 @@ export type Database = {
           publisher_id: number | null
           seq: unknown
           shared: boolean
+          thread_type: string | null
           twist_package_id: string
           updated_at: string
           user_id: string | null
@@ -2454,6 +2562,7 @@ export type Database = {
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
           execution_limit?: number | null
+          handle: string
           id?: never
           is_source?: boolean
           key_option?: string | null
@@ -2466,6 +2575,7 @@ export type Database = {
           publisher_id?: number | null
           seq?: unknown
           shared?: boolean
+          thread_type?: string | null
           twist_package_id: string
           updated_at?: string
           user_id?: string | null
@@ -2478,6 +2588,7 @@ export type Database = {
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
           execution_limit?: number | null
+          handle?: string
           id?: never
           is_source?: boolean
           key_option?: string | null
@@ -2490,6 +2601,7 @@ export type Database = {
           publisher_id?: number | null
           seq?: unknown
           shared?: boolean
+          thread_type?: string | null
           twist_package_id?: string
           updated_at?: string
           user_id?: string | null
@@ -2628,6 +2740,18 @@ export type Database = {
             referencedColumns: ["twist_instance_id"]
           },
           {
+            foreignKeyName: "twist_instance_channel_source_twist_instance_id_fkey"
+            columns: ["source_twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_source_twist_instance_id_fkey"
+            columns: ["source_twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance"
@@ -2643,6 +2767,18 @@ export type Database = {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -2704,6 +2840,18 @@ export type Database = {
             referencedColumns: ["twist_instance_id"]
           },
           {
+            foreignKeyName: "twist_instance_connection_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_connection_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
             foreignKeyName: "twist_instance_connection_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
@@ -2756,6 +2904,18 @@ export type Database = {
             foreignKeyName: "twist_instance_sync_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_sync_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_sync_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -2833,6 +2993,18 @@ export type Database = {
             foreignKeyName: "usage_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "usage_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "usage_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -3457,6 +3629,18 @@ export type Database = {
             referencedRelation: "twist_instance_note_create"
             referencedColumns: ["twist_instance_id"]
           },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
+            referencedColumns: ["twist_instance_id"]
+          },
         ]
       }
       twist_instance_channel_link_update: {
@@ -3535,6 +3719,18 @@ export type Database = {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -3645,6 +3841,18 @@ export type Database = {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_note_reaction_change"
+            referencedColumns: ["twist_instance_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist_instance_schedule_contact"
             referencedColumns: ["twist_instance_id"]
           },
         ]
@@ -3837,6 +4045,58 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+        ]
+      }
+      twist_instance_note_reaction_change: {
+        Row: {
+          actor_id: string | null
+          archived_at: string | null
+          change_type: string | null
+          emoji: string | null
+          id: number | null
+          note_id: string | null
+          seq: unknown
+          thread_id: string | null
+          twist_instance_id: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_reaction_note_id_fkey"
+            columns: ["note_id"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_reaction_note_id_fkey"
+            columns: ["note_id"]
+            referencedRelation: "twist_instance_channel_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_reaction_note_id_fkey"
+            columns: ["note_id"]
+            referencedRelation: "twist_instance_note_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_reaction_note_id_fkey"
+            columns: ["note_id"]
+            referencedRelation: "twist_instance_note_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4242,6 +4502,7 @@ export type Database = {
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
           execution_limit: number | null
+          handle: string
           id: number
           is_source: boolean
           key_option: string | null
@@ -4254,6 +4515,7 @@ export type Database = {
           publisher_id: number | null
           seq: unknown
           shared: boolean
+          thread_type: string | null
           twist_package_id: string
           updated_at: string
           user_id: string | null
@@ -4412,6 +4674,13 @@ export type Database = {
       tstzrange_to_daterange: {
         Args: { p_range: unknown; p_timezone?: string }
         Returns: unknown
+      }
+      twist_instance_for_actor: {
+        Args: {
+          p_actor_contact_id: string
+          p_reference_twist_instance_id: string
+        }
+        Returns: string
       }
       update_invitation_sent_at: {
         Args: { p_contact_id: string }
@@ -5366,6 +5635,7 @@ export type Database = {
           created_at: string | null
           default_mention_created: boolean | null
           default_mention_mentioned: boolean | null
+          handle: string | null
           id: string | null
           is_builtin: boolean | null
           is_source: boolean | null
@@ -5380,6 +5650,7 @@ export type Database = {
           seq: unknown
           shared: boolean | null
           team_id: number | null
+          thread_type: string | null
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
@@ -5391,13 +5662,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

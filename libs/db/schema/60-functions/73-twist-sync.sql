@@ -364,6 +364,59 @@ BEGIN
 END;
 $function$;
 
+-- Per-actor emoji reactions on notes. Routes to the reactor's own connector
+-- instance (via twist_instance_for_actor) so the dispatch reaches the
+-- instance with the user's OAuth token — not the note creator's instance.
+-- Mirrors sync_twist_for_thread_tag but with actor-based routing rather
+-- than created_by routing.
+CREATE OR REPLACE FUNCTION public.sync_twist_for_note_reaction ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_max_seq xid8;
+    v_twist_instance_id uuid;
+BEGIN
+    SELECT
+        MAX(nr.updated_at), MAX(nr.seq) INTO v_max_updated_at, v_max_seq
+    FROM
+        new_table nr
+        JOIN note nt ON nt.id = nr.note_id
+        JOIN thread a ON a.id = nt.thread_id
+    WHERE
+        nt.draft = FALSE
+        AND a.draft = FALSE;
+    IF v_max_updated_at IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
+    FOR v_twist_instance_id IN SELECT DISTINCT
+        public.twist_instance_for_actor (nr.actor_id, nt.created_by)
+    FROM
+        new_table nr
+        JOIN note nt ON nt.id = nr.note_id
+        JOIN thread a ON a.id = nt.thread_id
+    WHERE
+        nt.draft = FALSE
+        AND a.draft = FALSE
+        AND public.twist_instance_for_actor (nr.actor_id, nt.created_by) IS NOT NULL
+    ORDER BY
+        1 LOOP
+            INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                VALUES (v_twist_instance_id, 'note_reaction', 'update', v_max_updated_at, v_max_seq)
+            ON CONFLICT (twist_instance_id, entity, operation)
+                DO UPDATE SET
+                    last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
 -- Sync twist state when links are created or updated
 -- Links don't have a draft concept, so all inserts are creates and all updates are updates
 CREATE OR REPLACE FUNCTION public.sync_twist_for_link ()

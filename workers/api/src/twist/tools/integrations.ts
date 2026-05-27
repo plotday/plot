@@ -6,8 +6,6 @@ import {
   type Actor,
   type ActorId,
   ActorType,
-  type Action,
-  ActionType,
   type Link,
   type NewContact,
   type NewLinkWithNotes,
@@ -52,8 +50,7 @@ import { rpc, rpcUser } from "../../rpc";
 import { notifyUserSyncByEnv } from "../../app/sync/notify";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
-import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
-import { invokeCallback } from "../invoke-callback";
+import { disposeRpc } from "../../utils/rpc";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import { Store } from "./store";
@@ -112,12 +109,6 @@ type ChannelConfig = {
   enabled: boolean;
   enabledBy?: ActorId;
   title?: string | null;
-};
-
-type PendingActAs = {
-  callbackToken: Callback;
-  activityId: Uuid;
-  noteId?: string;
 };
 
 /**
@@ -574,99 +565,6 @@ export class Integrations extends Tool implements IAuth {
     // Shared key or fallback: the key is in the shared Options (resolved by the factory at runtime)
     // The connector should read it via this.tools.options directly
     return null;
-  }
-
-  /**
-   * Execute a callback as a specific actor, requesting auth if needed.
-   */
-  async actAs(
-    provider: AuthProvider,
-    actorId: ActorId,
-    activityId: Uuid,
-    callback: (token: AuthToken, ...args: any[]) => any,
-    ...extraArgs: any[]
-  ): Promise<void> {
-    // Check if actor already has a token
-    const token = await this.getActorToken(provider, actorId);
-
-    if (token) {
-      // Actor has a valid token — invoke immediately via the rebuild-and-bind
-      // dispatch path so `this` inside the connector method binds to the full
-      // connector instance. See workers/api/src/twist/CALLBACKS.md.
-      await invokeCallback(
-        this.env,
-        this.ctx,
-        this.callbacks,
-        this.twistInstanceId,
-        callback,
-        this.path.slice(0, -1),
-        extraArgs,
-        token
-      );
-      return;
-    }
-
-    // No token - create auth request for this actor
-    // @ts-ignore - TS2589: Type instantiation is excessively deep and possibly infinite
-    const callbackFunctionName = await getRpcFunctionName(callback);
-    if (!callbackFunctionName) {
-      throw new Error(
-        "Cannot create callback: function has no name. Use named functions or methods."
-      );
-    }
-
-    // Create callback token for the deferred callback
-    const callbackToken = await this.callbacks.create({
-      twistInstanceId: this.twistInstanceId,
-      path: this.path.slice(0, -1), // Target parent tool
-      functionName: callbackFunctionName,
-      extraArgs,
-    }) as unknown as Callback;
-
-    // Store pending actAs request
-    const pendingKey = `pending_auth:${provider}:${actorId}`;
-    const pending = await this.store.get<PendingActAs[]>(pendingKey) ?? [];
-
-    // Get provider config for scopes
-    const providerConfig = this.providerConfigs.find(p => p.provider === provider);
-    if (!providerConfig) {
-      throw new Error(`No provider config found for ${provider}`);
-    }
-
-    // Create auth link
-    const onAuthCallback = await this.callbacks.create({
-      twistInstanceId: this.twistInstanceId,
-      path: this.path,
-      functionName: "onAuth",
-      extraArgs: [], // onAuth will look up pending callbacks itself
-    }) as unknown as Callback;
-
-    const authLink: Action = {
-      title: `Continue with ${PROVIDER_CONFIGS[provider]?.name ?? provider}`,
-      type: ActionType.auth,
-      provider,
-      scopes: providerConfig.scopes,
-      callback: onAuthCallback,
-    };
-
-    // Create private note on the activity for this actor
-    const noteId = crypto.randomUUID();
-    const pendingEntry: PendingActAs = {
-      callbackToken,
-      activityId,
-      noteId,
-    };
-    pending.push(pendingEntry);
-    await this.store.set(pendingKey, pending);
-
-    // Store the auth link info for the API to create the note
-    // The actual note creation happens via the Plot built-in tool
-    await this.store.set(`actAs_auth_link:${noteId}`, {
-      actorId,
-      activityId,
-      provider,
-      authLink,
-    });
   }
 
   /**
@@ -2000,6 +1898,69 @@ export class Integrations extends Tool implements IAuth {
       }];
     }
 
+    // Handle note_reaction dispatch — route to connector's onNoteReactionChanged.
+    // The view (`twist_instance_note_reaction_change`) has already routed this
+    // event to the reactor's own connector instance via twist_instance_for_actor,
+    // so the connector method runs under the reactor's auth automatically and
+    // the write-back (`api.addReaction` etc.) is correctly attributed.
+    if (dispatchItem?.itemType === "note_reaction" && this.sourceProvider) {
+      const { item } = dispatchItem;
+      if (!item || !item.note_id || !item.emoji || !item.actor_id) return [];
+
+      const noteRow = await this.db
+        .selectFrom("note")
+        .select(["id", "thread_id", "key", "content", "created_by", "created_at", "updated_at"])
+        .where("id", "=", item.note_id as string)
+        .executeTakeFirst();
+      if (!noteRow?.thread_id) return [];
+
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select(["id", "title", "archived_at"])
+        .where("id", "=", noteRow.thread_id as string)
+        .executeTakeFirst();
+      if (!threadRow) return [];
+
+      // Resolve thread meta from a link this connector owns on this thread
+      // (the same source we'd use for any other dispatch on this thread).
+      const link = await this.db
+        .selectFrom("link")
+        .select(["meta", "channel_id", "source"])
+        .where("thread_id", "=", noteRow.thread_id as string)
+        .where("created_by", "=", this.twistInstanceId)
+        .executeTakeFirst();
+
+      const meta: ThreadMeta = {
+        ...((link?.meta as Record<string, unknown>) ?? {}),
+        channelId: link?.channel_id ?? null,
+        linkSource: link?.source ?? null,
+      } as ThreadMeta;
+
+      const thread: Partial<Thread> = {
+        id: threadRow.id as Uuid,
+        title: threadRow.title ?? "",
+        archived: threadRow.archived_at !== null,
+        meta,
+      };
+
+      const note: Partial<Note> = {
+        id: noteRow.id as Uuid,
+        key: noteRow.key ?? null,
+        content: noteRow.content ?? null,
+      };
+
+      const actor: Actor = {
+        id: item.actor_id as ActorId,
+        type: ActorType.Contact,
+        name: null,
+      };
+
+      return [{
+        sourceMethod: "onNoteReactionChanged",
+        args: [note, thread, actor, item.emoji as string, item.archived_at == null],
+      }];
+    }
+
     // Handle create_link dispatch — user authored a thread in Plot marked to
     // create a new external item. Route to the connector's onCreateLink and
     // forward the returned link to saveCreatedLink to attach it to the
@@ -2771,40 +2732,7 @@ export class Integrations extends Tool implements IAuth {
       actor,
     };
 
-    // 1. Process pending actAs requests for this provider + actor
-    const pendingKey = `pending_auth:${tokenInfo.provider}:${actor.id}`;
-    const pendingRequests = await this.store.get<PendingActAs[]>(pendingKey);
-
-    if (pendingRequests && pendingRequests.length > 0) {
-      const authToken = await this.getActorToken(tokenInfo.provider, actor.id as ActorId);
-      if (authToken) {
-        for (const pending of pendingRequests) {
-          try {
-            // Call the stored callback with the token. Routed through
-            // invokeWebhookCallback so the twist worker RPC runs in this
-            // worker context — keeps the CallbacksState DO output gate
-            // free instead of holding it across the connector method.
-            const _result = await invokeWebhookCallback(
-              this.env,
-              this.ctx,
-              pending.callbackToken,
-              authToken
-            );
-            disposeRpc(_result);
-          } catch (error) {
-            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
-            logger.error("Error executing pending actAs callback", error as Error, {
-              provider: tokenInfo.provider,
-              actor_id: actor.id,
-            });
-          }
-        }
-      }
-      // Clean up pending requests
-      await this.store.clear(pendingKey);
-    }
-
-    // 2. Call legacy callback token if provided (for backward compat / direct request() calls)
+    // Call legacy callback token if provided (for backward compat / direct request() calls)
     if (callbackToken) {
       try {
         const _result = await invokeWebhookCallback(
