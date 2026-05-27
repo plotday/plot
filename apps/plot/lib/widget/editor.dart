@@ -295,7 +295,7 @@ class MentionItem {
     String? teamName,
   }) => MentionItem(
     id: twist.id.toString(),
-    name: twist.displayName(allInstances: allInstances, teamName: teamName),
+    name: twist.mentionLabel(allInstances: allInstances, teamName: teamName),
     isTwist: true,
   );
 
