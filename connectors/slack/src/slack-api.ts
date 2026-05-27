@@ -1,4 +1,6 @@
+import { ActionType } from "@plotday/twister/plot";
 import type {
+  Action,
   NewLinkWithNotes,
   NewActor,
   NewReactions,
@@ -35,9 +37,12 @@ export type SlackMessage = {
   }>;
   files?: Array<{
     id: string;
-    name: string;
-    mimetype: string;
-    url_private: string;
+    name?: string;
+    mimetype?: string;
+    url_private?: string;
+    size?: number;
+    original_w?: number;
+    original_h?: number;
   }>;
   reply_count?: number;
   reply_users_count?: number;
@@ -438,6 +443,40 @@ export class SlackApi {
   }
 
   /**
+   * Step 1 of the Slack external file upload flow.
+   * Returns an upload URL and a file_id to use in `completeUploadExternal`.
+   * Requires the `files:write` scope (user token).
+   */
+  public async getUploadURLExternal(
+    filename: string,
+    length: number
+  ): Promise<{ upload_url: string; file_id: string }> {
+    const res = await this.call("files.getUploadURLExternal", {
+      filename,
+      length,
+    });
+    return { upload_url: res.upload_url, file_id: res.file_id };
+  }
+
+  /**
+   * Step 3 of the Slack external file upload flow. Finalizes the upload and
+   * attaches the file to the given channel / thread.
+   * Must be called after the bytes have been PUT to `upload_url`.
+   */
+  public async completeUploadExternal(
+    fileId: string,
+    title: string,
+    channelId: string,
+    threadTs?: string
+  ): Promise<void> {
+    await this.call("files.completeUploadExternal", {
+      files: JSON.stringify([{ id: fileId, title }]),
+      channel_id: channelId,
+      thread_ts: threadTs,
+    });
+  }
+
+  /**
    * Paginated list of all non-bot, non-deleted workspace members.
    * Caller is responsible for iterating pages via the returned `nextCursor`.
    */
@@ -702,6 +741,17 @@ export function transformSlackThread(
     const text = formatSlackText(message.text);
     const reactions = extractSlackMessageReactions(message, userInfos);
 
+    // Build fileRef actions for any files attached to this message
+    const actions: Action[] = (message.files ?? []).map((f) => ({
+      type: ActionType.fileRef as ActionType.fileRef,
+      ref: f.id,
+      fileName: f.name ?? "file",
+      fileSize: f.size ?? null,
+      mimeType: f.mimetype ?? "application/octet-stream",
+      imageWidth: f.original_w ?? null,
+      imageHeight: f.original_h ?? null,
+    }));
+
     // Create NewNote with idempotent key
     const note = {
       key: message.ts,
@@ -710,6 +760,7 @@ export function transformSlackThread(
       created: new Date(parseFloat(message.ts) * 1000),
       checkForTasks: true,
       ...(reactions ? { reactions } : {}),
+      actions: actions.length > 0 ? actions : null,
     };
 
     thread.notes!.push(note);

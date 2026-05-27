@@ -4,7 +4,8 @@ import {
   type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
+import { ActionType } from "@plotday/twister/plot";
+import type { Action, Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -13,6 +14,7 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Files } from "@plotday/twister/tools/files";
 
 
 type MessageChannel = {
@@ -134,6 +136,7 @@ export class Slack extends Connector<Slack> {
     return {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
+      files: build(Files),
     };
   }
 
@@ -442,6 +445,15 @@ export class Slack extends Connector<Slack> {
 
     for (const thread of threads) {
       try {
+        // Cache file → channel so downloadAttachment can resolve the right API
+        // token later. Do this before the transform so even failed transforms
+        // don't lose the mapping.
+        for (const message of thread) {
+          for (const f of message.files ?? []) {
+            await this.set(`slack:file-channel:${f.id}`, channelId);
+          }
+        }
+
         // Transform Slack thread to NewLinkWithNotes
         const activityThread = transformSlackThread(
           thread,
@@ -1177,7 +1189,7 @@ export class Slack extends Connector<Slack> {
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string;
-    const threadTs = meta.threadTs as string;
+    const threadTs = meta.threadTs as string | undefined;
     // For dm threads, tokenChannelId is an enabled workspace channel
     // whose OAuth token grants workspace access. Falls back to channelId for
     // regular channel threads where the channel IS the enabled resource.
@@ -1193,6 +1205,43 @@ export class Slack extends Connector<Slack> {
     const body = note.content ?? "";
     const result = await api.postMessage(channelId, body, threadTs);
     if (!result?.ts) return;
+
+    // Upload each file action and attach to the same thread
+    const fileActions = (note.actions ?? []).filter(
+      (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+        a.type === ActionType.file,
+    );
+    for (const action of fileActions) {
+      try {
+        const file = await this.tools.files.read(action.fileId);
+        const { upload_url, file_id } = await api.getUploadURLExternal(
+          file.fileName,
+          file.fileSize,
+        );
+        const putRes = await fetch(upload_url, {
+          method: "PUT",
+          // Cast to bypass TS confusion between Uint8Array and URLSearchParams
+          // (the latter is from the form-encoded Slack API call helper).
+          body: file.data as unknown as BodyInit,
+        });
+        if (!putRes.ok) {
+          console.error(
+            "Slack file PUT failed",
+            action.fileId,
+            putRes.status,
+          );
+          continue;
+        }
+        await api.completeUploadExternal(
+          file_id,
+          file.fileName,
+          channelId,
+          result.ts,
+        );
+      } catch (e) {
+        console.error("Failed to send Slack attachment", action.fileId, e);
+      }
+    }
 
     const externalContent = formatSlackText(result.text ?? body);
     return {
@@ -1274,6 +1323,95 @@ export class Slack extends Connector<Slack> {
         error
       );
     }
+  }
+
+  // ---- Inbound attachment downloads ----
+
+  /**
+   * Downloads a Slack file attachment identified by its Slack file id (`ref`).
+   *
+   * The `ref` is the Slack `file.id` emitted as an `ActionType.fileRef` action
+   * during inbound sync. We look up the channel → API token from the cache
+   * written in `processMessageThreads`, then use `files.info` to get the
+   * download URL and fetch the bytes.
+   */
+  override async downloadAttachment(ref: string): Promise<
+    | { redirectUrl: string }
+    | { body: ReadableStream; mimeType: string; fileName?: string }
+  > {
+    const channelId = await this.findChannelForFile(ref);
+    if (!channelId) {
+      throw new Error(`No Slack channel found for file ${ref}`);
+    }
+    const api = await this.getApi(channelId);
+
+    const info = await api.call("files.info", { file: ref });
+    const f = info.file as {
+      permalink_public?: string;
+      url_private?: string;
+      mimetype?: string;
+      name?: string;
+    };
+
+    // Prefer the public permalink when available (no auth header needed).
+    if (f.permalink_public) {
+      return { redirectUrl: f.permalink_public };
+    }
+
+    // Fall back to url_private with a bearer token.
+    const privateUrl = f.url_private;
+    if (!privateUrl) {
+      throw new Error(`Slack file ${ref} has no download URL`);
+    }
+
+    const res = await fetch(privateUrl, {
+      headers: { Authorization: `Bearer ${api.accessToken}` },
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`Slack file fetch failed: ${res.status}`);
+    }
+
+    return {
+      body: res.body,
+      mimeType: f.mimetype ?? "application/octet-stream",
+      fileName: f.name,
+    };
+  }
+
+  /**
+   * Looks up which enabled channel saw a given Slack file id.
+   *
+   * Fast path: the file → channel mapping is cached by `processMessageThreads`
+   * when the message containing the file is synced in.
+   *
+   * Slow path: probes each enabled channel via `files.info` — first success
+   * wins and the result is cached for future calls.
+   */
+  private async findChannelForFile(fileId: string): Promise<string | null> {
+    const cached = await this.get<string>(`slack:file-channel:${fileId}`);
+    if (cached) return cached;
+
+    // Slow path: probe each enabled channel.
+    const channelIds = await this.listEnabledChannelIds();
+    for (const channelId of channelIds) {
+      try {
+        const api = await this.getApi(channelId);
+        const info = await api.call("files.info", { file: fileId });
+        if (info?.file) {
+          await this.set(`slack:file-channel:${fileId}`, channelId);
+          return channelId;
+        }
+      } catch {
+        // Try next channel — file not visible from this token.
+      }
+    }
+    return null;
+  }
+
+  /** Returns the channel ids of all currently-enabled channels. */
+  private async listEnabledChannelIds(): Promise<string[]> {
+    const keys = await this.tools.store.list("sync_enabled_");
+    return keys.map((key) => key.substring("sync_enabled_".length));
   }
 }
 
