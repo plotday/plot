@@ -803,12 +803,17 @@ class NoteEditorState extends State<NoteEditor> {
     final actions = _currentActions;
     if (actions.isEmpty) return const SizedBox.shrink();
 
+    // In new-thread mode the connection chip above the editor owns the
+    // CreateLinkUserAction — surfacing it again here would be redundant
+    // (and the user can't remove it from this row anyway since switching
+    // back to "Plot thread" is done via the compose field).
     final attachments = actions
         .where(
           (a) =>
               a.type == UserActionType.file ||
               a.type == UserActionType.external ||
-              a.type == UserActionType.createLink,
+              (a.type == UserActionType.createLink &&
+                  !widget.isNewThreadMode),
         )
         .toList();
     if (attachments.isEmpty) return const SizedBox.shrink();

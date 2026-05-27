@@ -446,9 +446,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     actions.removeWhere((a) => a is CreateLinkUserAction);
     final action = choice.toUserAction();
     if (action != null) actions.add(action);
+    // Pass the list directly (even when empty) — Note.copyWith treats a
+    // null `actions` arg as "keep existing", so the prior CreateLinkUserAction
+    // would survive when the user picks "Plot thread".
     await bloc.updateDraft(
       bloc.state.draft,
-      note: note.copyWith(actions: actions.isEmpty ? null : actions),
+      note: note.copyWith(actions: actions),
     );
   }
 

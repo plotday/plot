@@ -66,25 +66,22 @@ class ConnectionComposeField extends StatelessWidget {
           logo,
           const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            child: RichText(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: theme.typography.md.copyWith(
+                  color: theme.plotColors.muted,
                 ),
-                if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.typography.sm.copyWith(
-                      color: theme.plotColors.veryMuted,
+                children: [
+                  TextSpan(text: title),
+                  if (subtitle.isNotEmpty)
+                    TextSpan(
+                      text: '  $subtitle',
+                      style: TextStyle(color: theme.plotColors.veryMuted),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
