@@ -22,6 +22,22 @@ import {
 } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 
+export type SharingModel = "thread" | "channel" | "message";
+
+export function resolveAccessContactsForSend(args: {
+  bodyAccessContacts: string[] | null | undefined;
+  sharingModel: SharingModel;
+  threadContacts: string[];
+}): string[] | null {
+  const { bodyAccessContacts, sharingModel, threadContacts } = args;
+  if (sharingModel !== "message") {
+    return Array.isArray(bodyAccessContacts) ? bodyAccessContacts : null;
+  }
+  // Message-mode invariant: never store NULL access_contacts.
+  if (Array.isArray(bodyAccessContacts)) return bodyAccessContacts;
+  return [...threadContacts];
+}
+
 const notes = new Hono<{ Bindings: Bindings }>();
 
 // GET /sync/notes
@@ -185,6 +201,37 @@ notes.post("/sync/notes", async (c) => {
 
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     await assertThreadAccess(trx, c.var.user.id, body.thread_id);
+
+    // Resolve sharing model + current thread.contacts so the message-mode
+    // invariant (always-explicit access_contacts) can be enforced.
+    // Join chain: thread → link (earliest) → channel (via channel_id + created_by)
+    // to get the link_types array that carries sharingModel per link type.
+    const threadRow = await trx
+      .selectFrom("thread")
+      .leftJoin("link", "link.thread_id", "thread.id")
+      .leftJoin("channel", (join) =>
+        join
+          .onRef("channel.channel_id", "=", "link.channel_id")
+          .onRef("channel.twist_instance_id", "=", "link.created_by")
+      )
+      .select(["thread.contacts", "channel.link_types", "link.type"])
+      .where("thread.id", "=", body.thread_id)
+      .orderBy("link.created_at", "asc")
+      .executeTakeFirst();
+
+    const sharingModel: SharingModel = (() => {
+      if (!threadRow?.link_types) return "thread";
+      const types = threadRow.link_types as Array<{ type: string; sharingModel?: SharingModel }>;
+      const matched = types.find((t) => t.type === threadRow.type);
+      return matched?.sharingModel ?? "thread";
+    })();
+
+    const resolvedAccessContacts = resolveAccessContactsForSend({
+      bodyAccessContacts: body.access_contacts ?? null,
+      sharingModel,
+      threadContacts: (threadRow?.contacts ?? []) as string[],
+    });
+
     return rpcUser(trx, "upsert_note", {
       user_id: c.var.user.id,
       p_id: body.id || null,
@@ -194,8 +241,8 @@ notes.post("/sync/notes", async (c) => {
       p_archived_at: body.archived_at || null,
       p_thread_id: body.thread_id,
       p_draft: body.draft || false,
-      p_access_contacts: (Array.isArray(body.access_contacts)
-        ? `{${body.access_contacts.join(",")}}`
+      p_access_contacts: (resolvedAccessContacts
+        ? `{${resolvedAccessContacts.join(",")}}`
         : null) as any,
       p_content: body.content || null,
       p_actions: body.actions || null,
