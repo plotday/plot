@@ -74,6 +74,7 @@ export class Linear extends Connector<Linear> {
       type: "issue",
       label: "Issue",
       noteLabel: "Comment",
+      sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/linear-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
