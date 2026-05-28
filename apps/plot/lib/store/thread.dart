@@ -4459,6 +4459,66 @@ ORDER BY
     return out;
   }
 
+  /// Compute the badge label for a note in a message-mode thread.
+  /// Returns null when the note matches the thread superset (no badge).
+  ///
+  /// - `noteAudience` = `note.accessContacts ?? {note.authorId}` plus
+  ///   the author. The caller is responsible for resolving NULL into
+  ///   the effective audience before calling.
+  /// - `threadContacts` = current `thread.contacts`.
+  /// - `viewerContactIds` = every contact linked to the viewer.
+  /// - `nameLookup(contactId)` = display-name resolver.
+  static String? noteBadgeLabel({
+    required Set<Uuid> noteAudience,
+    required Set<Uuid> threadContacts,
+    required Set<Uuid> viewerContactIds,
+    required String Function(Uuid) nameLookup,
+  }) {
+    final viewerInAudience = noteAudience.any(viewerContactIds.contains);
+    if (!viewerInAudience) return null;
+
+    final others = noteAudience
+        .where((c) => !viewerContactIds.contains(c))
+        .toSet();
+    final subsetOthers = others.intersection(threadContacts);
+    final plusOthers = others.difference(threadContacts);
+
+    final isPrivate = others.isEmpty;
+    // Subset = the audience is missing at least one thread contact (excluding
+    // viewer's own contacts, which the viewer is always counted as).
+    final isSubset =
+        !threadContacts.difference(viewerContactIds).every(noteAudience.contains);
+    final isPlus = plusOthers.isNotEmpty;
+
+    if (isPrivate && !isPlus) return 'Private';
+
+    // Format: "A" | "A, B" | "A, B +N"
+    String formatNames(Iterable<Uuid> ids) {
+      final names = ids.map(nameLookup).toList();
+      if (names.length == 1) return names[0];
+      if (names.length == 2) return '${names[0]}, ${names[1]}';
+      return '${names[0]}, ${names[1]} +${names.length - 2}';
+    }
+
+    // "and you" gets a comma when the list has 2+ names (Oxford comma).
+    String subsetClause(Set<Uuid> ids) {
+      final names = formatNames(ids);
+      final needsComma = ids.length >= 2;
+      return needsComma ? '$names, and you' : '$names and you';
+    }
+
+    if (isSubset && isPlus) {
+      return 'Just ${subsetClause(subsetOthers)}, plus ${formatNames(plusOthers)}';
+    }
+    if (isSubset) {
+      return 'Just ${subsetClause(subsetOthers)}';
+    }
+    if (isPlus) {
+      return 'Plus ${formatNames(plusOthers)}';
+    }
+    return null;
+  }
+
   /// Per-contact metadata (role assignments, etc) keyed by contact uuid
   /// (string). Empty when no roles are set; contacts not in the map use the
   /// link type's default role. See `ContactRoleConfig` and
