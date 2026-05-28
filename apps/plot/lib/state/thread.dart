@@ -10,6 +10,7 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
 part 'thread_state.dart';
@@ -133,11 +134,15 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// Creates a fresh draft note for the thread afterward.
   /// Note: Twisting tag for twist mentions is added in Note.save()
   Future<void> add(Note note) async {
+    // Snapshot thread + links before any state mutations below.
+    var currentThread = state.thread;
+    final currentLinks = state.links;
+
     // Also update thread contacts if there are new user/contact mentions.
     // Done BEFORE converting to non-draft so the mentions are correctly
     // attributed to the original draft content if copyWith was just called.
     if (note.mentions != null && note.mentions!.isNotEmpty) {
-      final newContacts = {...state.thread.contacts};
+      final newContacts = {...currentThread.contacts};
       bool changed = false;
       for (final mention in note.mentions!) {
         if (!mention.isTwist) {
@@ -148,13 +153,14 @@ class ThreadBloc extends Cubit<ThreadState> {
       }
 
       if (changed) {
-        final updatedThread = state.thread.copyWith(
+        final updatedThread = currentThread.copyWith(
           contacts: Value(newContacts.toList()),
         );
         // Save the thread to persist the contacts. This will trigger a
         // DB change and we update our local state too.
         await updatedThread.save();
         emit(state.copyWith(thread: updatedThread));
+        currentThread = updatedThread;
       }
     }
 
@@ -163,7 +169,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     // locally for immediate UI feedback instead of waiting for sync.
     note = note.copyWith(
       draft: false,
-      accessContacts: state.thread.priority.isViewer
+      accessContacts: currentThread.priority.isViewer
           ? const Value([])
           : const Value.absent(),
     );
@@ -173,7 +179,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     // Also clear replyTo and editing state
     emit(
       state.copyWith(
-        draft: Note.draft(threadId: state.thread.id),
+        draft: Note.draft(threadId: currentThread.id),
         clearReplyTo: true,
         clearEditingNote: true,
       ),
@@ -184,6 +190,58 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     // Async
     note.save();
+
+    // BCC auto-drop: for message-mode threads, remove contacts whose role
+    // is hidden (BCC) from thread.contacts after the message is sent.
+    // This prevents BCC recipients from being visible to future senders.
+    _dropHiddenRoleContactsAfterSend(currentThread, currentLinks);
+  }
+
+  /// After a note is sent on a message-mode thread, drop any contacts whose
+  /// role is marked `hidden` (BCC). Runs asynchronously so it doesn't delay
+  /// the UI update from [add].
+  void _dropHiddenRoleContactsAfterSend(Thread thread, List<Link> links) {
+    unawaited(_doDropHiddenRoleContacts(thread, links));
+  }
+
+  Future<void> _doDropHiddenRoleContacts(Thread thread, List<Link> links) async {
+    final sharingModel = Thread.resolveSharingModel(links);
+    if (sharingModel != SharingModel.message) return;
+
+    final cfg = links.isNotEmpty ? links.first.getTypeConfig() : null;
+    final hiddenRoleIds = (cfg?.contactRoles ?? const <ContactRoleConfig>[])
+        .where((r) => r.hidden)
+        .map((r) => r.id)
+        .toSet();
+    if (hiddenRoleIds.isEmpty) return;
+
+    final meta = thread.contactMeta;
+    final toDrop = thread.contacts.where((contactId) {
+      final entry = meta[contactId.toString()];
+      final role = entry is Map<String, dynamic> ? entry['role'] as String? : null;
+      return role != null && hiddenRoleIds.contains(role);
+    }).toList();
+
+    if (toDrop.isEmpty) return;
+
+    final newContacts = thread.contacts
+        .where((c) => !toDrop.contains(c))
+        .toList();
+    final toDropSet = toDrop.toSet();
+    final newMeta = Map<String, dynamic>.of(meta)
+      ..removeWhere((k, _) => toDropSet.any((id) => id.toString() == k));
+
+    final updatedThread = thread.copyWith(
+      contacts: Value(newContacts),
+      contactMeta: Value(newMeta.isEmpty ? null : newMeta),
+    );
+    try {
+      await updatedThread.save();
+      emit(state.copyWith(thread: updatedThread));
+    } catch (e, stackTrace) {
+      log.severe('Error dropping hidden-role contacts after send: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+    }
   }
 
   void _loadThread() {
