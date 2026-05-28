@@ -16,9 +16,6 @@ import { createThread } from "./thread";
 import { createNotes } from "./note";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
-import { getSharingModelForChannel } from "../../../app/sync/link-tags";
-import { reconcileThreadContacts } from "../../sharing";
-import { addContacts } from "./contacts";
 
 /**
  * Creates a link with its thread container.
@@ -118,41 +115,20 @@ export async function createLink(
       }
     }
 
-    // Message-mode contact reconciliation: when the connector declares
-    // sharingModel="message" and we're updating an existing thread, apply the
-    // 50% removal heuristic so that a reply-to-subset does not silently shrink
-    // the thread's visible recipient list.
-    if (threadData.id && link.accessContacts && link.accessContacts.length > 0) {
-      const sharingModel = await getSharingModelForChannel(
-        plot.db,
-        link.channelId ?? null,
-        link.type ?? null,
-        plot.twistInstanceId
-      );
-      if (sharingModel === "message") {
-        // Fetch the existing thread's resolved contacts.
-        const existingThread = await plot.db
-          .selectFrom("thread")
-          .select("contacts")
-          .where("id", "=", threadData.id)
-          .executeTakeFirst();
-        const previousContacts: ActorId[] = (existingThread?.contacts as ActorId[] | null) ?? [];
-
-        // Resolve incoming accessContacts (emails) to ActorId strings.
-        const incomingActors = await addContacts(plot, link.accessContacts);
-        const incomingContacts: ActorId[] = incomingActors.map((a) => a.id);
-
-        // Reconcile and inject the result as pre-resolved IDs so that
-        // prepareThreadForDb skips the addContacts email-resolution step.
-        const reconciled = reconcileThreadContacts({
-          previous: previousContacts,
-          incoming: incomingContacts,
-        }) as ActorId[];
-
-        threadData._resolvedContacts = reconciled;
-        delete threadData.accessContacts;
-      }
-    }
+    // TODO(thread-sharing-models): Message-mode contact reconciliation.
+    //
+    // The platform helper `reconcileThreadContacts` in `workers/api/src/twist/
+    // sharing.ts` implements the 50%-removal heuristic for message-mode threads
+    // (Gmail today; future per-message-recipient connectors). Wiring it here
+    // is intentionally deferred: `upsert_thread` is additive-only by design
+    // (security — connectors can only add contacts to a thread; pruning goes
+    // through `share_thread` which enforces access control). The reconciler's
+    // ADDITION path matches the additive union upsert_thread already does, so
+    // wiring it would be a no-op for additions and silently dropped for
+    // removals. Pruning requires a privileged removal mechanism (e.g. a new
+    // RPC the platform can call after the heuristic decides) — out of scope
+    // for the initial sharing-models plan. Pick up when the removal path is
+    // designed; the helper + 8 unit tests are ready to wire.
 
     // Pass skipNotify=true so we can fire a single notifySyncDOs after the
     // link row (and any schedules) are committed. Otherwise clients see the
