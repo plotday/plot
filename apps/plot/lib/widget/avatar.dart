@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -204,6 +206,9 @@ double _avatarSize(BuildContext context) {
 /// A single tooltip wraps the entire group rather than each avatar, listing
 /// contacts (with RSVP icons when [scheduleContacts] is provided) sorted
 /// attending → declined → tentative/unknown.
+///
+/// A subtle outline traces the union silhouette of the circles. When
+/// [clickable] is set it brightens on hover to signal the tap affordance.
 class AvatarGroup extends StatelessWidget {
   const AvatarGroup({
     required this.actors,
@@ -212,6 +217,7 @@ class AvatarGroup extends StatelessWidget {
     this.size,
     this.scheduleContacts,
     this.tooltipBelow = false,
+    this.clickable = false,
     super.key,
   }) : assert(maxVisible >= 1);
 
@@ -238,6 +244,11 @@ class AvatarGroup extends StatelessWidget {
   /// Anchor the hover tooltip below the group instead of above. Use when
   /// the group sits at the top of a clipped container.
   final bool tooltipBelow;
+
+  /// Whether the group acts as a tap target (the tap itself is owned by an
+  /// ancestor, e.g. a button). When true, the subtle outline brightens on
+  /// hover to signal the affordance; when false the outline stays static.
+  final bool clickable;
 
   @override
   Widget build(BuildContext context) {
@@ -312,15 +323,28 @@ class AvatarGroup extends StatelessWidget {
       ),
     );
 
+    // A single subtle outline tracing the union silhouette of the avatar
+    // circles (so it follows their curve rather than boxing the group in a
+    // rectangle). When the group is clickable it brightens on hover.
+    final outlined = _GroupOutline(
+      slots: totalSlots,
+      step: step,
+      size: size,
+      restColor: context.colour.border,
+      hoverColor: context.colour.muted,
+      clickable: clickable,
+      child: stack,
+    );
+
     final tooltipBuilder = _tooltipBuilder(context);
-    if (tooltipBuilder == null) return stack;
+    if (tooltipBuilder == null) return outlined;
     return FTooltip(
       tipAnchor: tooltipBelow ? Alignment.topCenter : Alignment.bottomCenter,
       childAnchor: tooltipBelow
           ? Alignment.bottomCenter
           : Alignment.topCenter,
       tipBuilder: tooltipBuilder,
-      child: stack,
+      child: outlined,
     );
   }
 
@@ -513,6 +537,118 @@ class _Ring extends StatelessWidget {
       child: ClipRRect(borderRadius: radius, child: child),
     );
   }
+}
+
+/// Overlays a subtle outline around the union silhouette of the avatar
+/// circles, so the border follows their curve rather than boxing the group in
+/// a rectangle. When [clickable] is set the outline brightens on hover as an
+/// affordance; the tap itself is handled by an ancestor.
+class _GroupOutline extends StatefulWidget {
+  const _GroupOutline({
+    required this.slots,
+    required this.step,
+    required this.size,
+    required this.restColor,
+    required this.hoverColor,
+    required this.clickable,
+    required this.child,
+  });
+
+  /// Number of circles in the group (visible avatars plus the overflow badge).
+  final int slots;
+
+  /// Horizontal distance between adjacent circle centers.
+  final double step;
+
+  /// Diameter of each circle.
+  final double size;
+
+  final Color restColor;
+  final Color hoverColor;
+  final bool clickable;
+  final Widget child;
+
+  @override
+  State<_GroupOutline> createState() => _GroupOutlineState();
+}
+
+class _GroupOutlineState extends State<_GroupOutline> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.clickable && _hovered
+        ? widget.hoverColor
+        : widget.restColor;
+    final painted = CustomPaint(
+      foregroundPainter: _GroupOutlinePainter(
+        slots: widget.slots,
+        step: widget.step,
+        size: widget.size,
+        color: color,
+      ),
+      child: widget.child,
+    );
+    if (!widget.clickable) return painted;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: painted,
+    );
+  }
+}
+
+class _GroupOutlinePainter extends CustomPainter {
+  const _GroupOutlinePainter({
+    required this.slots,
+    required this.step,
+    required this.size,
+    required this.color,
+  });
+
+  final int slots;
+  final double step;
+  final double size;
+  final Color color;
+
+  /// Outline stroke width. Kept thin so the border stays subtle.
+  static const double _stroke = 1.0;
+
+  @override
+  void paint(Canvas canvas, Size canvasSize) {
+    if (slots <= 0) return;
+    final r = size / 2;
+    // Trace circles inset by half the stroke so the stroke's outer edge lands
+    // exactly on each avatar's outer edge and never spills past the group's
+    // bounds (where a parent might clip it).
+    final pr = r - _stroke / 2;
+    // Use dart:ui's Path explicitly: `package:plot/util/path.dart` (re-exported
+    // transitively via store.dart) defines its own `Path`, which would
+    // otherwise shadow the painting one.
+    var union = ui.Path()
+      ..addOval(Rect.fromCircle(center: Offset(r, r), radius: pr));
+    for (var i = 1; i < slots; i++) {
+      final circle = ui.Path()
+        ..addOval(Rect.fromCircle(center: Offset(r + i * step, r), radius: pr));
+      // Union so only the outer silhouette is stroked; overlaps between
+      // adjacent circles produce a concave notch that follows their curve.
+      union = ui.Path.combine(PathOperation.union, union, circle);
+    }
+    canvas.drawPath(
+      union,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _stroke
+        ..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GroupOutlinePainter old) =>
+      old.slots != slots ||
+      old.step != step ||
+      old.size != size ||
+      old.color != color;
 }
 
 class _OverflowBadge extends StatelessWidget {

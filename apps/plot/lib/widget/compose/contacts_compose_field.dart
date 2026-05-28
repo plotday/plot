@@ -98,6 +98,7 @@ class ContactsComposeField extends StatelessWidget {
                 totalCount: chips.length,
                 maxVisible: 3,
                 size: theme.iconSizes.base,
+                clickable: true,
               ),
             ),
             const SizedBox(width: composeIconGap),

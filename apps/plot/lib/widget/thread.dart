@@ -1004,6 +1004,7 @@ class SharedCommandButton extends HookWidget {
         size: avatarSize,
         scheduleContacts: scheduleContacts,
         tooltipBelow: tooltipBelow,
+        clickable: true,
       );
     } else {
       child = SizedBox(
