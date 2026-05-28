@@ -88,7 +88,7 @@ export type NoteWriteBackResult = {
  * A Plot contact pre-resolved to its platform account ID, ready for use
  * in a messaging dispatch.
  *
- * Populated by the runtime for `targets: "contacts"` link types before
+ * Populated by the runtime for link types with `compose.targets: "contacts"` before
  * `onCreateLink` is called. The connector should use `externalAccountId`
  * directly to address the recipient on the platform (e.g. Slack user ID,
  * LinkedIn URN, Gmail address) without performing its own contact lookup.
@@ -127,18 +127,17 @@ export type CreateLinkDraft = {
    * when the external item is a message or invite. An empty list means
    * the user did not add anyone to the thread.
    *
-   * For `targets: "contacts"` link types, prefer `recipients` over
+   * For link types with `compose.targets: "contacts"`, prefer `recipients` over
    * re-resolving contacts yourself: the runtime pre-resolves each contact
    * to its platform account ID (`externalAccountId`) and populates
    * `recipients` before `onCreateLink` is called.
    */
   contacts: Actor[];
   /**
-   * Pre-resolved recipients for `targets: "contacts"` or `"addresses"`
-   * link types.
+   * Pre-resolved recipients for link types whose `compose.targets` is
+   * `"contacts"` or `"addresses"`.
    *
-   * Only populated for link types with `targets: "contacts"` or
-   * `"addresses"`; otherwise undefined. Each entry contains the Plot
+   * Only populated for those link types; otherwise undefined. Each entry contains the Plot
    * contact UUID and the platform-specific account ID
    * (`externalAccountId`) the connector should use to address the
    * recipient without performing its own lookup. For `"addresses"` link
@@ -148,7 +147,7 @@ export type CreateLinkDraft = {
   recipients?: ResolvedRecipient[];
   /**
    * Free-form addresses the user typed into the picker (no Plot contact
-   * row). Only populated for `targets: "addresses"` link types; otherwise
+   * row). Only populated for link types with `compose.targets: "addresses"`; otherwise
    * undefined. Connectors should append these alongside `recipients`
    * when constructing the recipient list (e.g. `To:` header for Gmail).
    */
@@ -399,10 +398,11 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * Called when a user creates a thread in Plot that should create a new
    * item in this connector's external system.
    *
-   * A connector opts in to Plot-initiated creation by declaring a status
-   * with `createDefault: true` on the relevant `LinkTypeConfig`. When a
-   * user picks "Create new <type>" from the Add link modal and the thread
-   * is synced, the runtime calls this method with the draft fields.
+   * A connector opts in to Plot-initiated creation by declaring a
+   * `compose` block on the relevant `LinkTypeConfig` (see
+   * {@link ComposeConfig}). When a user picks "Create new <type>" from the
+   * Add link modal and the thread is synced, the runtime calls this method
+   * with the draft fields.
    *
    * Implementations should create the item in the external service and
    * return a `NewLinkWithNotes` describing the created item. The platform

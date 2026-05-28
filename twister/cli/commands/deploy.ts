@@ -80,6 +80,8 @@ interface DeployOptions {
 interface PackageJson {
   name?: string;
   displayName?: string;
+  handle?: string;
+  threadType?: string;
   description?: string;
   author?: string;
   license?: string;
@@ -285,6 +287,8 @@ export async function deployCommand(options: DeployOptions) {
   // Extract twist metadata from package.json
   let twistId = packageJson?.plotTwistId;
   const twistName = packageJson?.displayName;
+  const twistHandle = packageJson?.handle;
+  const twistThreadType = packageJson?.threadType;
   const twistDescription = packageJson?.description;
   const twistLogoUrl = packageJson?.logoUrl;
   const twistLogoUrlDark = packageJson?.logoUrlDark;
@@ -619,6 +623,8 @@ export async function deployCommand(options: DeployOptions) {
     module: string;
     sourcemap?: string;
     name: string;
+    handle?: string;
+    threadType?: string;
     description?: string;
     logoUrl?: string;
     logoUrlDark?: string;
@@ -656,6 +662,8 @@ export async function deployCommand(options: DeployOptions) {
       module: moduleContent,
       sourcemap: sourcemapContent,
       name: deploymentName!,
+      handle: twistHandle,
+      threadType: twistThreadType,
       description: deploymentDescription,
       logoUrl: twistLogoUrl,
       logoUrlDark: twistLogoUrlDark,

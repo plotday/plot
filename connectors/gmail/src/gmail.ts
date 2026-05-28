@@ -3,7 +3,6 @@ import {
   type CreateLinkDraft,
   type NoteWriteBackResult,
   type ToolBuilder,
-  Tag,
 } from "@plotday/twister";
 import type { Actor, ActorId, NewLinkWithNotes, Note, Thread, Link } from "@plotday/twister/plot";
 import {
@@ -124,6 +123,7 @@ export class Gmail extends Connector<Gmail> {
       statuses: [
         { status: "inbox", label: "Inbox" },
         { status: "starred", label: "Starred", active: true },
+        { status: "sent", label: "Sent" },
         { status: "archived", label: "Archived", done: true },
       ],
       contactRoles: [
@@ -132,28 +132,15 @@ export class Gmail extends Connector<Gmail> {
         { id: "bcc", label: "BCC", hidden: true },
       ],
       supportsContactChanges: true,
-    },
-    {
-      type: "gmail-email",
-      label: "New email",
-      noteLabel: "Reply",
-      logo: "https://api.iconify.design/logos/google-gmail.svg",
-      logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
-      // Gmail composes can target any address: a Plot contact (with or
-      // without a Gmail-connection row) or a free-form typed email
-      // (delivered via the thread's inviteEmails). The runtime fills
-      // recipients from the connection-scoped row when available and
-      // falls back to contact.email otherwise.
-      targets: "addresses" as const,
-      statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
-      ],
-      contactRoles: [
-        { id: "to", label: "To", default: true },
-        { id: "cc", label: "CC" },
-        { id: "bcc", label: "BCC", hidden: true },
-      ],
-      supportsContactChanges: true,
+      // Gmail composes target any address — a Plot contact (with or without
+      // a Gmail-connection row) or a free-form typed email delivered via
+      // `inviteEmails`. The runtime fills `recipients` from the
+      // connection-scoped row when available and falls back to
+      // `contact.email` otherwise.
+      compose: {
+        targets: "addresses" as const,
+        status: "sent",
+      },
     },
   ];
 
@@ -1215,14 +1202,25 @@ export class Gmail extends Connector<Gmail> {
 
         // Star ↔ todo sync: detect star changes and update Plot todo status
         const isStarred = GmailApi.isStarred(thread);
-        const isArchived = !thread.messages?.some((m) =>
+        const isInInbox = thread.messages?.some((m) =>
           m.labelIds?.includes("INBOX")
+        );
+        // "Sent" is meaningful only when the thread isn't ALSO in the inbox
+        // (e.g. self-CC, or recipient replied) — those should appear under
+        // "inbox" so the user actions them like any other incoming thread.
+        const isSentOnly = !isInInbox && thread.messages?.some((m) =>
+          m.labelIds?.includes("SENT")
         );
 
         // Set status based on labels
         if (isStarred) {
           plotThread.status = "starred";
-        } else if (isArchived) {
+        } else if (isSentOnly) {
+          // Plot-composed thread that just sent, or organic Gmail-sent
+          // thread the user hasn't archived yet. Stays at "sent" until it
+          // returns to inbox (reply) or the user archives it.
+          plotThread.status = "sent";
+        } else if (!isInInbox) {
           plotThread.status = "archived";
         } else {
           plotThread.status = "inbox";
@@ -1456,11 +1454,11 @@ export class Gmail extends Connector<Gmail> {
   /**
    * Creates a new outbound email from Plot.
    *
-   * For the `targets: "addresses"` gmail-email link type, the runtime fills
-   * `draft.recipients` from the connection-scoped `contact_external_account`
-   * rows and falls back to `contact.email` for any picked contact without
-   * a row. Free-form addresses the user typed in arrive via
-   * `draft.inviteEmails`. The connector just merges and dedupes.
+   * For the `email` link type's `compose.targets: "addresses"`, the runtime
+   * fills `draft.recipients` from the connection-scoped
+   * `contact_external_account` rows and falls back to `contact.email` for
+   * any picked contact without a row. Free-form addresses the user typed in
+   * arrive via `draft.inviteEmails`. The connector just merges and dedupes.
    *
    * The returned `NewLinkWithNotes`'s `meta` matches what `onNoteCreated`
    * reads so replies work with zero extra wiring.
@@ -1468,7 +1466,7 @@ export class Gmail extends Connector<Gmail> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
-    if (draft.type !== "gmail-email") return null;
+    if (draft.type !== "email") return null;
 
     const seenEmails = new Set<string>();
     const toEmails: string[] = [];
@@ -1530,7 +1528,7 @@ export class Gmail extends Connector<Gmail> {
 
     return {
       source: canonicalUrl,
-      type: "gmail-email",
+      type: "email",
       title: subject || undefined,
       status: draft.status,
       created: new Date(),

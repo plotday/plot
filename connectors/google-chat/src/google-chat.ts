@@ -101,34 +101,34 @@ export class GoogleChat extends Connector<GoogleChat> {
   };
   readonly linkTypes = [
     {
-      type: "message",
-      label: "Message",
+      type: "thread",
+      label: "Thread",
       noteLabel: "Message",
       // Logo: full-color SVG from static assets (iconify has no logos/google-chat)
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
+      statuses: [
+        { status: "sent", label: "Sent" },
+      ],
+      compose: {
+        targets: "channels" as const,
+        status: "sent",
+      },
     },
     {
-      type: "google-chat-space",
-      label: "Space message",
+      type: "dm",
+      label: "Direct messages",
       noteLabel: "Message",
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
+        { status: "sent", label: "Sent" },
       ],
-    },
-    {
-      type: "google-chat-dm",
-      label: "Direct message",
-      noteLabel: "Message",
-      logo: "https://plot.day/assets/logo-google-chat.svg",
-      logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
-      targets: "contacts" as const,
-      statuses: [
-        { status: "sent", label: "Sent", createDefault: true },
-      ],
+      compose: {
+        targets: "contacts" as const,
+        status: "sent",
+      },
     },
   ];
 
@@ -938,7 +938,7 @@ export class GoogleChat extends Connector<GoogleChat> {
 
       await this.tools.integrations.saveLink({
         source,
-        type: "message",
+        type: "thread",
         archived: true,
         channelId,
         meta: {
@@ -1326,10 +1326,10 @@ export class GoogleChat extends Connector<GoogleChat> {
   /**
    * Creates a new Google Chat message from Plot via `onCreateLink`.
    *
-   * - `google-chat-space`: posts to `draft.channelId` (the space resource id
+   * - `thread`: posts to `draft.channelId` (the space resource id
    *   like "AAAA…"). Uses the existing channel token directly.
-   * - `google-chat-dm`: finds or creates the DM space for the selected
-   *   recipients, then posts there.
+   * - `dm`: finds or creates the DM space for the selected recipients,
+   *   then posts there.
    *
    * The returned `meta` matches what `onNoteCreated` reads so replies via
    * the existing write-back path work with zero extra wiring.
@@ -1337,10 +1337,10 @@ export class GoogleChat extends Connector<GoogleChat> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
-    if (draft.type === "google-chat-space") {
+    if (draft.type === "thread") {
       return this.createSpacePost(draft);
     }
-    if (draft.type === "google-chat-dm") {
+    if (draft.type === "dm") {
       return this.createDirectMessage(draft);
     }
     return null;
@@ -1379,7 +1379,7 @@ export class GoogleChat extends Connector<GoogleChat> {
 
     return {
       source: `google-chat:${channelId}:thread:${threadKey}`,
-      type: "google-chat-space",
+      type: "thread",
       title: draft.title,
       status: draft.status,
       created: new Date(result.createTime),
@@ -1401,7 +1401,7 @@ export class GoogleChat extends Connector<GoogleChat> {
   ): Promise<NewLinkWithNotes | null> {
     const recipients = draft.recipients;
     if (!recipients || recipients.length === 0) {
-      console.error("[google-chat] google-chat-dm onCreateLink: no recipients provided");
+      console.error("[google-chat] dm onCreateLink: no recipients provided");
       return null;
     }
 
@@ -1415,7 +1415,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
     const callerName = authUser?.googleUserId;
     if (!callerName) {
-      console.error("[google-chat] google-chat-dm: no auth_google_user stored; re-auth required");
+      console.error("[google-chat] dm: no auth_google_user stored; re-auth required");
       return null;
     }
 
@@ -1478,7 +1478,7 @@ export class GoogleChat extends Connector<GoogleChat> {
 
     return {
       source: `google-chat:${spaceId}:thread:${threadKey}`,
-      type: "google-chat-dm",
+      type: "dm",
       title: draft.title,
       status: draft.status,
       created: new Date(result.createTime),

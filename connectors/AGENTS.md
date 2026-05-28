@@ -388,15 +388,22 @@ For systems that return the stored representation on write (Drive, GitHub, Linea
 
 ### Creating new items from Plot (`onCreateLink`)
 
-Opt a link type in by marking one status with `createDefault: true`:
+Opt a link type in by adding a `compose` block to its `LinkTypeConfig`:
 
 ```typescript
-statuses: [
-  { status: "backlog", label: "Backlog" },
-  { status: "unstarted", label: "To Do", todo: true, createDefault: true },
-  { status: "completed", label: "Done", done: true },
-]
+{
+  type: "issue",
+  label: "Issue",
+  statuses: [
+    { status: "backlog", label: "Backlog" },
+    { status: "unstarted", label: "To Do", task: true },
+    { status: "completed", label: "Done", done: true },
+  ],
+  compose: { status: "unstarted" },        // targets defaults to "channels"
+}
 ```
+
+For closed-roster DM-style compose set `compose.targets: "contacts"`; for open address spaces (Gmail) use `"addresses"`. `compose.status` may be either a literal entry from `statuses[]` or a symbolic id the connector's `onCreateLink` resolves itself (Linear's per-team workflow-state UUIDs resolve from the category `"unstarted"`).
 
 Then implement `onCreateLink` — return the link, do NOT call `integrations.saveLink()` (platform wires it to the originating thread):
 
@@ -488,7 +495,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] `initialSync` propagated through every entry point and batch; set `unread: false, archived: false` on initial, omit on incremental
 - [ ] Create `NewContact` for authors/assignees
 - [ ] Clean up callbacks, webhooks, stored state in `stopSync()` and `onChannelDisabled()`
-- [ ] For Plot-initiated creation: mark status with `createDefault: true` AND implement `onCreateLink` — don't call `saveLink` from inside it
+- [ ] For Plot-initiated creation: add a `compose` block to the `LinkTypeConfig` AND implement `onCreateLink` — don't call `saveLink` from inside it
 - [ ] `pnpm build` succeeds
 
 ## Common pitfalls
@@ -509,7 +516,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 14. Omitting `created` on notes → everything appears "just now"; pass external timestamp.
 15. `this.run()` in `onChannelEnabled` → blocks HTTP response until full sync completes; always `runTask()`.
 16. Calling `integrations.saveLink()` inside `onCreateLink` → duplicate thread; just return the link.
-17. Implementing `onCreateLink` without `createDefault: true` on a status → "Create new X" entry never appears.
+17. Implementing `onCreateLink` without a `compose` block on the `LinkTypeConfig` → "Create new X" entry never appears.
 18. Returning a bare `string` (key only) from `onNoteCreated` when the external stores content lossily (plain-text comments APIs, ADF, sanitised HTML) → next sync-in clobbers Plot's content with the round-tripped form (e.g. `1.` → `1\.`). Return a `NoteWriteBackResult` with `externalContent` matching sync-in's shape instead.
 19. Returning `externalContent` that doesn't match what sync-in emits for the same note (e.g. post-write raw HTML when sync-in extracts plain text; pre-translation mentions when sync-in translates them) → baseline hash always mismatches and every sync clobbers. Inspect the sync-in `build*Note` path and return exactly what it produces.
 20. Calling `integrations.saveLink()` inside `onNoteCreated` to set the note's `key` → legacy workaround, no longer needed. The runtime sets `key` automatically from the `NoteWriteBackResult` return.
