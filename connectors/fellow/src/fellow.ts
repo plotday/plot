@@ -96,6 +96,7 @@ export class Fellow extends Connector<Fellow> {
           {
             type: "meeting",
             label: "Meeting",
+            sharingModel: "thread" as const,
             logo: "/assets/logo-fellow.svg",
           },
         ],

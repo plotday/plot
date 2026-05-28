@@ -104,6 +104,7 @@ export class Airtable extends Connector<Airtable> {
       type: "task",
       label: "Task",
       noteLabel: "Comment",
+      sharingModel: "channel" as const,
       logo: LOGO,
       logoDark: LOGO,
       logoMono: LOGO_MONO,

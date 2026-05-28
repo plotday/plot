@@ -104,6 +104,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       type: "thread",
       label: "Thread",
       noteLabel: "Message",
+      sharingModel: "channel" as const,
       // Logo: full-color SVG from static assets (iconify has no logos/google-chat)
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
@@ -120,6 +121,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       type: "dm",
       label: "Direct messages",
       noteLabel: "Message",
+      sharingModel: "thread" as const,
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       statuses: [

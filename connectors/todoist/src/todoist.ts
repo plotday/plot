@@ -63,6 +63,7 @@ export class Todoist extends Connector<Todoist> {
       type: "task",
       label: "Task",
       noteLabel: "Comment",
+      sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/todoist-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
       statuses: [

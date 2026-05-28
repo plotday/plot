@@ -98,6 +98,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     {
       type: "event",
       label: "Event",
+      sharingModel: "thread" as const,
       logo: "https://plot.day/assets/logo-apple-calendar.svg",
       logoMono: "https://api.iconify.design/simple-icons/apple.svg",
     },

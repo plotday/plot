@@ -101,6 +101,7 @@ export class Granola extends Connector<Granola> {
           {
             type: "meeting",
             label: "Notes",
+            sharingModel: "thread" as const,
             logo: "/assets/logo-granola.png",
           },
         ],
