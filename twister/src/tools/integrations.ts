@@ -119,6 +119,23 @@ export type LinkTypeConfig = {
    * false when omitted.
    */
   supportsContactChanges?: boolean;
+  /**
+   * Declares how sharing on threads of this link type is scoped:
+   *
+   * - `"thread"` (default): one roster shared across all notes in the
+   *   thread. Native Plot threads, Slack DMs, calendar events.
+   * - `"channel"`: visibility is the external channel's membership;
+   *   the per-thread `contacts` array is ignored for sharing UI.
+   *   Slack channels, Linear projects.
+   * - `"message"`: each note carries its own recipient set via
+   *   `note.access_contacts`; the thread roster is the union across
+   *   all messages. Email.
+   *
+   * Omit to default to `"thread"`. When set to `"message"`, every
+   * note this connector ingests must populate `access_contacts`
+   * explicitly (never NULL).
+   */
+  sharingModel?: "thread" | "channel" | "message";
 };
 
 /**
