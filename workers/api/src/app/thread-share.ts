@@ -256,7 +256,21 @@ threadShare.post("/thread/:id/share", async (c) => {
   // Message-mode drop/undrop: moves contacts to/from dropped_contacts without
   // touching thread.contacts. Callers supply contact IDs that must already be
   // in thread.contacts (the invariant is enforced by the DB function).
+  //
+  // Access control: `updateThreadDroppedContacts` is a privileged RPC that
+  // bypasses the user check baked into `share_thread`. Enforce membership
+  // here at the HTTP boundary — only users with a `thread_priority` row for
+  // this thread (i.e. users who can see it) may drop or undrop contacts.
   if (drop.length > 0 || undrop.length > 0) {
+    const membership = await c.var.db
+      .selectFrom("thread_priority")
+      .select("thread_id")
+      .where("thread_id", "=", threadId)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+    if (!membership) {
+      return c.json({ message: "User does not have access to this thread" }, 403);
+    }
     try {
       await updateThreadDroppedContacts(c.var.db, threadId, drop, undrop);
       logger.info("update_thread_dropped_contacts completed", {

@@ -545,7 +545,7 @@ class NoteEditorState extends State<NoteEditor> {
           : context.read<ThreadBloc>().state.thread;
       final Set<String> threadContactIds = mentionThread == null
           ? const <String>{}
-          : mentionThread.contacts
+          : mentionThread.activeContacts
                 .map((u) => Actor.canonicalId(ActorId.fromUuid(u)).toString())
                 .toSet();
 
@@ -1727,7 +1727,9 @@ class NoteEditorState extends State<NoteEditor> {
   /// but not to other read-only viewers.
   List<ActorId> _readOnlyDefaultShareTargets(Thread thread) {
     final result = <ActorId>{};
-    for (final contactId in thread.contacts) {
+    // Exclude dropped contacts — they retain visibility into past notes but
+    // shouldn't be added to the access_contacts of a new note.
+    for (final contactId in thread.activeContacts) {
       result.add(ActorId.fromUuid(contactId));
     }
     for (final groupId in thread.groups) {
