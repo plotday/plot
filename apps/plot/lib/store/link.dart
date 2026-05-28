@@ -2,6 +2,26 @@ part of 'store.dart';
 
 typedef LinkId = Uuid;
 
+/// How sharing on threads of this link type is scoped. Mirrors
+/// `LinkTypeConfig.sharingModel` in Twister.
+enum SharingModel {
+  /// One roster shared across all notes (default). Native threads,
+  /// Slack DMs, calendar events.
+  thread,
+  /// Visibility is the external channel's membership; per-thread
+  /// contacts are ignored for sharing UI. Slack channels, Linear.
+  channel,
+  /// Each note carries its own recipient set via access_contacts;
+  /// thread roster is the union across messages. Email.
+  message;
+
+  static SharingModel fromJson(String? value) => switch (value) {
+        'channel' => SharingModel.channel,
+        'message' => SharingModel.message,
+        _ => SharingModel.thread,
+      };
+}
+
 /// Describes a link type that a source creates.
 class LinkTypeConfig {
   final String type;
@@ -26,6 +46,9 @@ class LinkTypeConfig {
   /// role changed. Email-style threads set this true; messaging connectors
   /// where the recipient list is fixed at creation set it false.
   final bool supportsContactChanges;
+  /// How sharing on threads of this link type is scoped. See
+  /// [SharingModel]. Defaults to thread.
+  final SharingModel sharingModel;
 
   const LinkTypeConfig({
     required this.type,
@@ -39,6 +62,7 @@ class LinkTypeConfig {
     this.compose,
     this.contactRoles,
     this.supportsContactChanges = false,
+    this.sharingModel = SharingModel.thread,
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -66,6 +90,9 @@ class LinkTypeConfig {
           json['supportsContactChanges'] as bool? ??
               json['supports_contact_changes'] as bool? ??
               false,
+      sharingModel: SharingModel.fromJson(
+        json['sharingModel'] as String? ?? json['sharing_model'] as String?,
+      ),
     );
   }
 
