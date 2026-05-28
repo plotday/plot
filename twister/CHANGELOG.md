@@ -1,5 +1,28 @@
 # @plotday/twister
 
+## 0.53.0
+
+### Added
+
+- `ActionType.fileRef` and `Connector.downloadAttachment` for source-hosted attachments, plus the `Files` tool with `read(fileId)` for outbound R2 reads. Connectors emit `fileRef` actions during inbound sync and serve their bytes on demand via `downloadAttachment`. Outbound continues to use `ActionType.file` backed by Plot's R2 storage. ([`112854c`](https://github.com/plotday/plot/commit/112854ca061c3c538a1fe8671b9873a4eb91c67f))
+- `LinkTypeConfig.contactRoles` and `supportsContactChanges` for per-connector contact role declarations (email To/CC/BCC, calendar Required/Optional, etc.). One role is marked `default`; roles marked `hidden` (BCC-style) are filtered server-side so they're only visible to the contact themselves and the user who added them. `NewContact` accepts an optional `role` that connectors set on inbound sync. New `Connector.onContactsChanged` callback fires when a user adds/removes contacts or changes a role on a thread. ([#150](https://github.com/plotday/plot/pull/150) [`4556dde`](https://github.com/plotday/plot/commit/4556dde7a7afa0f32471733a2a168ab01ce57bd2))
+- `LinkTypeConfig.targets` and `CreateLinkDraft.recipients` / `ResolvedRecipient` to support contact-targeted link types (e.g. messaging DMs) where the runtime pre-resolves Plot contacts to platform account IDs before dispatching `onCreateLink`. ([#148](https://github.com/plotday/plot/pull/148) [`c556f5d`](https://github.com/plotday/plot/commit/c556f5db1a5e190527167dab124f87af7452819d))
+- `Reaction`, `Reactions`, `NewReactions` types and a `reactions` field on `ThreadCommon` (covering both `Thread` and `Note`), along with optional `reactions?: NewReactions` on `NewThread`, `NewNote`, `ThreadUpdate`, `NoteUpdate`. Also adds `Connector.reactionCapabilities` (open-unicode / unicode-subset / fixed) so the Plot picker and outbound dispatch can filter reactions to what the source platform supports. Foundation for higher-fidelity emoji reaction sync across Slack, Microsoft Teams, Google Chat, LinkedIn Messaging, and Plot-native threads. ([#151](https://github.com/plotday/plot/pull/151) [`2f904bb`](https://github.com/plotday/plot/commit/2f904bbcb1b36a70af7b1b68ecd7850e3601efe4))
+- `LinkTypeConfig.noteLabel` for per-type adaptive copy (e.g. "Comment" on Linear issues, "Message" on Slack). Clients use it to render type-aware composer hints and command titles like "Add a comment". ([#148](https://github.com/plotday/plot/pull/148) [`707b7df`](https://github.com/plotday/plot/commit/707b7dfe206cb95aa2a2b7d8d04b86a26a76d5a2))
+- `sharingModel` field on `LinkTypeConfig` to declare per-link-type sharing scope (`"thread"`, `"channel"`, or `"message"`). Defaults to `"thread"` when omitted. Connectors use `"channel"` for membership-based containers (Slack channels, Linear projects) and `"message"` for per-recipient threads (email). ([#154](https://github.com/plotday/plot/pull/154) [`026e122`](https://github.com/plotday/plot/commit/026e12235efe4d9826d5e7b092f61680773ffe8f))
+- `handle` and `threadType` fields in twist `package.json`. `handle` is the at-mention / attribution label (defaults to `displayName`). `threadType`, when present, makes the twist appear in the new-thread connection picker with the given label. ([#153](https://github.com/plotday/plot/pull/153) [`3a26cce`](https://github.com/plotday/plot/commit/3a26cce41de7123e8080e46c7bc4e020b3beb698))
+
+### Changed
+
+- `NewContact.source` no longer includes `provider` — the runtime stamps it from the dispatching twist instance. Connectors should drop `source.provider` and pass just `source: { accountId }`.
+- replaced `LinkTypeConfig.targets` and the status-level `createDefault` flag with a single `LinkTypeConfig.compose` block that declares whether (and how) the link type is composable from Plot. Each `compose` carries `targets` (picker mode — `"channels"` / `"contacts"` / `"addresses"`), `status` (default status for created links — may be a symbolic id the connector resolves itself, e.g. Linear's per-team UUIDs), and optional `label` (picker copy override).
+
+### Removed
+
+- `Integrations.actAs()` has been removed.
+- count-tag entries (`Tag.Yes` through `Tag.Dismayed`, IDs 1000–1027) from the `Tag` enum. The full Unicode emoji `Reaction` type (added in the previous changeset) replaces them; connectors that previously wrote `note.tags[Tag.Yes]` now write `note.reactions['👍']`. Compute (Todo, Done) and toggle tags (Pinned, Urgent, …, Idea) are unchanged. ([#151](https://github.com/plotday/plot/pull/151) [`2595e9b`](https://github.com/plotday/plot/commit/2595e9b0e4ffa7e7bfffe5947fa52405f414b637))
+- 10 toggle-tag entries (`Tag.Pinned`, `Tag.Urgent`, `Tag.Goal`, `Tag.Decision`, `Tag.Waiting`, `Tag.Blocked`, `Tag.Warning`, `Tag.Question`, `Tag.Star`, `Tag.Idea`) and the `tag?: Tag` field on `LinkTypeConfig.statuses[]`. The status-tag propagation mechanism is retired — connectors signal completion via the `done: true` boolean and messaging-active state via `active: true`, which is what was driving behaviour anyway. Reactions on threads/notes flow exclusively through the open Unicode emoji `Reaction` type.
+
 ## 0.52.0
 
 ### Added
