@@ -64,8 +64,10 @@ class PriorityComposeField extends StatelessWidget {
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(PlotIcon.sparkles, size: theme.iconSizes.sm),
-              const SizedBox(width: 6),
+              ComposeLeadingIcon(
+                child: Icon(PlotIcon.sparkles, size: theme.iconSizes.base),
+              ),
+              const SizedBox(width: composeIconGap),
               const Text('Auto-organize'),
             ],
           )

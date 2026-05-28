@@ -74,8 +74,13 @@ class ContactsComposeField extends StatelessWidget {
       label = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(FontAwesomeIcons.usersSlash, size: theme.iconSizes.sm),
-          const SizedBox(width: 6),
+          ComposeLeadingIcon(
+            child: Icon(
+              FontAwesomeIcons.usersSlash,
+              size: theme.iconSizes.base,
+            ),
+          ),
+          const SizedBox(width: composeIconGap),
           const Text('Private'),
         ],
       );
@@ -87,13 +92,15 @@ class ContactsComposeField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (actors.isNotEmpty) ...[
-            AvatarGroup(
-              actors: actors,
-              totalCount: chips.length,
-              maxVisible: 3,
-              size: theme.iconSizes.lg,
+            ComposeLeadingIcon(
+              child: AvatarGroup(
+                actors: actors,
+                totalCount: chips.length,
+                maxVisible: 3,
+                size: theme.iconSizes.base,
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: composeIconGap),
           ],
           Expanded(
             child: Text(

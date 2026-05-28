@@ -148,7 +148,7 @@ class TitleComposeFieldState extends State<TitleComposeField> {
                   IgnorePointer(
                     child: Padding(
                       padding: EdgeInsets.symmetric(
-                        vertical: isMobilePlatform() ? 10 : 8,
+                        vertical: isMobilePlatform() ? 10 : 6,
                       ),
                       child: _buildPlaceholder(theme),
                     ),
@@ -170,19 +170,25 @@ class TitleComposeFieldState extends State<TitleComposeField> {
   }
 
   /// The placeholder shown when the title is empty. Sparkles + "Auto-title"
-  /// at rest; "Set title" when the row is hovered or focused. Both use the
-  /// veryMuted color so they read as the same level of de-emphasis.
+  /// at rest or on hover; "Set title" only when the field is focused. Both
+  /// use the veryMuted color so they read as the same level of de-emphasis.
   Widget _buildPlaceholder(FThemeData theme) {
     final color = theme.plotColors.veryMuted;
     final textStyle = theme.typography.md.copyWith(color: color);
-    if (_hovered || _focused) {
+    if (_focused) {
       return Text('Set title', style: textStyle);
     }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(PlotIcon.sparkles, size: theme.iconSizes.sm, color: color),
-        const SizedBox(width: 6),
+        ComposeLeadingIcon(
+          child: Icon(
+            PlotIcon.sparkles,
+            size: theme.iconSizes.base,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: composeIconGap),
         Text('Auto-title', style: textStyle),
       ],
     );

@@ -149,7 +149,7 @@ FTextFieldStyleDelta ghostFieldStyle(BuildContext context) =>
 FTextFieldStyleDelta _ghostFieldStyle(FThemeData theme) {
   return FTextFieldStyleDelta.delta(
     contentPadding: EdgeInsetsGeometryDelta.value(
-      EdgeInsets.symmetric(horizontal: 0, vertical: isMobilePlatform() ? 10 : 8),
+      EdgeInsets.symmetric(horizontal: 0, vertical: isMobilePlatform() ? 10 : 6),
     ),
     // The default style fills the focused field with editableBackground,
     // which overpaints the compose surface's single bottom border. Keep
@@ -158,10 +158,15 @@ FTextFieldStyleDelta _ghostFieldStyle(FThemeData theme) {
     color: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.all(const Color(0x00000000)),
     ]),
+    // gapPadding: 0 — Material 3's InputDecorator adds border.gapPadding
+    // (default 4.0) to the input's start padding via `inputGap`, which
+    // shifts the field's text 4px right of the placeholder and the
+    // leading edge of every other compose row.
     border: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.all(
         const OutlineInputBorder(
           borderSide: BorderSide(width: 0, style: BorderStyle.none),
+          gapPadding: 0,
         ),
       ),
     ]),
