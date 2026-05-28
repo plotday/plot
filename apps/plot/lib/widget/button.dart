@@ -28,7 +28,8 @@ class Button extends StatefulWidget {
        color = null,
        hoverColor = null,
        forceHover = false,
-       onLongPress = null;
+       onLongPress = null,
+       tooltipBelow = false;
 
   const Button.primary(
     this.command, {
@@ -43,7 +44,8 @@ class Button extends StatefulWidget {
        color = null,
        hoverColor = null,
        forceHover = false,
-       onLongPress = null;
+       onLongPress = null,
+       tooltipBelow = false;
 
   const Button.ghost(
     this.command, {
@@ -58,7 +60,8 @@ class Button extends StatefulWidget {
        color = null,
        hoverColor = null,
        forceHover = false,
-       onLongPress = null;
+       onLongPress = null,
+       tooltipBelow = false;
 
   const Button.icon(
     this.command, {
@@ -71,6 +74,7 @@ class Button extends StatefulWidget {
     this.hoverColor,
     this.forceHover = false,
     this.onLongPress,
+    this.tooltipBelow = false,
     super.key,
   }) : iconOnly = true,
        expand = false;
@@ -90,6 +94,10 @@ class Button extends StatefulWidget {
   final Command command;
   /// Optional long-press callback (icon-only buttons).
   final VoidCallback? onLongPress;
+  /// Anchor the hover tooltip below the button instead of above. Use when the
+  /// button sits at the top of a clipped container (e.g. the squircle action
+  /// row) so the tooltip opens inside the clip area.
+  final bool tooltipBelow;
 
   @override
   State<Button> createState() => _ButtonState();
@@ -421,6 +429,12 @@ class _ButtonState extends State<Button> {
     Widget result = stack;
 
     result = FTooltip(
+      tipAnchor: widget.tooltipBelow
+          ? Alignment.topCenter
+          : Alignment.bottomCenter,
+      childAnchor: widget.tooltipBelow
+          ? Alignment.bottomCenter
+          : Alignment.topCenter,
       tipBuilder: (context, controller) {
         final hasSubtitle = widget.command.subtitle != null &&
             widget.command.subtitle!.isNotEmpty;

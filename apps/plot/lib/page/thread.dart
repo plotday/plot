@@ -1347,8 +1347,9 @@ class _ThreadActionsRow extends StatelessWidget {
         CommandWrapper(
           ToggleThreadActive(thread),
           icon: Value(FontAwesomeIcons.circlePlus),
-          title: 'To do',
+          title: 'Add to active',
         ),
+        tooltipBelow: true,
       );
     } else {
       todoButton = Button.icon(
@@ -1356,10 +1357,11 @@ class _ThreadActionsRow extends StatelessWidget {
           FinishThread(thread),
           icon: Value(FontAwesomeIcons.circle),
           hoverIcon: Value(FontAwesomeIcons.circleCheck),
-          title: 'Finish',
+          title: 'Move to done',
         ),
         selected: true,
         selectedColor: threadColor,
+        tooltipBelow: true,
       );
     }
 
@@ -1371,17 +1373,20 @@ class _ThreadActionsRow extends StatelessWidget {
       ),
       selected: isScheduled,
       selectedColor: threadColor,
+      tooltipBelow: true,
     );
 
     final taskListButton = Button.icon(
       ToggleThreadTask(thread),
       selected: thread.task,
       selectedColor: context.colour.accent,
+      tooltipBelow: true,
     );
     final readingListButton = Button.icon(
       ToggleThreadToRead(thread),
       selected: thread.toRead,
       selectedColor: context.colour.accent,
+      tooltipBelow: true,
     );
 
     final startGroup = <Widget>[
@@ -1389,12 +1394,12 @@ class _ThreadActionsRow extends StatelessWidget {
       scheduleButton,
       taskListButton,
       readingListButton,
+      if (!readOnly) Button.icon(EditThread(thread), tooltipBelow: true),
     ];
 
     final endGroup = <Widget>[
-      if (!readOnly) Button.icon(EditThread(thread)),
-      if (!readOnly) SharedCommandButton(thread: thread),
-      Button.icon(_buildThreadMenuCommand(thread)),
+      if (!readOnly) SharedCommandButton(thread: thread, tooltipBelow: true),
+      Button.icon(_buildThreadMenuCommand(thread), tooltipBelow: true),
     ];
 
     return DecoratedBox(
@@ -1416,7 +1421,7 @@ class _ThreadActionsRow extends StatelessWidget {
 
   Command _buildThreadMenuCommand(Thread thread) {
     return ShowCommands(
-      title: 'Menu',
+      title: 'More',
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final priorityBloc = context.read<PriorityBloc?>();

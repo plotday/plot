@@ -211,6 +211,7 @@ class AvatarGroup extends StatelessWidget {
     this.maxVisible = 3,
     this.size,
     this.scheduleContacts,
+    this.tooltipBelow = false,
     super.key,
   }) : assert(maxVisible >= 1);
 
@@ -233,6 +234,10 @@ class AvatarGroup extends StatelessWidget {
   /// declined next, then tentative/unknown. When null or empty, the tooltip
   /// falls back to a plain list of actor names.
   final List<ScheduleContact>? scheduleContacts;
+
+  /// Anchor the hover tooltip below the group instead of above. Use when
+  /// the group sits at the top of a clipped container.
+  final bool tooltipBelow;
 
   @override
   Widget build(BuildContext context) {
@@ -309,7 +314,14 @@ class AvatarGroup extends StatelessWidget {
 
     final tooltipBuilder = _tooltipBuilder(context);
     if (tooltipBuilder == null) return stack;
-    return FTooltip(tipBuilder: tooltipBuilder, child: stack);
+    return FTooltip(
+      tipAnchor: tooltipBelow ? Alignment.topCenter : Alignment.bottomCenter,
+      childAnchor: tooltipBelow
+          ? Alignment.bottomCenter
+          : Alignment.topCenter,
+      tipBuilder: tooltipBuilder,
+      child: stack,
+    );
   }
 
   /// Builds a single tooltip for the whole group. When [scheduleContacts] is

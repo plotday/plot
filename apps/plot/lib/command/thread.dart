@@ -969,11 +969,9 @@ abstract class _UpdateThreadCommand extends Command {
 class ToggleThreadActive extends _UpdateThreadCommand {
   ToggleThreadActive(super.thread, {super.onUpdate})
     : super(
-        title: thread.todo ? 'Mark done' : 'To do',
+        title: thread.todo ? 'Move to Done' : 'Add to Active',
         eventObject: EventObject.activity,
-        eventAction: thread.todo
-            ? EventAction.finished
-            : EventAction.started,
+        eventAction: thread.todo ? EventAction.finished : EventAction.started,
         icon: thread.todo
             ? FontAwesomeIcons.circleCheck
             : FontAwesomeIcons.circlePlus,
@@ -1090,7 +1088,7 @@ class FinishThread extends _UpdateThreadCommand {
     this.bump = true,
     this.onBeforeRun,
   }) : super(
-         title: 'Finish',
+         title: 'Move to Done',
          eventObject: EventObject.activity,
          eventAction: EventAction.finished,
          icon: stateIcon && thread.todo
@@ -2656,11 +2654,11 @@ class _ShareCandidatesCache {
 }
 
 String _computeSharedTitle(Thread thread) {
-  return isThreadShared(thread) ? 'Shared' : 'Share';
+  return isThreadShared(thread) ? 'Sharing' : 'Share';
 }
 
 IconData _computeSharedIcon(Thread thread) {
-  return isThreadShared(thread) ? PlotIcon.user : PlotIcon.shareAdd;
+  return isThreadShared(thread) ? PlotIcon.users : PlotIcon.shareAdd;
 }
 
 /// Canonical check for whether a thread is shared with anyone other than the
@@ -2867,7 +2865,7 @@ Future<Commands> _buildSharedCommands(
     prompt: 'Share with contact or email',
     emptyMessage: dmTwistInstanceId != null
         ? 'No contacts found for this connection. '
-          'They appear here after the workspace member sync completes.'
+              'They appear here after the workspace member sync completes.'
         : 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||
@@ -2924,8 +2922,10 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
   final Set<Uuid> excludeGroupIds;
   final Future<void> Function(Thread) onUpdate;
   final _ShareCandidatesCache candidates;
+
   /// When non-null, only contacts reachable through this connection are shown.
   final Uuid? dmTwistInstanceId;
+
   /// When true (`targets: "addresses"`), show all contacts with an email,
   /// hide groups, and allow free-form email invites.
   final bool isAddressMode;

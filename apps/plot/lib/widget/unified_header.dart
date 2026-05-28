@@ -565,8 +565,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   /// clears it. Matches the shared "active filter" styling used in the
   /// search field's suffix row (selected + accent color).
   Widget _listFilterButton(BuildContext context, Tag tag) {
-    final isOn =
-        context.read<PriorityBloc>().state.filter.contains(tag);
+    final isOn = context.read<PriorityBloc>().state.filter.contains(tag);
     return Button.icon(
       ToggleListFilter(tag, context: context),
       selected: isOn,
@@ -728,9 +727,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ...state.filter
             .where((tag) => !allTags.containsKey(tag))
             .map((tag) => ToggleActivityFilter(tag, context: ctx)),
-        ...allReactions.keys.map(
-          (e) => ToggleReactionFilter(e, context: ctx),
-        ),
+        ...allReactions.keys.map((e) => ToggleReactionFilter(e, context: ctx)),
         // Active filters that aren't present in this scope's enumeration
         // (e.g. the user reacted from a thread page so the priority's
         // reaction list hasn't refreshed yet) still need an entry so they
@@ -844,7 +841,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         CommandWrapper(
           ToggleThreadActive(thread),
           icon: Value(FontAwesomeIcons.circlePlus),
-          title: 'To do',
+          title: 'Add to Active',
         ),
       );
     } else {
@@ -853,7 +850,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           FinishThread(thread),
           icon: Value(FontAwesomeIcons.circle),
           hoverIcon: Value(FontAwesomeIcons.circleCheck),
-          title: 'Finish',
+          title: 'Move to Done',
         ),
         selected: true,
         selectedColor: threadColor,
@@ -897,7 +894,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
   Command _buildNoPriorityMenuCommand() {
     return ShowCommands(
-      title: 'Menu',
+      title: 'More',
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final showAll = context
@@ -926,7 +923,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     ThreadHeaderNotifier? notifier,
   ) {
     return ShowCommands(
-      title: 'Menu',
+      title: 'More',
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final thread = state.thread;
@@ -948,7 +945,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   /// commands live in the thread squircle's own "..." menu.
   Command _buildPriorityMenuCommand(PriorityState state) {
     return ShowCommands(
-      title: 'Menu',
+      title: 'More',
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final priorityGroups = currentPriorityCommandGroups(

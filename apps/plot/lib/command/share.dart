@@ -440,7 +440,7 @@ class ShareSelectionInvite extends Command {
 /// Summary icon for a [SharedSelection]: a user icon with a count badge when
 /// more than one party is selected, falling back to the "share+" glyph.
 IconData sharedSelectionIcon(SharedSelection selection) =>
-    selection.isEmpty ? PlotIcon.shareAdd : PlotIcon.user;
+    selection.isEmpty ? PlotIcon.shareAdd : PlotIcon.users;
 
 /// One-line truncated text describing the selection, suitable for display in
 /// a SelectTile-style summary.
@@ -477,7 +477,7 @@ class PickShared extends ShowCommands {
     }
 
     return PickShared._(
-      title: title ?? (selection.isEmpty ? 'Share' : 'Shared'),
+      title: title ?? (selection.isEmpty ? 'Share' : 'Sharing'),
       icon: sharedSelectionIcon(selection),
       commandsBuilder: (context) => buildSharedSelectionCommands(
         selection: ref[0],

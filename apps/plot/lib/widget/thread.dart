@@ -299,7 +299,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final String leadingTitle = !isTodo ? 'To do' : 'Mark done';
+        final String leadingTitle = !isTodo ? 'Add to Active' : 'Move to Done';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
@@ -852,9 +852,17 @@ class ThreadCommands extends HookWidget {
 /// share command via hover commands instead) should gate this widget on
 /// `isThreadShared(thread)`.
 class SharedCommandButton extends HookWidget {
-  const SharedCommandButton({required this.thread, super.key});
+  const SharedCommandButton({
+    required this.thread,
+    this.tooltipBelow = false,
+    super.key,
+  });
 
   final Thread thread;
+
+  /// Anchor the hover tooltip below the button instead of above. Use when
+  /// the button sits at the top of a clipped container.
+  final bool tooltipBelow;
 
   @override
   Widget build(BuildContext context) {
@@ -908,6 +916,7 @@ class SharedCommandButton extends HookWidget {
             totalCount: command.sharedTotalCount,
             size: avatarSize,
             scheduleContacts: scheduleContacts,
+            tooltipBelow: tooltipBelow,
           )
         : SizedBox(
             width: iconSize,
@@ -958,6 +967,10 @@ class SharedCommandButton extends HookWidget {
       onEnter: (_) => isHovered.value = true,
       onExit: (_) => isHovered.value = false,
       child: FTooltip(
+        tipAnchor: tooltipBelow ? Alignment.topCenter : Alignment.bottomCenter,
+        childAnchor: tooltipBelow
+            ? Alignment.bottomCenter
+            : Alignment.topCenter,
         tipBuilder: (context, controller) => Text(command.title),
         child: button,
       ),
