@@ -13,7 +13,7 @@ import {
   recordAiUsage,
 } from "../../utils/ai-limits";
 import { assertThreadAccess } from "./authorize";
-import { getLinkTypesForLink } from "./link-tags";
+import { getLinkTypesForLink, type SharingModel } from "./link-tags";
 import {
   parseReadParams,
   readSafeHorizon,
@@ -23,7 +23,7 @@ import {
 } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 
-export type SharingModel = "thread" | "channel" | "message";
+export type { SharingModel };
 
 export function resolveAccessContactsForSend(args: {
   bodyAccessContacts: string[] | null | undefined;
@@ -217,13 +217,20 @@ notes.post("/sync/notes", async (c) => {
       .executeTakeFirst();
 
     let sharingModel: SharingModel = "thread";
-    if (threadWithLink?.link_id && threadWithLink.link_created_by) {
-      const allLinkTypes = await getLinkTypesForLink(trx, threadWithLink.link_id, threadWithLink.link_created_by);
-      const matched = allLinkTypes.find((lt) => lt.type === threadWithLink.link_type);
-      const declared = matched?.sharingModel;
-      if (declared === "message" || declared === "channel") {
-        sharingModel = declared;
-      }
+    if (
+      threadWithLink?.link_id &&
+      threadWithLink.link_created_by &&
+      threadWithLink.link_type
+    ) {
+      const allLinkTypes = await getLinkTypesForLink(
+        trx,
+        threadWithLink.link_id,
+        threadWithLink.link_created_by,
+      );
+      const matched = allLinkTypes.find(
+        (lt) => lt.type === threadWithLink.link_type,
+      );
+      if (matched?.sharingModel) sharingModel = matched.sharingModel;
     }
 
     const resolvedAccessContacts = resolveAccessContactsForSend({

@@ -20,10 +20,12 @@ export type LinkTypeStatus = {
   todo?: boolean;
 };
 
+export type SharingModel = "thread" | "channel" | "message";
+
 export type LinkTypeConfig = {
   type: string;
   statuses?: LinkTypeStatus[];
-  sharingModel?: string;
+  sharingModel?: SharingModel;
 };
 
 /**
