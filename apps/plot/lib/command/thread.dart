@@ -2590,6 +2590,13 @@ class PickDraftThreadShared extends ShowCommands {
     Uuid? dmTwistInstanceId,
     bool isAddressMode = false,
     List<ContactRoleConfig>? roleConfigs,
+    /// Historical notes for the thread. Used to compute the Dropped section
+    /// in message-mode: contacts who appear in note history but are no longer
+    /// in `thread.contacts`. Typically empty for brand-new draft threads.
+    List<Note>? notes,
+    /// The resolved sharing model for this thread's link type. When
+    /// [SharingModel.message], a Dropped section is shown if non-empty.
+    SharingModel sharingModel = SharingModel.thread,
   }) {
     // Mutable reference so commandsBuilder always sees the latest thread
     final threadRef = [thread];
@@ -2611,6 +2618,8 @@ class PickDraftThreadShared extends ShowCommands {
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddressMode,
         roleConfigs: roleConfigs,
+        notes: notes,
+        sharingModel: sharingModel,
       ),
     );
   }
@@ -2830,6 +2839,8 @@ Future<Commands> _buildSharedCommands(
   Uuid? dmTwistInstanceId,
   bool isAddressMode = false,
   List<ContactRoleConfig>? roleConfigs,
+  List<Note>? notes,
+  SharingModel sharingModel = SharingModel.thread,
 }) async {
   // Resolve groups filed on the thread. Groups are shown in the "Shared"
   // list so the viewer can see (and remove) the team the thread is shared
@@ -2898,6 +2909,31 @@ Future<Commands> _buildSharedCommands(
   Command toggleGroup(GroupRow group) =>
       ShareThreadGroup(thread, group, onUpdate: onUpdate);
 
+  // Dropped section (message-mode only): contacts who appear in note history
+  // but are no longer in thread.contacts. Viewer's own contacts are excluded.
+  final droppedActors = <Actor>[];
+  if (sharingModel == SharingModel.message && notes != null && notes.isNotEmpty) {
+    final viewerContactIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    final historical = Thread.historicalParticipants(notes);
+    final currentContactSet = thread.contacts.toSet();
+    final droppedIds = historical
+        .difference(currentContactSet)
+        .difference(viewerContactIds);
+    for (final contactId in droppedIds) {
+      try {
+        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        droppedActors.add(actor);
+      } catch (_) {
+        // Skip contacts whose actors can't be resolved
+      }
+    }
+    droppedActors.sort(
+      (a, b) => (a.nameOrEmail).compareTo(b.nameOrEmail),
+    );
+  }
+
   return Commands(
     prompt: 'Share with contact or email',
     emptyMessage: dmTwistInstanceId != null
@@ -2915,6 +2951,11 @@ Future<Commands> _buildSharedCommands(
             ...sharedActors.map(toggleActor),
             ...thread.inviteEmails.map(toggleInvite),
           ],
+        ),
+      if (droppedActors.isNotEmpty)
+        StaticCommandGroup(
+          title: 'Dropped',
+          commands: droppedActors.map(toggleActor).toList(),
         ),
       _ThreadShareSuggestionsGroup(
         thread: thread,

@@ -574,13 +574,23 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Roles are connector-defined (email → To/CC/BCC, calendar →
     // Required/Optional, Slack/Linear → none). Forwarded into the picker
     // so already-shared rows render a role badge when there are ≥2 roles.
-    final roleConfigs = _activeLinkTypeConfig?.contactRoles;
+    final linkTypeCfg = _activeLinkTypeConfig;
+    final roleConfigs = linkTypeCfg?.contactRoles;
+    final sharingModel = linkTypeCfg?.sharingModel ?? SharingModel.thread;
+    // Historical notes are needed only for message-mode threads (Dropped
+    // section). Fetch them here so the commandsBuilder closure is async-safe.
+    final draft = priorityBloc.state.draft;
+    final notes = sharingModel == SharingModel.message
+        ? await Note.getForThread(draft.id)
+        : null;
     await context.run(
       PickDraftThreadShared(
-        thread: priorityBloc.state.draft,
+        thread: draft,
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddress,
         roleConfigs: roleConfigs,
+        sharingModel: sharingModel,
+        notes: notes,
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);
