@@ -113,13 +113,13 @@ class Threads extends Table
   BoolColumn get hasEmbedding =>
       boolean().withDefault(const Constant(false))();
 
-  /// "Archive threads like this" anchor (per-user, mirrored from
-  /// `thread_priority.auto_archived_by_thread_id`). NULL when not part of an
-  /// auto-archive rule. Equal to this thread's own id when the user invoked
-  /// the command on this thread (the seed). Otherwise points to the seed
-  /// whose rule swept this thread. Toggling the broom off on any thread
-  /// carrying a non-null flag reverses the rule for every related thread.
-  BlobColumn get autoArchivedByThreadId =>
+  /// "Skip active for threads like this" mute anchor (per-user, mirrored
+  /// from `thread_priority.mute_by_thread_id`). NULL when not muted. Equal
+  /// to this thread's own id when the user invoked the command on this
+  /// thread (the seed). Otherwise points to the seed whose rule swept this
+  /// thread. Toggling the broom off on any thread carrying a non-null flag
+  /// reverses the rule for every related thread.
+  BlobColumn get muteByThreadId =>
       blob().nullable().map(const UuidConverter())();
 
   /// When set, this thread was merged into the referenced thread and is
@@ -4500,10 +4500,10 @@ ORDER BY
   String? get icon => _thread.icon;
   bool get hasEmbedding => _thread.hasEmbedding;
 
-  /// Anchor for the "Archive threads like this" rule. Non-null on threads
-  /// the rule swept (and on the seed itself, where it equals the thread's
-  /// own id). Null when the thread is not part of any auto-archive rule.
-  ThreadId? get autoArchivedByThreadId => _thread.autoArchivedByThreadId;
+  /// Anchor for the "Skip active for threads like this" mute rule. Non-null
+  /// on threads the rule swept (and on the seed itself, where it equals the
+  /// thread's own id). Null when the thread is not muted.
+  ThreadId? get muteByThreadId => _thread.muteByThreadId;
 
   /// True if the current user only sees this thread via an announce-typed
   /// group they don't admin (i.e. not a direct contact, not a member of any
@@ -5479,10 +5479,11 @@ ORDER BY
     Value<String?> title = const Value.absent(),
     Value<Duration?> duration = const Value.absent(),
     Value<DateTime?> archivedAt = const Value.absent(),
-    // "Archive threads like this" rule anchor. Equal to this thread's own
-    // id when the user invoked the command on this thread (the seed); equal
-    // to some other id when the rule swept this thread; null when cleared.
-    Value<ThreadId?> autoArchivedByThreadId = const Value.absent(),
+    // "Skip active for threads like this" mute anchor. Equal to this
+    // thread's own id when the user invoked the command on this thread
+    // (the seed); equal to some other id when the rule swept this thread;
+    // null when cleared.
+    Value<ThreadId?> muteByThreadId = const Value.absent(),
 
     // These fields update the root activity
     Value<DateTimeRange?> recurrenceAt = const Value.absent(),
@@ -5524,7 +5525,7 @@ ORDER BY
         icon.present ||
         mergedIntoThreadId.present ||
         archivedAt.present ||
-        autoArchivedByThreadId.present ||
+        muteByThreadId.present ||
         bumpedAt.present ||
         readAt.present ||
         title.present) {
@@ -5542,7 +5543,7 @@ ORDER BY
           icon.present ||
           mergedIntoThreadId.present ||
           archivedAt.present ||
-          autoArchivedByThreadId.present ||
+          muteByThreadId.present ||
           title.present;
       activity = _thread.copyWith(
         priorityId: priority?.id,
@@ -5561,7 +5562,7 @@ ORDER BY
         createdAt: draft == false && _thread.draft ? now : null,
         updatedAt: now,
         archivedAt: archivedAt,
-        autoArchivedByThreadId: autoArchivedByThreadId,
+        muteByThreadId: muteByThreadId,
         bumpedAt: bumpedAt,
         readAt: readAt,
         title: !recurring ? title : const Value.absent(),

@@ -523,32 +523,32 @@ threads.post("/sync/threads", async (c) => {
   // example (mirrors POST /sync/priority-moves).
   let userMovedTransitioned = false;
 
-  // Track "Archive threads like this" intent the client passed in this
-  // payload so we can fan out (apply rule) or revert (clear rule) after the
-  // single-thread upsert completes. The flag is per-user (lives on
-  // thread_priority), so we pre-read the previous value to decide what to
-  // do when the client sends a null transition.
-  const archiveSimilarSent = Object.prototype.hasOwnProperty.call(
+  // Track "Skip active for threads like this" intent the client passed in
+  // this payload so we can fan out (apply rule) or revert (clear rule)
+  // after the single-thread upsert completes. The flag is per-user (lives
+  // on thread_priority), so we pre-read the previous value to decide what
+  // to do when the client sends a null transition.
+  const muteSent = Object.prototype.hasOwnProperty.call(
     threadData,
-    "auto_archived_by_thread_id"
+    "mute_by_thread_id"
   );
-  const archiveSimilarValue: string | null = archiveSimilarSent
-    ? (threadData.auto_archived_by_thread_id as string | null) ?? null
+  const muteValue: string | null = muteSent
+    ? (threadData.mute_by_thread_id as string | null) ?? null
     : null;
-  let archiveSimilarPrevSeed: string | null = null;
-  if (archiveSimilarSent && threadData.id) {
-    const prev = await sql<{ auto_archived_by_thread_id: string | null }>`
-      SELECT auto_archived_by_thread_id
+  let mutePrevSeed: string | null = null;
+  if (muteSent && threadData.id) {
+    const prev = await sql<{ mute_by_thread_id: string | null }>`
+      SELECT mute_by_thread_id
       FROM public.thread_priority
       WHERE thread_id = ${sql.val(threadData.id)}::uuid
         AND user_id = ${sql.val(userId)}::uuid
     `.execute(c.var.db);
-    archiveSimilarPrevSeed = prev.rows[0]?.auto_archived_by_thread_id ?? null;
+    mutePrevSeed = prev.rows[0]?.mute_by_thread_id ?? null;
   }
 
   // Count of threads the rule touched (for the PostHog event below).
-  let archiveSimilarAffected = 0;
-  let archiveSimilarMode: "apply" | "clear" | null = null;
+  let muteAffected = 0;
+  let muteMode: "apply" | "clear" | null = null;
 
   const result = await withUserDb(c.var.db, userId, async (trx) => {
     const upsertResult = await rpcUser(trx, "upsert_thread", {
@@ -557,35 +557,30 @@ threads.post("/sync/threads", async (c) => {
       p_defaults: (body.defaults || {}) as any,
     });
 
-    // Auto-archive rule fan-out: when the client set the broom flag to the
+    // Mute rule fan-out: when the client set the broom flag to the
     // thread's own id (rule established) OR explicitly cleared it (rule
     // revoked), drive the matching SQL function. Idempotent on the server
     // side, so re-sends are safe.
-    if (archiveSimilarSent && upsertResult) {
+    if (muteSent && upsertResult) {
       const seedSelf = upsertResult.id as string;
-      if (archiveSimilarValue && archiveSimilarValue === seedSelf) {
-        archiveSimilarMode = "apply";
-        const applied = await sql<{ apply_auto_archive: number }>`
-          SELECT "user".apply_auto_archive(
+      if (muteValue && muteValue === seedSelf) {
+        muteMode = "apply";
+        const applied = await sql<{ apply_mute: number }>`
+          SELECT "user".apply_mute(
             ${sql.val(userId)}::uuid,
             ${sql.val(seedSelf)}::uuid
-          ) AS apply_auto_archive
+          ) AS apply_mute
         `.execute(trx);
-        archiveSimilarAffected =
-          applied.rows[0]?.apply_auto_archive ?? 0;
-      } else if (
-        archiveSimilarValue === null &&
-        archiveSimilarPrevSeed !== null
-      ) {
-        archiveSimilarMode = "clear";
-        const cleared = await sql<{ clear_auto_archive: number }>`
-          SELECT "user".clear_auto_archive(
+        muteAffected = applied.rows[0]?.apply_mute ?? 0;
+      } else if (muteValue === null && mutePrevSeed !== null) {
+        muteMode = "clear";
+        const cleared = await sql<{ clear_mute: number }>`
+          SELECT "user".clear_mute(
             ${sql.val(userId)}::uuid,
-            ${sql.val(archiveSimilarPrevSeed)}::uuid
-          ) AS clear_auto_archive
+            ${sql.val(mutePrevSeed)}::uuid
+          ) AS clear_mute
         `.execute(trx);
-        archiveSimilarAffected =
-          cleared.rows[0]?.clear_auto_archive ?? 0;
+        muteAffected = cleared.rows[0]?.clear_mute ?? 0;
       }
     }
 
@@ -622,27 +617,27 @@ threads.post("/sync/threads", async (c) => {
                        AND user_moved = FALSE`.execute(trx);
         }
 
-        // "Archive threads like this": after classification settles, check
-        // whether the newly synced thread matches any of the user's active
-        // auto-archive rules. The SQL function no-ops on threads already
-        // archived/flagged, so re-runs are safe.
+        // "Skip active for threads like this": after classification settles,
+        // check whether the newly synced thread matches any of the user's
+        // active mute rules. The SQL function no-ops on threads already
+        // archived/muted, so re-runs are safe.
         try {
-          const auto = await sql<{ apply_auto_archive_for_new_thread: string | null }>`
-            SELECT "user".apply_auto_archive_for_new_thread(
+          const auto = await sql<{ apply_mute_for_new_thread: string | null }>`
+            SELECT "user".apply_mute_for_new_thread(
               ${sql.val(userId)}::uuid,
               ${sql.val(upsertResult.id)}::uuid
-            ) AS apply_auto_archive_for_new_thread
+            ) AS apply_mute_for_new_thread
           `.execute(trx);
-          const matchedSeed = auto.rows[0]?.apply_auto_archive_for_new_thread;
+          const matchedSeed = auto.rows[0]?.apply_mute_for_new_thread;
           if (matchedSeed) {
-            c.var.tracker.capture("archive_similar_threads_match", {
+            c.var.tracker.capture("mute_similar_threads_match", {
               seed_thread_id: matchedSeed,
               new_thread_id: upsertResult.id,
             });
           }
         } catch (autoErr) {
           console.error(
-            "[sync/threads] apply_auto_archive_for_new_thread failed:",
+            "[sync/threads] apply_mute_for_new_thread failed:",
             autoErr
           );
           c.var.tracker.captureException(autoErr as Error);
@@ -789,19 +784,19 @@ threads.post("/sync/threads", async (c) => {
     }
   }
 
-  // Fire PostHog events for the "Archive threads like this" rule lifecycle.
-  // The match-on-new-thread event is fired inline above (inside the
-  // auto-classify branch) since it depends on the matched seed.
-  if (archiveSimilarMode === "apply" && result) {
-    c.var.tracker.capture("archive_similar_threads", {
+  // Fire PostHog events for the mute rule lifecycle. The match-on-new-thread
+  // event is fired inline above (inside the auto-classify branch) since it
+  // depends on the matched seed.
+  if (muteMode === "apply" && result) {
+    c.var.tracker.capture("mute_similar_threads", {
       seed_thread_id: result.id,
-      archived_count: archiveSimilarAffected,
+      muted_count: muteAffected,
       match_method: "channel+author+title_or_embedding",
     });
-  } else if (archiveSimilarMode === "clear" && archiveSimilarPrevSeed) {
-    c.var.tracker.capture("archive_similar_threads_clear", {
-      seed_thread_id: archiveSimilarPrevSeed,
-      unarchived_count: archiveSimilarAffected,
+  } else if (muteMode === "clear" && mutePrevSeed) {
+    c.var.tracker.capture("mute_similar_threads_clear", {
+      seed_thread_id: mutePrevSeed,
+      unmuted_count: muteAffected,
     });
   }
 

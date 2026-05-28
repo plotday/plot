@@ -12,7 +12,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool showArchived = false,
-    bool autoArchiveOnly = false,
+    bool muteOnly = false,
     AgendaModel agenda = AgendaModel.empty,
     List<AgendaItem>? agendaItems,
     bool agendaDoneEnd = false,
@@ -52,7 +52,7 @@ class PriorityState extends Equatable {
       agendaDoneEnd: agendaDoneEnd,
       agendaLoaded: agendaLoaded,
       showArchived: showArchived,
-      autoArchiveOnly: autoArchiveOnly,
+      muteOnly: muteOnly,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
       reactionFilter: reactionFilter.isNotEmpty
           ? List.unmodifiable(reactionFilter)
@@ -100,7 +100,7 @@ class PriorityState extends Equatable {
     this.agendaDoneEnd = false,
     this.agendaLoaded = false,
     this.showArchived = false,
-    this.autoArchiveOnly = false,
+    this.muteOnly = false,
     this.filter = const [],
     this.reactionFilter = const [],
     this.search = '',
@@ -129,12 +129,13 @@ class PriorityState extends Equatable {
   final Note draftNote;
   final bool showArchived;
 
-  /// When true (and [showArchived] is also true), the archived view is
-  /// filtered down to threads carrying an `auto_archived_by_thread_id`
-  /// flag — i.e. only threads swept up by an "Archive threads like this"
-  /// rule. Lets users find and toggle the rule from the archive view.
-  /// In-memory only; resets to false on bloc rebuild.
-  final bool autoArchiveOnly;
+  /// When true, the activity feed is filtered down to threads carrying a
+  /// `mute_by_thread_id` flag — i.e. only threads swept up by a "Skip
+  /// active for threads like this" rule. Lets users find and toggle the
+  /// rule from the normal (non-archived) view since muted threads now
+  /// land in Done, not Archive. In-memory only; resets to false on bloc
+  /// rebuild.
+  final bool muteOnly;
 
   /// Block-aware view of the agenda. Source of truth going forward; the
   /// flat [agendaItems] is held alongside during the migration so legacy
@@ -206,13 +207,12 @@ class PriorityState extends Equatable {
   bool get doneEnd => agendaDoneEnd;
 
   /// The activity feed items as the user should see them — equal to
-  /// [activityFeedItems] except when [autoArchiveOnly] is on, in which
-  /// case the view is filtered down to threads carrying an
-  /// `auto_archived_by_thread_id` flag (with empty section headers
-  /// suppressed).
+  /// [activityFeedItems] except when [muteOnly] is on, in which case the
+  /// view is filtered down to threads carrying a `mute_by_thread_id`
+  /// flag (with empty section headers suppressed).
   List<AgendaItem> get activityFeedViewItems {
-    if (!autoArchiveOnly) return activityFeedItems;
-    bool keep(Thread t) => t.autoArchivedByThreadId != null;
+    if (!muteOnly) return activityFeedItems;
+    bool keep(Thread t) => t.muteByThreadId != null;
     final result = <AgendaItem>[];
     final pendingHeaders = <AgendaHeaderItem>[];
     for (final item in activityFeedItems) {
@@ -1184,7 +1184,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool? showArchived,
-    bool? autoArchiveOnly,
+    bool? muteOnly,
     AgendaModel? agenda,
     List<AgendaItem>? agendaItems,
     bool? agendaDoneEnd,
@@ -1216,7 +1216,7 @@ class PriorityState extends Equatable {
       draft: draft ?? this.draft,
       draftNote: draftNote ?? this.draftNote,
       showArchived: showArchived ?? this.showArchived,
-      autoArchiveOnly: autoArchiveOnly ?? this.autoArchiveOnly,
+      muteOnly: muteOnly ?? this.muteOnly,
       agenda: agenda ?? this.agenda,
       agendaItems: agendaItems ?? this.agendaItems,
       agendaDoneEnd: agendaDoneEnd ?? this.agendaDoneEnd,
@@ -1278,7 +1278,7 @@ class PriorityState extends Equatable {
     draft,
     draftNote,
     showArchived,
-    autoArchiveOnly,
+    muteOnly,
     agenda,
     agendaItems,
     agendaDoneEnd,

@@ -56,15 +56,18 @@ CREATE TABLE "public"."thread_priority" (
     -- twist_instance → thread → thread_priority anyway, so a stale marker
     -- is unreachable in practice.
     "applied_default_channel_id" bigint,
-    -- "Archive threads like this": per-user auto-archive rule.
-    --   NULL                 — not auto-archived.
+    -- "Skip active for threads like this": per-user mute rule.
+    --   NULL                 — not muted.
     --   = thread_id (self)   — this is the seed (user invoked the command on it).
-    --   = some other id      — auto-archived because it matched the rule
-    --                          established by that seed thread.
-    -- Setting this also requires archived_at to be set; clearing it via the
-    -- broom-toggle path unarchives. ON DELETE SET NULL so deleting the seed
-    -- (rare — threads are archived, not deleted) cleanly orphans dependents.
-    "auto_archived_by_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL,
+    --   = some other id      — muted because it matched the rule established
+    --                          by that seed thread.
+    -- The rule's action is read+inactive (apply_mute), not archive. The seed
+    -- and matching candidates are stamped as read in thread_state and active
+    -- is forced off so they land in the Done section instead of Doing.
+    -- Generic name (`mute`) so future tweaks to the rule action don't require
+    -- another rename. ON DELETE SET NULL so deleting the seed (rare — threads
+    -- are archived, not deleted) cleanly orphans dependents.
+    "mute_by_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("thread_id", "user_id"),
     -- Both NULL is unrecoverable: the row would be invisible to user

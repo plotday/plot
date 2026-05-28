@@ -2388,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 343;
+  int get schemaVersion => 344;
 
   @override
   MigrationStrategy get migration {
@@ -3476,11 +3476,18 @@ class Store extends _$Store {
       }
     }
     if (from < 333) {
-      // "Archive threads like this": per-user flag mirrored from
-      // thread_priority.auto_archived_by_thread_id on the server. Shows the
-      // broom indicator on archived rows and lets the client filter the
-      // archived view down to auto-archived threads.
-      await _safeAddColumn(m, threads, threads.autoArchivedByThreadId);
+      // Historic add for the per-user rule anchor (then called
+      // "auto_archived_by_thread_id"; later renamed to "mute_by_thread_id"
+      // at v344 to match server-side rename). Add via raw SQL with the
+      // original column name so the v333 → v344 sequence renames it
+      // consistently across all upgrade paths.
+      try {
+        await m.database.customStatement(
+          'ALTER TABLE threads ADD COLUMN auto_archived_by_thread_id BLOB',
+        );
+      } catch (e) {
+        if (!e.toString().contains('duplicate column')) rethrow;
+      }
     }
     if (from < 334) {
       // Access-loss tombstone column: when the server emits a row from
@@ -3676,6 +3683,26 @@ class Store extends _$Store {
         await m.database.customStatement(
           "UPDATE $tbl SET tags = NULL WHERE tags = '{}'",
         );
+      }
+    }
+    if (from < 344) {
+      // Rename `auto_archived_by_thread_id` → `mute_by_thread_id` to match
+      // the server-side rename (Skip active for threads like this). Wrapped
+      // in a try/catch because SQLite reports the rename as a no-op when
+      // the source column has already been removed by a previous partial
+      // upgrade.
+      try {
+        await m.database.customStatement(
+          'ALTER TABLE threads '
+          'RENAME COLUMN auto_archived_by_thread_id TO mute_by_thread_id',
+        );
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        // Already renamed or column doesn't exist on this client → no-op.
+        if (!msg.contains('no such column') &&
+            !msg.contains('duplicate column')) {
+          rethrow;
+        }
       }
     }
   }

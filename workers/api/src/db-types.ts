@@ -816,12 +816,12 @@ export interface ThreadAssociation {
 export interface ThreadPriority {
   applied_default_channel_id: Int8 | null;
   archived_at: Timestamp | null;
-  auto_archived_by_thread_id: string | null;
   /**
    * Timestamp when classification was last requested. NULL once classification has succeeded. NOT NULL signals the consumer Worker (workers/classify) to (re-)classify this row.
    */
   classify_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  mute_by_thread_id: string | null;
   /**
    * User's priority filing. NULL means classification is pending (see classify_at). Views must use COALESCE(priority_id, root_priority_id(user_id)) gated by the visibility filter (priority_id IS NOT NULL OR classify_at < now() - classify_visibility_window()).
    */
@@ -956,6 +956,7 @@ export interface Twist {
   description: string | null;
   environment: Generated<TwistEnvironment>;
   execution_limit: number | null;
+  handle: string;
   id: Generated<Int8>;
   is_source: Generated<boolean>;
   key_option: string | null;
@@ -966,7 +967,9 @@ export interface Twist {
   options_schema: Json | null;
   permissions: Json | null;
   publisher_id: Int8 | null;
+  seq: Generated<string>;
   shared: Generated<boolean>;
+  thread_type: string | null;
   twist_package_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
@@ -1633,7 +1636,6 @@ export interface UserThread {
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
-  auto_archived_by_thread_id: string | null;
   bumped_at: Timestamp | null;
   contact_meta: Json | null;
   contacts: string[] | null;
@@ -1647,6 +1649,7 @@ export interface UserThread {
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
   merged_into_thread_id: string | null;
+  mute_by_thread_id: string | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
@@ -1695,7 +1698,6 @@ export interface UserThreadRedacted {
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
-  auto_archived_by_thread_id: string | null;
   bumped_at: Timestamp | null;
   contact_meta: Json | null;
   contacts: string[] | null;
@@ -1709,6 +1711,7 @@ export interface UserThreadRedacted {
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
   merged_into_thread_id: string | null;
+  mute_by_thread_id: string | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
@@ -1746,6 +1749,7 @@ export interface UserTwist {
   created_at: Timestamp | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
+  handle: string | null;
   id: string | null;
   is_builtin: boolean | null;
   is_source: boolean | null;
@@ -1760,6 +1764,7 @@ export interface UserTwist {
   seq: string | null;
   shared: boolean | null;
   team_id: Int8 | null;
+  thread_type: string | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;

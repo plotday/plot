@@ -1,11 +1,11 @@
--- Title normalizer for "Archive threads like this" similarity matching.
+-- Title normalizer for "Skip active for threads like this" similarity matching.
 --
 -- Strips conversational/threading prefixes (Re:/Fwd:/Fw:, any nesting and any
 -- case), trailing counter suffixes (e.g. "(3)", "[12]", "#4"), and collapses
 -- whitespace. Returns NULL for NULL/empty/whitespace-only input so callers
 -- can treat "no title" as a non-match without extra guards.
 --
--- Used by user.find_auto_archive_candidates to compute a comparable canonical
+-- Used by user.find_mute_candidates to compute a comparable canonical
 -- form of two threads' titles so a newsletter whose subject varies only by
 -- issue number ("Weekly Digest (47)" vs "Weekly Digest (48)") still matches.
 CREATE OR REPLACE FUNCTION public.normalize_title (t text)

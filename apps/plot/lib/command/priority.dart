@@ -898,11 +898,10 @@ List<Command> currentPriorityCommands(
 }) => [
   ...prioritySecondaryCommands(priority),
   if (context != null) ToggleArchivedVisibility(context: context),
-  // Surface the broom-only filter alongside Show archived, but only when
-  // the archived view is currently on. Hidden otherwise so it doesn't
-  // clutter the menu with a no-op toggle.
-  if (context != null && context.read<PriorityBloc>().state.showArchived)
-    ToggleAutoArchiveFilter(context: context),
+  // Broom filter: show only muted threads so users can find the rules
+  // they've set and un-mute. Available in both regular and archived views
+  // since the filter applies to mute_by_thread_id across all threads.
+  if (context != null) ToggleMuteFilter(context: context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),
@@ -971,37 +970,33 @@ class ToggleShowArchived extends Command {
   }
 }
 
-/// Toggle the broom "Auto-archive" filter inside the archived view. When
-/// on, the activity feed is restricted to threads carrying an
-/// `auto_archived_by_thread_id` flag — the ones an "Archive threads like
+/// Toggle the broom "Muted only" filter on the unified feed. When on,
+/// the activity feed is restricted to threads carrying a
+/// `mute_by_thread_id` flag — the ones a "Skip active for threads like
 /// this" rule swept. Surfaced as a filter chip so users can find and
-/// toggle existing rules. Available only while [showArchived] is on.
-class ToggleAutoArchiveFilter extends Command {
-  ToggleAutoArchiveFilter._({required this.showingAutoArchiveOnly})
+/// toggle existing rules from anywhere in the feed.
+class ToggleMuteFilter extends Command {
+  ToggleMuteFilter._({required this.showingMuteOnly})
     : super(
-        title: showingAutoArchiveOnly
-            ? 'Show all archived'
-            : 'Show auto-archive only',
-        subtitle: showingAutoArchiveOnly
-            ? 'Show every archived thread'
-            : 'Show only threads filed by an auto-archive rule',
-        eventObject: EventObject.archived,
-        eventAction: EventAction.viewed,
+        title: showingMuteOnly ? 'Show all' : 'Show muted only',
+        subtitle: showingMuteOnly
+            ? 'Show every thread in this feed'
+            : 'Show only threads filed under a mute rule',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.filtered,
         icon: PlotIcon.broom,
       );
 
-  factory ToggleAutoArchiveFilter({required BuildContext context}) {
+  factory ToggleMuteFilter({required BuildContext context}) {
     final state = context.read<PriorityBloc>().state;
-    return ToggleAutoArchiveFilter._(
-      showingAutoArchiveOnly: state.autoArchiveOnly,
-    );
+    return ToggleMuteFilter._(showingMuteOnly: state.muteOnly);
   }
 
-  final bool showingAutoArchiveOnly;
+  final bool showingMuteOnly;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    context.read<PriorityBloc>().toggleAutoArchiveOnly();
+    context.read<PriorityBloc>().toggleMuteOnly();
     return const CommandDone();
   }
 }

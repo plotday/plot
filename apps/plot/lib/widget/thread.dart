@@ -481,12 +481,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               TextSpan(
                                 children: [
                                   // Broom indicator for threads swept up by
-                                  // an "Archive threads like this" rule.
-                                  // Surfaced only on archived rows so it
-                                  // appears in the archived view where the
-                                  // user can act on the rule.
-                                  if (activity.archivedAt != null &&
-                                      activity.autoArchivedByThreadId != null)
+                                  // a "Skip active for threads like this"
+                                  // mute rule. Surfaced on any muted thread
+                                  // so the user can identify rule-anchored
+                                  // rows in the unified feed.
+                                  if (activity.muteByThreadId != null)
                                     WidgetSpan(
                                       alignment: PlaceholderAlignment.middle,
                                       child: Padding(
@@ -790,11 +789,11 @@ class ThreadCommands extends HookWidget {
     if (showCommands) {
       allButtons = [
         ...threadCommandButtons.take(5),
-        // "Archive threads like this" sits immediately before the
-        // overflow menu so it's always reachable on hover. Title and
-        // event semantics flip based on whether the thread already
-        // carries the auto-archive flag.
-        Button.icon(ArchiveSimilarThreads(activity)),
+        // "Skip active for threads like this" sits immediately before the
+        // overflow menu so it's always reachable on hover. Title and event
+        // semantics flip based on whether the thread already carries the
+        // mute flag.
+        Button.icon(MuteSimilarThreads(activity)),
         // Always add ShowThreadCommands as the 6th button
         Button.icon(
           CommandWrapper(
@@ -807,14 +806,16 @@ class ThreadCommands extends HookWidget {
         ?trailingShareButton,
       ];
     } else {
-      // Task list / Reading list toggles are treated like enabled tags:
-      // when the underlying flag is set, the icon stays visible even
+      // Task list / Reading list / Mute toggles are treated like enabled
+      // tags: when the underlying flag is set, the icon stays visible even
       // when the row isn't hovered (hover surfaces the full command set,
-      // including these — so no duplication). Both render in the accent
+      // including these — so no duplication). All render in the accent
       // color since they only appear in their on-state here.
       allButtons = [
         if (activity.task) buildCommandButton(ToggleThreadTask(activity)),
         if (activity.toRead) buildCommandButton(ToggleThreadToRead(activity)),
+        if (activity.muteByThreadId != null)
+          buildCommandButton(MuteSimilarThreads(activity)),
       ];
     }
 

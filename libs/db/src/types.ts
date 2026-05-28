@@ -2169,9 +2169,9 @@ export type Database = {
         Row: {
           applied_default_channel_id: number | null
           archived_at: string | null
-          auto_archived_by_thread_id: string | null
           classify_at: string | null
           created_at: string
+          mute_by_thread_id: string | null
           priority_id: string | null
           revoked_at: string | null
           seq: unknown
@@ -2183,9 +2183,9 @@ export type Database = {
         Insert: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
-          auto_archived_by_thread_id?: string | null
           classify_at?: string | null
           created_at?: string
+          mute_by_thread_id?: string | null
           priority_id?: string | null
           revoked_at?: string | null
           seq?: unknown
@@ -2197,9 +2197,9 @@ export type Database = {
         Update: {
           applied_default_channel_id?: number | null
           archived_at?: string | null
-          auto_archived_by_thread_id?: string | null
           classify_at?: string | null
           created_at?: string
+          mute_by_thread_id?: string | null
           priority_id?: string | null
           revoked_at?: string | null
           seq?: unknown
@@ -2210,14 +2210,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread_x"
             referencedColumns: ["id"]
           },
@@ -5381,7 +5381,6 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
-          auto_archived_by_thread_id: string | null
           bumped_at: string | null
           contact_meta: Json | null
           contacts: string[] | null
@@ -5395,6 +5394,7 @@ export type Database = {
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           merged_into_thread_id: string | null
+          mute_by_thread_id: string | null
           preview: string | null
           priority_id: string | null
           priority_path: unknown
@@ -5439,26 +5439,26 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread_reactions"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread_redacted"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_priority_auto_archived_by_thread_id_fkey"
-            columns: ["auto_archived_by_thread_id"]
+            foreignKeyName: "thread_priority_mute_by_thread_id_fkey"
+            columns: ["mute_by_thread_id"]
             referencedRelation: "thread_tags"
             referencedColumns: ["id"]
           },
@@ -5566,7 +5566,6 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
-          auto_archived_by_thread_id: string | null
           bumped_at: string | null
           contact_meta: Json | null
           contacts: string[] | null
@@ -5580,6 +5579,7 @@ export type Database = {
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           merged_into_thread_id: string | null
+          mute_by_thread_id: string | null
           preview: string | null
           priority_id: string | null
           priority_path: unknown
@@ -5734,11 +5734,11 @@ export type Database = {
       }
     }
     Functions: {
-      apply_auto_archive: {
+      apply_mute: {
         Args: { p_seed_thread_id: string; p_user_id: string }
         Returns: number
       }
-      apply_auto_archive_for_new_thread: {
+      apply_mute_for_new_thread: {
         Args: { p_thread_id: string; p_user_id: string }
         Returns: string
       }
@@ -5747,7 +5747,7 @@ export type Database = {
         Returns: undefined
       }
       canonical_contact_id: { Args: { p_contact_id: string }; Returns: string }
-      clear_auto_archive: {
+      clear_mute: {
         Args: { p_seed_thread_id: string; p_user_id: string }
         Returns: number
       }
@@ -5764,7 +5764,7 @@ export type Database = {
         Args: { p_thread_id: string; user_id: string }
         Returns: undefined
       }
-      find_auto_archive_candidates: {
+      find_mute_candidates: {
         Args: { p_seed_thread_id: string; p_user_id: string }
         Returns: string[]
       }

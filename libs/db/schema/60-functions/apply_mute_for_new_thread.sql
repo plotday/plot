@@ -1,13 +1,13 @@
--- Check a newly synced/classified thread against the user's active
--- auto-archive rules. If it matches one of them, archive it and stamp the
--- seed reference so the broom-toggle-off path can still reverse it.
+-- Check a newly synced/classified thread against the user's active mute
+-- rules. If it matches one of them, stamp the seed reference and mark the
+-- thread read + inactive so it lands in Done rather than Doing.
 --
 -- Called from the API right after classify_thread_for_user (see
 -- workers/api/src/app/sync/threads.ts).
 --
 -- Returns the seed id that matched (so callers can log it), or NULL when
 -- no rule matched.
-CREATE OR REPLACE FUNCTION "user".apply_auto_archive_for_new_thread (
+CREATE OR REPLACE FUNCTION "user".apply_mute_for_new_thread (
     p_user_id uuid,
     p_thread_id uuid
 )
@@ -19,14 +19,14 @@ DECLARE
     v_match boolean;
 BEGIN
     -- Skip if the thread is already archived (don't reapply on top of an
-    -- explicit user action) or if it's itself a seed.
+    -- explicit user action) or if it's itself a seed / already muted.
     IF EXISTS (
         SELECT 1
         FROM public.thread_priority tp
         WHERE tp.thread_id = p_thread_id
           AND tp.user_id = p_user_id
           AND (tp.archived_at IS NOT NULL
-               OR tp.auto_archived_by_thread_id IS NOT NULL)
+               OR tp.mute_by_thread_id IS NOT NULL)
     ) THEN
         RETURN NULL;
     END IF;
@@ -38,24 +38,35 @@ BEGIN
         SELECT tp.thread_id
         FROM public.thread_priority tp
         WHERE tp.user_id = p_user_id
-          AND tp.auto_archived_by_thread_id = tp.thread_id
+          AND tp.mute_by_thread_id = tp.thread_id
         ORDER BY tp.updated_at DESC
     LOOP
         -- Does the new thread match this seed's criteria?
         SELECT EXISTS (
             SELECT 1
-            FROM "user".find_auto_archive_candidates(p_user_id, v_seed_id) cid
+            FROM "user".find_mute_candidates(p_user_id, v_seed_id) cid
             WHERE cid = p_thread_id
         )
         INTO v_match;
 
         IF v_match THEN
             UPDATE public.thread_priority tp
-            SET archived_at = COALESCE(tp.archived_at, now()),
-                auto_archived_by_thread_id = v_seed_id,
+            SET mute_by_thread_id = v_seed_id,
                 updated_at = now()
             WHERE tp.thread_id = p_thread_id
               AND tp.user_id = p_user_id;
+
+            -- Mark read + inactive so the thread surfaces in Done.
+            INSERT INTO public.thread_state (
+                user_id, thread_id, active, read_at
+            )
+            VALUES (p_user_id, p_thread_id, FALSE, now())
+            ON CONFLICT (user_id, thread_id)
+            DO UPDATE SET
+                active = FALSE,
+                read_at = COALESCE(thread_state.read_at, now()),
+                updated_at = now();
+
             RETURN v_seed_id;
         END IF;
     END LOOP;
@@ -64,5 +75,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION "user".apply_auto_archive_for_new_thread (uuid, uuid) IS
-    'Check a newly synced thread against the user''s active auto-archive seeds. If it matches one, archive it and stamp the seed reference. Returns the matching seed id or NULL. No-ops on threads already archived/flagged.';
+COMMENT ON FUNCTION "user".apply_mute_for_new_thread (uuid, uuid) IS
+    'Check a newly synced thread against the user''s active mute seeds. If it matches one, stamp the seed reference and mark the thread read + inactive. Returns the matching seed id or NULL. No-ops on threads already archived/muted.';

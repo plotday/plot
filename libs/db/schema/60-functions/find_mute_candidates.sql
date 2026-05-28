@@ -1,8 +1,8 @@
--- Find threads that match a seed thread's "Archive threads like this" rule.
+-- Find threads that match a seed thread's "Skip active for threads like this" rule.
 --
--- The seed defines an auto-archive rule for a specific user. We surface every
--- other thread the user can see that is currently not archived and matches
--- the seed on:
+-- The seed defines a mute rule for a specific user. We surface every other
+-- thread the user can see that is not currently archived, not already muted,
+-- and matches the seed on:
 --
 --   1. Channel — at least one link.channel_id in common.
 --   2. Author —
@@ -17,8 +17,8 @@
 --
 -- Returns nothing when the seed lacks enough signal (no channel, OR neither
 -- author nor topic). The caller treats an empty set as "no fan-out" — the
--- seed still gets its own archive applied separately.
-CREATE OR REPLACE FUNCTION "user".find_auto_archive_candidates (
+-- seed still gets its own mute applied separately.
+CREATE OR REPLACE FUNCTION "user".find_mute_candidates (
     p_user_id uuid,
     p_seed_thread_id uuid
 )
@@ -76,6 +76,7 @@ BEGIN
         ON tp.thread_id = t.id
        AND tp.user_id = p_user_id
        AND tp.archived_at IS NULL
+       AND tp.mute_by_thread_id IS NULL
     WHERE t.id <> p_seed_thread_id
       AND t.archived_at IS NULL
       AND (t.draft = FALSE OR t.created_by = p_user_id)
@@ -108,5 +109,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION "user".find_auto_archive_candidates (uuid, uuid) IS
-    'Returns thread ids the given user can see and that match the seed thread''s auto-archive rule (same channel + same link author (or topic when no link author) + similar title or embedding).';
+COMMENT ON FUNCTION "user".find_mute_candidates (uuid, uuid) IS
+    'Returns thread ids the given user can see and that match the seed thread''s mute rule (same channel + same link author (or topic when no link author) + similar title or embedding). Excludes threads already muted.';

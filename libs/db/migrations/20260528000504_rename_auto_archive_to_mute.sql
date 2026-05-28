@@ -1,37 +1,5 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -631,4 +599,449 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+-- Create "find_mute_candidates" function
+CREATE FUNCTION "user"."find_mute_candidates" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS SETOF uuid LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_seed_channels text[];
+    v_seed_author uuid;
+    v_seed_topic text;
+    v_seed_title_norm text;
+    v_seed_embedding public.halfvec;
+    v_user_contacts uuid[];
+    v_user_groups uuid[];
+BEGIN
+    -- Collect distinct channel ids across all links on the seed thread.
+    SELECT array_agg(DISTINCT l.channel_id)
+    INTO v_seed_channels
+    FROM public.link l
+    WHERE l.thread_id = p_seed_thread_id
+      AND l.channel_id IS NOT NULL;
+
+    -- Seed must have at least one channel signal — otherwise we can't
+    -- bound the rule and a runaway match would surprise the user.
+    IF v_seed_channels IS NULL OR cardinality(v_seed_channels) = 0 THEN
+        RETURN;
+    END IF;
+
+    -- Pick the seed's link author (first non-null wins; usually only one).
+    SELECT l.author_id
+    INTO v_seed_author
+    FROM public.link l
+    WHERE l.thread_id = p_seed_thread_id
+      AND l.author_id IS NOT NULL
+    LIMIT 1;
+
+    SELECT t.topic, t.embedding, public.normalize_title(t.title)
+    INTO v_seed_topic, v_seed_embedding, v_seed_title_norm
+    FROM public.thread t
+    WHERE t.id = p_seed_thread_id;
+
+    -- Need either author (from a link) or topic to identify the sender side.
+    IF v_seed_author IS NULL AND v_seed_topic IS NULL THEN
+        RETURN;
+    END IF;
+
+    v_user_contacts := "user".user_contact_ids(p_user_id);
+    v_user_groups := "user".user_group_ids(p_user_id);
+
+    RETURN QUERY
+    SELECT t.id
+    FROM public.thread t
+    JOIN public.thread_priority tp
+        ON tp.thread_id = t.id
+       AND tp.user_id = p_user_id
+       AND tp.archived_at IS NULL
+       AND tp.mute_by_thread_id IS NULL
+    WHERE t.id <> p_seed_thread_id
+      AND t.archived_at IS NULL
+      AND (t.draft = FALSE OR t.created_by = p_user_id)
+      AND (t.contacts && v_user_contacts OR t.groups && v_user_groups)
+      -- Channel match (required).
+      AND EXISTS (
+          SELECT 1
+          FROM public.link l
+          WHERE l.thread_id = t.id
+            AND l.channel_id = ANY (v_seed_channels)
+      )
+      -- Author OR topic match.
+      AND (
+          (v_seed_author IS NOT NULL AND EXISTS (
+              SELECT 1
+              FROM public.link l
+              WHERE l.thread_id = t.id
+                AND l.author_id = v_seed_author
+          ))
+          OR (v_seed_author IS NULL AND v_seed_topic IS NOT NULL AND t.topic = v_seed_topic)
+      )
+      -- Content match: normalized title OR embedding similarity.
+      AND (
+          (v_seed_title_norm IS NOT NULL
+           AND public.normalize_title(t.title) = v_seed_title_norm)
+          OR (v_seed_embedding IS NOT NULL
+              AND t.embedding IS NOT NULL
+              AND (t.embedding <=> v_seed_embedding) <= 0.15)
+      );
+END;
+$$;
+-- Set comment to function: "find_mute_candidates"
+COMMENT ON FUNCTION "user"."find_mute_candidates" IS 'Returns thread ids the given user can see and that match the seed thread''s mute rule (same channel + same link author (or topic when no link author) + similar title or embedding). Excludes threads already muted.';
+-- Create "apply_mute" function
+CREATE FUNCTION "user"."apply_mute" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_affected integer := 0;
+    v_candidate_ids uuid[];
+    v_lock_ids uuid[];
+BEGIN
+    -- Collect candidate ids up front. Materializing them (rather than
+    -- streaming the SETOF into the INSERT below) lets us:
+    --   1. Pre-lock the parent thread rows in a deterministic order, and
+    --   2. Drive the thread_priority upsert from a sortable array.
+    SELECT COALESCE(array_agg(cid), ARRAY[]::uuid[])
+    INTO v_candidate_ids
+    FROM "user".find_mute_candidates(p_user_id, p_seed_thread_id) cid;
+
+    -- Lock every thread we're about to touch — the seed plus the fan-out
+    -- candidates — in ascending id order. upsert_thread always locks
+    -- thread → thread_priority in that order; taking the locks here in
+    -- the same order avoids deadlocks with concurrent upsert_thread.
+    SELECT COALESCE(array_agg(DISTINCT id ORDER BY id), ARRAY[]::uuid[])
+    INTO v_lock_ids
+    FROM unnest(v_candidate_ids || ARRAY[p_seed_thread_id]) AS id
+    WHERE id IS NOT NULL;
+
+    IF cardinality(v_lock_ids) > 0 THEN
+        PERFORM 1
+        FROM public.thread t
+        WHERE t.id = ANY(v_lock_ids)
+        ORDER BY t.id
+        FOR NO KEY UPDATE;
+    END IF;
+
+    -- Stamp the seed's thread_priority row. We use ON CONFLICT DO UPDATE
+    -- rather than a bare UPDATE so a user who somehow lacks a
+    -- thread_priority row for the seed still gets the rule recorded;
+    -- that's unusual but cheap to handle.
+    INSERT INTO public.thread_priority (
+        thread_id, user_id, priority_id, mute_by_thread_id
+    )
+    VALUES (
+        p_seed_thread_id,
+        p_user_id,
+        "user".root_priority_id(p_user_id),
+        p_seed_thread_id
+    )
+    ON CONFLICT ON CONSTRAINT thread_priority_pkey
+    DO UPDATE SET
+        mute_by_thread_id = p_seed_thread_id,
+        updated_at = now();
+
+    -- Mark the seed read and inactive so it moves to Done immediately.
+    INSERT INTO public.thread_state (
+        user_id, thread_id, active, read_at
+    )
+    VALUES (p_user_id, p_seed_thread_id, FALSE, now())
+    ON CONFLICT (user_id, thread_id)
+    DO UPDATE SET
+        active = FALSE,
+        read_at = COALESCE(thread_state.read_at, now()),
+        updated_at = now();
+
+    -- Fan out to candidates. INSERT then ON CONFLICT update so candidates
+    -- without a thread_priority row (rare — typically every visible thread
+    -- has one) also pick up the flag. ORDER BY thread_id makes the lock
+    -- acquisition on thread_priority deterministic across concurrent
+    -- apply_mute calls (same user, different seeds with overlapping
+    -- candidates) so they can't deadlock with each other.
+    IF cardinality(v_candidate_ids) > 0 THEN
+        WITH upserted AS (
+            INSERT INTO public.thread_priority (
+                thread_id, user_id, priority_id, mute_by_thread_id
+            )
+            SELECT c.thread_id,
+                   p_user_id,
+                   "user".root_priority_id(p_user_id),
+                   p_seed_thread_id
+            FROM unnest(v_candidate_ids) AS c(thread_id)
+            ORDER BY c.thread_id
+            ON CONFLICT ON CONSTRAINT thread_priority_pkey
+            DO UPDATE SET
+                mute_by_thread_id = p_seed_thread_id,
+                updated_at = now()
+            RETURNING thread_id
+        )
+        SELECT count(*)::int INTO v_affected FROM upserted;
+
+        -- Mark every candidate read and inactive.
+        INSERT INTO public.thread_state (user_id, thread_id, active, read_at)
+        SELECT p_user_id, c.thread_id, FALSE, now()
+        FROM unnest(v_candidate_ids) AS c(thread_id)
+        ORDER BY c.thread_id
+        ON CONFLICT (user_id, thread_id)
+        DO UPDATE SET
+            active = FALSE,
+            read_at = COALESCE(thread_state.read_at, now()),
+            updated_at = now();
+    END IF;
+
+    RETURN v_affected;
+END;
+$$;
+-- Set comment to function: "apply_mute"
+COMMENT ON FUNCTION "user"."apply_mute" IS 'Apply the "Skip active for threads like this" mute rule anchored at p_seed_thread_id for p_user_id. Stamps mute_by_thread_id=seed and marks read+inactive in thread_state for both the seed and every candidate (per find_mute_candidates). Returns affected candidate count.';
+-- Create "apply_mute_for_new_thread" function
+CREATE FUNCTION "user"."apply_mute_for_new_thread" ("p_user_id" uuid, "p_thread_id" uuid) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+    v_seed_id uuid;
+    v_match boolean;
+BEGIN
+    -- Skip if the thread is already archived (don't reapply on top of an
+    -- explicit user action) or if it's itself a seed / already muted.
+    IF EXISTS (
+        SELECT 1
+        FROM public.thread_priority tp
+        WHERE tp.thread_id = p_thread_id
+          AND tp.user_id = p_user_id
+          AND (tp.archived_at IS NOT NULL
+               OR tp.mute_by_thread_id IS NOT NULL)
+    ) THEN
+        RETURN NULL;
+    END IF;
+
+    -- Iterate over the user's seed rows (self-referencing ones). Typically
+    -- a small set per user. Pick the most recently activated rule first so
+    -- newer seeds win when several would match.
+    FOR v_seed_id IN
+        SELECT tp.thread_id
+        FROM public.thread_priority tp
+        WHERE tp.user_id = p_user_id
+          AND tp.mute_by_thread_id = tp.thread_id
+        ORDER BY tp.updated_at DESC
+    LOOP
+        -- Does the new thread match this seed's criteria?
+        SELECT EXISTS (
+            SELECT 1
+            FROM "user".find_mute_candidates(p_user_id, v_seed_id) cid
+            WHERE cid = p_thread_id
+        )
+        INTO v_match;
+
+        IF v_match THEN
+            UPDATE public.thread_priority tp
+            SET mute_by_thread_id = v_seed_id,
+                updated_at = now()
+            WHERE tp.thread_id = p_thread_id
+              AND tp.user_id = p_user_id;
+
+            -- Mark read + inactive so the thread surfaces in Done.
+            INSERT INTO public.thread_state (
+                user_id, thread_id, active, read_at
+            )
+            VALUES (p_user_id, p_thread_id, FALSE, now())
+            ON CONFLICT (user_id, thread_id)
+            DO UPDATE SET
+                active = FALSE,
+                read_at = COALESCE(thread_state.read_at, now()),
+                updated_at = now();
+
+            RETURN v_seed_id;
+        END IF;
+    END LOOP;
+
+    RETURN NULL;
+END;
+$$;
+-- Set comment to function: "apply_mute_for_new_thread"
+COMMENT ON FUNCTION "user"."apply_mute_for_new_thread" IS 'Check a newly synced thread against the user''s active mute seeds. If it matches one, stamp the seed reference and mark the thread read + inactive. Returns the matching seed id or NULL. No-ops on threads already archived/muted.';
+-- Create "clear_mute" function
+CREATE FUNCTION "user"."clear_mute" ("p_user_id" uuid, "p_seed_thread_id" uuid) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_affected integer;
+    v_target_ids uuid[];
+BEGIN
+    -- Materialize the target thread ids first so we can lock the parent
+    -- thread rows in deterministic order (matching upsert_thread's
+    -- thread → thread_priority order). Concurrent upsert_thread on one
+    -- of the target threads would otherwise see clear_mute lock
+    -- thread_priority first; an AFTER UPDATE trigger could then need the
+    -- thread row already held by the other transaction and deadlock.
+    SELECT COALESCE(array_agg(tp.thread_id ORDER BY tp.thread_id), ARRAY[]::uuid[])
+    INTO v_target_ids
+    FROM public.thread_priority tp
+    WHERE tp.user_id = p_user_id
+      AND tp.mute_by_thread_id = p_seed_thread_id;
+
+    IF cardinality(v_target_ids) = 0 THEN
+        RETURN 0;
+    END IF;
+
+    PERFORM 1
+    FROM public.thread t
+    WHERE t.id = ANY(v_target_ids)
+    ORDER BY t.id
+    FOR NO KEY UPDATE;
+
+    WITH updated AS (
+        UPDATE public.thread_priority tp
+        SET mute_by_thread_id = NULL,
+            updated_at = now()
+        WHERE tp.user_id = p_user_id
+          AND tp.thread_id = ANY(v_target_ids)
+        RETURNING tp.thread_id
+    )
+    SELECT count(*)::int INTO v_affected FROM updated;
+
+    RETURN COALESCE(v_affected, 0);
+END;
+$$;
+-- Set comment to function: "clear_mute"
+COMMENT ON FUNCTION "user"."clear_mute" IS 'Reverse the "Skip active for threads like this" mute rule anchored at p_seed_thread_id for p_user_id. Clears mute_by_thread_id on every thread_priority row that was filed under the seed. Returns affected row count.';
+-- Rename the per-user rule-anchor column. Preserves existing data — rows
+-- previously archived under "Archive threads like this" keep their archive
+-- state and seed reference. PostgreSQL propagates the column reference into
+-- dependent view parse trees automatically, but the view's output column
+-- alias is stored separately and must be renamed with ALTER VIEW below.
+ALTER TABLE "public"."thread_priority" RENAME COLUMN "auto_archived_by_thread_id" TO "mute_by_thread_id";
+-- Rename the output column on user.thread to match the new schema-file
+-- definition. Required before CREATE OR REPLACE VIEW: that statement can
+-- add trailing columns but cannot rename existing ones.
+ALTER VIEW "user"."thread" RENAME COLUMN "auto_archived_by_thread_id" TO "mute_by_thread_id";
+-- Modify "thread" view
+CREATE OR REPLACE VIEW "user"."thread" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "seq",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "draft",
+  "contacts",
+  "contact_meta",
+  "groups",
+  "topic",
+  "title",
+  "preview",
+  "icon",
+  "merged_into_thread_id",
+  "has_embedding",
+  "mute_by_thread_id",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "bumped_at",
+  "unread",
+  "importance",
+  "active",
+  "task",
+  "to_read",
+  "urgent",
+  "state_order",
+  "state_on",
+  "state_at",
+  "activity_at",
+  "agenda_at",
+  "revoked"
+) AS WITH link_agg AS (
+         SELECT link.thread_id,
+            max(link.source_created_at) AS source_created_at
+           FROM public.link
+          GROUP BY link.thread_id
+        )
+ SELECT tp.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone), tp.updated_at, COALESCE(ts.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    GREATEST(a.seq, a.last_note_seq, tp.seq, COALESCE(ts.seq, '0'::xid8)) AS seq,
+    a.updated_by,
+    COALESCE(a.archived_at, tp.archived_at, upe.archived_at) AS archived_at,
+    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.contacts,
+    a.contact_meta,
+    a.groups,
+    a.topic,
+    a.title,
+    a.preview,
+    a.icon,
+    a.merged_into_thread_id,
+    a.embedding IS NOT NULL AS has_embedding,
+    tp.mute_by_thread_id,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    ts.bumped_at,
+    COALESCE(ts.read_at IS NULL AND ts.user_id IS NOT NULL, false) AS unread,
+    COALESCE(ts.importance, 0::smallint) AS importance,
+    COALESCE(ts.active, false) AS active,
+    COALESCE(ts.task, false) AS task,
+    COALESCE(ts.to_read, false) AS to_read,
+    ts.urgent,
+    ts."order" AS state_order,
+    ts."on" AS state_on,
+    ts.at AS state_at,
+    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ts.bumped_at, ( SELECT
+                CASE
+                    WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone) <= now() THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone)
+                    ELSE NULL::timestamp with time zone
+                END AS "case"
+           FROM public.schedule s_feed
+          WHERE s_feed.thread_id = a.id AND s_feed.occurrence IS NULL AND s_feed.archived_at IS NULL
+         LIMIT 1)), a.created_at) AS activity_at,
+    ( SELECT tstzrange(bounds.lo, GREATEST(bounds.lo, bounds.hi), '[]'::text) AS tstzrange
+           FROM ( SELECT COALESCE(LEAST(( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                          WHERE s_lo.thread_id = a.id AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1), COALESCE(lower(ts.at), lower(ts."on")::timestamp with time zone), ( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                             JOIN public.link l_lo ON l_lo.id = s_lo.link_id
+                          WHERE l_lo.thread_id = a.id AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1)), a.created_at) AS lo,
+                    COALESCE(
+                        CASE
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_rec
+                              WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL AND s_rec.recurrence_rule IS NOT NULL)) OR (EXISTS ( SELECT 1
+                               FROM public.schedule s_rec
+                                 JOIN public.link l_rec ON l_rec.id = s_rec.link_id
+                              WHERE l_rec.thread_id = a.id AND s_rec.archived_at IS NULL AND s_rec.recurrence_rule IS NOT NULL)) THEN 'infinity'::timestamp with time zone
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_ub
+                              WHERE s_ub.thread_id = a.id AND s_ub.archived_at IS NULL AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL) AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamp with time zone) IS NULL)) OR (EXISTS ( SELECT 1
+                               FROM public.schedule s_ub
+                                 JOIN public.link l_ub ON l_ub.id = s_ub.link_id
+                              WHERE l_ub.thread_id = a.id AND s_ub.archived_at IS NULL AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL) AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamp with time zone) IS NULL)) THEN 'infinity'::timestamp with time zone
+                            ELSE GREATEST(( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                              WHERE s_hi.thread_id = a.id AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1), COALESCE(upper(ts.at), upper(ts."on")::timestamp with time zone), ( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                                 JOIN public.link l_hi ON l_hi.id = s_hi.link_id
+                              WHERE l_hi.thread_id = a.id AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1))
+                        END, a.created_at) AS hi) bounds) AS agenda_at,
+    false AS revoked
+   FROM public.thread a
+     JOIN public.thread_priority tp ON tp.thread_id = a.id
+     LEFT JOIN "user".priority_expanded upe ON upe.user_id = tp.user_id AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+     JOIN public.priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+     LEFT JOIN public.thread_state ts ON ts.user_id = tp.user_id AND ts.thread_id = a.id
+     LEFT JOIN link_agg la ON la.thread_id = a.id
+  WHERE tp.revoked_at IS NULL AND (a.draft = false OR a.created_by = tp.user_id) AND (a.contacts && "user".user_contact_ids(tp.user_id) OR a.groups && "user".user_group_ids(tp.user_id)) AND (tp.priority_id IS NOT NULL OR tp.classify_at < (now() - public.classify_visibility_window())) AND (p.team_id IS NULL OR (EXISTS ( SELECT 1
+           FROM public.team_user tu2
+          WHERE tu2.team_id = p.team_id AND tu2.user_id = tp.user_id AND tu2.archived_at IS NULL)));
+-- Rename a view column from "auto_archived_by_thread_id" to "mute_by_thread_id"
+ALTER VIEW "user"."thread_redacted" RENAME COLUMN "auto_archived_by_thread_id" TO "mute_by_thread_id";
+-- Drop "apply_auto_archive" function
+DROP FUNCTION "user"."apply_auto_archive";
+-- Drop "apply_auto_archive_for_new_thread" function
+DROP FUNCTION "user"."apply_auto_archive_for_new_thread";
+-- Drop "clear_auto_archive" function
+DROP FUNCTION "user"."clear_auto_archive";
+-- Drop "find_auto_archive_candidates" function
+DROP FUNCTION "user"."find_auto_archive_candidates";

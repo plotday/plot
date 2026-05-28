@@ -320,14 +320,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   void toggleShowArchived() {
     final newShowArchived = !state.showArchived;
     log.info('Toggling showArchived to $newShowArchived');
-    emit(
-      state.copyWith(
-        showArchived: newShowArchived,
-        // Drop the broom filter whenever we leave the archived view, so it
-        // doesn't quietly stay armed for the next time the user enables it.
-        autoArchiveOnly: newShowArchived ? null : false,
-      ),
-    );
+    emit(state.copyWith(showArchived: newShowArchived));
 
     // Reload agenda items with new archived filter
     _loadPriority();
@@ -340,14 +333,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  /// Toggle the "Auto-archive only" filter, available only inside the
-  /// archived view. When on, the activity feed shows only threads filed
-  /// under an "Archive threads like this" rule.
-  void toggleAutoArchiveOnly() {
-    if (!state.showArchived) return;
-    final next = !state.autoArchiveOnly;
-    log.info('Toggling autoArchiveOnly to $next');
-    emit(state.copyWith(autoArchiveOnly: next));
+  /// Toggle the "Muted only" filter on the unified feed. When on, the
+  /// activity feed shows only threads filed under a "Skip active for
+  /// threads like this" rule, letting the user find and un-mute them.
+  /// Available in the regular (non-archived) view since muted threads
+  /// live in Done, not Archive.
+  void toggleMuteOnly() {
+    final next = !state.muteOnly;
+    log.info('Toggling muteOnly to $next');
+    emit(state.copyWith(muteOnly: next));
     _loadPriority();
     _restartActiveTabSubscription();
   }
