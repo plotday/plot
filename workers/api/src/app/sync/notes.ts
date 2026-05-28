@@ -13,6 +13,7 @@ import {
   recordAiUsage,
 } from "../../utils/ai-limits";
 import { assertThreadAccess } from "./authorize";
+import { getLinkTypesForLink } from "./link-tags";
 import {
   parseReadParams,
   readSafeHorizon,
@@ -204,32 +205,31 @@ notes.post("/sync/notes", async (c) => {
 
     // Resolve sharing model + current thread.contacts so the message-mode
     // invariant (always-explicit access_contacts) can be enforced.
-    // Join chain: thread → link (earliest) → channel (via channel_id + created_by)
-    // to get the link_types array that carries sharingModel per link type.
-    const threadRow = await trx
+    // Step 1: get thread.contacts and the earliest link (id, type, created_by).
+    // Step 2: resolve link types via channel-level first, twist-level fallback,
+    //         then find the sharingModel for the primary link's type.
+    const threadWithLink = await trx
       .selectFrom("thread")
       .leftJoin("link", "link.thread_id", "thread.id")
-      .leftJoin("channel", (join) =>
-        join
-          .onRef("channel.channel_id", "=", "link.channel_id")
-          .onRef("channel.twist_instance_id", "=", "link.created_by")
-      )
-      .select(["thread.contacts", "channel.link_types", "link.type"])
+      .select(["thread.contacts", "link.id as link_id", "link.type as link_type", "link.created_by as link_created_by"])
       .where("thread.id", "=", body.thread_id)
       .orderBy("link.created_at", "asc")
       .executeTakeFirst();
 
-    const sharingModel: SharingModel = (() => {
-      if (!threadRow?.link_types) return "thread";
-      const types = threadRow.link_types as Array<{ type: string; sharingModel?: SharingModel }>;
-      const matched = types.find((t) => t.type === threadRow.type);
-      return matched?.sharingModel ?? "thread";
-    })();
+    let sharingModel: SharingModel = "thread";
+    if (threadWithLink?.link_id && threadWithLink.link_created_by) {
+      const allLinkTypes = await getLinkTypesForLink(trx, threadWithLink.link_id, threadWithLink.link_created_by);
+      const matched = allLinkTypes.find((lt) => lt.type === threadWithLink.link_type);
+      const declared = matched?.sharingModel;
+      if (declared === "message" || declared === "channel") {
+        sharingModel = declared;
+      }
+    }
 
     const resolvedAccessContacts = resolveAccessContactsForSend({
       bodyAccessContacts: body.access_contacts ?? null,
       sharingModel,
-      threadContacts: (threadRow?.contacts ?? []) as string[],
+      threadContacts: (threadWithLink?.contacts ?? []) as string[],
     });
 
     return rpcUser(trx, "upsert_note", {

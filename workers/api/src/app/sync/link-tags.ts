@@ -4,7 +4,7 @@ import type { DB } from "../../db-types";
 import { rpcUser } from "../../rpc";
 import { truncateUuidForUpdatedBy } from "../../utils/uuid";
 
-type LinkTypeStatus = {
+export type LinkTypeStatus = {
   status: string;
   label: string;
   tag?: number;
@@ -20,9 +20,10 @@ type LinkTypeStatus = {
   todo?: boolean;
 };
 
-type LinkTypeConfig = {
+export type LinkTypeConfig = {
   type: string;
   statuses?: LinkTypeStatus[];
+  sharingModel?: string;
 };
 
 /**
@@ -169,7 +170,7 @@ export async function getChannelLinkTypes(
 /**
  * Load the full linkTypes config for a link — channel-level first, twist-level fallback.
  */
-async function getLinkTypesForLink(
+export async function getLinkTypesForLink(
   db: Kysely<DB>,
   linkId: string,
   createdBy: string
