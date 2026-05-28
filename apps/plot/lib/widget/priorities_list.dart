@@ -294,7 +294,8 @@ class _PrioritiesListState extends State<PrioritiesList>
                       ? context.theme.colors.mutedForeground
                       : context.colour.colours.fromTheme(
                           priority.displayColor,
-                          muted: !monochrome &&
+                          muted:
+                              !monochrome &&
                               !(priorityExpanded
                                   ? priority.unread
                                   : _hasDescendantUnread(priority)),
@@ -367,7 +368,8 @@ class _PrioritiesListState extends State<PrioritiesList>
                             ? context.theme.colors.mutedForeground
                             : context.colour.colours.fromTheme(
                                 priority.displayColor,
-                                muted: !monochrome &&
+                                muted:
+                                    !monochrome &&
                                     !(priorityExpanded
                                         ? priority.unread
                                         : _hasDescendantUnread(priority)),
@@ -704,9 +706,7 @@ class _EverythingTileState extends State<_EverythingTile> {
       textStyle: widget.textStyle.copyWith(color: textColor),
       trailingBuilder: (isHovered, hasFocus) {
         final button = Padding(
-          padding: EdgeInsets.only(
-            right: context.theme.spacing.sm,
-          ),
+          padding: EdgeInsets.only(right: context.theme.spacing.sm),
           child: Button.icon(ShowPriorityCommands(widget.root)),
         );
         if (isHovered || hasFocus) return button;

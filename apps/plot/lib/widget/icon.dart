@@ -159,4 +159,8 @@ class PlotIcon {
 
   // Conferencing
   static const video = FontAwesomeIcons.video;
+
+  // Focus / agenda
+  static const arrowsToDot = FontAwesomeIcons.arrowsToDot;
+  static const location = FontAwesomeIcons.locationDot;
 }

@@ -111,10 +111,7 @@ class _AgendaBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  height: 1,
-                  color: context.theme.colors.border,
-                ),
+                Container(height: 1, color: context.theme.colors.border),
                 Expanded(child: AgendaList(items: state.agendaViewItems)),
               ],
             ),
@@ -288,8 +285,9 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     // When an event is currently selected, restrict the "selected"
     // priority-tint to that one event so sibling events of the same
     // priority don't all light up.
-    final currentEventId =
-        nowState is NowLoaded ? nowState.currentEvent?.id : null;
+    final currentEventId = nowState is NowLoaded
+        ? nowState.currentEvent?.id
+        : null;
 
     // Only the first matching block gets the priority-tinted highlight —
     // multiple siblings of the same priority would otherwise all light up

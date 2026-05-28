@@ -60,7 +60,10 @@ class ChangeCurrentPriority extends PriorityCommand {
     Priority super.priority, {
     super.ancestry = true,
     this.fromAgenda = false,
-  }) : super(eventObject: EventObject.priority, eventAction: EventAction.viewed);
+  }) : super(
+         eventObject: EventObject.priority,
+         eventAction: EventAction.viewed,
+       );
 
   /// When true, mark the next [PriorityBloc] construction / [setPriority]
   /// call so the destination page opens with descendants hidden — agenda
@@ -352,9 +355,7 @@ class TogglePriorityArchived extends Command {
 
     if (otherCount > 0) {
       // Not the last — archive normally.
-      await priority
-          .copyWith(archivedAt: Value(DateTime.now()))
-          .save();
+      await priority.copyWith(archivedAt: Value(DateTime.now())).save();
       return const CommandDone();
     }
 
@@ -390,9 +391,7 @@ class TogglePriorityArchived extends Command {
       if (status == 'archived' || status == 'left_team') {
         // Locally archive the priority so the UI updates immediately; the
         // server will also deliver the change on the next sync tick.
-        await priority
-            .copyWith(archivedAt: Value(DateTime.now()))
-            .save();
+        await priority.copyWith(archivedAt: Value(DateTime.now())).save();
       }
       return const CommandDone();
     } on ApiException catch (e) {
@@ -484,9 +483,7 @@ Future<FormData> _buildNewPriorityForm(
             final lower = search.toLowerCase();
             return all
                 .where(
-                  (t) =>
-                      t == null ||
-                      t.name.toLowerCase().startsWith(lower),
+                  (t) => t == null || t.name.toLowerCase().startsWith(lower),
                 )
                 .toList();
           },
@@ -743,8 +740,7 @@ class EditPriorityCommand extends ShowForm {
                 return all
                     .where(
                       (t) =>
-                          t == null ||
-                          t.name.toLowerCase().startsWith(lower),
+                          t == null || t.name.toLowerCase().startsWith(lower),
                     )
                     .toList();
               },
@@ -868,7 +864,7 @@ class EditPriorityCommand extends ShowForm {
 class ShowPriorityCommands extends ShowCommands {
   ShowPriorityCommands(Priority priority, {bool current = false})
     : super(
-        title: 'More commands',
+        title: 'More',
         icon: PlotIcon.menu,
         commands: Commands(
           groups: current
