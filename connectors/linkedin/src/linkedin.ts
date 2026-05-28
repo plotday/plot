@@ -8,6 +8,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import type {
+  Action,
   Actor,
   NewActor,
   NewContact,
@@ -17,7 +18,9 @@ import type {
   Reactions,
   Thread,
 } from "@plotday/twister/plot";
+import { ActionType } from "@plotday/twister/plot";
 import { Callbacks } from "@plotday/twister/tools/callbacks";
+import { Files } from "@plotday/twister/tools/files";
 import {
   AuthProvider,
   type AuthToken,
@@ -28,6 +31,7 @@ import {
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import {
+  type LinkedInAttachment,
   type LinkedInChat,
   type LinkedInInvitation,
   type LinkedInMessage,
@@ -148,6 +152,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       network: build(Network, { urls: [] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
+      files: build(Files),
     };
   }
 
@@ -533,10 +538,35 @@ export class LinkedIn extends Connector<LinkedIn> {
     const chatId = meta.chatId as string | undefined;
     const channelId = meta.channelId as string | undefined;
     if (!chatId || !channelId) return;
+
+    const fileActions = (note.actions ?? []).filter(
+      (a): a is Extract<Action, { type: typeof ActionType.file }> =>
+        a.type === ActionType.file,
+    );
+
+    const attachments: Array<{
+      buffer: Uint8Array;
+      filename: string;
+      mimeType: string;
+    }> = [];
+    for (const action of fileActions) {
+      try {
+        const file = await this.tools.files.read(action.fileId);
+        attachments.push({
+          buffer: file.data,
+          filename: file.fileName,
+          mimeType: file.mimeType,
+        });
+      } catch (e) {
+        console.error("LinkedIn attachment read failed", action.fileId, e);
+      }
+    }
+
     const sent = await this.tools.linkedin.sendMessage({
       channelId,
       chatId,
       text: note.content ?? "",
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
     return {
       key: `message-${sent.id}`,
@@ -676,6 +706,35 @@ export class LinkedIn extends Connector<LinkedIn> {
     }
   }
 
+  override async downloadAttachment(ref: string): Promise<
+    | { redirectUrl: string }
+    | { body: ReadableStream | Uint8Array; mimeType: string; fileName?: string }
+  > {
+    const colon = ref.indexOf(":");
+    if (colon < 0) throw new Error(`Invalid LinkedIn attachment ref: ${ref}`);
+    const messageId = ref.slice(0, colon);
+    const attachmentId = ref.slice(colon + 1);
+
+    const channelId = await this.get<string>(`linkedin:msg-channel:${messageId}`);
+    if (!channelId) {
+      throw new Error(
+        `No LinkedIn channel cached for message ${messageId}. ` +
+          `The message may not have been synced through this connector instance.`
+      );
+    }
+
+    const result = await this.tools.linkedin.downloadAttachment({
+      channelId,
+      messageId,
+      attachmentId,
+    });
+    return {
+      body: result.body,
+      mimeType: result.mimeType,
+      fileName: result.fileName,
+    };
+  }
+
   private async build1to1ConversationLink(
     channelId: string,
     chat: LinkedInChat,
@@ -696,6 +755,12 @@ export class LinkedIn extends Connector<LinkedIn> {
     // message's reactions array or on the chat itself; turning them into
     // notes would create empty/noise rows.
     const messageItems = messages.messages.filter((m) => m.eventType === null);
+    // Cache message → channel so downloadAttachment can find the right token.
+    for (const msg of messageItems) {
+      if (msg.attachments.length > 0) {
+        await this.set(`linkedin:msg-channel:${msg.id}`, channelId);
+      }
+    }
     const notes: NewNote[] = messageItems
       .slice()
       .reverse()
@@ -746,6 +811,12 @@ export class LinkedIn extends Connector<LinkedIn> {
     // message's reactions array or on the chat itself; turning them into
     // notes would create empty/noise rows.
     const messageItems = messages.messages.filter((m) => m.eventType === null);
+    // Cache message → channel so downloadAttachment can find the right token.
+    for (const msg of messageItems) {
+      if (msg.attachments.length > 0) {
+        await this.set(`linkedin:msg-channel:${msg.id}`, channelId);
+      }
+    }
 
     const others = chat.participants.filter((p) => !p.isSelf);
     const notes: NewNote[] = messageItems
@@ -809,16 +880,13 @@ function buildNoteFromMessage(
     ? profileToContact(sender)
     : senderFallbackContact(msg);
 
-  const attachmentSuffix = msg.attachments.length
-    ? "\n\n" +
-      msg.attachments
-        .map(
-          (a) =>
-            `📎 [${a.name ?? "attachment"}](${a.url})` +
-            (a.contentType ? ` (${a.contentType})` : "")
-        )
-        .join("\n")
-    : "";
+  const actions: Action[] = msg.attachments.map((a: LinkedInAttachment) => ({
+    type: ActionType.fileRef as typeof ActionType.fileRef,
+    ref: `${msg.id}:${a.id}`,
+    fileName: a.name ?? "attachment",
+    fileSize: a.byteSize ?? null,
+    mimeType: a.contentType ?? "application/octet-stream",
+  }));
 
   const threadSource = threadPersonId
     ? `linkedin:person:${threadPersonId}`
@@ -830,10 +898,11 @@ function buildNoteFromMessage(
     thread: { source: threadSource },
     key: `message-${msg.id}`,
     created: msg.sentAt,
-    content: msg.text + attachmentSuffix,
+    content: msg.text,
     contentType: "text",
     author,
     ...(reactions ? { reactions } : {}),
+    ...(actions.length > 0 ? { actions } : {}),
   };
 }
 

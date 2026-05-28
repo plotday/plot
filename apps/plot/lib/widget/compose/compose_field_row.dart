@@ -1,3 +1,4 @@
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
@@ -6,6 +7,29 @@ import 'package:plot/widget/widget.dart';
 /// gutters). Chosen so the row's content starts at the same x as the
 /// NoteEditor's text (12 outer + 6 inner editor padding).
 const double composeIconLeft = 18;
+
+/// Horizontal gap between a row's leading icon column and its text label.
+/// Shared by every compose row so the labels start at the same x.
+const double composeIconGap = 10;
+
+/// Wraps a leading icon (sparkles, logo, avatars, etc.) in a fixed-width
+/// slot so icons of differing intrinsic widths center within the same
+/// column. Keeps the text label that follows pinned to the same x across
+/// every compose row. Width is the ambient `iconSizes.base` so it tracks
+/// the typography scale (desktop = 15px font / 16px icon).
+class ComposeLeadingIcon extends StatelessWidget {
+  const ComposeLeadingIcon({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: context.theme.iconSizes.base,
+      child: Center(child: child),
+    );
+  }
+}
 
 /// Shared chrome for compose-surface rows. Renders the row's [child]
 /// inside consistent horizontal gutters, wraps the whole row in an

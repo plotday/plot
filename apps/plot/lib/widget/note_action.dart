@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/router.dart';
+import 'package:plot/widget/file_ref_widgets.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
@@ -36,6 +37,7 @@ class NoteActionWidget extends StatelessWidget {
     this.variant,
     this.style,
     this.textStyle,
+    this.actionIndex,
     super.key,
   });
 
@@ -51,6 +53,10 @@ class NoteActionWidget extends StatelessWidget {
 
   /// Optional text style override (e.g. sm for compact actions).
   final TextStyle? textStyle;
+
+  /// Index of this action in the note's actions list. Required for
+  /// [UserActionType.fileRef] to construct the resolver URL.
+  final int? actionIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +104,47 @@ class NoteActionWidget extends StatelessWidget {
         }
         return FileLinkButton(
           link: fileLink,
+          variant: variant,
+          style: style,
+          textStyle: textStyle,
+        );
+      case UserActionType.fileRef:
+        final fileRefLink = link as FileRefUserAction;
+        final noteIdStr = note?.id.toString();
+        final idx = actionIndex;
+        if (noteIdStr == null || idx == null) {
+          // Context not available — render a disabled placeholder.
+          return FButton(
+            variant: variant ?? FButtonVariant.secondary,
+            style: style ?? const FButtonStyleDelta.context(),
+            mainAxisSize: MainAxisSize.min,
+            onPress: null,
+            prefix: Icon(
+              PlotIcon.attachment,
+              size: 14,
+              color: context.theme.colors.mutedForeground,
+            ),
+            child: Flexible(
+              child: Text(
+                fileRefLink.fileName,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: textStyle,
+              ),
+            ),
+          );
+        }
+        if (fileRefLink.isImage) {
+          return FileRefImageWidget(
+            link: fileRefLink,
+            noteId: noteIdStr,
+            actionIndex: idx,
+          );
+        }
+        return FileRefLinkButton(
+          link: fileRefLink,
+          noteId: noteIdStr,
+          actionIndex: idx,
           variant: variant,
           style: style,
           textStyle: textStyle,

@@ -20,6 +20,7 @@ import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
 import { Smtp, type SmtpOptions } from "./smtp";
 import { LinkedInMessaging } from "./unipile/linkedin";
+import { Files } from "./files";
 import { Network } from "./network";
 import { Plot } from "./plot";
 import { Store } from "./store";
@@ -59,6 +60,7 @@ class AIDisabledStub extends Tool implements IAI {
 function getToolClass(
   toolId: string
 ):
+  | typeof Files
   | typeof Plot
   | typeof Network
   | typeof AI
@@ -72,6 +74,8 @@ function getToolClass(
   | typeof LinkedInMessaging
   | null {
   switch (toolId) {
+    case "Files":
+      return Files;
     case "Plot":
       return Plot;
     case "Network":
@@ -158,6 +162,12 @@ export function createTool(
   }
 ): Tool {
   switch (id) {
+    case "Files":
+      return new Files({
+        db,
+        env,
+        twistInstanceId,
+      });
     case "Plot":
       return new Plot({
         db,

@@ -486,6 +486,15 @@ class NewThreadPageState extends State<NewThreadPage> {
       twists: twists,
     );
     if (picked == null || !mounted) return;
+    // The initial _loadConnections() from didChangeDependencies can race
+    // ahead of the TwistInstance cache (populated lazily via a Drift watch
+    // stream), leaving _allConnectionTargets empty. The picker itself just
+    // ran loadCreateTargets() and saw the cache populated, so refresh
+    // now — otherwise _resolveActiveConnectionChoice can't match the
+    // CreateLinkUserAction we're about to attach and the chip stays on
+    // "Plot thread".
+    await _loadConnections();
+    if (!mounted) return;
     await _applyConnectionChoice(picked);
   }
 

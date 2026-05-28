@@ -6,6 +6,7 @@ enum UserActionType {
   callback,
   conferencing,
   file,
+  fileRef,
   thread,
   plan,
   createLink,
@@ -35,6 +36,8 @@ abstract class UserAction extends Equatable {
         return ConferencingUserAction.fromJson(json);
       case UserActionType.file:
         return FileUserAction.fromJson(json);
+      case UserActionType.fileRef:
+        return FileRefUserAction.fromJson(json);
       case UserActionType.thread:
         return ThreadUserAction.fromJson(json);
       case UserActionType.plan:
@@ -215,6 +218,54 @@ class FileUserAction extends UserAction {
   @override
   List<Object?> get props =>
       [type, fileId, fileName, fileSize, mimeType, imageWidth, imageHeight];
+}
+
+class FileRefUserAction extends UserAction {
+  const FileRefUserAction({
+    required this.ref,
+    required this.fileName,
+    required this.fileSize,
+    required this.mimeType,
+    this.imageWidth,
+    this.imageHeight,
+  }) : super(type: UserActionType.fileRef);
+
+  final String ref;
+  final String fileName;
+  final int? fileSize;
+  final String mimeType;
+  final int? imageWidth;
+  final int? imageHeight;
+
+  bool get isImage => mimeType.startsWith('image/');
+
+  factory FileRefUserAction.fromJson(Map<String, dynamic> json) {
+    return FileRefUserAction(
+      ref: json['ref'] as String,
+      fileName: json['fileName'] as String,
+      fileSize: (json['fileSize'] as num?)?.toInt(),
+      mimeType: json['mimeType'] as String,
+      imageWidth: (json['imageWidth'] as num?)?.toInt(),
+      imageHeight: (json['imageHeight'] as num?)?.toInt(),
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'ref': ref,
+      'fileName': fileName,
+      'fileSize': fileSize,
+      'mimeType': mimeType,
+      if (imageWidth != null) 'imageWidth': imageWidth,
+      if (imageHeight != null) 'imageHeight': imageHeight,
+    };
+  }
+
+  @override
+  List<Object?> get props =>
+      [type, ref, fileName, fileSize, mimeType, imageWidth, imageHeight];
 }
 
 class ThreadUserAction extends UserAction {

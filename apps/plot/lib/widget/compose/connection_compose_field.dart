@@ -37,8 +37,8 @@ class ConnectionComposeField extends StatelessWidget {
       case PlotThreadChoice():
         logo = SvgPicture.asset(
           'assets/plot-icon.svg',
-          width: theme.iconSizes.sm,
-          height: theme.iconSizes.sm,
+          width: theme.iconSizes.base,
+          height: theme.iconSizes.base,
         );
         title = 'Plot thread';
         subtitle = '';
@@ -49,7 +49,7 @@ class ConnectionComposeField extends StatelessWidget {
         logo = url != null
             ? LogoImage(
                 url: url,
-                size: theme.iconSizes.sm,
+                size: theme.iconSizes.base,
                 fallback: const Icon(PlotIcon.link),
               )
             : const Icon(PlotIcon.link);
@@ -62,7 +62,7 @@ class ConnectionComposeField extends StatelessWidget {
         logo = url != null
             ? LogoImage(
                 url: url,
-                size: theme.iconSizes.sm,
+                size: theme.iconSizes.base,
                 fallback: const Icon(PlotIcon.twist),
               )
             : const Icon(PlotIcon.twist);
@@ -76,8 +76,8 @@ class ConnectionComposeField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: MainAxisSize.max,
         children: [
-          logo,
-          const SizedBox(width: 8),
+          ComposeLeadingIcon(child: logo),
+          const SizedBox(width: composeIconGap),
           Expanded(
             child: RichText(
               maxLines: 1,

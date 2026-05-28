@@ -501,6 +501,41 @@ Future<Map<String, dynamic>> uploadFile({
   }
 }
 
+/// Download a connector-attached file via the /app/files/ref resolver, returning
+/// the raw bytes. The server follows redirects and streams the remote content.
+///
+/// Throws [ApiException] (with statusCode 410) when the source attachment is
+/// no longer available, and [NetworkException] on connectivity issues.
+Future<Uint8List> getFileRefBytes(String noteId, int actionIndex) async {
+  final endpoint = '/app/files/ref/$noteId/$actionIndex';
+  try {
+    final headers = await getHeaders()..remove('Content-Type');
+    final response = await http.get(
+      Uri.parse('${Env.apiRoot}$endpoint'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 120));
+    if (response.statusCode != 200) {
+      await _checkAuthError(response, endpoint);
+      final errorMessage = _parseErrorMessage(response);
+      throw ApiException(
+        statusCode: response.statusCode,
+        endpoint: endpoint,
+        title: _getErrorTitle(response.statusCode),
+        description: errorMessage,
+      );
+    }
+    return response.bodyBytes;
+  } on TimeoutException {
+    throw const NetworkException(message: 'Download timed out. Check your network connection and try again.');
+  } on SocketException catch (e) {
+    throw NetworkException(originalException: e);
+  } on HttpException catch (e) {
+    throw NetworkException(originalException: e);
+  } on http.ClientException catch (e) {
+    throw NetworkException(originalException: e);
+  }
+}
+
 /// Download a file attachment, returning the raw bytes.
 Future<Uint8List> getFileBytes(String fileId) async {
   try {

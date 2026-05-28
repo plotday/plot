@@ -109,13 +109,52 @@ export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
     channelId: string;
     chatId: string;
     text: string;
+    attachments?: Array<{
+      buffer: Uint8Array;
+      filename: string;
+      mimeType: string;
+    }>;
   }): Promise<LinkedInMessage> {
     await this.assertAccount(params.channelId);
-    const raw = await this.client.sendMessage({
-      chatId: params.chatId,
-      text: params.text,
-    });
+    let raw;
+    if (params.attachments && params.attachments.length > 0) {
+      raw = await this.client.sendMessageMultipart({
+        chatId: params.chatId,
+        text: params.text,
+        attachments: params.attachments,
+      });
+    } else {
+      raw = await this.client.sendMessage({
+        chatId: params.chatId,
+        text: params.text,
+      });
+    }
     return normalizeMessage(raw);
+  }
+
+  async downloadAttachment(params: {
+    channelId: string;
+    messageId: string;
+    attachmentId: string;
+  }): Promise<{ body: ReadableStream; mimeType: string; fileName?: string }> {
+    await this.assertAccount(params.channelId);
+    const response = await this.client.downloadAttachmentRaw({
+      messageId: params.messageId,
+      attachmentId: params.attachmentId,
+    });
+    const contentType =
+      response.headers.get("content-type") ?? "application/octet-stream";
+    const mimeType = contentType.split(";")[0]?.trim() ?? "application/octet-stream";
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const fileNameMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
+    const fileName = fileNameMatch?.[1]
+      ? decodeURIComponent(fileNameMatch[1].trim())
+      : undefined;
+    return {
+      body: response.body as ReadableStream,
+      mimeType,
+      fileName,
+    };
   }
 
   async setChatRead(params: {
