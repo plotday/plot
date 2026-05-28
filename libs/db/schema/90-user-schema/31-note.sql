@@ -97,7 +97,16 @@ WHERE
     -- Hidden by note-level access restriction
     AND (n.access_contacts IS NOT NULL
         AND n.created_by != tp.user_id
-        AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)));
+        AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)))
+    -- Exclude users who are in this thread's dropped_contacts — they should
+    -- not see redacted stubs for messages they never had access to. Without
+    -- this filter, dropped users (still in thread.contacts for visibility)
+    -- would receive stubs for every post-drop note, leaking message existence.
+    AND NOT (
+        a.dropped_contacts IS NOT NULL
+        AND cardinality(a.dropped_contacts) > 0
+        AND a.dropped_contacts && "user".user_contact_ids(tp.user_id)
+    );
 
 
 -- User-accessible note tags

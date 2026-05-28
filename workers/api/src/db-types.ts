@@ -187,13 +187,10 @@ export interface CustomEmoji {
 
 export interface Device {
   app_version: string | null;
-  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
-  device_id: string | null;
   id: Generated<string>;
-  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string | null;
+  push_token: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -450,23 +447,6 @@ export interface LinkX {
   type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-}
-
-export interface LocalSyncLease {
-  attempt_id: string;
-  capability: string;
-  created_at: Generated<Timestamp>;
-  device_id: string;
-  fail_streak: Generated<number>;
-  last_completed_at: Timestamp | null;
-  last_error: string | null;
-  last_heartbeat_at: Timestamp;
-  last_result: string | null;
-  lease_token: string;
-  leased_until: Timestamp;
-  next_eligible_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
 }
 
 export interface Note {
@@ -758,6 +738,10 @@ export interface Thread {
   created_by: string;
   draft: Generated<boolean>;
   /**
+   * Contacts who have been dropped from the active recipient set by the message-mode heuristic. Every uuid here MUST also appear in contacts (invariant enforced by update_thread_dropped_contacts). Dropped contacts retain thread visibility but are excluded from outbound defaults and the active-participants display.
+   */
+  dropped_contacts: Generated<string[] | null>;
+  /**
    * Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.
    */
   embedding: string | null;
@@ -786,7 +770,6 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
-  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -917,6 +900,7 @@ export interface ThreadX {
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
+  dropped_contacts: string[] | null;
   embedding: string | null;
   groups: string[] | null;
   icon: string | null;
@@ -1811,7 +1795,6 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
-  local_sync_lease: LocalSyncLease;
   note: Note;
   note_reaction: NoteReaction;
   note_reactions: NoteReactions;

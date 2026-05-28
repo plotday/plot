@@ -7,6 +7,16 @@ CREATE TABLE "public"."thread" (
     "archived_at" timestamp with time zone,
     "draft" boolean NOT NULL DEFAULT FALSE,
     "contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    -- Contacts who were on this thread but have been dropped from the
+    -- active recipient set (subset of `contacts`). Dropped contacts retain
+    -- thread visibility (they can still see notes they were on, via
+    -- `note.access_contacts`), but are excluded from outbound defaults,
+    -- header AvatarGroup, and badge superset on the client.
+    --
+    -- Invariant: every uuid in dropped_contacts MUST also appear in
+    -- contacts. The privileged `update_thread_dropped_contacts` RPC enforces
+    -- this. Direct writes to this column bypass the invariant.
+    "dropped_contacts" uuid[] DEFAULT ARRAY[]::uuid[],
     "title" text,
     "preview" text,
     "last_note_created_at" timestamp with time zone,
@@ -127,6 +137,8 @@ COMMENT ON COLUMN "public"."thread"."groups" IS 'Group IDs attached to this thre
 COMMENT ON COLUMN "public"."thread"."topic" IS 'Routing key used by classify_thread_for_user. Two conventions: (1) priority:{KEY}[:{SUB_TOPIC}] defaults the thread into the user''s priority with that key when no user_moved example wins; (2) any other string acts as the topic filter over user_moved training examples. On INSERT defaults to, in order: explicit input, or groups[1]::text when unset.';
 
 COMMENT ON COLUMN "public"."thread"."contacts" IS 'Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester''s sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.';
+
+COMMENT ON COLUMN "public"."thread"."dropped_contacts" IS 'Contacts who have been dropped from the active recipient set by the message-mode heuristic. Every uuid here MUST also appear in contacts (invariant enforced by update_thread_dropped_contacts). Dropped contacts retain thread visibility but are excluded from outbound defaults and the active-participants display.';
 
 COMMENT ON COLUMN "public"."thread"."twist_id" IS 'Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.';
 
