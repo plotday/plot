@@ -9,6 +9,40 @@ import 'list_tile.dart';
 import 'modal.dart';
 import 'select_modal.dart';
 
+class _RoleBadge extends StatelessWidget {
+  const _RoleBadge({
+    required this.label,
+    required this.isHighlighted,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isHighlighted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isHighlighted
+        ? context.theme.colors.foreground
+        : context.theme.plotColors.muted;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Text(
+          label.toUpperCase(),
+          style: context.theme.typography.sm.copyWith(
+            color: color,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class CommandModal {
   factory CommandModal(
     Commands commands, {
@@ -32,6 +66,26 @@ class CommandModal {
   final Future<Commands> Function()? commandsBuilder;
   Future<void> Function()? _refreshCallback;
   final Map<Command, ListTileController> _controllers = Map.identity();
+
+  /// Invoke a command's [CommandSecondaryAxis.cycle] (badge tap or arrow
+  /// key) and route the result through the same refresh pipeline as a
+  /// normal command run, so a `CommandRefresh` re-fetches the list and
+  /// re-renders the badge with the new label.
+  Future<void> _cycleSecondaryAxis(Command command, int delta) async {
+    final axis = command.secondaryAxis;
+    if (axis == null) return;
+    final ctx = rootContext.mounted ? rootContext : null;
+    if (ctx == null) return;
+    final result = await axis.cycle(ctx, delta);
+    if (!ctx.mounted) return;
+    await Modal.handleCommandResult(
+      ctx,
+      result,
+      command,
+      rootContext: rootContext,
+      onRefresh: _refreshCallback,
+    );
+  }
 
   Future<CommandReturn> run(BuildContext context) async {
     if (!context.mounted) return CommandSkipped();
@@ -80,6 +134,7 @@ class CommandModal {
               );
 
         final isDisabled = !command.enabled(rootContext);
+        final axis = command.secondaryAxis;
 
         return ListTile(
           controller: controller,
@@ -104,6 +159,13 @@ class CommandModal {
                     ),
                   )
               : null,
+          trailingBuilder: axis == null
+              ? null
+              : (isHovered, hasFocus) => _RoleBadge(
+                    label: axis.badgeLabel,
+                    isHighlighted: isHovered || hasFocus,
+                    onTap: () => _cycleSecondaryAxis(command, 1),
+                  ),
           details: command.description != null
               ? Builder(
                   builder: (context) =>
@@ -186,6 +248,10 @@ class CommandModal {
         };
       },
       showFilter: showFilter,
+      onSecondaryAxis: (command, delta) async {
+        await _cycleSecondaryAxis(command, delta);
+        return true;
+      },
       addTooltip: _commands.secondaryCommand?.call('')?.title,
       onAdd: _commands.secondaryCommand == null
           ? null

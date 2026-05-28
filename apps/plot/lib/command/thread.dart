@@ -2581,6 +2581,7 @@ class PickDraftThreadShared extends ShowCommands {
     required Future<void> Function(Thread thread) onUpdate,
     Uuid? dmTwistInstanceId,
     bool isAddressMode = false,
+    List<ContactRoleConfig>? roleConfigs,
   }) {
     // Mutable reference so commandsBuilder always sees the latest thread
     final threadRef = [thread];
@@ -2601,6 +2602,7 @@ class PickDraftThreadShared extends ShowCommands {
         candidates: candidatesCache,
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddressMode,
+        roleConfigs: roleConfigs,
       ),
     );
   }
@@ -2796,6 +2798,7 @@ Future<Commands> _buildSharedCommands(
   required _ShareCandidatesCache candidates,
   Uuid? dmTwistInstanceId,
   bool isAddressMode = false,
+  List<ContactRoleConfig>? roleConfigs,
 }) async {
   // Resolve groups filed on the thread. Groups are shown in the "Shared"
   // list so the viewer can see (and remove) the team the thread is shared
@@ -2851,7 +2854,12 @@ Future<Commands> _buildSharedCommands(
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
   Command toggleActor(Actor actor) =>
-      ShareThreadActor(thread, actor, onUpdate: onUpdate);
+      ShareThreadActor(
+        thread,
+        actor,
+        onUpdate: onUpdate,
+        roleConfigs: roleConfigs,
+      );
 
   Command toggleInvite(String email) =>
       InviteThreadEmail(thread, email, onUpdate: onUpdate);
@@ -3047,22 +3055,31 @@ List<Uuid> _linkedContactIdsOnThread(Thread thread, Actor actor) {
 }
 
 class ShareThreadActor extends Command {
-  ShareThreadActor(this.thread, this.actor, {required this.onUpdate})
-    : _isShared = _actorShared(thread, actor),
-      super(
-        title: actor.nameOrEmail,
-        eventObject: EventObject.activity,
-        eventAction: _actorShared(thread, actor)
-            ? EventAction.updated
-            : EventAction.shared,
-        icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
-        on: _actorShared(thread, actor),
-      );
+  ShareThreadActor(
+    this.thread,
+    this.actor, {
+    required this.onUpdate,
+    this.roleConfigs,
+  }) : _isShared = _actorShared(thread, actor),
+       super(
+         title: actor.nameOrEmail,
+         eventObject: EventObject.activity,
+         eventAction: _actorShared(thread, actor)
+             ? EventAction.updated
+             : EventAction.shared,
+         icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
+         on: _actorShared(thread, actor),
+       );
 
   final Thread thread;
   final Actor actor;
   final Future<void> Function(Thread) onUpdate;
   final bool _isShared;
+
+  /// Per-connector role options. Null or shorter than 2 ⇒ no role badge.
+  /// The current row's role is read from `thread.contactMeta` and falls
+  /// back to the entry marked `default: true` (or the first entry).
+  final List<ContactRoleConfig>? roleConfigs;
 
   @override
   String? get subtitle => actor.name != null ? actor.email : null;
@@ -3070,6 +3087,32 @@ class ShareThreadActor extends Command {
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
       Avatar(actor: actor);
+
+  /// Role config for the current contact, or null when no badge should
+  /// render (connector has 0/1 roles, contact isn't shared, or row is for
+  /// self — sender doesn't get a recipient role).
+  ContactRoleConfig? get _currentRole {
+    final configs = roleConfigs;
+    if (configs == null || configs.length < 2) return null;
+    if (!_isShared) return null;
+    if (actor.self) return null;
+    final entry = thread.contactMeta[actor.id.toUuid().toString()];
+    final roleId = entry is Map<String, dynamic>
+        ? entry['role'] as String?
+        : null;
+    if (roleId != null) {
+      final match = configs.where((r) => r.id == roleId).firstOrNull;
+      if (match != null) return match;
+    }
+    return configs.firstWhere((r) => r.isDefault, orElse: () => configs.first);
+  }
+
+  @override
+  CommandSecondaryAxis? get secondaryAxis {
+    final current = _currentRole;
+    if (current == null) return null;
+    return _ShareThreadActorRoleAxis(this, current);
+  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -3084,6 +3127,7 @@ class ShareThreadActor extends Command {
       }
       final contactUuid = actor.id.toUuid();
       final List<Uuid> newContacts;
+      final Value<Map<String, dynamic>?> newMeta;
       if (_isShared) {
         // Remove every linked alias for this person, not just actor.id —
         // otherwise toggling off the primary would leave the alias contact
@@ -3092,15 +3136,83 @@ class ShareThreadActor extends Command {
         newContacts = thread.contacts
             .where((id) => !toRemove.contains(id))
             .toList();
+        newMeta = _metaWithout(thread.contactMeta, toRemove);
       } else {
         newContacts = [...thread.contacts, contactUuid];
+        newMeta = const Value.absent();
       }
-      await onUpdate(thread.copyWith(contacts: Value(newContacts)));
+      await onUpdate(
+        thread.copyWith(contacts: Value(newContacts), contactMeta: newMeta),
+      );
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in ShareThreadActor: $e', e, stackTrace);
       return CommandMessage('Failed to update sharing', isError: true);
     }
+  }
+
+  /// Apply [nextRoleId] to the contact's `contactMeta` entry. Server merges
+  /// additively, so we send only the changed entry (plus existing entries
+  /// untouched). `addedBy` is preserved when present, else falls back to
+  /// the current actor.
+  Future<CommandReturn> _setRole(String nextRoleId) async {
+    try {
+      final contactKey = actor.id.toUuid().toString();
+      final existing = thread.contactMeta[contactKey];
+      final addedBy = existing is Map<String, dynamic>
+          ? existing['addedBy'] as String?
+          : null;
+      // `addedBy` is the acting user_id per share_thread.sql.
+      final selfId = Base.userIdOrNull?.toString();
+      final addedByValue = addedBy ?? selfId;
+      final newMeta = <String, dynamic>{
+        ...thread.contactMeta,
+        contactKey: {
+          'role': nextRoleId,
+          'addedBy': ?addedByValue,
+        },
+      };
+      await onUpdate(thread.copyWith(contactMeta: Value(newMeta)));
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in ShareThreadActor._setRole: $e', e, stackTrace);
+      return CommandMessage('Failed to update role', isError: true);
+    }
+  }
+}
+
+/// Strip [removeIds] from a contactMeta map. Returns `Value.absent()` when
+/// nothing would change (lets callers omit the field from copyWith).
+Value<Map<String, dynamic>?> _metaWithout(
+  Map<String, dynamic> existing,
+  Set<Uuid> removeIds,
+) {
+  if (existing.isEmpty) return const Value.absent();
+  final removeKeys = removeIds.map((u) => u.toString()).toSet();
+  if (!removeKeys.any(existing.containsKey)) return const Value.absent();
+  final next = <String, dynamic>{
+    for (final entry in existing.entries)
+      if (!removeKeys.contains(entry.key)) entry.key: entry.value,
+  };
+  return Value(next);
+}
+
+class _ShareThreadActorRoleAxis extends CommandSecondaryAxis {
+  const _ShareThreadActorRoleAxis(this.cmd, this.current);
+
+  final ShareThreadActor cmd;
+  final ContactRoleConfig current;
+
+  @override
+  String get badgeLabel => current.label;
+
+  @override
+  Future<CommandReturn> cycle(BuildContext context, int delta) {
+    final configs = cmd.roleConfigs!;
+    final currentIndex = configs.indexWhere((r) => r.id == current.id);
+    final raw = currentIndex < 0 ? 0 : (currentIndex + delta) % configs.length;
+    final wrapped = raw < 0 ? raw + configs.length : raw;
+    return cmd._setRole(configs[wrapped].id);
   }
 }
 

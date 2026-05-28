@@ -528,11 +528,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     final dmTwistInstanceId = isDm && !isAddress
         ? Uuid.fromString(activeAction!.twistInstanceId)
         : null;
+    // Roles are connector-defined (email → To/CC/BCC, calendar →
+    // Required/Optional, Slack/Linear → none). Forwarded into the picker
+    // so already-shared rows render a role badge when there are ≥2 roles.
+    final roleConfigs = _activeLinkTypeConfig?.contactRoles;
     await context.run(
       PickDraftThreadShared(
         thread: priorityBloc.state.draft,
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddress,
+        roleConfigs: roleConfigs,
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);

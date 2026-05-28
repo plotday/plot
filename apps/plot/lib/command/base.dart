@@ -109,6 +109,15 @@ abstract class Command {
   /// Optional alternate command invoked on long-press. Null = no long-press action.
   Command? get longPressCommand => null;
 
+  /// Optional secondary axis exposed by this command. When non-null, the
+  /// hosting modal renders [CommandSecondaryAxis.buildBadge] as the row's
+  /// trailing widget (tap = cycle forward) and intercepts left/right arrow
+  /// keys while the row is highlighted to call [CommandSecondaryAxis.cycle].
+  /// Cycling does NOT run the command — it's a separate axis of state on
+  /// the same row. Used today for contact roles (To / CC / BCC) on the
+  /// thread share picker.
+  CommandSecondaryAxis? get secondaryAxis => null;
+
   Future<CommandReturn> run(BuildContext context);
 
   /// Override to provide a custom icon widget (e.g., Avatar) instead of IconData.
@@ -124,6 +133,23 @@ abstract class Command {
   /// Override to provide a custom description widget rendered below the title
   /// in command modals. Takes precedence over the static [description] field.
   Widget? buildDescription(BuildContext context) => null;
+}
+
+/// Secondary axis exposed by a [Command] for in-row cycling (e.g. role
+/// changes on a thread contact). Pure data — the modal layer renders the
+/// badge (so it can wire the tap into its refresh pipeline) and invokes
+/// [cycle] on tap or arrow key.
+abstract class CommandSecondaryAxis {
+  const CommandSecondaryAxis();
+
+  /// Short label shown in the row's trailing slot (e.g. "TO").
+  String get badgeLabel;
+
+  /// Cycle the axis by [delta] (typically +1 forward, -1 backward, wraps).
+  /// The returned [CommandReturn] is routed through the modal's
+  /// command-result handler so [CommandRefresh] re-renders the list with
+  /// the new value.
+  Future<CommandReturn> cycle(BuildContext context, int delta);
 }
 
 class CommandWrapper extends Command {
@@ -162,6 +188,9 @@ class CommandWrapper extends Command {
 
   @override
   Command? get longPressCommand => command.longPressCommand;
+
+  @override
+  CommandSecondaryAxis? get secondaryAxis => command.secondaryAxis;
 
   @override
   Future<CommandReturn> run(BuildContext context) {

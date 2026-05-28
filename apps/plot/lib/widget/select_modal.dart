@@ -69,6 +69,7 @@ class SelectModal<T> extends Modal {
     this.gridColumns,
     this.gridCellSize = 36,
     this.gridCellSpacing = 4,
+    this.onSecondaryAxis,
     super.key,
     super.constraints,
   }) : super(
@@ -91,6 +92,7 @@ class SelectModal<T> extends Modal {
            gridColumns: gridColumns,
            gridCellSize: gridCellSize,
            gridCellSpacing: gridCellSpacing,
+           onSecondaryAxis: onSecondaryAxis,
          ),
        );
 
@@ -168,6 +170,12 @@ class SelectModal<T> extends Modal {
   /// [gridColumns] is set.
   final double gridCellSpacing;
 
+  /// Optional handler for ←/→ on the currently highlighted item in list
+  /// mode. Returning true marks the keys as handled; returning false lets
+  /// them flow on (currently unused). Not invoked in grid mode, where
+  /// ←/→ already address grid navigation.
+  final Future<bool> Function(T item, int delta)? onSecondaryAxis;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -189,6 +197,7 @@ class SelectModal<T> extends Modal {
     int? gridColumns,
     double gridCellSize = 36,
     double gridCellSpacing = 4,
+    Future<bool> Function(T item, int delta)? onSecondaryAxis,
     BoxConstraints? constraints,
   }) async {
     // Pre-fetch items for empty search so the modal opens fully populated.
@@ -225,6 +234,7 @@ class SelectModal<T> extends Modal {
       gridColumns: gridColumns,
       gridCellSize: gridCellSize,
       gridCellSpacing: gridCellSpacing,
+      onSecondaryAxis: onSecondaryAxis,
       constraints: constraints ??
           const BoxConstraints(maxHeight: 640, maxWidth: 750),
     ).show<T>(context);
@@ -252,6 +262,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.gridColumns,
     this.gridCellSize = 36,
     this.gridCellSpacing = 4,
+    this.onSecondaryAxis,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -272,6 +283,7 @@ class _SelectModal<T> extends StatefulWidget {
   final int? gridColumns;
   final double gridCellSize;
   final double gridCellSpacing;
+  final Future<bool> Function(T item, int delta)? onSecondaryAxis;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -874,6 +886,20 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     });
   }
 
+  /// Forward ←/→ on the highlighted row to [widget.onSecondaryAxis], if
+  /// supplied. Silently no-op when the handler isn't provided, the
+  /// highlight is on an info-only slot, or out of range — that way the
+  /// keys don't interfere with non-secondary-axis modals.
+  void _invokeSecondaryAxis(int delta) {
+    final handler = widget.onSecondaryAxis;
+    if (handler == null) return;
+    final totalDisplay = _getTotalDisplayCount();
+    if (_highlightedIndex < 0 || _highlightedIndex >= totalDisplay) return;
+    if (_isInfoOnlySlot(_highlightedIndex)) return;
+    final item = _getItemAtIndexUnsafe(_highlightedIndex);
+    handler(item, delta);
+  }
+
   Future<void> _handleEnter() async {
     if (_enterHandled) return;
     _enterHandled = true;
@@ -1210,6 +1236,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       MoveListSelectionIntent(-1),
                   SingleActivator(LogicalKeyboardKey.arrowDown):
                       MoveListSelectionIntent(1),
+                  SingleActivator(LogicalKeyboardKey.arrowLeft):
+                      _SecondaryAxisIntent(-1),
+                  SingleActivator(LogicalKeyboardKey.arrowRight):
+                      _SecondaryAxisIntent(1),
                   SingleActivator(LogicalKeyboardKey.enter):
                       ActivateListSelectionIntent(),
                   SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
@@ -1219,6 +1249,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
               MoveListSelectionIntent: CallbackAction<MoveListSelectionIntent>(
                 onInvoke: (intent) {
                   _moveHighlight(intent.offset);
+                  return KeyEventResult.handled;
+                },
+              ),
+              _SecondaryAxisIntent: CallbackAction<_SecondaryAxisIntent>(
+                onInvoke: (intent) {
+                  _invokeSecondaryAxis(intent.delta);
                   return KeyEventResult.handled;
                 },
               ),
@@ -1712,6 +1748,14 @@ class _GridMoveIntent extends Intent {
   static const _GridMoveIntent down = _GridMoveIntent._('down');
   static const _GridMoveIntent left = _GridMoveIntent._('left');
   static const _GridMoveIntent right = _GridMoveIntent._('right');
+}
+
+/// Cycle the highlighted row's secondary axis (e.g. a contact's role).
+/// Fired by ←/→ in list mode when the modal was given an
+/// [SelectModal.onSecondaryAxis] handler.
+class _SecondaryAxisIntent extends Intent {
+  const _SecondaryAxisIntent(this.delta);
+  final int delta;
 }
 
 /// Render plan for grid mode. Each ListView row is one entry.
