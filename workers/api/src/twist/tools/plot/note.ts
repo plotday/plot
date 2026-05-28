@@ -19,6 +19,8 @@ import { detectTasks } from "../../../queue/note-analysis";
 import { rpc } from "../../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../../utils/ai-limits";
 import { hashExternalContent } from "../hash-external-content";
+import { getLinkTypesForLink } from "../../../app/sync/link-tags";
+import { resolveAccessContactsForSend } from "../../../app/sync/notes";
 import type { Plot } from "./index";
 import {
   convertNoteToMarkdown,
@@ -165,6 +167,7 @@ export async function createNote(
     // priority_id, so we skip this query to avoid a redundant round-trip.
     let priorityId: string;
     let threadCreatedBy: string | null = null;
+    let threadContacts: string[] = [];
     if (activityContext) {
       priorityId = activityContext.priority_id;
       if (activityContext.created_by) {
@@ -173,15 +176,25 @@ export async function createNote(
         // Fallback: fetch created_by for auto-mention logic
         const threadRow = await plot.db
           .selectFrom("thread")
-          .select("created_by")
+          .select(["created_by", "contacts"])
           .where("id", "=", activityId)
           .executeTakeFirst();
         threadCreatedBy = threadRow?.created_by ?? null;
+        threadContacts = threadRow?.contacts ?? [];
+      }
+      // Fetch contacts when activityContext was provided (no thread row fetched above)
+      if (activityContext.created_by) {
+        const contactsRow = await plot.db
+          .selectFrom("thread")
+          .select("contacts")
+          .where("id", "=", activityId)
+          .executeTakeFirst();
+        threadContacts = contactsRow?.contacts ?? [];
       }
     } else {
       const activityData = await plot.db
         .selectFrom("thread")
-        .select(["created_by"])
+        .select(["created_by", "contacts"])
         .where("id", "=", activityId)
         .executeTakeFirst();
 
@@ -199,6 +212,7 @@ export async function createNote(
 
       priorityId = tp?.priority_id ?? "";
       threadCreatedBy = activityData.created_by;
+      threadContacts = activityData.contacts ?? [];
     }
 
     // Skip priority access validation for notes - activities may have been moved
@@ -325,6 +339,39 @@ export async function createNote(
       );
     }
 
+    // Resolve link metadata used for both access_contacts enforcement and
+    // canonical_source dedup. A single query covers both needs.
+    let resolvedLinkMeta: { type: string | null; created_by: string | null; source: string | null } | null = null;
+    if (dbNote.link_id) {
+      resolvedLinkMeta = await plot.db
+        .selectFrom("link")
+        .select(["type", "created_by", "source"])
+        .where("id", "=", dbNote.link_id)
+        .executeTakeFirst() ?? null;
+    }
+
+    // Enforce the always-explicit access_contacts invariant for message-mode
+    // threads. For non-message modes this is a no-op (resolver returns the
+    // value unchanged). For message mode, NULL access_contacts is replaced
+    // with the thread's current contacts array so downstream per-viewer
+    // participant derivation (T9+) always has an explicit participant list.
+    if (resolvedLinkMeta) {
+      const linkTypes = await getLinkTypesForLink(
+        plot.db,
+        dbNote.link_id,
+        resolvedLinkMeta.created_by ?? ""
+      );
+      const linkTypeConfig = resolvedLinkMeta.type
+        ? linkTypes.find((lt) => lt.type === resolvedLinkMeta!.type)
+        : undefined;
+      const sharingModel = linkTypeConfig?.sharingModel ?? "thread";
+      dbNote.access_contacts = resolveAccessContactsForSend({
+        bodyAccessContacts: dbNote.access_contacts,
+        sharingModel,
+        threadContacts,
+      });
+    }
+
     // Resolve canonical_source for cross-connection dedup. When two users'
     // connections of the same external resource each write a note with the
     // same key, both links have the same `link.source` (the connector
@@ -332,13 +379,8 @@ export async function createNote(
     // onto the note lets the partial unique index on
     // (thread_id, canonical_source, key) collapse the writes to one row.
     if (dbNote.link_id && dbNote.key) {
-      const linkRow = await plot.db
-        .selectFrom("link")
-        .select("source")
-        .where("id", "=", dbNote.link_id)
-        .executeTakeFirst();
-      if (linkRow?.source) {
-        dbNote.canonical_source = linkRow.source;
+      if (resolvedLinkMeta?.source) {
+        dbNote.canonical_source = resolvedLinkMeta.source;
       }
     }
 
