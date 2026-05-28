@@ -947,7 +947,16 @@ class SharedCommandButton extends HookWidget {
         [contactsKey],
       ),
     ).data;
-    final actors = loadedActors ?? command.sharedDisplayActors;
+    // In message-mode the actor list is per-viewer. While the async load is
+    // pending, falling back to `command.sharedDisplayActors` (which reads
+    // `thread.contacts` — the full superset) would briefly surface
+    // dropped/post-drop participants to a viewer who shouldn't see them.
+    // Render zero avatars momentarily instead; thread-mode and channel-mode
+    // keep the existing cached fallback.
+    final actors = loadedActors
+        ?? (visibleContactIds != null
+            ? const <Actor>[]
+            : command.sharedDisplayActors);
 
     // Surface RSVP info in the unified avatar tooltip when the thread is a
     // calendar event with other invitees. Otherwise the tooltip falls back
@@ -1034,7 +1043,11 @@ class SharedCommandButton extends HookWidget {
         ),
       ),
       variant: FButtonVariant.ghost,
-      onPress: () => context.run(command),
+      // Channel-mode is non-tappable per the spec ("no tap behavior"): the
+      // channel title is informational only.
+      onPress: (sharingModel == SharingModel.channel && channelTitle != null)
+          ? null
+          : () => context.run(command),
       child: child,
     );
 
