@@ -125,9 +125,27 @@ export async function createLink(
     // prune_thread_contacts RPC before upsert_thread, so upsert_thread's
     // additive union produces the correctly reconciled final state.
     //
+    // KNOWN RACE: prune_thread_contacts and the downstream upsert_thread
+    // run as separate statements. If the process dies between them, the
+    // thread is left partially updated (contacts pruned, additions not
+    // applied). plot.db here may or may not be a transaction depending on
+    // the caller — the runtime should ideally wrap createLink in
+    // withUserDb so both writes commit atomically. Tracked as a follow-up;
+    // the window is small and the next message-mode saveLink for this
+    // thread will re-reconcile to the correct state.
+    //
+    // FAST PATH: skip when accessContacts is empty — incoming = [] means
+    // toRemove = previous (heuristic preserves) so nothing fires anyway,
+    // and we avoid an unnecessary sharing-model lookup + addContacts call
+    // on every non-message saveLink that omits accessContacts.
+    //
     // See workers/api/src/twist/sharing.ts and
     // libs/db/schema/60-functions/prune_thread_contacts.sql.
-    if (threadData.id && link.accessContacts !== undefined) {
+    if (
+      threadData.id &&
+      link.accessContacts !== undefined &&
+      link.accessContacts.length > 0
+    ) {
       const sharingModel = await getSharingModelForChannel(
         plot.db,
         link.channelId ?? null,

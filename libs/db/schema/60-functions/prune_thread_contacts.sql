@@ -19,9 +19,10 @@
 --   - Fires the existing thread `seq` bump trigger so clients re-sync.
 --
 -- Connectors MUST NOT call this directly. The reconciliation decision
--- happens in `workers/api/src/twist/sharing.ts:reconcileThreadContacts`
--- inside platform API code; connectors only supply the `saveLink`
--- payload that the heuristic compares against.
+-- happens in `workers/api/src/twist/sharing.ts:reconcileAndComputeRemovals`
+-- (which wraps the pure `reconcileThreadContacts` helper) inside platform
+-- API code; connectors only supply the `saveLink` payload that the
+-- heuristic compares against.
 CREATE OR REPLACE FUNCTION public.prune_thread_contacts (
     p_thread_id uuid,
     p_remove_contact_ids uuid[]
