@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileThreadContacts } from "./sharing";
+import { reconcileThreadContacts, reconcileAndComputeRemovals } from "./sharing";
 
 describe("reconcileThreadContacts (50% removal heuristic)", () => {
   it("adds new recipients always", () => {
@@ -50,5 +50,49 @@ describe("reconcileThreadContacts (50% removal heuristic)", () => {
     // 2 of 2 dropped = 100% → preserve previous as a private subset.
     expect(reconcileThreadContacts({ previous: ["a", "b"], incoming: [] }))
       .toEqual(["a", "b"]);
+  });
+});
+
+describe("reconcileAndComputeRemovals", () => {
+  it("returns empty toRemove for pure additions", () => {
+    const result = reconcileAndComputeRemovals({
+      previous: ["a", "b"],
+      incoming: ["a", "b", "c"],
+    });
+    expect(result.toRemove).toEqual([]);
+    expect(result.reconciled).toEqual(["a", "b", "c"]);
+  });
+
+  it("returns the dropped IDs when a small fraction is removed", () => {
+    const result = reconcileAndComputeRemovals({
+      previous: ["a", "b", "c"],
+      incoming: ["a", "b"],
+    });
+    expect(result.toRemove).toEqual(["c"]);
+    expect(result.reconciled).toEqual(["a", "b"]);
+  });
+
+  it("returns empty toRemove when most recipients are dropped (private reply)", () => {
+    const result = reconcileAndComputeRemovals({
+      previous: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+      incoming: ["a", "b"],
+    });
+    expect(result.toRemove).toEqual([]);
+  });
+
+  it("handles 50% removal (treats as real removal)", () => {
+    const result = reconcileAndComputeRemovals({
+      previous: ["a", "b"],
+      incoming: ["a"],
+    });
+    expect(result.toRemove).toEqual(["b"]);
+  });
+
+  it("returns empty toRemove when nothing changed", () => {
+    const result = reconcileAndComputeRemovals({
+      previous: ["a", "b"],
+      incoming: ["a", "b"],
+    });
+    expect(result.toRemove).toEqual([]);
   });
 });

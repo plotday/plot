@@ -1,3 +1,6 @@
+import { sql, type Kysely } from "kysely";
+import type { DB } from "../db-types";
+
 /**
  * Reconcile a thread's current contact list against the recipient set of an
  * incoming message-mode `saveLink` payload. Applied platform-wide by the
@@ -42,4 +45,40 @@ export function reconcileThreadContacts(args: {
     }
   }
   return out;
+}
+
+/**
+ * Compute the IDs to remove between a previous contact set and the reconciled
+ * result, applying the 50% removal heuristic. Combines `reconcileThreadContacts`
+ * with a diff so callers get just the removal delta.
+ */
+export function reconcileAndComputeRemovals(args: {
+  previous: string[];
+  incoming: string[];
+}): { reconciled: string[]; toRemove: string[] } {
+  const reconciled = reconcileThreadContacts(args);
+  const reconciledSet = new Set(reconciled);
+  const toRemove = args.previous.filter((c) => !reconciledSet.has(c));
+  return { reconciled, toRemove };
+}
+
+/**
+ * Invoke the privileged `prune_thread_contacts` DB function. Callers must
+ * have independently confirmed (via the platform reconciliation heuristic)
+ * that removal is correct — this RPC bypasses share_thread's user
+ * access-control check by design. See `prune_thread_contacts.sql` for the
+ * trust contract.
+ */
+export async function pruneThreadContacts(
+  db: Kysely<DB>,
+  threadId: string,
+  removeContactIds: string[],
+): Promise<void> {
+  if (removeContactIds.length === 0) return;
+  await sql`
+    SELECT public.prune_thread_contacts(
+      ${threadId}::uuid,
+      ${sql.val(removeContactIds)}::uuid[]
+    )
+  `.execute(db);
 }

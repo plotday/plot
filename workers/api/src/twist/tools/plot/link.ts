@@ -16,6 +16,9 @@ import { createThread } from "./thread";
 import { createNotes } from "./note";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
+import { getSharingModelForChannel } from "../../../app/sync/link-tags";
+import { reconcileAndComputeRemovals, pruneThreadContacts } from "../../sharing";
+import { addContacts } from "./contacts";
 
 /**
  * Creates a link with its thread container.
@@ -115,20 +118,38 @@ export async function createLink(
       }
     }
 
-    // TODO(thread-sharing-models): Message-mode contact reconciliation.
+    // Message-mode contact reconciliation (Option A: privileged platform
+    // removal). When the connector declares sharingModel="message" and we're
+    // updating an existing thread, apply the 50% removal heuristic. The
+    // helper decides which previous contacts to drop; we call the privileged
+    // prune_thread_contacts RPC before upsert_thread, so upsert_thread's
+    // additive union produces the correctly reconciled final state.
     //
-    // The platform helper `reconcileThreadContacts` in `workers/api/src/twist/
-    // sharing.ts` implements the 50%-removal heuristic for message-mode threads
-    // (Gmail today; future per-message-recipient connectors). Wiring it here
-    // is intentionally deferred: `upsert_thread` is additive-only by design
-    // (security — connectors can only add contacts to a thread; pruning goes
-    // through `share_thread` which enforces access control). The reconciler's
-    // ADDITION path matches the additive union upsert_thread already does, so
-    // wiring it would be a no-op for additions and silently dropped for
-    // removals. Pruning requires a privileged removal mechanism (e.g. a new
-    // RPC the platform can call after the heuristic decides) — out of scope
-    // for the initial sharing-models plan. Pick up when the removal path is
-    // designed; the helper + 8 unit tests are ready to wire.
+    // See workers/api/src/twist/sharing.ts and
+    // libs/db/schema/60-functions/prune_thread_contacts.sql.
+    if (threadData.id && link.accessContacts !== undefined) {
+      const sharingModel = await getSharingModelForChannel(
+        plot.db,
+        link.channelId ?? null,
+        link.type ?? null,
+        plot.twistInstanceId,
+      );
+      if (sharingModel === "message") {
+        const existing = await plot.db
+          .selectFrom("thread")
+          .select("contacts")
+          .where("id", "=", threadData.id)
+          .executeTakeFirst();
+        const previous: string[] =
+          ((existing?.contacts as string[] | null) ?? []);
+        const incomingActors = await addContacts(plot, link.accessContacts);
+        const incoming: string[] = incomingActors.map((a) => String(a.id));
+        const { toRemove } = reconcileAndComputeRemovals({ previous, incoming });
+        if (toRemove.length > 0) {
+          await pruneThreadContacts(plot.db, threadData.id, toRemove);
+        }
+      }
+    }
 
     // Pass skipNotify=true so we can fire a single notifySyncDOs after the
     // link row (and any schedules) are committed. Otherwise clients see the
