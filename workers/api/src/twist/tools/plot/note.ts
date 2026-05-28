@@ -20,7 +20,7 @@ import { rpc } from "../../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../../utils/ai-limits";
 import { hashExternalContent } from "../hash-external-content";
 import { getLinkTypesForLink } from "../../../app/sync/link-tags";
-import { resolveAccessContactsForSend } from "../../../app/sync/notes";
+import { resolveAccessContactsForSend, type SharingModel } from "../../../app/sync/notes";
 import type { Plot } from "./index";
 import {
   convertNoteToMarkdown,
@@ -172,8 +172,15 @@ export async function createNote(
       priorityId = activityContext.priority_id;
       if (activityContext.created_by) {
         threadCreatedBy = activityContext.created_by;
+        // Fetch contacts in the same trip as the created_by check
+        const contactsRow = await plot.db
+          .selectFrom("thread")
+          .select("contacts")
+          .where("id", "=", activityId)
+          .executeTakeFirst();
+        threadContacts = contactsRow?.contacts ?? [];
       } else {
-        // Fallback: fetch created_by for auto-mention logic
+        // Fallback: fetch created_by and contacts together
         const threadRow = await plot.db
           .selectFrom("thread")
           .select(["created_by", "contacts"])
@@ -181,15 +188,6 @@ export async function createNote(
           .executeTakeFirst();
         threadCreatedBy = threadRow?.created_by ?? null;
         threadContacts = threadRow?.contacts ?? [];
-      }
-      // Fetch contacts when activityContext was provided (no thread row fetched above)
-      if (activityContext.created_by) {
-        const contactsRow = await plot.db
-          .selectFrom("thread")
-          .select("contacts")
-          .where("id", "=", activityId)
-          .executeTakeFirst();
-        threadContacts = contactsRow?.contacts ?? [];
       }
     } else {
       const activityData = await plot.db
@@ -356,15 +354,20 @@ export async function createNote(
     // with the thread's current contacts array so downstream per-viewer
     // participant derivation (T9+) always has an explicit participant list.
     if (resolvedLinkMeta) {
-      const linkTypes = await getLinkTypesForLink(
-        plot.db,
-        dbNote.link_id,
-        resolvedLinkMeta.created_by ?? ""
-      );
-      const linkTypeConfig = resolvedLinkMeta.type
-        ? linkTypes.find((lt) => lt.type === resolvedLinkMeta!.type)
-        : undefined;
-      const sharingModel = linkTypeConfig?.sharingModel ?? "thread";
+      // Only resolve the sharing model when link.created_by is set.
+      // If it is null (data anomaly), skip resolution; sharingModel stays "thread".
+      let sharingModel: SharingModel = "thread";
+      if (resolvedLinkMeta.created_by) {
+        const linkTypes = await getLinkTypesForLink(
+          plot.db,
+          dbNote.link_id,
+          resolvedLinkMeta.created_by
+        );
+        const linkTypeConfig = resolvedLinkMeta.type
+          ? linkTypes.find((lt) => lt.type === resolvedLinkMeta!.type)
+          : undefined;
+        if (linkTypeConfig?.sharingModel) sharingModel = linkTypeConfig.sharingModel;
+      }
       dbNote.access_contacts = resolveAccessContactsForSend({
         bodyAccessContacts: dbNote.access_contacts,
         sharingModel,
