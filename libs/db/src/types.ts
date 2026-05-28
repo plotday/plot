@@ -4611,6 +4611,10 @@ export type Database = {
       normalize_title: { Args: { t: string }; Returns: string }
       order_first: { Args: never; Returns: number }
       parent_path: { Args: { p: unknown }; Returns: unknown }
+      prune_thread_contacts: {
+        Args: { p_remove_contact_ids: string[]; p_thread_id: string }
+        Returns: undefined
+      }
       reclassify_user_threads: {
         Args: {
           p_anchor_thread_id: string
