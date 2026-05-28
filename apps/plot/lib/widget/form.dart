@@ -377,9 +377,7 @@ class FormSelect<T> extends FormItem {
               children: [
                 if (leading != null) ...[
                   IconTheme(
-                    data: IconThemeData(
-                      color: context.theme.colors.foreground,
-                    ),
+                    data: IconThemeData(color: context.theme.colors.foreground),
                     child: leading,
                   ),
                   SizedBox(width: context.theme.spacing.md),
@@ -403,9 +401,7 @@ class FormSelect<T> extends FormItem {
             children: [
               if (leading != null) ...[
                 IconTheme(
-                  data: IconThemeData(
-                    color: context.theme.colors.foreground,
-                  ),
+                  data: IconThemeData(color: context.theme.colors.foreground),
                   child: leading,
                 ),
                 SizedBox(width: context.theme.spacing.md),
@@ -579,9 +575,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
     // Create the run function that validates, executes, and handles result
     Future<CommandReturn> runWrappedCommand() async {
       // Validate form before executing (skip for buttons that opt out)
-      if (!widget.skipValidation &&
-          formValidate != null &&
-          !formValidate()) {
+      if (!widget.skipValidation && formValidate != null && !formValidate()) {
         context.showToast(
           message: 'Please fill in all required fields',
           isError: true,
@@ -1157,7 +1151,7 @@ class _AddWindowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: 'Add quiet hours',
+      title: 'Add time window',
       icon: PlotIcon.add,
       style: ListTileStyle.button,
       padding: EdgeInsets.symmetric(
@@ -1169,7 +1163,7 @@ class _AddWindowTile extends StatelessWidget {
       focusNode: focusNode,
       command: CommandWrapper(
         _FormSubmitCommand(),
-        title: 'Add quiet hours',
+        title: 'Add time window',
         icon: Value(PlotIcon.add),
         run: (_, _) async {
           onTap();
@@ -1444,10 +1438,10 @@ class FormShareSelect extends FormItem {
   }
 
   String get _summary => sharedSelectionSummary(
-        _value,
-        groupNames: _groupNames,
-        contactNames: _contactNames,
-      );
+    _value,
+    groupNames: _groupNames,
+    contactNames: _contactNames,
+  );
 
   @override
   Widget build(
