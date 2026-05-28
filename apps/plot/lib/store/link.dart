@@ -3,7 +3,8 @@ part of 'store.dart';
 typedef LinkId = Uuid;
 
 /// How sharing on threads of this link type is scoped. Mirrors
-/// `LinkTypeConfig.sharingModel` in Twister.
+/// `LinkTypeConfig.sharingModel` in
+/// `public/twister/src/tools/integrations.ts`.
 enum SharingModel {
   /// One roster shared across all notes (default). Native threads,
   /// Slack DMs, calendar events.
