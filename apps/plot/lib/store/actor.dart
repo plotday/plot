@@ -278,16 +278,23 @@ class Actor extends ActorRow {
   /// sharing. Threads whose `topic` starts with `channel:` are
   /// connection-imported (calendar events, emails, etc.) and often pull in
   /// contacts the user never chose, so explicit-thread history takes
-  /// precedence over connection-thread history at every band:
-  ///   1. Explicit MRU — actors on the most-recent in-scope explicit
-  ///      threads, ordered by recency of their most-recent explicit thread.
-  ///   2. Explicit frequent — remaining actors on any in-scope explicit
-  ///      thread, ordered by explicit-thread count (ties → alphabetical).
-  ///   3. Channel-only frequent — actors with no in-scope explicit history
-  ///      but who appear on in-scope channel threads, ordered by count
-  ///      (ties → alphabetical). Channel threads never contribute to MRU
-  ///      because they're auto-imported, not user-selected.
-  ///   4. Rest — actors the user has no sharing history with in scope.
+  /// precedence over connection-thread history at every band. Within
+  /// explicit history, authored threads (where the user has actually
+  /// sent a note) outrank received-only threads so inbound senders like
+  /// `info@`, marketing, and newsletter accounts don't crowd out
+  /// real correspondents:
+  ///   1. Authored MRU — actors on the most-recent in-scope threads where
+  ///      the user has authored at least one note, ordered by recency.
+  ///   2. Authored frequent — remaining authored-thread actors, ordered
+  ///      by authored-thread count (ties → alphabetical).
+  ///   3. Explicit-only frequent — actors who appear only on
+  ///      received-only explicit threads (e.g. unanswered newsletters),
+  ///      ordered by explicit-thread count.
+  ///   4. Channel-only frequent — actors with no in-scope explicit
+  ///      history but who appear on in-scope channel threads, ordered by
+  ///      count (ties → alphabetical). Channel threads never contribute
+  ///      to MRU because they're auto-imported, not user-selected.
+  ///   5. Rest — actors the user has no sharing history with in scope.
   ///      When [priority] is provided, this falls back to the user's
   ///      cross-priority MRU/frequent ordering before alphabetical.
   ///
@@ -336,13 +343,16 @@ class Actor extends ActorRow {
     int byName(Actor a, Actor b) =>
         a.nameOrEmail.toLowerCase().compareTo(b.nameOrEmail.toLowerCase());
 
-    final explicitSeen = <Actor>[];
+    final authoredSeen = <Actor>[];
+    final explicitOnlySeen = <Actor>[];
     final channelOnlySeen = <Actor>[];
     final unseenInScope = <Actor>[];
     for (final actor in candidates) {
       final id = actor.id.toUuid();
-      if (scoped.explicitFirstSeenIndex.containsKey(id)) {
-        explicitSeen.add(actor);
+      if (scoped.authoredFirstSeenIndex.containsKey(id)) {
+        authoredSeen.add(actor);
+      } else if (scoped.explicitFirstSeenIndex.containsKey(id)) {
+        explicitOnlySeen.add(actor);
       } else if (scoped.firstSeenIndex.containsKey(id)) {
         channelOnlySeen.add(actor);
       } else {
@@ -350,17 +360,30 @@ class Actor extends ActorRow {
       }
     }
 
-    // MRU within explicit threads: order by first-seen index (lower = more
+    // MRU within authored threads: order by first-seen index (lower = more
     // recent). Tie-break alphabetically.
-    explicitSeen.sort((a, b) {
-      final ai = scoped.explicitFirstSeenIndex[a.id.toUuid()]!;
-      final bi = scoped.explicitFirstSeenIndex[b.id.toUuid()]!;
+    authoredSeen.sort((a, b) {
+      final ai = scoped.authoredFirstSeenIndex[a.id.toUuid()]!;
+      final bi = scoped.authoredFirstSeenIndex[b.id.toUuid()]!;
       if (ai != bi) return ai.compareTo(bi);
       return byName(a, b);
     });
 
-    final mru = explicitSeen.take(mruSize).toList();
-    final frequent = explicitSeen.skip(mruSize).toList()
+    final mru = authoredSeen.take(mruSize).toList();
+    final frequent = authoredSeen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = scoped.authoredCounts[a.id.toUuid()] ?? 0;
+        final cb = scoped.authoredCounts[b.id.toUuid()] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    // Explicit-only band: actors on explicit threads where the user has
+    // NOT authored a note. Typical case: unanswered emails from
+    // newsletters or `info@` addresses. No MRU here — recency of a
+    // received-only thread doesn't reflect user intent. Sort by count,
+    // ties alphabetical.
+    final explicitFrequent = explicitOnlySeen
       ..sort((a, b) {
         final ca = scoped.explicitCounts[a.id.toUuid()] ?? 0;
         final cb = scoped.explicitCounts[b.id.toUuid()] ?? 0;
@@ -405,6 +428,7 @@ class Actor extends ActorRow {
     return [
       ...mru,
       ...frequent,
+      ...explicitFrequent,
       ...channelFrequent,
       ...tailSeen,
       ...tailUnseen,
@@ -417,10 +441,11 @@ class Actor extends ActorRow {
   /// a freshly-used group sorts beside freshly-used contacts instead of
   /// pushing recent contacts down a separate "Groups" header.
   ///
-  /// Banding mirrors [getSortedForSharing]: explicit MRU, explicit
-  /// frequent, channel-only frequent, then the tail (cross-priority MRU
-  /// when [priority] is set, else alphabetical). Ties resolve
-  /// alphabetically against [Actor.nameOrEmail] / [GroupRow.name].
+  /// Banding mirrors [getSortedForSharing]: authored MRU, authored
+  /// frequent, explicit-only frequent (received-only senders),
+  /// channel-only frequent, then the tail (cross-priority MRU when
+  /// [priority] is set, else alphabetical). Ties resolve alphabetically
+  /// against [Actor.nameOrEmail] / [GroupRow.name].
   static Future<List<ShareCandidate>> getSortedShareCandidates({
     String? search,
     Priority? priority,
@@ -485,6 +510,12 @@ class Actor extends ActorRow {
     int byName(ShareCandidate a, ShareCandidate b) =>
         sortKey(a).compareTo(sortKey(b));
 
+    int? authoredFirstSeen(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scoped.authoredFirstSeenIndex[actor.id.toUuid()],
+          GroupShareCandidate(:final group) =>
+            scoped.groupAuthoredFirstSeenIndex[group.id],
+        };
     int? explicitFirstSeen(ShareCandidate c) => switch (c) {
           ActorShareCandidate(:final actor) =>
             scoped.explicitFirstSeenIndex[actor.id.toUuid()],
@@ -497,6 +528,12 @@ class Actor extends ActorRow {
             scan.firstSeenIndex[actor.id.toUuid()],
           GroupShareCandidate(:final group) =>
             scan.groupFirstSeenIndex[group.id],
+        };
+    int authoredCount(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scoped.authoredCounts[actor.id.toUuid()] ?? 0,
+          GroupShareCandidate(:final group) =>
+            scoped.groupAuthoredCounts[group.id] ?? 0,
         };
     int explicitCount(ShareCandidate c) => switch (c) {
           ActorShareCandidate(:final actor) =>
@@ -516,12 +553,15 @@ class Actor extends ActorRow {
       ...groups.map(GroupShareCandidate.new),
     ];
 
-    final explicitSeen = <ShareCandidate>[];
+    final authoredSeen = <ShareCandidate>[];
+    final explicitOnlySeen = <ShareCandidate>[];
     final channelOnlySeen = <ShareCandidate>[];
     final unseen = <ShareCandidate>[];
     for (final c in candidates) {
-      if (explicitFirstSeen(c) != null) {
-        explicitSeen.add(c);
+      if (authoredFirstSeen(c) != null) {
+        authoredSeen.add(c);
+      } else if (explicitFirstSeen(c) != null) {
+        explicitOnlySeen.add(c);
       } else if (anyFirstSeen(c, scoped) != null) {
         channelOnlySeen.add(c);
       } else {
@@ -529,15 +569,26 @@ class Actor extends ActorRow {
       }
     }
 
-    explicitSeen.sort((a, b) {
-      final ai = explicitFirstSeen(a)!;
-      final bi = explicitFirstSeen(b)!;
+    authoredSeen.sort((a, b) {
+      final ai = authoredFirstSeen(a)!;
+      final bi = authoredFirstSeen(b)!;
       if (ai != bi) return ai.compareTo(bi);
       return byName(a, b);
     });
 
-    final mru = explicitSeen.take(mruSize).toList();
-    final frequent = explicitSeen.skip(mruSize).toList()
+    final mru = authoredSeen.take(mruSize).toList();
+    final frequent = authoredSeen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = authoredCount(a);
+        final cb = authoredCount(b);
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    // Explicit-only: actors/groups on explicit threads where the user
+    // never authored a note. Received-only newsletters / `info@` land
+    // here. No MRU — received recency isn't a user-intent signal.
+    final explicitFrequent = explicitOnlySeen
       ..sort((a, b) {
         final ca = explicitCount(a);
         final cb = explicitCount(b);
@@ -576,6 +627,7 @@ class Actor extends ActorRow {
     return [
       ...mru,
       ...frequent,
+      ...explicitFrequent,
       ...channelFrequent,
       ...tailSeen,
       ...tailUnseen,
@@ -594,17 +646,26 @@ class Actor extends ActorRow {
       order: ThreadOrder.reverse,
       limit: limit,
     );
+    final authoredThreadIds = await _authoredThreadIds(
+      threadIds: threads.map((t) => t.id).toList(),
+      selfIds: selfIds,
+    );
     final firstSeenIndex = <Uuid, int>{};
     final counts = <Uuid, int>{};
     final explicitFirstSeenIndex = <Uuid, int>{};
     final explicitCounts = <Uuid, int>{};
+    final authoredFirstSeenIndex = <Uuid, int>{};
+    final authoredCounts = <Uuid, int>{};
     final groupFirstSeenIndex = <Uuid, int>{};
     final groupCounts = <Uuid, int>{};
     final groupExplicitFirstSeenIndex = <Uuid, int>{};
     final groupExplicitCounts = <Uuid, int>{};
+    final groupAuthoredFirstSeenIndex = <Uuid, int>{};
+    final groupAuthoredCounts = <Uuid, int>{};
     for (var i = 0; i < threads.length; i++) {
       final thread = threads[i];
       final isExplicit = !(thread.topic?.startsWith('channel:') ?? false);
+      final isAuthored = authoredThreadIds.contains(thread.id);
       for (final contactId in thread.contacts) {
         if (selfIds.contains(contactId)) continue;
         firstSeenIndex.putIfAbsent(contactId, () => i);
@@ -612,6 +673,10 @@ class Actor extends ActorRow {
         if (isExplicit) {
           explicitFirstSeenIndex.putIfAbsent(contactId, () => i);
           explicitCounts[contactId] = (explicitCounts[contactId] ?? 0) + 1;
+        }
+        if (isAuthored) {
+          authoredFirstSeenIndex.putIfAbsent(contactId, () => i);
+          authoredCounts[contactId] = (authoredCounts[contactId] ?? 0) + 1;
         }
       }
       for (final groupId in thread.groups) {
@@ -622,6 +687,11 @@ class Actor extends ActorRow {
           groupExplicitCounts[groupId] =
               (groupExplicitCounts[groupId] ?? 0) + 1;
         }
+        if (isAuthored) {
+          groupAuthoredFirstSeenIndex.putIfAbsent(groupId, () => i);
+          groupAuthoredCounts[groupId] =
+              (groupAuthoredCounts[groupId] ?? 0) + 1;
+        }
       }
     }
     return _ThreadScanResult(
@@ -629,11 +699,35 @@ class Actor extends ActorRow {
       counts: counts,
       explicitFirstSeenIndex: explicitFirstSeenIndex,
       explicitCounts: explicitCounts,
+      authoredFirstSeenIndex: authoredFirstSeenIndex,
+      authoredCounts: authoredCounts,
       groupFirstSeenIndex: groupFirstSeenIndex,
       groupCounts: groupCounts,
       groupExplicitFirstSeenIndex: groupExplicitFirstSeenIndex,
       groupExplicitCounts: groupExplicitCounts,
+      groupAuthoredFirstSeenIndex: groupAuthoredFirstSeenIndex,
+      groupAuthoredCounts: groupAuthoredCounts,
     );
+  }
+
+  /// Returns the subset of [threadIds] that contain at least one note
+  /// authored by one of [selfIds]. Used by the share picker to mark a
+  /// thread as "user has emailed in this thread" so contacts on those
+  /// threads can be banded above inbound-only senders.
+  static Future<Set<Uuid>> _authoredThreadIds({
+    required List<Uuid> threadIds,
+    required Set<Uuid> selfIds,
+  }) async {
+    if (threadIds.isEmpty || selfIds.isEmpty) return const {};
+    final n = Store.get.notes;
+    final query = Store.get.selectOnly(n, distinct: true)
+      ..addColumns([n.threadId])
+      ..where(
+        n.threadId.isIn(threadIds.map((id) => id.toBytes()).toList()) &
+            n.authorId.isIn(selfIds.map((id) => id.toBytes()).toList()),
+      );
+    final rows = await query.get();
+    return rows.map((r) => Uuid.fromBytes(r.read(n.threadId)!)).toSet();
   }
 
   /// Returns all actor IDs that belong to the current user.
@@ -911,10 +1005,14 @@ class _ThreadScanResult {
     required this.counts,
     required this.explicitFirstSeenIndex,
     required this.explicitCounts,
+    required this.authoredFirstSeenIndex,
+    required this.authoredCounts,
     required this.groupFirstSeenIndex,
     required this.groupCounts,
     required this.groupExplicitFirstSeenIndex,
     required this.groupExplicitCounts,
+    required this.groupAuthoredFirstSeenIndex,
+    required this.groupAuthoredCounts,
   });
 
   /// First-seen index and counts across all scanned threads.
@@ -929,6 +1027,14 @@ class _ThreadScanResult {
   final Map<Uuid, int> explicitFirstSeenIndex;
   final Map<Uuid, int> explicitCounts;
 
+  /// Same as [explicitFirstSeenIndex]/[explicitCounts] but restricted to
+  /// threads where the user has authored at least one note (sent a
+  /// message). Drives the top "Authored" bands so the picker prioritizes
+  /// people the user has actually written to over senders the user only
+  /// receives from (newsletters, info@, marketing).
+  final Map<Uuid, int> authoredFirstSeenIndex;
+  final Map<Uuid, int> authoredCounts;
+
   /// Group MRU/frequency tallies, keyed on `thread.groups`. Groups share
   /// the same thread index space as actors so the merged share picker
   /// can interleave them by recency.
@@ -936,6 +1042,8 @@ class _ThreadScanResult {
   final Map<Uuid, int> groupCounts;
   final Map<Uuid, int> groupExplicitFirstSeenIndex;
   final Map<Uuid, int> groupExplicitCounts;
+  final Map<Uuid, int> groupAuthoredFirstSeenIndex;
+  final Map<Uuid, int> groupAuthoredCounts;
 }
 
 /// Drift converter for ActorId
