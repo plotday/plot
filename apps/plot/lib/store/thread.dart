@@ -4422,6 +4422,43 @@ ORDER BY
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
   List<Uuid> get contacts => _thread.contacts ?? const [];
+
+  /// Resolved sharing model for this thread, derived from the primary
+  /// (earliest-created) link's [LinkTypeConfig.sharingModel]. Threads
+  /// with no link default to [SharingModel.thread].
+  ///
+  /// The store layer caches links per thread, so this is a cheap
+  /// in-memory lookup at the call site. Pass the list of links in
+  /// rather than re-querying.
+  static SharingModel resolveSharingModel(List<Link> links) {
+    if (links.isEmpty) return SharingModel.thread;
+    final primary = [...links]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final cfg = primary.first.getTypeConfig();
+    return cfg?.sharingModel ?? SharingModel.thread;
+  }
+
+  /// Per-viewer visible-contacts derivation for message-mode threads.
+  /// Returns the union of [Note.accessContacts] across notes the viewer
+  /// can see, plus each visible note's author. For non-message-mode
+  /// threads, callers should use [Thread.contacts] directly.
+  ///
+  /// [viewerContactIds] should be every contact linked to the viewer
+  /// (matches `user.user_contact_ids()` server-side).
+  static Set<Uuid> deriveVisibleContacts({
+    required List<Note> visibleNotes,
+    required Iterable<Uuid> viewerContactIds,
+  }) {
+    final out = <Uuid>{};
+    for (final note in visibleNotes) {
+      out.add(note.authorId.value);
+      final access = note.accessContacts;
+      if (access != null) out.addAll(access.map((a) => a.value));
+    }
+    out.addAll(viewerContactIds);
+    return out;
+  }
+
   /// Per-contact metadata (role assignments, etc) keyed by contact uuid
   /// (string). Empty when no roles are set; contacts not in the map use the
   /// link type's default role. See `ContactRoleConfig` and
