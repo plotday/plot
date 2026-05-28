@@ -4519,6 +4519,26 @@ ORDER BY
     return null;
   }
 
+  /// Union of `access_contacts` across all of a thread's notes, plus
+  /// each note's author. Used by the message-mode sharing modal to
+  /// populate the Dropped section and the re-add suggestion source.
+  ///
+  /// Returns a `Set<Uuid>` — order doesn't matter; the modal sorts for
+  /// display.
+  static Set<Uuid> historicalParticipants(List<Note> notes) {
+    final out = <Uuid>{};
+    for (final note in notes) {
+      out.add(note.authorId.value);
+      final access = note.accessContacts;
+      if (access != null) {
+        for (final actor in access) {
+          out.add(actor.value);
+        }
+      }
+    }
+    return out;
+  }
+
   /// Per-contact metadata (role assignments, etc) keyed by contact uuid
   /// (string). Empty when no roles are set; contacts not in the map use the
   /// link type's default role. See `ContactRoleConfig` and
