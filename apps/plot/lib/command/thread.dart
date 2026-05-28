@@ -2974,7 +2974,14 @@ Future<Commands> _buildSharedCommands(
         ),
       _ThreadShareSuggestionsGroup(
         thread: thread,
-        excludeActorIds: sharedActorIds,
+        // Exclude both currently-shared AND dropped actors from suggestions —
+        // dropped actors already appear in their own section, listing them
+        // again under "Share with" would double-render them on first paint
+        // (before the next CommandRefresh dedupes).
+        excludeActorIds: [
+          ...sharedActorIds,
+          ...droppedActors.map((a) => a.id),
+        ],
         excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
