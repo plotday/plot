@@ -178,15 +178,14 @@ class _PriorityWidgetState extends State<PriorityWidget> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Resting: weekly total chip → tap opens the time-tracking
-                // modal. Hover: replaced by the Time log icon button so the
-                // hover row stays a clean stack of icon controls.
+                // modal. Hover: swapped for icon controls; the Time log
+                // action lives inside the More modal.
                 if (!hovered)
                   _PriorityWeeklyTotal(
                     priority: priority,
                     selected: widget.selected,
                   )
                 else ...[
-                  Button.icon(ShowTimeLog(priority)),
                   Button.icon(
                     SetTopPriority(priority, priority.topOrder == null),
                   ),

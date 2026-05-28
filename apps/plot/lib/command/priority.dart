@@ -879,6 +879,7 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer) ShowResponseTimesSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer && !priority.isPlot) NewPriority(parent: priority),
+  ShowTimeLog(priority),
   if (!priority.root && !priority.isViewer && !priority.isPlot)
     TogglePriorityArchived(priority),
 ];
@@ -1101,9 +1102,8 @@ class ToggleArchivedPrioritiesFilter extends Command {
   }
 }
 
-/// Open the [TimeTrackingModal] for a priority — surfaced as a hover
-/// action on each priority row so users can review and adjust recorded
-/// time without leaving the priorities list.
+/// Open the [TimeTrackingModal] for a priority so users can review and
+/// adjust recorded time. Surfaced from the priority's More modal.
 class ShowTimeLog extends Command {
   ShowTimeLog(this.priority)
     : super(
