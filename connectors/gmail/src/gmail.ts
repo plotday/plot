@@ -121,6 +121,7 @@ export class Gmail extends Connector<Gmail> {
       type: "email",
       label: "Thread",
       noteLabel: "Reply",
+      sharingModel: "message" as const,
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [

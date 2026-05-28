@@ -55,6 +55,7 @@ export class Asana extends Connector<Asana> {
       type: "task",
       label: "Task",
       noteLabel: "Comment",
+      sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/asana-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/asana.svg",
       statuses: [

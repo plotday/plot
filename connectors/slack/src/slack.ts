@@ -102,6 +102,7 @@ export class Slack extends Connector<Slack> {
       type: "thread",
       label: "Thread",
       noteLabel: "Message",
+      sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [
@@ -118,6 +119,7 @@ export class Slack extends Connector<Slack> {
       type: "dm",
       label: "Direct messages",
       noteLabel: "Message",
+      sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
       statuses: [

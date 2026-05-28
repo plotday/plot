@@ -64,6 +64,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     {
       type: "task",
       label: "Task",
+      sharingModel: "thread" as const,
       // Logo: full-color SVG from static assets (iconify has no logos/google-tasks)
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-tasks.svg",
