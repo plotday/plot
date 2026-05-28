@@ -105,6 +105,7 @@ export class LinkedIn extends Connector<LinkedIn> {
     {
       type: TYPE_CONVERSATION,
       label: "LinkedIn conversation",
+      sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
       statuses: [
@@ -117,6 +118,7 @@ export class LinkedIn extends Connector<LinkedIn> {
     {
       type: TYPE_GROUP,
       label: "LinkedIn group",
+      sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
       statuses: [
@@ -129,6 +131,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       // creation via createDefault: true on the "sent" status.
       type: TYPE_DM,
       label: "New message",
+      sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
       targets: "contacts" as const,
