@@ -2508,12 +2508,27 @@ class PickThreadShared extends ShowCommands {
 
     return PickThreadShared._(
       thread: thread,
-      commandsBuilder: (context) => _buildSharedCommands(
-        threadRef[0],
-        onUpdate: onUpdate,
-        isDraft: false,
-        candidates: candidatesCache,
-      ),
+      commandsBuilder: (context) async {
+        // Resolve sharing model + notes for the Dropped section. Only
+        // message-mode threads use them; the section is hidden otherwise.
+        final links = await Link.getForThread(thread.id);
+        final sharingModel = Thread.resolveSharingModel(links);
+        final notes = sharingModel == SharingModel.message
+            ? await Note.getForThread(thread.id)
+            : null;
+        final roleConfigs = links.isEmpty
+            ? null
+            : links.first.getTypeConfig()?.contactRoles;
+        return _buildSharedCommands(
+          threadRef[0],
+          onUpdate: onUpdate,
+          isDraft: false,
+          candidates: candidatesCache,
+          notes: notes,
+          sharingModel: sharingModel,
+          roleConfigs: roleConfigs,
+        );
+      },
     );
   }
 
