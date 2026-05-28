@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/widget/note_badge.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/thread.dart';
@@ -144,12 +145,40 @@ class _NoteWidgetState extends State<NoteWidget> {
 
     final hasFocus = widget.focusNode?.hasFocus ?? false;
 
+    // Compute divergence badge for message-mode threads. Reads links and
+    // thread contacts from the already-watching ThreadBloc state — no extra
+    // stream needed. Uses the synchronous Actor cache for name resolution so
+    // build stays synchronous; falls back to "Someone" for cache misses.
+    final threadState = activityBloc.state;
+    final sharingModel = Thread.resolveSharingModel(threadState.links);
+    final badgeLabel = sharingModel == SharingModel.message
+        ? Thread.noteBadgeLabel(
+            noteAudience: <Uuid>{
+              widget.note.authorId.value,
+              ...?widget.note.accessContacts?.map((a) => a.value),
+            },
+            threadContacts: threadState.thread.contacts.toSet(),
+            viewerContactIds: Actor.getCurrentUserActorIds()
+                .map((a) => a.toUuid())
+                .toSet(),
+            nameLookup: (id) =>
+                Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ??
+                'Someone',
+          )
+        : null;
+
     final listTile = ListTile(
       padding: const EdgeInsets.only(left: 10, right: 16, top: 8),
       borderRadius: BorderRadius.circular(8),
       bodyBuilder: (context, highlighted) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (badgeLabel != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 6, right: 6, bottom: 4),
+              child: NoteBadge(label: badgeLabel),
+            ),
+          ],
           if (widget.note.reNoteId != null)
             Padding(
               padding: const EdgeInsets.only(left: 6, right: 6, bottom: 4),
