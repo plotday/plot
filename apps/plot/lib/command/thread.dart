@@ -2868,9 +2868,13 @@ Future<Commands> _buildSharedCommands(
 
   // Resolve shared actors, then dedupe per person so a user with multiple
   // linked contacts doesn't appear twice (and the primary wins over alias
-  // rows).
+  // rows). For message-mode threads, only show active contacts (contacts
+  // minus droppedContacts) — dropped contacts appear in their own section.
+  final activeContactIds = sharingModel == SharingModel.message
+      ? thread.activeContacts
+      : thread.contacts;
   final resolved = <Actor>[];
-  for (final contactId in thread.contacts) {
+  for (final contactId in activeContactIds) {
     try {
       resolved.add(await Actor.getOne(ActorId.fromUuid(contactId)));
     } catch (_) {
@@ -2910,12 +2914,14 @@ Future<Commands> _buildSharedCommands(
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
-  Command toggleActor(Actor actor) =>
+  Command toggleActor(Actor actor, {bool isDropped = false}) =>
       ShareThreadActor(
         thread,
         actor,
         onUpdate: onUpdate,
         roleConfigs: roleConfigs,
+        sharingModel: sharingModel,
+        isDropped: isDropped,
       );
 
   Command toggleInvite(String email) =>
@@ -2924,17 +2930,15 @@ Future<Commands> _buildSharedCommands(
   Command toggleGroup(GroupRow group) =>
       ShareThreadGroup(thread, group, onUpdate: onUpdate);
 
-  // Dropped section (message-mode only): contacts who appear in note history
-  // but are no longer in thread.contacts. Viewer's own contacts are excluded.
+  // Dropped section (message-mode only): contacts in thread.droppedContacts.
+  // Viewer's own contacts are excluded (they can't drop themselves this way).
   final droppedActors = <Actor>[];
-  if (sharingModel == SharingModel.message && notes != null && notes.isNotEmpty) {
+  if (sharingModel == SharingModel.message) {
     final viewerContactIds = Actor.getCurrentUserActorIds()
         .map((a) => a.toUuid())
         .toSet();
-    final historical = Thread.historicalParticipants(notes);
-    final currentContactSet = thread.contacts.toSet();
-    final droppedIds = historical
-        .difference(currentContactSet)
+    final droppedIds = thread.droppedContacts
+        .toSet()
         .difference(viewerContactIds);
     for (final contactId in droppedIds) {
       try {
@@ -2970,7 +2974,9 @@ Future<Commands> _buildSharedCommands(
       if (droppedActors.isNotEmpty)
         StaticCommandGroup(
           title: 'Dropped',
-          commands: droppedActors.map(toggleActor).toList(),
+          commands: droppedActors
+              .map((a) => toggleActor(a, isDropped: true))
+              .toList(),
         ),
       _ThreadShareSuggestionsGroup(
         thread: thread,
@@ -2987,6 +2993,7 @@ Future<Commands> _buildSharedCommands(
         candidates: candidates,
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddressMode,
+        sharingModel: sharingModel,
         title: 'Share with',
       ),
     ],
@@ -3015,6 +3022,7 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
     required String title,
     this.dmTwistInstanceId,
     this.isAddressMode = false,
+    this.sharingModel = SharingModel.thread,
   }) : super(title: title);
 
   final Thread thread;
@@ -3022,6 +3030,7 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
   final Set<Uuid> excludeGroupIds;
   final Future<void> Function(Thread) onUpdate;
   final _ShareCandidatesCache candidates;
+  final SharingModel sharingModel;
 
   /// When non-null, only contacts reachable through this connection are shown.
   final Uuid? dmTwistInstanceId;
@@ -3051,7 +3060,12 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
           if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
             continue;
           }
-          commands.add(ShareThreadActor(thread, actor, onUpdate: onUpdate));
+          commands.add(ShareThreadActor(
+            thread,
+            actor,
+            onUpdate: onUpdate,
+            sharingModel: sharingModel,
+          ));
         case GroupShareCandidate(:final group):
           if (hideGroups) continue;
           if (excludeGroupIds.contains(group.id)) continue;
@@ -3154,20 +3168,29 @@ class ShareThreadActor extends Command {
     this.actor, {
     required this.onUpdate,
     this.roleConfigs,
-  }) : _isShared = _actorShared(thread, actor),
+    this.sharingModel = SharingModel.thread,
+    bool? isDropped,
+  }) : _isDropped = isDropped ?? false,
+       _isShared = isDropped == true
+           ? false  // Dropped contacts appear as "off" so user can re-add
+           : _actorShared(thread, actor),
        super(
          title: actor.nameOrEmail,
          eventObject: EventObject.activity,
-         eventAction: _actorShared(thread, actor)
-             ? EventAction.updated
-             : EventAction.shared,
-         icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
-         on: _actorShared(thread, actor),
+         eventAction: (isDropped == true || !_actorShared(thread, actor))
+             ? EventAction.shared
+             : EventAction.updated,
+         icon: (isDropped == true || !_actorShared(thread, actor))
+             ? PlotIcon.shareAdd
+             : PlotIcon.user,
+         on: isDropped == true ? false : _actorShared(thread, actor),
        );
 
   final Thread thread;
   final Actor actor;
   final Future<void> Function(Thread) onUpdate;
+  final SharingModel sharingModel;
+  final bool _isDropped;
   final bool _isShared;
 
   /// Per-connector role options. Null or shorter than 2 ⇒ no role badge.
@@ -3219,6 +3242,58 @@ class ShareThreadActor extends Command {
         );
         return const CommandRefresh();
       }
+
+      // Message-mode: dropped contacts are moved to/from dropped_contacts
+      // (they retain visibility via thread.contacts). The server's
+      // POST /thread/:id/share endpoint handles drop/undrop via the
+      // privileged update_thread_dropped_contacts RPC.
+      if (sharingModel == SharingModel.message) {
+        if (_isDropped) {
+          // Un-drop: remove from dropped_contacts (contact is already in contacts).
+          final toDrop = <String>[];
+          final toUndrop = _linkedContactIdsOnThread(thread, actor)
+              .map((id) => id.toString())
+              .toList();
+          await _callDropEndpoint(thread.id.toString(), toDrop, toUndrop);
+          // Optimistically update local state
+          final droppedSet = thread.droppedContacts.toSet();
+          for (final id in _linkedContactIdsOnThread(thread, actor)) {
+            droppedSet.remove(id);
+          }
+          await onUpdate(
+            thread.copyWith(droppedContacts: Value(droppedSet.toList())),
+          );
+        } else if (_isShared) {
+          // Drop: move from active to dropped_contacts.
+          final toDrop = _linkedContactIdsOnThread(thread, actor)
+              .map((id) => id.toString())
+              .toList();
+          await _callDropEndpoint(thread.id.toString(), toDrop, []);
+          // Optimistically update local state — remove contact_meta entries too
+          final toDropSet = _linkedContactIdsOnThread(thread, actor).toSet();
+          final newDropped = [
+            ...thread.droppedContacts,
+            ...toDropSet.where((id) => !thread.droppedContacts.contains(id)),
+          ];
+          final newMeta = _metaWithout(thread.contactMeta, toDropSet);
+          await onUpdate(
+            thread.copyWith(
+              droppedContacts: Value(newDropped),
+              contactMeta: newMeta,
+            ),
+          );
+        } else {
+          // Add a new contact (not previously on the thread).
+          final contactUuid = actor.id.toUuid();
+          final newContacts = [...thread.contacts, contactUuid];
+          await onUpdate(
+            thread.copyWith(contacts: Value(newContacts)),
+          );
+        }
+        return const CommandRefresh();
+      }
+
+      // Non-message-mode: existing behavior (full add/remove from contacts).
       final contactUuid = actor.id.toUuid();
       final List<Uuid> newContacts;
       final Value<Map<String, dynamic>?> newMeta;
@@ -3243,6 +3318,21 @@ class ShareThreadActor extends Command {
       log.severe('Error in ShareThreadActor: $e', e, stackTrace);
       return CommandMessage('Failed to update sharing', isError: true);
     }
+  }
+
+  /// Call POST /thread/:id/share with drop/undrop parameters.
+  Future<void> _callDropEndpoint(
+    String threadId,
+    List<String> toDrop,
+    List<String> toUndrop,
+  ) async {
+    await api.post<dynamic>(
+      '/thread/$threadId/share',
+      body: {
+        if (toDrop.isNotEmpty) 'drop': toDrop,
+        if (toUndrop.isNotEmpty) 'undrop': toUndrop,
+      },
+    );
   }
 
   /// Apply [nextRoleId] to the contact's `contactMeta` entry. Server merges

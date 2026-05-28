@@ -157,7 +157,7 @@ class _NoteWidgetState extends State<NoteWidget> {
               widget.note.authorId.value,
               ...?widget.note.accessContacts?.map((a) => a.value),
             },
-            threadContacts: threadState.thread.contacts.toSet(),
+            threadContacts: threadState.thread.activeContacts.toSet(),
             viewerContactIds: Actor.getCurrentUserActorIds()
                 .map((a) => a.toUuid())
                 .toSet(),

@@ -43,6 +43,13 @@ class Threads extends Table
   /// `thread.contacts` on the server.
   TextColumn get contacts => text().nullable().map(const UuidListConverter())();
 
+  /// Contacts who were on this thread but have been dropped from the active
+  /// recipient set. They remain in `contacts` (for thread visibility) but are
+  /// excluded from outbound defaults, the header AvatarGroup, and badge logic.
+  /// Populated from `thread.dropped_contacts` on the server.
+  TextColumn get droppedContacts =>
+      text().nullable().map(const UuidListConverter())();
+
   /// Per-contact descriptive metadata, keyed by contact id. Shape (JSON):
   ///   `{ "<contact_uuid>": { "role": "<role_id>", "addedBy": "<user_id>" } }`
   /// Populated from `thread.contact_meta` on the server. Contacts not in the
@@ -4423,6 +4430,21 @@ ORDER BY
   bool get draft => _thread.draft;
   List<Uuid> get contacts => _thread.contacts ?? const [];
 
+  /// Contacts who have been dropped from the active recipient set. They remain
+  /// in [contacts] (for thread visibility) but are excluded from outbound
+  /// defaults, the header AvatarGroup, and badge logic.
+  List<Uuid> get droppedContacts => _thread.droppedContacts ?? const [];
+
+  /// Active contacts: [contacts] minus [droppedContacts]. This is the set used
+  /// for outbound defaults, badge superset logic, and the Shared section of
+  /// the sharing modal.
+  List<Uuid> get activeContacts {
+    if (droppedContacts.isEmpty) return contacts;
+    final droppedSet = droppedContacts.toSet();
+    return contacts.where((c) => !droppedSet.contains(c)).toList();
+  }
+
+
   /// Resolved sharing model for this thread, derived from the primary
   /// (earliest-created) link's [LinkTypeConfig.sharingModel]. Threads
   /// with no link default to [SharingModel.thread].
@@ -5581,6 +5603,7 @@ ORDER BY
     Order? order,
     bool? draft,
     Value<List<Uuid>?> contacts = const Value.absent(),
+    Value<List<Uuid>?> droppedContacts = const Value.absent(),
     Value<Map<String, dynamic>?> contactMeta = const Value.absent(),
     Value<List<Uuid>?> groups = const Value.absent(),
     Value<List<String>?> inviteEmails = const Value.absent(),
@@ -5634,6 +5657,7 @@ ORDER BY
     if (priority != null ||
         draft != null ||
         contacts.present ||
+        droppedContacts.present ||
         contactMeta.present ||
         groups.present ||
         inviteEmails.present ||
@@ -5653,6 +5677,7 @@ ORDER BY
       activityRemoteDirty = priority != null ||
           draft != null ||
           contacts.present ||
+          droppedContacts.present ||
           contactMeta.present ||
           groups.present ||
           inviteEmails.present ||
@@ -5666,6 +5691,7 @@ ORDER BY
         priorityId: priority?.id,
         draft: draft,
         contacts: contacts,
+        droppedContacts: droppedContacts,
         contactMeta: contactMeta,
         groups: groups,
         inviteEmails: inviteEmails.present

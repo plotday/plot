@@ -198,8 +198,10 @@ class ThreadBloc extends Cubit<ThreadState> {
   }
 
   /// After a note is sent on a message-mode thread, drop any contacts whose
-  /// role is marked `hidden` (BCC). Runs asynchronously so it doesn't delay
-  /// the UI update from [add].
+  /// role is marked `hidden` (BCC). The BCC contact is moved to
+  /// `dropped_contacts` (retains visibility into the message they were BCC'd
+  /// on) rather than removed from `contacts` entirely. Runs asynchronously so
+  /// it doesn't delay the UI update from [add].
   void _dropHiddenRoleContactsAfterSend(Thread thread, List<Link> links) {
     unawaited(_doDropHiddenRoleContacts(thread, links));
   }
@@ -224,15 +226,18 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     if (toDrop.isEmpty) return;
 
-    final newContacts = thread.contacts
-        .where((c) => !toDrop.contains(c))
-        .toList();
+    // Add to dropped_contacts (keeps contact in thread.contacts for visibility)
+    // and strip their contact_meta entries (they no longer have an active role).
     final toDropSet = toDrop.toSet();
+    final newDropped = [
+      ...thread.droppedContacts,
+      ...toDropSet.where((id) => !thread.droppedContacts.contains(id)),
+    ];
     final newMeta = Map<String, dynamic>.of(meta)
       ..removeWhere((k, _) => toDropSet.any((id) => id.toString() == k));
 
     final updatedThread = thread.copyWith(
-      contacts: Value(newContacts),
+      droppedContacts: Value(newDropped),
       contactMeta: Value(newMeta.isEmpty ? null : newMeta),
     );
     try {
