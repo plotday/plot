@@ -229,12 +229,12 @@ class ToggleSelfTask extends NoteCommand {
 /// known — same lookup used by [_NoteReactionsRow] (see widget/note.dart).
 class AddNoteReaction extends NoteCommand {
   AddNoteReaction(super.note, {this.activityBloc})
-      : super(
-          title: 'React',
-          eventObject: EventObject.note,
-          eventAction: EventAction.tagged,
-          icon: FontAwesomeIcons.faceSmile,
-        );
+    : super(
+        title: 'React',
+        eventObject: EventObject.note,
+        eventAction: EventAction.tagged,
+        icon: FontAwesomeIcons.faceSmile,
+      );
 
   final ThreadBloc? activityBloc;
 
@@ -290,22 +290,18 @@ class ToggleNoteReaction extends NoteCommand {
       final db = Store.get;
 
       // Read the current local reactions row (may not exist yet).
-      final current = await (db.select(db.noteReactions)
-            ..where((t) => t.id.equals(note.id.toBytes())))
-          .getSingleOrNull();
+      final current = await (db.select(
+        db.noteReactions,
+      )..where((t) => t.id.equals(note.id.toBytes()))).getSingleOrNull();
 
       final reactionsNow = <Reaction, List<ActorId>>{
         for (final entry in (current?.reactions ?? const {}).entries)
           entry.key: List<ActorId>.from(entry.value),
       };
-      final updatesNow = <String, bool>{
-        ...?current?.reactionsUpdated,
-      };
+      final updatesNow = <String, bool>{...?current?.reactionsUpdated};
 
       final actors = reactionsNow.putIfAbsent(emoji, () => <ActorId>[]);
-      final present = actors.any(
-        (id) => Actor.canonicalId(id) == canonical,
-      );
+      final present = actors.any((id) => Actor.canonicalId(id) == canonical);
       final nowPresent = !present;
 
       if (nowPresent) {
@@ -324,9 +320,7 @@ class ToggleNoteReaction extends NoteCommand {
         updatedAt: Value(DateTime.now()),
         pending: const Value(2),
       );
-      await db
-          .into(db.noteReactions)
-          .insertOnConflictUpdate(companion);
+      await db.into(db.noteReactions).insertOnConflictUpdate(companion);
 
       // Schedule a push.
       unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
@@ -377,11 +371,11 @@ List<Command> mruReactionsForToolbar(
 /// accent. Tap toggles the reaction off via [ToggleNoteReaction].
 class ActiveNoteReaction extends NoteCommand {
   ActiveNoteReaction(super.note, this.emoji)
-      : super(
-          title: emojiDisplayName(emoji),
-          eventObject: EventObject.note,
-          eventAction: EventAction.untagged,
-        );
+    : super(
+        title: emojiDisplayName(emoji),
+        eventObject: EventObject.note,
+        eventAction: EventAction.untagged,
+      );
 
   final Reaction emoji;
 
@@ -394,21 +388,22 @@ class ActiveNoteReaction extends NoteCommand {
       ToggleNoteReaction(note, emoji).run(context);
 }
 
-Widget _emojiButtonIcon(BuildContext _, Reaction emoji) => EmojiCommandIcon(emoji);
+Widget _emojiButtonIcon(BuildContext _, Reaction emoji) =>
+    EmojiCommandIcon(emoji);
 
 /// Hover-toolbar wrapper around [ToggleNoteReaction] that renders an emoji
 /// glyph instead of an icon and skips MRU bookkeeping (the user is reusing
 /// an already-recent emoji; no MRU change to make).
 class _QuickReactionCommand extends NoteCommand {
   _QuickReactionCommand(super.note, this.emoji)
-      : super(
-          // Tooltip text. Human-readable CLDR name when known (e.g.
-          // "grinning face"); falls back to the raw emoji for custom-emoji
-          // refs and any Unicode glyph not in the names map.
-          title: emojiDisplayName(emoji),
-          eventObject: EventObject.note,
-          eventAction: EventAction.tagged,
-        );
+    : super(
+        // Tooltip text. Human-readable CLDR name when known (e.g.
+        // "grinning face"); falls back to the raw emoji for custom-emoji
+        // refs and any Unicode glyph not in the names map.
+        title: emojiDisplayName(emoji),
+        eventObject: EventObject.note,
+        eventAction: EventAction.tagged,
+      );
 
   final Reaction emoji;
 
@@ -486,9 +481,7 @@ class MakeNotePrivate extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final updated = note.copyWith(
-        accessContacts: Value([Base.actorId]),
-      );
+      final updated = note.copyWith(accessContacts: Value([Base.actorId]));
       await updated.save();
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -520,9 +513,7 @@ class ChangeNotePrivacy extends ShowCommands {
     ThreadBloc threadBloc,
   ) async {
     final freshNote = await note.refresh();
-    final selfIds = Actor.getCurrentUserActorIds()
-        .map((a) => a.value)
-        .toSet();
+    final selfIds = Actor.getCurrentUserActorIds().map((a) => a.value).toSet();
     final threadContacts = threadBloc.state.thread.contacts;
 
     final actors = <Actor>[];
@@ -537,9 +528,11 @@ class ChangeNotePrivacy extends ShowCommands {
       }
     }
 
-    final selfActors = actors.where((a) => selfIds.contains(a.id.value))
+    final selfActors = actors
+        .where((a) => selfIds.contains(a.id.value))
         .toList();
-    final otherActors = actors.where((a) => !selfIds.contains(a.id.value))
+    final otherActors = actors
+        .where((a) => !selfIds.contains(a.id.value))
         .toList();
 
     return Commands(
@@ -553,22 +546,18 @@ class ChangeNotePrivacy extends ShowCommands {
           StaticCommandGroup(
             title: 'You',
             commands: selfActors
-                .map((a) => ToggleNotePrivacyContact(
-                      freshNote,
-                      a,
-                      isSelf: true,
-                    ))
+                .map(
+                  (a) => ToggleNotePrivacyContact(freshNote, a, isSelf: true),
+                )
                 .toList(),
           ),
         if (otherActors.isNotEmpty)
           StaticCommandGroup(
             title: 'Others in this thread',
             commands: otherActors
-                .map((a) => ToggleNotePrivacyContact(
-                      freshNote,
-                      a,
-                      isSelf: false,
-                    ))
+                .map(
+                  (a) => ToggleNotePrivacyContact(freshNote, a, isSelf: false),
+                )
                 .toList(),
           ),
       ],
@@ -599,21 +588,18 @@ class MakeNotePublic extends NoteCommand {
 }
 
 class ToggleNotePrivacyContact extends NoteCommand {
-  ToggleNotePrivacyContact(
-    super.note,
-    this.actor, {
-    required this.isSelf,
-  }) : super(
-          title: actor.nameOrEmail,
-          eventObject: EventObject.note,
-          eventAction: _isInAccess(note, actor.id)
-              ? EventAction.untagged
-              : EventAction.tagged,
-          icon: (isSelf || _isInAccess(note, actor.id))
-              ? PlotIcon.shared
-              : PlotIcon.shareAdd,
-          on: isSelf || _isInAccess(note, actor.id),
-        );
+  ToggleNotePrivacyContact(super.note, this.actor, {required this.isSelf})
+    : super(
+        title: actor.nameOrEmail,
+        eventObject: EventObject.note,
+        eventAction: _isInAccess(note, actor.id)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: (isSelf || _isInAccess(note, actor.id))
+            ? PlotIcon.shared
+            : PlotIcon.shareAdd,
+        on: isSelf || _isInAccess(note, actor.id),
+      );
 
   final Actor actor;
   final bool isSelf;
@@ -794,7 +780,8 @@ class PickNoteAssignee extends ShowCommands {
   /// Whether anyone other than the current user is assigned, including
   /// hidden assignees (announce-topic-only members the viewer can't see).
   bool get hasOtherAssignees {
-    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+    final selfAssigned =
+        note.activeAssignees.contains(Base.actorId) ||
         note.completedAssignees.contains(Base.actorId);
     return note.assigneeCount > (selfAssigned ? 1 : 0);
   }
@@ -806,7 +793,8 @@ class PickNoteAssignee extends ShowCommands {
       _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
 
   static bool _hasOtherAssignees(Note note) {
-    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+    final selfAssigned =
+        note.activeAssignees.contains(Base.actorId) ||
         note.completedAssignees.contains(Base.actorId);
     return note.assigneeCount > (selfAssigned ? 1 : 0);
   }
@@ -1011,12 +999,9 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       CopyNoteContent(note),
     if (activityBloc != null && !note.isPrivate)
       MakeNotePrivate(note, threadBloc: activityBloc),
-    if (activityBloc != null &&
-        note.isPrivate &&
-        note.authorId.isCurrentUser)
+    if (activityBloc != null && note.isPrivate && note.authorId.isCurrentUser)
       ChangeNotePrivacy(note, threadBloc: activityBloc),
-    ];
-
+  ];
 }
 
 class CopyNoteContent extends NoteCommand {
@@ -1048,7 +1033,7 @@ class CopyNoteContent extends NoteCommand {
 class ShowNoteCommands extends ShowCommands {
   ShowNoteCommands(Note note, {ThreadBloc? activityBloc})
     : super(
-        title: 'More commands',
+        title: 'More',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async => Commands(
           groups: noteCommandGroups(note, activityBloc: activityBloc),
@@ -1119,7 +1104,8 @@ class PickDraftNoteAssignee extends ShowCommands {
       _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
 
   static bool _hasOtherAssignees(Note note) {
-    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+    final selfAssigned =
+        note.activeAssignees.contains(Base.actorId) ||
         note.completedAssignees.contains(Base.actorId);
     return note.assigneeCount > (selfAssigned ? 1 : 0);
   }

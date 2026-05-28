@@ -609,9 +609,7 @@ class MuteSimilarThreads extends Command {
       // clears the anchor on every peer with the same seed; clients pick
       // those up on the next sync pull. read_at / active are left as-is so
       // the user's prior state is preserved.
-      final unmuted = _thread.copyWith(
-        muteByThreadId: const Value(null),
-      );
+      final unmuted = _thread.copyWith(muteByThreadId: const Value(null));
       priorityBloc?.optimisticallyUpdateThread(unmuted);
       await unmuted.save();
     } else {
@@ -2469,7 +2467,7 @@ class _ExecuteSplit extends ThreadCommand {
 class ShowThreadCommands extends ShowCommands {
   ShowThreadCommands(Thread thread, {bool open = true})
     : super(
-        title: 'More commands',
+        title: 'More',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async {
           // Capture the bloc here — `context` is the more-button's context,
@@ -2853,13 +2851,12 @@ Future<Commands> _buildSharedCommands(
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
-  Command toggleActor(Actor actor) =>
-      ShareThreadActor(
-        thread,
-        actor,
-        onUpdate: onUpdate,
-        roleConfigs: roleConfigs,
-      );
+  Command toggleActor(Actor actor) => ShareThreadActor(
+    thread,
+    actor,
+    onUpdate: onUpdate,
+    roleConfigs: roleConfigs,
+  );
 
   Command toggleInvite(String email) =>
       InviteThreadEmail(thread, email, onUpdate: onUpdate);
@@ -3167,10 +3164,7 @@ class ShareThreadActor extends Command {
       final addedByValue = addedBy ?? selfId;
       final newMeta = <String, dynamic>{
         ...thread.contactMeta,
-        contactKey: {
-          'role': nextRoleId,
-          'addedBy': ?addedByValue,
-        },
+        contactKey: {'role': nextRoleId, 'addedBy': ?addedByValue},
       };
       await onUpdate(thread.copyWith(contactMeta: Value(newMeta)));
       return const CommandRefresh();
