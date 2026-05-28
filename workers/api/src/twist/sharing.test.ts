@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconcileThreadContacts, reconcileAndComputeRemovals } from "./sharing";
+import { reconcileThreadContacts } from "./sharing";
 
 describe("reconcileThreadContacts (50% removal heuristic)", () => {
   it("adds new recipients always", () => {
@@ -53,46 +53,34 @@ describe("reconcileThreadContacts (50% removal heuristic)", () => {
   });
 });
 
-describe("reconcileAndComputeRemovals", () => {
-  it("returns empty toRemove for pure additions", () => {
-    const result = reconcileAndComputeRemovals({
-      previous: ["a", "b"],
-      incoming: ["a", "b", "c"],
-    });
-    expect(result.toRemove).toEqual([]);
-    expect(result.reconciled).toEqual(["a", "b", "c"]);
+describe("reconcileThreadContacts — drop/undrop direction tests", () => {
+  it("identifies contacts to drop: previous active minus reconciled", () => {
+    const previous = ["a", "b", "c"];
+    const incoming = ["a", "b"];
+    const reconciled = reconcileThreadContacts({ previous, incoming });
+    const reconciledSet = new Set(reconciled);
+    const toDrop = previous.filter((c) => !reconciledSet.has(c));
+    expect(toDrop).toEqual(["c"]);
   });
 
-  it("returns the dropped IDs when a small fraction is removed", () => {
-    const result = reconcileAndComputeRemovals({
-      previous: ["a", "b", "c"],
-      incoming: ["a", "b"],
-    });
-    expect(result.toRemove).toEqual(["c"]);
-    expect(result.reconciled).toEqual(["a", "b"]);
+  it("identifies contacts to undrop: previously dropped that are now back in reconciled", () => {
+    // Simulate: c was previously dropped, now incoming includes c again
+    const previousActive = ["a", "b"]; // excludes c (it was dropped)
+    const incoming = ["a", "b", "c"];
+    const previousDropped = new Set(["c"]);
+    const reconciled = reconcileThreadContacts({ previous: previousActive, incoming });
+    const reconciledSet = new Set(reconciled);
+    const toUndrop = [...previousDropped].filter((c) => reconciledSet.has(c));
+    expect(toUndrop).toEqual(["c"]);
   });
 
-  it("returns empty toRemove when most recipients are dropped (private reply)", () => {
-    const result = reconcileAndComputeRemovals({
-      previous: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
-      incoming: ["a", "b"],
-    });
-    expect(result.toRemove).toEqual([]);
-  });
-
-  it("handles 50% removal (treats as real removal)", () => {
-    const result = reconcileAndComputeRemovals({
-      previous: ["a", "b"],
-      incoming: ["a"],
-    });
-    expect(result.toRemove).toEqual(["b"]);
-  });
-
-  it("returns empty toRemove when nothing changed", () => {
-    const result = reconcileAndComputeRemovals({
-      previous: ["a", "b"],
-      incoming: ["a", "b"],
-    });
-    expect(result.toRemove).toEqual([]);
+  it("returns empty toDrop when all incoming are a large private subset", () => {
+    // >50% dropped → treat as private reply, no drops
+    const previous = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+    const incoming = ["a", "b"];
+    const reconciled = reconcileThreadContacts({ previous, incoming });
+    const reconciledSet = new Set(reconciled);
+    const toDrop = previous.filter((c) => !reconciledSet.has(c));
+    expect(toDrop).toEqual([]); // heuristic preserves all
   });
 });

@@ -8,6 +8,7 @@ import { rpc } from "../rpc";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 import { sendInvitation } from "./invitation";
+import { updateThreadDroppedContacts } from "../twist/sharing";
 
 const threadShare = new Hono<{ Bindings: Bindings }>();
 
@@ -42,6 +43,12 @@ const ShareRequestSchema = z.object({
   removeGroups: z.array(z.string().uuid()).optional(),
   addTopics: z.array(z.string().uuid()).optional(),
   removeTopics: z.array(z.string().uuid()).optional(),
+  // Message-mode drop/undrop: move contacts to/from dropped_contacts without
+  // changing thread.contacts (they retain visibility). Used by the Flutter
+  // sharing modal when the viewer drops or re-adds a participant on a
+  // message-mode thread.
+  drop: z.array(z.string().uuid()).optional(),
+  undrop: z.array(z.string().uuid()).optional(),
 });
 
 // POST /thread/:id/share - Share a thread with other users/contacts
@@ -71,13 +78,17 @@ threadShare.post("/thread/:id/share", async (c) => {
   const { add, remove, roleChanges } = parseResult.data;
   const addGroups = parseResult.data.addGroups ?? parseResult.data.addTopics ?? [];
   const removeGroups = parseResult.data.removeGroups ?? parseResult.data.removeTopics ?? [];
+  const drop = parseResult.data.drop ?? [];
+  const undrop = parseResult.data.undrop ?? [];
 
   if (
     add.length === 0 &&
     remove.length === 0 &&
     roleChanges.length === 0 &&
     addGroups.length === 0 &&
-    removeGroups.length === 0
+    removeGroups.length === 0 &&
+    drop.length === 0 &&
+    undrop.length === 0
   ) {
     return c.json({ message: "No changes to make" }, 400);
   }
@@ -237,6 +248,27 @@ threadShare.post("/thread/:id/share", async (c) => {
         c,
         groupError as Error,
         "Failed to share thread with groups",
+        { thread_id: threadId, user_id: user.id }
+      );
+    }
+  }
+
+  // Message-mode drop/undrop: moves contacts to/from dropped_contacts without
+  // touching thread.contacts. Callers supply contact IDs that must already be
+  // in thread.contacts (the invariant is enforced by the DB function).
+  if (drop.length > 0 || undrop.length > 0) {
+    try {
+      await updateThreadDroppedContacts(c.var.db, threadId, drop, undrop);
+      logger.info("update_thread_dropped_contacts completed", {
+        thread_id: threadId,
+        dropped: drop.length,
+        undropped: undrop.length,
+      });
+    } catch (dropError) {
+      return captureServerError(
+        c,
+        dropError as Error,
+        "Failed to update thread dropped contacts",
         { thread_id: threadId, user_id: user.id }
       );
     }

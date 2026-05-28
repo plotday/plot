@@ -17,7 +17,7 @@ import { createNotes } from "./note";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
 import { getSharingModelForChannel } from "../../../app/sync/link-tags";
-import { reconcileAndComputeRemovals, pruneThreadContacts } from "../../sharing";
+import { reconcileThreadContacts, updateThreadDroppedContacts } from "../../sharing";
 import { addContacts } from "./contacts";
 
 /**
@@ -118,29 +118,26 @@ export async function createLink(
       }
     }
 
-    // Message-mode contact reconciliation (Option A: privileged platform
-    // removal). When the connector declares sharingModel="message" and we're
-    // updating an existing thread, apply the 50% removal heuristic. The
-    // helper decides which previous contacts to drop; we call the privileged
-    // prune_thread_contacts RPC before upsert_thread, so upsert_thread's
-    // additive union produces the correctly reconciled final state.
+    // Message-mode contact reconciliation. When the connector declares
+    // sharingModel="message" and we're updating an existing thread, apply the
+    // 50% removal heuristic against the ACTIVE set (contacts - dropped_contacts).
+    // Contacts that fall out of the reconciled active set are moved to
+    // dropped_contacts (they retain thread visibility but are excluded from
+    // future defaults). Contacts that reappear in the active set are
+    // un-dropped.
     //
-    // KNOWN RACE: prune_thread_contacts and the downstream upsert_thread
-    // run as separate statements. If the process dies between them, the
-    // thread is left partially updated (contacts pruned, additions not
-    // applied). plot.db here may or may not be a transaction depending on
-    // the caller — the runtime should ideally wrap createLink in
-    // withUserDb so both writes commit atomically. Tracked as a follow-up;
-    // the window is small and the next message-mode saveLink for this
-    // thread will re-reconcile to the correct state.
+    // KNOWN RACE: update_thread_dropped_contacts and the downstream
+    // upsert_thread run as separate statements. If the process dies between
+    // them, the thread is left partially updated. The window is small and the
+    // next message-mode saveLink will re-reconcile to the correct state.
     //
     // FAST PATH: skip when accessContacts is empty — incoming = [] means
-    // toRemove = previous (heuristic preserves) so nothing fires anyway,
+    // nothing changes (heuristic preserves everything) so nothing fires,
     // and we avoid an unnecessary sharing-model lookup + addContacts call
     // on every non-message saveLink that omits accessContacts.
     //
     // See workers/api/src/twist/sharing.ts and
-    // libs/db/schema/60-functions/prune_thread_contacts.sql.
+    // libs/db/schema/60-functions/update_thread_dropped_contacts.sql.
     if (
       threadData.id &&
       link.accessContacts !== undefined &&
@@ -155,16 +152,34 @@ export async function createLink(
       if (sharingModel === "message") {
         const existing = await plot.db
           .selectFrom("thread")
-          .select("contacts")
+          .select(["contacts", "dropped_contacts"])
           .where("id", "=", threadData.id)
           .executeTakeFirst();
-        const previous: string[] =
-          ((existing?.contacts as string[] | null) ?? []);
+        const allContacts: string[] = (existing?.contacts as string[] | null) ?? [];
+        const droppedSet = new Set<string>(
+          (existing?.dropped_contacts as string[] | null) ?? [],
+        );
+        const previousActive = allContacts.filter((c) => !droppedSet.has(c));
+
         const incomingActors = await addContacts(plot, link.accessContacts);
         const incoming: string[] = incomingActors.map((a) => String(a.id));
-        const { toRemove } = reconcileAndComputeRemovals({ previous, incoming });
-        if (toRemove.length > 0) {
-          await pruneThreadContacts(plot.db, threadData.id, toRemove);
+
+        const reconciled = reconcileThreadContacts({
+          previous: previousActive,
+          incoming,
+        });
+        const reconciledSet = new Set(reconciled);
+
+        const toDrop = previousActive.filter((c) => !reconciledSet.has(c));
+        const toUndrop = [...droppedSet].filter((c) => reconciledSet.has(c));
+
+        if (toDrop.length > 0 || toUndrop.length > 0) {
+          await updateThreadDroppedContacts(
+            plot.db,
+            threadData.id,
+            toDrop,
+            toUndrop,
+          );
         }
       }
     }

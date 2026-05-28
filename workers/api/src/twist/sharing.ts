@@ -48,37 +48,28 @@ export function reconcileThreadContacts(args: {
 }
 
 /**
- * Compute the IDs to remove between a previous contact set and the reconciled
- * result, applying the 50% removal heuristic. Combines `reconcileThreadContacts`
- * with a diff so callers get just the removal delta.
+ * Invoke the privileged `update_thread_dropped_contacts` DB function.
+ * Callers must have independently confirmed (via the platform reconciliation
+ * heuristic) that the change is correct — this RPC bypasses share_thread's
+ * user access-control check by design. See
+ * `update_thread_dropped_contacts.sql` for the trust contract.
+ *
+ * Dropped contacts remain in `thread.contacts` (so they retain thread
+ * visibility) but are recorded in `thread.dropped_contacts` so clients
+ * exclude them from outbound defaults and badge logic.
  */
-export function reconcileAndComputeRemovals(args: {
-  previous: string[];
-  incoming: string[];
-}): { reconciled: string[]; toRemove: string[] } {
-  const reconciled = reconcileThreadContacts(args);
-  const reconciledSet = new Set(reconciled);
-  const toRemove = args.previous.filter((c) => !reconciledSet.has(c));
-  return { reconciled, toRemove };
-}
-
-/**
- * Invoke the privileged `prune_thread_contacts` DB function. Callers must
- * have independently confirmed (via the platform reconciliation heuristic)
- * that removal is correct — this RPC bypasses share_thread's user
- * access-control check by design. See `prune_thread_contacts.sql` for the
- * trust contract.
- */
-export async function pruneThreadContacts(
+export async function updateThreadDroppedContacts(
   db: Kysely<DB>,
   threadId: string,
-  removeContactIds: string[],
+  toDrop: string[],
+  toUndrop: string[],
 ): Promise<void> {
-  if (removeContactIds.length === 0) return;
+  if (toDrop.length === 0 && toUndrop.length === 0) return;
   await sql`
-    SELECT public.prune_thread_contacts(
+    SELECT public.update_thread_dropped_contacts(
       ${threadId}::uuid,
-      ${sql.val(removeContactIds)}::uuid[]
+      ${sql.val(toDrop)}::uuid[],
+      ${sql.val(toUndrop)}::uuid[]
     )
   `.execute(db);
 }
