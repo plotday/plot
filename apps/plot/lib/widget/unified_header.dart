@@ -605,11 +605,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
-    final IconData scopeCaret = state.hideSubPriorities
+    final IconData scopeCaret = state.showSubPriorities
         ? FontAwesomeIcons.chevronDown
         : FontAwesomeIcons.chevronRight;
     void toggleScope() =>
-        context.run(ToggleHideSubPriorities(context: context));
+        context.run(ToggleShowSubPriorities(context: context));
 
     return Expanded(
       child: Align(

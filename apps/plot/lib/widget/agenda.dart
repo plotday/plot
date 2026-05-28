@@ -1177,9 +1177,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
         onTap: () {
           final eventThread = widget.thread;
           if (eventThread == null) {
-            context.run(
-              ChangeCurrentPriority(widget.priority, fromAgenda: true),
-            );
+            context.run(ChangeCurrentPriority(widget.priority));
             return;
           }
           // Event-headers in the universal agenda live under the
@@ -1190,10 +1188,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // event as current, and let [ThreadPage] wire `setThread`
           // into the destination [PriorityBloc] on mount.
           context.read<NowBloc>().setCurrentEvent(eventThread);
-          // Match the gap-header path: the destination page should open
-          // with descendants hidden, since the agenda already rolls them
-          // up under each block.
-          PriorityBloc.markNextPriorityFromAgenda();
           // Record the source tab so back from the destination priority
           // page returns to Agenda instead of exiting the app. Mark for
           // URL-history replace when already on the Activity tab so an

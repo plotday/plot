@@ -223,25 +223,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// the same frame as the drop.
   static final Set<PriorityBloc> _allInstances = <PriorityBloc>{};
 
-  /// One-shot flag set by [ChangeCurrentPriority] (with `fromAgenda: true`)
-  /// just before navigation. Consumed by the next [PriorityBloc] construction
-  /// or [setPriority] call so the destination page opens with
-  /// [PriorityState.hideSubPriorities] = false. Agenda items already
-  /// surface descendant content under the current priority's block, so
-  /// landing on the priority page should default to "direct threads only"
-  /// to avoid duplicating that rollup in the feed.
-  static bool _nextPriorityFromAgenda = false;
-
-  static void markNextPriorityFromAgenda() {
-    _nextPriorityFromAgenda = true;
-  }
-
-  static bool _consumeFromAgendaFlag() {
-    final v = _nextPriorityFromAgenda;
-    _nextPriorityFromAgenda = false;
-    return v;
-  }
-
   ThreadHeaderNotifier? headerNotifier;
 
   /// Persisted scroll offsets for scroll restoration across route changes.
@@ -285,7 +266,6 @@ class PriorityBloc extends Cubit<PriorityState> {
         PriorityState(
           context: priority,
           thread: thread,
-          hideSubPriorities: !_consumeFromAgendaFlag(),
         ),
       ) {
     _allInstances.add(this);
@@ -310,10 +290,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// descendant priorities. Reloads those streams so the change takes effect
   /// immediately. The agenda is unaffected — it's a global stream that
   /// surfaces threads by date regardless of which priority page is active.
-  void toggleHideSubPriorities() {
-    final next = !state.hideSubPriorities;
-    log.info('Toggling hideSubPriorities to $next');
-    emit(state.copyWith(hideSubPriorities: next));
+  void toggleShowSubPriorities() {
+    final next = !state.showSubPriorities;
+    log.info('Toggling showSubPriorities to $next');
+    emit(state.copyWith(showSubPriorities: next));
     _restartActiveTabSubscription();
   }
 
@@ -792,7 +772,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final priorityToLoad = state.context;
     final isSearching = state.search.isNotEmpty;
     final scopeByPath =
-        isSearching || state.hideSubPriorities || _currentEventForFeed != null;
+        isSearching || state.showSubPriorities || _currentEventForFeed != null;
     final searchGlobal = isSearching && priorityToLoad.root;
 
     _activeTabSubscriptionTab = ActivityTab.all;
@@ -1124,7 +1104,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       final isSearching = state.search.isNotEmpty;
       final scopeByPath =
           isSearching ||
-          state.hideSubPriorities ||
+          state.showSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
 
@@ -1218,7 +1198,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       final isSearching = state.search.isNotEmpty;
       final scopeByPath =
           isSearching ||
-          state.hideSubPriorities ||
+          state.showSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
 
@@ -1324,7 +1304,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       final isSearching = state.search.isNotEmpty;
       final scopeByPath =
           isSearching ||
-          state.hideSubPriorities ||
+          state.showSubPriorities ||
           _currentEventForFeed != null;
       final searchGlobal = isSearching && priorityToLoad.root;
 
@@ -1407,9 +1387,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     final scopeChanged = (prev == null) != (event == null);
     _currentEventForFeed = event;
-    if (scopeChanged && !state.hideSubPriorities && state.search.isEmpty) {
+    if (scopeChanged && !state.showSubPriorities && state.search.isEmpty) {
       // Only reload when the effective scope actually flips. When the
-      // user already has descendants visible (hideSubPriorities=true) or
+      // user already has descendants visible (showSubPriorities=true) or
       // is searching (already global), nothing changes.
       _restartActiveTabSubscription();
     } else if (_activeTabSubscriptionTab != null) {
@@ -2550,10 +2530,6 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
-    // Reset hideSubPriorities to its default unless this navigation came
-    // from the agenda (in which case the destination defaults to direct-only
-    // threads). See [_consumeFromAgendaFlag] for the rationale.
-    final fromAgenda = _consumeFromAgendaFlag();
     emit(
       state.copyWith(
         context: newPriority,
@@ -2562,7 +2538,9 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedByTab: const {},
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
-        hideSubPriorities: !fromAgenda,
+        // Reset to the default rolled-up feed (priority + descendants) on
+        // every priority switch, including navigation from the agenda.
+        showSubPriorities: true,
         // Match the pre-persistence behavior: a fresh PriorityBloc started
         // with empty filters / search. Carrying them across switches makes
         // users hit "filtered to nothing" without realizing why.
