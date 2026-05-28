@@ -2388,7 +2388,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 344;
+  int get schemaVersion => 345;
 
   @override
   MigrationStrategy get migration {
@@ -3704,6 +3704,10 @@ class Store extends _$Store {
           rethrow;
         }
       }
+    }
+    if (from < 345) {
+      await m.addColumn(twistInstances, twistInstances.handle);
+      await m.addColumn(twistInstances, twistInstances.threadType);
     }
   }
 

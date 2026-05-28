@@ -436,14 +436,38 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Routes a ConnectionChoice from the modal/dropdown into the draft note.
-  /// Plot thread clears any CreateLinkUserAction; a target replaces it.
+  /// Routes a ConnectionChoice from the modal/dropdown into the draft.
+  /// - Plot thread: clear CreateLinkUserAction and clear any selected twist.
+  /// - CreateTarget: set CreateLinkUserAction; clear any selected twist.
+  /// - Twist: clear CreateLinkUserAction; set the twist (icon + selected state).
   Future<void> _applyConnectionChoice(ConnectionChoice choice) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
     final note = bloc.state.draftNote;
     final actions = List<UserAction>.from(note.actions ?? const []);
     actions.removeWhere((a) => a is CreateLinkUserAction);
+
+    if (choice is TwistConnectionChoice) {
+      // Drop any active CreateLinkUserAction, then apply the twist via the
+      // existing _selectTwist path (sets thread.icon = 'twist:N').
+      await bloc.updateDraft(
+        bloc.state.draft,
+        note: note.copyWith(actions: actions),
+      );
+      if (!mounted) return;
+      _selectTwist(choice.twist);
+      return;
+    }
+
+    // Plot thread / CreateTarget: clear any selected twist.
+    if (_selectedTwist != null) {
+      setState(() => _selectedTwist = null);
+      final draft = bloc.state.draft;
+      // Restore default icon when leaving a twist selection.
+      final cleared = draft.copyWith(icon: const Value(null));
+      bloc.updateDraftLocal(cleared);
+    }
+
     final action = choice.toUserAction();
     if (action != null) actions.add(action);
     // Pass the list directly (even when empty) — Note.copyWith treats a
@@ -456,12 +480,22 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Future<void> _openConnectionPicker() async {
-    final picked = await ConnectionPickerModal.open(context);
+    final twists = context.read<PriorityBloc>().state.twists;
+    final picked = await ConnectionPickerModal.open(
+      context,
+      twists: twists,
+    );
     if (picked == null || !mounted) return;
     await _applyConnectionChoice(picked);
   }
 
   ConnectionChoice _resolveActiveConnectionChoice(PriorityState state) {
+    if (_selectedTwist != null) {
+      return ConnectionChoice.twist(
+        _selectedTwist!,
+        allInstances: state.twists,
+      );
+    }
     final active = state.draftNote.actions
         ?.whereType<CreateLinkUserAction>()
         .firstOrNull;
@@ -598,6 +632,22 @@ class NewThreadPageState extends State<NewThreadPage> {
           'They appear here after the workspace member sync completes.';
     }
     return null;
+  }
+
+  void _onTwistMentioned(String twistId) {
+    final id = TwistInstanceId.fromString(twistId);
+    final twist = TwistInstance.fromCache(id);
+    if (twist == null) return;
+    // Use the same connection-application path the picker uses so the
+    // CreateLinkUserAction (if any) is cleared.
+    unawaited(
+      _applyConnectionChoice(
+        ConnectionChoice.twist(
+          twist,
+          allInstances: context.read<PriorityBloc>().state.twists,
+        ),
+      ),
+    );
   }
 
   void _selectTwist(TwistInstance twist) {
@@ -848,6 +898,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                           viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,
+                                          onTwistMentioned: _onTwistMentioned,
                                           onNavigateToThread: (thread) {
                                             context.run(
                                               ChangeCurrentThread(thread),
@@ -925,6 +976,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                 viewerMode: isViewerMode,
                                                 selectedTwist: _selectedTwist,
                                                 onTwistSelected: _selectTwist,
+                                                onTwistMentioned:
+                                                    _onTwistMentioned,
                                                 onNavigateToThread: (thread) {
                                                   context.run(
                                                     ChangeCurrentThread(thread),

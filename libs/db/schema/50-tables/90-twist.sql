@@ -18,6 +18,15 @@ CREATE TABLE "public"."twist" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
     "name" text NOT NULL,
+    -- At-mention / attribution label. Defaults to `name` when not supplied
+    -- by the twist's package.json. Distinct from `name` (settings/marketplace
+    -- label) so a twist can read as "@Plot" in the editor while showing as
+    -- "Plot AI Assistant" in settings.
+    "handle" text NOT NULL,
+    -- When non-null, this twist appears as a choice in the new-thread
+    -- connection picker with this label (e.g. "Plot AI chat"). When null
+    -- the twist is not offered as a chat target.
+    "thread_type" text,
     "description" text,
     "version" text NOT NULL,
     "permissions" jsonb,

@@ -38,6 +38,7 @@ class NoteEditor extends StatefulWidget {
     // Twist selection (new-thread mode)
     this.selectedTwist,
     this.onTwistSelected,
+    this.onTwistMentioned,
     // Link/navigation callbacks
     this.onNavigateToThread,
     this.autofocus,
@@ -84,6 +85,12 @@ class NoteEditor extends StatefulWidget {
 
   /// Called when user selects a twist from the picker modal.
   final ValueChanged<TwistInstance>? onTwistSelected;
+
+  /// Called when the user completes an @-mention of a twist in the editor
+  /// body. Parent should treat as a connection-target pick (parallel to
+  /// the contact-mention → add-to-thread behavior). The mention text is
+  /// still inserted; this is an additive signal.
+  final void Function(String twistId)? onTwistMentioned;
 
   /// Called when user selects an existing thread from the link modal.
   final void Function(Thread thread)? onNavigateToThread;
@@ -554,6 +561,7 @@ class NoteEditorState extends State<NoteEditor> {
         threadContactIds: threadContactIds,
         shrinkWrap: true,
         initialContent: widget.draft.content,
+        onTwistMentioned: widget.onTwistMentioned,
         onIsEmptyChanged: (isEmpty) {
           // Defer setState to avoid calling it during build
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1255,10 +1263,6 @@ class NoteEditorState extends State<NoteEditor> {
                       },
                     ),
                   ),
-                // Twist button (when twists are available)
-                if (!widget.viewerMode &&
-                    context.read<PriorityBloc>().state.twists.isNotEmpty)
-                  _buildNewThreadTwistButton(),
               ],
             ),
           ),
@@ -1419,59 +1423,6 @@ class NoteEditorState extends State<NoteEditor> {
     });
   }
 
-  /// Twist button for new-thread mode. Opens a single-select modal.
-  Widget _buildNewThreadTwistButton() {
-    final hasTwist = widget.selectedTwist != null;
-    return Button.icon(
-      CommandWrapper(
-        PickTwist(),
-        run: (action, ctx) async {
-          await _openNewThreadTwistPicker(ctx);
-          return const CommandDone();
-        },
-      ),
-      selected: hasTwist,
-    );
-  }
-
-  Future<void> _openNewThreadTwistPicker(BuildContext context) async {
-    final twists = context
-        .read<PriorityBloc>()
-        .state
-        .twists
-        .where((t) => !t.isSource)
-        .toList();
-    if (twists.isEmpty) return;
-
-    final result = await SelectModal.open<TwistInstance>(
-      context,
-      items: (_) async => [SelectGroup(title: null, items: twists)],
-      itemBuilder: (twist, _) {
-        final isDark = context.colour.brightness == Brightness.dark;
-        final logoUrl = isDark && twist.logoUrlDark != null
-            ? twist.logoUrlDark
-            : twist.logoUrl;
-        return ListTile(
-          body: Row(
-            spacing: 8,
-            children: [
-              if (logoUrl != null)
-                LogoImage(url: logoUrl, size: 14)
-              else
-                Icon(PlotIcon.twist, size: 14),
-              Text(twist.displayName(allInstances: twists, teamName: null)),
-            ],
-          ),
-        );
-      },
-      selectedValue: widget.selectedTwist,
-      prompt: 'Select twist',
-    );
-
-    if (!context.mounted || !result.present) return;
-    widget.onTwistSelected?.call(result.value);
-  }
-
   // -- Keyboard shortcuts --
 
   /// Builds keyboard shortcut bindings for note-level actions. These fire
@@ -1547,31 +1498,26 @@ class NoteEditorState extends State<NoteEditor> {
 
   void _shortcutSelectTwist(BuildContext context) {
     if (_saving) return;
-    if (widget.isNewThreadMode) {
-      if (widget.viewerMode ||
-          context.read<PriorityBloc>().state.twists.isEmpty) {
-        return;
-      }
-      _openNewThreadTwistPicker(context);
-    } else {
-      final threadState = context.read<ThreadBloc>().state;
-      final mentionableTwists = threadState.threadTwists
-          .where((t) => !t.isSource)
-          .toList();
-      if (mentionableTwists.isEmpty) return;
-      if (mentionableTwists.length == 1) {
-        setState(() {
-          final id = mentionableTwists.first.id;
-          if (_disabledTwists.contains(id)) {
-            _disabledTwists.remove(id);
-          } else {
-            _disabledTwists.add(id);
-          }
-        });
-        return;
-      }
-      _openTwistToggleModal(context, mentionableTwists);
+    // New-thread mode no longer exposes a twist picker shortcut — selection
+    // moved to the connection field above the editor.
+    if (widget.isNewThreadMode) return;
+    final threadState = context.read<ThreadBloc>().state;
+    final mentionableTwists = threadState.threadTwists
+        .where((t) => !t.isSource)
+        .toList();
+    if (mentionableTwists.isEmpty) return;
+    if (mentionableTwists.length == 1) {
+      setState(() {
+        final id = mentionableTwists.first.id;
+        if (_disabledTwists.contains(id)) {
+          _disabledTwists.remove(id);
+        } else {
+          _disabledTwists.add(id);
+        }
+      });
+      return;
     }
+    _openTwistToggleModal(context, mentionableTwists);
   }
 
   // -- Submit handlers --

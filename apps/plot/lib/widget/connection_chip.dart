@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
+import 'package:plot/store/store.dart' show TwistInstance;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
@@ -107,17 +108,34 @@ class _ConnectionChipState extends State<ConnectionChip> {
   }
 }
 
-/// Modal listing every create-target plus the synthetic "Plot thread"
-/// row. Returns the picked ConnectionChoice or null on dismiss.
+/// Modal listing every create-target, every chat-eligible twist, plus the
+/// synthetic "Plot thread" row. Returns the picked ConnectionChoice or
+/// null on dismiss.
 class ConnectionPickerModal {
   ConnectionPickerModal._();
 
-  static Future<ConnectionChoice?> open(BuildContext context) async {
+  static Future<ConnectionChoice?> open(
+    BuildContext context, {
+    required List<TwistInstance> twists,
+    String? teamName,
+  }) async {
     final targets = await loadCreateTargets();
     if (!context.mounted) return null;
 
+    // Only twists that opt in via `threadType` appear as chat targets.
+    final chatTwists = twists
+        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
+        .toList();
+
     final choices = <ConnectionChoice>[
       ConnectionChoice.plotThread,
+      ...chatTwists.map(
+        (t) => ConnectionChoice.twist(
+          t,
+          allInstances: twists,
+          teamName: teamName,
+        ),
+      ),
       ...targets.map(ConnectionChoice.target),
     ];
 
@@ -149,6 +167,7 @@ class ConnectionPickerModal {
           ),
         TargetConnectionChoice(:final target) =>
           connectionTargetTile(context, target),
+        TwistConnectionChoice() => _twistChoiceTile(context, choice),
       },
       prompt: 'Pick a connection',
       emptyMessage: 'No connections available',
@@ -157,4 +176,29 @@ class ConnectionPickerModal {
     if (!result.present) return null;
     return result.value;
   }
+}
+
+ListTile _twistChoiceTile(BuildContext context, TwistConnectionChoice choice) {
+  final isDark = context.read<ThemeBloc>().isDarkMode(context);
+  final twist = choice.twist;
+  final logo = isDark ? (twist.logoUrlDark ?? twist.logoUrl) : twist.logoUrl;
+  return ListTile(
+    leadingBuilder: logo != null
+        ? (_, _) => Builder(
+              builder: (context) => Padding(
+                padding: EdgeInsets.only(
+                  left: context.theme.spacing.lg,
+                  right: 8,
+                ),
+                child: LogoImage(
+                  url: logo,
+                  size: 16,
+                  fallback: const Icon(PlotIcon.twist, size: 16),
+                ),
+              ),
+            )
+        : null,
+    icon: logo == null ? PlotIcon.twist : null,
+    title: choice.label,
+  );
 }

@@ -36,6 +36,8 @@ SELECT
     pt.options,
     t.logo_url,
     t.logo_url_dark,
+    t.handle,
+    t.thread_type,
     (
         SELECT
             jsonb_agg(lt)

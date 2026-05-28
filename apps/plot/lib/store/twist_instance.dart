@@ -14,6 +14,8 @@ class TwistInstances extends Table
   BoolColumn get shared => boolean().withDefault(const Constant(false))();
   TextColumn get keyOption => text().nullable()();
   TextColumn get name => text()();
+  TextColumn get handle => text().withDefault(const Constant(''))();
+  TextColumn get threadType => text().nullable()();
   TextColumn get accountLabel => text().nullable()();
   TextColumn get config => text().map(const JsonConverter())();
   TextColumn get linkTypes => text().nullable()();
@@ -47,6 +49,10 @@ class TwistInstancesBase extends BaseTable {
     }
     // Default missing boolean fields not present in the view
     json['draft'] ??= false;
+    // Default missing handle so clients on a new schema can still sync from
+    // a server that hasn't deployed the handle/thread_type columns yet.
+    // The mentionLabel getter falls back to `name` when handle is empty.
+    json['handle'] ??= '';
     // Serialize link_types JSON to string for text column storage
     if (json['link_types'] != null && json['link_types'] is! String) {
       json['link_types'] = jsonEncode(json['link_types']);
@@ -220,6 +226,8 @@ class TwistInstance extends TwistInstanceRow {
         shared: row.shared,
         keyOption: row.keyOption,
         name: row.name,
+        handle: row.handle,
+        threadType: row.threadType,
         accountLabel: row.accountLabel,
         config: row.config,
         linkTypes: row.linkTypes,
@@ -292,6 +300,36 @@ class TwistInstance extends TwistInstanceRow {
 
     final scopeLabel = teamId == null ? 'Personal' : (teamName ?? 'Team');
     return '$name ($scopeLabel)';
+  }
+
+  /// At-mention / attribution label for this twist.
+  ///
+  /// Mirrors [displayName] but uses [handle] (the package-level mention
+  /// name) as the base instead of [name] (the per-install display name).
+  /// Sources keep using their per-connection [accountLabel] suffix.
+  /// Multi-instance and scope-disambiguation rules match [displayName] so
+  /// the label is unique across the user's installed twists.
+  String mentionLabel({
+    required List<TwistInstance> allInstances,
+    String? teamName,
+  }) {
+    final base = handle.isEmpty ? name : handle;
+    if (isSource) {
+      if (accountLabel != null && accountLabel!.isNotEmpty) {
+        return '$base ($accountLabel)';
+      }
+      return base;
+    }
+    if (multipleInstances) return base;
+    final hasSibling = allInstances.any(
+      (other) =>
+          other.id != id &&
+          other.twistId == twistId &&
+          other.archivedAt == null,
+    );
+    if (!hasSibling) return base;
+    final scopeLabel = teamId == null ? 'Personal' : (teamName ?? 'Team');
+    return '$base ($scopeLabel)';
   }
 
   Future<void> save() async {

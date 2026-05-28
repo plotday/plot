@@ -32,12 +32,12 @@ BEGIN
 
     -- 3. Plot twist definitions (review + public environments, keyed on
     --    twist_package_id from twists/plot/package.json)
-    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, version, is_source, shared, logo_url, auto_approve)
-    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'review', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', true)
+    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, handle, version, is_source, shared, logo_url, auto_approve)
+    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'review', 'Plot', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', true)
     ON CONFLICT (twist_package_id, environment) WHERE environment <> 'personal' DO NOTHING;
 
-    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, version, is_source, shared, logo_url, auto_approve)
-    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'public', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', false)
+    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, handle, version, is_source, shared, logo_url, auto_approve)
+    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'public', 'Plot', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', false)
     ON CONFLICT (twist_package_id, environment) WHERE environment <> 'personal' DO NOTHING;
 
 END $$;
