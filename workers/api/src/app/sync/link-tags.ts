@@ -170,6 +170,77 @@ export async function getChannelLinkTypes(
 }
 
 /**
+ * Load channel-level linkTypes using a known external channelId and
+ * twistInstanceId, without requiring a pre-existing link row. Used by the
+ * pre-creation reconciliation path in `createLink` where the link hasn't been
+ * written yet.
+ */
+export async function getLinkTypesForChannelId(
+  db: Kysely<DB>,
+  channelId: string,
+  twistInstanceId: string
+): Promise<LinkTypeConfig[]> {
+  const channel = await db
+    .selectFrom("channel")
+    .select("link_types")
+    .where("twist_instance_id", "=", twistInstanceId)
+    .where("channel_id", "=", channelId)
+    .executeTakeFirst();
+  if (!channel?.link_types) return [];
+
+  try {
+    const parsed = typeof channel.link_types === "string"
+      ? JSON.parse(channel.link_types)
+      : channel.link_types;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve the sharingModel for a given (channelId, linkType, twistInstanceId)
+ * triple. Channel-level linkTypes take precedence; falls back to twist-level
+ * permissions._providers[].linkTypes.
+ *
+ * Returns undefined when neither channel nor twist declares a sharingModel for
+ * this type.
+ */
+export async function getSharingModelForChannel(
+  db: Kysely<DB>,
+  channelId: string | null | undefined,
+  linkType: string | null | undefined,
+  twistInstanceId: string
+): Promise<"thread" | "channel" | "message" | undefined> {
+  if (!linkType) return undefined;
+
+  let allLinkTypes: LinkTypeConfig[] = [];
+
+  if (channelId) {
+    allLinkTypes = await getLinkTypesForChannelId(db, channelId, twistInstanceId);
+  }
+
+  if (allLinkTypes.length === 0) {
+    const twistRow = await db
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+      .select("twist.permissions")
+      .where("twist_instance.id", "=", twistInstanceId)
+      .executeTakeFirst();
+    if (!twistRow?.permissions) return undefined;
+    const permissions = twistRow.permissions as any;
+    const providers = permissions._providers;
+    if (!Array.isArray(providers)) return undefined;
+    allLinkTypes = providers.flatMap(
+      (p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]
+    );
+  }
+
+  const typeConfig = allLinkTypes.find((lt) => lt.type === linkType);
+  return typeConfig?.sharingModel;
+}
+
+/**
  * Load the full linkTypes config for a link — channel-level first, twist-level fallback.
  */
 export async function getLinkTypesForLink(

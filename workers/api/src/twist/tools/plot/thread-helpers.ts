@@ -1252,9 +1252,13 @@ export async function prepareThreadForDb(
     }
   }
 
-  // Resolve accessContacts from NewContact[] (emails) to ActorId[]
+  // Resolve accessContacts from NewContact[] (emails) to ActorId[].
+  // When _resolvedContacts is set (by the message-mode reconciliation path in
+  // createLink), use those pre-resolved IDs directly and skip email resolution.
   let resolvedAccessContacts: ActorId[] | undefined;
-  if (activity.accessContacts && activity.accessContacts.length > 0) {
+  if ((activity as any)._resolvedContacts !== undefined) {
+    resolvedAccessContacts = (activity as any)._resolvedContacts as ActorId[];
+  } else if (activity.accessContacts && activity.accessContacts.length > 0) {
     const actors = await addContacts(plot, activity.accessContacts as NewContact[]);
     resolvedAccessContacts = actors.map((a) => a.id);
   } else if (

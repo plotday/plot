@@ -16,6 +16,9 @@ import { createThread } from "./thread";
 import { createNotes } from "./note";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
+import { getSharingModelForChannel } from "../../../app/sync/link-tags";
+import { reconcileThreadContacts } from "../../sharing";
+import { addContacts } from "./contacts";
 
 /**
  * Creates a link with its thread container.
@@ -112,6 +115,42 @@ export async function createLink(
 
       if (existingLink) {
         threadData.id = existingLink.thread_id;
+      }
+    }
+
+    // Message-mode contact reconciliation: when the connector declares
+    // sharingModel="message" and we're updating an existing thread, apply the
+    // 50% removal heuristic so that a reply-to-subset does not silently shrink
+    // the thread's visible recipient list.
+    if (threadData.id && link.accessContacts && link.accessContacts.length > 0) {
+      const sharingModel = await getSharingModelForChannel(
+        plot.db,
+        link.channelId ?? null,
+        link.type ?? null,
+        plot.twistInstanceId
+      );
+      if (sharingModel === "message") {
+        // Fetch the existing thread's resolved contacts.
+        const existingThread = await plot.db
+          .selectFrom("thread")
+          .select("contacts")
+          .where("id", "=", threadData.id)
+          .executeTakeFirst();
+        const previousContacts: ActorId[] = (existingThread?.contacts as ActorId[] | null) ?? [];
+
+        // Resolve incoming accessContacts (emails) to ActorId strings.
+        const incomingActors = await addContacts(plot, link.accessContacts);
+        const incomingContacts: ActorId[] = incomingActors.map((a) => a.id);
+
+        // Reconcile and inject the result as pre-resolved IDs so that
+        // prepareThreadForDb skips the addContacts email-resolution step.
+        const reconciled = reconcileThreadContacts({
+          previous: previousContacts,
+          incoming: incomingContacts,
+        }) as ActorId[];
+
+        threadData._resolvedContacts = reconciled;
+        delete threadData.accessContacts;
       }
     }
 
