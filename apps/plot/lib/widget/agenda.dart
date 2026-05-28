@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart' show EventObject, EventAction;
 import 'package:plot/command/command.dart';
 import 'package:plot/state/agenda_model.dart';
@@ -18,7 +19,10 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/priorities_shell.dart';
-import 'package:plot/widget/widget.dart';
+// `widget/link.dart` exports a `Link` widget that shadows the
+// `package:plot/store/store.dart` data class we need here. Hide the
+// widget so `Link.watchForThread(...)` resolves to the store type.
+import 'package:plot/widget/widget.dart' hide Link;
 
 /// Width of the leading column: max of the widest time string and the
 /// widest duration string (both at sm font), plus horizontal padding.
@@ -718,44 +722,21 @@ class _BlockHeaderState extends State<_BlockHeader> {
         : null;
 
     final summary = block.summaryLine;
+    final isEvent = block is EventBlock;
 
-    // For event blocks the summary's first title is the event itself —
-    // render it in the priority's foreground color so it reads as the
-    // primary label, with any associated threads following in the
-    // neutral muted color used for non-event block summaries.
+    // For event blocks, row 1 is the event title rendered in the
+    // priority's foreground color (replacing the priority breadcrumb —
+    // the colour itself signals which priority the event belongs to).
+    // Row 2 surfaces the event's physical location and/or
+    // videoconferencing join link via a [StreamBuilder] over the event
+    // thread's links. For non-event blocks, row 1 keeps the priority
+    // breadcrumb (with a leading focus-mode icon for [PriorityBlock]s)
+    // and row 2 keeps the joined thread summary.
     final mutedColor = context.theme.plotColors.veryMuted;
-    final TextSpan summarySpan;
-    if (block is EventBlock) {
-      final eventTitle = block.event.displayTitle;
-      final associated = block.associated
-          .map((t) => t.displayTitle)
-          .where((s) => s.isNotEmpty)
-          .toList();
-      summarySpan = TextSpan(
-        children: [
-          if (eventTitle.isNotEmpty)
-            TextSpan(
-              text: eventTitle,
-              style: TextStyle(color: context.theme.colors.mutedForeground),
-            ),
-          if (eventTitle.isNotEmpty && associated.isNotEmpty)
-            TextSpan(
-              text: ' · ',
-              style: TextStyle(color: mutedColor),
-            ),
-          if (associated.isNotEmpty)
-            TextSpan(
-              text: associated.join(' · '),
-              style: TextStyle(color: mutedColor),
-            ),
-        ],
-      );
-    } else {
-      summarySpan = TextSpan(
-        text: summary,
-        style: TextStyle(color: mutedColor),
-      );
-    }
+    final TextSpan summarySpan = TextSpan(
+      text: summary,
+      style: TextStyle(color: mutedColor),
+    );
 
     // Row 2 trailing widget: RSVP summary, right-padded so its visible
     // edge lands at the same x as the right edge of the content area.
@@ -844,8 +825,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // duration label, the summary text, or a row-2 trailing widget. The
     // empty side (e.g. summary text on a duration-only [GapBlock]) just
     // renders a placeholder so both columns stay vertically aligned.
-    final hasSecondRow =
-        gutterRow2 != null || summary.isNotEmpty || row2Trailing != null;
+    // Events always reserve row 2 so the location / videoconferencing
+    // line and the live duration counter share a stable layout even
+    // before the link stream emits.
+    final hasSecondRow = gutterRow2 != null ||
+        summary.isNotEmpty ||
+        row2Trailing != null ||
+        isEvent;
 
     // Hover bump callback: events update the thread's duration; priority
     // blocks update the priority's total pending (slice-aware — see
@@ -911,13 +897,39 @@ class _BlockHeaderState extends State<_BlockHeader> {
                 height: primarySize,
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: PriorityLabel(
-                    priority: priority,
-                    color: fg,
-                    mutedAncestorColor: mutedFg,
-                    fontSize: secondarySize,
-                    height: 1,
-                  ),
+                  child: isEvent
+                      ? Text(
+                          block.event.displayTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: secondarySize,
+                            height: 1,
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (block is PriorityBlock) ...[
+                              Icon(
+                                PlotIcon.arrowsToDot,
+                                size: secondarySize,
+                                color: fg,
+                              ),
+                              SizedBox(width: spacing.sm),
+                            ],
+                            Flexible(
+                              child: PriorityLabel(
+                                priority: priority,
+                                color: fg,
+                                mutedAncestorColor: mutedFg,
+                                fontSize: secondarySize,
+                                height: 1,
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
               if (hasSecondRow) ...[
@@ -928,12 +940,21 @@ class _BlockHeaderState extends State<_BlockHeader> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: Text.rich(
-                          summarySpan,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: secondarySize, height: 1),
-                        ),
+                        child: isEvent
+                            ? _EventLocationRow(
+                                event: block.event,
+                                mutedColor: mutedColor,
+                                fontSize: secondarySize,
+                              )
+                            : Text.rich(
+                                summarySpan,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: secondarySize,
+                                  height: 1,
+                                ),
+                              ),
                       ),
                       if (row2Trailing != null) ...[
                         SizedBox(width: spacing.sm),
@@ -1472,5 +1493,224 @@ class _BumpDurationCommand extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     onApply();
     return const CommandDone();
+  }
+}
+
+/// Row 2 content for calendar event blocks. Watches the event thread's
+/// links to surface a physical location, a videoconferencing join link,
+/// or both. Falls back to [Thread.displayPreview] when neither is
+/// present so the row still carries useful context (e.g. user notes on
+/// the event).
+class _EventLocationRow extends StatelessWidget {
+  const _EventLocationRow({
+    required this.event,
+    required this.mutedColor,
+    required this.fontSize,
+  });
+
+  final Thread event;
+  final Color mutedColor;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Link>>(
+      stream: Link.watchForThread(event.id),
+      builder: (context, snapshot) {
+        final links = snapshot.data ?? const <Link>[];
+
+        String? location;
+        for (final link in links) {
+          final raw = link.meta?['location'];
+          if (raw is String && raw.trim().isNotEmpty) {
+            location = raw.trim();
+            break;
+          }
+        }
+
+        ConferencingUserAction? conf;
+        for (final link in links) {
+          for (final action in link.actions ?? const <UserAction>[]) {
+            if (action is ConferencingUserAction) {
+              conf = action;
+              break;
+            }
+          }
+          if (conf != null) break;
+        }
+
+        final spacing = context.theme.spacing;
+        final textStyle = TextStyle(
+          fontSize: fontSize,
+          color: mutedColor,
+          height: 1,
+        );
+
+        if (conf != null && location == null) {
+          return _ConferencingInline(
+            action: conf,
+            color: mutedColor,
+            fontSize: fontSize,
+            withLabel: true,
+          );
+        }
+
+        if (conf != null && location != null) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ConferencingInline(
+                action: conf,
+                color: mutedColor,
+                fontSize: fontSize,
+                withLabel: false,
+              ),
+              SizedBox(width: spacing.sm),
+              Flexible(
+                child: _LocationInline(
+                  location: location,
+                  color: mutedColor,
+                  fontSize: fontSize,
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (location != null) {
+          return _LocationInline(
+            location: location,
+            color: mutedColor,
+            fontSize: fontSize,
+          );
+        }
+
+        final preview = event.displayPreview;
+        if (preview != null && preview.isNotEmpty) {
+          return Text(
+            preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
+
+/// Clickable inline videoconferencing affordance. Renders the logo
+/// alone when [withLabel] is false (paired with a physical location);
+/// renders logo + provider name when [withLabel] is true (only
+/// videoconferencing, no physical location).
+class _ConferencingInline extends StatelessWidget {
+  const _ConferencingInline({
+    required this.action,
+    required this.color,
+    required this.fontSize,
+    required this.withLabel,
+  });
+
+  final ConferencingUserAction action;
+  final Color color;
+  final double fontSize;
+  final bool withLabel;
+
+  static String _providerName(ConferencingProvider provider) {
+    switch (provider) {
+      case ConferencingProvider.googleMeet:
+        return 'Google Meet';
+      case ConferencingProvider.zoom:
+        return 'Zoom';
+      case ConferencingProvider.microsoftTeams:
+        return 'Microsoft Teams';
+      case ConferencingProvider.webex:
+        return 'Webex';
+      case ConferencingProvider.other:
+        return 'Meeting';
+    }
+  }
+
+  void _open() {
+    try {
+      launchUrl(Uri.parse(action.url), mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.theme.spacing;
+    final tooltip = 'Join ${_providerName(action.provider)}';
+    final content = withLabel
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PlotIcon.video, size: fontSize, color: color),
+              SizedBox(width: spacing.sm),
+              Text(
+                _providerName(action.provider),
+                style: TextStyle(
+                  fontSize: fontSize,
+                  color: color,
+                  height: 1,
+                ),
+              ),
+            ],
+          )
+        : Icon(PlotIcon.video, size: fontSize, color: color);
+
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(tooltip),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(onTap: _open, child: content),
+      ),
+    );
+  }
+}
+
+/// Inline physical-location label. Address-like strings (containing a
+/// comma) open a Google Maps search on tap; bare meeting-room names
+/// render as plain text. The heuristic is intentionally conservative —
+/// a missed address is a minor inconvenience, a wrongly-clickable
+/// meeting room would mislead.
+class _LocationInline extends StatelessWidget {
+  const _LocationInline({
+    required this.location,
+    required this.color,
+    required this.fontSize,
+  });
+
+  final String location;
+  final Color color;
+  final double fontSize;
+
+  bool get _looksLikeAddress => location.contains(',');
+
+  void _open() {
+    final q = Uri.encodeQueryComponent(location);
+    try {
+      launchUrl(
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textWidget = Text(
+      location,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: fontSize, color: color, height: 1),
+    );
+    if (!_looksLikeAddress) return textWidget;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(onTap: _open, child: textWidget),
+    );
   }
 }
