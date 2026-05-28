@@ -884,6 +884,46 @@ class SharedCommandButton extends HookWidget {
     final iconSize = context.theme.iconSizes.base;
     final avatarSize = iconSize + iconPadding.top + iconPadding.bottom;
 
+    // Watch links to resolve the thread's sharing model (channel / message /
+    // thread). The stream is cheap — same table and index as ThreadCommands'
+    // conferencing-actions stream — and keeps the model in sync when links
+    // are added or removed without a full thread rebuild.
+    final linksSnapshot = useStream<List<Link>>(
+      useMemoized(() => Link.watchForThread(thread.id), [thread.id]),
+    );
+    final links = linksSnapshot.data ?? const <Link>[];
+    final sharingModel = Thread.resolveSharingModel(links);
+
+    // Channel-mode: derive the human-readable channel title from the primary
+    // (earliest-created) link. Falls back to null when the channel isn't in
+    // the local cache (deleted or not yet synced), in which case we fall
+    // through to the AvatarGroup path below.
+    String? channelTitle;
+    if (sharingModel == SharingModel.channel && links.isNotEmpty) {
+      final primaryLink =
+          ([...links]..sort((a, b) => a.createdAt.compareTo(b.createdAt)))
+              .first;
+      if (primaryLink.createdBy != null && primaryLink.channelId != null) {
+        channelTitle = Channel.findByChannel(
+          primaryLink.createdBy!,
+          primaryLink.channelId!,
+        )?.title;
+      }
+    }
+
+    // Message-mode: derive visible contacts per-viewer rather than reading
+    // thread.contacts directly. Uses [Thread.deriveVisibleContacts] so the
+    // AvatarGroup reflects only the participants visible to the current user.
+    // When thread.notes is null (not yet loaded), falls back to thread.contacts.
+    final viewerContactIds =
+        Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toList();
+    final visibleContactIds = sharingModel == SharingModel.message
+        ? Thread.deriveVisibleContacts(
+            visibleNotes: thread.notes ?? const [],
+            viewerContactIds: viewerContactIds,
+          )
+        : null;
+
     // The synchronous `sharedDisplayActors` getter only returns actors
     // already in the in-memory cache. On first render in the agenda the
     // contacts haven't been fetched yet, so it returns an empty list and
@@ -891,9 +931,21 @@ class SharedCommandButton extends HookWidget {
     // cache fills; once it does, this widget rebuilds with the resolved
     // actors AND any other ThreadWidget sharing the same contacts gets a
     // cache hit on its next build.
-    final contactsKey = thread.contacts.map((u) => u.toString()).join('|');
+    //
+    // For message-mode, load actors for the per-viewer visible contact set.
+    // For thread-mode (and channel-mode fallback), load from thread.contacts.
+    final contactsKey = visibleContactIds != null
+        ? ([...visibleContactIds]..sort((a, b) => a.toString().compareTo(b.toString())))
+              .map((u) => u.toString())
+              .join('|')
+        : thread.contacts.map((u) => u.toString()).join('|');
     final loadedActors = useFuture(
-      useMemoized(() => command.loadSharedDisplayActors(), [contactsKey]),
+      useMemoized(
+        () => visibleContactIds != null
+            ? command.loadSharedDisplayActorsForContacts(visibleContactIds)
+            : command.loadSharedDisplayActors(),
+        [contactsKey],
+      ),
     ).data;
     final actors = loadedActors ?? command.sharedDisplayActors;
 
@@ -911,25 +963,52 @@ class SharedCommandButton extends HookWidget {
         ? context.colour.foreground
         : context.colour.muted;
 
-    final Widget child = shared
-        ? AvatarGroup(
-            actors: actors,
-            totalCount: command.sharedTotalCount,
-            size: avatarSize,
-            scheduleContacts: scheduleContacts,
-            tooltipBelow: tooltipBelow,
-          )
-        : SizedBox(
-            width: iconSize,
-            height: iconSize,
-            child: Center(
-              child: FaIcon(
-                command.icon ?? PlotIcon.shareAdd,
-                size: iconSize,
-                color: iconColor,
-              ),
+    // Branch on sharing model:
+    //   channel (with resolved title) → muted text label, no avatar stack
+    //   channel (title unresolvable) / thread / message → AvatarGroup or
+    //     unshared-icon fallback, same as before. For message-mode the actors
+    //     are already derived per-viewer above.
+    final Widget child;
+    if (sharingModel == SharingModel.channel && channelTitle != null) {
+      // Render the channel name at the same vertical position as AvatarGroup
+      // would occupy. SizedBox height matches avatarSize so the button row
+      // stays stable when switching between thread/channel modes.
+      child = SizedBox(
+        height: avatarSize,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            channelTitle,
+            style: TextStyle(
+              color: context.colour.muted,
+              fontSize: context.theme.typography.sm.fontSize,
+              height: 1,
             ),
-          );
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    } else if (shared) {
+      child = AvatarGroup(
+        actors: actors,
+        totalCount: command.sharedTotalCount,
+        size: avatarSize,
+        scheduleContacts: scheduleContacts,
+        tooltipBelow: tooltipBelow,
+      );
+    } else {
+      child = SizedBox(
+        width: iconSize,
+        height: iconSize,
+        child: Center(
+          child: FaIcon(
+            command.icon ?? PlotIcon.shareAdd,
+            size: iconSize,
+            color: iconColor,
+          ),
+        ),
+      );
+    }
 
     final button = FButton.icon(
       style: FButtonStyleDelta.delta(
@@ -959,11 +1038,14 @@ class SharedCommandButton extends HookWidget {
       child: child,
     );
 
-    // When shared, the AvatarGroup renders its own unified tooltip listing
-    // contacts (with RSVP icons when applicable) — a generic "Shared" tooltip
-    // would shadow it. Keep the title tooltip only for the unshared share
-    // icon state.
-    if (shared) return button;
+    // When shared (AvatarGroup) or showing a channel title, the child already
+    // conveys context — a generic tooltip would shadow the AvatarGroup's
+    // unified contact list or duplicate the visible channel name. Keep the
+    // title tooltip and hover-colour tracking only for the unshared share-icon
+    // state.
+    if (shared || (sharingModel == SharingModel.channel && channelTitle != null)) {
+      return button;
+    }
     return MouseRegion(
       onEnter: (_) => isHovered.value = true,
       onExit: (_) => isHovered.value = false,

@@ -2549,6 +2549,14 @@ class PickThreadShared extends ShowCommands {
   Future<List<Actor>> loadSharedDisplayActors() =>
       _loadSharedDisplayActors(thread);
 
+  /// Like [loadSharedDisplayActors], but resolves actors for an explicit set
+  /// of contact IDs instead of reading from [thread.contacts]. Used for
+  /// message-mode threads where the visible contacts are derived per-viewer
+  /// via [Thread.deriveVisibleContacts].
+  Future<List<Actor>> loadSharedDisplayActorsForContacts(
+    Iterable<Uuid> contactIds,
+  ) => _loadDisplayActorsForContacts(contactIds);
+
   /// Total number of shared targets on the thread (self + other contacts +
   /// groups + pending email invites), used for the overflow counter.
   int get sharedTotalCount => _sharedCount(thread);
@@ -2749,6 +2757,29 @@ Future<List<Actor>> _loadSharedDisplayActors(Thread thread) async {
       .toSet();
   final actors = <Actor>[];
   for (final contactId in thread.contacts) {
+    if (selfUuids.contains(contactId)) continue;
+    try {
+      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+      if (actor.type == ActorType.twistInstance) continue;
+      actors.add(actor);
+    } catch (_) {
+      // Skip contacts whose actors can't be resolved.
+    }
+  }
+  return _dedupePerPerson(actors);
+}
+
+/// Like [_loadSharedDisplayActors] but operates on an explicit contact-id
+/// set instead of [Thread.contacts]. Used for message-mode threads where the
+/// visible participants are derived per-viewer.
+Future<List<Actor>> _loadDisplayActorsForContacts(
+  Iterable<Uuid> contactIds,
+) async {
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  final actors = <Actor>[];
+  for (final contactId in contactIds) {
     if (selfUuids.contains(contactId)) continue;
     try {
       final actor = await Actor.getOne(ActorId.fromUuid(contactId));
