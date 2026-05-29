@@ -108,7 +108,6 @@ void main() {
           textDirection: TextDirection.ltr,
           child: StepperRow(
             focusNode: node,
-            highlighted: true,
             onStepBack: () => log.add('back'),
             onStepForward: () => log.add('forward'),
             onJumpBack: () => log.add('jumpBack'),
@@ -136,19 +135,33 @@ void main() {
       expect(log, ['back', 'forward', 'jumpBack', 'jumpForward']);
     });
 
-    testWidgets('Up/Down/Tab are NOT consumed (return ignored)', (tester) async {
+    testWidgets('Up/Down/Tab do not trigger step callbacks', (tester) async {
       final log = <String>[];
       await pump(tester, log);
 
-      final upHandled =
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-      final downHandled =
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      // StepperRow returns `ignored` for these, so none of its step/jump
+      // callbacks fire (FormModal handles them at a higher level in the app).
       expect(log, isEmpty);
-      // sendKeyEvent returns true when the framework handled it; with no other
-      // handler present these arrows go unhandled.
-      expect(upHandled, isFalse);
-      expect(downHandled, isFalse);
+    });
+
+    testWidgets('paints highlightColor behind the child when provided',
+        (tester) async {
+      const hl = Color(0xFF123456);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: StepperRow(
+            focusNode: node,
+            highlightColor: hl,
+            child: const SizedBox(width: 100, height: 20),
+          ),
+        ),
+      );
+      final boxes = tester.widgetList<ColoredBox>(find.byType(ColoredBox));
+      expect(boxes.any((b) => b.color == hl), isTrue);
     });
   });
 }
@@ -193,13 +206,11 @@ class StepController {
 
 - [ ] **Step 4: Create `StepperRow` in `form_scheduler.dart`**
 
-Create `apps/plot/lib/widget/form_scheduler.dart` with (for now) just the imports and `StepperRow`:
+Create `apps/plot/lib/widget/form_scheduler.dart` with (for now) just the imports and `StepperRow`. `StepperRow` is theme-agnostic — it takes a `Color? highlightColor` (the caller, which has the theme, supplies it) so the widget is independently testable and never reaches into `context.theme`:
 
 ```dart
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
-
-import 'package:plot/style/plot_colors.dart';
 
 /// Wraps a single scheduler row so the Left/Right cursor keys adjust its value
 /// when the row holds form focus. Plain `←`/`→` do the small step;
@@ -209,11 +220,14 @@ import 'package:plot/style/plot_colors.dart';
 /// Implicit edit-mode: these handlers only fire when [focusNode] (the row) has
 /// focus. When the user clicks into an inner editable field, that field owns
 /// focus and consumes `←`/`→` for its text cursor, so typing still works.
+///
+/// [highlightColor] is painted behind [child] when non-null (the caller decides
+/// the row is active and supplies the themed color); null = no background.
 class StepperRow extends StatelessWidget {
   const StepperRow({
     required this.focusNode,
-    required this.highlighted,
     required this.child,
+    this.highlightColor,
     this.onStepBack,
     this.onStepForward,
     this.onJumpBack,
@@ -222,8 +236,8 @@ class StepperRow extends StatelessWidget {
   });
 
   final FocusNode focusNode;
-  final bool highlighted;
   final Widget child;
+  final Color? highlightColor;
   final VoidCallback? onStepBack;
   final VoidCallback? onStepForward;
   final VoidCallback? onJumpBack;
@@ -235,16 +249,20 @@ class StepperRow extends StatelessWidget {
       HardwareKeyboard.instance.logicalKeysPressed
           .contains(LogicalKeyboardKey.shiftRight);
 
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      (_shiftPressed ? onJumpBack : onStepBack)?.call();
+      final cb = _shiftPressed ? onJumpBack : onStepBack;
+      if (cb == null) return KeyEventResult.ignored;
+      cb();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      (_shiftPressed ? onJumpForward : onStepForward)?.call();
+      final cb = _shiftPressed ? onJumpForward : onStepForward;
+      if (cb == null) return KeyEventResult.ignored;
+      cb();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -252,19 +270,17 @@ class StepperRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = highlightColor;
     return Focus(
       focusNode: focusNode,
       onKeyEvent: _onKey,
-      child: Container(
-        color: highlighted ? context.theme.plotColors.editableBackground : null,
-        child: child,
-      ),
+      child: color != null ? ColoredBox(color: color, child: child) : child,
     );
   }
 }
 ```
 
-> Note: `context.theme.plotColors.editableBackground` is the same highlight the old modal used for the focused priority row (`schedule_focus_modal.dart:204`). `plot_colors.dart` is the import that provides the `context.theme` extension + `plotColors`.
+> Design: `StepperRow` only returns `handled` when a callback actually fires (so a missing callback doesn't swallow the key), and it does the highlight via an injected `Color?` rather than a theme lookup — keeping it pure and testable. The themed `editableBackground` color (the same highlight the old modal used, `schedule_focus_modal.dart:204`) is supplied by `FormScheduler` in Task 5.
 
 - [ ] **Step 5: Run test to verify it passes**
 
@@ -639,11 +655,12 @@ Adds `FormScheduler` (and its private body) to `apps/plot/lib/widget/form_schedu
 
 - [ ] **Step 1: Add imports to `form_scheduler.dart`**
 
-Add these imports below the existing ones at the top of `apps/plot/lib/widget/form_scheduler.dart`:
+Add these imports below the existing ones (`flutter/widgets.dart`, `flutter/services.dart`) at the top of `apps/plot/lib/widget/form_scheduler.dart`:
 
 ```dart
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/widget/form.dart';
 import 'package:plot/widget/icon.dart';
@@ -654,6 +671,8 @@ import 'package:plot/widget/time_range_input.dart';
 import 'package:plot/widget/schedule_range.dart';
 import 'package:plot/widget/step_controller.dart';
 ```
+
+> `plot_colors.dart` + `forui` give `_FormSchedulerBody` the `context.theme.plotColors.editableBackground` color it passes to each `StepperRow.highlightColor`. (`StepperRow` itself is theme-agnostic.)
 
 - [ ] **Step 2: Add the `FormScheduler` form item**
 
@@ -825,13 +844,16 @@ class _FormSchedulerBodyState extends State<_FormSchedulerBody> {
         ? FTime.fromDateTime(end)
         : FTime.fromDateTime(Time.now().add(const Duration(hours: 1)));
 
+    final highlight = context.theme.plotColors.editableBackground;
+    Color? hlFor(int i) => widget.highlightedSubIndex == i ? highlight : null;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // 0: Date
         StepperRow(
           focusNode: _node(0),
-          highlighted: widget.highlightedSubIndex == 0,
+          highlightColor: hlFor(0),
           onStepBack: () => _ctrl(0).stepBack?.call(),
           onStepForward: () => _ctrl(0).stepForward?.call(),
           onJumpBack: () => _ctrl(0).jumpBack?.call(),
@@ -850,7 +872,7 @@ class _FormSchedulerBodyState extends State<_FormSchedulerBody> {
         // 1: Time range
         StepperRow(
           focusNode: _node(1),
-          highlighted: widget.highlightedSubIndex == 1,
+          highlightColor: hlFor(1),
           onStepBack: () => _ctrl(1).stepBack?.call(),
           onStepForward: () => _ctrl(1).stepForward?.call(),
           onJumpBack: () => _ctrl(1).jumpBack?.call(),
@@ -874,7 +896,7 @@ class _FormSchedulerBodyState extends State<_FormSchedulerBody> {
         // 2: Duration
         StepperRow(
           focusNode: _node(2),
-          highlighted: widget.highlightedSubIndex == 2,
+          highlightColor: hlFor(2),
           onStepBack: () => _ctrl(2).stepBack?.call(),
           onStepForward: () => _ctrl(2).stepForward?.call(),
           onJumpBack: () => _ctrl(2).jumpBack?.call(),
