@@ -877,4 +877,117 @@ void main() {
       },
     );
   });
+
+  group('resolveFocusBlockDropAnchor — focus-block drop time', () {
+    const duration = Duration(hours: 1);
+
+    test('drop into a gap anchors at the gap start (the free time start), '
+        'even when the next block is an event', () {
+      // The slot inside a gap that sits before an event (e.g. the 9:35
+      // gap before a 10:00 event). The block starts where the user dropped
+      // it — the gap start — not "duration before the next event".
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: DateTime(2026, 5, 29, 9, 35),
+        prevEnd: DateTime(2026, 5, 29, 10), // gap end = next event start
+        nextStart: DateTime(2026, 5, 29, 10),
+        prevIsGap: true,
+        duration: const Duration(minutes: 30),
+      );
+      expect(result.anchor, DateTime(2026, 5, 29, 9, 35),
+          reason: 'lands at the gap start, where it was dropped');
+      expect(result.isExact, isTrue);
+    });
+
+    test('drop into a trailing gap anchors at the gap start, not its end '
+        '(which is the next day midnight)', () {
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: DateTime(2026, 5, 31, 11, 30),
+        prevEnd: DateTime(2026, 6, 1), // trailing gap fills to next midnight
+        nextStart: null,
+        prevIsGap: true,
+        duration: duration,
+      );
+      expect(result.anchor, DateTime(2026, 5, 31, 11, 30),
+          reason: 'gap start, never the midnight end (builder drops midnight)');
+      expect(result.isExact, isTrue);
+    });
+
+    test('drop after an event/block starts exactly when that block ends', () {
+      final prevEnd = DateTime(2026, 5, 28, 10);
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: DateTime(2026, 5, 28, 9),
+        prevEnd: prevEnd,
+        nextStart: DateTime(2026, 5, 28, 14),
+        duration: duration,
+      );
+      expect(result.anchor, prevEnd, reason: 'lands at the prev block end');
+      expect(result.isExact, isTrue);
+    });
+
+    test(
+        'drop before the first block of the day starts the focus block its '
+        'own duration before that block', () {
+      final nextStart = DateTime(2026, 5, 28, 9);
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: null,
+        prevEnd: null,
+        nextStart: nextStart,
+        duration: duration,
+      );
+      expect(
+        result.anchor,
+        DateTime(2026, 5, 28, 8),
+        reason: '9:00 first event − 1h duration = 8:00 start',
+      );
+      expect(result.isExact, isTrue);
+    });
+
+    test('a gap start takes precedence over the previous block end', () {
+      // prevIsGap means the block above the slot is the gap itself; its
+      // start wins over its (midnight/next-event) end.
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: DateTime(2026, 5, 28, 11, 30),
+        prevEnd: DateTime(2026, 5, 28, 15),
+        nextStart: DateTime(2026, 5, 28, 15),
+        prevIsGap: true,
+        duration: duration,
+      );
+      expect(result.anchor, DateTime(2026, 5, 28, 11, 30));
+      expect(result.isExact, isTrue);
+    });
+
+    test('epoch-zero prev end is ignored, falls through to next start', () {
+      final nextStart = DateTime(2026, 5, 28, 13);
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: null,
+        prevEnd: DateTime.fromMillisecondsSinceEpoch(0),
+        nextStart: nextStart,
+        duration: duration,
+      );
+      expect(result.anchor, DateTime(2026, 5, 28, 12));
+      expect(result.isExact, isTrue);
+    });
+
+    test('no time-anchored neighbors yields no exact anchor', () {
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: null,
+        prevEnd: null,
+        nextStart: null,
+        duration: duration,
+      );
+      expect(result.anchor, isNull);
+      expect(result.isExact, isFalse);
+    });
+
+    test('next start without a duration cannot resolve an exact anchor', () {
+      final result = resolveFocusBlockDropAnchor(
+        prevStart: null,
+        prevEnd: null,
+        nextStart: DateTime(2026, 5, 28, 9),
+        duration: null,
+      );
+      expect(result.anchor, isNull);
+      expect(result.isExact, isFalse);
+    });
+  });
 }

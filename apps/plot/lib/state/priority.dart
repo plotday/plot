@@ -1726,17 +1726,20 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> moveFocusBlock({
     required PriorityBlockRow source,
     required DateTime targetAnchor,
+    bool anchorIsExact = false,
   }) async {
     final now = DateTime.now();
-    final targetTime = _resolveFocusBlockTargetTime(
-      source: source,
-      targetAnchor: targetAnchor,
-    );
-
-    log.info(
-      '[moveFocusBlock] row=${source.id} priority=${source.priorityId} '
-      '${source.effectiveAt} -> $targetTime',
-    );
+    // An [anchorIsExact] target was derived from a neighbor block's
+    // start/end by the drag dispatch, so it carries the precise drop time
+    // and is used verbatim. The midnight/source-time-of-day heuristic
+    // only applies to the date-anchored fallback, where the anchor
+    // carries no meaningful time-of-day.
+    final targetTime = anchorIsExact
+        ? targetAnchor
+        : _resolveFocusBlockTargetTime(
+            source: source,
+            targetAnchor: targetAnchor,
+          );
 
     // Optimistic update: archive the source in the cache so the agenda
     // immediately stops rendering the block at its old time, and inject
@@ -1772,18 +1775,28 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Authoritative write: archive the existing row, then upsert the new
     // one. Reuses [store.PriorityBlock.save]'s `(priority_id, effective_at)`
     // conflict policy so a re-drag onto an existing slot updates in place.
-    await Store.get.save(
-      store.PriorityBlock.table,
-      archivedSource.toCompanion(false),
-      PriorityBlocksBase(),
-    );
-    final saver = store.PriorityBlock(
-      priorityId: source.priorityId,
-      orderValue: source.orderValue,
-      effectiveAt: targetTime,
-      duration: source.duration,
-    );
-    await saver.save();
+    //
+    // Both writes run in a single transaction so the
+    // `streamPriorityBlocksGroupedByPriority` watch fires exactly once —
+    // with the final, consistent state ({old archived, new present}). Two
+    // separate writes each notify the watch, and the intermediate emit
+    // (old archived but new not yet saved) momentarily overwrites the
+    // correct optimistic state above, flashing the block at its old
+    // position for a frame before it settles.
+    await Store.get.transaction(() async {
+      await Store.get.save(
+        store.PriorityBlock.table,
+        archivedSource.toCompanion(false),
+        PriorityBlocksBase(),
+      );
+      final saver = store.PriorityBlock(
+        priorityId: source.priorityId,
+        orderValue: source.orderValue,
+        effectiveAt: targetTime,
+        duration: source.duration,
+      );
+      await saver.save();
+    });
   }
 
   static DateTime _resolveFocusBlockTargetTime({

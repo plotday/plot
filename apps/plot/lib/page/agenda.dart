@@ -523,39 +523,62 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final sourcePeriodStart = source.sourcePeriodStart;
     final sourceThreadIds = {for (final t in canonicalBlock.threads) t.id};
 
-    // Focus blocks (rows inserted by [_insertExplicitFocusBlocks]) carry an
-    // explicit time-of-day. Drag rescheduling soft-archives the source
-    // row and writes a new row at the drop's target time — independent of
-    // the thread-block reorder path below. Detected via the `'fb_'`
-    // prefix the builder stamps on each focus block's id.
-    if (payload.blockId.startsWith('fb_')) {
-      final sourceRow = canonicalBlock is PriorityBlock
-          ? canonicalBlock.sourceRow
-          : null;
-      if (sourceRow == null) {
-        _log.info(
-          '[agenda block-drop] focus block drop skipped: source row missing '
-          '(blockId=${payload.blockId})',
-        );
-        return;
-      }
-      DateTime? focusAnchor = target.targetPeriodStart;
+    // Focus blocks reschedule by moving their underlying `priority_block`
+    // row, not by rewriting thread schedules. Each focus block is a
+    // standalone [PriorityBlock] (id `fb_…`) carrying that row in
+    // [PriorityBlock.sourceRow].
+    final sourceRow =
+        canonicalBlock is PriorityBlock ? canonicalBlock.sourceRow : null;
+    if (sourceRow != null) {
+      // Anchor the dropped focus block to the times of the blocks
+      // flanking the drop slot: start when the block above ends, or —
+      // when dropped before the day's first time-anchored block — its own
+      // duration before that block. The activation algorithm filters
+      // source-adjacent slots, so neither neighbor is ever the dragged
+      // block. Read start/end null-safely (an [EventBlock]'s `start`/`end`
+      // getters throw when its event has no `at`).
+      DateTime? blockStart(AgendaBlock? b) => switch (b) {
+        EventBlock e => e.event.at?.start,
+        GapBlock g => g.range.start,
+        PriorityBlock p => p.windowStart,
+        null => null,
+      };
+      DateTime? blockEnd(AgendaBlock? b) => switch (b) {
+        EventBlock e => e.event.at?.end,
+        GapBlock g => g.range.end,
+        PriorityBlock p => p.windowEnd,
+        null => null,
+      };
+      final agenda = bloc.state.agenda;
+      final prevBlock = target.prevBlockId == null
+          ? null
+          : agenda.blockById(target.prevBlockId!);
+      final nextBlock = target.nextBlockId == null
+          ? null
+          : agenda.blockById(target.nextBlockId!);
+      final resolved = resolveFocusBlockDropAnchor(
+        prevStart: blockStart(prevBlock),
+        prevEnd: blockEnd(prevBlock),
+        nextStart: blockStart(nextBlock),
+        prevIsGap: prevBlock is GapBlock,
+        duration: sourceRow.duration,
+      );
+
+      // Fallback for drops with no time-anchored neighbor (e.g. onto an
+      // empty date section): use the period/date anchor and let
+      // [moveFocusBlock] preserve the source row's existing time-of-day.
+      var focusAnchor = resolved.anchor;
+      focusAnchor ??= target.targetPeriodStart;
       if (focusAnchor == null && target.targetDate != null) {
         focusAnchor = target.targetDate!.toDateTime();
       }
-      if (focusAnchor == null) {
-        _log.info(
-          '[agenda block-drop] focus block drop skipped: no anchor + no date '
-          '(blockId=${payload.blockId})',
-        );
-        return;
-      }
-      _log.info(
-        '[agenda block-drop] focus block move: row=${sourceRow.id} '
-        '${sourceRow.effectiveAt} -> anchor=$focusAnchor',
-      );
+      if (focusAnchor == null) return;
       unawaited(
-        bloc.moveFocusBlock(source: sourceRow, targetAnchor: focusAnchor),
+        bloc.moveFocusBlock(
+          source: sourceRow,
+          targetAnchor: focusAnchor,
+          anchorIsExact: resolved.isExact,
+        ),
       );
       return;
     }

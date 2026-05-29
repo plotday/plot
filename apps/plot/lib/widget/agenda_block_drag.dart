@@ -235,6 +235,53 @@ typedef BlockDropDispatcher =
   return (before: before, after: after, afterList: afterList);
 }
 
+/// Resolve the clock time a dragged focus block should land at, from the
+/// times of the blocks flanking the drop slot. The focus block starts at
+/// the start of the slot the user dropped it into:
+///
+///   * **Drop into a gap** ([prevIsGap], [prevStart] set): start at the
+///     gap's start — the beginning of that free-time slot (which equals
+///     the previous event's end). A gap's *end* is the next event's start
+///     or the day boundary, so anchoring there would overlap the event or
+///     land at midnight (where the builder drops the block).
+///   * **Drop after an event or focus block** ([prevEnd] set): start
+///     exactly when that block ends — "right after the event ends."
+///   * **Drop before the first block of the day** ([prevStart]/[prevEnd]
+///     null, [nextStart] + [duration] set): start the focus block its own
+///     [duration] before that block, so it ends as the block begins.
+///   * **Otherwise** (no time-anchored neighbor, e.g. a drop onto an
+///     empty date section): return `(anchor: null, isExact: false)` so
+///     the caller falls back to the period/date anchor and preserves the
+///     source row's existing time-of-day.
+///
+/// Epoch-zero times (thread-grouped priority blocks that carry no
+/// explicit window) are treated as "no time" so the focus block never
+/// anchors to the meaningless epoch instant.
+///
+/// [isExact] is true only when an anchor was derived from a neighbor: the
+/// caller should then use it verbatim, bypassing the source-time-of-day
+/// heuristic that only applies to the date-anchored fallback.
+({DateTime? anchor, bool isExact}) resolveFocusBlockDropAnchor({
+  required DateTime? prevStart,
+  required DateTime? prevEnd,
+  required DateTime? nextStart,
+  required Duration? duration,
+  bool prevIsGap = false,
+}) {
+  bool isReal(DateTime? t) => t != null && t.millisecondsSinceEpoch > 0;
+  // Into a gap → the start of the free time the user dropped into.
+  if (prevIsGap && isReal(prevStart)) {
+    return (anchor: prevStart, isExact: true);
+  }
+  // After an event / focus block → start when it ends.
+  if (isReal(prevEnd)) return (anchor: prevEnd, isExact: true);
+  // Before the first block of the day → end as that block begins.
+  if (isReal(nextStart) && duration != null) {
+    return (anchor: nextStart!.subtract(duration), isExact: true);
+  }
+  return (anchor: null, isExact: false);
+}
+
 /// Builds a dimmed preview widget representing the dragged block's
 /// content (its header + visible thread rows). The active
 /// [BlockDropZone] renders this so the gap shows what will land there

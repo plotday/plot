@@ -86,15 +86,13 @@ class AgendaBuilder {
     // position relative to time-anchored siblings in the section. Blocks
     // that already carry an explicit non-epoch window (focus blocks) are
     // preserved.
-    final withWindows = _populateBlockWindows(withFocusBlocks);
-    // Attach per-block pending durations using the resolveBlockDurations
-    // walker. Each priority's rows are resolved independently across all
-    // sections; the result folds onto each block's cascadeDuration field.
-    return _attachBlockDurations(
-      withWindows,
-      todayMidnight: _todayMidnightFromNow(effectiveNow),
-      priorityBlocksByPriority: priorityBlocksByPriority ?? const {},
-    );
+    // A focus block is a single time: each `priority_block` row renders as
+    // its own block at its own `effective_at` (see
+    // [_insertExplicitFocusBlocks]). The previous duration cascade — which
+    // walked every priority's rows and folded a carried-forward duration
+    // onto every later block — has been removed; a block's duration lives
+    // only on the focus block it belongs to.
+    return _populateBlockWindows(withFocusBlocks);
   }
 
   /// Post-process [model] so that each "time period" (a gap region or the
@@ -373,109 +371,6 @@ class AgendaBuilder {
     ];
   }
 
-  /// For every priority, walk its agenda blocks in chronological order
-  /// (across all sections) and attach the duration that `priority_block`
-  /// rows resolve to for each block. Replaces the previous
-  /// `_cascadePendingDurations` fold, which surfaced a per-priority
-  /// total on today only.
-  static AgendaModel _attachBlockDurations(
-    AgendaModel model, {
-    required DateTime todayMidnight,
-    required Map<PriorityId, List<PriorityBlockRow>> priorityBlocksByPriority,
-  }) {
-    if (priorityBlocksByPriority.isEmpty) return model;
-
-    // 1. Build a chronological block list per priority.
-    final blocksByPriority = <PriorityId, List<({String id, DateTime start})>>{};
-    for (final section in model.sections) {
-      for (final block in section.blocks) {
-        // PriorityBlocks and priority-led GapBlocks are the only kinds
-        // that carry a priority's pending; EventBlocks do not.
-        if (block is PriorityBlock || block is GapBlock) {
-          final list = blocksByPriority.putIfAbsent(
-            block.priority.id,
-            () => <({String id, DateTime start})>[],
-          );
-          list.add((id: block.id, start: block.start));
-        }
-      }
-    }
-    for (final list in blocksByPriority.values) {
-      list.sort((a, b) => a.start.compareTo(b.start));
-    }
-
-    // 2. Resolve durations per priority.
-    final resolvedByBlockId = <String, Duration>{};
-    for (final entry in blocksByPriority.entries) {
-      final rows = priorityBlocksByPriority[entry.key] ?? const [];
-      final perBlock = resolveBlockDurations(
-        todayMidnight: todayMidnight,
-        blocks: entry.value,
-        blocksForPriority: rows,
-      );
-      for (final mapEntry in perBlock.entries) {
-        final d = mapEntry.value;
-        if (d != null) {
-          resolvedByBlockId[mapEntry.key] = d;
-        }
-      }
-    }
-
-    if (resolvedByBlockId.isEmpty) return model;
-
-    // 3. Fold the resolved durations back onto each block.
-    final newSections = <AgendaSection>[];
-    for (final section in model.sections) {
-      final newBlocks = <AgendaBlock>[];
-      for (final block in section.blocks) {
-        final dur = resolvedByBlockId[block.id];
-        if (dur == null) {
-          newBlocks.add(block);
-          continue;
-        }
-        if (block is PriorityBlock) {
-          newBlocks.add(PriorityBlock(
-            id: block.id,
-            priority: block.priority,
-            threads: block.threads,
-            isOutside: block.isOutside,
-            cascadeDuration: dur,
-            windowStart: block.windowStart,
-            windowEnd: block.windowEnd,
-            overflow: block.overflow,
-          ));
-        } else if (block is GapBlock) {
-          newBlocks.add(GapBlock(
-            id: block.id,
-            priority: block.priority,
-            range: block.range,
-            threads: block.threads,
-            isOutside: block.isOutside,
-            periodAnchor: block.periodAnchor,
-            cascadeDuration: dur,
-          ));
-        } else {
-          newBlocks.add(block);
-        }
-      }
-      switch (section) {
-        case DateSection s:
-          newSections.add(DateSection(
-            date: s.date,
-            blocks: List.unmodifiable(newBlocks),
-            isNow: s.isNow,
-            scheduleAt: s.scheduleAt,
-          ));
-        case TextSection s:
-          newSections.add(TextSection(
-            text: s.text,
-            blocks: List.unmodifiable(newBlocks),
-          ));
-      }
-    }
-    return AgendaModel(sections: List.unmodifiable(newSections));
-  }
-
   /// Compute today's local midnight from [now]. Pulled out so tests
   /// can pass a frozen `now`.
   static DateTime _todayMidnightFromNow(DateTime now) =>
@@ -609,20 +504,6 @@ class AgendaBuilder {
     for (final entry in priorityById.entries) {
       priorityLookup.putIfAbsent(entry.key, () => entry.value);
     }
-    // Collect block start times already in the model so we don't double-
-    // render: a row whose effective_at matches the start of an existing
-    // EventBlock, GapBlock, or PriorityBlock will attach its duration via
-    // [_attachBlockDurations] downstream — we only insert a *new* UI block
-    // for rows that don't line up with an existing anchor.
-    final existingStarts = <int>{};
-    for (final section in model.sections) {
-      for (final block in section.blocks) {
-        final s = block.start;
-        if (s.millisecondsSinceEpoch > 0) {
-          existingStarts.add(s.millisecondsSinceEpoch);
-        }
-      }
-    }
 
     for (final entry in priorityBlocksByPriority.entries) {
       final priority = priorityLookup[entry.key];
@@ -632,14 +513,9 @@ class AgendaBuilder {
         final d = row.duration;
         if (d == null || d <= Duration.zero) continue;
         if (row.effectiveAt.isBefore(todayMidnight)) continue;
-        // Skip rows that line up with an existing block's start time —
-        // those are legacy duration anchors attached to that block by
-        // the resolver, not new user-scheduled focus blocks.
-        if (existingStarts.contains(row.effectiveAt.millisecondsSinceEpoch)) {
-          continue;
-        }
-        // Skip day-boundary anchors (midnight). Those are also carry-
-        // forward rows the resolver attaches to today's chronological run.
+        // Skip day-boundary anchors (midnight). A midnight `priority_block`
+        // row is an order-timeline anchor, not a user-scheduled focus
+        // block with a real time-of-day.
         final at = row.effectiveAt;
         if (at.hour == 0 && at.minute == 0 && at.second == 0 &&
             at.millisecond == 0 && at.microsecond == 0) {
