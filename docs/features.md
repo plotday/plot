@@ -82,7 +82,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 ### Multi-User
 - Shared priorities
 - Built-in contact database
-- Activity assignment
+- Self-assigned note tasks (each person marks a shared note as their own task; everyone sees who's on it)
 - Author tracking (activities and notes)
 - @-mentions for notifications
 - Per-user unread tracking

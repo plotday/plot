@@ -1102,13 +1102,6 @@ class NoteEditorState extends State<NoteEditor> {
                         ToggleSelfTask(widget.draft),
                         selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
-                      // Assign
-                      Button.icon(
-                        PickNoteAssignee(widget.draft),
-                        selected: widget.draft.assignees.any(
-                          (id) => !id.isCurrentUser,
-                        ),
-                      ),
                     ],
                     // Link button
                     Button.icon(
@@ -1222,22 +1215,6 @@ class NoteEditorState extends State<NoteEditor> {
                     selected: draftNote.isAssignedTo(Base.actorId),
                   ),
                 ],
-                if (!widget.viewerMode && !thread.priority.isViewer)
-                  Button.icon(
-                    PickDraftNoteAssignee(
-                      note: draftNote,
-                      thread: thread,
-                      priorityId: thread.priority.id,
-                      onUpdate: (note, {Thread? thread}) =>
-                          widget.onDraftChanged!(
-                            thread ?? widget.thread!,
-                            note: note,
-                          ),
-                    ),
-                    selected: draftNote.assignees.any(
-                      (id) => !id.isCurrentUser,
-                    ),
-                  ),
                 // Link button
                 Button.icon(
                   AddLink(
@@ -1410,10 +1387,6 @@ class NoteEditorState extends State<NoteEditor> {
     bindings[platformSingleActivator(LogicalKeyboardKey.keyT)] =
         () => _shortcutToggleSelfTask(context);
 
-    // ⌘⇧T — assign
-    bindings[platformSingleActivator(LogicalKeyboardKey.keyT, shift: true)] =
-        () => _shortcutAssign(context);
-
     // ⌘⇧L — add link
     bindings[platformSingleActivator(LogicalKeyboardKey.keyL, shift: true)] =
         () => _shortcutAddLink(context);
@@ -1433,28 +1406,6 @@ class NoteEditorState extends State<NoteEditor> {
       widget.onDraftChanged?.call(widget.thread!, note: updatedNote);
     } else {
       context.run(ToggleSelfTask(widget.draft));
-    }
-  }
-
-  void _shortcutAssign(BuildContext context) {
-    if (_saving) return;
-    if (widget.isNewThreadMode) {
-      if (widget.viewerMode || widget.thread!.priority.isViewer) return;
-      context.run(
-        PickDraftNoteAssignee(
-          note: widget.draft,
-          thread: widget.thread!,
-          priorityId: widget.thread!.priority.id,
-          onUpdate: (note, {Thread? thread}) =>
-              widget.onDraftChanged?.call(
-                thread ?? widget.thread!,
-                note: note,
-              ) ??
-              Future.value(),
-        ),
-      );
-    } else {
-      context.run(PickNoteAssignee(widget.draft));
     }
   }
 

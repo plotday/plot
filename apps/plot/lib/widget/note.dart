@@ -882,9 +882,14 @@ class NoteCommands extends StatelessWidget {
     final othersTodo = todoActors.where((id) => id != actorId).toList();
     final totalDone = doneActors.length;
 
-    // Resolve assignee names for tooltip (async)
+    // Resolve assignee names for tooltip (async). Todo names label the
+    // "assigned themselves this task" chip; done names label the completion
+    // chip (the two sets differ once someone completes).
     final assigneeNamesFuture = note.assignees.isNotEmpty
         ? note.getTagActorNames(Tag.todo)
+        : Future.value('');
+    final doneNamesFuture = note.completedAssignees.isNotEmpty
+        ? note.getTagActorNames(Tag.done)
         : Future.value('');
 
     // Build generic tag widgets (excluding todo/done which are handled above)
@@ -950,10 +955,7 @@ class NoteCommands extends StatelessWidget {
     final activityState = activityBloc.state;
 
     // Watch the local note_reactions row so active emojis render inline
-    // with the other always-visible task buttons (no separate row), and
-    // the hover-toolbar MRU can dedupe against the active set + shrink
-    // its slot count so the total emoji slot count stays bounded.
-    const kHoverEmojiSlots = 5;
+    // with the other always-visible task buttons (no separate row).
 
     // Build the final row with tags and commands
     final commandsRow = StreamBuilder<NoteReactionsRow?>(
@@ -967,9 +969,6 @@ class NoteCommands extends StatelessWidget {
         final activeEntries = reactions.entries
             .where((e) => e.value.isNotEmpty)
             .toList(growable: false);
-        final excludedReactions = {for (final e in activeEntries) e.key};
-        final remainingMruSlots = (kHoverEmojiSlots - activeEntries.length)
-            .clamp(0, kHoverEmojiSlots);
 
         // Resolve the actors who added each active reaction so they can be
         // shown as a "You, Alice + 2 more" subtitle under the emoji name,
@@ -979,21 +978,24 @@ class NoteCommands extends StatelessWidget {
             Note.formatReactionActorNames(entry.value),
         ]);
 
-        return FutureBuilder<(List<Widget>, String, List<String>)>(
+        return FutureBuilder<(List<Widget>, String, List<String>, String)>(
       future: Future.wait([
         Future.wait(tagFutures),
         assigneeNamesFuture,
         reactionNamesFuture,
+        doneNamesFuture,
       ]).then(
         (results) => (
           results[0] as List<Widget>,
           results[1] as String,
           results[2] as List<String>,
+          results[3] as String,
         ),
       ),
       builder: (context, snapshot) {
         final assigneeNames = snapshot.data?.$2 ?? '';
         final reactionNames = snapshot.data?.$3 ?? const <String>[];
+        final doneNames = snapshot.data?.$4 ?? '';
 
         // Active reactions render with the same accent-color "selected"
         // treatment as count-tags — no border, no background. The actors
@@ -1019,15 +1021,6 @@ class NoteCommands extends StatelessWidget {
             }(),
         ];
 
-        // Wrap PickNoteAssignee with assignee names subtitle
-        Command assigneeCommand = PickNoteAssignee(note);
-        if (assigneeNames.isNotEmpty) {
-          assigneeCommand = CommandWrapper(
-            assigneeCommand,
-            subtitle: Value(assigneeNames),
-          );
-        }
-
         // Build task tag widgets — show as many as apply
         final taskTagWidgets = <Widget>[
           // Self todo: circle icon (circleCheck on hover via SelfTaskAction)
@@ -1037,23 +1030,30 @@ class NoteCommands extends StatelessWidget {
               key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
               selected: true,
             ),
-          // Others todo: assigned icon with count
+          // Others todo: userCircle chip (circlePlus on hover). Behaves like a
+          // reaction — tapping toggles the viewer's own task on/off, surfacing
+          // their own self-todo circle before this chip.
           if (othersTodo.isNotEmpty)
             CountBadge(
               count: othersTodo.length,
               child: Button.icon(
-                assigneeCommand,
+                assigneeNames.isNotEmpty
+                    ? CommandWrapper(
+                        JoinNoteTask(note),
+                        subtitle: Value(assigneeNames),
+                      )
+                    : JoinNoteTask(note),
                 key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
                 selected: true,
               ),
             ),
           // Any done: single check icon labelled "Done", count badge if > 1.
-          // Clicking always toggles the viewer's own Tag.done.
+          // Clicking toggles the viewer's own Tag.done (and clears their todo).
           if (totalDone >= 1)
             (() {
-              Command cmd = ToggleNoteTag(note, Tag.done, actorId);
-              if (assigneeNames.isNotEmpty) {
-                cmd = CommandWrapper(cmd, subtitle: Value(assigneeNames));
+              Command cmd = ToggleSelfDone(note);
+              if (doneNames.isNotEmpty) {
+                cmd = CommandWrapper(cmd, subtitle: Value(doneNames));
               }
               final btn = Button.icon(
                 cmd,
@@ -1070,39 +1070,21 @@ class NoteCommands extends StatelessWidget {
         final isViewer = activityState.thread.priority.isViewer;
         final commandButtons = showCommands
             ? [
-                if (!selfTodo && !selfDone && !isViewer)
+                // "Make a task" (circlePlus). Hidden when others are already
+                // assigned — the always-visible userCircle chip is the
+                // self-assign affordance in that case.
+                if (!selfTodo && !selfDone && !isViewer && othersTodo.isEmpty)
                   Button.icon(SelfTaskAction(note)),
-                if (othersTodo.isEmpty && !isViewer)
+
+                // Add reaction — opens the emoji picker modal.
+                if (!note.draft && !isViewer)
                   Button.icon(
-                    CommandWrapper(
-                      PickNoteAssignee(note),
-                      title: 'Assign',
-                      icon: const Value(PlotIcon.assignAdd),
-                    ),
+                    AddNoteReaction(note, activityBloc: activityBloc),
                   ),
-                if (totalDone == 0 &&
-                    !note.hasTag(Tag.todo, actorId) &&
-                    !note.hasTag(Tag.done, actorId))
-                  Button.icon(ToggleNoteTag(note, Tag.done, actorId)),
 
                 if (!note.draft && !isViewer)
                   Button.icon(ReplyToNote(note, activityBloc: activityBloc)),
 
-                // MRU emoji reactions, deduped against active emojis and
-                // shrunk by their count so the row's total emoji slots
-                // stay at `kHoverEmojiSlots` (unless the user already has
-                // more active reactions than slots).
-                if (!note.draft && !isViewer)
-                  ...mruReactionsForToolbar(
-                    context,
-                    note,
-                    source: activityState.links.isEmpty
-                        ? null
-                        : activityState.links.first.source,
-                    actorId: actorId,
-                    limit: remainingMruSlots,
-                    exclude: excludedReactions,
-                  ).map((cmd) => Button.icon(cmd)),
                 Button.icon(
                   CommandWrapper(
                     ShowNoteCommands(note, activityBloc: activityBloc),

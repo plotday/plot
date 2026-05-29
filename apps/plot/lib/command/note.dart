@@ -66,44 +66,6 @@ abstract class NoteCommand extends Command {
   final Note note;
 }
 
-class AssignNote extends NoteCommand {
-  AssignNote(super.note, {this.actorId})
-    : super(
-        title: 'Assign to me',
-        eventObject: EventObject.note,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.todo,
-      );
-
-  final ActorId? actorId;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      // Use current user ID if no actor specified
-      final targetActorId = actorId ?? Base.actorId;
-
-      // Check if already assigned
-      final isAssigned = note.isAssignedTo(targetActorId);
-
-      if (isAssigned) {
-        // Already assigned - skip or could unassign
-        return const CommandMessage('Already assigned');
-      }
-
-      // Assign the note by adding Tag.todo for the actor
-      final updatedNote = note.assignTo(targetActorId);
-      await updatedNote.save();
-
-      return const CommandDone();
-    } catch (e, stackTrace) {
-      log.severe('Error in AssignNote: $e', e, stackTrace);
-      Tracker.captureException(e, stackTrace);
-      return CommandMessage('Failed to assign note', isError: true);
-    }
-  }
-}
-
 enum _SelfTaskState { unassigned, todo, done }
 
 class SelfTaskAction extends NoteCommand {
@@ -214,6 +176,93 @@ class ToggleSelfTask extends NoteCommand {
   }
 }
 
+/// Inline chip shown when *other* users have made the note their own task.
+///
+/// Renders the userCircle glyph (circlePlus on hover) and, like an emoji
+/// reaction, tapping it toggles the current user's own [Tag.todo] on/off — it
+/// never marks done. Joining surfaces the user's own circle chip before this
+/// one; tapping again removes that circle.
+class JoinNoteTask extends NoteCommand {
+  JoinNoteTask(super.note)
+    : super(
+        title: 'Assigned themselves this task',
+        eventObject: EventObject.note,
+        eventAction: note.isAssignedTo(Base.actorId)
+            ? EventAction.untagged
+            : EventAction.tagged,
+        icon: PlotIcon.othersTask,
+        hoverIcon: PlotIcon.selfTask,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      ThreadBloc? activityBloc;
+      try {
+        activityBloc = context.read<ThreadBloc>();
+      } catch (e) {
+        activityBloc = null;
+      }
+
+      final updatedNote = note.toggleTag(Tag.todo, Base.actorId);
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
+      }
+      await updatedNote.save();
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in JoinNoteTask: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to update task', isError: true);
+    }
+  }
+}
+
+/// Toggles the current user's completion of a note, like an emoji reaction.
+///
+/// Turning it on also clears the user's [Tag.todo] (via [Note.completeFor]) so
+/// the local optimistic state matches the server, which archives todo when done
+/// is added. Turning it off just removes [Tag.done].
+class ToggleSelfDone extends NoteCommand {
+  ToggleSelfDone(super.note)
+    : super(
+        title: 'Done',
+        eventObject: EventObject.note,
+        eventAction: note.isCompletedBy(Base.actorId)
+            ? EventAction.untagged
+            : EventAction.finished,
+        icon: PlotIcon.done,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final actorId = Base.actorId;
+      ThreadBloc? activityBloc;
+      try {
+        activityBloc = context.read<ThreadBloc>();
+      } catch (e) {
+        activityBloc = null;
+      }
+
+      final updatedNote = note.isCompletedBy(actorId)
+          ? note.setTag(Tag.done, actorId, false)
+          : note.completeFor(actorId);
+      if (activityBloc != null &&
+          activityBloc.state.draft.id == updatedNote.id) {
+        await activityBloc.updateDraft(updatedNote);
+      }
+      await updatedNote.save();
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleSelfDone: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to update task', isError: true);
+    }
+  }
+}
+
 /// Toggles an emoji reaction for the current user on a note.
 ///
 /// Optimistically updates the local `note_reactions` row, marks the
@@ -230,10 +279,10 @@ class ToggleSelfTask extends NoteCommand {
 class AddNoteReaction extends NoteCommand {
   AddNoteReaction(super.note, {this.activityBloc})
     : super(
-        title: 'React',
+        title: 'Add reaction',
         eventObject: EventObject.note,
         eventAction: EventAction.tagged,
-        icon: FontAwesomeIcons.faceSmile,
+        icon: FontAwesomeIcons.faceSmilePlus,
       );
 
   final ThreadBloc? activityBloc;
@@ -334,37 +383,6 @@ class ToggleNoteReaction extends NoteCommand {
   }
 }
 
-/// Returns up to [limit] MRU emoji reactions to render inline on the hover
-/// toolbar. Falls back to [kDefaultReactionMru] when the user has not yet
-/// reacted, so the toolbar always offers something. Filtered by the
-/// connector's reaction capabilities and by [exclude] (typically the
-/// emojis already active on this note, so the inline row never shows the
-/// same glyph twice). Callers shrink [limit] by the active-reaction count
-/// so the total emoji slots stay constant regardless of how many active
-/// reactions exist.
-List<Command> mruReactionsForToolbar(
-  BuildContext context,
-  Note note, {
-  required String? source,
-  required ActorId actorId,
-  int limit = 5,
-  Set<Reaction>? exclude,
-}) {
-  if (limit <= 0) return const [];
-  final stored = context.read<LocalPreferencesBloc>().state.reactionMru;
-  final mru = stored.isEmpty ? kDefaultReactionMru : stored;
-  final allowed = reactionCapabilitiesForLinkSource(source).allowed?.toSet();
-
-  final result = <Command>[];
-  for (final emoji in mru) {
-    if (allowed != null && !allowed.contains(emoji)) continue;
-    if (exclude != null && exclude.contains(emoji)) continue;
-    result.add(_QuickReactionCommand(note, emoji));
-    if (result.length >= limit) break;
-  }
-  return result;
-}
-
 /// Renders an active emoji reaction inline in the note's command row.
 /// Uses the same `Button.icon(selected: true)` accent-color treatment as
 /// selected count-tags: no border, no background, just the glyph in
@@ -390,31 +408,6 @@ class ActiveNoteReaction extends NoteCommand {
 
 Widget _emojiButtonIcon(BuildContext _, Reaction emoji) =>
     EmojiCommandIcon(emoji);
-
-/// Hover-toolbar wrapper around [ToggleNoteReaction] that renders an emoji
-/// glyph instead of an icon and skips MRU bookkeeping (the user is reusing
-/// an already-recent emoji; no MRU change to make).
-class _QuickReactionCommand extends NoteCommand {
-  _QuickReactionCommand(super.note, this.emoji)
-    : super(
-        // Tooltip text. Human-readable CLDR name when known (e.g.
-        // "grinning face"); falls back to the raw emoji for custom-emoji
-        // refs and any Unicode glyph not in the names map.
-        title: emojiDisplayName(emoji),
-        eventObject: EventObject.note,
-        eventAction: EventAction.tagged,
-      );
-
-  final Reaction emoji;
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
-      _emojiButtonIcon(context, emoji);
-
-  @override
-  Future<CommandReturn> run(BuildContext context) =>
-      ToggleNoteReaction(note, emoji).run(context);
-}
 
 class ToggleNoteTag extends NoteCommand {
   ToggleNoteTag(super.note, this.tag, this.actorId, {this.isViewer = false})
@@ -763,192 +756,6 @@ class SplitNoteToNewThread extends NoteCommand {
   }
 }
 
-class PickNoteAssignee extends ShowCommands {
-  PickNoteAssignee(this.note)
-    : super(
-        title: _computeTitle(note),
-        icon: _computeIcon(note),
-        commandsBuilder: (context) => _getAssigneeCommands(note),
-        showFilter: true,
-        eventObject: EventObject.note,
-        eventAction: EventAction.updated,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT, shift: true),
-      );
-
-  final Note note;
-
-  /// Whether anyone other than the current user is assigned, including
-  /// hidden assignees (announce-topic-only members the viewer can't see).
-  bool get hasOtherAssignees {
-    final selfAssigned =
-        note.activeAssignees.contains(Base.actorId) ||
-        note.completedAssignees.contains(Base.actorId);
-    return note.assigneeCount > (selfAssigned ? 1 : 0);
-  }
-
-  static String _computeTitle(Note note) =>
-      _hasOtherAssignees(note) ? 'Assigned' : 'Assign';
-
-  static IconData _computeIcon(Note note) =>
-      _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
-
-  static bool _hasOtherAssignees(Note note) {
-    final selfAssigned =
-        note.activeAssignees.contains(Base.actorId) ||
-        note.completedAssignees.contains(Base.actorId);
-    return note.assigneeCount > (selfAssigned ? 1 : 0);
-  }
-
-  static Future<Commands> _getAssigneeCommands(Note note) async {
-    final activity = await Thread.getOne(note.threadId);
-    // Refresh note to get latest tag state
-    final freshNote = await note.refresh();
-    // activeAssignees is already canonical-deduped (Note.tags collapses
-    // linked-contact aliases). The picker keys all comparisons on canonical
-    // identity so a user with multiple linked contacts shows up once.
-    final assigneeIds = freshNote.activeAssignees;
-    final assigneeCanonicalIds = assigneeIds.map(Actor.canonicalId).toSet();
-
-    // Resolve assigned actors for the "Assigned" section. Map each assignee
-    // through its canonical actor so the row renders the user's primary
-    // identity (name/email/avatar), not whichever alias the row was filed on.
-    final assignedActors = assigneeIds.isNotEmpty
-        ? await Future.wait(
-            assigneeIds.map((id) => Actor.getOne(Actor.canonicalId(id))),
-          )
-        : <Actor>[];
-
-    // Hidden active assignees (announce-topic-only) — count only, no identity
-    final hiddenActiveCount =
-        TagActors.countOf(freshNote.tags[Tag.todo]) - assigneeIds.length;
-    final assignedSubtitle = hiddenActiveCount > 0
-        ? '+$hiddenActiveCount hidden'
-        : null;
-
-    // Resolve thread contacts for the "With" section. Dedupe by canonical
-    // identity so a contact present via multiple linked aliases (or via
-    // both thread.contacts and a group) collapses to one row.
-    final contactActors = <Actor>[];
-    final seenContactCanonicalIds = <ActorId>{};
-    for (final contactId in activity.contacts) {
-      try {
-        final canonical = Actor.canonicalId(ActorId.fromUuid(contactId));
-        if (!seenContactCanonicalIds.add(canonical)) continue;
-        final actor = await Actor.getOne(canonical);
-        if (!actor.self) contactActors.add(actor);
-      } catch (_) {
-        // Skip contacts whose actors can't be resolved
-      }
-    }
-    final contactCanonicalIds = contactActors.map((a) => a.id).toSet();
-
-    // Exclude already-assigned contacts from the With section
-    final unassignedContacts = contactActors
-        .where((a) => !assigneeCanonicalIds.contains(a.id))
-        .toList();
-
-    // Exclude both assigned and thread contact actors from Contacts
-    final excludeFromContacts = <ActorId>[
-      ...assigneeCanonicalIds,
-      ...contactCanonicalIds,
-    ];
-
-    return Commands(
-      prompt: 'Assign to',
-      groups: [
-        if (assignedActors.isNotEmpty)
-          StaticCommandGroup(
-            title: 'Assigned',
-            subtitle: assignedSubtitle,
-            commands: assignedActors
-                .map((actor) => AssignNoteActor(freshNote, actor))
-                .toList(),
-          ),
-        if (unassignedContacts.isNotEmpty)
-          StaticCommandGroup(
-            title: 'In this thread',
-            commands: unassignedContacts
-                .map((actor) => AssignNoteActor(freshNote, actor))
-                .toList(),
-          ),
-        ActorGroup(
-          title: 'Contacts',
-          excludeActorIds: excludeFromContacts,
-          builder: (actor) => AssignNoteActor(freshNote, actor),
-        ),
-      ],
-    );
-  }
-}
-
-class AssignNoteActor extends NoteCommand {
-  AssignNoteActor(super.note, this.actor)
-    : _isDone = note.isCompletedBy(actor.id),
-      super(
-        title: actor.nameOrEmail,
-        eventObject: EventObject.note,
-        eventAction: note.isCompletedBy(actor.id)
-            ? EventAction.clicked
-            : note.isAssignedTo(actor.id)
-            ? EventAction.untagged
-            : EventAction.tagged,
-        icon: note.isCompletedBy(actor.id)
-            ? PlotIcon.othersTaskDone
-            : note.isAssignedTo(actor.id)
-            ? PlotIcon.othersTask
-            : PlotIcon.assignAdd,
-        on: note.isAssignedTo(actor.id),
-      );
-
-  final Actor actor;
-  final bool _isDone;
-
-  @override
-  String? get subtitle => actor.name != null ? actor.email : null;
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
-      Avatar(actor: actor);
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    if (_isDone) {
-      return const CommandMessage('Only they can change their done status');
-    }
-    try {
-      ThreadBloc? activityBloc;
-      try {
-        activityBloc = context.read<ThreadBloc>();
-      } catch (e) {
-        activityBloc = null;
-      }
-
-      final isAssigned = note.isAssignedTo(actor.id);
-      final updatedNote = note.setTag(Tag.todo, actor.id, !isAssigned);
-      if (activityBloc != null &&
-          activityBloc.state.draft.id == updatedNote.id) {
-        await activityBloc.updateDraft(updatedNote);
-      }
-      await updatedNote.save();
-
-      // If assigning (not unassigning) and actor is not on the thread, add them
-      if (!isAssigned) {
-        final thread = await Thread.getOne(note.threadId);
-        final contactUuid = actor.id.toUuid();
-        if (!thread.contacts.contains(contactUuid)) {
-          final newContacts = [...thread.contacts, contactUuid];
-          await thread.copyWith(contacts: Value(newContacts)).save();
-        }
-      }
-
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in AssignNoteActor: $e', e, stackTrace);
-      return CommandMessage('Failed to update assignment', isError: true);
-    }
-  }
-}
-
 List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
@@ -992,7 +799,6 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
         note.content != null &&
         note.content!.trim().isNotEmpty)
       EditNote(note, activityBloc: activityBloc),
-    PickNoteAssignee(note),
     if (!note.draft && note.content != null && note.content!.trim().isNotEmpty)
       SplitNoteToNewThread(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
@@ -1039,225 +845,4 @@ class ShowNoteCommands extends ShowCommands {
           groups: noteCommandGroups(note, activityBloc: activityBloc),
         ),
       );
-}
-
-/// Assign picker for draft notes on NewThreadPage (uses callback instead of ThreadBloc).
-class PickDraftNoteAssignee extends ShowCommands {
-  factory PickDraftNoteAssignee({
-    required Note note,
-    required Thread thread,
-    required Uuid priorityId,
-    required Future<void> Function(Note note, {Thread? thread}) onUpdate,
-  }) {
-    // Mutable references so commandsBuilder always sees the latest state
-    final noteRef = [note];
-    final threadRef = [thread];
-
-    Future<void> wrappedOnUpdate(Note updatedNote, {Thread? thread}) async {
-      noteRef[0] = updatedNote;
-      if (thread != null) threadRef[0] = thread;
-      await onUpdate(updatedNote, thread: thread);
-    }
-
-    return PickDraftNoteAssignee._(
-      note: note,
-      thread: thread,
-      priorityId: priorityId,
-      onUpdate: onUpdate,
-      commandsBuilder: (context) => _getAssigneeCommands(
-        noteRef[0],
-        threadRef[0],
-        priorityId,
-        wrappedOnUpdate,
-      ),
-    );
-  }
-
-  PickDraftNoteAssignee._({
-    required this.note,
-    required this.thread,
-    required this.priorityId,
-    required this.onUpdate,
-    required Future<Commands> Function(BuildContext) commandsBuilder,
-  }) : super(
-         title: _computeTitle(note),
-         icon: _computeIcon(note),
-         commandsBuilder: commandsBuilder,
-         showFilter: true,
-         eventObject: EventObject.note,
-         eventAction: EventAction.updated,
-         shortcut: platformSingleActivator(
-           LogicalKeyboardKey.keyT,
-           shift: true,
-         ),
-       );
-
-  final Note note;
-  final Thread thread;
-  final Uuid priorityId;
-  final Future<void> Function(Note note, {Thread? thread}) onUpdate;
-
-  static String _computeTitle(Note note) =>
-      _hasOtherAssignees(note) ? 'Assigned' : 'Assign';
-
-  static IconData _computeIcon(Note note) =>
-      _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
-
-  static bool _hasOtherAssignees(Note note) {
-    final selfAssigned =
-        note.activeAssignees.contains(Base.actorId) ||
-        note.completedAssignees.contains(Base.actorId);
-    return note.assigneeCount > (selfAssigned ? 1 : 0);
-  }
-
-  static Future<Commands> _getAssigneeCommands(
-    Note note,
-    Thread thread,
-    Uuid priorityId,
-    Future<void> Function(Note note, {Thread? thread}) onUpdate,
-  ) async {
-    final assigneeIds = note.activeAssignees;
-    final assigneeCanonicalIds = assigneeIds.map(Actor.canonicalId).toSet();
-
-    // Resolve assigned actors for the "Assigned" section, mapped through
-    // canonical ids so each row renders the user's primary identity.
-    final assignedActors = assigneeIds.isNotEmpty
-        ? await Future.wait(
-            assigneeIds.map((id) => Actor.getOne(Actor.canonicalId(id))),
-          )
-        : <Actor>[];
-
-    // Hidden active assignees (announce-topic-only) — count only, no identity
-    final hiddenActiveCount =
-        TagActors.countOf(note.tags[Tag.todo]) - assigneeIds.length;
-    final assignedSubtitle = hiddenActiveCount > 0
-        ? '+$hiddenActiveCount hidden'
-        : null;
-
-    // Resolve thread contacts for the "With" section, deduped by identity.
-    final contactActors = <Actor>[];
-    final seenContactCanonicalIds = <ActorId>{};
-    for (final contactId in thread.contacts) {
-      try {
-        final canonical = Actor.canonicalId(ActorId.fromUuid(contactId));
-        if (!seenContactCanonicalIds.add(canonical)) continue;
-        final actor = await Actor.getOne(canonical);
-        if (!actor.self) contactActors.add(actor);
-      } catch (_) {
-        // Skip contacts whose actors can't be resolved
-      }
-    }
-    final contactCanonicalIds = contactActors.map((a) => a.id).toSet();
-
-    // Exclude already-assigned contacts from the With section
-    final unassignedContacts = contactActors
-        .where((a) => !assigneeCanonicalIds.contains(a.id))
-        .toList();
-
-    // Exclude both assigned and thread contact actors from Contacts
-    final excludeFromContacts = <ActorId>[
-      ...assigneeCanonicalIds,
-      ...contactCanonicalIds,
-    ];
-
-    return Commands(
-      prompt: 'Assign to',
-      groups: [
-        if (assignedActors.isNotEmpty)
-          StaticCommandGroup(
-            title: 'Assigned',
-            subtitle: assignedSubtitle,
-            commands: assignedActors
-                .map(
-                  (actor) =>
-                      _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
-                )
-                .toList(),
-          ),
-        if (unassignedContacts.isNotEmpty)
-          StaticCommandGroup(
-            title: 'In this thread',
-            commands: unassignedContacts
-                .map(
-                  (actor) => _AssignDraftNoteActor(
-                    note,
-                    actor,
-                    onUpdate: onUpdate,
-                    thread: thread,
-                  ),
-                )
-                .toList(),
-          ),
-        ActorGroup(
-          title: 'Contacts',
-          excludeActorIds: excludeFromContacts,
-          builder: (actor) => _AssignDraftNoteActor(
-            note,
-            actor,
-            onUpdate: onUpdate,
-            thread: thread,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AssignDraftNoteActor extends NoteCommand {
-  _AssignDraftNoteActor(
-    super.note,
-    this.actor, {
-    required this.onUpdate,
-    this.thread,
-  }) : super(
-         title: actor.nameOrEmail,
-         eventObject: EventObject.note,
-         eventAction: note.isAssignedTo(actor.id)
-             ? EventAction.untagged
-             : EventAction.tagged,
-         icon: note.isCompletedBy(actor.id)
-             ? PlotIcon.othersTaskDone
-             : note.isAssignedTo(actor.id)
-             ? PlotIcon.othersTask
-             : PlotIcon.assignAdd,
-         on: note.isAssignedTo(actor.id),
-       );
-
-  final Actor actor;
-  final Future<void> Function(Note note, {Thread? thread}) onUpdate;
-  final Thread? thread;
-
-  @override
-  String? get subtitle => actor.name != null ? actor.email : null;
-
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
-      Avatar(actor: actor);
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      final isAssigned = note.isAssignedTo(actor.id);
-      final updatedNote = note.setTag(Tag.todo, actor.id, !isAssigned);
-
-      // If assigning (not unassigning) and actor is not on the thread, add
-      // them to the draft thread's contacts so sharing follows assignment.
-      Thread? updatedThread;
-      if (!isAssigned && thread != null) {
-        final contactUuid = actor.id.toUuid();
-        if (!thread!.contacts.contains(contactUuid)) {
-          updatedThread = thread!.copyWith(
-            contacts: Value([...thread!.contacts, contactUuid]),
-          );
-        }
-      }
-
-      await onUpdate(updatedNote, thread: updatedThread);
-
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in _AssignDraftNoteActor: $e', e, stackTrace);
-      return CommandMessage('Failed to update assignment', isError: true);
-    }
-  }
 }
