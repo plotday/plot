@@ -1488,27 +1488,32 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
         RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
       ),
     );
-    // The section heading renders as a quiet divider with no fill or rule —
-    // the preceding row's bottom border provides the separation. The Row
-    // just lays the centered tile alongside the trailing "Reschedule all"
-    // button (with an invisible left mirror to keep the title centered).
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Invisible mirror on the left reserves the button's width so
-        // the centred tile text sits at the row's true horizontal
-        // midpoint. Using the same widget on both sides keeps the
-        // reserved widths identical down to anti-aliasing.
-        Visibility(
-          visible: false,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: button,
-        ),
-        Expanded(child: tile),
-        button,
-      ],
+    // The whole header sits on the subtle section-header band. Wrapping the
+    // full Row (not just the centered tile) means the band also runs behind
+    // the trailing "Reschedule all" button and its invisible left mirror —
+    // otherwise the band only paints under the tile in the middle and the
+    // sides show through. The tile paints the same opaque band internally for
+    // button-less sections, so the two coincide here with no seam.
+    return DecoratedBox(
+      decoration: BoxDecoration(color: context.colour.sectionHeaderBackground),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Invisible mirror on the left reserves the button's width so
+          // the centred tile text sits at the row's true horizontal
+          // midpoint. Using the same widget on both sides keeps the
+          // reserved widths identical down to anti-aliasing.
+          Visibility(
+            visible: false,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: button,
+          ),
+          Expanded(child: tile),
+          button,
+        ],
+      ),
     );
   }
 }
