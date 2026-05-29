@@ -395,6 +395,18 @@ class ThreadsBase extends BaseTable {
           : DateTimeRange.fromString(rawStateAt).start?.toUtc().toIso8601String();
     }
 
+    // contact_meta must be an object keyed by contact_id. A malformed
+    // non-object value (e.g. the `[{}, null]` array an old upsert_thread bug
+    // produced when merging a JSON-null payload) would crash the Map cast in
+    // ThreadRow.fromJson — and since pull() aborts cursor advance on any
+    // row-parse failure, a single bad row permanently wedges all thread sync.
+    // Degrade a bad shape to null (the model reads null as "no meta") so one
+    // corrupt row can't stall the whole pull.
+    final rawContactMeta = json['contact_meta'];
+    if (rawContactMeta != null && rawContactMeta is! Map) {
+      json['contact_meta'] = null;
+    }
+
     return ThreadRow.fromJson(json);
   }
 

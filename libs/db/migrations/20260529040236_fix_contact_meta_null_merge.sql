@@ -1,37 +1,5 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -646,4 +614,21 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+
+-- Data repair: fix threads whose contact_meta was corrupted into a JSON array
+-- by the pre-fix `'{}'::jsonb || 'null'::jsonb` coercion. A literal
+-- `"contact_meta": null` payload (clients send this for "no meta") slipped past
+-- COALESCE(..., '{}') because it is a JSONB 'null', not SQL NULL, and the `||`
+-- merge coerced object+null into `[{}, null]`. The column must be an object
+-- keyed by contact_id; the array shape crashes ThreadRow.fromJson on every
+-- client and wedges the sync cursor. Salvage the leading object element when
+-- the array still carries real keyed meta; otherwise reset to an empty object.
+-- This is an UPDATE (not DELETE) on a synced table, so the seq/updated_at
+-- trigger fires and clients re-pull the corrected row.
+UPDATE thread
+SET contact_meta = CASE
+        WHEN jsonb_typeof(contact_meta -> 0) = 'object' THEN contact_meta -> 0
+        ELSE '{}'::jsonb
+    END
+WHERE jsonb_typeof(contact_meta) <> 'object';
