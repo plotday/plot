@@ -971,7 +971,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                           children: [
                             if (block is PriorityBlock) ...[
                               Icon(
-                                PlotIcon.arrowsToDot,
+                                PlotIcon.priority,
                                 size: secondarySize,
                                 color: fg,
                               ),

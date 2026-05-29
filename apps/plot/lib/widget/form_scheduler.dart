@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:forui/forui.dart';
 
-import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/widget/form.dart';
 import 'package:plot/widget/icon.dart';
@@ -158,7 +158,20 @@ class FormScheduler extends FormItem {
     }
   }
 
-  /// Enter / tap on a row focuses its inner editable field for typing.
+  // Enter on any scheduler row submits the form (like a text field), instead of
+  // entering per-field edit mode — FormModal restores row focus right after
+  // `activate`, which made an Enter-to-edit flash and revert. Typing stays
+  // available by clicking into a field; arrow keys adjust without typing.
+  VoidCallback? _onSubmitted;
+
+  @override
+  set onSubmitted(VoidCallback? callback) => _onSubmitted = callback;
+
+  @override
+  VoidCallback? get onSubmitted => _onSubmitted;
+
+  /// Focus a row's inner editable field (e.g. when the row is tapped). Not
+  /// reached via Enter — Enter submits the form (see [onSubmitted]).
   @override
   Future<void> activate(BuildContext context, {int subIndex = 0}) async {
     if (subIndex >= 0 && subIndex < _stepControllers.length) {
@@ -256,70 +269,64 @@ class _FormSchedulerBodyState extends State<_FormSchedulerBody> {
         ? FTime.fromDateTime(end)
         : FTime.fromDateTime(Time.now().add(const Duration(hours: 1)));
 
-    final highlight = context.theme.plotColors.editableBackground;
-    Color? hlFor(int i) => widget.highlightedSubIndex == i ? highlight : null;
+    // Match the standard FormModal rows: highlight with the same secondary
+    // colour, and inset row content by spacing.xl so the leading icons line up
+    // with the priority field and submit button above/below.
+    final highlight = context.theme.colors.secondary;
+
+    Widget row(int i, IconData icon, Widget content) {
+      final ctrl = _ctrl(i);
+      return StepperRow(
+        focusNode: _node(i),
+        highlightColor: widget.highlightedSubIndex == i ? highlight : null,
+        onStepBack: () => ctrl.stepBack?.call(),
+        onStepForward: () => ctrl.stepForward?.call(),
+        onJumpBack: () => ctrl.jumpBack?.call(),
+        onJumpForward: () => ctrl.jumpForward?.call(),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.theme.spacing.xl),
+          child: IconInputRow(icon: icon, content: content),
+        ),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 0: Date
-        StepperRow(
-          focusNode: _node(0),
-          highlightColor: hlFor(0),
-          onStepBack: () => _ctrl(0).stepBack?.call(),
-          onStepForward: () => _ctrl(0).stepForward?.call(),
-          onJumpBack: () => _ctrl(0).jumpBack?.call(),
-          onJumpForward: () => _ctrl(0).jumpForward?.call(),
-          child: IconInputRow(
-            icon: PlotIcon.event,
-            content: DateInput(
-              value: _range.start,
-              onChanged: (date) {
-                if (date != null) _apply(withDate(_range, date));
-              },
-              stepController: _ctrl(0),
-            ),
+        row(
+          0,
+          PlotIcon.event,
+          DateInput(
+            value: _range.start,
+            onChanged: (date) {
+              if (date != null) _apply(withDate(_range, date));
+            },
+            stepController: _ctrl(0),
           ),
         ),
-        // 1: Time range
-        StepperRow(
-          focusNode: _node(1),
-          highlightColor: hlFor(1),
-          onStepBack: () => _ctrl(1).stepBack?.call(),
-          onStepForward: () => _ctrl(1).stepForward?.call(),
-          onJumpBack: () => _ctrl(1).jumpBack?.call(),
-          onJumpForward: () => _ctrl(1).jumpForward?.call(),
-          child: IconInputRow(
-            icon: PlotIcon.later,
-            content: TimeRangeInput(
-              startTime: startFTime,
-              endTime: endFTime,
-              onStartTimeChanged: (t) {
-                if (t != null) _apply(withStart(_range, t));
-              },
-              onEndTimeChanged: (t) {
-                if (t != null) _apply(withEnd(_range, t));
-              },
-              onRangeShift: (delta) => _apply(shiftedBy(_range, delta)),
-              stepController: _ctrl(1),
-            ),
+        row(
+          1,
+          PlotIcon.later,
+          TimeRangeInput(
+            startTime: startFTime,
+            endTime: endFTime,
+            onStartTimeChanged: (t) {
+              if (t != null) _apply(withStart(_range, t));
+            },
+            onEndTimeChanged: (t) {
+              if (t != null) _apply(withEnd(_range, t));
+            },
+            onRangeShift: (delta) => _apply(shiftedBy(_range, delta)),
+            stepController: _ctrl(1),
           ),
         ),
-        // 2: Duration
-        StepperRow(
-          focusNode: _node(2),
-          highlightColor: hlFor(2),
-          onStepBack: () => _ctrl(2).stepBack?.call(),
-          onStepForward: () => _ctrl(2).stepForward?.call(),
-          onJumpBack: () => _ctrl(2).jumpBack?.call(),
-          onJumpForward: () => _ctrl(2).jumpForward?.call(),
-          child: IconInputRow(
-            icon: PlotIcon.waiting,
-            content: DurationInput(
-              value: _range.duration ?? const Duration(minutes: 30),
-              onChanged: (d) => _apply(withDuration(_range, d)),
-              stepController: _ctrl(2),
-            ),
+        row(
+          2,
+          PlotIcon.waiting,
+          DurationInput(
+            value: _range.duration ?? const Duration(minutes: 30),
+            onChanged: (d) => _apply(withDuration(_range, d)),
+            stepController: _ctrl(2),
           ),
         ),
       ],
