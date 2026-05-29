@@ -396,17 +396,13 @@ account.post("/activate", async (c) => {
 
     // priority.user_id is set automatically by the default_priority_user_id trigger
 
-    // Step 3.6: Seed default response-time settings on the root priority.
-    // Sub-priorities inherit via priority_setting_inherited unless overridden.
+    // Step 3.6: Seed default early-notification settings on the root
+    // priority. Sub-priorities inherit via priority_setting_inherited
+    // unless overridden.
     try {
       await sql`
         INSERT INTO priority_setting (user_id, priority_id, key, value)
         VALUES
-          (${user.id}::uuid, ${newPriority.id}::uuid, 'respond_schedule_enabled', 'true'::jsonb),
-          (${user.id}::uuid, ${newPriority.id}::uuid, 'respond_window',
-           ${JSON.stringify([{ days: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" }])}::jsonb),
-          (${user.id}::uuid, ${newPriority.id}::uuid, 'respond_within',
-           ${JSON.stringify({ value: 4, unit: "hours" })}::jsonb),
           (${user.id}::uuid, ${newPriority.id}::uuid, 'early_notifications_enabled', 'true'::jsonb),
           (${user.id}::uuid, ${newPriority.id}::uuid, 'notify_window',
            ${JSON.stringify([{ days: [1, 2, 3, 4, 5, 6, 7], start: "08:00", end: "20:00" }])}::jsonb),
@@ -416,7 +412,7 @@ account.post("/activate", async (c) => {
       `.execute(c.var.db);
     } catch (err) {
       const logger = createLogger(extractRequestContext(c));
-      logger.error("Failed to set default response-time settings", err as Error, {
+      logger.error("Failed to set default early-notification settings", err as Error, {
         user_id: user.id,
         priority_id: newPriority.id,
       });

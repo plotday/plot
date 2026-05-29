@@ -7,18 +7,18 @@ import { notifySync } from "./notify";
 
 const priorityAttention = new Hono<{ Bindings: Bindings }>();
 
-// POST /sync/priority-attention - Set/clear per-priority response-time settings.
+// POST /sync/priority-attention - Set/clear per-priority early-notification
+// settings.
 //
-// Six per-priority keys split into two clearly-labelled mechanisms:
-//   - Schedule time to respond: `respond_schedule_enabled` toggle,
-//     `respond_window` (active hours) and `respond_within` (response SLA).
-//   - Early notifications: `early_notifications_enabled` toggle,
-//     `notify_window` (when interruptions are allowed) and `see_within`
-//     (max delay before notification fires).
+// Three per-priority keys:
+//   - `early_notifications_enabled` toggle.
+//   - `notify_window` (when interruptions are allowed).
+//   - `see_within` (max delay before notification fires; used as the
+//     deadline fallback when no focus block exists for the priority).
 //
-// Each value pairs with a `set_*` flag so a partial payload only writes the
-// keys the client intended to change; passing a null value with the flag
-// clears the override and reverts to the inherited value.
+// Each value pairs with a `set_*` flag so a partial payload only writes
+// the keys the client intended to change; passing a null value with the
+// flag clears the override and reverts to the inherited value.
 priorityAttention.post("/sync/priority-attention", async (c) => {
   const userId = c.var.user.id;
   const body = await c.req.json();
@@ -27,12 +27,6 @@ priorityAttention.post("/sync/priority-attention", async (c) => {
     return rpcUser(trx, "upsert_priority_attention", {
       p_user_id: userId,
       p_priority_id: body.priority_id,
-      p_respond_schedule_enabled: body.respond_schedule_enabled ?? null,
-      p_set_respond_schedule_enabled: body.set_respond_schedule_enabled ?? false,
-      p_respond_window: body.respond_window ?? null,
-      p_set_respond_window: body.set_respond_window ?? false,
-      p_respond_within: body.respond_within ?? null,
-      p_set_respond_within: body.set_respond_within ?? false,
       p_early_notifications_enabled: body.early_notifications_enabled ?? null,
       p_set_early_notifications_enabled: body.set_early_notifications_enabled ?? false,
       p_notify_window: body.notify_window ?? null,

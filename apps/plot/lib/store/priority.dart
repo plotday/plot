@@ -34,20 +34,8 @@ class Priorities extends Table
   BoolColumn get seeWithinSet =>
       boolean().withDefault(const Constant(false))();
 
-  /// Master toggle for the "Schedule time to respond" mechanism. When false,
-  /// the agenda doesn't auto-place a respond block for this priority.
-  BoolColumn get respondScheduleEnabled => boolean().nullable()();
-
-  /// Active hours during which respond blocks may be placed. JSON-encoded
-  /// `List<AttentionWindow>`.
-  TextColumn get respondWindow => text().nullable()();
-
-  /// Target response SLA. JSON-encoded `SeeWithinTime`.
-  TextColumn get respondWithin => text().nullable()();
-
   /// Master toggle for the "Early notifications" mechanism. When false,
-  /// notifications fire only at the placed block-start, never at the
-  /// see-within deadline.
+  /// notifications fire only at the placed block-start.
   BoolColumn get earlyNotificationsEnabled => boolean().nullable()();
 
   /// Active hours during which early notifications may fire. JSON-encoded
@@ -56,12 +44,6 @@ class Priorities extends Table
 
   /// `*_set` direct-override flags. True when the user has set the value on
   /// this priority itself (vs. inheriting from an ancestor).
-  BoolColumn get respondScheduleEnabledSet =>
-      boolean().withDefault(const Constant(false))();
-  BoolColumn get respondWindowSet =>
-      boolean().withDefault(const Constant(false))();
-  BoolColumn get respondWithinSet =>
-      boolean().withDefault(const Constant(false))();
   BoolColumn get earlyNotificationsEnabledSet =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get notifyWindowSet =>
@@ -114,8 +96,6 @@ class PrioritiesBase extends BaseTable {
     for (final key in const [
       'attention_window',
       'see_within',
-      'respond_window',
-      'respond_within',
       'notify_window',
     ]) {
       final value = json[key];
@@ -123,6 +103,16 @@ class PrioritiesBase extends BaseTable {
         json[key] = jsonEncode(value);
       }
     }
+    // Drop legacy `respond_*` keys the server may still send while it
+    // catches up to the schema drop. These columns no longer exist on
+    // the Drift priorities table; leaving them in `json` would trip
+    // `PriorityRow.fromJson`.
+    json.remove('respond_schedule_enabled');
+    json.remove('respond_window');
+    json.remove('respond_within');
+    json.remove('respond_schedule_enabled_set');
+    json.remove('respond_window_set');
+    json.remove('respond_within_set');
     // Ensure order is never null — the server COALESCE should prevent this,
     // but a null here causes a native SIGSEGV at sqlite3_bind_double
     json['order'] ??= DateTime.parse(
@@ -1022,9 +1012,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          role: parent.role,
          attentionWindowSet: false,
          seeWithinSet: false,
-         respondScheduleEnabledSet: false,
-         respondWindowSet: false,
-         respondWithinSet: false,
          earlyNotificationsEnabledSet: false,
          notifyWindowSet: false,
          defaultContacts:
@@ -1107,14 +1094,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          seeWithin: row.seeWithin,
          attentionWindowSet: row.attentionWindowSet,
          seeWithinSet: row.seeWithinSet,
-         respondScheduleEnabled: row.respondScheduleEnabled,
-         respondWindow: row.respondWindow,
-         respondWithin: row.respondWithin,
          earlyNotificationsEnabled: row.earlyNotificationsEnabled,
          notifyWindow: row.notifyWindow,
-         respondScheduleEnabledSet: row.respondScheduleEnabledSet,
-         respondWindowSet: row.respondWindowSet,
-         respondWithinSet: row.respondWithinSet,
          earlyNotificationsEnabledSet: row.earlyNotificationsEnabledSet,
          notifyWindowSet: row.notifyWindowSet,
          config: row.config,
@@ -1274,14 +1255,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   SeeWithinTime? get seeWithinTime =>
       SeeWithinTime.fromJsonString(seeWithin);
 
-  /// Parsed "respond during" windows (inherited).
-  List<AttentionWindow>? get respondWindows =>
-      AttentionWindow.fromJsonString(respondWindow);
-
-  /// Parsed "respond within" SLA (inherited).
-  SeeWithinTime? get respondWithinTime =>
-      SeeWithinTime.fromJsonString(respondWithin);
-
   /// Parsed "notify during" windows (inherited).
   List<AttentionWindow>? get notifyWindows =>
       AttentionWindow.fromJsonString(notifyWindow);
@@ -1417,14 +1390,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<BigInt?> teamId = const Value.absent(),
     bool? attentionWindowSet,
     bool? seeWithinSet,
-    Value<bool?> respondScheduleEnabled = const Value.absent(),
-    Value<String?> respondWindow = const Value.absent(),
-    Value<String?> respondWithin = const Value.absent(),
     Value<bool?> earlyNotificationsEnabled = const Value.absent(),
     Value<String?> notifyWindow = const Value.absent(),
-    bool? respondScheduleEnabledSet,
-    bool? respondWindowSet,
-    bool? respondWithinSet,
     bool? earlyNotificationsEnabledSet,
     bool? notifyWindowSet,
     Value<String?> config = const Value.absent(),
@@ -1468,14 +1435,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         seeWithin: seeWithin,
         attentionWindowSet: attentionWindowSet,
         seeWithinSet: seeWithinSet,
-        respondScheduleEnabled: respondScheduleEnabled,
-        respondWindow: respondWindow,
-        respondWithin: respondWithin,
         earlyNotificationsEnabled: earlyNotificationsEnabled,
         notifyWindow: notifyWindow,
-        respondScheduleEnabledSet: respondScheduleEnabledSet,
-        respondWindowSet: respondWindowSet,
-        respondWithinSet: respondWithinSet,
         earlyNotificationsEnabledSet: earlyNotificationsEnabledSet,
         notifyWindowSet: notifyWindowSet,
         config: config,

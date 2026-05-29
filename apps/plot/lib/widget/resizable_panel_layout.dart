@@ -23,8 +23,11 @@ const double _outerInset = 14.0;
 /// Half of the gap between adjacent squircles that don't share one shape
 /// (e.g. left sidebar squircle vs. main-panel squircle). Split evenly across
 /// the FResizable region boundary so the boundary — and its drag handle —
-/// lands at the visual center of the gap.
-const double _halfGap = 12.0;
+/// lands at the visual center of the gap. Sized so the full inter-panel gap
+/// (`2 * _halfGap`) equals [_outerInset], keeping the spacing on either side
+/// of the agenda squircle balanced (its left edge sits [_outerInset] from the
+/// window edge) and tightening the sidebar-to-main-panel gap.
+const double _halfGap = 7.0;
 
 /// Corner radius for the squircle panel cards.
 const double _panelRadius = 14.0;

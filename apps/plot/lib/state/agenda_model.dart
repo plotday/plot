@@ -61,8 +61,24 @@ class AgendaModel extends Equatable {
       for (final block in section.blocks) {
         switch (block) {
           case PriorityBlock b:
+            // Surface the block's window as a [DateTimeRange] when the
+            // block carries an explicit time anchor (focus blocks from
+            // [_insertExplicitFocusBlocks] set [windowStart]/[windowEnd]
+            // to the row's `effective_at`/`effective_at + duration`).
+            // Without this, the renderer's gutter — which derives its
+            // time label from `dateTimeRange.start.toTimeOfDay` — has
+            // nothing to show, and the user-scheduled time vanishes
+            // from the agenda. Midnight-anchored standalone blocks
+            // still hide the label downstream (timeOfDay.isMidnight
+            // gate in [_BlockHeader]), so this is safe for them too.
+            final hasExplicitWindow =
+                b.windowStart.millisecondsSinceEpoch > 0 &&
+                b.windowEnd.millisecondsSinceEpoch > 0;
             out.add(
               AgendaHeaderItem(
+                dateTimeRange: hasExplicitWindow
+                    ? DateTimeRange(b.windowStart, b.windowEnd)
+                    : null,
                 blockPriority: b.priority,
                 block: b,
                 isOutsidePriority: b.isOutside,
@@ -225,6 +241,7 @@ class PriorityBlock extends AgendaBlock {
     this.isOutside = false,
     this.cascadeDuration,
     this.overflow = false,
+    this.sourceRow,
   });
 
   @override
@@ -259,6 +276,12 @@ class PriorityBlock extends AgendaBlock {
   /// such a block's duration in red so the user notices.
   final bool overflow;
 
+  /// When this block was inserted from an explicit `priority_block` row
+  /// (a user-scheduled focus block), the underlying row. The agenda's
+  /// gutter edit affordance uses it to open the schedule modal in edit
+  /// mode (so Save updates in place and Delete archives).
+  final PriorityBlockRow? sourceRow;
+
   @override
   List<Object?> get props => [
         id,
@@ -269,6 +292,7 @@ class PriorityBlock extends AgendaBlock {
         windowStart,
         windowEnd,
         overflow,
+        sourceRow?.id,
       ];
 }
 

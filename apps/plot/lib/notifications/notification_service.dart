@@ -250,12 +250,39 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       if (batches.isEmpty) return;
 
       // Check the notify window — if currently closed, schedule a retry
-      // for when it opens. Urgent threads bypass the window (see-within
-      // path only — block-start path is independent and not handled here).
+      // for when it opens. Urgent threads bypass the window.
+      //
+      // Smart deferral: when at least one batch's first-level priority
+      // has an upcoming focus block, the earliest such block becomes
+      // the delivery deadline — we pick the latest notify-window opening
+      // on or before it instead of falling back to "the very next
+      // opening". When no batch has a focus block, the legacy fallback
+      // ([computeWindowOpenTime]) is used.
       final prefs = await SharedPreferences.getInstance();
       final hasUrgent = batches.any((b) => b.highestUrgent);
       if (!hasUrgent) {
-        final scheduleAt = computeWindowOpenTime(prefs);
+        final now = DateTime.now();
+        DateTime? earliestDeadline;
+        for (final batch in batches) {
+          final priorityIdStr = batch.firstLevelPriorityId;
+          PriorityId pid;
+          try {
+            pid = Uuid.fromString(priorityIdStr);
+          } catch (_) {
+            continue;
+          }
+          final fb = await PriorityBlock.nextFocusBlockStart(
+            priorityId: pid,
+            after: now,
+          );
+          if (fb == null) continue;
+          if (earliestDeadline == null || fb.isBefore(earliestDeadline)) {
+            earliestDeadline = fb;
+          }
+        }
+        final scheduleAt = earliestDeadline != null
+            ? computeSmartDeliveryAt(prefs, earliestDeadline, now: now)
+            : computeWindowOpenTime(prefs, now: now);
         if (scheduleAt != null) {
           final delay = scheduleAt.difference(DateTime.now());
           if (delay > Duration.zero) {

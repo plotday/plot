@@ -1709,6 +1709,119 @@ class PriorityBloc extends Cubit<PriorityState> {
     unawaited(block.save());
   }
 
+  /// Reschedule an existing focus block (`priority_block` row with
+  /// positive `duration`) to [targetAnchor]. Soft-archives [source] and
+  /// writes a new row at the resolved time so the block always carries
+  /// an explicit, non-midnight time-of-day.
+  ///
+  /// Time-of-day resolution:
+  ///   1. If [targetAnchor] has a non-midnight time (gap start after an
+  ///      event, scheduled focus block slot, etc.), the row lands there.
+  ///   2. If [targetAnchor] is at midnight (the section anchor for a
+  ///      no-event day), the row inherits the source row's existing
+  ///      time-of-day on the target's calendar date.
+  ///   3. If both are at midnight, the row lands at 9:00 on the target
+  ///      date — a sensible default since the modal also defaults to 9am
+  ///      on future days.
+  Future<void> moveFocusBlock({
+    required PriorityBlockRow source,
+    required DateTime targetAnchor,
+  }) async {
+    final now = DateTime.now();
+    final targetTime = _resolveFocusBlockTargetTime(
+      source: source,
+      targetAnchor: targetAnchor,
+    );
+
+    log.info(
+      '[moveFocusBlock] row=${source.id} priority=${source.priorityId} '
+      '${source.effectiveAt} -> $targetTime',
+    );
+
+    // Optimistic update: archive the source in the cache so the agenda
+    // immediately stops rendering the block at its old time, and inject
+    // the new row.
+    final archivedSource = source.copyWith(
+      archivedAt: Value(now),
+      updatedAt: now,
+    );
+    final newRow = PriorityBlockRow(
+      id: Uuid.generate(),
+      priorityId: source.priorityId,
+      createdBy: Base.userId,
+      orderValue: source.orderValue,
+      effectiveAt: targetTime,
+      duration: source.duration,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final updated = <PriorityId, List<PriorityBlockRow>>{
+      for (final entry in _priorityBlocksByPriority.entries)
+        entry.key: List.of(entry.value),
+    };
+    final list =
+        updated.putIfAbsent(source.priorityId, () => <PriorityBlockRow>[]);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id == source.id) list[i] = archivedSource;
+    }
+    list.add(newRow);
+    _priorityBlocksByPriority = updated;
+    _rebuildAgendaModel();
+
+    // Authoritative write: archive the existing row, then upsert the new
+    // one. Reuses [store.PriorityBlock.save]'s `(priority_id, effective_at)`
+    // conflict policy so a re-drag onto an existing slot updates in place.
+    await Store.get.save(
+      store.PriorityBlock.table,
+      archivedSource.toCompanion(false),
+      PriorityBlocksBase(),
+    );
+    final saver = store.PriorityBlock(
+      priorityId: source.priorityId,
+      orderValue: source.orderValue,
+      effectiveAt: targetTime,
+      duration: source.duration,
+    );
+    await saver.save();
+  }
+
+  static DateTime _resolveFocusBlockTargetTime({
+    required PriorityBlockRow source,
+    required DateTime targetAnchor,
+  }) {
+    final anchorIsMidnight = targetAnchor.hour == 0 &&
+        targetAnchor.minute == 0 &&
+        targetAnchor.second == 0 &&
+        targetAnchor.millisecond == 0 &&
+        targetAnchor.microsecond == 0;
+    if (!anchorIsMidnight) return targetAnchor;
+    final src = source.effectiveAt;
+    final sourceIsMidnight = src.hour == 0 &&
+        src.minute == 0 &&
+        src.second == 0 &&
+        src.millisecond == 0 &&
+        src.microsecond == 0;
+    if (sourceIsMidnight) {
+      return DateTime(
+        targetAnchor.year,
+        targetAnchor.month,
+        targetAnchor.day,
+        9,
+      );
+    }
+    return DateTime(
+      targetAnchor.year,
+      targetAnchor.month,
+      targetAnchor.day,
+      src.hour,
+      src.minute,
+      src.second,
+      src.millisecond,
+      src.microsecond,
+    );
+  }
+
   /// Apply an optimistic duration change for a block, then schedule the
   /// underlying `priority_block` write. Mirrors the reorder optimistic
   /// pattern above so the agenda gutter updates in the same frame as

@@ -16,9 +16,6 @@ Priority _testPriority() {
     role: 'member',
     attentionWindowSet: false,
     seeWithinSet: false,
-    respondScheduleEnabledSet: false,
-    respondWindowSet: false,
-    respondWithinSet: false,
     earlyNotificationsEnabledSet: false,
     notifyWindowSet: false,
   );

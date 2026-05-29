@@ -23,9 +23,15 @@ import 'package:plot/util/time_service.dart';
 import 'package:plot/widget/modal.dart';
 import 'command.dart';
 
+/// TEMPORARY: when true, suppresses the Debug command group entirely so a
+/// local debug build behaves like an App Store release build for App Store
+/// review screenshots. Flip back to `false` before committing.
+const bool _hideForAppStoreReviewScreenshots = true;
+
 /// Build the debug command group if available in the current mode.
 /// Returns null if neither kDebugMode nor DeveloperMode is enabled.
 StaticCommandGroup? buildDebugCommands() {
+  if (_hideForAppStoreReviewScreenshots) return null;
   if (!kDebugMode && !DeveloperMode.isEnabled) return null;
   return StaticCommandGroup(
     title: 'Debug',

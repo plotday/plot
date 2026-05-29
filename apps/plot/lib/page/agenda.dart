@@ -190,8 +190,18 @@ class _CenteredAgendaSpinnerState extends State<_CenteredAgendaSpinner> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: _showSpinner ? const Spinner(size: 22) : const SizedBox.shrink(),
+    // Fill the agenda's background while loading. The panel's outlined
+    // squircle (`_outlinedSquircle` in resizable_panel_layout.dart) draws
+    // only a foreground hairline border and no background fill — it relies
+    // on the agenda content to paint the background. The loaded agenda
+    // paints [context.colour.background] (via [ScrollEdgeFade]); without a
+    // matching fill here the loading state shows a bordered box with a
+    // transparent interior, which reads as an empty outline on startup.
+    return ColoredBox(
+      color: context.colour.background,
+      child: Center(
+        child: _showSpinner ? const Spinner(size: 22) : const SizedBox.shrink(),
+      ),
     );
   }
 }
@@ -512,6 +522,43 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final sourceDate = source.sourceDate;
     final sourcePeriodStart = source.sourcePeriodStart;
     final sourceThreadIds = {for (final t in canonicalBlock.threads) t.id};
+
+    // Focus blocks (rows inserted by [_insertExplicitFocusBlocks]) carry an
+    // explicit time-of-day. Drag rescheduling soft-archives the source
+    // row and writes a new row at the drop's target time — independent of
+    // the thread-block reorder path below. Detected via the `'fb_'`
+    // prefix the builder stamps on each focus block's id.
+    if (payload.blockId.startsWith('fb_')) {
+      final sourceRow = canonicalBlock is PriorityBlock
+          ? canonicalBlock.sourceRow
+          : null;
+      if (sourceRow == null) {
+        _log.info(
+          '[agenda block-drop] focus block drop skipped: source row missing '
+          '(blockId=${payload.blockId})',
+        );
+        return;
+      }
+      DateTime? focusAnchor = target.targetPeriodStart;
+      if (focusAnchor == null && target.targetDate != null) {
+        focusAnchor = target.targetDate!.toDateTime();
+      }
+      if (focusAnchor == null) {
+        _log.info(
+          '[agenda block-drop] focus block drop skipped: no anchor + no date '
+          '(blockId=${payload.blockId})',
+        );
+        return;
+      }
+      _log.info(
+        '[agenda block-drop] focus block move: row=${sourceRow.id} '
+        '${sourceRow.effectiveAt} -> anchor=$focusAnchor',
+      );
+      unawaited(
+        bloc.moveFocusBlock(source: sourceRow, targetAnchor: focusAnchor),
+      );
+      return;
+    }
 
     final sameDate = sourceDate == target.targetDate;
     final samePeriod = sourcePeriodStart == target.targetPeriodStart;

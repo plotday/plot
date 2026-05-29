@@ -27,9 +27,6 @@ Priority _testPriority({
     role: 'member',
     attentionWindowSet: false,
     seeWithinSet: false,
-    respondScheduleEnabledSet: false,
-    respondWindowSet: false,
-    respondWithinSet: false,
     earlyNotificationsEnabledSet: false,
     notifyWindowSet: false,
   );
@@ -153,29 +150,18 @@ void main() {
       expect(p2Threads.map((t) => t.id), contains(t2.id));
     });
 
-    test('recovers an unread thread whose agendaAt falls before today onto '
-        'today\'s block via _mergeUnreadIntoToday', () {
+    test('does NOT auto-recover unread threads whose agendaAt falls before '
+        'today onto today\'s section (explicit-only agenda)', () {
       final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
 
-      // An unread thread scheduled on a date BEFORE the frozen "today"
-      // (2026-05-02). [PriorityState.makeAgendaItems] groups by
-      // `agendaAt.toDate()` and then drops any group whose date is
-      // before today (`!date.isBefore(today)`), so this thread never
-      // makes it into the atom stream. Only the post-pass merge in
-      // [AgendaBuilder._mergeUnreadIntoToday] can recover it onto the
-      // today section — which is exactly what this test exercises.
+      // An unread thread scheduled on a date BEFORE today.
+      // [PriorityState.makeAgendaItems] drops past-dated groups, and the
+      // explicit-only agenda no longer rescues them via a merge step.
       final pastUnread = Thread(
         priority: p1,
         title: 'forgotten unread',
         on: Day(Date(2026, 5, 1)),
       ).copyWith(unread: true);
-
-      // A second thread that lands on today so the today section exists
-      // with at least one PriorityBlock for `p1`. Without this, the merge
-      // would still create a fresh PriorityBlock, but the explicit
-      // setup keeps the test honest about the "merge into existing
-      // same-priority block" path that production hits in the common
-      // case.
       final todayThread = Thread(priority: p1, title: 'today note');
 
       final model = AgendaBuilder.build(
@@ -184,29 +170,21 @@ void main() {
         horizonDays: 30,
       );
 
-      // Locate the today section.
       final todaySection = model.sections
           .whereType<ui.DateSection>()
           .firstWhere((s) => s.isNow,
               orElse: () => throw StateError(
                   'expected a today (isNow) section in the model'));
 
-      // The past-dated unread thread must surface inside today's p1
-      // block. Without `_mergeUnreadIntoToday` it would be silently
-      // dropped by the date-cutoff in `makeAgendaItems`.
-      final p1Blocks = todaySection.blocks
-          .whereType<ui.PriorityBlock>()
-          .where((b) => b.priority.id == p1.id)
-          .toList();
-      expect(p1Blocks, isNotEmpty,
-          reason: 'today must contain a p1 PriorityBlock to merge into');
-      final mergedThreadIds =
-          p1Blocks.expand((b) => b.threads).map((t) => t.id).toSet();
-      expect(mergedThreadIds, contains(pastUnread.id),
-          reason: 'past-dated unread thread must be recovered onto today '
-              'by _mergeUnreadIntoToday');
-      expect(mergedThreadIds, contains(todayThread.id),
-          reason: 'today\'s own thread must remain in today\'s block');
+      final todayThreadIds = todaySection.blocks
+          .expand((b) => b.threads)
+          .map((t) => t.id)
+          .toSet();
+      expect(todayThreadIds, isNot(contains(pastUnread.id)),
+          reason: 'past-dated unread thread must not be auto-recovered onto '
+              'today — users explicitly schedule what they care about');
+      expect(todayThreadIds, contains(todayThread.id),
+          reason: 'today\'s own thread must still appear in today\'s section');
     });
 
     test('a todo pinned after an event on a past day surfaces on today\'s '
@@ -318,15 +296,23 @@ void main() {
           .expand((b) => b.threads)
           .map((t) => t.id)
           .toSet();
+      // In the explicit-only agenda neither the past-pin nor the
+      // `todoNowDate` sentinel surface on today — both are auto-forwards
+      // covered by [Thread.isAgendaAtAutoForwarded] and live in the
+      // priority's Active list instead. Only the scheduled event
+      // ([todayEvent]) anchors to today.
       expect(
         todayThreadIds,
-        contains(pinnedToYesterday.id),
-        reason: 'a todo pinned after a past-day event must appear in '
-            'today\'s section after the midnight rollover, not silently '
-            'drop out because no anchor on today matches its pin time',
+        isNot(contains(pinnedToYesterday.id)),
+        reason: 'past-pinned todos are no longer auto-forwarded to today',
       );
-      expect(todayThreadIds, contains(anytimeToday.id),
-          reason: 'the unpinned anytime-today todo must still appear');
+      expect(
+        todayThreadIds,
+        isNot(contains(anytimeToday.id)),
+        reason: 'todoNowDate sentinel no longer surfaces on today',
+      );
+      expect(todayThreadIds, contains(todayEvent.id),
+          reason: 'the scheduled event anchors to today and must surface');
     });
   });
 }

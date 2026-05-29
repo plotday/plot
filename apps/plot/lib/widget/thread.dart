@@ -774,7 +774,8 @@ class ThreadCommands extends HookWidget {
     // attend/skip/toggle buttons: colour reports the user's own response,
     // body shows the tally, tap opens the picker, hover shows attendees.
     // Solo events (no other invitees) get no RSVP UI.
-    final rsvpChip = showEventButtons &&
+    final rsvpChip =
+        showEventButtons &&
             activity.isLinkScheduleInstance &&
             activity.hasOtherAttendees
         ? RsvpChip(activity: activity)
@@ -893,9 +894,9 @@ class SharedCommandButton extends HookWidget {
     // through to the AvatarGroup path below.
     String? channelTitle;
     if (sharingModel == SharingModel.channel && links.isNotEmpty) {
-      final primaryLink =
-          ([...links]..sort((a, b) => a.createdAt.compareTo(b.createdAt)))
-              .first;
+      final primaryLink = ([
+        ...links,
+      ]..sort((a, b) => a.createdAt.compareTo(b.createdAt))).first;
       if (primaryLink.createdBy != null && primaryLink.channelId != null) {
         channelTitle = Channel.findByChannel(
           primaryLink.createdBy!,
@@ -908,8 +909,9 @@ class SharedCommandButton extends HookWidget {
     // thread.contacts directly. Uses [Thread.deriveVisibleContacts] so the
     // AvatarGroup reflects only the participants visible to the current user.
     // When thread.notes is null (not yet loaded), falls back to thread.contacts.
-    final viewerContactIds =
-        Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toList();
+    final viewerContactIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toList();
     final visibleContactIds = sharingModel == SharingModel.message
         ? Thread.deriveVisibleContacts(
             visibleNotes: thread.notes ?? const [],
@@ -928,7 +930,8 @@ class SharedCommandButton extends HookWidget {
     // For message-mode, load actors for the per-viewer visible contact set.
     // For thread-mode (and channel-mode fallback), load from thread.contacts.
     final contactsKey = visibleContactIds != null
-        ? ([...visibleContactIds]..sort((a, b) => a.toString().compareTo(b.toString())))
+        ? ([...visibleContactIds]
+                ..sort((a, b) => a.toString().compareTo(b.toString())))
               .map((u) => u.toString())
               .join('|')
         : thread.contacts.map((u) => u.toString()).join('|');
@@ -946,8 +949,9 @@ class SharedCommandButton extends HookWidget {
     // dropped/post-drop participants to a viewer who shouldn't see them.
     // Render zero avatars momentarily instead; thread-mode and channel-mode
     // keep the existing cached fallback.
-    final actors = loadedActors
-        ?? (visibleContactIds != null
+    final actors =
+        loadedActors ??
+        (visibleContactIds != null
             ? const <Actor>[]
             : command.sharedDisplayActors);
 
@@ -1050,7 +1054,8 @@ class SharedCommandButton extends HookWidget {
     // unified contact list or duplicate the visible channel name. Keep the
     // title tooltip and hover-colour tracking only for the unshared share-icon
     // state.
-    if (shared || (sharingModel == SharingModel.channel && channelTitle != null)) {
+    if (shared ||
+        (sharingModel == SharingModel.channel && channelTitle != null)) {
       return button;
     }
     return MouseRegion(
@@ -1116,21 +1121,20 @@ class RsvpChip extends StatefulWidget {
 
   /// The user's own status → chip tone.
   static RsvpTone toneFor(String? currentUserRsvp) => switch (currentUserRsvp) {
-        'attend' => RsvpTone.going,
-        'skip' => RsvpTone.declined,
-        _ => RsvpTone.neutral,
-      };
+    'attend' => RsvpTone.going,
+    'skip' => RsvpTone.declined,
+    _ => RsvpTone.neutral,
+  };
 
   /// Ordered, non-zero count segments (going, declined, undecided).
   static List<({IconData icon, int count})> segmentsFor(
     ({int attend, int skip, int undecided}) counts,
-  ) =>
-      [
-        if (counts.attend > 0) (icon: PlotIcon.rsvpGoing, count: counts.attend),
-        if (counts.skip > 0) (icon: PlotIcon.rsvpDeclined, count: counts.skip),
-        if (counts.undecided > 0)
-          (icon: PlotIcon.rsvpUndecided, count: counts.undecided),
-      ];
+  ) => [
+    if (counts.attend > 0) (icon: PlotIcon.rsvpGoing, count: counts.attend),
+    if (counts.skip > 0) (icon: PlotIcon.rsvpDeclined, count: counts.skip),
+    if (counts.undecided > 0)
+      (icon: PlotIcon.rsvpUndecided, count: counts.undecided),
+  ];
 
   @override
   State<RsvpChip> createState() => _RsvpChipState();
@@ -1147,20 +1151,31 @@ class _RsvpChipState extends State<RsvpChip> {
     final fontSize =
         widget.fontSize ?? context.theme.typography.sm.fontSize ?? 13;
 
-    // Content colour = the user's own status. Tinted fill is a low-alpha wash
-    // of the same colour so all three tones stay consistent (no per-count
-    // colour). The theme-colour helpers handle dark mode.
-    final content = switch (RsvpChip.toneFor(widget.activity.currentUserRsvp)) {
-      RsvpTone.going =>
+    // The user's own status drives the colour. Content (icons + numbers) is the
+    // muted status colour; a faint same-hue border frames the pill. The fill
+    // base uses fuller chroma for "going" so its green tint reads as saturated
+    // as the rose "declined". Hover deepens the border (+ a soft glow) and keeps
+    // the fill constant — a stronger same-hue fill closes on the text and reads
+    // as muddy.
+    final (Color content, Color fillBase) = switch (RsvpChip.toneFor(
+      widget.activity.currentUserRsvp,
+    )) {
+      RsvpTone.going => (
         context.colour.colours.fromTheme(const ThemeColor(0), muted: true),
-      RsvpTone.declined =>
+        context.colour.colours.fromTheme(const ThemeColor(0)),
+      ),
+      RsvpTone.declined => (
         context.colour.colours.fromTheme(const ThemeColor(5), muted: true),
-      RsvpTone.neutral => context.colour.muted,
+        context.colour.colours.fromTheme(const ThemeColor(5), muted: true),
+      ),
+      RsvpTone.neutral => (context.colour.muted, context.colour.muted),
     };
-    final fill = content.withValues(alpha: _hovered ? 0.22 : 0.13);
+    final fill = fillBase.withValues(alpha: 0.10);
+    final borderColor = content.withValues(alpha: _hovered ? 0.5 : 0.3);
 
     // Height fills the agenda's row-2 box exactly (secondarySize * 1.25) so
-    // the pill never grows the row; the fill (not a border) gives it shape.
+    // the pill never grows the row; the border is painted inside, adding no
+    // extra height.
     final height = fontSize * 1.25;
     final iconSize = fontSize * 0.82;
     final gap = fontSize * 0.5;
@@ -1170,6 +1185,7 @@ class _RsvpChipState extends State<RsvpChip> {
       padding: EdgeInsets.symmetric(horizontal: fontSize * 0.5),
       decoration: BoxDecoration(
         color: fill,
+        border: Border.all(color: borderColor, width: 1),
         borderRadius: BorderRadius.circular(height / 2),
         boxShadow: _hovered
             ? [

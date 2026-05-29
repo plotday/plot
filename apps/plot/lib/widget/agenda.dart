@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:plot/analytics/tracker.dart' show EventObject, EventAction;
 import 'package:plot/command/command.dart';
 import 'package:plot/state/agenda_model.dart';
 // The store also exports a `PriorityBlock` (the Drift store wrapper for
@@ -19,6 +18,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/priorities_shell.dart';
+import 'package:plot/widget/schedule_focus_modal.dart';
 // `widget/link.dart` exports a `Link` widget that shadows the
 // `package:plot/store/store.dart` data class we need here. Hide the
 // widget so `Link.watchForThread(...)` resolves to the store type.
@@ -50,9 +50,19 @@ double agendaLeadingWidth(BuildContext context) {
     textDirection: TextDirection.ltr,
   )..layout()).width;
   final textWidth = timeWidth > durationWidth ? timeWidth : durationWidth;
-  final pad = context.theme.spacing.sm;
-  return textWidth + pad * 2;
+  // Left breathing room plus the gutter→content gap. Keeping the right
+  // gap ([agendaGutterGap]) wider than the left margin separates the
+  // time/duration column from the titles beside it.
+  final leftPad = context.theme.spacing.sm;
+  return textWidth + leftPad + agendaGutterGap(context);
 }
+
+/// Horizontal gap between the leading time/duration gutter and the
+/// title/summary content beside it. Shared by [agendaLeadingWidth] (which
+/// budgets the column's width to include it) and every gutter's right
+/// padding, so the time column and the content stay aligned across all
+/// block types.
+double agendaGutterGap(BuildContext context) => context.theme.spacing.md;
 
 class AgendaTile extends StatelessWidget {
   const AgendaTile({
@@ -131,20 +141,25 @@ class AgendaTile extends StatelessWidget {
     }
     // Determine what to show in the center
     String? centerText = text;
-    // Split date into weekday, month name, and day number for centered
-    // rendering.
+    // Date parts for the day header: the full weekday leads in the content
+    // area; the short month + day sit in the gutter.
     String? dateWeekday;
-    String? dateMonth;
+    String? dateMonthShort;
     String? dateDay;
     if (date != null) {
-      // Centered "Weekday, Month Day" using the full names. Computed even
-      // when [text] or [dateTimeRange] is also set so the date header
-      // can always render its primary label.
-      dateWeekday = date!.format(format: 'EEEE');
+      // Full weekday ("Thursday") leads in the content area; the short month
+      // + day ("May 28") sit in the gutter, the day number landing on the
+      // gutter's right edge (aligned with the times below). The whole label
+      // stays small and quiet — only the day number is a touch bolder. The
+      // year is rarely relevant in a near-term agenda, so it only appears (on
+      // the weekday) when the date isn't in the current year. Computed even
+      // when [text] or [dateTimeRange] is also set so the header can always
+      // render its label.
+      dateWeekday = date!.year == Date.today().year
+          ? date!.format(format: 'EEEE')
+          : date!.format(format: 'EEEE, yyyy');
+      dateMonthShort = date!.format(format: 'MMM');
       dateDay = date!.format(format: 'd');
-      dateMonth = date!.year == Date.today().year
-          ? date!.format(format: 'MMMM')
-          : date!.format(format: 'MMMM yyyy');
     } else if (centerText == null && dateTimeRange != null) {
       // Show time from DateTimeRange
       final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
@@ -221,66 +236,93 @@ class AgendaTile extends StatelessWidget {
         ? context.theme.spacing.xl
         : context.theme.spacing.md;
 
-    // Date headers: simple container with darkened background, no ListTile needed
+    // Date headers separate each day by leading with the full weekday in
+    // the content area and tucking the short month + day into the gutter.
+    // The whole label shares one quiet tone and size on a single baseline;
+    // only the day number carries a slightly heavier weight. No fill —
+    // separation comes from the symmetric vertical spacing around the header.
     if (date != null) {
-      final headerBg = context.colour.headerBackground;
       final smSize = context.theme.typography.sm.fontSize;
 
-      // "Weekday  Day  Month" with the day number perfectly centered.
-      // Two equal-width Expanded halves sit on either side of the day
-      // number — weekday right-aligned in the left half, month
-      // left-aligned in the right half — so the day number stays at the
-      // absolute horizontal center regardless of weekday/month width.
-      // Weekday and month are muted; the day number is foreground.
-      final mutedStyle = TextStyle(
+      // One quiet tone and size for the whole label; the day number is the
+      // only part with a heavier weight, so nothing competes with the
+      // content titles beside it.
+      final spacing = context.theme.spacing;
+      final timeColWidth = agendaLeadingWidth(context);
+      final labelStyle = TextStyle(
         color: context.theme.plotColors.veryMuted,
         fontSize: smSize,
         fontWeight: FontWeight.w500,
       );
-      final dayStyle = TextStyle(
-        color: context.theme.colors.mutedForeground,
-        fontSize: smSize,
-        fontWeight: FontWeight.w600,
+      final dayStyle = labelStyle.copyWith(
+        color: context.theme.plotColors.muted,
+        fontWeight: FontWeight.w700,
       );
-      final spacing = context.theme.spacing;
+      final priorityBloc = context.read<PriorityBloc>();
+      final addButton = Button.icon(
+        OpenScheduleFocusModal(
+          date: date!,
+          defaultPriority: priorityBloc.state.context,
+        ),
+        color: context.theme.plotColors.veryMuted,
+      );
       final child = Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Weekday + gutter date share a baseline; the + button stays
+          // vertically centred (an icon has no baseline to align to).
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(right: spacing.sm),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  dateWeekday!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mutedStyle,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                // Gutter: quiet short month + day number, right-aligned so
+                // the number lands on the same edge as the times below.
+                SizedBox(
+                  width: timeColWidth,
+                  child: Padding(
+                    padding: EdgeInsets.only(right: agendaGutterGap(context)),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '${dateMonthShort!} ',
+                              style: labelStyle,
+                            ),
+                            TextSpan(text: dateDay!, style: dayStyle),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                // Content: full weekday, in the same quiet label style as
+                // the month.
+                Expanded(
+                  child: Text(
+                    dateWeekday!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: labelStyle,
+                  ),
+                ),
+              ],
             ),
           ),
-          Text(dateDay!, style: dayStyle),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(left: spacing.sm),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  dateMonth!.trimLeft(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mutedStyle,
-                ),
-              ),
-            ),
+          Padding(
+            padding: EdgeInsets.only(right: spacing.sm),
+            child: addButton,
           ),
         ],
       );
 
-      return Container(
-        color: headerBg,
-        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
+      // Symmetric vertical padding around each header.
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: spacing.sm),
         child: child,
       );
     }
@@ -327,7 +369,7 @@ class AgendaTile extends StatelessWidget {
                 SizedBox(
                   width: timeColWidth,
                   child: Padding(
-                    padding: EdgeInsets.only(right: spacing.sm),
+                    padding: EdgeInsets.only(right: agendaGutterGap(context)),
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: Text(
@@ -341,8 +383,13 @@ class AgendaTile extends StatelessWidget {
                 ),
                 if (durationText != null)
                   Expanded(
+                    // Empty gaps carry no title, so the duration right-aligns
+                    // at the end of the row instead of sitting in the title
+                    // slot. The time stays in the gutter (column-aligned with
+                    // event times) and the duration floats to the trailing
+                    // edge, keeping the row to a single quiet line.
                     child: Align(
-                      alignment: Alignment.centerLeft,
+                      alignment: Alignment.centerRight,
                       child: Text(
                         durationText,
                         style: TextStyle(color: veryMuted, fontSize: fontSize),
@@ -366,23 +413,21 @@ class AgendaTile extends StatelessWidget {
       }
 
       // Text-only section headings (e.g. Activity tab "Today"/"New"/...)
-      // share the unified darker section-header background with agenda
-      // date headers and PrioritiesPage section headers — a single
-      // Container carries the full md+xs vertical padding so the tinted
-      // band reaches all the way around the text.
-      // Empty gap headers (no priority) keep that same background so they
-      // read as a neutral time marker rather than a priority block.
+      // render as quiet dividers — no fill, just a muted centered label,
+      // relying on the preceding row's bottom border for separation —
+      // sharing the same visual language as the agenda date headers above.
+      // Empty gap headers (no priority) also render with no fill: an empty
+      // gap should read as quiet negative space, not compete with the
+      // visual weight of a real event row.
       final isTextOnlyHeading = !isGapHeader && dateTimeRange == null;
       Widget result;
       if (isTextOnlyHeading) {
-        result = Container(
-          color: context.colour.headerBackground,
+        result = Padding(
           padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
           child: child,
         );
       } else {
         result = Container(
-          color: isGapHeader ? context.colour.headerBackground : null,
           padding: EdgeInsets.symmetric(
             vertical: isGapHeader
                 ? context.theme.spacing.xs
@@ -425,7 +470,7 @@ class AgendaTile extends StatelessWidget {
             child: SizedBox(
               width: timeColWidth,
               child: Padding(
-                padding: EdgeInsets.only(right: context.theme.spacing.sm),
+                padding: EdgeInsets.only(right: agendaGutterGap(context)),
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: Text(
@@ -528,25 +573,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
   StreamSubscription<PriorityPendingDisplay>? _pendingSub;
   PriorityPendingDisplay? _pendingDisplay;
 
-  // Touch: short swipes on the block header bump the editable duration
-  // by ±15m (right = +, left = −) — the hover ± buttons are mouse-only.
-  // See [_wrapSwipe]. Long-swipe slots are still free for a future
-  // block-menu command (TODO(agenda-menu)).
-
-  static const _swipeBumpStep = Duration(minutes: 15);
-
-  /// First-add default for a priority block's pending duration. A bump
-  /// from `null` lands here directly instead of going through one
-  /// [_swipeBumpStep] — matches the same 30m default the agenda's
-  /// drop-into-gap path applies, so "Add planned time" produces the
-  /// same starting size regardless of how the user invoked it.
-  static const _firstAddDuration = Duration(minutes: 30);
-
-  /// Minimum non-zero duration. A subtract that would land below this
-  /// clears the pending value entirely (returns null) rather than
-  /// leaving a sub-step remainder.
-  static const _minimumDuration = Duration(minutes: 15);
-
   /// `(start, end)` for the block this header introduces. Reads the
   /// uniform `start`/`end` getters added on `AgendaBlock`.
   ({DateTime start, DateTime end}) get _blockWindow {
@@ -586,12 +612,14 @@ class _BlockHeaderState extends State<_BlockHeader> {
       _tick?.cancel();
       _scheduleTick();
     }
-    final editableChanged = _blockHasEditablePending(oldWidget.block) !=
+    final editableChanged =
+        _blockHasEditablePending(oldWidget.block) !=
         _blockHasEditablePending(widget.block);
     final priorityChanged = oldWidget.priority.id != widget.priority.id;
     // Window comparison only matters for blocks where the subscription
     // is live; reading start/end on blocks without time anchors throws.
-    final windowChanged = _blockHasEditablePending(widget.block) &&
+    final windowChanged =
+        _blockHasEditablePending(widget.block) &&
         _blockHasEditablePending(oldWidget.block) &&
         (oldWidget.block.start != widget.block.start ||
             oldWidget.block.end != widget.block.end);
@@ -627,14 +655,15 @@ class _BlockHeaderState extends State<_BlockHeader> {
   void _subscribePending() {
     if (!_blockHasEditablePending(widget.block)) return;
     final w = _blockWindow;
-    _pendingSub = NowBloc.watchBlockDisplay(
-      priorityId: widget.priority.id,
-      blockStart: w.start,
-      blockEnd: w.end,
-    ).listen((d) {
-      if (!mounted) return;
-      setState(() => _pendingDisplay = d);
-    });
+    _pendingSub =
+        NowBloc.watchBlockDisplay(
+          priorityId: widget.priority.id,
+          blockStart: w.start,
+          blockEnd: w.end,
+        ).listen((d) {
+          if (!mounted) return;
+          setState(() => _pendingDisplay = d);
+        });
   }
 
   void _onDragChanged() {
@@ -828,67 +857,97 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // Events always reserve row 2 so the location / videoconferencing
     // line and the live duration counter share a stable layout even
     // before the link stream emits.
-    final hasSecondRow = gutterRow2 != null ||
+    final hasSecondRow =
+        gutterRow2 != null ||
         summary.isNotEmpty ||
         row2Trailing != null ||
         isEvent;
 
-    // Hover bump callback: events update the thread's duration; priority
-    // blocks update the priority's total pending (slice-aware — see
-    // [_applyPriorityBump]). Null when no editable duration is exposed
-    // (e.g. GapBlock headers without a thread). Shared with [_wrapSwipe]
-    // so the touch swipe gestures and the desktop hover ± buttons
-    // operate on the same underlying value/callback.
-    final (currentDuration, onBumpDuration) = _computeBumpInfo(context);
+    // Show the gutter edit affordance only for blocks that map cleanly
+    // to a focus-block create/edit action — priority blocks (already
+    // backed by a row when sourceRow is set, or pre-fillable when not)
+    // and gap blocks with a priority lead.
+    final canEditAsFocusBlock = block is PriorityBlock || block is GapBlock;
+
+    final gutterColumn = SizedBox(
+      width: timeColWidth,
+      child: Padding(
+        padding: EdgeInsets.only(right: agendaGutterGap(context)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SizedBox(
+              height: primarySize,
+              child: timeText != null
+                  ? Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        timeText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.theme.colors.mutedForeground,
+                          fontSize: secondarySize,
+                          height: 1,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            if (hasSecondRow) ...[
+              SizedBox(height: spacing.sm),
+              SizedBox(
+                height: secondarySize * 1.25,
+                child: gutterRow2 != null
+                    ? Align(alignment: Alignment.centerRight, child: gutterRow2)
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+
+    final Widget gutter;
+    if (canEditAsFocusBlock) {
+      gutter = Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedOpacity(
+            opacity: _isHovered ? 0 : 1,
+            duration: const Duration(milliseconds: 120),
+            child: gutterColumn,
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_isHovered,
+              child: AnimatedOpacity(
+                opacity: _isHovered ? 1 : 0,
+                duration: const Duration(milliseconds: 120),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () => _openFocusBlockEditor(context),
+                    behavior: HitTestBehavior.opaque,
+                    child: Icon(
+                      PlotIcon.edit,
+                      size: secondarySize,
+                      color: context.theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      gutter = gutterColumn;
+    }
 
     final innerRow = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Gutter: time (row 1) + duration / active timing (row 2).
-        // Both right-aligned within the gutter so the values stack
-        // cleanly. Duration uses xs font; since durations never have
-        // descenders, the row 2 box can hug the glyph height.
-        SizedBox(
-          width: timeColWidth,
-          child: Padding(
-            padding: EdgeInsets.only(right: spacing.sm),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                SizedBox(
-                  height: primarySize,
-                  child: timeText != null
-                      ? Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            timeText,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.theme.colors.mutedForeground,
-                              fontSize: secondarySize,
-                              height: 1,
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                if (hasSecondRow) ...[
-                  SizedBox(height: spacing.sm),
-                  SizedBox(
-                    height: secondarySize * 1.25,
-                    child: gutterRow2 != null
-                        ? Align(
-                            alignment: Alignment.centerRight,
-                            child: gutterRow2,
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
+        gutter,
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -970,31 +1029,6 @@ class _BlockHeaderState extends State<_BlockHeader> {
       ],
     );
 
-    // Float the hover +/− buttons centred vertically over the whole
-    // block (both rows). Matches the original [_PendingDurationControl]
-    // float behaviour while keeping the new [ThreadWidget]-style icon
-    // buttons and edge-fade gradient.
-    final Widget inner = onBumpDuration == null
-        ? innerRow
-        : Stack(
-            alignment: Alignment.centerRight,
-            clipBehavior: Clip.none,
-            children: [
-              innerRow,
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                child: _BlockHoverDurationButtons(
-                  current: currentDuration,
-                  onChanged: onBumpDuration,
-                  background: bg,
-                  visible: _isHovered,
-                ),
-              ),
-            ],
-          );
-
     return Container(
       color: bg,
       padding: EdgeInsets.only(
@@ -1003,135 +1037,83 @@ class _BlockHeaderState extends State<_BlockHeader> {
         right: trailingHandle != null ? 0 : rightPad,
       ),
       child: trailingHandle == null
-          ? inner
+          ? innerRow
           : Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(child: inner),
+                Expanded(child: innerRow),
                 trailingHandle,
               ],
             ),
     );
   }
 
-  /// Returns the editable duration value and the bump callback for this
-  /// block: events update the thread's duration; priority blocks update
-  /// whichever row is currently producing the displayed value
-  /// (see [_applyPriorityBump]). Both elements are `null` when no
-  /// editable duration is exposed (e.g. GapBlock headers without a
-  /// thread).
-  (Duration?, ValueChanged<Duration?>?) _computeBumpInfo(BuildContext context) {
+  /// Open the schedule-focus modal for this block. Edit mode is used when
+  /// (a) the block carries an explicit [PriorityBlock.sourceRow] (focus
+  /// blocks inserted by [_insertExplicitFocusBlocks]) or (b) a
+  /// non-archived `priority_block` row with positive duration exists at
+  /// the block's window start (legacy bump/reorder rows that still
+  /// contribute a cascade duration). Otherwise create mode pre-fills the
+  /// block's priority + window.
+  Future<void> _openFocusBlockEditor(BuildContext context) async {
     final block = widget.block;
-    final thread = widget.thread;
-    if (thread != null) {
-      return (
-        widget.dateTimeRange?.duration,
-        (newDur) => SetThreadDuration(thread, newDur).run(context),
-      );
-    }
-    if (_blockHasEditablePending(block)) {
-      // The live overlay [_pendingDisplay] only carries a session's
-      // remaining time (active or paused-explicit, anchored inside this
-      // block's window). When there's no in-window session it emits
-      // null, and we use the block's resolved `cascadeDuration` from
-      // the agenda model — the only source that knows about preceding
-      // blocks already consuming a row, so a row attached to day 2 by
-      // the walker never leaks into day 3's bump current.
-      final slice = block is PriorityBlock
-          ? block.cascadeDuration
-          : (block as GapBlock).cascadeDuration;
-      final current = _pendingDisplay?.duration ?? slice;
-      return (
-        current,
-        (newDur) => _applyPriorityBump(
-          priority: block.priority,
-          newDisplayed: newDur,
-          currentDisplayed: current,
-        ),
-      );
-    }
-    return (null, null);
-  }
-
-  /// Returns the next value after a swipe-bump.
-  ///
-  /// * Adding to a null pending lands at [_firstAddDuration] (30m) — the
-  ///   single-tap default for "Add planned time" — rather than one
-  ///   [_swipeBumpStep] (15m). Subsequent adds proceed in [_swipeBumpStep]
-  ///   increments.
-  /// * Subtracting from a value at or below [_minimumDuration] clears
-  ///   (returns null) so the gutter empties when nothing meaningful is
-  ///   left — sub-step remainders aren't useful and would otherwise
-  ///   leave fractions lingering after a tap that visually said "15m → 0".
-  ///   Above the minimum, subtracting decrements by [_swipeBumpStep].
-  Duration? _bumpedDuration(Duration? current, Duration delta) {
-    if (!delta.isNegative && (current == null || current <= Duration.zero)) {
-      return _firstAddDuration;
-    }
-    if (delta.isNegative && (current ?? Duration.zero) <= _minimumDuration) {
-      return null;
-    }
-    final next = (current ?? Duration.zero) + delta;
-    if (next <= Duration.zero) return null;
-    if (next < _minimumDuration) return _minimumDuration;
-    return next;
-  }
-
-  /// On touch, wrap [child] in a [Swipeable] whose short right/left
-  /// gestures add/subtract 15 minutes from the block's editable duration.
-  /// Mirrors the hover ± buttons used on desktop. No-op on devices with
-  /// a physical keyboard (the hover row is sufficient) or when this
-  /// block has no editable duration (e.g. empty gap headers).
-  Widget _wrapSwipe(BuildContext context, Widget child) {
-    if (hasPhysicalKeyboard()) return child;
-    final (current, onBump) = _computeBumpInfo(context);
-    if (onBump == null) return child;
-    final hasValue = current != null && current.inSeconds > 0;
-    final addCmd = _BumpDurationCommand(
-      title: hasValue ? 'Add 15 minutes' : 'Add planned time',
-      icon: PlotIcon.add,
-      onApply: () => onBump(_bumpedDuration(current, _swipeBumpStep)),
+    if (block is! PriorityBlock && block is! GapBlock) return;
+    PriorityBlockRow? row = block is PriorityBlock ? block.sourceRow : null;
+    row ??= await _lookupExistingFocusRow(
+      priorityId: block.priority.id,
+      at: block.start,
     );
-    final removeCmd = hasValue
-        ? _BumpDurationCommand(
-            title: 'Subtract 15 minutes',
-            icon: PlotIcon.remove,
-            onApply: () => onBump(_bumpedDuration(current, -_swipeBumpStep)),
-          )
-        : null;
-    return Swipeable(startCommand: addCmd, endCommand: removeCmd, child: child);
-  }
-
-  /// Apply a ±15m bump to a block's displayed value. Two parts:
-  ///
-  /// 1. **Optimistic** — push the new duration through
-  ///    [PriorityBloc.optimisticBlockDuration] so the agenda gutter
-  ///    updates in the same frame as the button press.
-  /// 2. **Authoritative** — route the actual write through
-  ///    [NowBloc.applyBlockBump], which lands on a session row when
-  ///    one is anchored inside the block's window, otherwise on
-  ///    `priority_block` at the block's start. The watch-driven
-  ///    rebuild then confirms the state once the DB settles. If the
-  ///    authoritative write went to a session, the next priority_block
-  ///    emission harmlessly reverts the optimistic mutation.
-  void _applyPriorityBump({
-    required Priority priority,
-    required Duration? newDisplayed,
-    required Duration? currentDisplayed,
-  }) {
+    if (!context.mounted) return;
+    if (row != null) {
+      Modal(
+        showCloseButton: false,
+        builder: (_) =>
+            ScheduleFocusModal.edit(row: row!, priority: block.priority),
+      ).show<void>(context);
+      return;
+    }
     final w = _blockWindow;
-    context.read<PriorityBloc>().optimisticBlockDuration(
-          priorityId: priority.id,
-          blockStart: w.start,
-          newDuration: newDisplayed,
-        );
-    NowBloc.applyBlockBump(
-      priorityId: priority.id,
-      blockStart: w.start,
-      blockEnd: w.end,
-      currentDisplayed: currentDisplayed,
-      newDisplayed: newDisplayed,
+    final dateForCreate = Date(w.start.year, w.start.month, w.start.day);
+    Modal(
+      showCloseButton: false,
+      builder: (_) => ScheduleFocusModal.create(
+        date: dateForCreate,
+        defaultPriority: block.priority,
+      ),
+    ).show<void>(context);
+  }
+
+  /// Returns the most recent non-archived `priority_block` row with
+  /// positive duration for [priorityId] whose `effective_at` matches [at]
+  /// (or, when nothing matches exactly, any positive-duration row for the
+  /// priority on the same calendar day). Null when no candidate exists.
+  Future<PriorityBlockRow?> _lookupExistingFocusRow({
+    required PriorityId priorityId,
+    required DateTime at,
+  }) async {
+    if (!Store.isAvailable) return null;
+    final table = Store.get.priorityBlocks;
+    final dayStart = DateTime(at.year, at.month, at.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final rows = await (Store.get.select(
+      table,
+    )..where((t) => t.priorityId.equals(priorityId.toBytes()))).get();
+    final candidates = rows
+        .where(
+          (r) =>
+              r.archivedAt == null &&
+              r.duration != null &&
+              r.duration! > Duration.zero &&
+              !r.effectiveAt.isBefore(dayStart) &&
+              r.effectiveAt.isBefore(dayEnd),
+        )
+        .toList();
+    if (candidates.isEmpty) return null;
+    final exact = candidates.firstWhere(
+      (r) => r.effectiveAt.isAtSameMomentAs(at),
+      orElse: () => candidates.first,
     );
+    return exact;
   }
 
   /// Builds the floating-feedback widget shown under the pointer during
@@ -1205,8 +1187,8 @@ class _BlockHeaderState extends State<_BlockHeader> {
           if (isOnActivityTab(tabsRouter)) {
             context.router.root.navigationHistory.markUrlStateForReplace();
           }
-          final targetPriorityIdString =
-              eventThread.priority.id.toShortString();
+          final targetPriorityIdString = eventThread.priority.id
+              .toShortString();
           final targetThreadIdString = eventThread.id.toShortString();
           // Same-priority fast path: when PriorityRoute(target) is already
           // mounted on the Activity tab, `root.navigate(PriorityRoute(X,
@@ -1244,9 +1226,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           context.router.root.navigate(
             PriorityRoute(
               priorityIdString: targetPriorityIdString,
-              children: [
-                ThreadRoute(threadIdString: targetThreadIdString),
-              ],
+              children: [ThreadRoute(threadIdString: targetThreadIdString)],
             ),
           );
         },
@@ -1258,7 +1238,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
   @override
   Widget build(BuildContext context) {
     if (!_isDraggable) {
-      return _wrapTapToOpen(_wrapSwipe(context, _buildRow(context)));
+      return _wrapTapToOpen(_buildRow(context));
     }
 
     final payload = BlockDragPayload(
@@ -1306,7 +1286,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           // activity feed uses. See [_SwipeHorizontalDragRecognizer].
           final source = KeyedSubtree(
             key: _sourceKey,
-            child: _wrapSwipe(context, _buildRow(context)),
+            child: _buildRow(context),
           );
           final feedback = _buildFeedback(context, rowWidth: rowWidth);
           final childWhenDragging = buildDraggingChild();
@@ -1372,122 +1352,6 @@ String _formatDuration(Duration d) {
   if (h == 0) return '${m}m';
   if (m == 0) return '${h}h';
   return '${h}h ${m}m';
-}
-
-/// Inline hover +/− stepper for the agenda block header. Mirrors the
-/// [ThreadCommands] hover pattern: an [AnimatedOpacity]-wrapped [Row]
-/// with a 24-px gradient that fades the row's background up to a solid
-/// [ColoredBox] holding the icon buttons, so the controls overlap the
-/// priority label without revealing the text underneath.
-///
-/// [current] is the value the user sees; [onChanged] receives the new
-/// duration (null clears it). Both buttons hide when [visible] is false;
-/// the − is also hidden when there is nothing to subtract.
-class _BlockHoverDurationButtons extends StatelessWidget {
-  const _BlockHoverDurationButtons({
-    required this.current,
-    required this.onChanged,
-    required this.background,
-    required this.visible,
-  });
-
-  final Duration? current;
-  final ValueChanged<Duration?> onChanged;
-  final Color background;
-  final bool visible;
-
-  static const _step = Duration(minutes: 15);
-
-  /// Returns the next value after a +/− press. A subtract on a value at
-  /// or below [_step] clears (returns null) — the user pressed − on a
-  /// gutter showing 15m or less, which signals "remove this duration"
-  /// rather than "shave another 15m off a sub-step remainder".
-  Duration? _bumped(Duration delta) {
-    if (delta.isNegative && (current ?? Duration.zero) <= _step) return null;
-    final next = (current ?? Duration.zero) + delta;
-    if (next <= Duration.zero) return null;
-    return next;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasValue = current != null && current!.inSeconds > 0;
-    // Stretch the gradient and the solid background to the parent's
-    // full height so the buttons cover any underlying row that would
-    // otherwise bleed through, and so the gradient is a real rectangle
-    // (a zero-height Container would never paint).
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: const Duration(milliseconds: 120),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Gradient fade from transparent to the row's background so
-            // the priority label tail dissolves into the buttons.
-            Container(
-              width: 24,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [background.withValues(alpha: 0), background],
-                ),
-              ),
-            ),
-            ColoredBox(
-              color: background,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (hasValue)
-                    Button.icon(
-                      _BumpDurationCommand(
-                        title: 'Subtract 15 minutes',
-                        icon: PlotIcon.remove,
-                        onApply: () => onChanged(_bumped(-_step)),
-                      ),
-                    ),
-                  Button.icon(
-                    _BumpDurationCommand(
-                      title: hasValue ? 'Add 15 minutes' : 'Add planned time',
-                      icon: PlotIcon.add,
-                      onApply: () => onChanged(_bumped(_step)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Lightweight closure-backed [Command] used by [_BlockHoverDurationButtons]
-/// to route +/− taps through [Button.icon] into the parent block header's
-/// callback. The callback owns the actual delta math and persistence;
-/// this class just forwards `run()` and supplies the icon/title that
-/// drive [Button.icon]'s tooltip and glyph.
-class _BumpDurationCommand extends Command {
-  _BumpDurationCommand({
-    required super.title,
-    required IconData super.icon,
-    required this.onApply,
-  }) : super(
-         eventObject: EventObject.priority,
-         eventAction: EventAction.updated,
-       );
-
-  final VoidCallback onApply;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    onApply();
-    return const CommandDone();
-  }
 }
 
 /// Row 2 content for calendar event blocks. Watches the event thread's
@@ -1599,7 +1463,11 @@ class _EventLocationRow extends StatelessWidget {
 /// alone when [withLabel] is false (paired with a physical location);
 /// renders logo + provider name when [withLabel] is true (only
 /// videoconferencing, no physical location).
-class _ConferencingInline extends StatelessWidget {
+///
+/// On hover the label underlines and both icon and text strengthen from
+/// the resting muted tone to [PlotColors.muted], signalling that the row
+/// is a true (external) link the user can click to join.
+class _ConferencingInline extends StatefulWidget {
   const _ConferencingInline({
     required this.action,
     required this.color,
@@ -1627,38 +1495,71 @@ class _ConferencingInline extends StatelessWidget {
     }
   }
 
+  @override
+  State<_ConferencingInline> createState() => _ConferencingInlineState();
+}
+
+class _ConferencingInlineState extends State<_ConferencingInline> {
+  bool _hovered = false;
+
   void _open() {
     try {
-      launchUrl(Uri.parse(action.url), mode: LaunchMode.externalApplication);
+      launchUrl(
+        Uri.parse(widget.action.url),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
-    final tooltip = 'Join ${_providerName(action.provider)}';
-    final content = withLabel
-        ? Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(PlotIcon.video, size: fontSize, color: color),
-              SizedBox(width: spacing.sm),
-              Text(
-                _providerName(action.provider),
-                style: TextStyle(
-                  fontSize: fontSize,
-                  color: color,
-                  height: 1,
+    final provider = widget.action.provider;
+    final tooltip = 'Join ${_ConferencingInline._providerName(provider)}';
+    // Strengthen from the resting muted tone on hover so the link reads
+    // as interactive without shifting layout.
+    final color = _hovered ? context.theme.plotColors.muted : widget.color;
+
+    // Lay the glyph out *inside* the label's text line as a [WidgetSpan]
+    // rather than as a sibling in a [Row]. The text engine then positions
+    // it against the font's own metrics (`PlaceholderAlignment.middle`),
+    // so it shares the label's optical line and lands on the same physical
+    // pixel in every row. A sibling icon nudged by a fractional
+    // `Transform` instead rounds differently at each row's sub-pixel
+    // baseline, which made one row's icon sit a pixel above another's.
+    final content = widget.withLabel
+        ? Text.rich(
+            TextSpan(
+              children: [
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Icon(
+                    PlotIcon.video,
+                    size: widget.fontSize,
+                    color: color,
+                  ),
                 ),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: SizedBox(width: spacing.sm),
+                ),
+                TextSpan(text: _ConferencingInline._providerName(provider)),
+              ],
+              style: TextStyle(
+                fontSize: widget.fontSize,
+                color: color,
+                height: 1,
               ),
-            ],
+            ),
           )
-        : Icon(PlotIcon.video, size: fontSize, color: color);
+        : Icon(PlotIcon.video, size: widget.fontSize, color: color);
 
     return FTooltip(
       tipBuilder: (context, controller) => Text(tooltip),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(onTap: _open, child: content),
       ),
     );

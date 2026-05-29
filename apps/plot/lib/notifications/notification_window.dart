@@ -94,3 +94,69 @@ int _parseHHMM(String hhmm) {
   final parts = hhmm.split(':');
   return int.parse(parts[0]) * 60 + int.parse(parts[1]);
 }
+
+/// Smart-defer a notification to the latest notify-window opening that
+/// still lands at or before [deadline] (the next user-scheduled focus
+/// block for the thread's priority). Returns:
+///   - null when notifying now is fine (current time is inside a window)
+///   - the next opening when no window opens between now and [deadline]
+///     (falls through to [computeWindowOpenTime]'s next-opening
+///     fallback behaviour)
+///   - otherwise the latest opening on `[now, deadline]`
+DateTime? computeSmartDeliveryAt(
+  SharedPreferences prefs,
+  DateTime deadline, {
+  DateTime? now,
+}) {
+  try {
+    final now0 = now ?? DateTime.now();
+    if (!deadline.isAfter(now0)) return null;
+
+    final raw = prefs.getString(notifyWindowsPrefsKey);
+    final List<AttentionWindow> windows;
+    if (raw != null) {
+      windows = AttentionWindow.fromJsonString(raw) ?? const [];
+    } else {
+      windows = const [
+        AttentionWindow(
+          days: [1, 2, 3, 4, 5, 6, 7],
+          start: '00:00',
+          end: '23:59',
+        ),
+      ];
+    }
+    if (windows.isEmpty) return null;
+
+    if (_isInsideWindow(windows, now0)) return null;
+
+    final nowMidnight = DateTime(now0.year, now0.month, now0.day);
+    DateTime? best;
+    for (
+      var day = DateTime(deadline.year, deadline.month, deadline.day);
+      !day.isBefore(nowMidnight);
+      day = day.subtract(const Duration(days: 1))
+    ) {
+      for (final w in windows) {
+        if (!w.days.contains(day.weekday)) continue;
+        final start = _parseHHMM(w.start);
+        final candidate = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          start ~/ 60,
+          start % 60,
+        );
+        if (candidate.isAfter(deadline)) continue;
+        if (candidate.isBefore(now0)) continue;
+        if (best == null || candidate.isAfter(best)) best = candidate;
+      }
+      if (best != null) return best;
+    }
+
+    // No qualifying opening between now and deadline. Fall back to the
+    // next opening after now (same as the pre-focus-block behaviour).
+    return _nextOpening(windows, now0);
+  } catch (_) {
+    return null;
+  }
+}

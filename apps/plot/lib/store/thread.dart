@@ -4890,6 +4890,46 @@ ORDER BY
         createdAt;
   }
 
+  /// True when this active thread would only appear in today's agenda
+  /// via the [agendaAt] collapse-to-today fallback — i.e. it has no
+  /// shared/calendar schedule anchoring it, and no explicit non-sentinel
+  /// per-user date. The agenda's explicit-only model drops these;
+  /// active threads remain accessible from the priority's Active list.
+  ///
+  /// Keeps a thread when ANY of:
+  ///   - It has a shared schedule ([ScheduleRow.startAt] or `startOn`)
+  ///     today or later — a real calendar event.
+  ///   - Its per-user `state_on` is a real date (not the `todoNowDate`
+  ///     "anytime today" sentinel) AND today or later.
+  ///
+  /// Drops everything else, including:
+  ///   - Active threads with no schedule at all.
+  ///   - Per-user `state_at` pins without a shared schedule — these
+  ///     surfaced [at] from `stateAt` rather than a real calendar slot,
+  ///     so they're implicit todos, not events.
+  ///   - `state_on = todoNowDate` ("anytime today" sentinel).
+  ///   - Past shared schedules and past `state_on` dates that the
+  ///     collapse-to-today fallback would forward.
+  bool get isAgendaAtAutoForwarded {
+    if (isLinkScheduleInstance) return false;
+    if (!todo) return false;
+    final sharedStart = _schedule?.startAt;
+    if (sharedStart != null && !sharedStart.toDate().isBefore(Date.today())) {
+      return false;
+    }
+    final sharedStartOn = _schedule?.startOn;
+    if (sharedStartOn != null && !sharedStartOn.isBefore(Date.today())) {
+      return false;
+    }
+    final stateOn = _thread.stateOn;
+    if (stateOn != null &&
+        stateOn != Thread.todoNowDate &&
+        !stateOn.isBefore(Date.today())) {
+      return false;
+    }
+    return true;
+  }
+
   /// Original schedule date for todo sorting. Unlike agendaAt, this preserves
   /// past dates so that todos from different days maintain their relative order
   /// when they all appear as "current".

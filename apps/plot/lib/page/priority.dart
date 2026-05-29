@@ -1235,6 +1235,28 @@ class _PriorityPageState extends State<PriorityPage>
                 // and they'd stand out from their siblings — drop it
                 // here when a section marker is present.
                 final tileDate = marker != null ? null : header.date;
+
+                // "Reschedule all" affordance for the Doing block and
+                // every Scheduled-day block. Collect the threads that
+                // follow this header until the next AgendaHeaderItem and
+                // skip rendering the button when the block is empty.
+                final canRescheduleAll =
+                    marker != null &&
+                    (marker.section == ActivitySection.doing ||
+                        marker.section == ActivitySection.scheduled);
+                List<Thread>? sectionThreads;
+                if (canRescheduleAll) {
+                  sectionThreads = <Thread>[];
+                  for (var j = index + 1; j < displayItems.length; j++) {
+                    final next = displayItems[j];
+                    if (next is AgendaHeaderItem) break;
+                    if (next is AgendaThreadItem) {
+                      sectionThreads.add(next.thread);
+                    }
+                  }
+                  if (sectionThreads.isEmpty) sectionThreads = null;
+                }
+
                 final tile = AgendaTile(
                   dateTimeRange: header.dateTimeRange,
                   date: tileDate,
@@ -1245,32 +1267,14 @@ class _PriorityPageState extends State<PriorityPage>
                   scheduleAt: header.scheduleAt,
                 );
 
-                // "Reschedule all" affordance for the Doing block and
-                // every Scheduled-day block. Collect the threads that
-                // follow this header until the next AgendaHeaderItem and
-                // skip rendering the button when the block is empty.
-                final canRescheduleAll =
-                    marker != null &&
-                    (marker.section == ActivitySection.doing ||
-                        marker.section == ActivitySection.scheduled);
-                if (canRescheduleAll) {
-                  final sectionThreads = <Thread>[];
-                  for (var j = index + 1; j < displayItems.length; j++) {
-                    final next = displayItems[j];
-                    if (next is AgendaHeaderItem) break;
-                    if (next is AgendaThreadItem) {
-                      sectionThreads.add(next.thread);
-                    }
-                  }
-                  if (sectionThreads.isNotEmpty) {
-                    return [
-                      _SectionHeaderWithRescheduleAll(
-                        tile: tile,
-                        threads: sectionThreads,
-                        sectionLabel: marker.label,
-                      ),
-                    ];
-                  }
+                if (sectionThreads != null) {
+                  return [
+                    _SectionHeaderWithRescheduleAll(
+                      tile: tile,
+                      threads: sectionThreads,
+                      sectionLabel: marker!.label,
+                    ),
+                  ];
                 }
 
                 return [tile];
@@ -1484,31 +1488,27 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
         RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
       ),
     );
-    // AgendaTile paints its own `headerBackground` band but only across
-    // its own width — the mirror and button sit outside that band and
-    // would let the page background show through. Paint the same colour
-    // on the outer row so the tinted band runs edge to edge.
-    return ColoredBox(
-      color: context.colour.headerBackground,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Invisible mirror on the left reserves the button's width so
-          // the centred tile text sits at the row's true horizontal
-          // midpoint. Using the same widget on both sides keeps the
-          // reserved widths identical down to anti-aliasing.
-          Visibility(
-            visible: false,
-            maintainSize: true,
-            maintainAnimation: true,
-            maintainState: true,
-            child: button,
-          ),
-          Expanded(child: tile),
-          button,
-        ],
-      ),
+    // The section heading renders as a quiet divider with no fill or rule —
+    // the preceding row's bottom border provides the separation. The Row
+    // just lays the centered tile alongside the trailing "Reschedule all"
+    // button (with an invisible left mirror to keep the title centered).
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Invisible mirror on the left reserves the button's width so
+        // the centred tile text sits at the row's true horizontal
+        // midpoint. Using the same widget on both sides keeps the
+        // reserved widths identical down to anti-aliasing.
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: button,
+        ),
+        Expanded(child: tile),
+        button,
+      ],
     );
   }
 }
-

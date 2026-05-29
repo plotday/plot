@@ -451,28 +451,37 @@ export type Database = {
       device: {
         Row: {
           app_version: string | null
+          capabilities: Json
           created_at: string
+          device_id: string | null
           id: string
+          last_seen_at: string
           platform: string
-          push_token: string
+          push_token: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform: string
-          push_token: string
+          push_token?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           app_version?: string | null
+          capabilities?: Json
           created_at?: string
+          device_id?: string | null
           id?: string
+          last_seen_at?: string
           platform?: string
-          push_token?: string
+          push_token?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -883,6 +892,64 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      local_sync_lease: {
+        Row: {
+          attempt_id: string
+          capability: string
+          created_at: string
+          device_id: string
+          fail_streak: number
+          last_completed_at: string | null
+          last_error: string | null
+          last_heartbeat_at: string
+          last_result: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_id: string
+          capability: string
+          created_at?: string
+          device_id: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at: string
+          last_result?: string | null
+          lease_token: string
+          leased_until: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_id?: string
+          capability?: string
+          created_at?: string
+          device_id?: string
+          fail_streak?: number
+          last_completed_at?: string | null
+          last_error?: string | null
+          last_heartbeat_at?: string
+          last_result?: string | null
+          lease_token?: string
+          leased_until?: string
+          next_eligible_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "local_sync_lease_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1963,6 +2030,7 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[]
           preview: string | null
+          private_to_creator: boolean
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -1990,6 +2058,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -2017,6 +2086,7 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -5602,13 +5672,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5887,15 +5957,9 @@ export type Database = {
           p_early_notifications_enabled?: boolean
           p_notify_window?: Json
           p_priority_id: string
-          p_respond_schedule_enabled?: boolean
-          p_respond_window?: Json
-          p_respond_within?: Json
           p_see_within?: Json
           p_set_early_notifications_enabled?: boolean
           p_set_notify_window?: boolean
-          p_set_respond_schedule_enabled?: boolean
-          p_set_respond_window?: boolean
-          p_set_respond_within?: boolean
           p_set_see_within?: boolean
           p_user_id: string
         }

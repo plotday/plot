@@ -984,19 +984,13 @@ BEGIN
 END;
 $function$;
 
--- Upsert the six per-priority response-time settings. Each accepts an
+-- Upsert the per-priority early-notification settings. Each accepts an
 -- explicit set flag so a partial payload only writes the keys the client
 -- intended to change; passing NULL with the flag set clears the override
 -- (the inherited value from an ancestor takes over again).
 CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
     p_user_id uuid,
     p_priority_id uuid,
-    p_respond_schedule_enabled boolean DEFAULT NULL,
-    p_set_respond_schedule_enabled boolean DEFAULT FALSE,
-    p_respond_window jsonb DEFAULT NULL,
-    p_set_respond_window boolean DEFAULT FALSE,
-    p_respond_within jsonb DEFAULT NULL,
-    p_set_respond_within boolean DEFAULT FALSE,
     p_early_notifications_enabled boolean DEFAULT NULL,
     p_set_early_notifications_enabled boolean DEFAULT FALSE,
     p_notify_window jsonb DEFAULT NULL,
@@ -1006,42 +1000,6 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
 ) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
 BEGIN
     PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
-
-    IF p_set_respond_schedule_enabled THEN
-        IF p_respond_schedule_enabled IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'respond_schedule_enabled', to_jsonb(p_respond_schedule_enabled))
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'respond_schedule_enabled';
-        END IF;
-    END IF;
-
-    IF p_set_respond_window THEN
-        IF p_respond_window IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'respond_window', p_respond_window)
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'respond_window';
-        END IF;
-    END IF;
-
-    IF p_set_respond_within THEN
-        IF p_respond_within IS NOT NULL THEN
-            INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'respond_within', p_respond_within)
-            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-        ELSE
-            DELETE FROM priority_setting
-            WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'respond_within';
-        END IF;
-    END IF;
 
     IF p_set_early_notifications_enabled THEN
         IF p_early_notifications_enabled IS NOT NULL THEN

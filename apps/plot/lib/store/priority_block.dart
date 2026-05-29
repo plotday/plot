@@ -299,6 +299,30 @@ class PriorityBlock extends PriorityBlockRow {
     );
   }
 
+  /// Returns the start time of the next user-scheduled focus block for
+  /// [priorityId] strictly after [after]. A focus block is a non-archived
+  /// `priority_block` row carrying a positive `duration`. Returns null when
+  /// the priority has no upcoming focus block. Used by the notification
+  /// path (smart delivery anchors deferral on the next focus block).
+  static Future<DateTime?> nextFocusBlockStart({
+    required PriorityId priorityId,
+    required DateTime after,
+  }) async {
+    if (!Store.isAvailable) return null;
+    final rows = await (Store.get.select(table)
+          ..where((t) =>
+              t.priorityId.equals(priorityId.toBytes()) &
+              t.archivedAt.isNull() &
+              t.effectiveAt.isBiggerThanValue(after))
+          ..orderBy([(t) => OrderingTerm.asc(t.effectiveAt)]))
+        .get();
+    for (final r in rows) {
+      final d = r.duration;
+      if (d != null && d > Duration.zero) return r.effectiveAt;
+    }
+    return null;
+  }
+
   /// Stream every non-archived priority_block row for the current user.
   /// Used by PriorityBloc to keep an in-memory map of orderings.
   static Stream<List<PriorityBlock>> streamAll() {

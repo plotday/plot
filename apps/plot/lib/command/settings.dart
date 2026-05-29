@@ -109,7 +109,7 @@ List<StaticCommandGroup> settingsCommands({
       if (NotificationService.isSupported &&
           !NotificationService.instance.isTokenRegistered)
         EnableNotifications(),
-      if (rootPriority != null) ShowResponseTimesSettings(rootPriority),
+      if (rootPriority != null) ShowEarlyNotificationsSettings(rootPriority),
       ChangeAiPreference(),
       for (final org in adminOrgs)
         if (org['plan'] != 'free')
