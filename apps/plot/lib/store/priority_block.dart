@@ -119,6 +119,54 @@ double effectivePriorityOrderAt({
   return best?.orderValue.value ?? fallback;
 }
 
+/// Pure function. Returns the priority id whose user-scheduled focus block
+/// covers [moment], or null if none does.
+///
+/// A focus block is a non-archived `priority_block` row with a positive
+/// `duration` and a real time-of-day (a midnight-anchored row is an
+/// order-timeline anchor, not a block). Its window is
+/// `[effectiveAt, effectiveAt + duration)` — start inclusive, end
+/// exclusive. Rows whose `effectiveAt` falls before [moment]'s local
+/// midnight are ignored, matching the agenda's same-day focus-block
+/// selection in [AgendaBuilder] — there is no carry-forward of an expired
+/// block. When more than one priority has a block covering [moment], the
+/// one that started most recently wins (mirroring the agenda's lead-block
+/// preference for the latest anchor).
+PriorityId? activeFocusBlockPriorityAt({
+  required DateTime moment,
+  required Map<PriorityId, List<PriorityBlockRow>> blocksByPriority,
+}) {
+  final midnight =
+      DateTime(moment.year, moment.month, moment.day);
+  PriorityId? best;
+  DateTime? bestStart;
+  for (final entry in blocksByPriority.entries) {
+    for (final row in entry.value) {
+      if (row.archivedAt != null) continue;
+      final d = row.duration;
+      if (d == null || d <= Duration.zero) continue;
+      final start = row.effectiveAt;
+      if (start.isBefore(midnight)) continue;
+      // Midnight-anchored rows carry order only, never a focus block.
+      if (start.hour == 0 &&
+          start.minute == 0 &&
+          start.second == 0 &&
+          start.millisecond == 0 &&
+          start.microsecond == 0) {
+        continue;
+      }
+      if (start.isAfter(moment)) continue;
+      final end = start.add(d);
+      if (!moment.isBefore(end)) continue; // moment >= end
+      if (bestStart == null || start.isAfter(bestStart)) {
+        best = entry.key;
+        bestStart = start;
+      }
+    }
+  }
+  return best;
+}
+
 /// Pure function. Returns a map from agenda block id to the duration
 /// that block should display.
 ///

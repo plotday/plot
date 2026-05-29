@@ -93,9 +93,8 @@ final class NowLoaded extends NowState {
   /// the right-side agenda filter.
   final Thread? currentEvent;
 
-  /// Every non-archived priority. Used to rank "current priority" by
-  /// [effectivePriorityOrderAt] when neither an active session nor a
-  /// currently-running scheduled event applies.
+  /// Every non-archived priority. Used to resolve a focus-block match from
+  /// [priorityBlocksByPriority] back to its [Priority] in [priority].
   final List<Priority> priorities;
 
   /// Priority-block timeline rows grouped by priority id. Same shape the
@@ -218,38 +217,39 @@ final class NowLoaded extends NowState {
   /// now. Used by the `/` route redirect, focus commands, and other
   /// callers that need a single canonical answer. Ordering, in priority:
   ///   1. [context] — explicit programmatic override (the priority the
-  ///      user is currently viewing).
-  ///   2. [session] — the active focus session's priority.
-  ///   3. The first event currently in progress on today's schedule
+  ///      user is currently viewing). Null at cold start, so it never
+  ///      affects which priority the app opens to.
+  ///   2. The first event currently in progress on today's schedule
   ///      (matches an [EventBlock] with `isCurrent: true` in the agenda).
-  ///   4. The priority with the lowest [effectivePriorityOrderAt] at
-  ///      [now] — same ranking the agenda uses to choose each region's
-  ///      lead block.
-  ///   5. [defaultPriority] — last-resort fallback.
+  ///   3. The priority whose user-scheduled focus block covers [now]
+  ///      (see [activeFocusBlockPriorityAt]).
+  ///   4. [session] — the active focus session's priority (a timer the
+  ///      user explicitly started).
+  ///   5. [defaultPriority] — the root priority, last-resort fallback.
+  ///
+  /// Events and focus blocks happening *right now* take precedence over an
+  /// active session, and when nothing is scheduled or running we fall
+  /// straight back to root rather than guessing a priority from its order.
   Priority get priority =>
       context ??
-      session?.priority ??
       scheduled.firstOrNull?.priority ??
-      _topByEffectiveOrder() ??
+      _activeFocusBlockPriority() ??
+      session?.priority ??
       defaultPriority;
 
-  Priority? _topByEffectiveOrder() {
-    if (priorities.isEmpty) return null;
-    final ranked = priorities.toList()
-      ..sort((a, b) {
-        final aOrd = effectivePriorityOrderAt(
-          moment: now,
-          blocksForPriority: priorityBlocksByPriority[a.id] ?? const [],
-          fallback: a.order.value,
-        );
-        final bOrd = effectivePriorityOrderAt(
-          moment: now,
-          blocksForPriority: priorityBlocksByPriority[b.id] ?? const [],
-          fallback: b.order.value,
-        );
-        return aOrd.compareTo(bOrd);
-      });
-    return ranked.first;
+  /// The priority whose user-scheduled focus block covers [now], resolved
+  /// to a [Priority] from [priorities]. Null when no focus block is active
+  /// or the matched priority isn't in the current list.
+  Priority? _activeFocusBlockPriority() {
+    final id = activeFocusBlockPriorityAt(
+      moment: now,
+      blocksByPriority: priorityBlocksByPriority,
+    );
+    if (id == null) return null;
+    for (final p in priorities) {
+      if (p.id == id) return p;
+    }
+    return null;
   }
   Thread get current =>
       scheduled.firstOrNull ??
