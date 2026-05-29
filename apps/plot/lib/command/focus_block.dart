@@ -7,11 +7,11 @@ import 'package:plot/widget/widget.dart';
 
 import 'base.dart';
 
-/// Open the [ScheduleFocusModal] in create mode, pre-filled with [date] and
-/// [defaultPriority]. Backs the agenda date-header `+` button. Routing the
-/// modal open through a [Command] gives it analytics tracking (via
-/// [BuildContextCommandExtension.run]) and the standard [Button] hover
-/// treatment instead of a bare `FButton`.
+/// Open the schedule-focus [FormModal] in create mode, pre-filled with [date]
+/// and [defaultPriority] (see [openScheduleFocusModal]). Backs the agenda
+/// date-header `+` button. Routing the modal open through a [Command] gives it
+/// analytics tracking (via [BuildContextCommandExtension.run]) and the standard
+/// [Button] hover treatment instead of a bare `FButton`.
 class OpenScheduleFocusModal extends Command {
   OpenScheduleFocusModal({required this.date, this.defaultPriority})
     : super(

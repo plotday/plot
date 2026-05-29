@@ -18,7 +18,6 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/priority_nav.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/priorities_shell.dart';
-import 'package:plot/widget/schedule_focus_modal.dart';
 // `widget/link.dart` exports a `Link` widget that shadows the
 // `package:plot/store/store.dart` data class we need here. Hide the
 // widget so `Link.watchForThread(...)` resolves to the store type.
@@ -1065,22 +1064,20 @@ class _BlockHeaderState extends State<_BlockHeader> {
     );
     if (!context.mounted) return;
     if (row != null) {
-      Modal(
-        showCloseButton: false,
-        builder: (_) =>
-            ScheduleFocusModal.edit(row: row!, priority: block.priority),
-      ).show<void>(context);
+      await openScheduleFocusModal(
+        context,
+        existingRow: row,
+        initialPriority: block.priority,
+      );
       return;
     }
     final w = _blockWindow;
     final dateForCreate = Date(w.start.year, w.start.month, w.start.day);
-    Modal(
-      showCloseButton: false,
-      builder: (_) => ScheduleFocusModal.create(
-        date: dateForCreate,
-        defaultPriority: block.priority,
-      ),
-    ).show<void>(context);
+    await openScheduleFocusModal(
+      context,
+      date: dateForCreate,
+      initialPriority: block.priority,
+    );
   }
 
   /// Returns the most recent non-archived `priority_block` row with
