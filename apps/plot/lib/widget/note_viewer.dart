@@ -50,7 +50,7 @@ class _ViewerHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colour.headerBackground,
+        color: context.colour.pageHeaderBackground,
         border: Border(
           bottom: BorderSide(
             color: context.theme.colors.border,

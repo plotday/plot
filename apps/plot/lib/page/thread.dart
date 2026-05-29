@@ -1404,7 +1404,7 @@ class _ThreadActionsRow extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colour.headerBackground,
+        color: context.colour.pageHeaderBackground,
         border: Border(
           bottom: BorderSide(color: context.theme.colors.border, width: 1),
         ),

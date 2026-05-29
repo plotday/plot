@@ -267,27 +267,37 @@ class ColourSchemeData extends Equatable {
     );
   }
 
-  /// L3 — section-header background. Used by agenda date headers, agenda
-  /// gap headers, and PriorityPage activity-feed section headers
-  /// ("Today"/"New"/...).
+  /// L3 (page) — header-bar band. Used by the thread page header
+  /// (`page/thread.dart`) and the note viewer header
+  /// (`widget/note_viewer.dart`). A clear, neutral header bar — distinctly
+  /// stronger than the subtler [sectionHeaderBackground] used for in-list
+  /// section/date headers.
   ///
-  /// Relative to the current scheme's [darken]: in the un-darkened middle
-  /// panel this renders at depth 3 from baseline; inside the agenda subtree
-  /// whose [ColourSchemeData] is already darkened (via the agenda's nested
-  /// provider), this compounds — so the band is always darker than its
-  /// surrounding surface.
-  ///
-  /// In light mode this is a whisper-darker neutral band — close enough to
-  /// the squircle interior (L=0.98) to read as a subtle stripe rather than
-  /// a coloured panel, and fully desaturated so the priority-tinted frame
-  /// outside the squircle doesn't compete with it for attention.
-  Color get headerBackground {
+  /// In light mode a pure-neutral band; in dark mode it inherits the
+  /// background's faint warm chroma via [background].
+  Color get pageHeaderBackground {
     final relDarken = pow(_darkenFactor, 3).toDouble();
     if (brightness == Brightness.light) {
       final l = (1.0 / darken / relDarken).clamp(0.0, 1.0);
       return RayOklch.fromComponents(l, 0.0, 95).toColor();
     }
     return copyWith(darken: relDarken).background;
+  }
+
+  /// L3 (section) — subtle in-list header band. Used by agenda date headers
+  /// and PriorityPage activity-feed section headings ("Today"/"New"/...).
+  ///
+  /// A *gentler* sibling of [pageHeaderBackground]: one relative-darken step
+  /// over [background]. Two consequences, both intentional:
+  ///   * It stays darker than whatever surface it sits on — the un-darkened
+  ///     middle panel (activity feed) and the already-darkened agenda subtree
+  ///     (date headers), where the step compounds. Darker, never lighter:
+  ///     lighter is reserved for the hover/focus [highlight].
+  ///   * It inherits the surface's faint warm chroma (hue 115) instead of
+  ///     being flattened to a pure neutral like the light-mode page band.
+  /// The single step keeps it well short of [pageHeaderBackground]'s bar.
+  Color get sectionHeaderBackground {
+    return copyWith(darken: _darkenFactor).background;
   }
 
   /// L4 — darkest panel background. Used by the universal header and the
