@@ -10,10 +10,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 // Hide store.dart's `PriorityBlock` (the order-timeline class) to avoid
 // shadowing agenda_model.dart's UI block re-exported via priority.dart.
-// We still need to call its static `setBlockDuration` helper, which
-// lives on the store-side class, so bring it in under an alias.
 import 'package:plot/store/store.dart' hide PriorityBlock;
-import 'package:plot/store/store.dart' as store show PriorityBlock;
 import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/block_list_separator.dart';
 import 'package:plot/widget/widget.dart';
@@ -235,15 +232,14 @@ class _AgendaEmptyState extends StatelessWidget {
 }
 
 /// Renders the agenda body as a vertical list of block headers with
-/// matching dividers and drag-to-reorder support.
+/// matching dividers.
 ///
-/// Post-Task-8 the agenda is exclusively one [AgendaHeaderItem] per block —
-/// no [AgendaThreadItem]s — so each row is the entire dragged block.
-/// Drag/drop wiring mirrors [PriorityPage]'s activity feed (shared
-/// [BlockDragController] + [BlockDropZone] + [BlockListSeparator])
-/// so both lists behave identically; the dispatcher routes drops to
-/// [PriorityBloc.reorderBlockWithinPeriod] (same period) or
-/// [PriorityBloc.moveBlock] (cross period / cross date).
+/// The agenda is exclusively one [AgendaHeaderItem] per block — events,
+/// user-scheduled focus blocks, and read-only gap markers. Only focus
+/// blocks are draggable: drag/drop wiring reuses the shared
+/// [BlockDragController] + [BlockDropZone] + [BlockListSeparator] infra,
+/// and the dispatcher routes the drop to [PriorityBloc.moveFocusBlock],
+/// which reschedules the focus block's underlying `priority_block` row.
 class AgendaList extends StatefulWidget {
   const AgendaList({required this.items, super.key});
 
@@ -371,11 +367,16 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         // double up on the affordance. Date/text headers and gap markers
         // don't have a hover meaning at all. So no item type opts in.
         canHighlight: (_) => false,
-        // Each agenda block is a single row whose drag id is its
-        // [parentBlockId]; nothing else in the list participates in
-        // drag-source matching.
-        dragSourceId: (item) =>
-            item is AgendaHeaderItem ? item.parentBlockId : null,
+        // Only user-scheduled focus blocks are draggable: events anchor to
+        // a fixed time and gaps are read-only. A focus block's header
+        // carries a [PriorityBlock] with a non-null [sourceRow].
+        dragSourceId: (item) {
+          if (item is! AgendaHeaderItem) return null;
+          final block = item.block;
+          return block is PriorityBlock && block.sourceRow != null
+              ? item.parentBlockId
+              : null;
+        },
       ),
       builder: (context, index, focusNode, {reorderableIndex}) {
         if (index < 0 || index >= items.length) return null;
@@ -479,14 +480,12 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
 
   /// Dispatch a block-drop event from the [BlockDragController].
   ///
-  /// Source identity comes from [payload.blockId]; target slot is
-  /// described by [target]. Same-period reorders go through
-  /// [PriorityBloc.reorderBlockWithinPeriod] (writes a `priority_block`
-  /// row). Cross-period or cross-date moves go through
-  /// [PriorityBloc.moveBlock] (rewrites every contained thread's
-  /// schedule). Drops adjacent to the source are filtered upstream by
-  /// the controller's no-op slot logic, so we only see meaningful drops
-  /// here.
+  /// Source identity comes from [payload.blockId]. The only draggable
+  /// block is a user-scheduled focus block, so the drop reschedules its
+  /// `priority_block` row via [PriorityBloc.moveFocusBlock], anchoring to
+  /// the time of the blocks flanking the drop slot. Drops adjacent to the
+  /// source are filtered upstream by the controller's no-op slot logic, so
+  /// we only see meaningful drops here.
   void _dispatchBlockDrop(
     BuildContext context,
     List<AgendaItem> listItems,
@@ -494,372 +493,82 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     BlockDropTarget target,
   ) {
     AgendaHeaderItem? source;
-    int? sourceIndex;
-    for (var i = 0; i < listItems.length; i++) {
-      final it = listItems[i];
+    for (final it in listItems) {
       if (it is AgendaHeaderItem && it.parentBlockId == payload.blockId) {
         source = it;
-        sourceIndex = i;
         break;
       }
     }
     final bloc = context.read<PriorityBloc>();
     final canonicalBlock = bloc.state.agenda.blockById(payload.blockId);
-    if (source == null ||
-        sourceIndex == null ||
-        source.blockPriority == null ||
-        canonicalBlock == null) {
-      _log.info(
-        '[agenda block-drop] dispatch skipped: source not found / no '
-        'blockPriority (blockId=${payload.blockId} '
-        'sourceFound=${source != null} '
-        'blockPriorityNull=${source?.blockPriority == null} '
-        'canonicalNull=${canonicalBlock == null})',
-      );
-      return;
-    }
-    final sourcePriority = source.blockPriority!;
-    final sourceDate = source.sourceDate;
-    final sourcePeriodStart = source.sourcePeriodStart;
-    final sourceThreadIds = {for (final t in canonicalBlock.threads) t.id};
 
-    // Focus blocks reschedule by moving their underlying `priority_block`
-    // row, not by rewriting thread schedules. Each focus block is a
-    // standalone [PriorityBlock] (id `fb_…`) carrying that row in
-    // [PriorityBlock.sourceRow].
+    // In the explicit-only agenda the only draggable block is a
+    // user-scheduled focus block — a [PriorityBlock] (id `fb_…`) carrying
+    // its `priority_block` row in [PriorityBlock.sourceRow]. Events anchor
+    // to a fixed time and gaps are read-only, so neither participates.
+    // Focus blocks reschedule by moving that row, not by rewriting thread
+    // schedules.
     final sourceRow =
         canonicalBlock is PriorityBlock ? canonicalBlock.sourceRow : null;
-    if (sourceRow != null) {
-      // Anchor the dropped focus block to the times of the blocks
-      // flanking the drop slot: start when the block above ends, or —
-      // when dropped before the day's first time-anchored block — its own
-      // duration before that block. The activation algorithm filters
-      // source-adjacent slots, so neither neighbor is ever the dragged
-      // block. Read start/end null-safely (an [EventBlock]'s `start`/`end`
-      // getters throw when its event has no `at`).
-      DateTime? blockStart(AgendaBlock? b) => switch (b) {
-        EventBlock e => e.event.at?.start,
-        GapBlock g => g.range.start,
-        PriorityBlock p => p.windowStart,
-        null => null,
-      };
-      DateTime? blockEnd(AgendaBlock? b) => switch (b) {
-        EventBlock e => e.event.at?.end,
-        GapBlock g => g.range.end,
-        PriorityBlock p => p.windowEnd,
-        null => null,
-      };
-      final agenda = bloc.state.agenda;
-      final prevBlock = target.prevBlockId == null
-          ? null
-          : agenda.blockById(target.prevBlockId!);
-      final nextBlock = target.nextBlockId == null
-          ? null
-          : agenda.blockById(target.nextBlockId!);
-      final resolved = resolveFocusBlockDropAnchor(
-        prevStart: blockStart(prevBlock),
-        prevEnd: blockEnd(prevBlock),
-        nextStart: blockStart(nextBlock),
-        prevIsGap: prevBlock is GapBlock,
-        duration: sourceRow.duration,
-      );
-
-      // Fallback for drops with no time-anchored neighbor (e.g. onto an
-      // empty date section): use the period/date anchor and let
-      // [moveFocusBlock] preserve the source row's existing time-of-day.
-      var focusAnchor = resolved.anchor;
-      focusAnchor ??= target.targetPeriodStart;
-      if (focusAnchor == null && target.targetDate != null) {
-        focusAnchor = target.targetDate!.toDateTime();
-      }
-      if (focusAnchor == null) return;
-      unawaited(
-        bloc.moveFocusBlock(
-          source: sourceRow,
-          targetAnchor: focusAnchor,
-          anchorIsExact: resolved.isExact,
-        ),
+    if (source == null || sourceRow == null) {
+      _log.info(
+        '[agenda block-drop] skipped: not a focus block '
+        '(blockId=${payload.blockId} sourceFound=${source != null} '
+        'focusRow=${sourceRow != null})',
       );
       return;
     }
 
-    final sameDate = sourceDate == target.targetDate;
-    final samePeriod = sourcePeriodStart == target.targetPeriodStart;
-    _log.info(
-      '[agenda block-drop] dispatch entry: priority=${sourcePriority.id} '
-      'sourceDate=$sourceDate sourcePeriodStart=$sourcePeriodStart '
-      'targetDate=${target.targetDate} '
-      'targetPeriodStart=${target.targetPeriodStart} '
-      'targetPrev=${target.prevBlockId} targetNext=${target.nextBlockId} '
-      'sameDate=$sameDate samePeriod=$samePeriod '
-      'threadIds=${sourceThreadIds.length}',
-    );
-
-    // Compute a sensible anchor for the target period — falls back to
-    // the target date when the target sits above any gap, so a drop
-    // lands at the top of that date instead of snapping back. Used by
-    // both the cross-period move (thread-bearing sources) and the
-    // reorder path's `periodReferenceTime` for cross-period cascade
-    // drops below.
-    // When the drop lacks a gap anchor, fall back to the target date's
-    // midnight. The agenda render uses a per-section temporal lens
-    // (see `AgendaBuilder._consolidateAndSort`) so a row anchored at
-    // any moment within the target date will win for that date's
-    // standalone run. Using `Time.now()` here was a bug: past-day
-    // reorders ended up anchored to today, and same-day reorders kept
-    // creating fresh rows at different moments-of-day.
-    DateTime? targetAnchor = target.targetPeriodStart;
-    if (targetAnchor == null && target.targetDate != null) {
-      targetAnchor = target.targetDate!.toDateTime();
-    }
-
-    // If the drop lands inside a gap and the source priority has no
-    // pending duration set, default it to `min(30m, gap.duration)` so
-    // the priority occupies a sensible slice of the gap in the cascade.
-    // Honors the existing pending when set ("use the block's duration"
-    // path). Only fires for cross-period drops — a same-period reorder
-    // doesn't change which gap the block lives in, so it can't be
-    // interpreted as "dropping into" a new gap.
-    if ((!sameDate || !samePeriod) && target.targetPeriodStart != null) {
-      _ensurePendingForGapDrop(
-        bloc,
-        sourcePriority.id,
-        target.targetPeriodStart!,
-        target.targetDate,
-      );
-    }
-
-    if ((!sameDate || !samePeriod) && sourceThreadIds.isNotEmpty) {
-      // Cross-period move of a thread-bearing block — rewrite
-      // contained-thread schedules to the target gap anchor.
-      if (targetAnchor == null) {
-        _log.info(
-          '[agenda block-drop] cross-period drop with no anchor and no '
-          'date — skipping (priority=${sourcePriority.id})',
-        );
-        return;
-      }
-      _log.info(
-        '[agenda block-drop] cross-period move: priority=${sourcePriority.id} '
-        'sourceGap=$sourcePeriodStart -> targetGap=$targetAnchor '
-        '(targetPeriodStart=${target.targetPeriodStart}, '
-        'targetDate=${target.targetDate})',
-      );
-      bloc.moveBlock(
-        blockId: payload.blockId,
-        threadIds: sourceThreadIds,
-        targetGapAnchorAt: targetAnchor,
-      );
-      // Fall through to the reorder logic below: moveBlock relocates
-      // the threads but doesn't establish priority-vs-priority ordering
-      // on the target day, so the source priority would land at its
-      // default order regardless of where in the target's list the
-      // user dropped. The reorder logic below brackets the drop
-      // position and writes a priority_block row at targetAnchor so
-      // the priority lands where the user actually dropped it.
-    }
-    // Empty-thread sources (cascade slices representing a priority's
-    // pending duration laid into a gap) fall through to the reorder
-    // path. moveBlock can't act on them — it rewrites thread schedules
-    // and a cascade slice has no threads — so routing here would no-op
-    // and the drop would snap back. The reorder path uses target-side
-    // bracketing only, so it handles both same-period and cross-period
-    // cascade drops once `periodReferenceTime` is set to the target's
-    // anchor below.
-
-    // Same-period reorder — find bracketing priority-bearing blocks
-    // within the target's period only. Standalone priority blocks
-    // (thread == null) bracket the new ordering; events (thread != null)
-    // are skipped because they're anchored to a fixed time and don't
-    // participate in priority_block ordering. Headers whose period
-    // anchor differs from the target's are skipped — without this, the
-    // walk crosses period boundaries.
-    final insertionIndex = _targetInsertionIndex(target, listItems);
-    final targetPeriod = target.targetPeriodStart;
-    bool inSamePeriod(AgendaHeaderItem h) =>
-        h.sourcePeriodStart == targetPeriod;
-    PriorityId? above;
-    for (var i = insertionIndex - 1; i >= 0; i--) {
-      final candidate = listItems[i];
-      if (candidate is! AgendaHeaderItem) continue;
-      if (candidate.date != null) break;
-      if (candidate.parentBlockId == payload.blockId) continue;
-      if (!inSamePeriod(candidate)) break;
-      if (candidate.blockPriority != null && candidate.thread == null) {
-        above = candidate.blockPriority!.id;
-        break;
-      }
-    }
-    PriorityId? below;
-    for (var i = insertionIndex; i < listItems.length; i++) {
-      final candidate = listItems[i];
-      if (candidate is! AgendaHeaderItem) continue;
-      if (candidate.date != null) break;
-      if (candidate.parentBlockId == payload.blockId) continue;
-      if (!inSamePeriod(candidate)) break;
-      if (candidate.blockPriority != null && candidate.thread == null) {
-        below = candidate.blockPriority!.id;
-        break;
-      }
-    }
-
-    if (above == sourcePriority.id || below == sourcePriority.id) {
-      _log.info(
-        '[agenda block-drop] same-period reorder skipped: bracketing '
-        'priority matches source (priority=${sourcePriority.id} '
-        'above=$above below=$below insertionIndex=$insertionIndex)',
-      );
-      return;
-    }
-
-    if (above == null && below == null) {
-      // Nothing else lives in this period — there's no ordering to
-      // express. Without this guard each rapid-fire drop in a single-
-      // block period would write a fresh `priority_block` row.
-      _log.info(
-        '[agenda block-drop] same-period reorder skipped: no bracketing '
-        'blocks (priority=${sourcePriority.id} '
-        'insertionIndex=$insertionIndex listLen=${listItems.length})',
-      );
-      return;
-    }
-
-    final periodReferenceTime =
-        targetAnchor ?? target.targetPeriodStart ?? Time.now();
-    _log.info(
-      '[agenda block-drop] same-period reorder: priority=${sourcePriority.id} '
-      'above=${above ?? "-"} below=${below ?? "-"} '
-      'period=$periodReferenceTime',
-    );
-    bloc.reorderBlockWithinPeriod(
-      priorityId: sourcePriority.id,
-      periodReferenceTime: periodReferenceTime,
-      above: above,
-      below: below,
-    );
-  }
-
-  /// When a block lands in a gap and its priority has no pending
-  /// duration, set it to `min(30m, remaining-gap-duration)`. The
-  /// "remaining" gap is the residual band the cascade emitted after
-  /// existing priorities filled part of the gap (if any), otherwise
-  /// the full original gap. This makes the default react to what's
-  /// already booked: dropping into a half-filled 1h gap defaults to
-  /// the remaining 30 minutes rather than overflowing into the next
-  /// period.
-  void _ensurePendingForGapDrop(
-    PriorityBloc bloc,
-    PriorityId priorityId,
-    DateTime targetPeriodStart,
-    Date? targetDate,
-  ) {
-    // Look up whether a row already exists for this priority at the
-    // target period's anchor. The agenda model already attached the
-    // resolved duration; read it off the matching block.
+    // Anchor the dropped focus block to the times of the blocks flanking
+    // the drop slot: start when the block above ends, or — when dropped
+    // before the day's first time-anchored block — its own duration before
+    // that block. The activation algorithm filters source-adjacent slots,
+    // so neither neighbor is ever the dragged block. Read start/end
+    // null-safely (an [EventBlock]'s `start`/`end` getters throw when its
+    // event has no `at`).
+    DateTime? blockStart(AgendaBlock? b) => switch (b) {
+      EventBlock e => e.event.at?.start,
+      GapBlock g => g.range.start,
+      PriorityBlock p => p.windowStart,
+      null => null,
+    };
+    DateTime? blockEnd(AgendaBlock? b) => switch (b) {
+      EventBlock e => e.event.at?.end,
+      GapBlock g => g.range.end,
+      PriorityBlock p => p.windowEnd,
+      null => null,
+    };
     final agenda = bloc.state.agenda;
-    Duration? current;
-    for (final section in agenda.sections) {
-      if (targetDate != null &&
-          section is DateSection &&
-          section.date != targetDate) {
-        continue;
-      }
-      for (final block in section.blocks) {
-        if (block.priority.id != priorityId) continue;
-        if (block.start != targetPeriodStart) continue;
-        if (block is PriorityBlock) current = block.cascadeDuration;
-        if (block is GapBlock) current = block.cascadeDuration;
-      }
-    }
-    if (current != null && current > Duration.zero) return;
-
-    final available = _availableInGap(agenda, targetPeriodStart, targetDate);
-    if (available == null || available <= Duration.zero) {
-      _log.info(
-        '[agenda block-drop] skip pending default: no gap room at '
-        'periodStart=$targetPeriodStart date=$targetDate',
-      );
-      return;
-    }
-    const defaultBlock = Duration(minutes: 30);
-    final newPending = available < defaultBlock ? available : defaultBlock;
-    _log.info(
-      '[agenda block-drop] defaulting pending duration: priority=$priorityId '
-      'period=$targetPeriodStart available=$available -> $newPending',
+    final prevBlock = target.prevBlockId == null
+        ? null
+        : agenda.blockById(target.prevBlockId!);
+    final nextBlock = target.nextBlockId == null
+        ? null
+        : agenda.blockById(target.nextBlockId!);
+    final resolved = resolveFocusBlockDropAnchor(
+      prevStart: blockStart(prevBlock),
+      prevEnd: blockEnd(prevBlock),
+      nextStart: blockStart(nextBlock),
+      prevIsGap: prevBlock is GapBlock,
+      duration: sourceRow.duration,
     );
+
+    // Fallback for drops with no time-anchored neighbor (e.g. onto an
+    // empty date section): use the period/date anchor and let
+    // [moveFocusBlock] preserve the source row's existing time-of-day.
+    var focusAnchor = resolved.anchor;
+    focusAnchor ??= target.targetPeriodStart;
+    if (focusAnchor == null && target.targetDate != null) {
+      focusAnchor = target.targetDate!.toDateTime();
+    }
+    if (focusAnchor == null) return;
     unawaited(
-      store.PriorityBlock.setBlockDuration(
-        priorityId: priorityId,
-        blockStart: targetPeriodStart,
-        newDuration: newPending,
+      bloc.moveFocusBlock(
+        source: sourceRow,
+        targetAnchor: focusAnchor,
+        anchorIsExact: resolved.isExact,
       ),
     );
-  }
-
-  /// Returns the available room in the gap anchored at [periodStart].
-  /// Prefers the residual band (the leftover the cascade emitted after
-  /// existing priorities consumed part of the gap) so the caller
-  /// reasons over what's actually free; falls back to the full gap
-  /// from `max(now, gap.start)` when no residual exists.
-  Duration? _availableInGap(
-    AgendaModel agenda,
-    DateTime periodStart,
-    Date? targetDate,
-  ) {
-    GapBlock? original;
-    GapBlock? residual;
-    for (final section in agenda.sections) {
-      if (targetDate != null &&
-          section is DateSection &&
-          section.date != targetDate) {
-        continue;
-      }
-      for (final block in section.blocks) {
-        if (block is! GapBlock) continue;
-        if (block.periodAnchor == periodStart) {
-          residual ??= block;
-        } else if (block.range.start == periodStart) {
-          original ??= block;
-        }
-      }
-    }
-    final gap = residual ?? original;
-    if (gap == null) return null;
-    final start = gap.range.start;
-    final end = gap.range.end;
-    if (start == null || end == null) return null;
-    final nowTs = Time.now();
-    final effectiveStart = nowTs.isAfter(start) ? nowTs : start;
-    if (!effectiveStart.isBefore(end)) return null;
-    return end.difference(effectiveStart);
-  }
-
-  /// Resolve the listItems index where a [BlockDropTarget] sits.
-  ///
-  /// - If [target.nextBlockId] is non-null, the boundary is rendered
-  ///   above the row whose [parentBlockId] matches it.
-  /// - If [nextBlockId] is null and [prevBlockId] is non-null, the
-  ///   boundary sits right after the prev block's last row.
-  /// - Otherwise the boundary is at the end of the list.
-  int _targetInsertionIndex(
-    BlockDropTarget target,
-    List<AgendaItem> listItems,
-  ) {
-    final next = target.nextBlockId;
-    if (next != null) {
-      for (var i = 0; i < listItems.length; i++) {
-        final it = listItems[i];
-        if (it is AgendaHeaderItem && it.parentBlockId == next) return i;
-      }
-    }
-    final prev = target.prevBlockId;
-    if (prev != null) {
-      for (var i = 0; i < listItems.length; i++) {
-        final it = listItems[i];
-        if (it is AgendaHeaderItem && it.parentBlockId == prev) return i + 1;
-      }
-    }
-    return listItems.length;
   }
 
   /// Static dimmed preview rendered inside the active [BlockDropZone].

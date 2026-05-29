@@ -88,21 +88,14 @@ class AgendaModel extends Equatable {
               ),
             );
           case GapBlock b:
-            // Empty gaps are pure visual time markers — no priority,
-            // neutral background. Gaps that have either threads or a
-            // [cascadeDuration] (a cascade slice that was merged into
-            // the gap's anchor) carry their priority as a lead and
-            // render as a combined gap+priority header. Both carry
-            // [parentBlockId] so the renderer recognizes the block
-            // transition for drop-zone insertion; draggability is gated
-            // by [blockPriority != null] separately. The gap defines a
-            // new period: this block — and any blocks that follow it
-            // within the section — live in this period. A residual gap
-            // (cascade leftover) inherits its parent gap's anchor via
-            // [periodAnchor].
-            final hasPriorityLead =
-                b.threads.isNotEmpty || b.cascadeDuration != null;
-            final gapAnchor = b.periodAnchor ?? b.range.start;
+            // Gaps are read-only visual markers of free time between
+            // time-anchored blocks — no priority, no threads, neutral
+            // background. They still carry [parentBlockId] so the renderer
+            // recognizes the block transition for focus-block drop-zone
+            // insertion; the gap's start anchors the period its following
+            // blocks live in.
+            final hasPriorityLead = b.threads.isNotEmpty;
+            final gapAnchor = b.range.start;
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
@@ -240,7 +233,6 @@ class PriorityBlock extends AgendaBlock {
     required this.windowEnd,
     this.isOutside = false,
     this.cascadeDuration,
-    this.overflow = false,
     this.sourceRow,
   });
 
@@ -270,12 +262,6 @@ class PriorityBlock extends AgendaBlock {
   /// row contributes to this block's window.
   final Duration? cascadeDuration;
 
-  /// True when this is an auto-placed respond block that the placer
-  /// could not fit before its deadline without overlapping busy time
-  /// (or whose deadline fell in a closed period). The agenda renders
-  /// such a block's duration in red so the user notices.
-  final bool overflow;
-
   /// When this block was inserted from an explicit `priority_block` row
   /// (a user-scheduled focus block), the underlying row. The agenda's
   /// gutter edit affordance uses it to open the schedule modal in edit
@@ -291,7 +277,6 @@ class PriorityBlock extends AgendaBlock {
         cascadeDuration,
         windowStart,
         windowEnd,
-        overflow,
         sourceRow?.id,
       ];
 }
@@ -346,8 +331,6 @@ class GapBlock extends AgendaBlock {
     required this.range,
     required this.threads,
     this.isOutside = false,
-    this.periodAnchor,
-    this.cascadeDuration,
   });
 
   @override
@@ -360,23 +343,6 @@ class GapBlock extends AgendaBlock {
   @override
   final bool isOutside;
 
-  /// Overrides the period start used for drop-target attribution and
-  /// the post-block `currentPeriodStart` walker state. Set on a residual
-  /// gap (the leftover band emitted after cascade slices fill part of a
-  /// gap) so it inherits the ORIGINAL gap's period anchor — drops into
-  /// the residual then write priority_block rows at the gap's true
-  /// start, where the cascade walker resolves them, instead of at the
-  /// residual's own start (which the cascade never evaluates).
-  /// Null for "normal" gaps where `range.start` is the canonical anchor.
-  final DateTime? periodAnchor;
-
-  /// The pending duration resolved for this gap by the per-block walker
-  /// (`resolveBlockDurations`) when the gap promotes a priority into its
-  /// header. Mirrors [PriorityBlock.cascadeDuration] so the same gutter
-  /// editing flow works on either kind. Null on gap blocks with no
-  /// priority lead or no `priority_block` row at the gap's start.
-  final Duration? cascadeDuration;
-
   @override
   DateTime get start =>
       range.start ?? (throw StateError('GapBlock without range.start'));
@@ -386,8 +352,7 @@ class GapBlock extends AgendaBlock {
       range.end ?? (throw StateError('GapBlock without range.end'));
 
   @override
-  List<Object?> get props =>
-      [id, priority, range, threads, isOutside, periodAnchor, cascadeDuration];
+  List<Object?> get props => [id, priority, range, threads, isOutside];
 }
 
 /// Atom type used by the legacy flat-list rendering and reorder paths.

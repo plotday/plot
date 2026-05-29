@@ -74,27 +74,6 @@ void main() {
     });
   });
 
-  group('AgendaBuilder block windows', () {
-    setUp(() => Time.setFrozenTime(DateTime(2026, 5, 14, 14, 0)));
-    tearDown(() => Time.unfreeze());
-
-    test('standalone PriorityBlock with no time-anchored siblings uses '
-        'section midnight to next midnight', () {
-      final p = _testPriority();
-      final t = Thread(priority: p, title: 't');
-      final model = AgendaBuilder.build(
-        threads: [t],
-        context: p,
-        horizonDays: 1,
-      );
-      final block = model.allBlocks.whereType<ui.PriorityBlock>().firstWhere(
-        (b) => b.priority.id == p.id,
-      );
-      expect(block.start, DateTime(2026, 5, 14));
-      expect(block.end, DateTime(2026, 5, 15));
-    });
-  });
-
   group('AgendaBuilder explicit focus blocks (single time, no cascade)', () {
     setUp(() => Time.setFrozenTime(DateTime(2026, 5, 14, 14, 0)));
     tearDown(() => Time.unfreeze());
@@ -273,26 +252,6 @@ void main() {
           reason: 'gap now starts when the focus block ends');
       expect(gap.range.end, DateTime(2026, 5, 14, 19),
           reason: 'gap still ends at the next event');
-    });
-
-    test('a residual gap keeps the original gap start as its period anchor',
-        () {
-      final p = _testPriority();
-      final row =
-          mkRow(p, DateTime(2026, 5, 14, 17), const Duration(hours: 1));
-      final model = AgendaBuilder.build(
-        threads: twoEvents(p),
-        context: p,
-        horizonDays: 1,
-        priorityBlocksByPriority: {
-          p.id: [row],
-        },
-      );
-      final gap = model.allBlocks.whereType<ui.GapBlock>().firstWhere(
-            (g) => g.range.end == DateTime(2026, 5, 14, 19),
-          );
-      expect(gap.periodAnchor, DateTime(2026, 5, 14, 17),
-          reason: 'drops into the residual still anchor at the original gap');
     });
 
     test('a focus block that fills the whole gap removes the gap header', () {

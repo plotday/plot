@@ -2236,7 +2236,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         // date) come before user-only todos so a flood of overdue or
         // sentinel-dated todos can't push real events past `limit`. Visual
         // ordering in the agenda is driven by `agendaAt` in
-        // [PriorityState.makeAgendaItems], not this clause — the discriminator
+        // [AgendaBuilder.build], not this clause — the discriminator
         // only governs which rows survive pagination when the result set is
         // larger than the limit.
         final hasHardSchedule = CaseWhenExpression<int>(

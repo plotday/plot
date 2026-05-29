@@ -28,8 +28,8 @@ class BlockDragPayload {
   /// Id of the [AgendaBlock] being dragged.
   final String blockId;
 
-  /// Priority id of the dragged block — used by the bloc-side dispatch
-  /// (`reorderBlockWithinPeriod`, `moveBlock`).
+  /// Priority id of the dragged block — used by the bloc-side drop
+  /// dispatch to identify the source.
   final PriorityId priorityId;
 
   /// Date the source block lives in (null = "Now"/no-date section).

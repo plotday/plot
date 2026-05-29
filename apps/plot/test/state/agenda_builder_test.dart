@@ -7,8 +7,6 @@ import 'package:plot/state/agenda_model.dart' as ui;
 import 'package:plot/store/store.dart';
 
 /// Build a minimal [Priority] usable in unit tests.
-/// Uses [Priority.fromStore] with [draft] = true so the constructor
-/// does not try to register the priority with a parent or the Store.
 Priority _testPriority({
   String title = 'Test',
   String path = 'test',
@@ -33,6 +31,19 @@ Priority _testPriority({
   return Priority.fromStore(row, draft: true);
 }
 
+PriorityBlockRow _focusRow(Priority p, DateTime at, Duration d) =>
+    PriorityBlockRow(
+      id: Uuid.generate(),
+      priorityId: p.id,
+      createdBy: Uuid.generate(),
+      orderValue: Order(0),
+      effectiveAt: at,
+      duration: d,
+      archivedAt: null,
+      createdAt: DateTime(2026, 5, 14),
+      updatedAt: DateTime(2026, 5, 14),
+    );
+
 void main() {
   test('empty threads list produces empty model', () {
     final context = _testPriority();
@@ -45,13 +56,8 @@ void main() {
     expect(model, ui.AgendaModel.empty);
   });
 
-  // Regression for the "drag one Using-Plot block, lose its other-day
-  // siblings" bug. `PriorityBloc.moveBlock` used to filter
-  // `_lastAgendaThreads` by priority alone, so a drag of one block
-  // pulled in every same-priority thread across the whole agenda. The
-  // fix scopes the move to `AgendaModel.blockById(blockId).threads`,
-  // which already groups by `(date, period, priority)`. This test
-  // anchors the contract `moveBlock` now relies on.
+  // `PriorityBloc.moveFocusBlock` relies on `blockById(...).threads`
+  // returning only that block's threads. Anchors that contract.
   test(
       'blockById returns only that block\'s threads when one priority has '
       'multiple blocks on different dates', () {
@@ -88,231 +94,181 @@ void main() {
     expect(
       fetchedToday!.threads.map((t) => t.id).toSet(),
       {todayThreadA.id, todayThreadB.id},
-      reason: 'today block must not include tomorrow\'s thread',
     );
     expect(fetchedToday.threads, isNot(contains(tomorrowThread)));
-
-    final fetchedTomorrow = model.blockById(tomorrowBlock.id);
-    expect(fetchedTomorrow, isNotNull);
-    expect(
-      fetchedTomorrow!.threads.map((t) => t.id).toSet(),
-      {tomorrowThread.id},
-    );
-
     expect(model.blockById('does-not-exist'), isNull);
   });
 
-  group('AgendaBuilder.build is universal across priorities', () {
-    setUp(() {
-      // Freeze time so today's date and "now" placement are deterministic.
-      Time.setFrozenTime(DateTime(2026, 5, 2, 14, 0));
-    });
+  group('explicit-only agenda', () {
+    setUp(() => Time.setFrozenTime(DateTime(2026, 5, 14, 14, 0)));
     tearDown(() => Time.unfreeze());
 
-    test('produces a block per priority even when the priority is outside '
-        'the in-context subtree', () {
-      // Two different priorities, neither a parent of the other.
+    Iterable<Uuid> threadIdsOf(ui.AgendaModel model) =>
+        model.allThreads.map((t) => t.id);
+
+    test('a timed event appears as an EventBlock at its time', () {
+      final p = _testPriority();
+      final event = Thread(
+        priority: p,
+        title: 'meeting',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [event],
+        context: p,
+        horizonDays: 1,
+      );
+      final blocks = model.allBlocks.whereType<ui.EventBlock>().toList();
+      expect(blocks, hasLength(1));
+      expect(blocks.single.event.id, event.id);
+      expect(blocks.single.start, DateTime(2026, 5, 14, 15));
+    });
+
+    test('a todo scheduled for a day creates NO block (the implicit '
+        'priority-block bug)', () {
+      final p = _testPriority();
+      // A task the user scheduled for today via per-user state_on. The old
+      // agenda grouped it into a timeless PriorityBlock; the explicit-only
+      // agenda must not show it at all.
+      final scheduledTodo = Thread(
+        priority: p,
+        title: 'do this today',
+        active: true,
+        stateOrder: Order.first(),
+        stateOn: Date(2026, 5, 14),
+      );
+      expect(scheduledTodo.todo, isTrue);
+      final model = AgendaBuilder.build(
+        threads: [scheduledTodo],
+        context: p,
+        horizonDays: 1,
+      );
+      expect(model.allBlocks.whereType<ui.PriorityBlock>(), isEmpty,
+          reason: 'scheduling a task must not create a priority block');
+      expect(model.allBlocks.whereType<ui.EventBlock>(), isEmpty);
+      expect(threadIdsOf(model), isNot(contains(scheduledTodo.id)));
+    });
+
+    test('a todo pinned to a time creates NO block', () {
+      final p = _testPriority();
+      final pinned = Thread(
+        priority: p,
+        title: 'pinned task',
+        active: true,
+        stateOrder: Order.first(),
+        stateAt: DateTime(2026, 5, 14, 15),
+      );
+      expect(pinned.todo, isTrue);
+      final model = AgendaBuilder.build(
+        threads: [pinned],
+        context: p,
+        horizonDays: 1,
+      );
+      expect(model.allBlocks, isEmpty,
+          reason: 'today section is the only section and it carries no blocks');
+      expect(threadIdsOf(model), isNot(contains(pinned.id)));
+    });
+
+    test('a plain note with no schedule creates NO block', () {
+      final p = _testPriority();
+      final note = Thread(priority: p, title: 'just a note');
+      final model = AgendaBuilder.build(
+        threads: [note],
+        context: p,
+        horizonDays: 1,
+      );
+      expect(threadIdsOf(model), isNot(contains(note.id)));
+      expect(model.allBlocks.where((b) => b is! ui.GapBlock), isEmpty);
+    });
+
+    test('events from priorities outside the context subtree still appear', () {
       final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
       final p2 = _testPriority(title: 'P2', path: 'p2', order: 1);
-
-      // Two threads filed today (Thread() default createdAt = now).
-      // Both are unscheduled / non-todo / unread=false: the simplest case.
-      final t1 = Thread(priority: p1, title: 'on p1');
-      final t2 = Thread(priority: p2, title: 'on p2');
-
-      // Build with `context = p1`. Under the old behavior the agenda only
-      // surfaced threads belonging to `context` or its descendants, so a
-      // thread filed on `p2` (outside the subtree) would not appear in
-      // any block. The universal builder must produce a block for both
-      // priorities regardless of context.
-      final model = AgendaBuilder.build(
-        threads: [t1, t2],
-        context: p1,
-        horizonDays: 30,
-      );
-
-      // Find every PriorityBlock / GapBlock / EventBlock the model emits
-      // and group them by priority.
-      final blockPriorityIds = model.allBlocks.map((b) => b.priority.id).toSet();
-      expect(
-        blockPriorityIds,
-        containsAll(<Uuid>{p1.id, p2.id}),
-        reason: 'Both p1 and p2 must contribute at least one block, even '
-            'though p2 is outside p1\'s subtree (context=$p1).',
-      );
-
-      // The thread filed on p2 must end up inside a block whose priority
-      // is p2 — not silently bucketed into a p1 block.
-      final p2Threads = model.allBlocks
-          .where((b) => b.priority.id == p2.id)
-          .expand((b) => b.threads)
-          .toList();
-      expect(p2Threads.map((t) => t.id), contains(t2.id));
-    });
-
-    test('does NOT auto-recover unread threads whose agendaAt falls before '
-        'today onto today\'s section (explicit-only agenda)', () {
-      final p1 = _testPriority(title: 'P1', path: 'p1', order: 0);
-
-      // An unread thread scheduled on a date BEFORE today.
-      // [PriorityState.makeAgendaItems] drops past-dated groups, and the
-      // explicit-only agenda no longer rescues them via a merge step.
-      final pastUnread = Thread(
+      final e1 = Thread(
         priority: p1,
-        title: 'forgotten unread',
-        on: Day(Date(2026, 5, 1)),
-      ).copyWith(unread: true);
-      final todayThread = Thread(priority: p1, title: 'today note');
-
-      final model = AgendaBuilder.build(
-        threads: [pastUnread, todayThread],
-        context: p1,
-        horizonDays: 30,
+        title: 'on p1',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
       );
-
-      final todaySection = model.sections
-          .whereType<ui.DateSection>()
-          .firstWhere((s) => s.isNow,
-              orElse: () => throw StateError(
-                  'expected a today (isNow) section in the model'));
-
-      final todayThreadIds = todaySection.blocks
-          .expand((b) => b.threads)
-          .map((t) => t.id)
-          .toSet();
-      expect(todayThreadIds, isNot(contains(pastUnread.id)),
-          reason: 'past-dated unread thread must not be auto-recovered onto '
-              'today — users explicitly schedule what they care about');
-      expect(todayThreadIds, contains(todayThread.id),
-          reason: 'today\'s own thread must still appear in today\'s section');
+      final e2 = Thread(
+        priority: p2,
+        title: 'on p2',
+        at: DateTimeRange(DateTime(2026, 5, 14, 17), DateTime(2026, 5, 14, 18)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [e1, e2],
+        context: p1, // p2 is outside p1's subtree
+        horizonDays: 1,
+      );
+      expect(threadIdsOf(model), containsAll(<Uuid>{e1.id, e2.id}));
     });
 
-    test('a todo pinned after an event on a past day surfaces on today\'s '
-        'section after midnight rollover', () {
-      // Regression: in production, four Doing-column todos at Movement
-      // Building shared this state — `user_schedule.start_at = Thursday
-      // 11am ET` (pinned after a Thursday event), `user_schedule.start_on
-      // = null`. On Thursday they appeared correctly under that event;
-      // at midnight Friday they vanished from the agenda entirely.
-      //
-      // The root cause: `Thread.agendaAt` collapses a stale schedule
-      // date to "today, anytime" (so the thread buckets onto today), but
-      // `Thread.isPinnedTodo` / `pinnedAfterTime` keep reporting the
-      // original Thursday afternoon time. `makeAgendaItems` then peels
-      // it into `pinnedTodos` and looks for a Friday anchor matching
-      // Thursday afternoon — there is none, so the thread is silently
-      // dropped.
-      //
-      // The end-of-day gap branch has fallbacks (`!createdDateHeader`
-      // and `startOfDay && remainingUnscheduled.isNotEmpty`) that catch
-      // stranded todos when no events exist on the day — so the bug
-      // only manifests when there is at least one scheduled event
-      // today, which forces the end-of-day gap to take the
-      // `!startOfDay` branch that only claims pins whose
-      // `pinnedAfterTime` matches the gap's exact start time. The
-      // production trigger was the user's Personal calendar events
-      // (Paul, Phil, Warkentins) sitting on Friday alongside the
-      // stranded Plot todos.
-      //
-      // The fix mirrors `agendaAt`'s normalization at the partition site:
-      // a pinned todo whose `pinnedAfterTime` is before today's start is
-      // treated as unpinned for placement, so it lands in today's flow.
-      // Override the group-level "2pm" frozen time: the production bug
-      // surfaced right at midnight Friday with all of Friday's events
-      // still in the future, which is what forces the event loop to
-      // run and the end-of-day gap to take the `!startOfDay` branch.
-      Time.setFrozenTime(DateTime(2026, 5, 2, 0, 1));
-
-      final priority = _testPriority(title: 'Movement Building', path: 'mb');
-      final personal = _testPriority(title: 'Personal', path: 'personal');
-
-      final today = Date.today();
-      expect(today, equals(Date(2026, 5, 2)));
-      final yesterdayAfternoon = DateTime(2026, 5, 1, 15, 0);
-
-      // A scheduled (non-todo, non-link) event today, AFTER frozen
-      // "now" so it stays in `remainingScheduled` and the event loop
-      // iterates it. That advances `previousEnd` past midnight, which
-      // forces the end-of-day gap to take the `!startOfDay` branch
-      // where the bug strands the pinned todo.
+    test('a past-dated event is not recovered onto today', () {
+      final p = _testPriority();
+      final pastEvent = Thread(
+        priority: p,
+        title: 'yesterday meeting',
+        at: DateTimeRange(DateTime(2026, 5, 13, 9), DateTime(2026, 5, 13, 10)),
+      );
       final todayEvent = Thread(
-        priority: personal,
-        title: 'Paul call',
-        at: DateTimeRange(
-          DateTime(2026, 5, 2, 9, 30),
-          DateTime(2026, 5, 2, 10, 0),
-        ),
+        priority: p,
+        title: 'today meeting',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
       );
-
-      final pinnedToYesterday = Thread(
-        priority: priority,
-        title: 'pinned after yesterday\'s event',
-        // startAt set + stateOn null → pinned todo (pinnedAfterTime
-        // returns stateAt; isPinnedTodo == true).
-        active: true,
-        stateOrder: Order.first(),
-        stateAt: yesterdayAfternoon,
-      );
-
-      // A second todo on today via the `todoNowDate` ("anytime today")
-      // sentinel. This thread takes the normal path through
-      // `beforeNowUnscheduled` and creates the today date header before
-      // the end-of-day gap branch runs — which is what makes the bug
-      // manifest, because the gap branch's `!createdDateHeader`
-      // fallback no longer catches stranded pinned todos.
-      final anytimeToday = Thread(
-        priority: priority,
-        title: 'anytime today',
-        active: true,
-        stateOrder: Order.first(),
-        stateOn: Thread.todoNowDate,
-      );
-
-      // Sanity-check the fixture matches the production state.
-      expect(pinnedToYesterday.todo, isTrue,
-          reason: 'thread must be a todo (user_schedule with startAt set)');
-      expect(pinnedToYesterday.isPinnedTodo, isTrue,
-          reason: 'startAt set + startOn null = pinned todo');
-      expect(pinnedToYesterday.pinnedAfterTime, equals(yesterdayAfternoon),
-          reason: 'pin time is yesterday afternoon');
-      expect(pinnedToYesterday.agendaAt.toDate(), equals(today),
-          reason: 'agendaAt already normalizes stale pins to today');
-      expect(anytimeToday.todo, isTrue);
-      expect(anytimeToday.isPinnedTodo, isFalse);
-
       final model = AgendaBuilder.build(
-        threads: [pinnedToYesterday, anytimeToday, todayEvent],
-        context: priority,
-        horizonDays: 30,
+        threads: [pastEvent, todayEvent],
+        context: p,
+        horizonDays: 1,
       );
-
       final todaySection = model.sections
           .whereType<ui.DateSection>()
-          .firstWhere((s) => s.isNow,
-              orElse: () => throw StateError(
-                  'expected a today (isNow) section in the model'));
+          .firstWhere((s) => s.isNow);
+      final ids = todaySection.blocks.expand((b) => b.threads).map((t) => t.id);
+      expect(ids, isNot(contains(pastEvent.id)));
+      expect(ids, contains(todayEvent.id));
+    });
 
-      final todayThreadIds = todaySection.blocks
-          .expand((b) => b.threads)
-          .map((t) => t.id)
-          .toSet();
-      // In the explicit-only agenda neither the past-pin nor the
-      // `todoNowDate` sentinel surface on today — both are auto-forwards
-      // covered by [Thread.isAgendaAtAutoForwarded] and live in the
-      // priority's Active list instead. Only the scheduled event
-      // ([todayEvent]) anchors to today.
-      expect(
-        todayThreadIds,
-        isNot(contains(pinnedToYesterday.id)),
-        reason: 'past-pinned todos are no longer auto-forwarded to today',
+    test('an explicit focus block appears as a PriorityBlock at its time', () {
+      final p = _testPriority();
+      final row = _focusRow(p, DateTime(2026, 5, 14, 16), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        priorityById: {p.id: p},
       );
-      expect(
-        todayThreadIds,
-        isNot(contains(anytimeToday.id)),
-        reason: 'todoNowDate sentinel no longer surfaces on today',
+      final fb = model.allBlocks
+          .whereType<ui.PriorityBlock>()
+          .firstWhere((b) => b.id == 'fb_${row.id}');
+      expect(fb.windowStart, DateTime(2026, 5, 14, 16));
+      expect(fb.windowEnd, DateTime(2026, 5, 14, 17));
+      expect(fb.sourceRow?.id, row.id);
+    });
+
+    test('a read-only gap marks the free space between two events', () {
+      final p = _testPriority();
+      final morning = Thread(
+        priority: p,
+        title: 'morning',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
       );
-      expect(todayThreadIds, contains(todayEvent.id),
-          reason: 'the scheduled event anchors to today and must surface');
+      final evening = Thread(
+        priority: p,
+        title: 'evening',
+        at: DateTimeRange(DateTime(2026, 5, 14, 18), DateTime(2026, 5, 14, 19)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [morning, evening],
+        context: p,
+        horizonDays: 1,
+      );
+      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
+      expect(gaps, hasLength(1));
+      expect(gaps.single.range.start, DateTime(2026, 5, 14, 16));
+      expect(gaps.single.range.end, DateTime(2026, 5, 14, 18));
+      expect(gaps.single.threads, isEmpty, reason: 'gaps are read-only');
     });
   });
 }

@@ -27,7 +27,6 @@ import 'package:plot/store/store.dart' as store show PriorityBlock;
 export 'package:plot/state/agenda_model.dart'
     show AgendaItem, AgendaHeaderItem, AgendaThreadItem;
 import 'package:plot/util/async.dart';
-import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
@@ -1510,189 +1509,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
-  /// Move a single priority block to a different gap (and optionally a
-  /// different day). Every contained thread's `_userSchedule.startAt` is
-  /// rewritten to `targetGapAnchorAt` (the start of the destination gap)
-  /// using the existing pinned-after-event encoding. The thread set is
-  /// scoped to the source [blockId] — the agenda model already groups
-  /// threads by `(date, period, priority)`, so using the block's own
-  /// thread list is what isolates a drag of (say) Using Plot's *today*
-  /// block from Using Plot's *tomorrow* block.
-  ///
-  /// Earlier this scope was just `priority.id`, which had the dragged
-  /// block silently consuming every thread of that priority across the
-  /// whole agenda — `reorderToAfterEvent` clears `startOn` and writes
-  /// one common `startAt`, so other-day blocks of the same priority
-  /// collapsed into the dragged target and disappeared from their
-  /// original date.
-  ///
-  /// Implements rule 3 of the redesign (blocks can move into different
-  /// time periods). Rejected drops over events should snap to the
-  /// nearest gap before reaching this method.
-  Future<void> moveBlock({
-    required String blockId,
-    required Iterable<ThreadId> threadIds,
-    required DateTime targetGapAnchorAt,
-  }) async {
-    _reorderTimestamp = DateTime.now();
-    // Resolve thread ids against `_lastAgendaThreads` — the canonical
-    // cache. The dispatcher passes ids gathered from `listItems`, which
-    // comes from the same agenda model. We don't read `state.agenda` to
-    // find the block here because there's a narrow race where the bloc
-    // has emitted a new state but the page hasn't yet rebuilt with
-    // matching `listItems` — in that window `blockById` can miss while
-    // `listItems` still references the prior model. Operating on thread
-    // ids directly sidesteps the lookup.
-    final threadIdSet = threadIds.toSet();
-    if (threadIdSet.isEmpty) {
-      log.warning('[moveBlock] block $blockId — empty thread id set');
-      return;
-    }
-    final threadsToMove = _lastAgendaThreads
-        .where((t) => threadIdSet.contains(t.id))
-        .toList();
-    if (threadsToMove.isEmpty) {
-      log.warning(
-        '[moveBlock] block $blockId — none of ${threadIdSet.length} '
-        'thread ids present in cache (stale agenda?)',
-      );
-      return;
-    }
-    final priorityId = threadsToMove.first.priority.id;
-
-    log.info(
-      '[moveBlock] block=$blockId priority=$priorityId '
-      'threads=${threadsToMove.length} target=$targetGapAnchorAt',
-    );
-
-    final updated = <Thread>[];
-    for (final t in threadsToMove) {
-      final moved = t.reorderToAfterEvent(
-        t.order,
-        eventEndTime: targetGapAnchorAt,
-      );
-      updated.add(moved);
-      _optimisticOverrides[t.id] = _OptimisticOverride.expect(expected: moved);
-    }
-    final movedById = {for (final t in updated) t.id: t};
-    _lastAgendaThreads = _lastAgendaThreads
-        .map((t) => movedById[t.id] ?? t)
-        .toList();
-
-    // _rebuildAgendaModel re-emits the active per-tab section too, so
-    // the dragged block's threads land in their new day on the visible
-    // activity feed synchronously (via overlay substitution / sort).
-    _rebuildAgendaModel();
-
-    for (final t in updated) {
-      // Fire-and-forget; the optimistic override survives until the
-      // stream confirms.
-      unawaited(t.save());
-    }
-  }
-
-  /// Reorder a priority's block within a single time period.
-  ///
-  /// `periodReferenceTime` is the agenda moment from which the new
-  /// ordering applies — typically the target gap's start. `above` and
-  /// `below` identify the block's new neighbours (null = top / bottom).
-  ///
-  /// `effectiveAt` on the written `priority_block` row is purely an
-  /// agenda coordinate (the gap's anchor). It has no relation to
-  /// wall-clock `now`: a reorder of a past gap, the current gap, or a
-  /// future gap all anchor at the gap itself, and time-traveled
-  /// sessions behave the same as live ones. Earlier this used
-  /// `now` for "do-now" reorders, which silently broke ordering for
-  /// past gaps because `effectivePriorityOrderAt` filters out rows
-  /// whose `effectiveAt > moment`.
-  ///
-  /// Re-reordering the *same* gap soft-archives the previous row at
-  /// the same `effectiveAt` so the new one wins unambiguously. Rows
-  /// at *different* `effectiveAt`s (older or newer reorders of other
-  /// gaps) are preserved — they form a timeline where each gap has
-  /// the ordering the user last set for it.
-  Future<void> reorderBlockWithinPeriod({
-    required PriorityId priorityId,
-    required DateTime periodReferenceTime,
-    required PriorityId? above,
-    required PriorityId? below,
-  }) async {
-    _reorderTimestamp = DateTime.now();
-    final now = DateTime.now();
-
-    Order? aboveOrder;
-    Order? belowOrder;
-    if (above != null) {
-      final aboveBlocks = _priorityBlocksByPriority[above] ?? const [];
-      final fallback = _findPriorityFallback(above);
-      aboveOrder = Order(
-        effectivePriorityOrderAt(
-          moment: periodReferenceTime,
-          blocksForPriority: aboveBlocks,
-          fallback: fallback,
-        ),
-      );
-    }
-    if (below != null) {
-      final belowBlocks = _priorityBlocksByPriority[below] ?? const [];
-      final fallback = _findPriorityFallback(below);
-      belowOrder = Order(
-        effectivePriorityOrderAt(
-          moment: periodReferenceTime,
-          blocksForPriority: belowBlocks,
-          fallback: fallback,
-        ),
-      );
-    }
-    final newOrder = Order.between(aboveOrder, belowOrder);
-    final effectiveAt = periodReferenceTime;
-
-    log.info(
-      '[reorderBlockWithinPeriod] priority=$priorityId '
-      'order=${newOrder.value} effectiveAt=$effectiveAt',
-    );
-
-    // Optimistic: splice a synthetic row into the cache so the next
-    // rebuild reflects the new ordering immediately.
-    final optimisticRow = PriorityBlockRow(
-      id: Uuid.generate(),
-      priorityId: priorityId,
-      createdBy: Base.userId,
-      orderValue: newOrder,
-      effectiveAt: effectiveAt,
-      archivedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    );
-    final updated = <PriorityId, List<PriorityBlockRow>>{
-      for (final entry in _priorityBlocksByPriority.entries)
-        entry.key: List.of(entry.value),
-    };
-    final list = updated.putIfAbsent(priorityId, () => <PriorityBlockRow>[]);
-    // Soft-archive any existing non-archived row at the same
-    // effectiveAt for this priority — re-reorders of the same gap
-    // replace the previous entry rather than accumulating duplicates
-    // that effectivePriorityOrderAt would pick between
-    // non-deterministically. Rows at *other* effectiveAts represent
-    // orderings the user established for other gaps and stay intact.
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].effectiveAt.isAtSameMomentAs(effectiveAt) &&
-          list[i].archivedAt == null) {
-        list[i] = list[i].copyWith(archivedAt: Value(now));
-      }
-    }
-    list.add(optimisticRow);
-    _priorityBlocksByPriority = updated;
-
-    _rebuildAgendaModel();
-
-    final block = store.PriorityBlock(
-      priorityId: priorityId,
-      orderValue: newOrder,
-      effectiveAt: effectiveAt,
-    );
-    unawaited(block.save());
-  }
 
   /// Reschedule an existing focus block (`priority_block` row with
   /// positive `duration`) to [targetAnchor]. Soft-archives [source] and
@@ -2176,15 +1992,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _rebuildAgendaModel();
 
     unawaited(anchored.save());
-  }
-
-  /// Look up a priority's fallback order value. Used by
-  /// `reorderBlockWithinPeriod` when computing the order between two
-  /// neighbours; matches the same fallback `AgendaBuilder` uses when no
-  /// `priority_block` rows exist for a priority.
-  double _findPriorityFallback(PriorityId id) {
-    final priority = _findPriorityById(id);
-    return priority?.order.value ?? 0.0;
   }
 
   Priority? _findPriorityById(PriorityId id) {
@@ -3412,7 +3219,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       includeUnscheduled: false,
       range: dateRange,
       // Restrict the datetime-based event branches to "in progress at
-      // now and forward" — `makeAgendaItems` drops past link schedule
+      // now and forward" — `AgendaBuilder` drops past link schedule
       // instances anyway, so fetching them only wastes work. Uses
       // [Time.now] so the agenda matches the user's frozen time when
       // time travel is enabled (otherwise events on dates between
@@ -3423,7 +3230,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       eventsOnly: true,
     );
     // Todos query: every active user-only todo, no LIMIT and no date
-    // range. Surfacing one row per todo is intentional — `makeAgendaItems`
+    // range. Surfacing one row per todo is intentional — `AgendaBuilder`
     // collapses past-dated todos to today via `agendaAt`, and future-dated
     // todos to their actual date, so the stream's full output naturally
     // covers the "current day + future days with at least one todo"
@@ -3940,7 +3747,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   // [fetchMoreAgendaItems] as the user scrolls.
   int _agendaHorizonDays = 30;
   // Minimum days from today to populate with empty headers. Starts at 0
-  // so [makeAgendaItems]'s 14-day buffer past the last-content date
+  // so [AgendaBuilder.build]'s 14-day buffer past the last-content date
   // dominates on the initial render. Grows in [fetchMoreAgendaItems] as
   // the user scrolls past the buffer so more empty days appear instead
   // of leaving the user on a stuck spinner.

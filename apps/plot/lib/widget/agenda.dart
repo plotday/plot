@@ -628,18 +628,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
   }
 
   /// True for blocks whose lead priority owns an editable pending
-  /// duration in the gutter — both standalone [PriorityBlock]s and
-  /// [GapBlock]s that have promoted a priority into their header
-  /// (either via threads or a cascade-merged slice).
-  /// Empty / no-priority gaps stay read-only.
-  static bool _blockHasEditablePending(AgendaBlock block) {
-    if (block is PriorityBlock) return true;
-    if (block is GapBlock &&
-        (block.threads.isNotEmpty || block.cascadeDuration != null)) {
-      return true;
-    }
-    return false;
-  }
+  /// duration in the gutter. Only user-scheduled focus blocks
+  /// ([PriorityBlock]s) qualify; events and read-only gaps do not.
+  static bool _blockHasEditablePending(AgendaBlock block) =>
+      block is PriorityBlock;
 
   @override
   void dispose() {
@@ -800,27 +792,12 @@ class _BlockHeaderState extends State<_BlockHeader> {
           overflow: TextOverflow.ellipsis,
         );
       }
-    } else if (_blockHasEditablePending(block)) {
-      // Priority blocks and gap blocks that have promoted a priority
-      // into their header both surface the block's pending in the
-      // gutter. [NowBloc.watchBlockDisplay] only overlays an active or
-      // paused-explicit session's live remaining; otherwise it emits
-      // null and we use the block's resolved `cascadeDuration` from the
-      // agenda model. The model walker (`_attachBlockDurations`) is the
-      // single source of truth for which row attaches to which block,
-      // so we never duplicate that resolve in the widget. When the
-      // block has no pending and is a [GapBlock], the gap's own range
-      // duration takes over (preserves the legacy time-marker
-      // behaviour).
-      final slice = block is PriorityBlock
-          ? block.cascadeDuration
-          : (block as GapBlock).cascadeDuration;
-      final pending = _pendingDisplay?.duration ?? slice;
-      Duration? displayed = pending;
-      if (displayed == null && block is GapBlock) {
-        final dur = dateTimeRange?.duration;
-        if (dur != null && dur.inSeconds > 0) displayed = dur;
-      }
+    } else if (block is PriorityBlock) {
+      // A user-scheduled focus block surfaces its duration in the gutter.
+      // [NowBloc.watchBlockDisplay] overlays an active or paused-explicit
+      // session's live remaining; otherwise it emits null and we fall back
+      // to the block's own scheduled duration.
+      final displayed = _pendingDisplay?.duration ?? block.cascadeDuration;
       if (displayed != null) {
         gutterRow2 = Text(
           _formatDuration(displayed),
