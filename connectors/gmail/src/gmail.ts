@@ -1491,7 +1491,9 @@ export class Gmail extends Connector<Gmail> {
    * fills `draft.recipients` from the connection-scoped
    * `contact_external_account` rows and falls back to `contact.email` for
    * any picked contact without a row. Free-form addresses the user typed in
-   * arrive via `draft.inviteEmails`. The connector just merges and dedupes.
+   * arrive via `draft.inviteEmails`. The connector merges, dedupes, and
+   * splits recipients into To/Cc/Bcc using each recipient's `role` (so BCC
+   * recipients stay out of the visible To/Cc headers).
    *
    * The returned `NewLinkWithNotes`'s `meta` matches what `onNoteCreated`
    * reads so replies work with zero extra wiring.
@@ -1501,22 +1503,38 @@ export class Gmail extends Connector<Gmail> {
   ): Promise<NewLinkWithNotes | null> {
     if (draft.type !== "email") return null;
 
+    // Split recipients into To/Cc/Bcc by their thread role so CC/BCC
+    // recipients are addressed correctly — and, critically, so BCC
+    // recipients are never placed in the To: header where the other
+    // recipients would see them (privacy leak). The `email` link type
+    // declares `to`/`cc`/`bcc` roles (with `bcc` hidden); the runtime
+    // resolves each contact's role from the thread's contact_meta into
+    // `recipient.role`. A null role means the contact had no explicit
+    // role entry, so it defaults to To. Free-form typed addresses
+    // (`inviteEmails`) carry no contact role and likewise default to To.
     const seenEmails = new Set<string>();
     const toEmails: string[] = [];
-    const addRecipient = (raw: string | null | undefined) => {
+    const ccEmails: string[] = [];
+    const bccEmails: string[] = [];
+    const addRecipient = (
+      raw: string | null | undefined,
+      role: string | null
+    ) => {
       if (!raw) return;
       const trimmed = raw.trim();
       if (!trimmed) return;
       const key = trimmed.toLowerCase();
       if (seenEmails.has(key)) return;
       seenEmails.add(key);
-      toEmails.push(trimmed);
+      if (role === "cc") ccEmails.push(trimmed);
+      else if (role === "bcc") bccEmails.push(trimmed);
+      else toEmails.push(trimmed);
     };
 
-    for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId);
-    for (const email of draft.inviteEmails ?? []) addRecipient(email);
+    for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
+    for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
 
-    if (toEmails.length === 0) {
+    if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
       console.error(
         "[gmail] onCreateLink: no email recipients could be derived from draft"
       );
@@ -1538,6 +1556,8 @@ export class Gmail extends Connector<Gmail> {
 
     const raw = buildNewEmailMessage({
       to: toEmails,
+      cc: ccEmails,
+      bcc: bccEmails,
       from: fromEmail,
       subject,
       body,

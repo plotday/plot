@@ -974,19 +974,29 @@ export async function syncGmailMailboxIncremental(
 export function buildNewEmailMessage(options: {
   to: string[];
   cc?: string[];
+  bcc?: string[];
   from: string;
   subject: string;
   body: string;
 }): string {
-  const { to, cc = [], from, subject, body } = options;
+  const { to, cc = [], bcc = [], from, subject, body } = options;
 
-  const lines: string[] = [
-    `From: ${from}`,
-    `To: ${to.join(", ")}`,
-  ];
+  const lines: string[] = [`From: ${from}`];
+
+  // Only emit recipient headers that have addresses. A message may be
+  // addressed entirely via Cc/Bcc (no To). Gmail's send API delivers to
+  // Bcc recipients and strips the Bcc header from the copy other
+  // recipients receive, so listing them here does not expose them.
+  if (to.length > 0) {
+    lines.push(`To: ${to.join(", ")}`);
+  }
 
   if (cc.length > 0) {
     lines.push(`Cc: ${cc.join(", ")}`);
+  }
+
+  if (bcc.length > 0) {
+    lines.push(`Bcc: ${bcc.join(", ")}`);
   }
 
   lines.push(`Subject: ${subject}`);
