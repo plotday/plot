@@ -273,8 +273,10 @@ class ColourSchemeData extends Equatable {
   /// stronger than the subtler [sectionHeaderBackground] used for in-list
   /// section/date headers.
   ///
-  /// In light mode a pure-neutral band; in dark mode it inherits the
-  /// background's faint warm chroma via [background].
+  /// In light mode a pure-neutral band (chroma forced to zero); in dark mode
+  /// it uses [background] and inherits its faint warm chroma. The sibling
+  /// [sectionHeaderBackground] never forces chroma to zero, so it stays
+  /// warm-tinted in both modes.
   Color get pageHeaderBackground {
     final relDarken = pow(_darkenFactor, 3).toDouble();
     if (brightness == Brightness.light) {
@@ -303,7 +305,7 @@ class ColourSchemeData extends Equatable {
   /// L4 — darkest panel background. Used by the universal header and the
   /// left-panel priorities section so they read as a continuous dark
   /// frame around the lighter middle/right content. Rendered at depth 7
-  /// so it pops clearly against L2 (agenda body) and L3 (section headers)
+  /// so it pops clearly against L2 (agenda body) and the L3 header bands
   /// — at depth 4 the gap to L3 was too small to feel like a frame.
   Color get panelDarkestBackground => _atAbsoluteDepth(7).background;
 
