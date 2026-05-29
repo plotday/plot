@@ -23,7 +23,10 @@ import {
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
 import { notifySync, notifyUserSyncByEnv } from "./notify";
-import { stripAnnounceContactsFromThreads } from "./viewer";
+import {
+  stripAnnounceContactsFromThreads,
+  stripHiddenRoleContactsFromThreads,
+} from "./viewer";
 import { twistFactory } from "../../twist/factory";
 
 /** Client-supplied request to create an external item via a connector. */
@@ -212,11 +215,11 @@ threads.get("/sync/threads", async (c) => {
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
 
-  // TODO(contact-roles): when a connector starts emitting hidden roles (e.g.
-  // Gmail BCC), filter contact_meta entries here based on the role config's
-  // `hidden` flag — keep the entry only when the requesting user is either
-  // the contact (linked via user_contact) or the `addedBy` user. Until then
-  // every entry is visible to every viewer.
+  // Hide BCC-style recipients (link types with a `hidden` contact role) from
+  // viewers who aren't the recipient themselves or the user who added them, so
+  // a BCC contact isn't exposed to the other recipients via the shared
+  // thread.contacts / contact_meta.
+  await stripHiddenRoleContactsFromThreads(c.var.db, userId, rows as any);
 
   // Version-gated serialization: apiVersion < 3 clients expect a `topics`
   // array (the legacy name for what is now `groups`). Map groups → topics
