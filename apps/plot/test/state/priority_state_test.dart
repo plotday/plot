@@ -57,7 +57,7 @@ void main() {
     });
     tearDown(() => Time.unfreeze());
 
-    test('today\'s date header survives the now-event collapse', () {
+    test('passes builder output through without stripping past content', () {
       final priority = _testPriority();
 
       // A thread happening "now" — the AgendaHeaderItem carries the
@@ -72,9 +72,9 @@ void main() {
       final today = Date.today();
       final tomorrow = today.addDays(1);
 
-      // Simulate the flat agenda items: today's date header, then a past
-      // event header for today, then the now-event header, then a future
-      // section.
+      // Simulate the flat agenda items the builder emits: today's date
+      // header, then a past event header for today, then the now-event
+      // header, then a future section.
       final items = <AgendaItem>[
         AgendaHeaderItem(date: today),
         AgendaHeaderItem(
@@ -94,10 +94,11 @@ void main() {
 
       final state = _stateWith(priority: priority, agendaItems: items);
 
-      // The now-event collapse drops the past-event header at index 1
-      // and the today-date header at index 0 — but agendaViewItems must
-      // reinject today's date header so the agenda always opens with a
-      // header above the first thread.
+      // The builder now owns dedup/window/gap synthesis and the today
+      // header, so agendaViewItems no longer collapses past content — it
+      // passes the builder's output through (only stripping the legacy
+      // "Now" text header and marking the next block). The agenda still
+      // opens with today's date header because the builder emits it first.
       final view = state.agendaViewItems;
       expect(view, isNotEmpty);
       expect(
@@ -113,14 +114,42 @@ void main() {
         isTrue,
       );
 
-      // The past-event header at 9am is collapsed away.
+      // The past-event header at 9am is preserved — past content is no
+      // longer stripped at the view layer.
       expect(
         view.any((item) =>
             item is AgendaHeaderItem &&
-            item.dateTimeRange?.start ==
-                DateTime(2026, 5, 2, 9, 0)),
-        isFalse,
+            item.dateTimeRange?.start == DateTime(2026, 5, 2, 9, 0)),
+        isTrue,
+        reason: 'view getter must not fast-forward past past content',
       );
+    });
+
+    test('strips the legacy standalone "Now" text header', () {
+      final priority = _testPriority();
+      final today = Date.today();
+
+      // A bare "Now" text header with no thread is the legacy marker that
+      // agendaViewItems removes (today's date header carries the
+      // "we're here now" signal instead).
+      final items = <AgendaItem>[
+        AgendaHeaderItem(date: today),
+        AgendaHeaderItem(now: true, text: 'Now'),
+        AgendaHeaderItem(date: today.addDays(1)),
+      ];
+      final state = _stateWith(priority: priority, agendaItems: items);
+
+      final view = state.agendaViewItems;
+      expect(
+        view.any((item) =>
+            item is AgendaHeaderItem &&
+            item.now &&
+            item.text == 'Now' &&
+            item.thread == null),
+        isFalse,
+        reason: 'the legacy "Now" text header must be stripped',
+      );
+      expect(view.length, 2);
     });
 
     test('preserves today\'s date header when no now-event is collapsed',

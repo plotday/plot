@@ -1517,23 +1517,25 @@ class _ConferencingInlineState extends State<_ConferencingInline> {
     // as interactive without shifting layout.
     final color = _hovered ? context.theme.plotColors.muted : widget.color;
 
-    // Lay the glyph out *inside* the label's text line as a [WidgetSpan]
-    // rather than as a sibling in a [Row]. The text engine then positions
-    // it against the font's own metrics (`PlaceholderAlignment.middle`),
-    // so it shares the label's optical line and lands on the same physical
-    // pixel in every row. A sibling icon nudged by a fractional
-    // `Transform` instead rounds differently at each row's sub-pixel
-    // baseline, which made one row's icon sit a pixel above another's.
+    // Render the glyph as a real inline character in the label's text run —
+    // a [TextSpan] in the icon font, not an [Icon] wrapped in a [WidgetSpan].
+    // A [WidgetSpan] forces the icon into its own `height: 1.0` box and then
+    // `PlaceholderAlignment.middle` re-centers that box on the *line* box,
+    // which is `_agendaRowLineHeight` (1.25) tall — so its geometric centre
+    // sits a fraction above the text glyphs' optical centre and the icon
+    // floats high (more obvious with the wide, rectangular camcorder glyph).
+    // As an inline glyph it shares the run's font size and line height, so
+    // Font Awesome's own baseline metrics land it on the same optical line as
+    // the label, identically in every row.
     final content = widget.withLabel
         ? Text.rich(
             TextSpan(
               children: [
-                WidgetSpan(
-                  alignment: PlaceholderAlignment.middle,
-                  child: Icon(
-                    PlotIcon.video,
-                    size: widget.fontSize,
-                    color: color,
+                TextSpan(
+                  text: String.fromCharCode(PlotIcon.video.codePoint),
+                  style: TextStyle(
+                    fontFamily: PlotIcon.video.fontFamily,
+                    package: PlotIcon.video.fontPackage,
                   ),
                 ),
                 WidgetSpan(

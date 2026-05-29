@@ -970,14 +970,27 @@ class Store extends _$Store {
       log.warning("Error saving ${toString()}", e, t);
       rethrow;
     }
-    // Fire and forget push through orchestrator for dependency awareness
+    // Fire and forget push through orchestrator for dependency awareness.
+    //
+    // Run the push in the root zone so it escapes any active transaction
+    // zone. When `save()` is called inside `Store.transaction(...)`, drift
+    // routes DB operations to the transaction executor via a Zone. A
+    // fire-and-forget push started in that zone captures it, so the push's
+    // own writes (the claim `UPDATE ... RETURNING` and the `pending` clear)
+    // execute *after* the transaction body returns and the executor is
+    // closed — throwing "Transaction used after it was closed". Hopping to
+    // the root zone routes those writes to the main executor instead, where
+    // they serialize behind the open transaction and therefore observe its
+    // committed rows.
     final entity = SyncOrchestrator.getEntityByTableName(baseTable.table);
-    if (entity != null) {
-      SyncOrchestrator.instance.push(entity);
-    } else {
-      // Fallback to direct push for entities not in orchestrator
-      push(table, baseTable);
-    }
+    Zone.root.run(() {
+      if (entity != null) {
+        SyncOrchestrator.instance.push(entity);
+      } else {
+        // Fallback to direct push for entities not in orchestrator
+        push(table, baseTable);
+      }
+    });
   }
 
   Future<bool> push<TABLE extends SyncableTable, DATA extends DataClass>(
