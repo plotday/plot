@@ -84,13 +84,18 @@ class _DateInputState extends State<DateInput> {
     widget.onChanged(newDate);
   }
 
+  void _stepBackDay() => _navigateDate(-1);
+  void _stepForwardDay() => _navigateDate(1);
+  void _jumpBackWeek() => _navigateDate(-7);
+  void _jumpForwardWeek() => _navigateDate(7);
+
   @override
   Widget build(BuildContext context) {
     widget.stepController
-      ?..stepBack = (() => _navigateDate(-1))
-      ..stepForward = (() => _navigateDate(1))
-      ..jumpBack = (() => _navigateDate(-7))
-      ..jumpForward = (() => _navigateDate(7))
+      ?..stepBack = _stepBackDay
+      ..stepForward = _stepForwardDay
+      ..jumpBack = _jumpBackWeek
+      ..jumpForward = _jumpForwardWeek
       ..focusEditor = _focusNode.requestFocus;
     final theme = context.theme;
 
