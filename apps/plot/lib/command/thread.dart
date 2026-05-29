@@ -698,6 +698,17 @@ class ArchiveThread extends Command {
   }
 }
 
+/// Whether an RSVP change should target this specific occurrence rather than
+/// the series. True only when the user already has an occurrence-level RSVP
+/// that was set directly on the occurrence (not inherited from the series).
+/// Initial RSVPs and toggles of series-inherited RSVPs target the series.
+bool rsvpTargetsOccurrence({
+  required bool hasExistingRsvp,
+  required String? occurrence,
+  required bool inheritedFromSeries,
+}) =>
+    hasExistingRsvp && occurrence != null && !inheritedFromSeries;
+
 class ToggleRsvp extends _UpdateThreadCommand {
   ToggleRsvp(super.thread)
     : _targetStatus = _effectiveRsvp(thread) == 'attend' ? 'skip' : 'attend',
