@@ -26,6 +26,32 @@ import { notifySync, notifyUserSyncByEnv } from "./notify";
 import { stripAnnounceContactsFromThreads } from "./viewer";
 import { twistFactory } from "../../twist/factory";
 
+/** Client-supplied request to create an external item via a connector. */
+export type CreateLinkSpec = {
+  twist_instance_id?: string;
+  channel_id?: string | null;
+  type?: string;
+  status?: string;
+};
+
+/**
+ * Whether a `create_link` spec carries enough to dispatch to a connector's
+ * onCreateLink.
+ *
+ * `channel_id` is intentionally NOT required. Address/contacts-mode compose —
+ * link types whose `compose.targets` is `"addresses"` (Gmail email) or
+ * `"contacts"` (Slack DMs) — has no specific channel: the Flutter client sends
+ * `channel_id: null` (see `CreateTarget.toUserAction`, `isDmType ? null : …`)
+ * and the connector resolves its own channel inside onCreateLink. Requiring
+ * channel_id here silently dropped every such compose — no link, no message,
+ * no error. Only twist_instance_id, type, and status are needed to dispatch.
+ */
+export function isDispatchableCreateLink(
+  spec: CreateLinkSpec | undefined,
+): spec is CreateLinkSpec & { twist_instance_id: string; type: string; status: string } {
+  return Boolean(spec?.twist_instance_id && spec.type && spec.status);
+}
+
 const threads = new Hono<{ Bindings: Bindings }>();
 
 // GET /sync/threads
@@ -428,14 +454,7 @@ threads.post("/sync/threads", async (c) => {
   // the same reference as `body` (when the client sends a flat body with no
   // `thread` wrapper), so a later `delete threadData.create_link` would
   // also clear `body.create_link` if we didn't snapshot here.
-  const createLinkSpec = body.create_link as
-    | {
-        twist_instance_id?: string;
-        channel_id?: string;
-        type?: string;
-        status?: string;
-      }
-    | undefined;
+  const createLinkSpec = body.create_link as CreateLinkSpec | undefined;
   const noteContent = (body.note_content as string | null | undefined) ?? null;
 
   const threadData = body.thread || body;
@@ -807,10 +826,7 @@ threads.post("/sync/threads", async (c) => {
   // returns immediately — the link will appear via sync once the connector
   // responds.
   if (
-    createLinkSpec?.twist_instance_id &&
-    createLinkSpec.channel_id &&
-    createLinkSpec.type &&
-    createLinkSpec.status &&
+    isDispatchableCreateLink(createLinkSpec) &&
     result &&
     threadData.draft !== true
   ) {
