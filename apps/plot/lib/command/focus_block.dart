@@ -1,7 +1,8 @@
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart' hide PriorityBlock;
 import 'package:plot/store/store.dart' as store show PriorityBlock;
-import 'package:plot/widget/schedule_focus_modal.dart';
+import 'package:plot/widget/form_scheduler.dart';
+import 'package:plot/command/priority.dart' show createPriorityInline;
 import 'package:plot/widget/widget.dart';
 
 import 'base.dart';
@@ -25,11 +26,11 @@ class OpenScheduleFocusModal extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await Modal(
-      showCloseButton: false,
-      builder: (_) =>
-          ScheduleFocusModal.create(date: date, defaultPriority: defaultPriority),
-    ).show<void>(context);
+    await openScheduleFocusModal(
+      context,
+      date: date,
+      initialPriority: defaultPriority,
+    );
     return const CommandDone();
   }
 }
@@ -129,4 +130,118 @@ class ArchiveFocusBlock extends Command {
     );
     return const CommandDone();
   }
+}
+
+/// Build the "Schedule focus block" form. Create mode when [existingRow] is
+/// null; edit mode (with Delete + past-time editing) otherwise.
+FormData scheduleFocusBlockForm({
+  Date? date,
+  Priority? initialPriority,
+  PriorityBlockRow? existingRow,
+}) {
+  final isEdit = existingRow != null;
+
+  // Initial range: edit → from the row; create → next 15-min boundary today
+  // (or 09:00 on a future date), 30-minute default.
+  final DateTimeRange initialRange;
+  if (isEdit) {
+    final start = existingRow.effectiveAt;
+    final duration = existingRow.duration ?? const Duration(minutes: 30);
+    initialRange = DateTimeRange(start, start.add(duration));
+  } else {
+    final base = date?.toDateTime() ?? Date.today().toDateTime();
+    final today = Date.today();
+    final isToday =
+        base.year == today.year &&
+        base.month == today.month &&
+        base.day == today.day;
+    final DateTime start;
+    if (isToday) {
+      final now = Time.now();
+      final remainder = now.minute % 15;
+      final pad = remainder == 0 ? 0 : 15 - remainder;
+      start = DateTime(now.year, now.month, now.day, now.hour, now.minute + pad);
+    } else {
+      start = DateTime(base.year, base.month, base.day, 9, 0);
+    }
+    initialRange = DateTimeRange(start, start.add(const Duration(minutes: 30)));
+  }
+
+  final priorityField = FormSelect<Priority>(
+    key: 'priority',
+    label: 'Priority',
+    required: true,
+    placeholder: 'Select priority',
+    initialValue: initialPriority,
+    items: (search) async {
+      final priorities = await Priority.get(order: PriorityOrder.nested);
+      if (search == null || search.isEmpty) return priorities;
+      return priorities.where((p) => p.matchesSearch(search)).toList();
+    },
+    titleBuilder: (p) => p.title,
+    labelBuilder: (p) => PriorityLabel(priority: p),
+    onAdd: (ctx) => createPriorityInline(ctx, parent: initialPriority),
+  );
+
+  final scheduler = FormScheduler(
+    key: 'schedule',
+    initialRange: initialRange,
+    allowPastTimes: isEdit,
+  );
+
+  final items = <FormItem>[
+    priorityField,
+    scheduler,
+    FormButton(
+      key: 'submit',
+      isPrimary: true,
+      buildCommand: (values) {
+        final priority = values['priority'] as Priority;
+        final range = values['schedule'] as DateTimeRange;
+        final start = range.start!;
+        final end = range.end!;
+        return ScheduleFocusBlock(
+          priorityId: priority.id,
+          start: start,
+          duration: end.difference(start),
+          existingRow: existingRow,
+        );
+      },
+    ),
+    if (isEdit)
+      FormButton(
+        key: 'delete',
+        skipValidation: true,
+        buildCommand: (_) => ArchiveFocusBlock(row: existingRow),
+      ),
+  ];
+
+  return FormData(
+    title: isEdit ? 'Edit focus block' : 'Schedule focus block',
+    dismissable: true,
+    groups: [StaticFormGroup(items: items)],
+  );
+}
+
+/// Open the schedule-focus modal as a [FormModal]. Used by both the agenda
+/// date-header `+` button (create) and agenda block editing (create or edit).
+Future<void> openScheduleFocusModal(
+  BuildContext context, {
+  Date? date,
+  Priority? initialPriority,
+  PriorityBlockRow? existingRow,
+}) async {
+  final form = scheduleFocusBlockForm(
+    date: date,
+    initialPriority: initialPriority,
+    existingRow: existingRow,
+  );
+  final groups = await form.list();
+  if (!context.mounted) return;
+  await FormModal(
+    form,
+    groups: groups,
+    rootContext: context,
+    constraints: const BoxConstraints(maxHeight: 520, maxWidth: 420),
+  ).run(context);
 }
