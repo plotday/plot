@@ -2030,6 +2030,38 @@ export class Integrations extends Tool implements IAuth {
           composeTargets === "addresses"
         ) {
           const contactIds = draft.contacts.map((c) => c.id);
+
+          // Resolve each contact's role (e.g. to/cc/bcc) from the
+          // originating thread's contact_meta so role-aware connectors can
+          // honor it. Gmail in particular must keep CC/BCC recipients out
+          // of the To: header — placing a BCC recipient in To: exposes them
+          // to everyone else on the message (privacy leak). Missing entries
+          // → null, which the connector treats as its default role.
+          const roleByContactId = new Map<string, string>();
+          try {
+            const threadRow = await this.db
+              .selectFrom("thread")
+              .select("contact_meta")
+              .where("id", "=", threadId)
+              .executeTakeFirst();
+            const meta: unknown =
+              threadRow?.contact_meta == null
+                ? null
+                : typeof threadRow.contact_meta === "string"
+                  ? JSON.parse(threadRow.contact_meta)
+                  : threadRow.contact_meta;
+            if (meta && typeof meta === "object") {
+              for (const [cid, entry] of Object.entries(
+                meta as Record<string, unknown>,
+              )) {
+                const role = (entry as { role?: unknown } | null)?.role;
+                if (typeof role === "string") roleByContactId.set(cid, role);
+              }
+            }
+          } catch {
+            // Non-fatal: recipients fall back to null role (connector default).
+          }
+
           // Scope by twist_instance_id (the connection): two Slack workspaces
           // with the same Plot contact have separate `contact_external_account`
           // rows, one per workspace. Returning only this connection's rows is
@@ -2051,6 +2083,7 @@ export class Integrations extends Tool implements IAuth {
               id: r.id as Uuid,
               name: r.name ?? null,
               externalAccountId: r.account_id,
+              role: roleByContactId.get(r.id) ?? null,
             }));
           } else {
             // "addresses": fall back to contact.email (lowercased) for any
@@ -2074,6 +2107,7 @@ export class Integrations extends Tool implements IAuth {
                   id: row.id as Uuid,
                   name: row.name ?? null,
                   externalAccountId: row.account_id,
+                  role: roleByContactId.get(row.id) ?? null,
                 });
                 continue;
               }
@@ -2083,6 +2117,7 @@ export class Integrations extends Tool implements IAuth {
                   id: fallback.id as Uuid,
                   name: fallback.name ?? null,
                   externalAccountId: fallback.email.toLowerCase(),
+                  role: roleByContactId.get(fallback.id) ?? null,
                 });
               }
             }
