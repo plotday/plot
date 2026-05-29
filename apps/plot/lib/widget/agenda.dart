@@ -285,7 +285,7 @@ class AgendaTile extends StatelessWidget {
           // intentionally ignored. The + button stays vertically centred.
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(left: spacing.sm),
+              padding: EdgeInsets.only(left: spacing.md),
               child: Text.rich(
                 TextSpan(
                   children: [
