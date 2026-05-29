@@ -3418,12 +3418,21 @@ SELECT
     final sqlBuf = StringBuffer();
     final now = Time.now();
 
+    // `urgent` and `importance` are sort keys for the *unread* cluster only —
+    // they decide which unread threads surface (and notify) first. The read
+    // tail (the Done section) must order purely by recency (`activity_at`), so
+    // gate both to `0` for read rows. Without this, a read thread with no
+    // importance score (e.g. a freshly self-authored thread, importance 0)
+    // sorts below the whole importance-50 band and falls outside the LIMITed
+    // load window, so it never reaches the top of Done despite being newest.
+    // The cursor (built from these aliases) stores the gated values, so
+    // pagination stays monotonic under the same ORDER BY.
     sqlBuf.writeln('''
 SELECT
   a.id AS id,
   COALESCE(a.unread, 0) AS unread,
-  COALESCE(a.urgent, 0) AS urgent,
-  a.importance AS importance,
+  CASE WHEN COALESCE(a.unread, 0) = 1 THEN COALESCE(a.urgent, 0) ELSE 0 END AS urgent,
+  CASE WHEN COALESCE(a.unread, 0) = 1 THEN a.importance ELSE 0 END AS importance,
   MAX(MAX(
     COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
     COALESCE(a.bumped_at, '0000'),
