@@ -472,7 +472,17 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     extractAccountLabel: (d) => (d as GoogleProviderData).email || null,
     additionalParams: {
       access_type: "offline",
-      prompt: "select_account",
+      // "consent" forces the permission screen so Google re-issues a
+      // refresh_token. Without it, an account that already granted these
+      // scopes (e.g. disconnected in Plot but never revoked in the Google
+      // account, or a second Google connector reusing an existing grant)
+      // gets an access-token-only response that expires in ~1h and can't
+      // refresh — the same re-auth loop fixed for re-auth in #218, but on
+      // the initial-connect path. "select_account" keeps the account chooser
+      // (Google accepts a space-separated prompt list). On a genuine first
+      // authorization Google shows consent anyway, so the only added friction
+      // is a re-confirmation when a grant already exists.
+      prompt: "select_account consent",
       // Incremental authorization: token carries previously granted scopes,
       // but the consent screen lists only newly requested ones.
       include_granted_scopes: "true",
