@@ -11,7 +11,9 @@ class PlotIcon {
   static const pipe = FontAwesomeIcons.pipe;
   static const schedule = FontAwesomeIcons.calendar;
   static const add = FontAwesomeIcons.plusLarge;
+  static const plus = FontAwesomeIcons.plus;
   static const addNote = FontAwesomeIcons.penToSquare;
+  static const edit = FontAwesomeIcons.pen;
   static const remove = FontAwesomeIcons.minus;
   static const startOfDay = FontAwesomeIcons.sunHaze;
   static const priority = FontAwesomeIcons.bullseyeArrow;
@@ -145,10 +147,16 @@ class PlotIcon {
   static const confused = FontAwesomeIcons.faceConfused;
   static const dismayed = FontAwesomeIcons.faceAnguished;
 
-  // RSVPs
+  // RSVPs (avatar/people variants)
   static const attend = FontAwesomeIcons.userCheck;
   static const skip = FontAwesomeIcons.userXmark;
   static const undecided = FontAwesomeIcons.userQuestion;
+
+  // RSVP marks — used by the RSVP chip, picker, and details popover.
+  // Clean bare marks; undecided is a quiet dash, not a question mark.
+  static const rsvpGoing = FontAwesomeIcons.check;
+  static const rsvpDeclined = FontAwesomeIcons.xmark;
+  static const rsvpUndecided = FontAwesomeIcons.minus;
 
   // Thread sub-types
   static const action = FontAwesomeIcons.clipboardListCheck;
