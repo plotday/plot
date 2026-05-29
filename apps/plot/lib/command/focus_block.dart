@@ -132,6 +132,25 @@ class ArchiveFocusBlock extends Command {
   }
 }
 
+/// Display-only command shown on the submit button while the form is still
+/// incomplete (e.g. before a priority is picked), so the button reads
+/// "Schedule focus block" / "Update focus block" instead of a generic label.
+/// Never actually runs — submission is gated on form validation, which only
+/// builds the real [ScheduleFocusBlock] once the required values are present.
+class _ScheduleFocusBlockPlaceholder extends Command {
+  _ScheduleFocusBlockPlaceholder({required bool isEdit})
+    : super(
+        title: isEdit ? 'Update focus block' : 'Schedule focus block',
+        icon: PlotIcon.priority,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async =>
+      const CommandSkipped();
+}
+
 /// Build the "Schedule focus block" form. Create mode when [existingRow] is
 /// null; edit mode (with Delete + past-time editing) otherwise.
 FormData scheduleFocusBlockForm({
@@ -196,10 +215,17 @@ FormData scheduleFocusBlockForm({
       key: 'submit',
       isPrimary: true,
       buildCommand: (values) {
-        final priority = values['priority'] as Priority;
-        final range = values['schedule'] as DateTimeRange;
-        final start = range.start!;
-        final end = range.end!;
+        final priority = values['priority'] as Priority?;
+        final range = values['schedule'] as DateTimeRange?;
+        final start = range?.start;
+        final end = range?.end;
+        // buildCommand is also called for display before the form is complete
+        // (e.g. before a priority is picked). Show a labeled placeholder then;
+        // submission is gated on validation so the real command only builds
+        // once the required values are present.
+        if (priority == null || start == null || end == null) {
+          return _ScheduleFocusBlockPlaceholder(isEdit: isEdit);
+        }
         return ScheduleFocusBlock(
           priorityId: priority.id,
           start: start,
