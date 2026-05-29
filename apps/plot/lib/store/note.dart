@@ -850,6 +850,13 @@ class Note extends Equatable implements Comparable<Note> {
     return Note._formatActorNames([authorId]);
   }
 
+  /// Format the actors who added an emoji reaction for display in a tooltip
+  /// subtitle, e.g. "You, Alice, Bob" or "You, Alice, Bob + 2 more".
+  /// "You" is shown first for the current user.
+  static Future<String> formatReactionActorNames(List<ActorId> actorIds) {
+    return Note._formatActorNames(actorIds);
+  }
+
   /// Get the full Author actor for display (name, email, etc.)
   Future<Actor?> getAuthor() async {
     try {

@@ -967,13 +967,49 @@ class NoteCommands extends StatelessWidget {
         final activeEntries = reactions.entries
             .where((e) => e.value.isNotEmpty)
             .toList(growable: false);
-        // Active reactions render with the same accent-color "selected"
-        // treatment as count-tags — no border, no background.
-        final activeReactionButtons = <Widget>[
+        final excludedReactions = {for (final e in activeEntries) e.key};
+        final remainingMruSlots = (kHoverEmojiSlots - activeEntries.length)
+            .clamp(0, kHoverEmojiSlots);
+
+        // Resolve the actors who added each active reaction so they can be
+        // shown as a "You, Alice + 2 more" subtitle under the emoji name,
+        // matching how count-tags surface their actors.
+        final reactionNamesFuture = Future.wait([
           for (final entry in activeEntries)
+            Note.formatReactionActorNames(entry.value),
+        ]);
+
+        return FutureBuilder<(List<Widget>, String, List<String>)>(
+      future: Future.wait([
+        Future.wait(tagFutures),
+        assigneeNamesFuture,
+        reactionNamesFuture,
+      ]).then(
+        (results) => (
+          results[0] as List<Widget>,
+          results[1] as String,
+          results[2] as List<String>,
+        ),
+      ),
+      builder: (context, snapshot) {
+        final assigneeNames = snapshot.data?.$2 ?? '';
+        final reactionNames = snapshot.data?.$3 ?? const <String>[];
+
+        // Active reactions render with the same accent-color "selected"
+        // treatment as count-tags — no border, no background. The actors
+        // who reacted are shown as a subtitle under the emoji name (empty
+        // until the names resolve).
+        final activeReactionButtons = <Widget>[
+          for (var i = 0; i < activeEntries.length; i++)
             () {
+              final entry = activeEntries[i];
+              final names = i < reactionNames.length ? reactionNames[i] : '';
+              Command cmd = ActiveNoteReaction(note, entry.key);
+              if (names.isNotEmpty) {
+                cmd = CommandWrapper(cmd, subtitle: Value(names));
+              }
               final btn = Button.icon(
-                ActiveNoteReaction(note, entry.key),
+                cmd,
                 key: ValueKey(Object.hash(note.id, entry.key)),
                 selected: true,
               );
@@ -982,17 +1018,6 @@ class NoteCommands extends StatelessWidget {
                   : btn;
             }(),
         ];
-        final excludedReactions = {for (final e in activeEntries) e.key};
-        final remainingMruSlots = (kHoverEmojiSlots - activeEntries.length)
-            .clamp(0, kHoverEmojiSlots);
-
-        return FutureBuilder<(List<Widget>, String)>(
-      future: Future.wait([
-        Future.wait(tagFutures),
-        assigneeNamesFuture,
-      ]).then((results) => (results[0] as List<Widget>, results[1] as String)),
-      builder: (context, snapshot) {
-        final assigneeNames = snapshot.data?.$2 ?? '';
 
         // Wrap PickNoteAssignee with assignee names subtitle
         Command assigneeCommand = PickNoteAssignee(note);
