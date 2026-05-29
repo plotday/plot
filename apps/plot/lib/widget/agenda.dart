@@ -742,7 +742,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // edge lands at the same x as the right edge of the content area.
     Widget? row2Trailing;
     if (thread != null && thread.hasOtherAttendees) {
-      row2Trailing = RsvpSummary(activity: thread, fontSize: secondarySize);
+      row2Trailing = RsvpChip(activity: thread, fontSize: secondarySize);
     }
 
     final timeColWidth = agendaLeadingWidth(context);
