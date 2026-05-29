@@ -70,5 +70,13 @@ void main() {
       final out = clampScheduleRange(r(durationMin: 30), allowPast: true, now: now);
       expect(out.start, base);
     });
+    test('slides a past sub-minimum range forward AND enforces min duration', () {
+      // Exercises both phases in sequence: past-slide then 15-min clamp.
+      final tiny = DateTimeRange(base, base.add(const Duration(minutes: 5)));
+      final now = base.add(const Duration(hours: 1));
+      final out = clampScheduleRange(tiny, allowPast: false, now: now);
+      expect(out.start, now);
+      expect(out.duration, const Duration(minutes: 15));
+    });
   });
 }

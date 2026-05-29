@@ -72,12 +72,15 @@ DateTimeRange clampScheduleRange(
   var end = range.end;
   if (start == null || end == null) return range;
 
+  // Phase 1: slide a past range forward (preserving its duration for now).
   if (!allowPast && start.isBefore(now)) {
     final shift = now.difference(start);
     start = now;
     end = end.add(shift);
   }
 
+  // Phase 2: enforce the minimum duration. Must run AFTER the slide so a
+  // sub-minimum range that was also in the past still ends up >= _minDuration.
   if (end.isBefore(start) || end.difference(start) < _minDuration) {
     end = start.add(_minDuration);
   }
