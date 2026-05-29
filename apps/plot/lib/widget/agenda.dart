@@ -320,10 +320,14 @@ class AgendaTile extends StatelessWidget {
         ],
       );
 
-      // Symmetric vertical padding around each header.
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: spacing.sm),
-        child: child,
+      // A subtle full-width band sets each day apart; the symmetric vertical
+      // padding keeps the label breathing inside it.
+      return DecoratedBox(
+        decoration: BoxDecoration(color: context.colour.sectionHeaderBackground),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: spacing.sm),
+          child: child,
+        ),
       );
     }
 
@@ -349,7 +353,7 @@ class AgendaTile extends StatelessWidget {
               centerText,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: timeStyle,
+              style: timeStyle.copyWith(fontWeight: FontWeight.w500),
             ),
           );
         } else {
@@ -422,9 +426,13 @@ class AgendaTile extends StatelessWidget {
       final isTextOnlyHeading = !isGapHeader && dateTimeRange == null;
       Widget result;
       if (isTextOnlyHeading) {
-        result = Padding(
-          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
-          child: child,
+        result = DecoratedBox(
+          decoration:
+              BoxDecoration(color: context.colour.sectionHeaderBackground),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
+            child: child,
+          ),
         );
       } else {
         result = Container(
