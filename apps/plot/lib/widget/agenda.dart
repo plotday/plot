@@ -64,6 +64,20 @@ double agendaLeadingWidth(BuildContext context) {
 /// block types.
 double agendaGutterGap(BuildContext context) => context.theme.spacing.md;
 
+/// Line-height multiplier for the block header's fixed-height text rows.
+///
+/// Figtree's glyphs span ~1.2em (0.95 ascent + 0.25 descent). A line box
+/// shorter than that ink shears off descenders ("g", "y", "p") — but only on
+/// truncated lines, because `TextOverflow.ellipsis` makes `RenderParagraph`
+/// clip its painting to its own line box once the text overflows the width.
+/// Forcing `height: 1` made the box exactly 1em, one physical pixel short on
+/// the descender side, so long-enough (ellipsized) summaries lost the bottom
+/// of their text while short ones looked fine. 1.25 keeps the line box a hair
+/// taller than the ink so descenders survive the clip, and it matches the
+/// row boxes ([secondarySize] × this) so each paragraph fills its box exactly
+/// with no overflow.
+const _agendaRowLineHeight = 1.25;
+
 class AgendaTile extends StatelessWidget {
   const AgendaTile({
     this.dateTimeRange,
@@ -141,24 +155,22 @@ class AgendaTile extends StatelessWidget {
     }
     // Determine what to show in the center
     String? centerText = text;
-    // Date parts for the day header: the full weekday leads in the content
-    // area; the short month + day sit in the gutter.
+    // Date parts for the day header: the full month + day lead, then the
+    // full weekday, all left-aligned on one line.
     String? dateWeekday;
-    String? dateMonthShort;
+    String? dateMonth;
     String? dateDay;
     if (date != null) {
-      // Full weekday ("Thursday") leads in the content area; the short month
-      // + day ("May 28") sit in the gutter, the day number landing on the
-      // gutter's right edge (aligned with the times below). The whole label
-      // stays small and quiet — only the day number is a touch bolder. The
-      // year is rarely relevant in a near-term agenda, so it only appears (on
-      // the weekday) when the date isn't in the current year. Computed even
-      // when [text] or [dateTimeRange] is also set so the header can always
-      // render its label.
+      // The label reads "May 28 Thursday" — full month + day, then the full
+      // weekday — left-aligned on a single line. The whole label stays small
+      // and quiet; only the day number is a touch bolder. The year is rarely
+      // relevant in a near-term agenda, so it only appears (on the weekday)
+      // when the date isn't in the current year. Computed even when [text] or
+      // [dateTimeRange] is also set so the header can always render its label.
       dateWeekday = date!.year == Date.today().year
           ? date!.format(format: 'EEEE')
-          : date!.format(format: 'EEEE, yyyy');
-      dateMonthShort = date!.format(format: 'MMM');
+          : date!.format(format: 'EEEE yyyy');
+      dateMonth = date!.format(format: 'MMMM');
       dateDay = date!.format(format: 'd');
     } else if (centerText == null && dateTimeRange != null) {
       // Show time from DateTimeRange
@@ -236,11 +248,11 @@ class AgendaTile extends StatelessWidget {
         ? context.theme.spacing.xl
         : context.theme.spacing.md;
 
-    // Date headers separate each day by leading with the full weekday in
-    // the content area and tucking the short month + day into the gutter.
-    // The whole label shares one quiet tone and size on a single baseline;
-    // only the day number carries a slightly heavier weight. No fill —
-    // separation comes from the symmetric vertical spacing around the header.
+    // Date headers separate each day with a quiet, left-aligned label:
+    // full month + day, then the full weekday, on one line. The label
+    // ignores the time-column gutter — it just sits at a small left margin
+    // with regular spacing between its parts. One quiet tone and size
+    // throughout; only the day number carries a slightly heavier weight.
     if (date != null) {
       final smSize = context.theme.typography.sm.fontSize;
 
@@ -248,7 +260,6 @@ class AgendaTile extends StatelessWidget {
       // only part with a heavier weight, so nothing competes with the
       // content titles beside it.
       final spacing = context.theme.spacing;
-      final timeColWidth = agendaLeadingWidth(context);
       final labelStyle = TextStyle(
         color: context.theme.plotColors.veryMuted,
         fontSize: smSize,
@@ -269,48 +280,24 @@ class AgendaTile extends StatelessWidget {
       final child = Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Weekday + gutter date share a baseline; the + button stays
-          // vertically centred (an icon has no baseline to align to).
+          // Left-aligned label: "May 28 Thursday". Full month + day (the day
+          // a touch bolder), then the weekday, separated by single spaces.
+          // A small left margin keeps it off the edge; the gutter width is
+          // intentionally ignored. The + button stays vertically centred.
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                // Gutter: quiet short month + day number, right-aligned so
-                // the number lands on the same edge as the times below.
-                SizedBox(
-                  width: timeColWidth,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: agendaGutterGap(context)),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '${dateMonthShort!} ',
-                              style: labelStyle,
-                            ),
-                            TextSpan(text: dateDay!, style: dayStyle),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
+            child: Padding(
+              padding: EdgeInsets.only(left: spacing.sm),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: '${dateMonth!} ', style: labelStyle),
+                    TextSpan(text: dateDay!, style: dayStyle),
+                    TextSpan(text: ' ${dateWeekday!}', style: labelStyle),
+                  ],
                 ),
-                // Content: full weekday, in the same quiet label style as
-                // the month.
-                Expanded(
-                  child: Text(
-                    dateWeekday!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: labelStyle,
-                  ),
-                ),
-              ],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
           Padding(
@@ -323,7 +310,9 @@ class AgendaTile extends StatelessWidget {
       // A subtle full-width band sets each day apart; the symmetric vertical
       // padding keeps the label breathing inside it.
       return DecoratedBox(
-        decoration: BoxDecoration(color: context.colour.sectionHeaderBackground),
+        decoration: BoxDecoration(
+          color: context.colour.sectionHeaderBackground,
+        ),
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: spacing.sm),
           child: child,
@@ -427,8 +416,9 @@ class AgendaTile extends StatelessWidget {
       Widget result;
       if (isTextOnlyHeading) {
         result = DecoratedBox(
-          decoration:
-              BoxDecoration(color: context.colour.sectionHeaderBackground),
+          decoration: BoxDecoration(
+            color: context.colour.sectionHeaderBackground,
+          ),
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
             child: child,
@@ -743,11 +733,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
         ? context.colour.editableBackground
         : context.colour.background;
     final spacing = context.theme.spacing;
-    // Primary line (priority breadcrumb) reads at the same size as
-    // thread titles in the activity feed; secondary line (summary,
-    // time, duration, RSVP, active-timing) sits one step below for
-    // hierarchy without crowding.
-    final primarySize = context.theme.typography.md.fontSize ?? 15;
+    // Both header lines render at the activity feed's sm size: the primary
+    // line (priority breadcrumb / event title) and the secondary line
+    // (summary, time, duration, RSVP, active-timing) share one quiet scale,
+    // with hierarchy coming from colour rather than size.
     final secondarySize = context.theme.typography.sm.fontSize ?? 13;
 
     final hasTime = dateTimeRange != null;
@@ -779,7 +768,10 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // edge lands at the same x as the right edge of the content area.
     Widget? row2Trailing;
     if (thread != null && thread.hasOtherAttendees) {
-      row2Trailing = RsvpChip(activity: thread, fontSize: secondarySize);
+      row2Trailing = RsvpChip(
+        activity: thread,
+        fontSize: context.theme.typography.xs.fontSize,
+      );
     }
 
     final timeColWidth = agendaLeadingWidth(context);
@@ -803,7 +795,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           style: TextStyle(
             fontSize: secondarySize,
             color: mutedColor,
-            height: 1,
+            height: _agendaRowLineHeight,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -836,7 +828,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           style: TextStyle(
             fontSize: secondarySize,
             color: mutedColor,
-            height: 1,
+            height: _agendaRowLineHeight,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -850,7 +842,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           style: TextStyle(
             fontSize: secondarySize,
             color: mutedColor,
-            height: 1,
+            height: _agendaRowLineHeight,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -885,7 +877,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             SizedBox(
-              height: primarySize,
+              height: secondarySize * _agendaRowLineHeight,
               child: timeText != null
                   ? Align(
                       alignment: Alignment.centerRight,
@@ -896,7 +888,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                         style: TextStyle(
                           color: context.theme.colors.mutedForeground,
                           fontSize: secondarySize,
-                          height: 1,
+                          height: _agendaRowLineHeight,
                         ),
                       ),
                     )
@@ -905,7 +897,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
             if (hasSecondRow) ...[
               SizedBox(height: spacing.sm),
               SizedBox(
-                height: secondarySize * 1.25,
+                height: secondarySize * _agendaRowLineHeight,
                 child: gutterRow2 != null
                     ? Align(alignment: Alignment.centerRight, child: gutterRow2)
                     : const SizedBox.shrink(),
@@ -961,7 +953,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                height: primarySize,
+                height: secondarySize * _agendaRowLineHeight,
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: isEvent
@@ -972,7 +964,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                           style: TextStyle(
                             color: fg,
                             fontSize: secondarySize,
-                            height: 1,
+                            height: _agendaRowLineHeight,
                           ),
                         )
                       : Row(
@@ -992,7 +984,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                                 color: fg,
                                 mutedAncestorColor: mutedFg,
                                 fontSize: secondarySize,
-                                height: 1,
+                                height: _agendaRowLineHeight,
                               ),
                             ),
                           ],
@@ -1002,7 +994,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
               if (hasSecondRow) ...[
                 SizedBox(height: spacing.sm),
                 SizedBox(
-                  height: secondarySize * 1.25,
+                  height: secondarySize * _agendaRowLineHeight,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -1019,7 +1011,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: secondarySize,
-                                  height: 1,
+                                  height: _agendaRowLineHeight,
                                 ),
                               ),
                       ),
@@ -1409,7 +1401,7 @@ class _EventLocationRow extends StatelessWidget {
         final textStyle = TextStyle(
           fontSize: fontSize,
           color: mutedColor,
-          height: 1,
+          height: _agendaRowLineHeight,
         );
 
         if (conf != null && location == null) {
@@ -1556,7 +1548,7 @@ class _ConferencingInlineState extends State<_ConferencingInline> {
               style: TextStyle(
                 fontSize: widget.fontSize,
                 color: color,
-                height: 1,
+                height: _agendaRowLineHeight,
               ),
             ),
           )
@@ -1608,7 +1600,11 @@ class _LocationInline extends StatelessWidget {
       location,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: fontSize, color: color, height: 1),
+      style: TextStyle(
+        fontSize: fontSize,
+        color: color,
+        height: _agendaRowLineHeight,
+      ),
     );
     if (!_looksLikeAddress) return textWidget;
     return MouseRegion(

@@ -50,7 +50,7 @@ class PlotIcon {
   static const shared = FontAwesomeIcons.users;
   static const user = FontAwesomeIcons.user;
   static const users = FontAwesomeIcons.users;
-  static const private = FontAwesomeIcons.lock;
+  static const private = FontAwesomeIcons.usersSlash;
   static const buildingLock = FontAwesomeIcons.buildingLock;
   static const buildingUser = FontAwesomeIcons.buildingUser;
   static const offline = FontAwesomeIcons.wifiSlash;

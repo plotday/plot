@@ -1109,18 +1109,6 @@ class NoteEditorState extends State<NoteEditor> {
                           (id) => !id.isCurrentUser,
                         ),
                       ),
-                      // Private toggle (only for threads with other contacts)
-                      if (threadState.thread.contacts.length > 1 &&
-                          (!widget.draft.isPrivate ||
-                              widget.draft.authorId.isCurrentUser))
-                        Button.icon(
-                          ToggleNoteTag(
-                            widget.draft,
-                            Tag.private,
-                            Base.actorId,
-                          ),
-                          selected: widget.draft.isPrivate,
-                        ),
                     ],
                     // Link button
                     Button.icon(
@@ -1146,12 +1134,23 @@ class NoteEditorState extends State<NoteEditor> {
                         ),
                       ),
                     if (!isCurrentlyEditing) ...[
+                      // Private toggle (only for threads with other contacts).
+                      // A private note is kept among the selected people and
+                      // is not sent to the thread's connector.
+                      if (threadState.thread.contacts.length > 1 &&
+                          (!widget.draft.isPrivate ||
+                              widget.draft.authorId.isCurrentUser))
+                        Button.icon(
+                          ToggleNoteTag(
+                            widget.draft,
+                            Tag.private,
+                            Base.actorId,
+                          ),
+                          selected: widget.draft.isPrivate,
+                        ),
                       // Twist button (only when thread has twists)
                       if (threadState.threadTwists.isNotEmpty)
                         _buildTwistButton(context),
-                      // Connector button (autoReply connectors on thread)
-                      if (threadState.threadTwists.isNotEmpty)
-                        _buildConnectorButton(context),
                     ],
                   ],
                 ),
@@ -1319,8 +1318,8 @@ class NoteEditorState extends State<NoteEditor> {
   // -- Twist buttons --
 
   /// Twist button for note mode (ThreadPage). Opens a modal showing
-  /// thread twists with toggle state. Source connectors are handled by
-  /// the separate connector (plug) button and excluded here.
+  /// thread twists with toggle state. Source connectors are excluded here —
+  /// replies go to the thread's connector automatically unless private.
   Widget _buildTwistButton(BuildContext context) {
     final threadState = context.read<ThreadBloc>().state;
     final mentionableTwists = threadState.threadTwists
@@ -1349,46 +1348,6 @@ class NoteEditorState extends State<NoteEditor> {
             return const CommandDone();
           }
           await _openTwistToggleModal(ctx, mentionableTwists);
-          return const CommandDone();
-        },
-      ),
-      selected: anyEnabled,
-    );
-  }
-
-  /// Plug button for autoReply connectors on the thread. Toggles all
-  /// connectors on or off together. Hidden when no autoReply connectors
-  /// are present.
-  Widget _buildConnectorButton(BuildContext context) {
-    final threadState = context.read<ThreadBloc>().state;
-    final connectors = threadState.threadTwists
-        .where((t) => t.isSource && t.defaultMentionCreated)
-        .toList();
-    if (connectors.isEmpty) return const SizedBox.shrink();
-
-    final anyEnabled = connectors.any(
-      (c) => !_disabledTwists.contains(c.id),
-    );
-    final names = connectors.map((c) => c.name).join(', ');
-    return Button.icon(
-      CommandWrapper(
-        PickTwist(),
-        title: 'Send to $names',
-        icon: Value(PlotIcon.connection),
-        run: (action, ctx) async {
-          setState(() {
-            if (anyEnabled) {
-              // Disable all
-              for (final c in connectors) {
-                _disabledTwists.add(c.id);
-              }
-            } else {
-              // Enable all
-              for (final c in connectors) {
-                _disabledTwists.remove(c.id);
-              }
-            }
-          });
           return const CommandDone();
         },
       ),
@@ -1671,12 +1630,17 @@ class NoteEditorState extends State<NoteEditor> {
 
   // -- Finalize methods --
 
-  /// Returns the list of active (non-disabled) twist ActorIds from thread mentions.
-  List<ActorId> _getActiveTwistMentions() {
+  /// Returns the list of active (non-disabled) twist ActorIds from thread
+  /// mentions. Source connectors are included only when [includeConnectors]
+  /// is true — private notes pass `false` so they're never sent to the
+  /// thread's connector.
+  List<ActorId> _getActiveTwistMentions({required bool includeConnectors}) {
     if (widget.isNewThreadMode) return const [];
     final threadState = context.read<ThreadBloc>().state;
     return threadState.threadTwists
-        .where((t) => !t.isSource || t.defaultMentionCreated)
+        .where(
+          (t) => !t.isSource || (includeConnectors && t.defaultMentionCreated),
+        )
         .where((t) => !_disabledTwists.contains(t.id))
         .map((t) => ActorId.fromUuid(t.id))
         .toList();
@@ -1697,8 +1661,17 @@ class NoteEditorState extends State<NoteEditor> {
         ? <ActorId>{replyTo.authorId, ...?replyTo.accessContacts}.toList()
         : <ActorId>[];
 
-    // Merge active twist mentions into the note
-    final activeTwistMentions = _getActiveTwistMentions();
+    // A note is private when replying to a private note, in viewer mode, or
+    // when the user toggled the private tag. Private notes are kept among the
+    // selected people and are never sent to the thread's connector.
+    final isPrivateNote =
+        widget.viewerMode || replyRestricted || widget.draft.isPrivate;
+
+    // Merge active twist mentions into the note. Connectors only receive the
+    // reply when it isn't private.
+    final activeTwistMentions = _getActiveTwistMentions(
+      includeConnectors: !isPrivateNote,
+    );
     final allAddMentions = [...activeTwistMentions, ...replyAccessContacts];
 
     // Default share targets for read-only-thread viewers: every contact on
