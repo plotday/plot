@@ -2364,6 +2364,13 @@ class Store extends _$Store {
     WidgetsBinding.instance.addObserver(_lifecycleObserver!);
   }
 
+  /// Test-only constructor that opens the full schema against an injected
+  /// executor (e.g. `NativeDatabase.memory()`). Lets store-layer queries be
+  /// exercised end-to-end in unit tests without the production file/profile
+  /// machinery.
+  @visibleForTesting
+  Store.forTesting(super.executor);
+
   Store._(User user)
     : super(
         driftDatabase(
@@ -2388,7 +2395,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 346;
+  int get schemaVersion => 347;
 
   @override
   MigrationStrategy get migration {
@@ -3562,23 +3569,25 @@ class Store extends _$Store {
       );
     }
     if (from < 338) {
-      // Response-times rework: split "Notifications" into two mechanisms,
-      // each with a master toggle, an active-hours window list, and an SLA.
-      // The server side is already merged on main; this catches the Flutter
-      // store up. Bumped `priority.updated_at` server-side ensures every row
-      // re-pulls with values for the new columns.
-      await _safeAddColumn(m, priorities, priorities.respondScheduleEnabled);
-      await _safeAddColumn(m, priorities, priorities.respondWindow);
-      await _safeAddColumn(m, priorities, priorities.respondWithin);
+      // Response-times rework: added two mechanisms (schedule respond +
+      // early notifications), each with toggle/windows/SLA. The respond
+      // half was removed at v347, so its raw-SQL ALTERs land here and
+      // disappear during v347's TableMigration rebuild. The early-
+      // notifications half still lives on the table.
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_schedule_enabled INTEGER');
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_window TEXT');
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_within TEXT');
       await _safeAddColumn(m, priorities, priorities.earlyNotificationsEnabled);
       await _safeAddColumn(m, priorities, priorities.notifyWindow);
-      await _safeAddColumn(
-        m,
-        priorities,
-        priorities.respondScheduleEnabledSet,
-      );
-      await _safeAddColumn(m, priorities, priorities.respondWindowSet);
-      await _safeAddColumn(m, priorities, priorities.respondWithinSet);
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_schedule_enabled_set INTEGER NOT NULL DEFAULT 0');
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_window_set INTEGER NOT NULL DEFAULT 0');
+      await _safeCustomStatement(m,
+        'ALTER TABLE priorities ADD COLUMN respond_within_set INTEGER NOT NULL DEFAULT 0');
       await _safeAddColumn(
         m,
         priorities,
@@ -3711,6 +3720,17 @@ class Store extends _$Store {
     }
     if (from < 346) {
       await m.addColumn(threads, threads.droppedContacts);
+    }
+    if (from < 347) {
+      // Drop the "Schedule time to respond" columns from the priorities
+      // table. The feature was removed in favour of explicit focus
+      // blocks; only the early-notifications half remains. TableMigration
+      // rebuilds the table keeping only the columns Drift still knows
+      // about, so the respond_* columns disappear.
+      await m.alterTable(TableMigration(priorities));
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
+      );
     }
   }
 

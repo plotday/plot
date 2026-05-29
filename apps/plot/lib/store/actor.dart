@@ -402,18 +402,33 @@ class Actor extends ActorRow {
         return byName(a, b);
       });
 
-    // Tail: for actors with no in-scope history, prefer their cross-priority
-    // MRU/frequency before falling back to alphabetical. When no priority is
-    // provided, [global] === [scoped] so this collapses to alphabetical.
+    // Tail: for actors with no in-scope history, people the user has authored
+    // to *anywhere* (global authored band) come first — otherwise a sparse or
+    // empty priority surfaces only the recency tail, which inbound mailing
+    // lists dominate. Then cross-priority recency, then alphabetical. When no
+    // priority is provided, [global] === [scoped] so the authored/seen tails
+    // are empty and this collapses to alphabetical.
+    final tailAuthored = <Actor>[];
     final tailSeen = <Actor>[];
     final tailUnseen = <Actor>[];
     for (final actor in unseenInScope) {
-      if (global.firstSeenIndex.containsKey(actor.id.toUuid())) {
+      if (global.authoredFirstSeenIndex.containsKey(actor.id.toUuid())) {
+        tailAuthored.add(actor);
+      } else if (global.firstSeenIndex.containsKey(actor.id.toUuid())) {
         tailSeen.add(actor);
       } else {
         tailUnseen.add(actor);
       }
     }
+    tailAuthored.sort((a, b) {
+      final ca = global.authoredCounts[a.id.toUuid()] ?? 0;
+      final cb = global.authoredCounts[b.id.toUuid()] ?? 0;
+      if (ca != cb) return cb.compareTo(ca);
+      final ai = global.authoredFirstSeenIndex[a.id.toUuid()]!;
+      final bi = global.authoredFirstSeenIndex[b.id.toUuid()]!;
+      if (ai != bi) return ai.compareTo(bi);
+      return byName(a, b);
+    });
     tailSeen.sort((a, b) {
       final ai = global.firstSeenIndex[a.id.toUuid()]!;
       final bi = global.firstSeenIndex[b.id.toUuid()]!;
@@ -430,6 +445,7 @@ class Actor extends ActorRow {
       ...frequent,
       ...explicitFrequent,
       ...channelFrequent,
+      ...tailAuthored,
       ...tailSeen,
       ...tailUnseen,
     ];
@@ -480,8 +496,14 @@ class Actor extends ActorRow {
     final List<Actor> actors;
     final List<GroupRow> groups;
     if (search == null || search.isEmpty) {
+      // Materialize everyone surfaced by either scan. Authored contacts must
+      // be included explicitly: their threads can sit outside the recent
+      // window (the parent/root-priority case), so they may be absent from
+      // [firstSeenIndex] yet belong at the top of the list.
       final actorIds = <Uuid>{
+        ...scoped.authoredFirstSeenIndex.keys,
         ...scoped.firstSeenIndex.keys,
+        ...global.authoredFirstSeenIndex.keys,
         ...global.firstSeenIndex.keys,
       };
       actors = await _getInviteablePrimaryByIds(
@@ -522,7 +544,7 @@ class Actor extends ActorRow {
           GroupShareCandidate(:final group) =>
             scoped.groupExplicitFirstSeenIndex[group.id],
         };
-    int? anyFirstSeen(ShareCandidate c, _ThreadScanResult scan) =>
+    int? anyFirstSeen(ShareCandidate c, ThreadScanResult scan) =>
         switch (c) {
           ActorShareCandidate(:final actor) =>
             scan.firstSeenIndex[actor.id.toUuid()],
@@ -541,7 +563,7 @@ class Actor extends ActorRow {
           GroupShareCandidate(:final group) =>
             scoped.groupExplicitCounts[group.id] ?? 0,
         };
-    int anyCount(ShareCandidate c, _ThreadScanResult scan) => switch (c) {
+    int anyCount(ShareCandidate c, ThreadScanResult scan) => switch (c) {
           ActorShareCandidate(:final actor) =>
             scan.counts[actor.id.toUuid()] ?? 0,
           GroupShareCandidate(:final group) =>
@@ -604,15 +626,45 @@ class Actor extends ActorRow {
         return byName(a, b);
       });
 
+    // Tail: candidates with no history in the scoped priority. People the
+    // user has authored to *anywhere* (global authored band) come first —
+    // otherwise a thread filed under a sparse/empty priority would surface
+    // only the recency tail, which is dominated by inbound mailing lists.
+    // Then global recency-seen, then alphabetical.
+    int? globalAuthoredFirstSeen(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            global.authoredFirstSeenIndex[actor.id.toUuid()],
+          GroupShareCandidate(:final group) =>
+            global.groupAuthoredFirstSeenIndex[group.id],
+        };
+    int globalAuthoredCount(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            global.authoredCounts[actor.id.toUuid()] ?? 0,
+          GroupShareCandidate(:final group) =>
+            global.groupAuthoredCounts[group.id] ?? 0,
+        };
+
+    final tailAuthored = <ShareCandidate>[];
     final tailSeen = <ShareCandidate>[];
     final tailUnseen = <ShareCandidate>[];
     for (final c in unseen) {
-      if (anyFirstSeen(c, global) != null) {
+      if (globalAuthoredFirstSeen(c) != null) {
+        tailAuthored.add(c);
+      } else if (anyFirstSeen(c, global) != null) {
         tailSeen.add(c);
       } else {
         tailUnseen.add(c);
       }
     }
+    tailAuthored.sort((a, b) {
+      final ca = globalAuthoredCount(a);
+      final cb = globalAuthoredCount(b);
+      if (ca != cb) return cb.compareTo(ca);
+      final ai = globalAuthoredFirstSeen(a)!;
+      final bi = globalAuthoredFirstSeen(b)!;
+      if (ai != bi) return ai.compareTo(bi);
+      return byName(a, b);
+    });
     tailSeen.sort((a, b) {
       final ai = anyFirstSeen(a, global)!;
       final bi = anyFirstSeen(b, global)!;
@@ -629,27 +681,71 @@ class Actor extends ActorRow {
       ...frequent,
       ...explicitFrequent,
       ...channelFrequent,
+      ...tailAuthored,
       ...tailSeen,
       ...tailUnseen,
     ];
   }
 
-  static Future<_ThreadScanResult> _scanThreadsForSharing({
+  static Future<ThreadScanResult> _scanThreadsForSharing({
     required Set<Uuid> selfIds,
     required Path? priorityPath,
     required int limit,
   }) async {
-    final threads = await Thread.get(
+    // Two independent thread sources:
+    //   - `recent`: the most-recent N threads in scope (the activity feed).
+    //     Drives the explicit-only / channel / cross-priority fallback bands.
+    //   - `authored`: the most-recent N threads in scope that the user has
+    //     written a note in. Drives the top "Authored" bands.
+    // These are scanned separately because in an aggregating parent/root
+    // priority the recent window is a tiny, recency-biased slice of thousands
+    // of threads, so the user's authored relationships fall outside it. Pulling
+    // authored threads directly keeps the authored band populated regardless of
+    // how much inbound noise (newsletters, mailing lists) sits above them in the
+    // feed.
+    final recent = await Thread.get(
       priorityPath: priorityPath,
       draft: false,
       archived: false,
       order: ThreadOrder.reverse,
       limit: limit,
     );
-    final authoredThreadIds = await _authoredThreadIds(
-      threadIds: threads.map((t) => t.id).toList(),
+    final authored = await authoredThreadsForSharing(
+      selfIds: selfIds,
+      priorityPath: priorityPath,
+      limit: limit,
+    );
+    return buildShareScan(
+      recent: recent
+          .map(
+            (t) => ShareScanThread(
+              id: t.id,
+              contacts: t.contacts,
+              groups: t.groups,
+              isExplicit: !(t.topic?.startsWith('channel:') ?? false),
+            ),
+          )
+          .toList(),
+      authored: authored,
       selfIds: selfIds,
     );
+  }
+
+  /// Builds the share-picker tallies from two ordered thread lists.
+  ///
+  /// [recent] (most-recent-first) populates the explicit-only / channel /
+  /// cross-priority bands. [authored] (most-recent-first) populates the top
+  /// "Authored" bands. The two use independent index spaces — each band only
+  /// ever compares first-seen indices within itself, so the authored MRU stays
+  /// correct while being sourced from a different query than the recent feed.
+  ///
+  /// Pure and side-effect free so it can be unit-tested without a database.
+  @visibleForTesting
+  static ThreadScanResult buildShareScan({
+    required List<ShareScanThread> recent,
+    required List<ShareScanThread> authored,
+    required Set<Uuid> selfIds,
+  }) {
     final firstSeenIndex = <Uuid, int>{};
     final counts = <Uuid, int>{};
     final explicitFirstSeenIndex = <Uuid, int>{};
@@ -662,39 +758,47 @@ class Actor extends ActorRow {
     final groupExplicitCounts = <Uuid, int>{};
     final groupAuthoredFirstSeenIndex = <Uuid, int>{};
     final groupAuthoredCounts = <Uuid, int>{};
-    for (var i = 0; i < threads.length; i++) {
-      final thread = threads[i];
-      final isExplicit = !(thread.topic?.startsWith('channel:') ?? false);
-      final isAuthored = authoredThreadIds.contains(thread.id);
+
+    // Recent window: explicit-only / channel / cross-priority bands.
+    for (var i = 0; i < recent.length; i++) {
+      final thread = recent[i];
       for (final contactId in thread.contacts) {
         if (selfIds.contains(contactId)) continue;
         firstSeenIndex.putIfAbsent(contactId, () => i);
         counts[contactId] = (counts[contactId] ?? 0) + 1;
-        if (isExplicit) {
+        if (thread.isExplicit) {
           explicitFirstSeenIndex.putIfAbsent(contactId, () => i);
           explicitCounts[contactId] = (explicitCounts[contactId] ?? 0) + 1;
-        }
-        if (isAuthored) {
-          authoredFirstSeenIndex.putIfAbsent(contactId, () => i);
-          authoredCounts[contactId] = (authoredCounts[contactId] ?? 0) + 1;
         }
       }
       for (final groupId in thread.groups) {
         groupFirstSeenIndex.putIfAbsent(groupId, () => i);
         groupCounts[groupId] = (groupCounts[groupId] ?? 0) + 1;
-        if (isExplicit) {
+        if (thread.isExplicit) {
           groupExplicitFirstSeenIndex.putIfAbsent(groupId, () => i);
           groupExplicitCounts[groupId] =
               (groupExplicitCounts[groupId] ?? 0) + 1;
         }
-        if (isAuthored) {
-          groupAuthoredFirstSeenIndex.putIfAbsent(groupId, () => i);
-          groupAuthoredCounts[groupId] =
-              (groupAuthoredCounts[groupId] ?? 0) + 1;
-        }
       }
     }
-    return _ThreadScanResult(
+
+    // Authored threads: the top "Authored" bands. Sourced independently of the
+    // recent window so people the user writes to surface even when their
+    // threads are older than the recent activity feed.
+    for (var i = 0; i < authored.length; i++) {
+      final thread = authored[i];
+      for (final contactId in thread.contacts) {
+        if (selfIds.contains(contactId)) continue;
+        authoredFirstSeenIndex.putIfAbsent(contactId, () => i);
+        authoredCounts[contactId] = (authoredCounts[contactId] ?? 0) + 1;
+      }
+      for (final groupId in thread.groups) {
+        groupAuthoredFirstSeenIndex.putIfAbsent(groupId, () => i);
+        groupAuthoredCounts[groupId] = (groupAuthoredCounts[groupId] ?? 0) + 1;
+      }
+    }
+
+    return ThreadScanResult(
       firstSeenIndex: firstSeenIndex,
       counts: counts,
       explicitFirstSeenIndex: explicitFirstSeenIndex,
@@ -710,24 +814,69 @@ class Actor extends ActorRow {
     );
   }
 
-  /// Returns the subset of [threadIds] that contain at least one note
-  /// authored by one of [selfIds]. Used by the share picker to mark a
-  /// thread as "user has emailed in this thread" so contacts on those
-  /// threads can be banded above inbound-only senders.
-  static Future<Set<Uuid>> _authoredThreadIds({
-    required List<Uuid> threadIds,
+  /// Fetches the most-recent [limit] threads in scope that contain at least
+  /// one note authored by one of [selfIds], newest first. Scoped to the
+  /// priority subtree (priority + descendants) when [priorityPath] is set.
+  ///
+  /// This is the authored-band source. Unlike the recent activity feed, it is
+  /// not crowded out by inbound mail, so the people the user actually writes to
+  /// surface even in an aggregating parent/root priority. Recency uses the
+  /// last-note / bump / creation timestamp as a proxy for the feed's computed
+  /// `activity_at`; exact ordering only affects the small top-N MRU slice, the
+  /// frequency bands below it are order-independent.
+  @visibleForTesting
+  static Future<List<ShareScanThread>> authoredThreadsForSharing({
     required Set<Uuid> selfIds,
+    required Path? priorityPath,
+    required int limit,
   }) async {
-    if (threadIds.isEmpty || selfIds.isEmpty) return const {};
-    final n = Store.get.notes;
-    final query = Store.get.selectOnly(n, distinct: true)
-      ..addColumns([n.threadId])
-      ..where(
-        n.threadId.isIn(threadIds.map((id) => id.toBytes()).toList()) &
-            n.authorId.isIn(selfIds.map((id) => id.toBytes()).toList()),
+    if (selfIds.isEmpty) return const [];
+    final a = Store.get.threads;
+    final n = Store.get.alias(Store.get.notes, 'authored_note');
+    final selfBytes = selfIds.map((id) => id.toBytes()).toList();
+
+    final joins = <Join<HasResultSet, dynamic>>[];
+    if (priorityPath != null) {
+      final p = Store.get.alias(Store.get.priorities, 'authored_priority');
+      joins.add(
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) &
+              (p.path.equalsValue(priorityPath) |
+                  p.path.likeExp(Constant('$priorityPath%'))),
+        ),
       );
+    }
+
+    final query = Store.get.select(a).join(joins)
+      ..where(
+        a.archivedAt.isNull() &
+            a.draft.equals(false) &
+            existsQuery(
+              Store.get.selectOnly(n)
+                ..addColumns([n.id])
+                ..where(
+                  n.threadId.equalsExp(a.id) & n.authorId.isIn(selfBytes),
+                ),
+            ),
+      )
+      ..orderBy([
+        OrderingTerm.desc(a.lastNoteCreatedAt),
+        OrderingTerm.desc(a.bumpedAt),
+        OrderingTerm.desc(a.createdAt),
+      ])
+      ..limit(limit);
+
     final rows = await query.get();
-    return rows.map((r) => Uuid.fromBytes(r.read(n.threadId)!)).toSet();
+    return rows.map((row) {
+      final t = row.readTable(a);
+      return ShareScanThread(
+        id: t.id,
+        contacts: t.contacts ?? const [],
+        groups: t.groups ?? const [],
+        isExplicit: !(t.topic?.startsWith('channel:') ?? false),
+      );
+    }).toList();
   }
 
   /// Returns all actor IDs that belong to the current user.
@@ -740,7 +889,8 @@ class Actor extends ActorRow {
     for (final actor in _cache.values) {
       if (actor.self) ids.add(actor.id);
     }
-    final basePrimary = Base.actorIdOrNull;
+    final basePrimary =
+        Injector.appInstance.exists<Base>() ? Base.actorIdOrNull : null;
     if (basePrimary != null) ids.add(basePrimary);
     return ids.toList();
   }
@@ -999,8 +1149,28 @@ class GroupShareCandidate extends ShareCandidate {
   final GroupRow group;
 }
 
-class _ThreadScanResult {
-  _ThreadScanResult({
+/// Minimal thread shape consumed by [Actor.buildShareScan]: the contact and
+/// group ids on a thread plus whether it is an explicit (non-channel) thread.
+/// Kept independent of [Thread] so the ranking is unit-testable without a DB.
+class ShareScanThread {
+  const ShareScanThread({
+    required this.id,
+    required this.contacts,
+    required this.groups,
+    this.isExplicit = true,
+  });
+
+  final Uuid id;
+  final List<Uuid> contacts;
+  final List<Uuid> groups;
+
+  /// True when the thread is not connection-imported (`topic` does not start
+  /// with `channel:`). Only meaningful for the recent-window source.
+  final bool isExplicit;
+}
+
+class ThreadScanResult {
+  ThreadScanResult({
     required this.firstSeenIndex,
     required this.counts,
     required this.explicitFirstSeenIndex,
