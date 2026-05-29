@@ -64,6 +64,51 @@ const SELF_HEAL_INTERVAL_MS = 60 * 60 * 1000;
  */
 const WATCH_PREEMPTIVE_RENEW_MS = 36 * 60 * 60 * 1000;
 
+/**
+ * A thread whose full-fetch failed during an incremental sync and must be
+ * re-attempted on a later sync. `attempts` bounds retries so a permanently
+ * unfetchable thread (e.g. deleted) is eventually abandoned with a log line
+ * rather than re-fetched forever.
+ */
+type PendingThread = { id: string; attempts: number };
+
+/** Max times we re-attempt a failing thread fetch before giving up. */
+const MAX_THREAD_FETCH_ATTEMPTS = 5;
+
+/**
+ * Persisted mailbox-wide incremental cursor. `pendingThreadIds` carries
+ * thread fetches that failed on a prior sync so the next sync retries them —
+ * without this, advancing `historyId` past a failed fetch silently loses that
+ * mail.
+ */
+type IncrementalState = {
+  historyId?: string;
+  lastSyncTime?: Date;
+  pendingThreadIds?: PendingThread[];
+};
+
+/**
+ * Idempotency window for `onCreateLink`. A compose draft carries no stable
+ * id, so we dedupe by a content hash; two dispatches with identical content
+ * within this window are treated as a callback retry (suppress the resend),
+ * while a genuine re-compose later than this still sends.
+ */
+const COMPOSE_DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * FNV-1a 32-bit hash → 8-char hex. Deterministic and dependency-free; used
+ * only to derive a compact idempotency key from compose-draft content, not
+ * for anything security-sensitive.
+ */
+function fnv1aHex(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
 /** Persisted per-channel initial-backfill cursor. */
 type InitialSyncState = {
   pageToken?: string;
@@ -764,10 +809,8 @@ export class Gmail extends Connector<Gmail> {
     let missedThreads = 0;
 
     const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
-    const incremental = await this.get<{
-      historyId?: string;
-      lastSyncTime?: Date;
-    }>("incremental_state");
+    const incremental =
+      await this.get<IncrementalState>("incremental_state");
     const lastWebhookAt = await this.get<string>(
       "last_webhook_received_at"
     );
@@ -778,9 +821,11 @@ export class Gmail extends Connector<Gmail> {
       try {
         const api = await this.getApiAny();
         if (api) {
+          const pending = incremental.pendingThreadIds ?? [];
           const result = await syncGmailMailboxIncremental(
             api,
-            incremental.historyId
+            incremental.historyId,
+            pending.map((p) => p.id)
           );
           if (result.expired) {
             // History window expired; reseed cursor (same fallback as
@@ -796,16 +841,24 @@ export class Gmail extends Connector<Gmail> {
             console.warn(
               `Gmail selfHealCheck [${this.id}]: history window expired, reseeded cursor`
             );
-          } else if (result.threads.length > 0) {
-            missedThreads = result.threads.length;
-            await this.processEmailThreads(result.threads, false);
+          } else {
+            if (result.threads.length > 0) {
+              missedThreads = result.threads.length;
+              await this.processEmailThreads(result.threads, false);
+              // Missed history while a watch existed = push delivery is
+              // broken. Force a fresh watch setup below.
+              action = "missed_history";
+            }
+            // Always advance the cursor and carry forward failed fetches so
+            // we neither re-walk the whole window nor lose unfetched mail.
             await this.set("incremental_state", {
               historyId: result.historyId,
               lastSyncTime: now,
+              pendingThreadIds: this.mergePendingThreads(
+                pending,
+                result.failedThreadIds
+              ),
             });
-            // Missed history while a watch existed = push delivery is
-            // broken. Force a fresh watch setup below.
-            action = "missed_history";
           }
         }
       } catch (error) {
@@ -1007,10 +1060,7 @@ export class Gmail extends Connector<Gmail> {
       const enabled = await this.getEnabledChannels();
       if (enabled.size === 0) return;
 
-      const state = await this.get<{
-        historyId?: string;
-        lastSyncTime?: Date;
-      }>("incremental_state");
+      const state = await this.get<IncrementalState>("incremental_state");
       if (!state?.historyId) {
         // Nothing to do — webhook will re-seed on next watch setup.
         return;
@@ -1024,7 +1074,12 @@ export class Gmail extends Connector<Gmail> {
         return;
       }
 
-      const result = await syncGmailMailboxIncremental(api, state.historyId);
+      const pending = state.pendingThreadIds ?? [];
+      const result = await syncGmailMailboxIncremental(
+        api,
+        state.historyId,
+        pending.map((p) => p.id)
+      );
       if (result.expired) {
         // Recover by reseeding from the watch's most recent historyId.
         const webhook =
@@ -1047,14 +1102,46 @@ export class Gmail extends Connector<Gmail> {
         await this.processEmailThreads(result.threads, false);
       }
 
+      // Advance the cursor, but carry forward any thread fetches that failed
+      // so the next sync retries them — otherwise moving past them loses mail.
       await this.set("incremental_state", {
         historyId: result.historyId,
         lastSyncTime: new Date(),
+        pendingThreadIds: this.mergePendingThreads(
+          pending,
+          result.failedThreadIds
+        ),
       });
     } catch (error) {
       console.error("Error in Gmail incremental sync batch:", error);
       throw error;
     }
+  }
+
+  /**
+   * Merges newly-failed thread fetches into the prior pending set, bumping a
+   * per-thread attempt counter and dropping threads that have exhausted
+   * {@link MAX_THREAD_FETCH_ATTEMPTS} retries (logged, since that change is
+   * effectively lost). Threads that succeeded this round are simply absent
+   * from `failedIds` and therefore fall out of the pending set.
+   */
+  private mergePendingThreads(
+    prior: PendingThread[],
+    failedIds: string[]
+  ): PendingThread[] {
+    const attemptsById = new Map(prior.map((p) => [p.id, p.attempts]));
+    const merged: PendingThread[] = [];
+    for (const id of failedIds) {
+      const attempts = (attemptsById.get(id) ?? 0) + 1;
+      if (attempts > MAX_THREAD_FETCH_ATTEMPTS) {
+        console.error(
+          `[gmail] giving up on thread ${id} after ${attempts - 1} failed fetch attempts; its change may be lost`
+        );
+        continue;
+      }
+      merged.push({ id, attempts });
+    }
+    return merged;
   }
 
   /**
@@ -1286,6 +1373,19 @@ export class Gmail extends Connector<Gmail> {
       return;
     }
 
+    // Idempotency: a callback may be re-dispatched after its send already
+    // succeeded (e.g. the response was lost), which would send a duplicate
+    // reply. `note.id` is stable across retries of the same note, so a guard
+    // keyed on it suppresses the resend and returns the original message key.
+    const sendGuardKey = `send_note:${note.id}`;
+    const priorSend = await this.get<{ messageId: string }>(sendGuardKey);
+    if (priorSend?.messageId) {
+      console.log(
+        `[gmail] onNoteCreated: note ${note.id} already sent as ${priorSend.messageId}, skipping resend`
+      );
+      return { key: priorSend.messageId };
+    }
+
     const api = await this.getApi(channelId);
 
     // Fetch the full Gmail thread to get message headers
@@ -1386,6 +1486,10 @@ export class Gmail extends Connector<Gmail> {
     });
 
     const result = await api.sendMessage(raw, threadId);
+
+    // Record the idempotency guard so a retried dispatch of this note does
+    // not send a second copy (see the guard check above).
+    await this.set(sendGuardKey, { messageId: result.id });
 
     // Store sent message ID for dedup when synced back
     await this.set(`sent:${result.id}`, true);
@@ -1491,7 +1595,9 @@ export class Gmail extends Connector<Gmail> {
    * fills `draft.recipients` from the connection-scoped
    * `contact_external_account` rows and falls back to `contact.email` for
    * any picked contact without a row. Free-form addresses the user typed in
-   * arrive via `draft.inviteEmails`. The connector just merges and dedupes.
+   * arrive via `draft.inviteEmails`. The connector merges, dedupes, and
+   * splits recipients into To/Cc/Bcc using each recipient's `role` (so BCC
+   * recipients stay out of the visible To/Cc headers).
    *
    * The returned `NewLinkWithNotes`'s `meta` matches what `onNoteCreated`
    * reads so replies work with zero extra wiring.
@@ -1501,22 +1607,38 @@ export class Gmail extends Connector<Gmail> {
   ): Promise<NewLinkWithNotes | null> {
     if (draft.type !== "email") return null;
 
+    // Split recipients into To/Cc/Bcc by their thread role so CC/BCC
+    // recipients are addressed correctly — and, critically, so BCC
+    // recipients are never placed in the To: header where the other
+    // recipients would see them (privacy leak). The `email` link type
+    // declares `to`/`cc`/`bcc` roles (with `bcc` hidden); the runtime
+    // resolves each contact's role from the thread's contact_meta into
+    // `recipient.role`. A null role means the contact had no explicit
+    // role entry, so it defaults to To. Free-form typed addresses
+    // (`inviteEmails`) carry no contact role and likewise default to To.
     const seenEmails = new Set<string>();
     const toEmails: string[] = [];
-    const addRecipient = (raw: string | null | undefined) => {
+    const ccEmails: string[] = [];
+    const bccEmails: string[] = [];
+    const addRecipient = (
+      raw: string | null | undefined,
+      role: string | null
+    ) => {
       if (!raw) return;
       const trimmed = raw.trim();
       if (!trimmed) return;
       const key = trimmed.toLowerCase();
       if (seenEmails.has(key)) return;
       seenEmails.add(key);
-      toEmails.push(trimmed);
+      if (role === "cc") ccEmails.push(trimmed);
+      else if (role === "bcc") bccEmails.push(trimmed);
+      else toEmails.push(trimmed);
     };
 
-    for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId);
-    for (const email of draft.inviteEmails ?? []) addRecipient(email);
+    for (const r of draft.recipients ?? []) addRecipient(r.externalAccountId, r.role);
+    for (const email of draft.inviteEmails ?? []) addRecipient(email, null);
 
-    if (toEmails.length === 0) {
+    if (toEmails.length + ccEmails.length + bccEmails.length === 0) {
       console.error(
         "[gmail] onCreateLink: no email recipients could be derived from draft"
       );
@@ -1536,8 +1658,64 @@ export class Gmail extends Connector<Gmail> {
     const subject = draft.title || "";
     const body = draft.noteContent ?? "";
 
+    // channelId: use the first enabled channel so onNoteCreated (reply path)
+    // can resolve the OAuth token via getApi(channelId).
+    const enabledChannels = await this.getEnabledChannels();
+    const channelId = [...enabledChannels][0] ?? "";
+
+    // Build the link the runtime wires to the originating thread. Shared
+    // between the normal send and the dedup-hit path so a retried dispatch
+    // returns an identical link.
+    const linkFor = (gmailThreadId: string): NewLinkWithNotes => {
+      const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${gmailThreadId}`;
+      return {
+        source: canonicalUrl,
+        type: "email",
+        title: subject || undefined,
+        status: draft.status,
+        created: new Date(),
+        sourceUrl: canonicalUrl,
+        channelId,
+        meta: {
+          syncProvider: "google",
+          syncableId: channelId,
+          channelId,
+          threadId: gmailThreadId,
+          historyId: null,
+        },
+      };
+    };
+
+    // Idempotency: a compose draft carries no stable id, so dedupe on a hash
+    // of its content. A second dispatch with identical content within
+    // COMPOSE_DEDUP_WINDOW_MS is treated as a callback retry whose send
+    // already succeeded — return the prior link instead of sending again.
+    const dedupKey = `compose:${fnv1aHex(
+      JSON.stringify([
+        draft.type,
+        draft.status,
+        subject,
+        body,
+        [...toEmails].sort(),
+        [...ccEmails].sort(),
+        [...bccEmails].sort(),
+      ])
+    )}`;
+    const prior = await this.get<{
+      gmailThreadId: string;
+      at: number;
+    }>(dedupKey);
+    if (prior?.gmailThreadId && Date.now() - prior.at < COMPOSE_DEDUP_WINDOW_MS) {
+      console.log(
+        `[gmail] onCreateLink: duplicate compose dispatch within ${COMPOSE_DEDUP_WINDOW_MS}ms, reusing thread ${prior.gmailThreadId}`
+      );
+      return linkFor(prior.gmailThreadId);
+    }
+
     const raw = buildNewEmailMessage({
       to: toEmails,
+      cc: ccEmails,
+      bcc: bccEmails,
       from: fromEmail,
       subject,
       body,
@@ -1547,34 +1725,16 @@ export class Gmail extends Connector<Gmail> {
     const gmailThreadId = result.threadId;
     const gmailMessageId = result.id;
 
+    // Record the idempotency guard so a retried dispatch reuses this send
+    // rather than emitting a duplicate email.
+    await this.set(dedupKey, { gmailThreadId, at: Date.now() });
+
     // Suppress the echo when this sent message is synced back via Gmail's
     // incremental history. The message id is the note key the sync path
     // uses (same as onNoteCreated dedup).
     await this.set(`sent:${gmailMessageId}`, true);
 
-    const canonicalUrl = `https://mail.google.com/mail/u/0/#inbox/${gmailThreadId}`;
-
-    // channelId: use the first enabled channel so onNoteCreated (reply path)
-    // can resolve the OAuth token via getApi(channelId).
-    const enabledChannels = await this.getEnabledChannels();
-    const channelId = [...enabledChannels][0] ?? "";
-
-    return {
-      source: canonicalUrl,
-      type: "email",
-      title: subject || undefined,
-      status: draft.status,
-      created: new Date(),
-      sourceUrl: canonicalUrl,
-      channelId,
-      meta: {
-        syncProvider: "google",
-        syncableId: channelId,
-        channelId,
-        threadId: gmailThreadId,
-        historyId: null,
-      },
-    };
+    return linkFor(gmailThreadId);
   }
 
   /**

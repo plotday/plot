@@ -100,6 +100,20 @@ export type ResolvedRecipient = {
   name: string | null;
   /** Platform-specific account identifier pre-resolved at dispatch time (e.g. Slack `U…`, LinkedIn URN, Gmail email address) */
   externalAccountId: string;
+  /**
+   * The contact's role on the originating thread, resolved from
+   * `thread.contact_meta` against the link type's `contactRoles` (e.g.
+   * `"to"` / `"cc"` / `"bcc"` for Gmail). `null` when the contact had no
+   * explicit role entry — connectors should treat `null` as the link
+   * type's default role (the `contactRoles` entry marked `default: true`).
+   *
+   * Connectors that distinguish roles MUST honor this when addressing the
+   * recipient — e.g. Gmail must place `"cc"`/`"bcc"` recipients in the
+   * Cc/Bcc headers, never the To header, so BCC recipients are not
+   * exposed to the other recipients. Connectors that don't distinguish
+   * roles (Slack, Linear) can ignore it.
+   */
+  role: string | null;
 };
 
 /**
@@ -138,11 +152,12 @@ export type CreateLinkDraft = {
    * `"contacts"` or `"addresses"`.
    *
    * Only populated for those link types; otherwise undefined. Each entry contains the Plot
-   * contact UUID and the platform-specific account ID
+   * contact UUID, the platform-specific account ID
    * (`externalAccountId`) the connector should use to address the
-   * recipient without performing its own lookup. For `"addresses"` link
-   * types, contacts without a connection-scoped row fall back to
-   * `contact.email`.
+   * recipient without performing its own lookup, and the contact's
+   * `role` on the thread (e.g. `"to"` / `"cc"` / `"bcc"`) resolved from
+   * `thread.contact_meta`. For `"addresses"` link types, contacts without
+   * a connection-scoped row fall back to `contact.email`.
    */
   recipients?: ResolvedRecipient[];
   /**
