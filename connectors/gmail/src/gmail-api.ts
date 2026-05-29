@@ -918,13 +918,26 @@ async function syncGmailChannelFull(
  * thread IDs (with their fetched full thread payloads). On 404 (history
  * window expired), returns `expired: true` so the caller can fall back to
  * a per-channel full re-sync.
+ *
+ * Thread fetches that fail (transient 5xx, rate limits, network) are NOT
+ * silently dropped: their IDs are returned in `failedThreadIds`. The caller
+ * advances the `historyId` cursor as usual (so we don't re-walk the whole
+ * window) but must re-attempt the failed IDs on a subsequent sync by passing
+ * them back via `retryThreadIds` — otherwise the cursor would move past
+ * changes we never ingested, permanently losing that mail.
  */
 export async function syncGmailMailboxIncremental(
   api: GmailApi,
-  historyId: string
+  historyId: string,
+  retryThreadIds: string[] = []
 ): Promise<
   | { expired: true }
-  | { expired: false; historyId: string; threads: GmailThread[] }
+  | {
+      expired: false;
+      historyId: string;
+      threads: GmailThread[];
+      failedThreadIds: string[];
+    }
 > {
   let historyResult;
   try {
@@ -936,7 +949,7 @@ export async function syncGmailMailboxIncremental(
     throw error;
   }
 
-  const changedThreadIds = new Set<string>();
+  const changedThreadIds = new Set<string>(retryThreadIds);
   for (const entry of historyResult.history) {
     for (const added of entry.messagesAdded ?? []) {
       changedThreadIds.add(added.message.threadId);
@@ -952,11 +965,13 @@ export async function syncGmailMailboxIncremental(
   }
 
   const threads: GmailThread[] = [];
+  const failedThreadIds: string[] = [];
   for (const threadId of changedThreadIds) {
     try {
       threads.push(await api.getThread(threadId));
     } catch (error) {
       console.error(`Failed to fetch thread ${threadId}:`, error);
+      failedThreadIds.push(threadId);
     }
   }
 
@@ -964,7 +979,19 @@ export async function syncGmailMailboxIncremental(
     expired: false,
     historyId: historyResult.historyId,
     threads,
+    failedThreadIds,
   };
+}
+
+/**
+ * Strips CR, LF, and NUL from a value before it is interpolated into an
+ * email header. Without this, an attacker-controlled subject or recipient
+ * (e.g. `"Hi\r\nBcc: victim@example.com"`) would inject additional headers
+ * into the outgoing message (RFC 5322 header injection). Header values must
+ * be a single unfolded line; we collapse any control characters to a space.
+ */
+function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n\x00]+/g, " ").trim();
 }
 
 /**
@@ -981,25 +1008,31 @@ export function buildNewEmailMessage(options: {
 }): string {
   const { to, cc = [], bcc = [], from, subject, body } = options;
 
-  const lines: string[] = [`From: ${from}`];
+  // Sanitize every value interpolated into a header to prevent CRLF header
+  // injection (RFC 5322) via attacker-controlled subjects or addresses.
+  const toLine = to.map(sanitizeHeaderValue).join(", ");
+  const ccLine = cc.map(sanitizeHeaderValue).join(", ");
+  const bccLine = bcc.map(sanitizeHeaderValue).join(", ");
+
+  const lines: string[] = [`From: ${sanitizeHeaderValue(from)}`];
 
   // Only emit recipient headers that have addresses. A message may be
   // addressed entirely via Cc/Bcc (no To). Gmail's send API delivers to
   // Bcc recipients and strips the Bcc header from the copy other
   // recipients receive, so listing them here does not expose them.
   if (to.length > 0) {
-    lines.push(`To: ${to.join(", ")}`);
+    lines.push(`To: ${toLine}`);
   }
 
   if (cc.length > 0) {
-    lines.push(`Cc: ${cc.join(", ")}`);
+    lines.push(`Cc: ${ccLine}`);
   }
 
   if (bcc.length > 0) {
-    lines.push(`Bcc: ${bcc.join(", ")}`);
+    lines.push(`Bcc: ${bccLine}`);
   }
 
-  lines.push(`Subject: ${subject}`);
+  lines.push(`Subject: ${sanitizeHeaderValue(subject)}`);
   lines.push(`Content-Type: text/plain; charset="UTF-8"`);
   lines.push(""); // Empty line separates headers from body
   lines.push(body);
@@ -1063,8 +1096,18 @@ export function buildReplyMessage(options: {
 }): string {
   const { to, cc, from, subject, body, messageId, references, attachments } = options;
 
+  // Sanitize every value interpolated into a header to prevent CRLF header
+  // injection (RFC 5322) via attacker-controlled subjects or addresses.
+  const fromHeader = sanitizeHeaderValue(from);
+  const toHeader = to.map(sanitizeHeaderValue).join(", ");
+  const ccHeader = cc.map(sanitizeHeaderValue).join(", ");
+  const safeMessageId = sanitizeHeaderValue(messageId);
+  const safeReferences = sanitizeHeaderValue(references);
+
   // Ensure subject has "Re:" prefix
-  const reSubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
+  const reSubject = sanitizeHeaderValue(
+    subject.startsWith("Re:") ? subject : `Re: ${subject}`
+  );
 
   let rawMessage: string;
 
@@ -1073,25 +1116,30 @@ export function buildReplyMessage(options: {
     const boundary = `----=_PlotBoundary_${Date.now().toString(16)}`;
 
     const headerLines: string[] = [
-      `From: ${from}`,
-      `To: ${to.join(", ")}`,
+      `From: ${fromHeader}`,
+      `To: ${toHeader}`,
     ];
-    if (cc.length > 0) headerLines.push(`Cc: ${cc.join(", ")}`);
+    if (cc.length > 0) headerLines.push(`Cc: ${ccHeader}`);
     headerLines.push(`Subject: ${reSubject}`);
-    headerLines.push(`In-Reply-To: ${messageId}`);
-    const refChain = references ? `${references} ${messageId}` : messageId;
+    headerLines.push(`In-Reply-To: ${safeMessageId}`);
+    const refChain = safeReferences
+      ? `${safeReferences} ${safeMessageId}`
+      : safeMessageId;
     headerLines.push(`References: ${refChain}`);
     headerLines.push(`MIME-Version: 1.0`);
     headerLines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
     headerLines.push(""); // end of headers
 
-    // Text body part
+    // Text body part. Base64-encode the UTF-8 body so the declared
+    // Content-Transfer-Encoding matches the bytes we emit — inserting a raw
+    // 8-bit body under a `quoted-printable` (or any non-identity) declaration
+    // corrupts non-ASCII content and breaks strict MIME parsers.
     const bodyPart = [
       `--${boundary}`,
       `Content-Type: text/plain; charset="UTF-8"`,
-      `Content-Transfer-Encoding: quoted-printable`,
+      `Content-Transfer-Encoding: base64`,
       "",
-      body,
+      uint8ArrayToBase64Lines(new TextEncoder().encode(body)),
     ];
 
     // Attachment parts
@@ -1119,21 +1167,21 @@ export function buildReplyMessage(options: {
   } else {
     // Simple text-only message (existing path)
     const lines: string[] = [
-      `From: ${from}`,
-      `To: ${to.join(", ")}`,
+      `From: ${fromHeader}`,
+      `To: ${toHeader}`,
     ];
 
     if (cc.length > 0) {
-      lines.push(`Cc: ${cc.join(", ")}`);
+      lines.push(`Cc: ${ccHeader}`);
     }
 
     lines.push(`Subject: ${reSubject}`);
-    lines.push(`In-Reply-To: ${messageId}`);
+    lines.push(`In-Reply-To: ${safeMessageId}`);
 
     // Build References chain
-    const refChain = references
-      ? `${references} ${messageId}`
-      : messageId;
+    const refChain = safeReferences
+      ? `${safeReferences} ${safeMessageId}`
+      : safeMessageId;
     lines.push(`References: ${refChain}`);
 
     lines.push(`Content-Type: text/plain; charset="UTF-8"`);
