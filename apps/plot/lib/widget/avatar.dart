@@ -10,6 +10,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
 
 /// A compact representation of a contact.
@@ -358,22 +359,7 @@ class AvatarGroup extends StatelessWidget {
   ) {
     final contacts = scheduleContacts;
     if (contacts != null && contacts.isNotEmpty) {
-      final attending = <ScheduleContact>[];
-      final declined = <ScheduleContact>[];
-      final other = <ScheduleContact>[];
-      for (final c in contacts) {
-        switch (c.status) {
-          case 'attend':
-            attending.add(c);
-          case 'skip':
-            declined.add(c);
-          default:
-            other.add(c);
-        }
-      }
-      final sorted = [...attending, ...declined, ...other];
-      if (sorted.isEmpty) return null;
-      return (context, controller) => _RsvpTooltipContent(contacts: sorted);
+      return (context, controller) => RsvpDetails(contacts: contacts);
     }
 
     final visible = [
@@ -428,52 +414,111 @@ class _ActorListTooltipContent extends StatelessWidget {
   }
 }
 
-class _RsvpTooltipContent extends StatelessWidget {
-  const _RsvpTooltipContent({required this.contacts});
+/// Grouped attendee details for an event RSVP. Sections (Going / Not going /
+/// Undecided) appear only when non-empty; the current user's row(s) are
+/// marked. Shown in the avatar-group tooltip and the RSVP chip's hover popover.
+class RsvpDetails extends StatelessWidget {
+  const RsvpDetails({required this.contacts, super.key});
 
   final List<ScheduleContact> contacts;
 
+  /// Pure partition by status (testable without a render).
+  static ({
+    List<ScheduleContact> going,
+    List<ScheduleContact> declined,
+    List<ScheduleContact> undecided,
+  }) group(List<ScheduleContact> contacts) {
+    final going = <ScheduleContact>[];
+    final declined = <ScheduleContact>[];
+    final undecided = <ScheduleContact>[];
+    for (final c in contacts) {
+      switch (c.status) {
+        case 'attend':
+          going.add(c);
+        case 'skip':
+          declined.add(c);
+        default:
+          undecided.add(c);
+      }
+    }
+    return (going: going, declined: declined, undecided: undecided);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final g = group(contacts);
     final textStyle = context.theme.typography.sm;
-    final iconSize = (textStyle.fontSize ?? 14) * 0.9;
     final mutedStyle = textStyle.copyWith(color: context.colour.muted);
-    // Match the colors used by the ThreadWidget RSVP summary: attend uses
-    // ThemeColor(0) muted, skip uses ThemeColor(5) muted, undecided uses
-    // veryMuted.
-    final attendColor = context.colour.colours.fromTheme(
-      ThemeColor(0),
-      muted: true,
+    final headerStyle = context.theme.typography.xs.copyWith(
+      color: context.colour.veryMuted,
+      letterSpacing: 0.3,
     );
-    final skipColor = context.colour.colours.fromTheme(
-      ThemeColor(5),
-      muted: true,
-    );
+    final userId = Base.userIdOrNull?.toString();
+    final youColor = context.colour.accent;
+
+    final goingColor =
+        context.colour.colours.fromTheme(const ThemeColor(0), muted: true);
+    final declinedColor =
+        context.colour.colours.fromTheme(const ThemeColor(5), muted: true);
     final undecidedColor = context.colour.veryMuted;
+
+    Widget section(
+      String label,
+      IconData icon,
+      Color color,
+      List<ScheduleContact> people,
+    ) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FaIcon(icon, size: (headerStyle.fontSize ?? 11) * 0.9, color: color),
+                  const SizedBox(width: 5),
+                  Text('${label.toUpperCase()} · ${people.length}', style: headerStyle),
+                ],
+              ),
+            ),
+            for (final c in people)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                child: _contactLabel(
+                  c,
+                  textStyle,
+                  mutedStyle,
+                  isUser: userId != null && c.contactUserId == userId,
+                  youColor: youColor,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    final sections = <Widget>[
+      if (g.going.isNotEmpty)
+        section('Going', PlotIcon.rsvpGoing, goingColor, g.going),
+      if (g.declined.isNotEmpty)
+        section('Not going', PlotIcon.rsvpDeclined, declinedColor, g.declined),
+      if (g.undecided.isNotEmpty)
+        section('Undecided', PlotIcon.rsvpUndecided, undecidedColor, g.undecided),
+    ];
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
+      // Trim the first section's top padding so the popover hugs its content.
       children: [
-        for (final c in contacts)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FaIcon(
-                  _iconFor(c.status),
-                  size: iconSize,
-                  color: switch (c.status) {
-                    'attend' => attendColor,
-                    'skip' => skipColor,
-                    _ => undecidedColor,
-                  },
-                ),
-                const SizedBox(width: 6),
-                Flexible(child: _contactLabel(c, textStyle, mutedStyle)),
-              ],
-            ),
-          ),
+        for (var i = 0; i < sections.length; i++)
+          i == 0
+              ? Padding(padding: EdgeInsets.zero, child: sections[i])
+              : sections[i],
       ],
     );
   }
@@ -481,37 +526,30 @@ class _RsvpTooltipContent extends StatelessWidget {
   Widget _contactLabel(
     ScheduleContact c,
     TextStyle textStyle,
-    TextStyle mutedStyle,
-  ) {
+    TextStyle mutedStyle, {
+    required bool isUser,
+    required Color youColor,
+  }) {
     final hasName = c.contactName != null && c.contactName!.isNotEmpty;
     final hasEmail = c.contactEmail != null && c.contactEmail!.isNotEmpty;
-    if (hasName && hasEmail) {
-      return Text.rich(
-        TextSpan(
-          style: textStyle,
-          children: [
-            TextSpan(text: c.contactName),
+    final name = hasName ? c.contactName! : (hasEmail ? c.contactEmail! : 'Unknown');
+    return Text.rich(
+      TextSpan(
+        style: textStyle,
+        children: [
+          TextSpan(text: name),
+          if (hasName && hasEmail) ...[
             const TextSpan(text: '  '),
             TextSpan(text: c.contactEmail, style: mutedStyle),
           ],
-        ),
-      );
-    }
-    return Text(
-      hasName ? c.contactName! : (hasEmail ? c.contactEmail! : 'Unknown'),
-      style: textStyle,
+          if (isUser)
+            TextSpan(
+              text: '  · you',
+              style: mutedStyle.copyWith(color: youColor),
+            ),
+        ],
+      ),
     );
-  }
-
-  static IconData _iconFor(String? status) {
-    switch (status) {
-      case 'attend':
-        return FontAwesomeIcons.check;
-      case 'skip':
-        return FontAwesomeIcons.xmark;
-      default:
-        return FontAwesomeIcons.question;
-    }
   }
 }
 

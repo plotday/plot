@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plot/store/store.dart';
+import 'package:plot/widget/avatar.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/thread.dart';
 
@@ -36,6 +38,25 @@ void main() {
     });
     test('all zero → empty', () {
       expect(RsvpChip.segmentsFor((attend: 0, skip: 0, undecided: 0)), isEmpty);
+    });
+  });
+
+  group('RsvpDetails.group', () {
+    ScheduleContact c(String? status) =>
+        ScheduleContact(contactId: 'x', status: status);
+
+    test('partitions by status into going/declined/undecided', () {
+      final g = RsvpDetails.group([c('attend'), c('skip'), c(null), c('attend')]);
+      expect(g.going.length, 2);
+      expect(g.declined.length, 1);
+      expect(g.undecided.length, 1);
+    });
+
+    test('non-attend/skip statuses fall into undecided', () {
+      final g = RsvpDetails.group([c('tentative'), c(null)]);
+      expect(g.going, isEmpty);
+      expect(g.declined, isEmpty);
+      expect(g.undecided.length, 2);
     });
   });
 }
