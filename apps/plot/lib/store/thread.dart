@@ -4395,8 +4395,8 @@ ORDER BY
 
   /// Whether the RSVP status shown on [_schedule] was inherited from the
   /// series row rather than set on this specific occurrence. Used by
-  /// [ToggleRsvp] to decide whether a toggle should target the series or
-  /// the occurrence. Defaults to false. Set to true only by
+  /// `rsvpTargetsOccurrence` to decide whether an RSVP change should target
+  /// the series or the occurrence. Defaults to false. Set to true only by
   /// [loadRepresentativeForFeed] when it resolves a recurring event to a
   /// representative occurrence whose RSVP is a series-level copy.
   final bool rsvpInheritedFromSeries;

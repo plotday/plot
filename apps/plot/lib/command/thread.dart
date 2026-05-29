@@ -709,44 +709,28 @@ bool rsvpTargetsOccurrence({
 }) =>
     hasExistingRsvp && occurrence != null && !inheritedFromSeries;
 
-class ToggleRsvp extends _UpdateThreadCommand {
-  ToggleRsvp(super.thread)
-    : _targetStatus = _effectiveRsvp(thread) == 'attend' ? 'skip' : 'attend',
-      super(
-        title: _effectiveRsvp(thread) == 'attend' ? 'Skip' : 'Attend',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: _effectiveRsvp(thread) == 'attend'
-            ? PlotIcon.calendarCheck
-            : thread.currentUserRsvp == 'skip'
-            ? PlotIcon.calendarXmark
-            : PlotIcon.calendarPlus,
-        hoverIcon: _effectiveRsvp(thread) == 'attend'
-            ? PlotIcon.calendarXmark
-            : PlotIcon.calendarCheck,
-      );
+/// Shared base for the three RSVP-setting commands. Applies the optimistic
+/// status change and POSTs `/sync/schedule/status`, targeting the occurrence
+/// or series per [rsvpTargetsOccurrence].
+abstract class _RsvpCommand extends _UpdateThreadCommand {
+  _RsvpCommand(
+    super.thread, {
+    required super.title,
+    required super.icon,
+  }) : super(
+          eventObject: EventObject.activity,
+          eventAction: EventAction.updated,
+        );
 
-  /// For link schedule instances (calendar events), treat null RSVP as
-  /// implicitly attending — the user's own events default to "attend".
-  static String? _effectiveRsvp(Thread thread) =>
-      thread.currentUserRsvp ??
-      (thread.isLinkScheduleInstance ? 'attend' : null);
-
-  final String _targetStatus;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final updated = thread.withRsvpStatus(_targetStatus);
+  Future<CommandReturn> apply(BuildContext context, String? status) async {
+    final updated = thread.withRsvpStatus(status);
     await saveOptimistically(context, updated);
 
-    // Target the occurrence only when the user has an existing RSVP on
-    // this specific occurrence (not inherited from the series). Initial
-    // RSVPs and toggles of series-inherited RSVPs target the series.
-    final hasExistingRsvp = thread.currentUserRsvp != null;
-    final targetsOccurrence =
-        hasExistingRsvp &&
-        thread.occurrence != null &&
-        !thread.rsvpInheritedFromSeries;
+    final targetsOccurrence = rsvpTargetsOccurrence(
+      hasExistingRsvp: thread.currentUserRsvp != null,
+      occurrence: thread.occurrence,
+      inheritedFromSeries: thread.rsvpInheritedFromSeries,
+    );
 
     api
         .post<dynamic>(
@@ -754,7 +738,7 @@ class ToggleRsvp extends _UpdateThreadCommand {
           body: {
             'thread_id': thread.id.toString(),
             if (targetsOccurrence) 'occurrence': thread.occurrence,
-            'status': _targetStatus,
+            'status': status,
           },
         )
         .catchError((_) {});
@@ -763,54 +747,55 @@ class ToggleRsvp extends _UpdateThreadCommand {
   }
 }
 
-class AttendRsvp extends _UpdateThreadCommand {
+class AttendRsvp extends _RsvpCommand {
   AttendRsvp(super.thread)
-    : super(
-        title: 'Attend',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.calendarCheck,
-      );
+      : super(title: 'Going', icon: PlotIcon.rsvpGoing);
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final updated = thread.withRsvpStatus('attend');
-    await saveOptimistically(context, updated);
-
-    api
-        .post<dynamic>(
-          '/sync/schedule/status',
-          body: {'thread_id': thread.id.toString(), 'status': 'attend'},
-        )
-        .catchError((_) {});
-
-    return const CommandDone();
-  }
+  Future<CommandReturn> run(BuildContext context) => apply(context, 'attend');
 }
 
-class SkipRsvp extends _UpdateThreadCommand {
+class SkipRsvp extends _RsvpCommand {
   SkipRsvp(super.thread)
-    : super(
-        title: 'Skip',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.calendarXmark,
-      );
+      : super(title: 'Not going', icon: PlotIcon.rsvpDeclined);
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final updated = thread.withRsvpStatus('skip');
-    await saveOptimistically(context, updated);
+  Future<CommandReturn> run(BuildContext context) => apply(context, 'skip');
+}
 
-    api
-        .post<dynamic>(
-          '/sync/schedule/status',
-          body: {'thread_id': thread.id.toString(), 'status': 'skip'},
-        )
-        .catchError((_) {});
+class ClearRsvp extends _RsvpCommand {
+  ClearRsvp(super.thread)
+      : super(title: 'Clear response', icon: PlotIcon.rsvpUndecided);
 
-    return const CommandDone();
-  }
+  @override
+  Future<CommandReturn> run(BuildContext context) => apply(context, null);
+}
+
+/// Opens a standard [CommandModal] letting the user set their RSVP. "Clear
+/// response" only appears when the user currently has a response. Invoked by
+/// the RSVP chip's tap.
+class ShowRsvpOptions extends ShowCommands {
+  ShowRsvpOptions(Thread thread)
+      : super(
+          title: 'RSVP',
+          icon: PlotIcon.rsvpGoing,
+          eventObject: EventObject.activity,
+          eventAction: EventAction.opened,
+          commands: _build(thread),
+        );
+
+  static Commands _build(Thread thread) => Commands(
+        prompt: 'Your RSVP',
+        groups: [
+          StaticCommandGroup(
+            commands: [
+              AttendRsvp(thread),
+              SkipRsvp(thread),
+              if (thread.currentUserRsvp != null) ClearRsvp(thread),
+            ],
+          ),
+        ],
+      );
 }
 
 class EditThread extends ShowForm {
