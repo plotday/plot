@@ -331,13 +331,24 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    * `created` timestamps where Google doesn't tell us when something
    * actually happened (cancellation date, description-edit date) and we
    * don't want re-syncs to bump the note forward in the activity feed.
+   *
+   * `seed` is the timestamp to record on the first observation. Pass the
+   * event's own timestamp (e.g. `event.created` / `event.updated`) so a
+   * pre-existing event observed for the first time under a new key — e.g.
+   * after a connector key-scheme change or a reconnect that re-walks
+   * history — is stamped with its real past time instead of wall-clock
+   * `now()`, which would drag every historical event to the top of the
+   * activity feed. Falls back to `now()` only when no seed is available.
+   * The seed is read on the first observation only; subsequent syncs
+   * reuse the stored value, so an unrelated `event.updated` bump never
+   * drags the note forward.
    */
-  private async firstSeenAt(storeKey: string): Promise<Date> {
+  private async firstSeenAt(storeKey: string, seed?: Date): Promise<Date> {
     const existing = await this.get<string>(storeKey);
     if (existing) return new Date(existing);
-    const now = new Date();
-    await this.set(storeKey, now.toISOString());
-    return now;
+    const initial = seed ?? new Date();
+    await this.set(storeKey, initial.toISOString());
+    return initial;
   }
 
   private async getApi(calendarId: string): Promise<GoogleApi> {
@@ -1062,7 +1073,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             // reuse that on every subsequent sync (instead of letting
             // event.updated drag the note forward on unrelated edits).
             const cancelFirstSeen = await this.firstSeenAt(
-              `cancel_seen:${canonicalUrl}`
+              `cancel_seen:${canonicalUrl}`,
+              event.updated ? new Date(event.updated) : undefined
             );
             const cancelNote = {
               key: "cancellation" as const,
@@ -1208,7 +1220,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             : null;
           const descFirstSeen = descHash
             ? await this.firstSeenAt(
-                `desc_seen:${canonicalUrl}:${descHash}`
+                `desc_seen:${canonicalUrl}:${descHash}`,
+                event.created ? new Date(event.created) : undefined
               )
             : undefined;
           const descriptionNote =
@@ -1473,7 +1486,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // storage, and reuse it on every subsequent sync.
       const occurrenceIso = new Date(originalStartTime).toISOString();
       const cancelFirstSeen = await this.firstSeenAt(
-        `cancel_seen:${masterCanonicalUrl}:${occurrenceIso}`
+        `cancel_seen:${masterCanonicalUrl}:${occurrenceIso}`,
+        event.updated ? new Date(event.updated) : undefined
       );
       const cancelNote = {
         // Unique key per occurrence so multiple instance cancellations on the
