@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/step_controller.dart';
 
 /// A compound input widget for editing durations with +/- buttons and separate hour/minute fields.
 ///
@@ -25,6 +26,7 @@ class DurationInput extends StatefulWidget {
     this.minutesFocusNode,
     this.autofocus = false,
     this.backgroundColor,
+    this.stepController,
     super.key,
   });
 
@@ -45,6 +47,9 @@ class DurationInput extends StatefulWidget {
 
   /// Optional background color for the container.
   final Color? backgroundColor;
+
+  /// Optional hook exposing the +/- step actions for external (keyboard) drivers.
+  final StepController? stepController;
 
   @override
   State<DurationInput> createState() => _DurationInputState();
@@ -212,6 +217,12 @@ class _DurationInputState extends State<DurationInput> {
 
   @override
   Widget build(BuildContext context) {
+    widget.stepController
+      ?..stepBack = _decrement15Minutes
+      ..stepForward = _increment15Minutes
+      ..jumpBack = _decrementHour
+      ..jumpForward = _incrementHour
+      ..focusEditor = _hoursFocusNode.requestFocus;
     final theme = context.theme;
 
     return Row(

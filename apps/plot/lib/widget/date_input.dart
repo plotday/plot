@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import 'package:intl/intl.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/step_controller.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time.dart';
 
@@ -24,6 +25,7 @@ class DateInput extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.backgroundColor,
+    this.stepController,
     super.key,
   });
 
@@ -41,6 +43,9 @@ class DateInput extends StatefulWidget {
 
   /// Optional background color for the container.
   final Color? backgroundColor;
+
+  /// Optional hook exposing the day/week navigation actions for keyboard drivers.
+  final StepController? stepController;
 
   @override
   State<DateInput> createState() => _DateInputState();
@@ -81,6 +86,12 @@ class _DateInputState extends State<DateInput> {
 
   @override
   Widget build(BuildContext context) {
+    widget.stepController
+      ?..stepBack = (() => _navigateDate(-1))
+      ..stepForward = (() => _navigateDate(1))
+      ..jumpBack = (() => _navigateDate(-7))
+      ..jumpForward = (() => _navigateDate(7))
+      ..focusEditor = _focusNode.requestFocus;
     final theme = context.theme;
 
     return Row(

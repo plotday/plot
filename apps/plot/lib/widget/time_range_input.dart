@@ -4,6 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/widget/step_controller.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 
@@ -29,6 +30,7 @@ class TimeRangeInput extends StatefulWidget {
     this.endTimeFocusNode,
     this.autofocus = false,
     this.backgroundColor,
+    this.stepController,
     super.key,
   });
 
@@ -58,6 +60,9 @@ class TimeRangeInput extends StatefulWidget {
 
   /// Optional background color for the container.
   final Color? backgroundColor;
+
+  /// Optional hook exposing the range-shift actions for keyboard drivers.
+  final StepController? stepController;
 
   @override
   State<TimeRangeInput> createState() => _TimeRangeInputState();
@@ -148,6 +153,12 @@ class _TimeRangeInputState extends State<TimeRangeInput>
 
   @override
   Widget build(BuildContext context) {
+    widget.stepController
+      ?..stepBack = _shiftLeft15
+      ..stepForward = _shiftRight15
+      ..jumpBack = _shiftLeft1Hour
+      ..jumpForward = _shiftRight1Hour
+      ..focusEditor = _startTimeFocusNode.requestFocus;
     final theme = context.theme;
     final isTouch = !hasPhysicalKeyboard();
 
