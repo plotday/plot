@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:prism_flutter/prism_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
@@ -1149,14 +1150,12 @@ class _RsvpChipState extends State<RsvpChip> {
     if (segments.isEmpty) return const SizedBox.shrink();
 
     final fontSize =
-        widget.fontSize ?? context.theme.typography.sm.fontSize ?? 13;
+        widget.fontSize ?? context.theme.typography.xs.fontSize ?? 13;
 
     // The user's own status drives the colour. Content (icons + numbers) is the
     // muted status colour; a faint same-hue border frames the pill. The fill
     // base uses fuller chroma for "going" so its green tint reads as saturated
-    // as the rose "declined". Hover deepens the border (+ a soft glow) and keeps
-    // the fill constant — a stronger same-hue fill closes on the text and reads
-    // as muddy.
+    // as the rose "declined". Hover deepens the border (+ a soft glow).
     final (Color content, Color fillBase) = switch (RsvpChip.toneFor(
       widget.activity.currentUserRsvp,
     )) {
@@ -1170,13 +1169,36 @@ class _RsvpChipState extends State<RsvpChip> {
       ),
       RsvpTone.neutral => (context.colour.muted, context.colour.muted),
     };
-    final fill = fillBase.withValues(alpha: 0.10);
+
+    // The fill is a translucent same-hue tint. In dark mode a flat 10% wash of
+    // the (dark) base over the dark surface reads well, so it's kept as-is. In
+    // light mode that same wash turns dark and grey — the base is dark and
+    // little of its chroma survives at such low alpha — so the tint is rebuilt
+    // from a light, saturated pastel of the same hue laid down at a higher
+    // alpha. The fill stays constant across hover in both modes: over a pale
+    // surface a heavier tint only reads darker (away from white), never more
+    // vivid, so hover is signalled by the deepened border + glow instead.
+    final Color fill;
+    if (context.colour.brightness == Brightness.light) {
+      final base = fillBase.toRayRgb8().toOklch();
+      final pastel = base
+          .withLightness(0.85)
+          .withChroma(base.chroma * 1.2)
+          .toColor();
+      fill = pastel.withValues(alpha: 0.20);
+    } else {
+      fill = fillBase.withValues(alpha: 0.10);
+    }
     final borderColor = content.withValues(alpha: _hovered ? 0.5 : 0.3);
 
-    // Height fills the agenda's row-2 box exactly (secondarySize * 1.25) so
-    // the pill never grows the row; the border is painted inside, adding no
-    // extra height.
-    final height = fontSize * 1.25;
+    // The pill sits a little taller than its text so the icon + number have a
+    // bit of vertical breathing room. The factor stays under the agenda's
+    // fixed row-2 box, which is sized for the larger sm text (secondarySize *
+    // 1.25 ≈ fontSize * 1.46 when the chip renders at xs): the pill fills more
+    // of that box without overflowing or growing the row. In the thread footer
+    // it sits well inside the taller button row. The border is painted inside,
+    // adding no extra height.
+    final height = fontSize * 1.4;
     final iconSize = fontSize * 0.82;
     final gap = fontSize * 0.5;
 
