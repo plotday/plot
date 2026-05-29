@@ -207,4 +207,121 @@ void main() {
       );
     });
   });
+
+  group('AgendaBuilder focus blocks split surrounding gaps', () {
+    setUp(() => Time.setFrozenTime(DateTime(2026, 5, 14, 14, 0)));
+    tearDown(() => Time.unfreeze());
+
+    PriorityBlockRow mkRow(Priority p, DateTime at, Duration d) =>
+        PriorityBlockRow(
+          id: Uuid.generate(),
+          priorityId: p.id,
+          createdBy: Uuid.generate(),
+          orderValue: Order(0),
+          effectiveAt: at,
+          duration: d,
+          archivedAt: null,
+          createdAt: DateTime(2026, 5, 14),
+          updatedAt: DateTime(2026, 5, 14),
+        );
+
+    // Two future events leave a free gap [17:00, 19:00] between them.
+    List<Thread> twoEvents(Priority p) => [
+          Thread(
+            priority: p,
+            title: 'morning',
+            at: DateTimeRange(
+                DateTime(2026, 5, 14, 16), DateTime(2026, 5, 14, 17)),
+          ),
+          Thread(
+            priority: p,
+            title: 'evening',
+            at: DateTimeRange(
+                DateTime(2026, 5, 14, 19), DateTime(2026, 5, 14, 20)),
+          ),
+        ];
+
+    test('a focus block dropped at the gap start shrinks the gap to the '
+        'remaining time and moves it below the focus block', () {
+      final p = _testPriority();
+      // Focus block at the gap's start (17:00) for one hour.
+      final row =
+          mkRow(p, DateTime(2026, 5, 14, 17), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: twoEvents(p),
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+      );
+
+      final blocks = model.allBlocks.toList();
+      final fbIndex = blocks.indexWhere((b) => b.id == 'fb_${row.id}');
+      // The inter-event gap is the one ending when the next event starts.
+      final gapIndex = blocks.indexWhere(
+        (b) => b is ui.GapBlock && b.range.end == DateTime(2026, 5, 14, 19),
+      );
+
+      expect(fbIndex, isNonNegative, reason: 'focus block renders');
+      expect(gapIndex, isNonNegative, reason: 'a residual gap remains');
+      expect(gapIndex, greaterThan(fbIndex),
+          reason: 'the gap header moves below the focus block');
+
+      final gap = blocks[gapIndex] as ui.GapBlock;
+      expect(gap.range.start, DateTime(2026, 5, 14, 18),
+          reason: 'gap now starts when the focus block ends');
+      expect(gap.range.end, DateTime(2026, 5, 14, 19),
+          reason: 'gap still ends at the next event');
+    });
+
+    test('a residual gap keeps the original gap start as its period anchor',
+        () {
+      final p = _testPriority();
+      final row =
+          mkRow(p, DateTime(2026, 5, 14, 17), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: twoEvents(p),
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+      );
+      final gap = model.allBlocks.whereType<ui.GapBlock>().firstWhere(
+            (g) => g.range.end == DateTime(2026, 5, 14, 19),
+          );
+      expect(gap.periodAnchor, DateTime(2026, 5, 14, 17),
+          reason: 'drops into the residual still anchor at the original gap');
+    });
+
+    test('a focus block that fills the whole gap removes the gap header', () {
+      final p = _testPriority();
+      // Focus block spans the entire [17:00, 19:00] gap.
+      final row =
+          mkRow(p, DateTime(2026, 5, 14, 17), const Duration(hours: 2));
+      final model = AgendaBuilder.build(
+        threads: twoEvents(p),
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+      );
+      // The inter-event gap should be gone; the trailing end-of-day gap
+      // is unaffected.
+      expect(
+        model.allBlocks
+            .whereType<ui.GapBlock>()
+            .where((g) => g.range.end == DateTime(2026, 5, 14, 19)),
+        isEmpty,
+        reason: 'no time remains, so the gap header is removed',
+      );
+      expect(
+        model.allBlocks.where((b) => b.id == 'fb_${row.id}'),
+        isNotEmpty,
+        reason: 'the focus block still renders',
+      );
+    });
+  });
 }

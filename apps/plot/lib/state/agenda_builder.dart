@@ -82,6 +82,11 @@ class AgendaBuilder {
       threadsByPriority: threadsByPriority,
       now: effectiveNow,
     );
+    // Carve focus blocks out of the gaps they land in: a focus block
+    // dropped at a gap's start consumes the front of that free time, so
+    // the gap header shrinks to the remaining time and re-sorts below the
+    // focus block. A focus block that fills the whole gap removes it.
+    final split = _splitGapsAroundFocusBlocks(withFocusBlocks);
     // Populate each PriorityBlock's windowStart/windowEnd based on its
     // position relative to time-anchored siblings in the section. Blocks
     // that already carry an explicit non-epoch window (focus blocks) are
@@ -92,7 +97,127 @@ class AgendaBuilder {
     // walked every priority's rows and folded a carried-forward duration
     // onto every later block — has been removed; a block's duration lives
     // only on the focus block it belongs to.
-    return _populateBlockWindows(withFocusBlocks);
+    return _populateBlockWindows(split);
+  }
+
+  /// Chronological sort key for a block within its section. Mirrors the
+  /// rule used when merging focus blocks in [_insertExplicitFocusBlocks]:
+  /// events and gaps sort by their start, focus blocks by their explicit
+  /// window start, and thread-grouped blocks with epoch-zero windows fall
+  /// to the end.
+  static int _chronoIndex(AgendaBlock b) {
+    if (b is EventBlock) {
+      return b.event.at?.start?.millisecondsSinceEpoch ?? 1 << 62;
+    }
+    if (b is GapBlock) {
+      return b.range.start?.millisecondsSinceEpoch ?? 1 << 62;
+    }
+    if (b is PriorityBlock && b.windowStart.millisecondsSinceEpoch > 0) {
+      return b.windowStart.millisecondsSinceEpoch;
+    }
+    return 1 << 62;
+  }
+
+  /// Shrink every [GapBlock] by the focus blocks that land inside it.
+  ///
+  /// A focus block ([PriorityBlock] with a [PriorityBlock.sourceRow])
+  /// dropped into a gap anchors at the gap's start, so it consumes the
+  /// front of the free time. The gap header therefore starts when the
+  /// last overlapping focus block ends and re-sorts below it. When the
+  /// focus block(s) fill the whole gap the header is removed.
+  ///
+  /// The shrunken gap keeps the ORIGINAL gap start as its
+  /// [GapBlock.periodAnchor] so drops into the residual still resolve to
+  /// the gap's true anchor (see [GapBlock.periodAnchor] and
+  /// `_availableInGap` in `page/agenda.dart`).
+  static AgendaModel _splitGapsAroundFocusBlocks(AgendaModel model) {
+    final newSections = <AgendaSection>[];
+    for (final section in model.sections) {
+      if (section is! DateSection) {
+        newSections.add(section);
+        continue;
+      }
+      final focusBlocks = section.blocks
+          .whereType<PriorityBlock>()
+          .where((b) => b.sourceRow != null)
+          .toList();
+      if (focusBlocks.isEmpty) {
+        newSections.add(section);
+        continue;
+      }
+
+      final rebuilt = <AgendaBlock>[];
+      var changed = false;
+      for (final block in section.blocks) {
+        if (block is! GapBlock) {
+          rebuilt.add(block);
+          continue;
+        }
+        final gapStart = block.range.start;
+        final gapEnd = block.range.end;
+        if (gapStart == null || gapEnd == null) {
+          rebuilt.add(block);
+          continue;
+        }
+        // Focus blocks overlapping this gap consume its front. Because
+        // drops anchor at the gap start and stack, the occupied region is
+        // contiguous from the start, so the new free start is the latest
+        // end among overlapping focus blocks.
+        DateTime newStart = gapStart;
+        for (final fb in focusBlocks) {
+          if (fb.windowStart.isBefore(gapEnd) &&
+              fb.windowEnd.isAfter(gapStart) &&
+              fb.windowEnd.isAfter(newStart)) {
+            newStart = fb.windowEnd;
+          }
+        }
+        if (newStart == gapStart) {
+          // No focus block touches this gap — leave it untouched.
+          rebuilt.add(block);
+          continue;
+        }
+        changed = true;
+        if (!newStart.isBefore(gapEnd)) {
+          // The gap is fully consumed — drop the header.
+          continue;
+        }
+        rebuilt.add(
+          GapBlock(
+            id: block.id,
+            priority: block.priority,
+            range: DateTimeRange(newStart, gapEnd),
+            threads: block.threads,
+            isOutside: block.isOutside,
+            periodAnchor: block.periodAnchor ?? gapStart,
+            cascadeDuration: block.cascadeDuration,
+          ),
+        );
+      }
+
+      if (!changed) {
+        newSections.add(section);
+        continue;
+      }
+      // Stable sort: only gaps moved, so preserve the existing relative
+      // order for blocks that tie on the chronological key (e.g.
+      // thread-grouped blocks that all sort to the end). Pair each block
+      // with its original index — `AgendaBlock` is value-equal (Equatable),
+      // so keying a map by the block itself would collide.
+      final indexed = [
+        for (var k = 0; k < rebuilt.length; k++) (index: k, block: rebuilt[k]),
+      ]..sort((a, b) {
+          final cmp =
+              _chronoIndex(a.block).compareTo(_chronoIndex(b.block));
+          return cmp != 0 ? cmp : a.index.compareTo(b.index);
+        });
+      newSections.add(DateSection(
+        date: section.date,
+        blocks: List.unmodifiable([for (final e in indexed) e.block]),
+        isNow: section.isNow,
+        scheduleAt: section.scheduleAt,
+      ));
+    }
+    return AgendaModel(sections: List.unmodifiable(newSections));
   }
 
   /// Post-process [model] so that each "time period" (a gap region or the
@@ -556,28 +681,6 @@ class AgendaBuilder {
       );
     }
 
-    int chronologicalIndex(AgendaBlock b) {
-      // For ordering: events and gaps with a real start, plus focus
-      // blocks carrying their own window. Thread-grouped PriorityBlocks
-      // that still have epoch-zero windows sort to the end (after the
-      // last time-anchored neighbor).
-      if (b is EventBlock) {
-        final s = b.event.at?.start;
-        return s?.millisecondsSinceEpoch ?? 1 << 62;
-      }
-      if (b is GapBlock) {
-        final s = b.range.start;
-        return s?.millisecondsSinceEpoch ?? 1 << 62;
-      }
-      if (b is PriorityBlock) {
-        if (b.windowStart.millisecondsSinceEpoch > 0) {
-          return b.windowStart.millisecondsSinceEpoch;
-        }
-        return 1 << 62;
-      }
-      return 1 << 62;
-    }
-
     final newSections = <AgendaSection>[];
     for (final section in model.sections) {
       if (section is! DateSection) {
@@ -597,7 +700,7 @@ class AgendaBuilder {
         ...section.blocks,
         for (final e in extras) buildFocusBlock(e),
       ];
-      merged.sort((a, b) => chronologicalIndex(a).compareTo(chronologicalIndex(b)));
+      merged.sort((a, b) => _chronoIndex(a).compareTo(_chronoIndex(b)));
       newSections.add(DateSection(
         date: section.date,
         blocks: List.unmodifiable(merged),
