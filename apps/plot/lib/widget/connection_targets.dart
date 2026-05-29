@@ -39,10 +39,15 @@ class CreateTarget {
   /// Display label for picker copy. Falls back to the linkType's label.
   String get _displayLabel => compose.label ?? linkType.label;
 
-  /// Stable identity for MRU keying and de-duping.
-  String get key => isDmType
-      ? '${twist.id}||${linkType.type}|${compose.targets}'
-      : '${twist.id}|${channel!.channelId}|${linkType.type}';
+  /// Stable identity for MRU keying and de-duping. Delegates to
+  /// [connectionTargetKey] so it stays byte-identical to the key recorded
+  /// from a draft's [CreateLinkUserAction] (see [createLinkActionKey]).
+  String get key => connectionTargetKey(
+        twistInstanceId: twist.id.toString(),
+        channelId: channel?.channelId,
+        linkType: linkType.type,
+        dmTargets: compose.targets,
+      );
 
   String get title =>
       'Create new $connectorName ${_displayLabel.toLowerCase()}';
@@ -92,6 +97,35 @@ class CreateTarget {
       );
 }
 
+/// Canonical identity/MRU key for a connection target. Shared by
+/// [CreateTarget.key] and [createLinkActionKey] so a key recorded from a
+/// draft's [CreateLinkUserAction] always matches the [CreateTarget] the
+/// picker built — including DM-type targets (`contacts`/`addresses`), whose
+/// key uses the `twist||linkType|targets` form rather than `twist|null|...`.
+/// `contacts` and `addresses` are the only DM discriminants; any other value
+/// (including the default `channels`) is treated as channel-type.
+String connectionTargetKey({
+  required String twistInstanceId,
+  required String? channelId,
+  required String linkType,
+  required String? dmTargets,
+}) {
+  final isDm = dmTargets == 'contacts' || dmTargets == 'addresses';
+  return isDm
+      ? '$twistInstanceId||$linkType|$dmTargets'
+      : '$twistInstanceId|$channelId|$linkType';
+}
+
+/// The [connectionTargetKey] for the connection a [CreateLinkUserAction]
+/// targets. Used to record connection usage from a submitted draft so the
+/// MRU keys line up with the [CreateTarget]s loaded for the picker.
+String createLinkActionKey(CreateLinkUserAction action) => connectionTargetKey(
+      twistInstanceId: action.twistInstanceId,
+      channelId: action.channelId,
+      linkType: action.linkType,
+      dmTargets: action.dmTargets,
+    );
+
 /// Build every create-target available to the current user across all enabled
 /// channels.
 ///
@@ -109,9 +143,10 @@ class CreateTarget {
 Future<List<CreateTarget>> loadCreateTargets() async {
   final channels = await Channel.getAllEnabled();
   final result = <CreateTarget>[];
-  // Tracks which (twistId, linkTypeType, composeTargets) tuples have already
-  // been emitted as connection-scoped targets so we emit exactly one per
-  // twist instance, not one per enabled channel on that instance.
+  // Tracks which connection-scoped targets have already been emitted so we
+  // emit exactly one per twist instance, not one per enabled channel on that
+  // instance. Uses [connectionTargetKey] so the dedup key equals the
+  // target's own key.
   final emittedDmKeys = <String>{};
 
   for (final channel in channels) {
@@ -154,7 +189,12 @@ Future<List<CreateTarget>> loadCreateTargets() async {
         // per compose targets mode, not per channel. A linkType with two
         // compose entries (one channels, one contacts) — possible once
         // multi-compose is supported — would dedupe each separately.
-        final dmKey = '${twist.id}|${linkType.type}|${compose.targets}';
+        final dmKey = connectionTargetKey(
+          twistInstanceId: twist.id.toString(),
+          channelId: null,
+          linkType: linkType.type,
+          dmTargets: compose.targets,
+        );
         if (!emittedDmKeys.add(dmKey)) continue;
         result.add(CreateTarget(
           twist: twist,

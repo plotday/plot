@@ -100,6 +100,25 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     return [...priorityBucket, ...globalBucket, ...unseenBucket];
   }
 
+  /// The highest-ranked connection key among [candidateKeys] that has a
+  /// recorded use, biased per [rankConnectionsByMru] (priority-bucket beats
+  /// global-bucket). Returns null when none of the candidates has ever been
+  /// used, so callers can keep their existing default (e.g. "Plot thread").
+  String? lastUsedConnectionKey({
+    required List<String> candidateKeys,
+    required String priorityId,
+  }) {
+    final ranked = rankConnectionsByMru(
+      keys: candidateKeys,
+      priorityId: priorityId,
+    );
+    if (ranked.isEmpty) return null;
+    final top = ranked.first;
+    // Unseen keys sort last, so a seen first key means at least one candidate
+    // has history. Guard explicitly in case every candidate is unseen.
+    return state.connectionMru.containsKey(top) ? top : null;
+  }
+
   /// Sort a list of items by mention MRU order
   /// Items not in the MRU list will be placed after MRU items in their original order.
   /// Low-priority items (e.g. contacts) sort after other non-MRU items.

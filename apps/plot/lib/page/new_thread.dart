@@ -146,6 +146,59 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     // Load available connection create-targets for the connection chip row.
     await _loadConnections();
+    if (!mounted) return;
+
+    // Default the connection chip to the user's last-used connection for this
+    // priority (falls back to global; no-op with no history).
+    await _applyLastUsedConnectionDefault();
+  }
+
+  /// Pre-selects the user's last-used connection on a fresh draft so the
+  /// compose chip defaults to it instead of "Plot thread". No-op when there's
+  /// no recorded history (keeps the Plot-thread default), when a connection is
+  /// already set, or for share-intent captures (a stray Enter must not post
+  /// the shared link to an external connector).
+  Future<void> _applyLastUsedConnectionDefault() async {
+    if (widget.sharedUrl != null) return;
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    if (_selectedTwist != null || _activeCreateAction != null) return;
+
+    final prefs = context.read<LocalPreferencesBloc>();
+    final draft = bloc.state.draft;
+
+    // Chat-eligible twists — same filter the connection picker uses.
+    final chatTwists = bloc.state.twists
+        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
+        .toList();
+
+    final candidateKeys = <String>[
+      ConnectionChoice.plotThread.key,
+      ...chatTwists.map((t) => 'twist:${t.id}'),
+      ..._allConnectionTargets.map((t) => t.key),
+    ];
+
+    final key = prefs.lastUsedConnectionKey(
+      candidateKeys: candidateKeys,
+      priorityId: draft.priority.id.toString(),
+    );
+    // Null (no history) or the Plot-thread sentinel → keep the existing
+    // default; nothing to apply.
+    if (key == null || key == ConnectionChoice.plotThread.key) return;
+
+    if (key.startsWith('twist:')) {
+      final twist =
+          chatTwists.where((t) => 'twist:${t.id}' == key).firstOrNull;
+      if (twist != null) _selectTwist(twist, recordUsage: false);
+      return;
+    }
+
+    final target =
+        _allConnectionTargets.where((t) => t.key == key).firstOrNull;
+    if (target != null) {
+      await _applyConnectionChoice(ConnectionChoice.target(target));
+      if (!mounted) return;
+    }
   }
 
   Future<void> _loadConnections() async {
@@ -669,15 +722,19 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  void _selectTwist(TwistInstance twist) {
+  void _selectTwist(TwistInstance twist, {bool recordUsage = true}) {
     setState(() => _selectedTwist = twist);
     final bloc = context.read<PriorityBloc>();
     bloc.updateDraftLocal(
       bloc.state.draft.copyWith(icon: Value('twist:${twist.twistId}')),
     );
-    context.read<LocalPreferencesBloc>().recordMentionUsage(
-      twist.id.toString(),
-    );
+    // Skipped when selecting a remembered default — a default must not feed
+    // back into the mention ranking.
+    if (recordUsage) {
+      context.read<LocalPreferencesBloc>().recordMentionUsage(
+        twist.id.toString(),
+      );
+    }
   }
 
   String get _editorHint {
@@ -753,10 +810,36 @@ class NewThreadPageState extends State<NewThreadPage> {
     await bloc.updateDraft(updatedThread, note: note);
   }
 
+  /// The canonical connection key for whatever the compose surface currently
+  /// has selected: the selected twist, an attached create-link action, or the
+  /// "Plot thread" sentinel. Recorded on submit so the next new thread in this
+  /// priority defaults back to it (see _applyLastUsedConnectionDefault).
+  String _currentConnectionKey() {
+    if (_selectedTwist != null) return 'twist:${_selectedTwist!.id}';
+    final action = _activeCreateAction;
+    if (action != null) return createLinkActionKey(action);
+    return ConnectionChoice.plotThread.key;
+  }
+
   void _onChatSubmitted() {
+    final prefs = context.read<LocalPreferencesBloc>();
     if (_selectedTwist != null) {
-      context.read<LocalPreferencesBloc>().recordMentionUsage(
-        _selectedTwist!.id.toString(),
+      prefs.recordMentionUsage(_selectedTwist!.id.toString());
+    }
+    // Remember this connection so the next new thread in this priority
+    // defaults to it (see _applyLastUsedConnectionDefault). Fire-and-forget:
+    // the route flip to ThreadRoute follows immediately.
+    final bloc = _priorityBloc;
+    if (bloc != null) {
+      unawaited(
+        prefs
+            .recordConnectionUsage(
+              channelKey: _currentConnectionKey(),
+              priorityId: bloc.state.draft.priority.id.toString(),
+            )
+            .catchError((Object e, StackTrace s) {
+              Tracker.captureException(e, s);
+            }),
       );
     }
     // Clear global search so the new thread is visible in the list

@@ -70,4 +70,68 @@ void main() {
       expect(ranked, ['Z', 'A', 'M']);
     });
   });
+
+  group('lastUsedConnectionKey', () {
+    test('prefers a use in the current priority over a more-recent global use',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      // 'A' used in p1; later 'B' used elsewhere (more recent globally).
+      await bloc.recordConnectionUsage(channelKey: 'A', priorityId: 'p1');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(channelKey: 'B', priorityId: 'pX');
+
+      final key = bloc.lastUsedConnectionKey(
+        candidateKeys: ['A', 'B', 'plot:thread'],
+        priorityId: 'p1',
+      );
+      expect(key, 'A');
+    });
+
+    test('falls back to the global most-recent when this priority has none',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      await bloc.recordConnectionUsage(channelKey: 'A', priorityId: 'pX');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(channelKey: 'B', priorityId: 'pY');
+
+      final key = bloc.lastUsedConnectionKey(
+        candidateKeys: ['A', 'B'],
+        priorityId: 'p1',
+      );
+      expect(key, 'B');
+    });
+
+    test('returns null when no candidate has a recorded use', () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      final key = bloc.lastUsedConnectionKey(
+        candidateKeys: ['A', 'plot:thread'],
+        priorityId: 'p1',
+      );
+      expect(key, isNull);
+    });
+
+    test('returns plot:thread when that was the last choice', () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      await bloc.recordConnectionUsage(channelKey: 'A', priorityId: 'p1');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(
+        channelKey: 'plot:thread',
+        priorityId: 'p1',
+      );
+
+      final key = bloc.lastUsedConnectionKey(
+        candidateKeys: ['A', 'plot:thread'],
+        priorityId: 'p1',
+      );
+      expect(key, 'plot:thread');
+    });
+  });
 }

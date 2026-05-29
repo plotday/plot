@@ -100,6 +100,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Twist Creator SDK (Twister) for custom integrations
 - Development environments: Personal, Private, Review, Public
 - Twists with a `threadType` appear in the new-thread connection picker, so users can start a chat with the twist alongside picking a connector channel or a plain Plot thread
+- The new-thread connection field defaults to the connection last used in that priority (falling back to the most recent across priorities) — a connector channel, a twist chat, or a plain Plot thread — so repeat workflows skip re-picking; share-intent captures stay a plain Plot thread
 - Built-in twists:
   - Plot (default workflows; available as "Plot AI chat" in the connection picker)
   - Calendar Sync
