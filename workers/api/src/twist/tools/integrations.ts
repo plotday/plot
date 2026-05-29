@@ -4512,13 +4512,20 @@ export class Integrations extends Tool implements IAuth {
     };
 
     // Re-auth: caller knows which account to reconnect, so pre-select it via
-    // login_hint and drop prompt=select_account so Google can skip the chooser
-    // when the user is already signed into that account. login_hint is also a
-    // standard OAuth param honored by Microsoft.
+    // login_hint. login_hint is a standard OAuth param honored by both Google
+    // and Microsoft, and pre-fills the account so the user skips the chooser.
     if (accountHint && (provider === "google" || provider === "microsoft")) {
       additionalParams.login_hint = accountHint;
       if (provider === "google") {
-        delete additionalParams.prompt;
+        // Force the consent screen on Google re-auth. Google only re-issues a
+        // refresh_token when access_type=offline is paired with prompt=consent
+        // (or on a first-ever authorization); for an already-consented account,
+        // any prompt other than "consent" returns an access-token-only grant
+        // with no refresh_token. That token expires in ~1h and can't refresh,
+        // so getActorToken clears it and re-flags reauth — an infinite re-auth
+        // loop. Forcing consent (login_hint still pre-selects the account)
+        // guarantees the refresh_token comes back.
+        additionalParams.prompt = "consent";
       }
     }
 
