@@ -1,3 +1,10 @@
+-- Disable statement timeout for this migration transaction. The data-migration
+-- UPDATEs below (backfill canonical_source, dedup notes, bump every link and
+-- schedule row) touch large tables and exceed the default per-statement budget
+-- on production. The whole migration runs in one transaction, so SET LOCAL
+-- scopes the override to this migration only.
+SET LOCAL statement_timeout = '0';
+
 -- Modify "note" table
 ALTER TABLE "public"."note" ADD COLUMN "canonical_source" text NULL;
 -- Create index "note_thread_canonical_key_unique" to table: "note"
