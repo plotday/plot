@@ -29,9 +29,12 @@ class AgendaBuilder {
     DateTime? now,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
 
-    /// Optional lookup so focus blocks for priorities with no threads in
-    /// [threads] still resolve their [Priority]. Defaults to deriving from
-    /// `threads`.
+    /// Authoritative source for a focus block's [Priority], keyed by
+    /// priority id. Focus blocks are explicit `priority_block` rows that
+    /// exist independently of any threads (e.g. a block on the root
+    /// priority, which never has its own agenda threads), so their
+    /// [Priority] is resolved from this map — never derived from
+    /// [threads]. A block whose priority is absent here is skipped.
     Map<PriorityId, Priority>? priorityById,
   }) {
     final blocksByPriority = priorityBlocksByPriority ?? const {};
@@ -49,19 +52,15 @@ class AgendaBuilder {
         t.priority.path != context.path &&
         !context.path.isParent(t.priority.path);
 
-    // Lookups for association rendering and focus-block previews.
+    // Lookups for association rendering and focus-block previews. Focus
+    // blocks resolve their [Priority] from [priorityById] (thread-
+    // independent), so threads only feed the association/preview maps.
     final threadById = <Uuid, Thread>{};
     final threadsByPriority = <PriorityId, List<Thread>>{};
-    final priorityLookup = <PriorityId, Priority>{};
+    final priorityLookup = priorityById ?? const <PriorityId, Priority>{};
     for (final t in threads) {
       threadById[t.id] = t;
       threadsByPriority.putIfAbsent(t.priority.id, () => []).add(t);
-      priorityLookup.putIfAbsent(t.priority.id, () => t.priority);
-    }
-    if (priorityById != null) {
-      for (final e in priorityById.entries) {
-        priorityLookup.putIfAbsent(e.key, () => e.value);
-      }
     }
 
     final associatedChildIds = <Uuid>{};

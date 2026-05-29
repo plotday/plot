@@ -656,6 +656,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
+      priorityById: _priorityById,
     );
     emit(
       state.copyWith(
@@ -1389,8 +1390,18 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// first stream emission; AgendaBuilder falls back to
   /// `priority.order` when a priority has no rows here.
   Map<PriorityId, List<PriorityBlockRow>> _priorityBlocksByPriority = const {};
-  StreamSubscription<Map<PriorityId, List<PriorityBlockRow>>>?
+  StreamSubscription<
+    (Map<PriorityId, List<PriorityBlockRow>>, Map<PriorityId, Priority>)
+  >?
   _priorityBlocksSubscription;
+
+  /// Priorities keyed by id, sourced from a priorities watch (NOT from the
+  /// agenda's threads). Passed to [AgendaBuilder.build] as `priorityById`
+  /// so explicit focus blocks resolve their [Priority] even when the
+  /// priority has no threads in the agenda — most notably the root
+  /// priority, whose agenda shows only descendants' events. Mirrors the
+  /// block-priority resolution in [NowBloc].
+  Map<PriorityId, Priority> _priorityById = const {};
 
   /// Data-driven suppression for association changes: keeps reorderViewItems
   /// until _associations confirms the child is under the expected parent.
@@ -1498,6 +1509,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
+      priorityById: _priorityById,
     );
     final flat = agenda.flatItems();
     emit(
@@ -2447,6 +2459,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       minFillDays: _agendaFillDays,
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
+      priorityById: _priorityById,
     );
     emit(
       state.copyWith(
@@ -3010,11 +3023,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // `cascadeDuration` stays stale until some other event happens to
     // rebuild the agenda.
     _priorityBlocksSubscription?.cancel();
-    _priorityBlocksSubscription = streamPriorityBlocksGroupedByPriority()
-        .listen((grouped) {
-          _priorityBlocksByPriority = grouped;
-          _rebuildAgendaModel();
-        });
+    _priorityBlocksSubscription = Rx.combineLatest2(
+      streamPriorityBlocksGroupedByPriority(),
+      Priority.watch(archived: false),
+      (
+        Map<PriorityId, List<PriorityBlockRow>> grouped,
+        List<Priority> priorities,
+      ) => (grouped, {for (final p in priorities) p.id: p}),
+    ).listen((data) {
+      _priorityBlocksByPriority = data.$1;
+      _priorityById = data.$2;
+      _rebuildAgendaModel();
+    });
 
     // Watch tags for the priority
     _tagsSubscription?.cancel();
@@ -3524,6 +3544,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 minFillDays: _agendaFillDays,
                 associationsByParentId: _associations,
                 priorityBlocksByPriority: _priorityBlocksByPriority,
+                priorityById: _priorityById,
               );
               if (buildStart != null) {
                 profile?.mark(

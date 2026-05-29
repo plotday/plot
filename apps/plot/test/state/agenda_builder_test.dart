@@ -247,6 +247,48 @@ void main() {
       expect(fb.sourceRow?.id, row.id);
     });
 
+    test('a focus block renders from priorityById without any threads '
+        '(root-priority regression)', () {
+      // The root priority's agenda shows only descendants' events, so the
+      // root never has a thread of its own in `threads`. A focus block on
+      // it must still render — its Priority comes from `priorityById`, not
+      // from threads. (Regression: it was silently dropped.)
+      final root = _testPriority(title: 'Root', path: 'root');
+      final row =
+          _focusRow(root, DateTime(2026, 5, 14, 10), const Duration(hours: 2));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: root,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          root.id: [row],
+        },
+        priorityById: {root.id: root},
+      );
+      final fb = model.allBlocks.whereType<ui.PriorityBlock>().toList();
+      expect(fb, hasLength(1), reason: 'block must render with no threads');
+      expect(fb.single.id, 'fb_${row.id}');
+      expect(fb.single.priority.id, root.id);
+      expect(fb.single.threads, isEmpty);
+    });
+
+    test('a focus block whose priority is absent from priorityById is skipped',
+        () {
+      final p = _testPriority();
+      final row =
+          _focusRow(p, DateTime(2026, 5, 14, 16), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        // priorityById intentionally omitted.
+      );
+      expect(model.allBlocks.whereType<ui.PriorityBlock>(), isEmpty);
+    });
+
     test('a read-only gap marks the free space between two events', () {
       final p = _testPriority();
       final morning = Thread(

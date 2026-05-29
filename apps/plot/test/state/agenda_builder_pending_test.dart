@@ -103,6 +103,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
       final fb = model.allBlocks
           .whereType<ui.PriorityBlock>()
@@ -135,6 +136,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
       final fbs = model.allBlocks
           .whereType<ui.PriorityBlock>()
@@ -156,6 +158,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
       expect(
         model.allBlocks
@@ -177,6 +180,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
       expect(
         model.allBlocks
@@ -233,6 +237,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
 
       final blocks = model.allBlocks.toList();
@@ -266,6 +271,7 @@ void main() {
         priorityBlocksByPriority: {
           p.id: [row],
         },
+        priorityById: {p.id: p},
       );
       // The inter-event gap should be gone; the trailing end-of-day gap
       // is unaffected.
