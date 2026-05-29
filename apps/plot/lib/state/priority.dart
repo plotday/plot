@@ -596,33 +596,25 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void>? _activeTabAppendInFlight;
   int _activeTabAppendGeneration = 0;
 
-  /// Tail cursor of the most recent head emission for the Catch up tab.
-  /// Used to start the first append page from the right spot when the
-  /// active tab is Catch up.
-  ({int urgent, int importance, String activityAt, ThreadId id})?
-  _catchUpHeadTailCursor;
+  /// True while the active feed is in flat (search / filter / icon) mode,
+  /// which renders a single unsectioned list from one [Thread.watchAllTabHead]
+  /// query. When false the feed is sectioned and fed by three merged section
+  /// streams (Unread / Active+Scheduled / Done). Pagination dispatches on
+  /// this: flat pages the all-tab query; sectioned pages the Done stream.
+  bool _activeTabFlatMode = false;
 
-  /// Cursor of the next Catch up append page, or `null` when no further
-  /// append is available locally (last fetched page was non-saturated or
-  /// no append has run yet — fall back to the head tail cursor).
-  ({int urgent, int importance, String activityAt, ThreadId id})?
-  _catchUpAppendCursor;
-
-  /// Tail cursor of the most recent head emission for the All tab.
+  /// Flat-mode (search/filter) head + append cursors for the single
+  /// unified query. Unused in sectioned mode.
   ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
   _allTabHeadTailCursor;
-
-  /// Cursor of the next All-tab append page.
   ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
   _allTabAppendCursor;
 
-  /// Tail cursor of the most recent head emission for an action tab.
-  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-  _actionTabHeadTailCursor;
-
-  /// Cursor of the next action-tab append page.
-  ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-  _actionTabAppendCursor;
+  /// Sectioned-mode Done head + append cursors. Only the Done section
+  /// paginates on scroll; Unread and Active+Scheduled are loaded whole at a
+  /// generous limit (they're bounded), so they carry no cursor.
+  ({String activityAt, ThreadId id})? _doneHeadTailCursor;
+  ({String activityAt, ThreadId id})? _doneAppendCursor;
 
   /// Latest threads list emitted by the agenda subscription (after
   /// optimistic overrides). Optimistic mutation handlers transform
@@ -754,12 +746,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activeTabAppendsExhausted = false;
     _activeTabAppendGeneration++;
     _activeTabHeadReceived = false;
-    _catchUpHeadTailCursor = null;
-    _catchUpAppendCursor = null;
     _allTabHeadTailCursor = null;
     _allTabAppendCursor = null;
-    _actionTabHeadTailCursor = null;
-    _actionTabAppendCursor = null;
+    _doneHeadTailCursor = null;
+    _doneAppendCursor = null;
     _overlay.clear();
 
     // Unified feed: a single subscription returns every visible thread.
@@ -775,29 +765,127 @@ class PriorityBloc extends Cubit<PriorityState> {
         isSearching || state.showSubPriorities || _currentEventForFeed != null;
     final searchGlobal = isSearching && priorityToLoad.root;
 
+    final priorityId = scopeByPath ? null : priorityToLoad.id;
+    final priorityPath = scopeByPath
+        ? (searchGlobal ? null : priorityToLoad.path)
+        : null;
+    final archived = state.showArchived;
+    final filter = state.filter.isNotEmpty ? state.filter : null;
+    final reactionFilter =
+        state.reactionFilter.isNotEmpty ? state.reactionFilter : null;
+    final iconFilter = state.iconFilter.isNotEmpty ? state.iconFilter : null;
+    final search = isSearching ? state.search : null;
+
+    // Flat mode (search / filter / icon) renders one unsectioned list, so a
+    // single query is both correct and cheaper. Sectioned mode runs three
+    // independently-sorted streams so the bounded Unread / Active+Scheduled
+    // sets always surface regardless of how deep the Done tail is — the bug
+    // this fixes was active threads being buried past the LIMIT of a single
+    // `activity_at`-ordered page at rolled-up priorities.
+    final flatMode = state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+
     _activeTabSubscriptionTab = ActivityTab.all;
-    _activeTabSubscription =
-        Thread.watchAllTabHead(
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
-          archived: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          reactionFilter: state.reactionFilter.isNotEmpty
-              ? state.reactionFilter
-              : null,
-          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
-          limit: _activityFeedLimit,
-        ).listen((result) {
-          if (isClosed) return;
-          _activeTabHead = result.threads;
-          _activeTabHeadSaturated = result.saturated;
-          _allTabHeadTailCursor = result.tailCursor;
-          _activeTabHeadReceived = true;
-          _rebuildActiveTabSection();
-        });
+    _activeTabFlatMode = flatMode;
+
+    if (flatMode) {
+      _activeTabSubscription = Thread.watchAllTabHead(
+        priorityId: priorityId,
+        priorityPath: priorityPath,
+        archived: archived,
+        filter: filter,
+        reactionFilter: reactionFilter,
+        iconFilter: iconFilter,
+        search: search,
+        limit: _activityFeedLimit,
+      ).listen((result) {
+        if (isClosed) return;
+        _activeTabHead = result.threads;
+        _activeTabHeadSaturated = result.saturated;
+        _allTabHeadTailCursor = result.tailCursor;
+        _activeTabHeadReceived = true;
+        _rebuildActiveTabSection();
+      });
+      return;
+    }
+
+    // Sectioned mode: merge the three section streams into a single head
+    // list, deduped by id (streams are mutually exclusive on the stored
+    // unread/active booleans, so a dupe only appears for a single frame
+    // mid-transition — keeping the first occurrence pins it stably). Only
+    // the Done stream paginates; its tail cursor drives [_fetchMoreDone].
+    _activeTabSubscription = Rx.combineLatest3<
+        ({
+          List<Thread> threads,
+          ({int urgent, int importance, double order, ThreadId id})? tailCursor,
+          bool saturated,
+        }),
+        ({
+          List<Thread> threads,
+          ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+              tailCursor,
+          bool saturated,
+        }),
+        ({
+          List<Thread> threads,
+          ({String activityAt, ThreadId id})? tailCursor,
+          bool saturated,
+        }),
+        ({
+          List<Thread> threads,
+          ({String activityAt, ThreadId id})? doneCursor,
+          bool doneSaturated,
+        })>(
+      Thread.watchUnreadHead(
+        priorityId: priorityId,
+        priorityPath: priorityPath,
+        archived: archived,
+        reactionFilter: reactionFilter,
+        limit: _boundedSectionLimit,
+      ),
+      Thread.watchActionTabHead(
+        action: 'active',
+        sectionScope: 'active',
+        priorityId: priorityId,
+        priorityPath: priorityPath,
+        archived: archived,
+        reactionFilter: reactionFilter,
+        limit: _boundedSectionLimit,
+      ),
+      Thread.watchDoneHead(
+        priorityId: priorityId,
+        priorityPath: priorityPath,
+        archived: archived,
+        reactionFilter: reactionFilter,
+        limit: _activityFeedLimit,
+      ),
+      (unread, active, done) {
+        final seen = <ThreadId>{};
+        final merged = <Thread>[];
+        for (final t in unread.threads) {
+          if (seen.add(t.id)) merged.add(t);
+        }
+        for (final t in active.threads) {
+          if (seen.add(t.id)) merged.add(t);
+        }
+        for (final t in done.threads) {
+          if (seen.add(t.id)) merged.add(t);
+        }
+        return (
+          threads: merged,
+          doneCursor: done.tailCursor,
+          doneSaturated: done.saturated,
+        );
+      },
+    ).listen((result) {
+      if (isClosed) return;
+      _activeTabHead = result.threads;
+      _activeTabHeadSaturated = result.doneSaturated;
+      _doneHeadTailCursor = result.doneCursor;
+      _activeTabHeadReceived = true;
+      _rebuildActiveTabSection();
+    });
   }
 
   /// Recompose the active tab's items list from the per-tab subscription's
@@ -1055,16 +1143,20 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (tab == null) return false;
     final isSearching = state.search.isNotEmpty;
     final exhaustedRemote = isSearching || _activityFeedSyncNoMore;
+    final appendCursorNull =
+        _activeTabFlatMode ? _allTabAppendCursor == null : _doneAppendCursor == null;
     final localExhausted = _activeTabAppended.isEmpty
         ? (!_activeTabHeadSaturated || _activeTabAppendsExhausted)
-        : _catchUpAppendCursor == null;
+        : appendCursorNull;
     return localExhausted && exhaustedRemote;
   }
 
-  /// Fetch additional Catch up pages beyond the head when InfiniteList
-  /// scrolls past what's loaded. Mirrors [fetchMoreActivityFeedItems] but
-  /// uses [Thread.fetchCatchUpPage] and the per-tab cursors.
-  Future<void> _fetchMoreCatchUp(int first, int count) async {
+  /// Fetch additional **Done** pages beyond the head when InfiniteList
+  /// scrolls past what's loaded (sectioned mode). Mirrors [_fetchMoreAllTab]
+  /// but uses [Thread.fetchDonePage] and the Done `(activity_at, id)` cursor.
+  /// Unread and Active+Scheduled are fully loaded by the head streams, so
+  /// only the Done tail grows here.
+  Future<void> _fetchMoreDone(int first, int count) async {
     final needed = first + count;
     bool needsProbeBeyondHead() =>
         _activeTabHeadSaturated &&
@@ -1090,7 +1182,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     while (!_computeActiveTabDoneEnd() &&
         (_activeTabHead.length + _activeTabAppended.length < needed ||
             needsProbeBeyondHead())) {
-      final cursor = _catchUpAppendCursor ?? _catchUpHeadTailCursor;
+      final cursor = _doneAppendCursor ?? _doneHeadTailCursor;
       if (cursor == null) {
         if (needsProbeBeyondHead()) {
           _activeTabAppendsExhausted = true;
@@ -1112,23 +1204,19 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabAppendInFlight = completer.future;
       ({
         List<Thread> threads,
-        ({int urgent, int importance, String activityAt, ThreadId id})?
-        nextCursor,
+        ({String activityAt, ThreadId id})? nextCursor,
         bool saturated,
       })?
       page;
       try {
-        page = await Thread.fetchCatchUpPage(
+        page = await Thread.fetchDonePage(
           priorityId: scopeByPath ? null : priorityToLoad.id,
           priorityPath: scopeByPath
               ? (searchGlobal ? null : priorityToLoad.path)
               : null,
           archived: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
-          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
           limit: _activityFeedLimit,
           after: cursor,
         );
@@ -1145,7 +1233,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           .where((t) => !headIds.contains(t.id))
           .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
-      _catchUpAppendCursor = page.saturated ? page.nextCursor : null;
+      _doneAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
         _activeTabAppendsExhausted = true;
       }
@@ -1246,109 +1334,6 @@ class PriorityBloc extends Cubit<PriorityState> {
           .toList();
       _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
       _allTabAppendCursor = page.saturated ? page.nextCursor : null;
-      if (!page.saturated) {
-        _activeTabAppendsExhausted = true;
-      }
-      _rebuildActiveTabSection();
-
-      if (!page.saturated) break;
-    }
-  }
-
-  /// Fetch additional action-tab pages beyond the head. Same shape as
-  /// [_fetchMoreCatchUp] but uses [Thread.fetchActionTabPage] and the
-  /// action tab's `(isActiveInv, bucketKey, order, id)` cursor.
-  Future<void> _fetchMoreActionTab(
-    ActivityTab tab,
-    int first,
-    int count,
-  ) async {
-    final action = tab.actionFilter;
-    if (action == null) return;
-    final needed = first + count;
-    bool needsProbeBeyondHead() =>
-        _activeTabHeadSaturated &&
-        _activeTabAppended.isEmpty &&
-        !_activeTabAppendsExhausted;
-
-    if (_activeTabHead.length + _activeTabAppended.length >= needed &&
-        !needsProbeBeyondHead()) {
-      return;
-    }
-
-    while (_activeTabAppendInFlight != null) {
-      try {
-        await _activeTabAppendInFlight;
-      } catch (_) {}
-      if (isClosed) return;
-      if (_activeTabHead.length + _activeTabAppended.length >= needed &&
-          !needsProbeBeyondHead()) {
-        return;
-      }
-    }
-
-    while (!_computeActiveTabDoneEnd() &&
-        (_activeTabHead.length + _activeTabAppended.length < needed ||
-            needsProbeBeyondHead())) {
-      final cursor = _actionTabAppendCursor ?? _actionTabHeadTailCursor;
-      if (cursor == null) {
-        if (needsProbeBeyondHead()) {
-          _activeTabAppendsExhausted = true;
-          _rebuildActiveTabSection();
-        }
-        break;
-      }
-
-      final gen = _activeTabAppendGeneration;
-      final priorityToLoad = state.context;
-      final isSearching = state.search.isNotEmpty;
-      final scopeByPath =
-          isSearching ||
-          state.showSubPriorities ||
-          _currentEventForFeed != null;
-      final searchGlobal = isSearching && priorityToLoad.root;
-
-      final completer = Completer<void>();
-      _activeTabAppendInFlight = completer.future;
-      ({
-        List<Thread> threads,
-        List<({ThreadId id, bool isActive, String? bucketDate, double order})>
-        rows,
-        ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-        nextCursor,
-        bool saturated,
-      })?
-      page;
-      try {
-        page = await Thread.fetchActionTabPage(
-          action: action,
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
-          archived: state.showArchived,
-          filter: state.filter.isNotEmpty ? state.filter : null,
-          reactionFilter:
-              state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
-          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
-          limit: _activityFeedLimit,
-          after: cursor,
-        );
-      } finally {
-        completer.complete();
-        _activeTabAppendInFlight = null;
-      }
-
-      if (isClosed) return;
-      if (gen != _activeTabAppendGeneration) return;
-
-      final headIds = {for (final t in _activeTabHead) t.id};
-      final dedupedNew = page.threads
-          .where((t) => !headIds.contains(t.id))
-          .toList();
-      _activeTabAppended = [..._activeTabAppended, ...dedupedNew];
-      _actionTabAppendCursor = page.saturated ? page.nextCursor : null;
       if (!page.saturated) {
         _activeTabAppendsExhausted = true;
       }
@@ -3931,18 +3916,16 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
-    final activeTab = _activeTabSubscriptionTab;
-    if (activeTab == ActivityTab.catchUp) {
-      return _fetchMoreCatchUp(first, count);
-    }
-    if (activeTab == ActivityTab.all) {
+    // No active head subscription yet — defensive guard so InfiniteList
+    // doesn't hang before the feed has loaded.
+    if (_activeTabSubscriptionTab == null) return;
+    // Flat (search/filter) mode pages the single unified query; sectioned
+    // mode pages only the Done tail (Unread + Active+Scheduled are fully
+    // loaded by their head streams).
+    if (_activeTabFlatMode) {
       return _fetchMoreAllTab(first, count);
     }
-    if (activeTab != null && activeTab.isActionTab) {
-      return _fetchMoreActionTab(activeTab, first, count);
-    }
-    // Reached only if no per-tab subscription is active — defensive
-    // guard so InfiniteList doesn't hang on an unmigrated tab.
+    return _fetchMoreDone(first, count);
   }
 
   final List<StreamSubscription<void>> _subscriptions;
@@ -3969,6 +3952,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// [fetchMoreActivityFeedItems], so watcher cost stays constant
   /// regardless of scroll depth.
   static const int _activityFeedLimit = 50;
+
+  /// Head limit for the bounded sectioned streams (Unread, Active+Scheduled).
+  /// These sets are a user's curated Updates / Doing / Scheduled lists, so
+  /// they're small in practice (tens, occasionally low hundreds) — well under
+  /// this cap — and are loaded whole so they always surface regardless of the
+  /// Done tail's volume. Only the Done section paginates past its head.
+  static const int _boundedSectionLimit = 1000;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
   Future<void>? _agendaSyncFuture;

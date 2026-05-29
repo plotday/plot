@@ -2402,6 +2402,18 @@ class Thread extends Equatable implements Comparable<Thread> {
     /// When set, restrict to threads with the named state flag = TRUE.
     /// Accepted values: 'active', 'task', 'to_read'. Anything else is ignored.
     String? stateFlag,
+    /// Unified-feed section partition. The feed is split into three
+    /// mutually-exclusive, independently-paginated streams keyed on the
+    /// stored `unread` / `active` booleans (matching the `Thread.unread`
+    /// getter and `primarySectionFor`, which the client display partition
+    /// uses). Accepted values:
+    ///   - 'unread' → `unread = 1`            (Updates cluster, top of Doing)
+    ///   - 'active' → `active = 1 AND unread = 0` (read Doing + future Scheduled)
+    ///   - 'done'   → `active = 0 AND unread = 0` (Activity / history tail)
+    /// Anything else is ignored. Use the `unread` boolean (not `read_at`)
+    /// so freshly-created read-but-never-opened active threads partition
+    /// the same way the client does.
+    String? sectionScope,
   }) {
     // Extract special tags (mirrors [_getQuery] / [_watchActivityFeedIds]
     // semantics).
@@ -2471,6 +2483,16 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     }
     if (stateFlag == 'active' || stateFlag == 'task' || stateFlag == 'to_read') {
       wheres.add('a.$stateFlag = 1');
+    }
+
+    // Unified-feed section partition (mutually exclusive on the stored
+    // `unread` / `active` booleans — see [sectionScope] doc above).
+    if (sectionScope == 'unread') {
+      wheres.add('COALESCE(a.unread, 0) = 1');
+    } else if (sectionScope == 'active') {
+      wheres.add('a.active = 1 AND COALESCE(a.unread, 0) = 0');
+    } else if (sectionScope == 'done') {
+      wheres.add('a.active = 0 AND COALESCE(a.unread, 0) = 0');
     }
 
     // Icon filter — mirrors [_getQuery] logic.
@@ -3520,6 +3542,7 @@ SELECT
     List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
+    String? sectionScope,
   }) async* {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     yield* _watchActionTabIds(
@@ -3534,6 +3557,7 @@ SELECT
       reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       limit: limit,
+      sectionScope: sectionScope,
     ).asyncMap((idRows) async {
       if (idRows.isEmpty) {
         return (
@@ -3586,6 +3610,7 @@ SELECT
     List<String>? iconFilter,
     required int limit,
     ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+    String? sectionScope,
   }) async {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchActionTabIds(
@@ -3601,6 +3626,7 @@ SELECT
       iconFilter: iconFilter,
       limit: limit,
       after: after,
+      sectionScope: sectionScope,
     ).first;
 
     if (idRows.isEmpty) {
@@ -3670,6 +3696,12 @@ SELECT
     required int limit,
     int offset = 0,
     ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+    /// Unified-feed partition (see [_buildFeedFilter.sectionScope]). When
+    /// set (e.g. 'active'), the section predicate replaces the legacy
+    /// `stateFlag` + `read_at IS NULL` shim so the active+scheduled stream
+    /// is the exact complement of the unread stream (keyed on the stored
+    /// `unread` boolean, not `read_at`).
+    String? sectionScope,
   }) {
     final variables = <Variable>[];
     final sqlBuf = StringBuffer();
@@ -3728,17 +3760,23 @@ SELECT
       reactionFilter: reactionFilter,
       iconFilter: iconFilter,
       requireLinkSched: true,
-      stateFlag: action,
+      // When a unified-feed section is requested, the partition predicate
+      // owns the state filter; otherwise fall back to the legacy stateFlag.
+      stateFlag: sectionScope == null ? action : null,
+      sectionScope: sectionScope,
     );
     sqlBuf.write(parts.sql);
     variables.addAll(parts.variables);
 
-    // Action-tab caller passes whatever flag it cares about as `action`;
-    // pair it with the unread half of the active predicate so threads the
-    // user has marked read drop out. NOTE: per-tab queries are slated to
-    // be removed when the unified feed is restored — this code is a
-    // compile-time shim only.
-    sqlBuf.writeln('AND a.read_at IS NULL');
+    if (sectionScope == null) {
+      // Legacy action-tab caller passes whatever flag it cares about as
+      // `action`; pair it with the unread half of the active predicate so
+      // threads the user has marked read drop out.
+      sqlBuf.writeln('AND a.read_at IS NULL');
+    }
+    // For the unified active+scheduled stream (sectionScope == 'active') the
+    // `active = 1 AND unread = 0` partition already selects exactly the
+    // read-active rows, so no read_at shim is applied.
 
     sqlBuf.writeln('GROUP BY a.id');
 
@@ -3786,6 +3824,351 @@ ORDER BY
                   isActive: row.read<int>('is_active') == 1,
                   bucketDate: row.readNullable<String>('bucket_date'),
                   order: row.read<double>('state_order'),
+                ),
+              )
+              .toList(),
+        );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unified-feed section streams (Unread / Active+Scheduled / Done).
+  //
+  // The feed is fetched as three mutually-exclusive, independently-sorted,
+  // independently-paginated streams instead of one query that is sectioned
+  // client-side. With thousands of threads at a rolled-up priority, a single
+  // `activity_at DESC` page is dominated by recently-touched *done* threads,
+  // so the bounded Unread / Active sets fall past the LIMIT and never render.
+  // Splitting by section guarantees each section surfaces regardless of the
+  // done-tail volume. Active+Scheduled is served by
+  // [watchActionTabHead(action: 'active', sectionScope: 'active')].
+  // ---------------------------------------------------------------------------
+
+  /// Live head of the unified feed's **Unread** stream. Returns hydrated
+  /// unread threads in `unreadDoing` display order (urgent DESC,
+  /// importance DESC, state_order ASC, id ASC) plus the keyset tail cursor.
+  static Stream<({
+    List<Thread> threads,
+    ({int urgent, int importance, double order, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchUnreadHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<Reaction>? reactionFilter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchUnreadIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      reactionFilter: reactionFilter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (threads: <Thread>[], tailCursor: null, saturated: false);
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (
+          urgent: last.urgent,
+          importance: last.importance,
+          order: last.order,
+          id: last.id,
+        ),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
+  /// Phase 1 of the Unread stream: `(id, urgent, importance, state_order)`
+  /// per unread thread. The display order is mixed-direction
+  /// (urgent DESC, importance DESC, state_order ASC, id ASC); it is expressed
+  /// all-ascending over `(1 - urgent, -importance, state_order, id)` so the
+  /// keyset cursor stays monotonic. Pair with [_hydrateActivityFeedRows].
+  static Stream<
+      List<({ThreadId id, int urgent, int importance, double order})>>
+  _watchUnreadIds({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<Reaction>? reactionFilter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({int urgent, int importance, double order, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  COALESCE(a.urgent, 0) AS urgent,
+  a.importance AS importance,
+  COALESCE(a.state_order, 0) AS state_order''');
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      reactionFilter: reactionFilter,
+      iconFilter: iconFilter,
+      sectionScope: 'unread',
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    if (after != null) {
+      sqlBuf.writeln(
+        'HAVING ((1 - urgent), -importance, state_order, a.id) > (?, ?, ?, ?)',
+      );
+      variables.add(Variable.withInt(1 - after.urgent));
+      variables.add(Variable.withInt(-after.importance));
+      variables.add(Variable.withReal(after.order));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln(
+      'ORDER BY (1 - urgent) ASC, -importance ASC, state_order ASC, a.id ASC',
+    );
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  urgent: row.read<int>('urgent'),
+                  importance: row.read<int>('importance'),
+                  order: row.read<double>('state_order'),
+                ),
+              )
+              .toList(),
+        );
+  }
+
+  /// Live head of the unified feed's **Done** stream (the read history
+  /// tail). Ordered `activity_at DESC, id DESC` — the same recency formula
+  /// and `(activity_at, id)` cursor as the legacy activity-feed query, but
+  /// restricted to `active = 0 AND unread = 0`. This is the only section
+  /// that paginates on scroll (see [fetchDonePage]).
+  static Stream<({
+    List<Thread> threads,
+    ({String activityAt, ThreadId id})? tailCursor,
+    bool saturated,
+  })> watchDoneHead({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<Reaction>? reactionFilter,
+    List<String>? iconFilter,
+    required int limit,
+  }) async* {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    yield* _watchDoneIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      reactionFilter: reactionFilter,
+      iconFilter: iconFilter,
+      limit: limit,
+    ).asyncMap((idRows) async {
+      if (idRows.isEmpty) {
+        return (threads: <Thread>[], tailCursor: null, saturated: false);
+      }
+      final ids = idRows.map((r) => r.id).toList();
+      final detailRows = await _hydrateActivityFeedRows(ids);
+      final threads = await _mapResultsToThreads(detailRows);
+      final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+      threads.sort(
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      );
+      final last = idRows.last;
+      return (
+        threads: threads,
+        tailCursor: (activityAt: last.activityAt, id: last.id),
+        saturated: idRows.length >= limit,
+      );
+    });
+  }
+
+  /// One-shot Done page for cursor-paginated scroll-down. Mirrors
+  /// [fetchActivityFeedPage] but uses the Done partition and `(activity_at,
+  /// id)` cursor.
+  static Future<({
+    List<Thread> threads,
+    ({String activityAt, ThreadId id})? nextCursor,
+    bool saturated,
+  })> fetchDonePage({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<Tag>? filter,
+    List<Reaction>? reactionFilter,
+    List<String>? iconFilter,
+    required int limit,
+    ({String activityAt, ThreadId id})? after,
+  }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
+    final idRows = await _watchDoneIds(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      reactionFilter: reactionFilter,
+      iconFilter: iconFilter,
+      limit: limit,
+      after: after,
+    ).first;
+
+    if (idRows.isEmpty) {
+      return (threads: <Thread>[], nextCursor: null, saturated: false);
+    }
+
+    final ids = idRows.map((r) => r.id).toList();
+    final detailRows = await _hydrateActivityFeedRows(ids);
+    final threads = await _mapResultsToThreads(detailRows);
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
+    threads.sort(
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
+          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+    );
+    final last = idRows.last;
+    return (
+      threads: threads,
+      nextCursor: (activityAt: last.activityAt, id: last.id),
+      saturated: idRows.length >= limit,
+    );
+  }
+
+  /// Phase 1 of the Done stream: `(id, activity_at)` per read/inactive
+  /// thread, ordered `activity_at DESC, id DESC`. `activity_at` uses the
+  /// established recency formula (see [_watchAllTabIds]) so the cursor stays
+  /// monotonic with the Dart `Thread.activityAt` getter.
+  static Stream<List<({ThreadId id, String activityAt})>> _watchDoneIds({
+    PriorityId? priorityId,
+    Path? priorityPath,
+    bool? archived = false,
+    bool draft = false,
+    String? search,
+    List<List<String>>? contactIdMatchesPerWord,
+    List<Tag>? filter,
+    List<Reaction>? reactionFilter,
+    List<String>? iconFilter,
+    required int limit,
+    int offset = 0,
+    ({String activityAt, ThreadId id})? after,
+  }) {
+    final variables = <Variable>[];
+    final sqlBuf = StringBuffer();
+    final now = Time.now();
+
+    sqlBuf.writeln('''
+SELECT
+  a.id AS id,
+  MAX(MAX(
+    COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
+    COALESCE(a.bumped_at, '0000'),
+    CASE WHEN sched.end_at IS NOT NULL
+          AND sched.occurrence IS NULL
+          AND sched.end_at <= ?
+         THEN sched.end_at
+         ELSE '0000' END
+  )) AS activity_at''');
+    variables.add(Variable.withDateTime(now));
+
+    final parts = _buildFeedFilter(
+      priorityId: priorityId,
+      priorityPath: priorityPath,
+      archived: archived,
+      draft: draft,
+      search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
+      filter: filter,
+      reactionFilter: reactionFilter,
+      iconFilter: iconFilter,
+      sectionScope: 'done',
+    );
+    sqlBuf.write(parts.sql);
+    variables.addAll(parts.variables);
+
+    sqlBuf.writeln('GROUP BY a.id');
+
+    if (after != null) {
+      sqlBuf.writeln('HAVING (activity_at, a.id) < (?, ?)');
+      variables.add(Variable.withString(after.activityAt));
+      variables.add(Variable.withBlob(after.id.toBytes()));
+    }
+
+    sqlBuf.writeln('ORDER BY activity_at DESC, a.id DESC');
+    sqlBuf.writeln('LIMIT ? OFFSET ?');
+    variables.add(Variable.withInt(limit));
+    variables.add(Variable.withInt(offset));
+
+    return Store.get
+        .customSelect(
+          sqlBuf.toString(),
+          variables: variables,
+          readsFrom: parts.readsFrom,
+        )
+        .watch()
+        .map(
+          (rows) => rows
+              .map(
+                (row) => (
+                  id: Uuid.fromBytes(row.read<Uint8List>('id')),
+                  activityAt: row.read<String>('activity_at'),
                 ),
               )
               .toList(),

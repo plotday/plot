@@ -128,11 +128,20 @@ threads.get("/sync/threads", async (c) => {
         query = query.where(updatedSinceCursor(updatedSince, cursorId));
       }
 
-      // Initial pull: fetch unread non-archived threads. Redacted stubs are
-      // archived by definition, so this branch naturally excludes them.
+      // Initial pull: fetch unread OR active non-archived threads. The feed
+      // paginates the done tail reverse-chronologically by activity_at, so an
+      // active thread with an old activity_at would otherwise never sync to a
+      // fresh device (it's not unread and falls outside the windowed pull),
+      // leaving the Doing section empty at rolled-up priorities. Pulling
+      // active threads here (the unbounded initial pull) guarantees they reach
+      // the device regardless of recency; ongoing state changes sync
+      // incrementally. `active = true` covers both Doing and future Scheduled
+      // (scheduled ⊂ active). Redacted stubs are archived by definition, so
+      // this branch naturally excludes them. This is a strict superset of the
+      // previous unread-only response, so older clients are unaffected.
       if (initial && archived !== true) {
         query = query.where(
-          sql<boolean>`(archived_at IS NULL AND draft = false AND unread = true)`
+          sql<boolean>`(archived_at IS NULL AND draft = false AND (unread = true OR active = true))`
         );
       } else {
         // Archived filter (only when not initial)
