@@ -21,13 +21,13 @@ import classes from "./home.module.css";
 
 export function meta(_: Route.MetaArgs) {
   return mergeMeta([
-    { title: "Plot | Collaborate and carry on" },
+    { title: "Plot | Your best work every day" },
     {
       name: "description",
       content:
         "Plot brings together everything you need to know, respond to, and do, organized and prioritized. The best of the day stays yours.",
     },
-    { name: "twitter:title", content: "Plot — Collaborate and carry on" },
+    { name: "twitter:title", content: "Plot — Your best work every day" },
     {
       name: "twitter:description",
       content:
@@ -52,7 +52,7 @@ export default function Home() {
             </div>
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Collaborate and carry&nbsp;on
+                Your best work every day
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>

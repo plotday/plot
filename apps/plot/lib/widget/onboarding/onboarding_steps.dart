@@ -150,14 +150,15 @@ class OnboardingSteps {
   // Momentum, Turning Point, Breakthrough, and Climax along the way.
   static List<OnboardingStep> get all => [
     const FullScreenStep(
-      title: 'Collaborate and carry on',
+      title: 'Your best work every day',
       body:
           "Every conversation in its place.\nThe best of your day stays yours to make progress on what matters.",
       background: ThemeColor(0), // Catalyst — opener
     ),
     const FullScreenStep(
       title: 'What fills your days?',
-      body: "Start with the roles you play. You'll add priorities under each one.",
+      body:
+          "Start with the roles you play. You'll add priorities under each one.",
       background: ThemeColor(1), // Call to Adventure
       contentMaxWidth: 540,
       contentBuilder: _buildRoles,
