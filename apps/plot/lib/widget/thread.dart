@@ -770,19 +770,14 @@ class ThreadCommands extends HookWidget {
               .toList()
         : <ConferencingUserAction>[];
 
-    // RSVP buttons for calendar events (link schedule instances).
-    // When the user has been invited to an event and hasn't responded,
-    // show explicit Attend + Skip buttons side-by-side. Otherwise show
-    // the single ToggleRsvp button (solo events, or already-RSVP'd events).
-    final isCalendarEvent = showEventButtons && activity.isLinkScheduleInstance;
-    final needsRsvp =
-        isCalendarEvent &&
-        activity.currentUserRsvp == null &&
-        activity.hasOtherAttendees;
-    final attendButton = needsRsvp ? Button.icon(AttendRsvp(activity)) : null;
-    final skipButton = needsRsvp ? Button.icon(SkipRsvp(activity)) : null;
-    final rsvpButton = isCalendarEvent && !needsRsvp
-        ? Button.icon(ToggleRsvp(activity))
+    // RSVP chip for calendar events with other invitees. Replaces the old
+    // attend/skip/toggle buttons: colour reports the user's own response,
+    // body shows the tally, tap opens the picker, hover shows attendees.
+    // Solo events (no other invitees) get no RSVP UI.
+    final rsvpChip = showEventButtons &&
+            activity.isLinkScheduleInstance &&
+            activity.hasOtherAttendees
+        ? RsvpChip(activity: activity)
         : null;
 
     final List<Widget> allButtons;
@@ -825,9 +820,7 @@ class ThreadCommands extends HookWidget {
         ...allButtons,
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
-        ?attendButton,
-        ?skipButton,
-        ?rsvpButton,
+        ?rsvpChip,
         // Trailing AvatarGroup slot — only present when the thread is
         // actually shared. When not shared we leave the slot empty (no
         // padding, no tooltip); the share command is reachable via the
