@@ -1108,51 +1108,44 @@ class _ConferencingIconButton extends StatelessWidget {
   }
 }
 
-class RsvpSummary extends StatelessWidget {
-  const RsvpSummary({required this.activity, this.fontSize, super.key});
+/// Which colour the RSVP chip wears, driven by the current user's own
+/// response. Tentative and no-response both read neutral.
+enum RsvpTone { going, declined, neutral }
+
+/// Interactive RSVP chip: shows the attendee tally (non-zero count segments)
+/// tinted by the user's own status; tap opens the RSVP picker; hover shows
+/// the grouped attendee details. Only render when [activity.hasOtherAttendees].
+class RsvpChip extends StatefulWidget {
+  const RsvpChip({required this.activity, this.fontSize, super.key});
 
   final Thread activity;
   final double? fontSize;
 
-  @override
-  Widget build(BuildContext context) {
-    final counts = activity.rsvpCounts;
-    final attendColor = context.colour.colours.fromTheme(
-      ThemeColor(0),
-      muted: true,
-    );
-    final skipColor = context.colour.colours.fromTheme(
-      ThemeColor(5),
-      muted: true,
-    );
-    final undecidedColor = context.colour.veryMuted;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      spacing: 4,
-      children: [
-        if (counts.attend > 0)
-          Text(
-            '${counts.attend}✓',
-            style: TextStyle(color: attendColor, fontSize: fontSize, height: 1),
-          ),
-        if (counts.skip > 0)
-          Text(
-            '${counts.skip}✗',
-            style: TextStyle(color: skipColor, fontSize: fontSize, height: 1),
-          ),
+  /// The user's own status → chip tone.
+  static RsvpTone toneFor(String? currentUserRsvp) => switch (currentUserRsvp) {
+        'attend' => RsvpTone.going,
+        'skip' => RsvpTone.declined,
+        _ => RsvpTone.neutral,
+      };
+
+  /// Ordered, non-zero count segments (going, declined, undecided).
+  static List<({IconData icon, int count})> segmentsFor(
+    ({int attend, int skip, int undecided}) counts,
+  ) =>
+      [
+        if (counts.attend > 0) (icon: PlotIcon.rsvpGoing, count: counts.attend),
+        if (counts.skip > 0) (icon: PlotIcon.rsvpDeclined, count: counts.skip),
         if (counts.undecided > 0)
-          Text(
-            '${counts.undecided}?',
-            style: TextStyle(
-              color: undecidedColor,
-              fontSize: fontSize,
-              height: 1,
-            ),
-          ),
-      ],
-    );
-  }
+          (icon: PlotIcon.rsvpUndecided, count: counts.undecided),
+      ];
+
+  @override
+  State<RsvpChip> createState() => _RsvpChipState();
+}
+
+class _RsvpChipState extends State<RsvpChip> {
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _ThreadLogo extends StatelessWidget {
