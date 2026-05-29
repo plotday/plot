@@ -14,6 +14,7 @@ import {
 } from "./thread-helpers";
 import { createThread } from "./thread";
 import { createNotes } from "./note";
+import { normalizeConferencingLink } from "./conferencing";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
 import { getSharingModelForChannel } from "../../../app/sync/link-tags";
@@ -34,6 +35,18 @@ export async function createLink(
   link: NewLinkWithNotes
 ): Promise<Uuid> {
   try {
+    // Reconcile conferencing links that arrive in the location field (e.g. a
+    // Zoom/Meet/Teams URL pasted into a calendar event's location) into a
+    // single conferencing action, clearing the duplicate URL from
+    // meta.location. Done up front so both the thread (legacy) and link rows
+    // persist the normalized values. See ./conferencing.ts.
+    const normalizedConferencing = normalizeConferencingLink({
+      meta: link.meta,
+      actions: link.actions,
+    });
+    link.meta = normalizedConferencing.meta;
+    link.actions = normalizedConferencing.actions;
+
     // Normalize identifiers to a single canonical array. Connectors may supply
     // `sources` directly, or the legacy `source` + `relatedSource` pair; the
     // runtime treats them all as elements of `sources` for upsert/bundling.
