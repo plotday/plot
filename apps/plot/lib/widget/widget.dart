@@ -2,6 +2,7 @@ export 'package:flutter/widgets.dart';
 export 'package:forui/forui.dart';
 
 export 'animated_removal.dart';
+export 'autofocus_reclaim.dart';
 export 'avatar.dart';
 export 'thread.dart';
 export 'alert.dart';

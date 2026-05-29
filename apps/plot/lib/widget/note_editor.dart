@@ -190,6 +190,14 @@ class NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  /// Resolved autofocus: the value handed to the inner [Editor]. New-thread
+  /// editors and physical-keyboard platforms autofocus by default; callers can
+  /// override via [NoteEditor.autofocus] (e.g. a note-mode editor on a touch
+  /// platform passes nothing and resolves to false, so the soft keyboard isn't
+  /// forced up). The `bodyOnly` focus recovery is gated on this.
+  bool get _shouldAutofocus =>
+      widget.autofocus ?? (widget.isNewThreadMode || hasPhysicalKeyboard());
+
   /// Request focus on the editor
   void focus() {
     log.info(
@@ -552,9 +560,7 @@ class NoteEditorState extends State<NoteEditor> {
       final editor = Editor(
         key: _editorKey,
         hint: hint,
-        autofocus:
-            widget.autofocus ??
-            (widget.isNewThreadMode || hasPhysicalKeyboard()),
+        autofocus: _shouldAutofocus,
         focusNode: focusNode,
         twists: twists,
         actors: actors,
@@ -667,7 +673,15 @@ class NoteEditorState extends State<NoteEditor> {
 
     if (widget.bodyOnly) {
       final focusNode = _bodyOnlyFocusNode ??= FocusNode();
-      return Builder(builder: (context) => buildContent(context, focusNode));
+      // bodyOnly skips EditableArea (and its focus recovery), so SuperEditor's
+      // one-shot autofocus is the only thing focusing this editor — and it
+      // loses to the navigator's post-route focus pass / macOS's clear-to-root.
+      // AutofocusReclaim re-grabs focus across a few frames when nobody owns it.
+      return AutofocusReclaim(
+        focusNode: focusNode,
+        autofocus: _shouldAutofocus,
+        child: Builder(builder: (context) => buildContent(context, focusNode)),
+      );
     }
 
     return EditableArea(
