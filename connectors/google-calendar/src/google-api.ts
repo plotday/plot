@@ -402,6 +402,7 @@ export function transformGoogleEvent(
           : end
         : null,
       description: event.description || null,
+      location: event.location || null,
     },
     // Timed events get type "event"; cancelled/all-day events get no type
     type: isCancelled || isAllDay ? undefined : "event",
