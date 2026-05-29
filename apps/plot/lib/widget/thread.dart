@@ -1144,8 +1144,90 @@ class RsvpChip extends StatefulWidget {
 }
 
 class _RsvpChipState extends State<RsvpChip> {
+  bool _hovered = false;
+
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) {
+    final segments = RsvpChip.segmentsFor(widget.activity.rsvpCounts);
+    if (segments.isEmpty) return const SizedBox.shrink();
+
+    final fontSize =
+        widget.fontSize ?? context.theme.typography.sm.fontSize ?? 13;
+
+    // Content colour = the user's own status. Tinted fill is a low-alpha wash
+    // of the same colour so all three tones stay consistent (no per-count
+    // colour). The theme-colour helpers handle dark mode.
+    final content = switch (RsvpChip.toneFor(widget.activity.currentUserRsvp)) {
+      RsvpTone.going =>
+        context.colour.colours.fromTheme(const ThemeColor(0), muted: true),
+      RsvpTone.declined =>
+        context.colour.colours.fromTheme(const ThemeColor(5), muted: true),
+      RsvpTone.neutral => context.colour.muted,
+    };
+    final fill = content.withValues(alpha: _hovered ? 0.22 : 0.13);
+
+    // Height fills the agenda's row-2 box exactly (secondarySize * 1.25) so
+    // the pill never grows the row; the fill (not a border) gives it shape.
+    final height = fontSize * 1.25;
+    final iconSize = fontSize * 0.82;
+    final gap = fontSize * 0.5;
+
+    final chip = Container(
+      height: height,
+      padding: EdgeInsets.symmetric(horizontal: fontSize * 0.5),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(height / 2),
+        boxShadow: _hovered
+            ? [
+                BoxShadow(
+                  color: content.withValues(alpha: 0.18),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < segments.length; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            FaIcon(segments[i].icon, size: iconSize, color: content),
+            SizedBox(width: fontSize * 0.22),
+            Text(
+              '${segments[i].count}',
+              style: TextStyle(
+                color: content,
+                fontSize: fontSize,
+                height: 1,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    final interactive = MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          context.run(ShowRsvpOptions(widget.activity));
+        },
+        child: chip,
+      ),
+    );
+
+    final contacts = widget.activity.scheduleContacts;
+    if (contacts.isEmpty) return interactive;
+    return FTooltip(
+      tipBuilder: (context, controller) => RsvpDetails(contacts: contacts),
+      child: interactive,
+    );
+  }
 }
 
 class _ThreadLogo extends StatelessWidget {
