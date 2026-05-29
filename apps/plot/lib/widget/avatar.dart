@@ -468,36 +468,33 @@ class RsvpDetails extends StatelessWidget {
       Color color,
       List<ScheduleContact> people,
     ) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FaIcon(icon, size: (headerStyle.fontSize ?? 11) * 0.9, color: color),
+                const SizedBox(width: 5),
+                Text('${label.toUpperCase()} · ${people.length}', style: headerStyle),
+              ],
+            ),
+          ),
+          for (final c in people)
             Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FaIcon(icon, size: (headerStyle.fontSize ?? 11) * 0.9, color: color),
-                  const SizedBox(width: 5),
-                  Text('${label.toUpperCase()} · ${people.length}', style: headerStyle),
-                ],
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: _contactLabel(
+                c,
+                textStyle,
+                mutedStyle,
+                isUser: userId != null && c.contactUserId == userId,
+                youColor: youColor,
               ),
             ),
-            for (final c in people)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 1),
-                child: _contactLabel(
-                  c,
-                  textStyle,
-                  mutedStyle,
-                  isUser: userId != null && c.contactUserId == userId,
-                  youColor: youColor,
-                ),
-              ),
-          ],
-        ),
+        ],
       );
     }
 
@@ -513,13 +510,9 @@ class RsvpDetails extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      // Trim the first section's top padding so the popover hugs its content.
-      children: [
-        for (var i = 0; i < sections.length; i++)
-          i == 0
-              ? Padding(padding: EdgeInsets.zero, child: sections[i])
-              : sections[i],
-      ],
+      // 6px between sections; none before the first so the popover hugs its content.
+      spacing: 6,
+      children: sections,
     );
   }
 
