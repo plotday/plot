@@ -72,6 +72,7 @@ class NowBloc extends Cubit<NowState> {
               trackingPausedAt: settings?.trackingPausedAt,
               context: prior?.context,
               currentEvent: prior?.currentEvent,
+              selectedBlockId: prior?.selectedBlockId,
               previewPomodoro: prior?.previewPomodoro,
             );
           },
@@ -342,11 +343,33 @@ class NowBloc extends Cubit<NowState> {
   /// actually looking at the priority that owned it. Navigating *to* the
   /// session's priority is always a pure view change (the pill becomes
   /// active because session.priority now matches ctx).
-  void setContext(Priority? priority) async {
+  ///
+  /// [selectedBlockId] records a block the user tapped *in the agenda*
+  /// (see [NowLoaded.selectedBlockId]). Resolution:
+  ///   - A non-null id (an agenda block tap) always becomes the new
+  ///     selection, even when it re-targets a different block of the
+  ///     priority already in view.
+  ///   - A null id (every other caller) clears the selection only on a
+  ///     real priority *change*. A same-priority re-assertion — e.g.
+  ///     [PriorityPage] calling this on mount with the priority the
+  ///     agenda tap just selected — preserves it, so the highlight
+  ///     survives the navigation that the tap itself triggered.
+  void setContext(Priority? priority, {String? selectedBlockId}) async {
     final prior = loadedState;
-    if (prior.context?.id == priority?.id) return;
-    // Sticky-until-navigated-away: clear currentEvent whenever the
-    // displayed priority changes to one that doesn't own the event.
+    final samePriority = prior.context?.id == priority?.id;
+    final newSelectedBlockId =
+        selectedBlockId ?? (samePriority ? prior.selectedBlockId : null);
+
+    if (samePriority) {
+      // No real navigation — only the agenda selection can change
+      // (re-tapping a different block of the priority in view).
+      if (prior.selectedBlockId == newSelectedBlockId) return;
+      emit(prior.copyWith(selectedBlockId: newSelectedBlockId));
+      return;
+    }
+
+    // Real priority change. Sticky-until-navigated-away: clear
+    // currentEvent unless the new priority still owns the event.
     final currentEvent = prior.currentEvent;
     final keepEvent =
         currentEvent != null && currentEvent.priority.id == priority?.id;
@@ -354,6 +377,7 @@ class NowBloc extends Cubit<NowState> {
       prior.copyWith(
         context: priority,
         currentEvent: keepEvent ? currentEvent : null,
+        selectedBlockId: newSelectedBlockId,
         // Staged duration is per-priority — drop it whenever the user
         // navigates to a different priority.
         previewPomodoro: null,
@@ -420,11 +444,28 @@ class NowBloc extends Cubit<NowState> {
         loadedState.currentEvent?.occurrence == event?.occurrence) {
       return;
     }
+    // Selecting an event is its own direct selection — drop any block
+    // the user had tapped so the two highlight sources can't fight.
+    // Clearing the event (event == null) leaves the block selection
+    // alone; the highlight precedence already prefers an event over a
+    // block, so there's nothing to resolve on deselect.
+    final selectedBlockId = event != null ? null : loadedState.selectedBlockId;
     if (event != null && loadedState.context?.id != event.priority.id) {
-      emit(loadedState.copyWith(context: event.priority, currentEvent: event));
+      emit(
+        loadedState.copyWith(
+          context: event.priority,
+          currentEvent: event,
+          selectedBlockId: selectedBlockId,
+        ),
+      );
       return;
     }
-    emit(loadedState.copyWith(currentEvent: event));
+    emit(
+      loadedState.copyWith(
+        currentEvent: event,
+        selectedBlockId: selectedBlockId,
+      ),
+    );
   }
 
   /// Focus is the priority of the current activity, which may be more

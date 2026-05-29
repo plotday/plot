@@ -20,6 +20,56 @@ import 'loading.dart';
 
 final _log = Logger('AgendaPage');
 
+/// Index of the agenda block to highlight, or null when none should be.
+///
+/// Source priority:
+///   1. [currentEventId] — an event the user tapped directly in the
+///      agenda ([NowLoaded.currentEvent]).
+///   2. [selectedBlockId] — a focus block or priority-led gap tapped
+///      directly in the agenda ([NowLoaded.selectedBlockId]).
+///   3. Otherwise the block covering [now], and only when it belongs to
+///      [currentPriorityId]. So a priority change by a non-agenda route
+///      (tree, header, thread) with no current-time block for that
+///      priority highlights nothing.
+///
+/// Only the first match wins — multiple siblings of the same priority
+/// would otherwise all light up and dilute the "this is where you are"
+/// affordance.
+int? agendaHighlightIndex({
+  required List<AgendaItem> items,
+  required PriorityId currentPriorityId,
+  required Uuid? currentEventId,
+  required String? selectedBlockId,
+  required DateTime now,
+}) {
+  // True when [item]'s block covers [now]. Event blocks already carry the
+  // answer in [AgendaHeaderItem.now] ([EventBlock.isCurrent]); focus
+  // blocks and priority-led gaps are tested against their time window.
+  bool coversNow(AgendaHeaderItem item) {
+    if (item.now) return true;
+    final start = item.dateTimeRange?.start;
+    final end = item.dateTimeRange?.end;
+    if (start == null || end == null) return false;
+    return !now.isBefore(start) && now.isBefore(end);
+  }
+
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    if (item is! AgendaHeaderItem) continue;
+    if (item.blockPriority == null) continue;
+    final bool match;
+    if (currentEventId != null) {
+      match = item.thread?.id == currentEventId;
+    } else if (selectedBlockId != null) {
+      match = item.parentBlockId == selectedBlockId;
+    } else {
+      match = item.blockPriority?.id == currentPriorityId && coversNow(item);
+    }
+    if (match) return i;
+  }
+  return null;
+}
+
 /// The universal agenda page.
 ///
 /// Mounted at `/agenda` (wired up by Task 10). Reuses [PriorityBloc] keyed
@@ -288,27 +338,30 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     final currentPriorityId = nowState is NowLoaded
         ? nowState.priority.id
         : context.read<PriorityBloc>().state.context.id;
-    // When an event is currently selected, restrict the "selected"
-    // priority-tint to that one event so sibling events of the same
-    // priority don't all light up.
+    // A directly-tapped event ([NowLoaded.currentEvent]) or focus block
+    // ([NowLoaded.selectedBlockId]) is highlighted verbatim, wherever it
+    // sits. With neither, we auto-highlight only the block covering the
+    // current time — and only when its priority matches the viewed one.
+    // So changing priority by a non-agenda route (tree, header, thread)
+    // with no current-time block for that priority highlights nothing.
     final currentEventId = nowState is NowLoaded
         ? nowState.currentEvent?.id
         : null;
+    final selectedBlockId = nowState is NowLoaded
+        ? nowState.selectedBlockId
+        : null;
+    final now = nowState is NowLoaded ? nowState.now : Time.now();
 
-    // Only the first matching block gets the priority-tinted highlight —
-    // multiple siblings of the same priority would otherwise all light up
-    // and dilute the "this is where you are" affordance.
-    AgendaHeaderItem? firstSelectedItem;
-    int? firstSelectedIndex;
-    for (var i = 0; i < items.length; i++) {
-      final item = items[i];
-      if (item is! AgendaHeaderItem) continue;
-      if (item.blockPriority?.id != currentPriorityId) continue;
-      if (currentEventId != null && item.thread?.id != currentEventId) continue;
-      firstSelectedItem = item;
-      firstSelectedIndex = i;
-      break;
-    }
+    final selectedIndex = agendaHighlightIndex(
+      items: items,
+      currentPriorityId: currentPriorityId,
+      currentEventId: currentEventId,
+      selectedBlockId: selectedBlockId,
+      now: now,
+    );
+    final selectedItem = selectedIndex != null
+        ? items[selectedIndex] as AgendaHeaderItem
+        : null;
 
     final ({
       Map<int, BlockDropTarget> before,
@@ -357,9 +410,9 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         dragController: _dragController,
         index: index,
         selectedAccent: (item) {
-          if (!identical(item, firstSelectedItem)) return null;
+          if (!identical(item, selectedItem)) return null;
           return context.colour.colours.fromTheme(
-            firstSelectedItem!.blockPriority!.displayColor,
+            selectedItem!.blockPriority!.displayColor,
           );
         },
         // Block headers carry their own hover affordance (the drag grip
@@ -414,7 +467,7 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
             current.sourcePeriodStart != null &&
             current.blockPriority == null;
 
-        final selected = index == firstSelectedIndex;
+        final selected = index == selectedIndex;
 
         return Column(
           mainAxisSize: MainAxisSize.min,

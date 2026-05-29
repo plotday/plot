@@ -1167,7 +1167,14 @@ class _BlockHeaderState extends State<_BlockHeader> {
         onTap: () {
           final eventThread = widget.thread;
           if (eventThread == null) {
-            context.run(ChangeCurrentPriority(widget.priority));
+            // Direct agenda selection: highlight exactly this block, even
+            // when it isn't the block covering the current time.
+            context.run(
+              ChangeCurrentPriority(
+                widget.priority,
+                selectedBlockId: widget.parentBlockId,
+              ),
+            );
             return;
           }
           // Event-headers in the universal agenda live under the

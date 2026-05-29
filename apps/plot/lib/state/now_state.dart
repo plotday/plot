@@ -58,6 +58,7 @@ final class NowLoaded extends NowState {
     this.session,
     this.context,
     this.currentEvent,
+    this.selectedBlockId,
     this.trackingPausedAt,
     this.previewPomodoro,
   }) : now = Time.now(),
@@ -92,6 +93,18 @@ final class NowLoaded extends NowState {
   /// PriorityPage "Event Agenda" section, the unified-header title, and
   /// the right-side agenda filter.
   final Thread? currentEvent;
+
+  /// The [AgendaBlock.id] of a block the user tapped directly in the
+  /// agenda (a focus block or priority-led gap — events use
+  /// [currentEvent] instead). When set, the agenda highlights exactly
+  /// that block even if it isn't the block covering the current time.
+  /// Cleared whenever the displayed priority changes by any non-agenda
+  /// means: every [setContext] call without an explicit `selectedBlockId`
+  /// resets it, so navigating via the priority tree, header, or a thread
+  /// drops back to auto-highlighting only the current-time block. See
+  /// [AgendaList] for how this combines with [currentEvent] and the
+  /// current-time fallback.
+  final String? selectedBlockId;
 
   /// Every non-archived priority. Used to resolve a focus-block match from
   /// [priorityBlocksByPriority] back to its [Priority] in [priority].
@@ -206,6 +219,7 @@ final class NowLoaded extends NowState {
     priority.id,
     currentEvent?.id,
     currentEvent?.occurrence,
+    selectedBlockId,
     // Reduced to a boolean so the epoch sentinel `ResumeTracking` writes
     // locally doesn't show up as a distinct paused state — only a real
     // flip of [trackingPaused] should re-emit.
@@ -393,6 +407,7 @@ final class NowLoaded extends NowState {
     List<Priority>? priorities,
     Map<PriorityId, List<PriorityBlockRow>>? priorityBlocksByPriority,
     Object? currentEvent = _sentinel,
+    Object? selectedBlockId = _sentinel,
     Object? trackingPausedAt = _sentinel,
     Object? previewPomodoro = _sentinel,
   }) {
@@ -407,6 +422,9 @@ final class NowLoaded extends NowState {
       currentEvent: identical(currentEvent, _sentinel)
           ? this.currentEvent
           : currentEvent as Thread?,
+      selectedBlockId: identical(selectedBlockId, _sentinel)
+          ? this.selectedBlockId
+          : selectedBlockId as String?,
       trackingPausedAt: identical(trackingPausedAt, _sentinel)
           ? this.trackingPausedAt
           : trackingPausedAt as DateTime?,

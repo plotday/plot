@@ -59,10 +59,19 @@ class ChangeCurrentPriority extends PriorityCommand {
   ChangeCurrentPriority(
     Priority super.priority, {
     super.ancestry = true,
+    this.selectedBlockId,
   }) : super(
          eventObject: EventObject.priority,
          eventAction: EventAction.viewed,
        );
+
+  /// When this change originates from tapping a block in the agenda,
+  /// the tapped [AgendaBlock.id]. Passed through to
+  /// [NowBloc.setContext] so the agenda highlights exactly that block
+  /// instead of the current-time block. Null for every other entry
+  /// point (priority tree, header, command palette), which clears any
+  /// prior agenda selection.
+  final String? selectedBlockId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -75,7 +84,7 @@ class ChangeCurrentPriority extends PriorityCommand {
       // chosen priority is the same as the event's priority (setContext
       // would otherwise preserve it).
       nowBloc.setCurrentEvent(null);
-      nowBloc.setContext(priority);
+      nowBloc.setContext(priority, selectedBlockId: selectedBlockId);
     }
 
     final tabsRouter = _tabsRouterOrNull(context);
