@@ -28,11 +28,21 @@ export type ClassifyEnv = {
  * does NOT bump so a no-op classification doesn't trigger client
  * re-sync.
  */
+export type ClassifyOutcome = {
+  status: "skipped" | "settled" | "same" | "moved";
+  /** Cascade stage that produced the result (undefined when skipped pre-classify). */
+  stage?: string;
+  llmCalls?: number;
+  cacheHits?: number;
+  /** True when an LLM stage was skipped for lack of budget (see classifier). */
+  budgetExhausted?: boolean;
+};
+
 export async function handleClassifyJob(
   job: ClassifyJob,
   env: ClassifyEnv,
   db: ClassifyDb
-): Promise<{ status: "skipped" | "settled" | "same" | "moved" }> {
+): Promise<ClassifyOutcome> {
   const row = await db
     .selectFrom("thread_priority")
     .select(["priority_id", "user_moved", "classify_at"])
@@ -88,6 +98,15 @@ export async function handleClassifyJob(
   const ctx = classifierContextFromDb(db, job.userId);
   const result = await classifier.classify(ctx, candidate);
 
+  // Telemetry surfaced to PostHog (see workers/classify/src/index.ts) so a
+  // shift in stage mix or a spike in budgetExhausted is observable.
+  const telemetry: Omit<ClassifyOutcome, "status"> = {
+    stage: result.stage,
+    llmCalls: result.llmCalls,
+    cacheHits: result.cacheHits,
+    budgetExhausted: result.budgetExhausted,
+  };
+
   // If the classifier returned null, case A falls back to root; B/D
   // stays at the snapshot so we never bounce settled rows through root.
   let target = result.priorityId;
@@ -103,7 +122,7 @@ export async function handleClassifyJob(
          ORDER BY created_at ASC
          LIMIT 1`.execute(db);
       target = rootRow.rows[0]?.id ?? null;
-      if (target == null) return { status: "skipped" };
+      if (target == null) return { status: "skipped", ...telemetry };
     }
   }
 
@@ -118,7 +137,10 @@ export async function handleClassifyJob(
       .where("priority_id", "is", null)
       .where("user_moved", "=", false)
       .executeTakeFirst();
-    return { status: updated.numUpdatedRows > 0n ? "settled" : "skipped" };
+    return {
+      status: updated.numUpdatedRows > 0n ? "settled" : "skipped",
+      ...telemetry,
+    };
   } else if (target !== snapshot) {
     // Cases B-D with a different classifier result. Guard with the
     // snapshot so concurrent moves win.
@@ -130,7 +152,10 @@ export async function handleClassifyJob(
       .where("priority_id", "=", snapshot)
       .where("user_moved", "=", false)
       .executeTakeFirst();
-    return { status: updated.numUpdatedRows > 0n ? "moved" : "skipped" };
+    return {
+      status: updated.numUpdatedRows > 0n ? "moved" : "skipped",
+      ...telemetry,
+    };
   } else {
     // Same result — only clear classify_at. Does NOT bump
     // thread.updated_at (the parent-seq trigger excludes this branch).
@@ -140,7 +165,7 @@ export async function handleClassifyJob(
       .where("user_id", "=", job.userId)
       .where("thread_id", "=", job.threadId)
       .execute();
-    return { status: "same" };
+    return { status: "same", ...telemetry };
   }
 }
 

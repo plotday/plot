@@ -9,6 +9,21 @@ export type SignalWeights = {
 
 export type Nonlinearity = "identity" | "square" | "sigmoid";
 
+/**
+ * Per-user LLM-call budget. The monthly pool absorbs large one-time imports
+ * with no daily throttle; once it is exhausted the daily cap takes over for
+ * the rest of the month, so sustained heavy usage is rate-limited but never
+ * fully cut off (over-budget classifications degrade to deterministic
+ * scoring, not the bare topic mode). The gate allows a call when
+ * `monthCount < monthlyMax OR dayCount < dailyMax`.
+ */
+export type BudgetLimits = {
+  /** Generous monthly pool (LLM calls / calendar month, UTC). */
+  monthlyMax: number;
+  /** Daily trickle that applies only after the monthly pool is spent. */
+  dailyMax: number;
+};
+
 export type AggregationMode =
   | { mode: "top1" }
   | { mode: "topk_mean"; k: number }
@@ -35,7 +50,15 @@ export type LlmParams = {
     maxScoringCandidates: number;
     promptId: string;
   };
-  dailyBudgetPerUser: number;
+  /**
+   * Budget for paid plans (user_subscription.plan ∈ {core, pro, team} with
+   * status ∈ {active, trialing}). Effectively unlimited for real use — sized
+   * to absorb a very large initial import — and serves only as a bug/abuse
+   * ceiling.
+   */
+  budgetPaid: BudgetLimits;
+  /** Budget for free / lapsed users. */
+  budgetFree: BudgetLimits;
   /** Subdirectory of libs/eval/.cache/llm/ where cached responses live. */
   cacheNamespace: string;
 };
@@ -147,10 +170,13 @@ export const DEFAULTS_LLM: HybridParams = {
       maxScoringCandidates: 3,
       promptId: "topic-ambiguity-v2",
     },
-    // 200 (up from spec's 50) so an eval pass over a single-user corpus
-    // can fully exercise the LLM stages without truncating mid-run.
-    // Production deployments will tune this down per ramping plan.
-    dailyBudgetPerUser: 200,
+    // Monthly pool absorbs the initial import unthrottled; the daily cap is
+    // the post-exhaustion sustained rate. Paid is effectively unlimited for
+    // real use (a bug/abuse ceiling); free still classifies a moderate
+    // import, then trickles. Over-budget calls degrade to scoring, not the
+    // bare topic mode (see ts-hybrid-llm topic stage).
+    budgetPaid: { monthlyMax: 50_000, dailyMax: 500 },
+    budgetFree: { monthlyMax: 5_000, dailyMax: 100 },
     cacheNamespace: "default",
   },
 };

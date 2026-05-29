@@ -11,6 +11,7 @@ export type {
   Nonlinearity,
   AggregationMode,
   LlmParams,
+  BudgetLimits,
 } from "./ts-hybrid.defaults";
 export {
   DEFAULTS,

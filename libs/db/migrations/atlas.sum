@@ -1,4 +1,4 @@
-h1:NfvHsKbq94p+3Vw3ZZfO4hw8RSevZjYWkD4+0dogpP8=
+h1:dMLX37QaIjgdlCAc1xIKDyk4y4Y0r4I9wrlT7fLlhF8=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -431,3 +431,4 @@ h1:NfvHsKbq94p+3Vw3ZZfO4hw8RSevZjYWkD4+0dogpP8=
 20260528183626_drop_respond_attention_params.sql h1:iamMq3aS3VLSaUMhN0Vw199yY4KGwHk49Jv3prt+plo=
 20260529040236_fix_contact_meta_null_merge.sql h1:mXuNDVgEbGXeVgpeK+3t2pN+6QIoX3Oo13BGp/PgKQE=
 20260529153701_backfill_conferencing_location.sql h1:oyMMw9q7pOfTEjL+XjjjzgC+CgfNzY6sO7f4kG8Fj0c=
+20260529161330_fix_connector_topic_channel_keying.sql h1:16GkUpRlgpomn796w2OlvRVM+960idGE1sthNFCNmXI=

@@ -44,6 +44,10 @@ export default {
               properties: {
                 threadId: job.threadId,
                 status: outcome.status,
+                stage: outcome.stage,
+                llmCalls: outcome.llmCalls,
+                cacheHits: outcome.cacheHits,
+                budgetExhausted: outcome.budgetExhausted,
                 attempt: message.attempts,
               },
             });

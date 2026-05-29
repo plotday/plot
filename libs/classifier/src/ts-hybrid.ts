@@ -83,6 +83,7 @@ export function makeHybridClassifier(
         durationMs: performance.now() - start,
         llmCalls: 0,
         cacheHits: 0,
+        budgetExhausted: false,
       };
     },
   };
@@ -99,5 +100,6 @@ function done(
     durationMs: performance.now() - start,
     llmCalls: 0,
     cacheHits: 0,
+    budgetExhausted: false,
   };
 }

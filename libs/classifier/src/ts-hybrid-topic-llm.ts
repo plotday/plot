@@ -1,7 +1,7 @@
 import type { Candidate, ClassifierContext } from "./types";
 import type { LLMClient, LLMOutput } from "./llm-client";
 import { loadPrompt } from "./prompts";
-import type { ScoringExplain } from "./ts-hybrid-scoring";
+import type { ScoringExplain, ScoringOutcome } from "./ts-hybrid-scoring";
 import type { TopicTrainingSummary } from "./ts-hybrid-stages";
 import type { HybridParams } from "./ts-hybrid.defaults";
 import {
@@ -53,6 +53,59 @@ export function isTopicAmbiguous(
   if (summary.perPriority[0]!.n <= 1) return true;
   if (scoringContradicts) return true;
   return false;
+}
+
+/**
+ * Criterion 4 of {@link isTopicAmbiguous}: does the scoring stage actively
+ * contradict the topic mode? True when scoring has a confident match
+ * (top1 ≥ 1.5× threshold) for a DIFFERENT priority than the topic mode.
+ */
+export function scoringContradictsTopic(
+  summary: TopicTrainingSummary,
+  scoring: ScoringOutcome,
+  scoreThreshold: number
+): boolean {
+  return (
+    scoring.matched &&
+    scoring.priorityId !== summary.topPriorityId &&
+    scoring.top1 >= scoreThreshold * 1.5
+  );
+}
+
+/**
+ * Decide the topic stage's outcome once all signals are computed (and the
+ * LLM has either run or been skipped). Pure so it can be unit-tested without
+ * the DB-heavy cascade.
+ *
+ *   - Unambiguous topic → short-circuit to the mode (all same-topic moves
+ *     agree, so the plurality is a reliable signal).
+ *   - Ambiguous topic, LLM resolved → use the LLM's pick.
+ *   - Ambiguous topic, no LLM resolution (disabled, out of budget, or
+ *     declined) → defer to per-thread scoring when it has a confident match;
+ *     otherwise return null to fall through to the rest of the cascade
+ *     (channel_default → scoring → shortcuts → cold-start → root).
+ *
+ * The ambiguous→scoring path is the core fix: a thin plurality on a coarse
+ * shared topic (e.g. a connector-derived priority-id topic) must not override
+ * the per-thread signal, and budget exhaustion must not dump every thread
+ * into the mode.
+ */
+export function pickTopicOutcome(
+  summary: TopicTrainingSummary,
+  scoring: ScoringOutcome,
+  ambiguous: boolean,
+  llmPriorityId: string | null
+): { priorityId: string; stage: string } | null {
+  if (!ambiguous) {
+    return { priorityId: summary.topPriorityId, stage: "topic_shortcircuit" };
+  }
+  if (llmPriorityId !== null) {
+    return { priorityId: llmPriorityId, stage: "llm_topic_ambiguity" };
+  }
+  if (scoring.matched) {
+    return { priorityId: scoring.priorityId, stage: "scoring" };
+  }
+  return null;
 }
 
 export async function runTopicLlm(inputs: TopicLlmInputs): Promise<TopicLlmResult> {

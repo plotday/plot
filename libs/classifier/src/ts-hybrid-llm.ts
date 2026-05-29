@@ -12,7 +12,7 @@ import {
   twistAuthorShortcut,
 } from "./ts-hybrid-shortcuts";
 import { runColdStart } from "./ts-hybrid-coldstart";
-import { scoringStage } from "./ts-hybrid-scoring";
+import { scoringStage, type ScoringOutcome } from "./ts-hybrid-scoring";
 import {
   channelDefault,
   keyedPriority,
@@ -21,13 +21,23 @@ import {
   rootFallback,
   topicTrainingSummary,
 } from "./ts-hybrid-stages";
-import { isTopicAmbiguous, runTopicLlm } from "./ts-hybrid-topic-llm";
-import { assertValidWeights, type HybridParams } from "./ts-hybrid.defaults";
+import {
+  isTopicAmbiguous,
+  pickTopicOutcome,
+  runTopicLlm,
+  scoringContradictsTopic,
+} from "./ts-hybrid-topic-llm";
+import { resolveBudgetLimits } from "./ts-hybrid-budget";
+import {
+  assertValidWeights,
+  type BudgetLimits,
+  type HybridParams,
+} from "./ts-hybrid.defaults";
 
 export type LlmClientFactory = (promptId: string) => LLMClient;
 export type ConsumeBudgetFn = (
   userId: string,
-  dailyMax: number
+  limits: BudgetLimits
 ) => boolean | Promise<boolean>;
 
 export type MakeHybridLlmOpts = {
@@ -45,17 +55,26 @@ export type MakeHybridLlmOpts = {
   consumeBudget?: ConsumeBudgetFn;
 };
 
-const defaultBudget = new Map<string, { date: string; count: number }>();
+const defaultMonthBudget = new Map<string, { period: string; count: number }>();
+const defaultDayBudget = new Map<string, { period: string; count: number }>();
 
-function defaultConsumeBudget(userId: string, dailyMax: number): boolean {
-  const today = new Date().toISOString().slice(0, 10);
-  const cur = defaultBudget.get(userId);
-  if (!cur || cur.date !== today) {
-    defaultBudget.set(userId, { date: today, count: 1 });
-    return 1 <= dailyMax;
-  }
-  cur.count++;
-  return cur.count <= dailyMax;
+/**
+ * In-memory monthly-pool + daily-fallback gate (test/eval default). Mirrors
+ * kvBudget: allow when `month < monthlyMax OR day < dailyMax`; on allow,
+ * increment both counters.
+ */
+function defaultConsumeBudget(userId: string, limits: BudgetLimits): boolean {
+  const now = new Date().toISOString();
+  const month = now.slice(0, 7); // yyyy-mm
+  const day = now.slice(0, 10); // yyyy-mm-dd
+  const m = defaultMonthBudget.get(userId);
+  const mCount = m && m.period === month ? m.count : 0;
+  const d = defaultDayBudget.get(userId);
+  const dCount = d && d.period === day ? d.count : 0;
+  if (mCount >= limits.monthlyMax && dCount >= limits.dailyMax) return false;
+  defaultMonthBudget.set(userId, { period: month, count: mCount + 1 });
+  defaultDayBudget.set(userId, { period: day, count: dCount + 1 });
+  return true;
 }
 
 export function makeHybridLlmClassifier(
@@ -113,6 +132,23 @@ export function makeHybridLlmClassifier(
         client.stats.misses = 0;
       };
 
+      // Per-user LLM budget, resolved lazily by subscription tier the first
+      // time an LLM stage wants to fire (deterministic-only classifications
+      // never touch the DB for it). budgetExhausted is surfaced for
+      // observability when the cascade falls back for lack of budget.
+      let budgetExhausted = false;
+      let budgetLimits: BudgetLimits | null = null;
+      const tryConsumeBudget = async (): Promise<boolean> => {
+        budgetLimits ??= await resolveBudgetLimits(ctx, llm);
+        const ok = await consumeBudget(ctx.userId, budgetLimits);
+        if (!ok) budgetExhausted = true;
+        return ok;
+      };
+      // Scoring is computed at most once per classify and reused: the topic
+      // stage needs it (to detect topic-vs-scoring contradiction and as the
+      // ambiguous-topic fallback), and the later scoring stage reuses it.
+      let scoreResult: ScoringOutcome | null = null;
+
       const pp = await priorityPrefix(ctx, candidate.topic);
       if (pp) return finish(pp);
       // Pre-insert callers (thread-helpers.prepareThreadForDb) classify
@@ -136,58 +172,72 @@ export function makeHybridLlmClassifier(
           candidate.contacts
         );
         if (summary !== null) {
-          const ambigScore = llm.topicAmbiguity.enabled
-            ? await scoringStage(ctx, candidate, opts.params)
-            : null;
-          const scoringContradicts =
-            ambigScore?.matched === true &&
-            ambigScore.priorityId !== summary.topPriorityId &&
-            ambigScore.top1 >= opts.params.scoreThreshold * 1.5;
+          // Always score here: needed to detect topic-vs-scoring
+          // contradiction and as the fallback when an ambiguous topic can't
+          // be resolved by the LLM. Reused by the later scoring stage.
+          scoreResult = await scoringStage(ctx, candidate, opts.params);
+          const ambiguous = isTopicAmbiguous(
+            summary,
+            candidate.contacts,
+            scoringContradictsTopic(summary, scoreResult, opts.params.scoreThreshold)
+          );
 
-          if (
-            llm.topicAmbiguity.enabled &&
-            isTopicAmbiguous(summary, candidate.contacts, scoringContradicts) &&
-            (await consumeBudget(ctx.userId, llm.dailyBudgetPerUser))
-          ) {
+          // Ambiguous topics escalate to the LLM disambiguator (budget
+          // permitting). A thin/contradicted plurality must not determinist-
+          // ically win over the per-thread signal.
+          let llmPriorityId: string | null = null;
+          let llmRationale: unknown = null;
+          if (ambiguous && llm.topicAmbiguity.enabled && (await tryConsumeBudget())) {
             const client = getTopicLlmClient();
             const r = await runTopicLlm({
               ctx,
               candidate,
               summary,
-              scoring: ambigScore!.explain,
+              scoring: scoreResult.explain,
               params: opts.params,
               llmClient: client,
             });
             observe(client);
             if (r.fired && r.output.priorityId !== null) {
-              return finish({
-                priorityId: r.output.priorityId,
-                stage: "llm_topic_ambiguity",
-                scores: {
-                  rationale: r.output.rationale,
-                  topic: candidate.topic,
-                  candidateCount: summary.perPriority.length,
-                },
-              });
+              llmPriorityId = r.output.priorityId;
+              llmRationale = r.output.rationale;
             }
           }
-          return finish({
-            priorityId: summary.topPriorityId,
-            stage: "topic_shortcircuit",
-            scores: {
-              topic: candidate.topic,
-              candidateCount: summary.perPriority.length,
-            },
-          });
+
+          const outcome = pickTopicOutcome(
+            summary,
+            scoreResult,
+            ambiguous,
+            llmPriorityId
+          );
+          if (outcome) {
+            return finish({
+              priorityId: outcome.priorityId,
+              stage: outcome.stage,
+              scores:
+                outcome.stage === "llm_topic_ambiguity"
+                  ? {
+                      rationale: llmRationale,
+                      topic: candidate.topic,
+                      candidateCount: summary.perPriority.length,
+                    }
+                  : outcome.stage === "scoring"
+                    ? (scoreResult.explain as unknown as Record<string, unknown>)
+                    : {
+                        topic: candidate.topic,
+                        candidateCount: summary.perPriority.length,
+                      },
+            });
+          }
+          // Ambiguous topic with no LLM resolution and no confident scoring:
+          // fall through to the rest of the cascade (channel_default →
+          // scoring(reused) → shortcuts → cold-start → root).
         }
       }
 
       const cd = await channelDefault(ctx, candidate.topic);
       if (cd) {
-        if (
-          llm.topicAmbiguity.enabled &&
-          (await consumeBudget(ctx.userId, llm.dailyBudgetPerUser))
-        ) {
+        if (llm.topicAmbiguity.enabled && (await tryConsumeBudget())) {
           const cdScore = await scoringStage(ctx, candidate, opts.params);
           const fakeSummary = {
             topPriorityId: cd.priorityId,
@@ -226,13 +276,10 @@ export function makeHybridLlmClassifier(
         return finish(cd);
       }
 
-      const score = await scoringStage(ctx, candidate, opts.params);
+      const score = scoreResult ?? (await scoringStage(ctx, candidate, opts.params));
 
       if (score.matched) {
-        if (
-          llm.tieBreaker.enabled &&
-          (await consumeBudget(ctx.userId, llm.dailyBudgetPerUser))
-        ) {
+        if (llm.tieBreaker.enabled && (await tryConsumeBudget())) {
           const client = getTieBreakerClient();
           const tb = await runTieBreaker({
             ctx,
@@ -267,10 +314,7 @@ export function makeHybridLlmClassifier(
       const ts3 = await singlePriorityBypass(ctx, opts.params);
       if (ts3) return finish(ts3);
 
-      if (
-        llm.coldStart.enabled &&
-        (await consumeBudget(ctx.userId, llm.dailyBudgetPerUser))
-      ) {
+      if (llm.coldStart.enabled && (await tryConsumeBudget())) {
         const client = getColdStartClient();
         const cs = await runColdStart({
           ctx,
@@ -312,6 +356,7 @@ export function makeHybridLlmClassifier(
           durationMs: performance.now() - start,
           llmCalls,
           cacheHits,
+          budgetExhausted,
         };
       }
     },

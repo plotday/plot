@@ -33,6 +33,7 @@ export const sqlCurrentClassifier: Classifier = {
       durationMs,
       llmCalls: 0,
       cacheHits: 0,
+      budgetExhausted: false,
     };
   },
 };

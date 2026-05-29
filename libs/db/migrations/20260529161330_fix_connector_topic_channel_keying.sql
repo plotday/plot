@@ -1,37 +1,5 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -659,4 +627,45 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+
+-- Data fix: correct connector/twist-created threads whose topic was set to
+-- their filed priority's id (the pre-fix upsert_thread default), which
+-- pre-empted the set_thread_topic_from_link_channel trigger and collapsed
+-- every channel into one coarse topic. Re-key them to 'channel:<channel.id>'
+-- and mark non-sticky (auto-classified) filings pending so the hourly
+-- classify sweep re-files them with the fixed cascade. Sticky (user_moved)
+-- filings keep their priority but get the corrected topic so they train the
+-- right channel bucket rather than the polluted priority-id bucket.
+WITH affected AS (
+    SELECT t.id AS thread_id,
+           'channel:' || min(ch.id)::text AS new_topic
+    FROM public.thread t
+    JOIN public.twist_instance ti ON ti.id = t.created_by
+    JOIN public.link l
+      ON l.thread_id = t.id
+     AND l.channel_id IS NOT NULL
+    JOIN public.channel ch
+      ON ch.twist_instance_id = l.created_by
+     AND ch.channel_id = l.channel_id
+    -- topic is exactly a priority id (the pre-fix default); a 'channel:<n>'
+    -- topic never equals priority.id::text, so this also excludes already-
+    -- correct rows.
+    JOIN public.priority p ON p.id::text = t.topic
+    WHERE t.topic IS NOT NULL
+    GROUP BY t.id
+),
+retopiced AS (
+    UPDATE public.thread t
+    SET topic = a.new_topic
+    FROM affected a
+    WHERE t.id = a.thread_id
+      AND t.topic IS DISTINCT FROM a.new_topic
+    RETURNING t.id
+)
+UPDATE public.thread_priority tp
+SET classify_at = now()
+FROM retopiced r
+WHERE tp.thread_id = r.id
+  AND tp.user_moved = FALSE
+  AND tp.priority_id IS NOT NULL;

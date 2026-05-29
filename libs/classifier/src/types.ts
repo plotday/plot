@@ -37,6 +37,13 @@ export interface ClassificationResult {
   llmCalls: number;
   /** Number of LLM cache hits during this classification (default 0). */
   cacheHits: number;
+  /**
+   * True when an LLM stage wanted to fire but the user's daily/monthly LLM
+   * budget was exhausted, so the cascade fell back to a deterministic stage.
+   * Surfaced for observability (PostHog) — a high rate signals the budget is
+   * too low or a runaway re-classification loop. Default false.
+   */
+  budgetExhausted: boolean;
 }
 
 export interface Classifier {
