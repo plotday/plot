@@ -92,7 +92,11 @@ class FormScheduler extends FormItem {
     required DateTimeRange initialRange,
     this.allowPastTimes = false,
     this.onChanged,
-  }) : _range = initialRange,
+  }) : assert(
+         initialRange.start != null && initialRange.end != null,
+         'FormScheduler requires a bounded initial range (non-null start/end)',
+       ),
+       _range = initialRange,
        super(required: true);
 
   /// When true, past start times are preserved (edit mode). When false, the
@@ -232,8 +236,14 @@ class _FormSchedulerBodyState extends State<_FormSchedulerBody> {
     widget.onChanged(clamped);
   }
 
-  FocusNode _node(int i) =>
-      i < widget.focusNodes.length ? widget.focusNodes[i] : FocusNode();
+  FocusNode _node(int i) {
+    assert(
+      i < widget.focusNodes.length,
+      'FormScheduler.focusableCount is 3 but only '
+      '${widget.focusNodes.length} focus nodes were provided',
+    );
+    return widget.focusNodes[i];
+  }
 
   StepController _ctrl(int i) => widget.stepControllers[i];
 
