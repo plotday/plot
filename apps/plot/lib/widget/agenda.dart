@@ -247,11 +247,11 @@ class AgendaTile extends StatelessWidget {
         ? context.theme.spacing.xl
         : context.theme.spacing.md;
 
-    // Date headers separate each day with a quiet, left-aligned label:
-    // full month + day, then the full weekday, on one line. The label
-    // ignores the time-column gutter — it just sits at a small left margin
-    // with regular spacing between its parts. One quiet tone and size
-    // throughout; only the day number carries a slightly heavier weight.
+    // Date headers separate each day with a quiet label: the month + day
+    // sit in the leading gutter (left-aligned, column-aligned with the time
+    // labels on event/gap rows), and the weekday sits in the content column
+    // aligned with the titles beside it. One quiet tone and size throughout;
+    // only the day number carries a slightly heavier weight.
     if (date != null) {
       final smSize = context.theme.typography.sm.fontSize;
 
@@ -276,27 +276,59 @@ class AgendaTile extends StatelessWidget {
         ),
         color: context.theme.plotColors.veryMuted,
       );
+
+      // The day number is always shown; the month falls back to its short
+      // form (e.g. "Sep") when the full name would overflow the narrow
+      // gutter. Measure the bold "<month> <day>" against the gutter's text
+      // area (its width minus the gutter→content gap).
+      final timeColWidth = agendaLeadingWidth(context);
+      final available = timeColWidth - agendaGutterGap(context);
+      final monthFull = dateMonth!;
+      final fullWidth = (TextPainter(
+        text: TextSpan(
+          text: '$monthFull ${dateDay!}',
+          style: TextStyle(fontSize: smSize, fontWeight: FontWeight.w700),
+        ),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout()).width;
+      final monthText = fullWidth <= available
+          ? monthFull
+          : date!.format(format: 'MMM');
+
       final child = Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Left-aligned label: "May 28 Thursday". Full month + day (the day
-          // a touch bolder), then the weekday, separated by single spaces.
-          // A small left margin keeps it off the edge; the gutter width is
-          // intentionally ignored. The + button stays vertically centred.
-          Expanded(
+          // Gutter: "May 28" — right-aligned, column-aligned with the leading
+          // time labels on event/gap rows (right padding = the gutter→content
+          // gap so the weekday lines up with the titles beside it).
+          SizedBox(
+            width: timeColWidth,
             child: Padding(
-              padding: EdgeInsets.only(left: spacing.md),
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(text: '${dateMonth!} ', style: labelStyle),
-                    TextSpan(text: dateDay!, style: dayStyle),
-                    TextSpan(text: ' ${dateWeekday!}', style: labelStyle),
-                  ],
+              padding: EdgeInsets.only(right: agendaGutterGap(context)),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: '$monthText ', style: labelStyle),
+                      TextSpan(text: dateDay, style: dayStyle),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
+            ),
+          ),
+          // Weekday in the content column, aligned with the titles on other
+          // rows. The + button stays vertically centred at the trailing edge.
+          Expanded(
+            child: Text(
+              dateWeekday!,
+              style: labelStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Padding(
@@ -773,15 +805,17 @@ class _BlockHeaderState extends State<_BlockHeader> {
         .resolve(TextDirection.ltr);
     final rightPad = isWide ? spacing.lg : iconPad.right;
 
-    // For an in-progress event, replace the static duration label in
-    // gutter row 2 with the remaining time so it counts down toward 0.
-    Widget? gutterRow2;
+    // The duration label lives on the right side of row 1 in all cases
+    // (column-aligned with the gap headers' trailing duration). For an
+    // in-progress event, the static duration is replaced with the
+    // remaining time so it counts down toward 0.
+    Widget? durationWidget;
     if (widget.now && thread?.at?.end != null) {
       final currentTime = Time.now();
       final end = thread!.at!.end!;
       if (end.isAfter(currentTime)) {
         final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
-        gutterRow2 = Text(
+        durationWidget = Text(
           Duration(minutes: remaining).format(),
           style: TextStyle(
             fontSize: secondarySize,
@@ -793,13 +827,13 @@ class _BlockHeaderState extends State<_BlockHeader> {
         );
       }
     } else if (block is PriorityBlock) {
-      // A user-scheduled focus block surfaces its duration in the gutter.
+      // A user-scheduled focus block surfaces its duration on row 1.
       // [NowBloc.watchBlockDisplay] overlays an active or paused-explicit
       // session's live remaining; otherwise it emits null and we fall back
       // to the block's own scheduled duration.
       final displayed = _pendingDisplay?.duration ?? block.cascadeDuration;
       if (displayed != null) {
-        gutterRow2 = Text(
+        durationWidget = Text(
           _formatDuration(displayed),
           style: TextStyle(
             fontSize: secondarySize,
@@ -813,7 +847,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     } else {
       final dur = dateTimeRange?.duration;
       if (dur != null && dur.inSeconds > 0) {
-        gutterRow2 = Text(
+        durationWidget = Text(
           dur.format(),
           style: TextStyle(
             fontSize: secondarySize,
@@ -826,18 +860,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
       }
     }
 
-    // Row 2 renders whenever ANY column has content for it: the gutter
-    // duration label, the summary text, or a row-2 trailing widget. The
-    // empty side (e.g. summary text on a duration-only [GapBlock]) just
-    // renders a placeholder so both columns stay vertically aligned.
-    // Events always reserve row 2 so the location / videoconferencing
-    // line and the live duration counter share a stable layout even
-    // before the link stream emits.
-    final hasSecondRow =
-        gutterRow2 != null ||
-        summary.isNotEmpty ||
-        row2Trailing != null ||
-        isEvent;
+    final rowHeight = secondarySize * _agendaRowLineHeight;
 
     // Show the gutter edit affordance only for blocks that map cleanly
     // to a focus-block create/edit action — priority blocks (already
@@ -845,41 +868,29 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // and gap blocks with a priority lead.
     final canEditAsFocusBlock = block is PriorityBlock || block is GapBlock;
 
+    // The gutter carries only the time now (the duration moved to row 1's
+    // trailing edge), so it is a single line aligned with the title.
     final gutterColumn = SizedBox(
       width: timeColWidth,
       child: Padding(
         padding: EdgeInsets.only(right: agendaGutterGap(context)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            SizedBox(
-              height: secondarySize * _agendaRowLineHeight,
-              child: timeText != null
-                  ? Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        timeText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.theme.colors.mutedForeground,
-                          fontSize: secondarySize,
-                          height: _agendaRowLineHeight,
-                        ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            if (hasSecondRow) ...[
-              SizedBox(height: spacing.sm),
-              SizedBox(
-                height: secondarySize * _agendaRowLineHeight,
-                child: gutterRow2 != null
-                    ? Align(alignment: Alignment.centerRight, child: gutterRow2)
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ],
+        child: SizedBox(
+          height: rowHeight,
+          child: timeText != null
+              ? Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    timeText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.theme.colors.mutedForeground,
+                      fontSize: secondarySize,
+                      height: _agendaRowLineHeight,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ),
     );
@@ -920,89 +931,112 @@ class _BlockHeaderState extends State<_BlockHeader> {
       gutter = gutterColumn;
     }
 
-    final innerRow = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Row 1: time (gutter) · title · duration. Always present.
+    final firstRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         gutter,
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                height: secondarySize * _agendaRowLineHeight,
+          child: SizedBox(
+            height: rowHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: isEvent
+                  ? Text(
+                      block.event.displayTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: fg,
+                        fontSize: secondarySize,
+                        height: _agendaRowLineHeight,
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (block is PriorityBlock) ...[
+                          Icon(PlotIcon.priority, size: secondarySize, color: fg),
+                          SizedBox(width: spacing.sm),
+                        ],
+                        Flexible(
+                          child: PriorityLabel(
+                            priority: priority,
+                            color: fg,
+                            mutedAncestorColor: mutedFg,
+                            fontSize: secondarySize,
+                            height: _agendaRowLineHeight,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+        if (durationWidget != null) ...[
+          SizedBox(width: spacing.sm),
+          durationWidget,
+        ],
+      ],
+    );
+
+    // Row 2 is indented to start under the title (past the gutter) and
+    // only renders when it has content. For non-events the content is the
+    // synchronous summary, so we decide here. Events resolve their
+    // location / videoconferencing line asynchronously from the link
+    // stream, so [_EventSecondRow] makes that decision reactively and
+    // collapses to nothing (no blank line) when an event has no location,
+    // conferencing, preview, or RSVP to show.
+    Widget? secondRow;
+    if (isEvent) {
+      secondRow = _EventSecondRow(
+        event: block.event,
+        indent: timeColWidth,
+        topGap: spacing.sm,
+        gap: spacing.sm,
+        rowHeight: rowHeight,
+        mutedColor: mutedColor,
+        fontSize: secondarySize,
+        trailing: row2Trailing,
+      );
+    } else if (summary.isNotEmpty || row2Trailing != null) {
+      secondRow = Padding(
+        padding: EdgeInsets.only(top: spacing.sm),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(width: timeColWidth),
+            Expanded(
+              child: SizedBox(
+                height: rowHeight,
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: isEvent
-                      ? Text(
-                          block.event.displayTitle,
+                  child: summary.isNotEmpty
+                      ? Text.rich(
+                          summarySpan,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: fg,
                             fontSize: secondarySize,
                             height: _agendaRowLineHeight,
                           ),
                         )
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (block is PriorityBlock) ...[
-                              Icon(
-                                PlotIcon.priority,
-                                size: secondarySize,
-                                color: fg,
-                              ),
-                              SizedBox(width: spacing.sm),
-                            ],
-                            Flexible(
-                              child: PriorityLabel(
-                                priority: priority,
-                                color: fg,
-                                mutedAncestorColor: mutedFg,
-                                fontSize: secondarySize,
-                                height: _agendaRowLineHeight,
-                              ),
-                            ),
-                          ],
-                        ),
+                      : const SizedBox.shrink(),
                 ),
               ),
-              if (hasSecondRow) ...[
-                SizedBox(height: spacing.sm),
-                SizedBox(
-                  height: secondarySize * _agendaRowLineHeight,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: isEvent
-                            ? _EventLocationRow(
-                                event: block.event,
-                                mutedColor: mutedColor,
-                                fontSize: secondarySize,
-                              )
-                            : Text.rich(
-                                summarySpan,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: secondarySize,
-                                  height: _agendaRowLineHeight,
-                                ),
-                              ),
-                      ),
-                      if (row2Trailing != null) ...[
-                        SizedBox(width: spacing.sm),
-                        row2Trailing,
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+            ),
+            if (row2Trailing != null) ...[
+              SizedBox(width: spacing.sm),
+              row2Trailing,
             ],
-          ),
+          ],
         ),
-      ],
+      );
+    }
+
+    final innerRow = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [firstRow, ?secondRow],
     );
 
     return Container(
@@ -1328,106 +1362,153 @@ String _formatDuration(Duration d) {
   return '${h}h ${m}m';
 }
 
-/// Row 2 content for calendar event blocks. Watches the event thread's
-/// links to surface a physical location, a videoconferencing join link,
-/// or both. Falls back to [Thread.displayPreview] when neither is
-/// present so the row still carries useful context (e.g. user notes on
-/// the event).
-class _EventLocationRow extends StatelessWidget {
-  const _EventLocationRow({
+/// Row 2 for calendar event blocks. Watches the event thread's links to
+/// surface a physical location, a videoconferencing join link, or both,
+/// falling back to [Thread.displayPreview] when neither is present so the
+/// row still carries useful context (e.g. user notes on the event).
+///
+/// The whole row is reactive: when an event has no location, conferencing,
+/// preview, *and* no [trailing] RSVP, it collapses to nothing rather than
+/// reserving a blank second line. The row is indented by [indent] (the
+/// gutter width) so its content lines up under the title.
+class _EventSecondRow extends StatelessWidget {
+  const _EventSecondRow({
     required this.event,
+    required this.indent,
+    required this.topGap,
+    required this.gap,
+    required this.rowHeight,
     required this.mutedColor,
     required this.fontSize,
+    required this.trailing,
   });
 
   final Thread event;
+  final double indent;
+  final double topGap;
+  final double gap;
+  final double rowHeight;
   final Color mutedColor;
   final double fontSize;
+  final Widget? trailing;
+
+  /// The location / conferencing / preview content for [event] built from
+  /// its [links], or null when the event has nothing to show. Returning
+  /// null (rather than an empty box) lets the caller decide whether the
+  /// row should appear at all.
+  Widget? _content(BuildContext context, List<Link> links) {
+    String? location;
+    for (final link in links) {
+      final raw = link.meta?['location'];
+      if (raw is String && raw.trim().isNotEmpty) {
+        location = raw.trim();
+        break;
+      }
+    }
+
+    ConferencingUserAction? conf;
+    for (final link in links) {
+      for (final action in link.actions ?? const <UserAction>[]) {
+        if (action is ConferencingUserAction) {
+          conf = action;
+          break;
+        }
+      }
+      if (conf != null) break;
+    }
+
+    final spacing = context.theme.spacing;
+
+    if (conf != null && location == null) {
+      return _ConferencingInline(
+        action: conf,
+        color: mutedColor,
+        fontSize: fontSize,
+        withLabel: true,
+      );
+    }
+
+    if (conf != null && location != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ConferencingInline(
+            action: conf,
+            color: mutedColor,
+            fontSize: fontSize,
+            withLabel: false,
+          ),
+          SizedBox(width: spacing.sm),
+          Flexible(
+            child: _LocationInline(
+              location: location,
+              color: mutedColor,
+              fontSize: fontSize,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (location != null) {
+      return _LocationInline(
+        location: location,
+        color: mutedColor,
+        fontSize: fontSize,
+      );
+    }
+
+    final preview = event.displayPreview;
+    if (preview != null && preview.isNotEmpty) {
+      return Text(
+        preview,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: fontSize,
+          color: mutedColor,
+          height: _agendaRowLineHeight,
+        ),
+      );
+    }
+
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Link>>(
       stream: Link.watchForThread(event.id),
       builder: (context, snapshot) {
-        final links = snapshot.data ?? const <Link>[];
+        final content = _content(context, snapshot.data ?? const <Link>[]);
 
-        String? location;
-        for (final link in links) {
-          final raw = link.meta?['location'];
-          if (raw is String && raw.trim().isNotEmpty) {
-            location = raw.trim();
-            break;
-          }
+        // No content and no RSVP → no second line at all.
+        if (content == null && trailing == null) {
+          return const SizedBox.shrink();
         }
 
-        ConferencingUserAction? conf;
-        for (final link in links) {
-          for (final action in link.actions ?? const <UserAction>[]) {
-            if (action is ConferencingUserAction) {
-              conf = action;
-              break;
-            }
-          }
-          if (conf != null) break;
-        }
-
-        final spacing = context.theme.spacing;
-        final textStyle = TextStyle(
-          fontSize: fontSize,
-          color: mutedColor,
-          height: _agendaRowLineHeight,
-        );
-
-        if (conf != null && location == null) {
-          return _ConferencingInline(
-            action: conf,
-            color: mutedColor,
-            fontSize: fontSize,
-            withLabel: true,
-          );
-        }
-
-        if (conf != null && location != null) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
+        return Padding(
+          padding: EdgeInsets.only(top: topGap),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _ConferencingInline(
-                action: conf,
-                color: mutedColor,
-                fontSize: fontSize,
-                withLabel: false,
-              ),
-              SizedBox(width: spacing.sm),
-              Flexible(
-                child: _LocationInline(
-                  location: location,
-                  color: mutedColor,
-                  fontSize: fontSize,
+              SizedBox(width: indent),
+              Expanded(
+                child: SizedBox(
+                  height: rowHeight,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: content ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
+              if (trailing != null) ...[
+                SizedBox(width: gap),
+                trailing!,
+              ],
             ],
-          );
-        }
-
-        if (location != null) {
-          return _LocationInline(
-            location: location,
-            color: mutedColor,
-            fontSize: fontSize,
-          );
-        }
-
-        final preview = event.displayPreview;
-        if (preview != null && preview.isNotEmpty) {
-          return Text(
-            preview,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: textStyle,
-          );
-        }
-
-        return const SizedBox.shrink();
+          ),
+        );
       },
     );
   }
