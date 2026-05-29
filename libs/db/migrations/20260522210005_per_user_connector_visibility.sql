@@ -7,8 +7,13 @@ SET LOCAL statement_timeout = '0';
 
 -- Modify "note" table
 ALTER TABLE "public"."note" ADD COLUMN "canonical_source" text NULL;
--- Create index "note_thread_canonical_key_unique" to table: "note"
-CREATE UNIQUE INDEX "note_thread_canonical_key_unique" ON "public"."note" ("thread_id", "canonical_source", "key") WHERE ((canonical_source IS NOT NULL) AND (key IS NOT NULL));
+-- NOTE: the "note_thread_canonical_key_unique" index is created near the end of
+-- this migration, AFTER the data backfill and dedup below. Creating it here
+-- would fail: the canonical_source backfill (step A) populates the same
+-- (thread_id, canonical_source, key) tuple on cross-connection duplicate notes
+-- simultaneously, and the dedup (step B) that resolves those duplicates has not
+-- run yet. The index is also partial on archived_at IS NULL so soft-deleted
+-- duplicates never occupy the unique slot.
 -- Set comment to column: "link_id" on table: "note"
 COMMENT ON COLUMN "public"."note"."link_id" IS 'The connector-created link this note was first written through. Informational attribution — note visibility is thread-scoped, not link-scoped. Cross-connection dedup is keyed on canonical_source, not link_id. NULL for user/Plot-tool authored notes.';
 -- Set comment to column: "canonical_source" on table: "note"
@@ -187,6 +192,12 @@ WHERE legacy.link_id = l.id
         AND sibling.key LIKE 'description-%'
         AND sibling.archived_at IS NULL
   );
+
+-- Create index "note_thread_canonical_key_unique" to table: "note".
+-- Created here, after the backfill (A) and dedup (B/C), so the data already
+-- satisfies uniqueness. Partial on archived_at IS NULL so archived duplicates
+-- (which B/C soft-deleted rather than removing) are excluded from the constraint.
+CREATE UNIQUE INDEX "note_thread_canonical_key_unique" ON "public"."note" ("thread_id", "canonical_source", "key") WHERE ((canonical_source IS NOT NULL) AND (key IS NOT NULL) AND (archived_at IS NULL));
 
 -- D. Bump link and schedule rows so clients re-pull under the new per-user
 -- visibility filter. Required because the view change alters which rows each

@@ -54,14 +54,15 @@ CREATE UNIQUE INDEX note_thread_link_key_unique
     ON "public"."note" ("thread_id", "link_id", "key")
     WHERE key IS NOT NULL;
 
--- Cross-connection dedup: one keyed note per (thread, canonical external resource).
--- Two users'' connections of the same calendar event share link.source (e.g. an
--- iCalUID-based identifier), so their description notes collide on this index
--- and converge to one row. Notes whose link has no source fall through to the
--- per-link index above.
+-- Cross-connection dedup: one live keyed note per (thread, canonical external
+-- resource). Two users'' connections of the same calendar event share
+-- link.source (e.g. an iCalUID-based identifier), so their description notes
+-- collide on this index and converge to one row. Notes whose link has no source
+-- fall through to the per-link index above. Archived rows are excluded so a
+-- soft-deleted duplicate never occupies the unique slot (dedup archives extras).
 CREATE UNIQUE INDEX note_thread_canonical_key_unique
     ON "public"."note" ("thread_id", "canonical_source", "key")
-    WHERE canonical_source IS NOT NULL AND key IS NOT NULL;
+    WHERE canonical_source IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL;
 
 -- Index for efficient key lookups
 CREATE INDEX idx_note_key ON "public"."note" ("key")

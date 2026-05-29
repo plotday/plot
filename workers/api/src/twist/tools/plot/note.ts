@@ -463,9 +463,10 @@ export async function createNote(
     //
     // Two ON CONFLICT targets:
     //   - When canonical_source is set: dedup across links sharing the same
-    //     external resource (one note per (thread, canonical_source, key)).
-    //     `link_id` is omitted from the update so the first writer's link
-    //     attribution stays pinned.
+    //     external resource (one live note per (thread, canonical_source, key)).
+    //     The arbiter index is partial on `archived_at IS NULL`, so the WHERE
+    //     below must include it to match. `link_id` is omitted from the update
+    //     so the first writer's link attribution stays pinned.
     //   - Otherwise: fall back to the per-link key index (one note per
     //     (thread, link_id, key)).
     //
@@ -538,6 +539,7 @@ export async function createNote(
                   .columns(["thread_id", "canonical_source", "key"])
                   .where("canonical_source", "is not", null)
                   .where("key", "is not", null)
+                  .where("archived_at", "is", null)
                   .doUpdateSet(onConflictUpdateSet)
                   .where(onConflictWhere)
               : oc
