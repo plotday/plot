@@ -34,7 +34,7 @@ import { Tool } from "./tool";
  */
 class AIDisabledStub extends Tool implements IAI {
   available(): AICapabilities {
-    return { prompt: false, embed: false };
+    return { prompt: false, embed: false, webSearch: false };
   }
 
   async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(

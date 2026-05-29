@@ -102,7 +102,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Twists with a `threadType` appear in the new-thread connection picker, so users can start a chat with the twist alongside picking a connector channel or a plain Plot thread
 - The new-thread connection field defaults to the connection last used in that priority (falling back to the most recent across priorities) — a connector channel, a twist chat, or a plain Plot thread — so repeat workflows skip re-picking; share-intent captures stay a plain Plot thread
 - Built-in twists:
-  - Plot (default workflows; available as "Plot AI chat" in the connection picker)
+  - Plot — general-purpose AI assistant (available as "Plot AI chat" in the connection picker). Responds conversationally to any request like ChatGPT/Claude/Gemini; searches the web for up-to-date information; reads and reasons over the user's own Plot data (notes, threads, priorities) to answer questions about their workspace; and can propose organization plans (move/archive/rename threads and priorities) for approval. Mention @Plot anywhere or start a Plot AI chat.
   - Calendar Sync
   - Message Tasks
   - Project Sync
@@ -131,7 +131,8 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
   - Custom OpenAI-compatible endpoints: point to any API (local LLMs, proxies, alternative providers) with configurable model names
   - Text generation and analysis
   - Structured output with schemas
-  - Tool calling support
+  - Tool calling support (multi-step agentic loops via `maxSteps`)
+  - Provider-native web search (Anthropic/Google) for up-to-date information, with cited sources
   - BYOK (Bring Your Own Key): Users can add their own API keys per provider, scoped to personal or organization priorities
 - Network: HTTP requests for external APIs
 - Store: Persistent key-value storage

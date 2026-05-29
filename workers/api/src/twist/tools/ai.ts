@@ -1,7 +1,7 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { Output, generateText, jsonSchema } from "ai";
+import { Output, generateText, jsonSchema, stepCountIs } from "ai";
 import type { Static, TSchema } from "typebox";
 import { createWorkersAI } from "workers-ai-provider";
 
@@ -149,7 +149,39 @@ export class AI extends Tool implements IAI {
   }
 
   available(): AICapabilities {
-    return { prompt: true, embed: true };
+    // Web search uses provider-native server-side tools, available on
+    // Anthropic and Google. Plot AI (gateway) mode routes to those
+    // providers, so it's available there too. OpenAI/custom BYOK can't.
+    const provider = this.providerConfig?.provider;
+    const webSearch =
+      !provider || provider === "anthropic" || provider === "google";
+    return { prompt: true, embed: true, webSearch };
+  }
+
+  /**
+   * Builds the provider-native web search tool for a resolved model, or
+   * null if the model's provider doesn't support server-side web search.
+   * The returned tool is executed server-side by the provider; any pages
+   * used surface in the response `sources`.
+   */
+  private webSearchTool(
+    modelStr: string,
+    webSearch: boolean | { maxUses?: number }
+  ): Record<string, unknown> | null {
+    const maxUses =
+      typeof webSearch === "object" ? webSearch.maxUses : undefined;
+    if (modelStr.startsWith("anthropic/")) {
+      return {
+        web_search: anthropic.tools.webSearch_20250305(
+          maxUses ? { maxUses } : {}
+        ),
+      };
+    }
+    if (modelStr.startsWith("google/")) {
+      return { google_search: google.tools.googleSearch({}) };
+    }
+    // OpenAI / custom / Workers AI: no server-side web search here.
+    return null;
   }
 
   /**
@@ -172,8 +204,13 @@ export class AI extends Tool implements IAI {
         }
         // Otherwise fall through to tier-based selection for the configured provider
       } else {
-        // Plot AI mode: any hint is valid
-        return hintModel;
+        // Plot AI mode (Plot-funded): keep paid usage on Google. Honor a
+        // hint only when it points to a Google model; non-Google hints fall
+        // through to the default matrix below so Plot-funded traffic never
+        // routes to other (e.g. Anthropic/OpenAI) providers.
+        if (modelProvider(hintModel) === "google") {
+          return hintModel;
+        }
       }
     }
 
@@ -198,26 +235,29 @@ export class AI extends Tool implements IAI {
       );
     }
 
-    // Plot AI mode: standard model selection matrix
+    // Plot AI mode (Plot-funded): use Cloudflare Workers AI where a frontier
+    // model isn't needed (the cheap tiers), and Google (Gemini) wherever a
+    // frontier model is needed — replacing Anthropic so Plot-funded usage no
+    // longer routes to Anthropic. BYOK (user keys) is handled above.
     if (speed === "fast") {
-      if (cost === "low") return AIModel.LLAMA_32_1B;
-      if (cost === "medium") return AIModel.CLAUDE_HAIKU_45;
-      return AIModel.CLAUDE_HAIKU_45;
+      if (cost === "low") return AIModel.LLAMA_32_1B; // Workers AI
+      if (cost === "medium") return AIModel.GEMINI_25_FLASH_LITE; // was Claude Haiku
+      return AIModel.GEMINI_25_FLASH; // was Claude Haiku
     }
 
     if (speed === "balanced") {
-      if (cost === "low") return AIModel.LLAMA_4_SCOUT_17B;
-      if (cost === "medium") return AIModel.LLAMA_33_70B;
-      return AIModel.CLAUDE_SONNET_46;
+      if (cost === "low") return AIModel.LLAMA_4_SCOUT_17B; // Workers AI
+      if (cost === "medium") return AIModel.LLAMA_33_70B; // Workers AI
+      return AIModel.GEMINI_25_PRO; // was Claude Sonnet
     }
 
     if (speed === "capable") {
-      if (cost === "low") return AIModel.DEEPSEEK_R1_32B;
-      if (cost === "medium") return AIModel.CLAUDE_SONNET_46;
-      return AIModel.CLAUDE_SONNET_46;
+      if (cost === "low") return AIModel.DEEPSEEK_R1_32B; // Workers AI
+      if (cost === "medium") return AIModel.GEMINI_25_PRO; // was Claude Sonnet
+      return AIModel.GEMINI_25_PRO; // was Claude Sonnet
     }
 
-    return AIModel.CLAUDE_HAIKU_45;
+    return AIModel.GEMINI_25_FLASH; // was Claude Haiku
   }
 
   async prompt<TOOLS extends AIToolSet, SCHEMA extends TSchema = never>(
@@ -234,6 +274,8 @@ export class AI extends Tool implements IAI {
       temperature,
       topP,
       toolChoice,
+      webSearch,
+      maxSteps,
     } = request;
 
     // Determine the actual model to use from preferences
@@ -274,19 +316,34 @@ export class AI extends Tool implements IAI {
       : undefined;
 
     // Transform tools to AI SDK format
-    // Convert Typebox schemas to jsonSchema format expected by AI SDK
-    const transformedTools = tools
+    // Convert Typebox schemas to jsonSchema format expected by AI SDK.
+    // `inputSchema` is canonical; `parameters` is accepted as a legacy alias.
+    const transformedTools: Record<string, unknown> = tools
       ? Object.fromEntries(
           Object.entries(tools).map(([name, tool]) => [
             name,
             {
               description: tool.description,
-              inputSchema: jsonSchema(tool.inputSchema),
+              inputSchema: jsonSchema(tool.inputSchema ?? (tool as any).parameters),
               execute: tool.execute,
             },
           ])
         )
-      : undefined;
+      : {};
+
+    // Inject provider-native web search when requested and supported.
+    if (webSearch) {
+      const searchTool = this.webSearchTool(modelStr, webSearch);
+      if (searchTool) {
+        Object.assign(transformedTools, searchTool);
+      } else {
+        console.log(
+          `[AI] webSearch requested but unsupported for model ${modelStr}; ignoring.`
+        );
+      }
+    }
+
+    const hasTools = Object.keys(transformedTools).length > 0;
 
     // Call generateText with the configured model and parameters
     // @ts-ignore - Type instantiation is excessively deep due to complex generic tool types
@@ -297,9 +354,13 @@ export class AI extends Tool implements IAI {
       topP,
       system,
       ...(prompt ? { prompt: prompt! } : { messages: messages! }),
-      tools: transformedTools as any,
+      tools: hasTools ? (transformedTools as any) : undefined,
       experimental_output,
       toolChoice,
+      // Loop tool calls into a final answer up to maxSteps (default 1 =
+      // single step, preserving prior behavior). Server-side provider tools
+      // like web search resolve within a step and don't require looping.
+      stopWhen: stepCountIs(maxSteps ?? 1),
     });
 
     await this.trackUsage(modelStr, result.usage);

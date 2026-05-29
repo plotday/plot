@@ -109,6 +109,16 @@ export async function handleIntent(
   plot: Plot,
   note: Note
 ): Promise<{ optionPath: string[]; args: any[] } | null> {
+  // Single conversational handler: when a twist declares `note.handler`,
+  // route EVERY mention straight to it and skip intent matching (and the
+  // built-in MENU/REMOVE intents and the "I didn't recognize…" dead-end).
+  // The descriptor is resolved and invoked in the twist worker with `this`
+  // bound to the twist, exactly like an intent handler.
+  const directHandler = plot.plotOptions?.note?.handler;
+  if (typeof directHandler === "function") {
+    return { optionPath: ["note", "handler"], args: [note] };
+  }
+
   const matchedIntent = await matchIntent(plot, note);
 
   const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
