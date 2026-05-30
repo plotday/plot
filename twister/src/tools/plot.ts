@@ -247,6 +247,27 @@ export abstract class Plot extends ITool {
        * ```
        */
       intents?: NoteIntentHandler[];
+      /**
+       * Single conversational handler for mentions.
+       *
+       * When set, EVERY mention of this twist is routed directly to this
+       * handler — intent matching (and the built-in "What can you do?" /
+       * "Remove yourself" intents) is skipped. Use this to build a
+       * general-purpose conversational assistant that responds to any
+       * request, rather than classifying into a fixed set of `intents`.
+       *
+       * `handler` and `intents` are mutually exclusive; when both are
+       * present, `handler` takes precedence and `intents` is ignored.
+       *
+       * @example
+       * ```typescript
+       * note: {
+       *   defaultMention: true,
+       *   handler: this.respond, // (note: Note) => Promise<void>
+       * }
+       * ```
+       */
+      handler?: (note: Note) => Promise<void>;
     };
     /** Enable link processing from connected source channels. */
     link?: true | {

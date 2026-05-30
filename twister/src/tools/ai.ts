@@ -69,8 +69,11 @@ export abstract class AI extends ITool {
    * Returns which AI capabilities are currently available.
    * Check this before calling prompt() or embed() to gracefully
    * handle cases where AI is disabled by the user.
+   *
+   * Built-in tools are accessed as RPC stubs, so from a twist this call
+   * resolves asynchronously — always `await` it.
    */
-  abstract available(): AICapabilities;
+  abstract available(): AICapabilities | Promise<AICapabilities>;
 
   /**
    * Sends a request to an AI model and returns the response using the Vercel AI SDK.
@@ -134,7 +137,7 @@ export abstract class AI extends ITool {
    *   tools: {
    *     getWeather: {
    *       description: "Get weather for a city",
-   *       parameters: Type.Object({
+   *       inputSchema: Type.Object({
    *         city: Type.String()
    *       }),
    *       execute: async ({ city }) => {
@@ -165,6 +168,12 @@ export type AICapabilities = {
   prompt: boolean;
   /** Whether AI embedding generation is available. */
   embed: boolean;
+  /**
+   * Whether provider-native web search is available. True for Plot AI and
+   * Anthropic/Google BYOK providers; false for OpenAI/custom BYOK providers
+   * that don't expose a server-side web search tool through this runtime.
+   */
+  webSearch: boolean;
 };
 
 /**
@@ -345,6 +354,31 @@ export interface AIRequest<
    * Controls diversity by limiting to top probability tokens.
    */
   topP?: number;
+
+  /**
+   * Enable provider-native web search so the model can retrieve
+   * up-to-date information from the web. The search is executed
+   * server-side by the provider and any pages used are returned in
+   * {@link AIResponse.sources}.
+   *
+   * Only available on web-search-capable providers (Anthropic and
+   * Google). Check {@link AICapabilities.webSearch} via `available()`
+   * before relying on it; on unsupported providers the flag is ignored.
+   *
+   * Pass `true` for defaults, or an object to cap the number of searches.
+   */
+  webSearch?: boolean | { maxUses?: number };
+
+  /**
+   * Maximum number of sequential generation steps for agentic tool use.
+   * When the model calls a tool, its result is fed back and the model is
+   * called again, up to `maxSteps` times, until it produces a final answer.
+   *
+   * Defaults to 1 (single step — tool calls are returned but not looped),
+   * preserving prior behavior. Set higher (e.g. 6) to let the model chain
+   * tool calls into a final answer.
+   */
+  maxSteps?: number;
 }
 
 /**
@@ -742,17 +776,19 @@ export interface ToolExecutionOptions {
  */
 export type AITool<PARAMETERS extends ToolParameters = any, RESULT = any> = {
   /**
-   * The schema of the input that the tool expects. The language model will use this to generate the input.
-   * It is also used to validate the output of the language model.
-   * Use descriptions to make the input understandable for the language model.
-   */
-  parameters: PARAMETERS;
-  /**
-   * The schema of the input that the tool expects. The language model will use this to generate the input.
-   * It is also used to validate the output of the language model.
-   * Use descriptions to make the input understandable for the language model.
+   * The schema of the input that the tool expects, expressed as a Typebox
+   * schema. The language model uses this to generate (and the runtime to
+   * validate) the tool input. Use field descriptions to make the input
+   * understandable for the model.
+   *
+   * This is the canonical field read by the runtime. `parameters` is an
+   * accepted alias for backwards compatibility.
    */
   inputSchema: TSchema;
+  /**
+   * @deprecated Alias for {@link inputSchema}. Prefer `inputSchema`.
+   */
+  parameters?: PARAMETERS;
   /**
    * An optional description of what the tool does.
    * Will be used by the language model to decide whether to use the tool.
