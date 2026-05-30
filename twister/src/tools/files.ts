@@ -14,7 +14,7 @@ import { ITool } from "..";
  */
 export abstract class Files extends ITool {
   /**
-   * Read a file uploaded by a client and attached to a note in a priority
+   * Read a file uploaded by a client and attached to a note in a focus
    * where this twist is installed.
    *
    * @param fileId The id from an ActionType.file action.

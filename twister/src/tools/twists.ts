@@ -46,7 +46,7 @@ export type Log = {
  *   },
  *   "plot": {
  *     "thread:mentioned": ["read", "write", "update"],
- *     "priority": ["read", "write", "update"]
+ *     "focus": ["read", "write", "update"]
  *   }
  * }
  * ```
@@ -77,7 +77,7 @@ export type TwistPermissions = Record<string, Record<string, string[]>>;
  */
 export abstract class Twists extends ITool {
   /**
-   * Creates a new twist ID and grants access to people in the current priority.
+   * Creates a new twist ID and grants access to people in the current focus.
    *
    * @returns Promise resolving to the generated twist ID
    * @throws When twist creation fails

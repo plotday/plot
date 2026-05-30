@@ -316,7 +316,7 @@ export abstract class Integrations extends ITool {
   abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
 
   /**
-   * Saves a link with notes to the connector's priority.
+   * Saves a link with notes to the connector's focus.
    *
    * Creates a thread+link pair. The thread is a lightweight container;
    * the link holds the external entity data (source, meta, type, status, etc.).
@@ -355,7 +355,7 @@ export abstract class Integrations extends ITool {
   abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
 
   /**
-   * Upserts contacts into the connector's priority without requiring a Link.
+   * Upserts contacts into the connector's focus without requiring a Link.
    *
    * Use this for messaging connectors to bulk-sync workspace members so the
    * recipient picker can filter contacts by reachable platform account. Populate
