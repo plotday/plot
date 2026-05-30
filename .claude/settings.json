@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_GLOB_NO_IGNORE": "false"
+  },
   "hooks": {
     "WorktreeCreate": [
       {
@@ -18,18 +21,6 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/worktree-remove\"",
             "timeout": 120
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/redirect-glob.sh\"",
-            "timeout": 10
           }
         ]
       }
