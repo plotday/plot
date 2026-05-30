@@ -79,6 +79,7 @@ class AgendaModel extends Equatable {
                 dateTimeRange: hasExplicitWindow
                     ? DateTimeRange(b.windowStart, b.windowEnd)
                     : null,
+                now: b.isCurrent,
                 blockPriority: b.priority,
                 block: b,
                 isOutsidePriority: b.isOutside,
@@ -99,6 +100,7 @@ class AgendaModel extends Equatable {
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
+                now: b.isCurrent,
                 blockPriority: hasPriorityLead ? b.priority : null,
                 block: hasPriorityLead ? b : null,
                 isOutsidePriority: b.isOutside,
@@ -231,6 +233,7 @@ class PriorityBlock extends AgendaBlock {
     required this.threads,
     required this.windowStart,
     required this.windowEnd,
+    this.isCurrent = false,
     this.isOutside = false,
     this.cascadeDuration,
     this.sourceRow,
@@ -242,6 +245,10 @@ class PriorityBlock extends AgendaBlock {
   final Priority priority;
   @override
   final List<Thread> threads;
+
+  /// True when this focus block's window covers "now" (today only). Drives
+  /// the agenda's "Now" gutter label and remaining-duration countdown.
+  final bool isCurrent;
   @override
   final bool isOutside;
 
@@ -273,6 +280,7 @@ class PriorityBlock extends AgendaBlock {
         id,
         priority,
         threads,
+        isCurrent,
         isOutside,
         cascadeDuration,
         windowStart,
@@ -330,6 +338,7 @@ class GapBlock extends AgendaBlock {
     required this.priority,
     required this.range,
     required this.threads,
+    this.isCurrent = false,
     this.isOutside = false,
   });
 
@@ -340,6 +349,10 @@ class GapBlock extends AgendaBlock {
   final DateTimeRange range;
   @override
   final List<Thread> threads;
+
+  /// True when this gap's window covers "now" (today only). Drives the
+  /// agenda's "Now" gutter label and remaining-free-time countdown.
+  final bool isCurrent;
   @override
   final bool isOutside;
 
@@ -352,7 +365,8 @@ class GapBlock extends AgendaBlock {
       range.end ?? (throw StateError('GapBlock without range.end'));
 
   @override
-  List<Object?> get props => [id, priority, range, threads, isOutside];
+  List<Object?> get props =>
+      [id, priority, range, threads, isCurrent, isOutside];
 }
 
 /// Atom type used by the legacy flat-list rendering and reorder paths.

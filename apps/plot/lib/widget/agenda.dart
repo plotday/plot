@@ -172,12 +172,16 @@ class AgendaTile extends StatelessWidget {
       dateMonth = date!.format(format: 'MMMM');
       dateDay = date!.format(format: 'd');
     } else if (centerText == null && dateTimeRange != null) {
-      // Show time from DateTimeRange
-      final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
-      if (timeOfDay != null && timeOfDay.isMidnight != true) {
-        centerText = context.isMultiPanel
-            ? timeOfDay.formatShort(context)
-            : timeOfDay.formatNarrow(context);
+      // A gap in progress shows "Now"; otherwise its start time.
+      if (now) {
+        centerText = 'Now';
+      } else {
+        final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
+        if (timeOfDay != null && timeOfDay.isMidnight != true) {
+          centerText = context.isMultiPanel
+              ? timeOfDay.formatShort(context)
+              : timeOfDay.formatNarrow(context);
+        }
       }
     }
 
@@ -192,14 +196,21 @@ class AgendaTile extends StatelessWidget {
           endTime.hour == 0 && endTime.minute == 0 && endTime.second == 0;
     }
 
-    // Determine duration text
+    // Determine duration text. A gap in progress shows its remaining free
+    // time (end − now); otherwise the full gap duration.
     String? durationText;
-    if (dateTimeRange != null &&
-        dateTimeRange!.duration?.inSeconds != null &&
-        dateTimeRange!.duration!.inSeconds > 0 &&
-        !isLastGapOfDay &&
-        !now) {
-      durationText = dateTimeRange!.duration!.format();
+    if (dateTimeRange != null && !isLastGapOfDay) {
+      if (now) {
+        final end = dateTimeRange!.end;
+        final currentTime = Time.now();
+        if (end != null && end.isAfter(currentTime)) {
+          final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
+          durationText = Duration(minutes: remaining).format();
+        }
+      } else if (dateTimeRange!.duration != null &&
+          dateTimeRange!.duration!.inSeconds > 0) {
+        durationText = dateTimeRange!.duration!.format();
+      }
     }
 
     // No priority-context tint anymore — the universal agenda no longer
@@ -764,11 +775,15 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
     final hasTime = dateTimeRange != null;
     final timeOfDay = dateTimeRange?.start?.toTimeOfDay();
-    final timeText = hasTime && timeOfDay != null && !timeOfDay.isMidnight
-        ? (context.isMultiPanel
-              ? timeOfDay.formatShort(context)
-              : timeOfDay.formatNarrow(context))
-        : null;
+    // An event/block/gap in progress shows "Now" in the gutter instead of
+    // its start time.
+    final timeText = widget.now
+        ? 'Now'
+        : (hasTime && timeOfDay != null && !timeOfDay.isMidnight
+              ? (context.isMultiPanel
+                    ? timeOfDay.formatShort(context)
+                    : timeOfDay.formatNarrow(context))
+              : null);
 
     final summary = block.summaryLine;
     final isEvent = block is EventBlock;
@@ -807,57 +822,47 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
     // The duration label lives on the right side of row 1 in all cases
     // (column-aligned with the gap headers' trailing duration). For an
-    // in-progress event, the static duration is replaced with the
-    // remaining time so it counts down toward 0.
-    Widget? durationWidget;
-    if (widget.now && thread?.at?.end != null) {
-      final currentTime = Time.now();
-      final end = thread!.at!.end!;
-      if (end.isAfter(currentTime)) {
-        final remaining = (end.difference(currentTime).inSeconds / 60).ceil();
-        durationWidget = Text(
-          Duration(minutes: remaining).format(),
-          style: TextStyle(
-            fontSize: secondarySize,
-            color: mutedColor,
-            height: _agendaRowLineHeight,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        );
-      }
-    } else if (block is PriorityBlock) {
+    // event, focus block, or gap in progress ([widget.now]) the static
+    // duration is replaced with the remaining time (end − now, ceil to
+    // whole minutes) so it counts down toward 0. The per-minute tick in
+    // [_scheduleTick] (gated on [widget.now]) keeps it fresh.
+    final currentTime = Time.now();
+    final blockEnd = dateTimeRange?.end;
+    Duration? remainingNow;
+    if (widget.now && blockEnd != null && blockEnd.isAfter(currentTime)) {
+      remainingNow = Duration(
+        minutes: (blockEnd.difference(currentTime).inSeconds / 60).ceil(),
+      );
+    }
+
+    final Duration? displayedDuration;
+    if (block is PriorityBlock) {
       // A user-scheduled focus block surfaces its duration on row 1.
       // [NowBloc.watchBlockDisplay] overlays an active or paused-explicit
-      // session's live remaining; otherwise it emits null and we fall back
-      // to the block's own scheduled duration.
-      final displayed = _pendingDisplay?.duration ?? block.cascadeDuration;
-      if (displayed != null) {
-        durationWidget = Text(
-          _formatDuration(displayed),
-          style: TextStyle(
-            fontSize: secondarySize,
-            color: mutedColor,
-            height: _agendaRowLineHeight,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        );
-      }
+      // session's live remaining; with no session it emits null and we
+      // fall back to the in-progress remaining, then the block's own
+      // scheduled duration.
+      displayedDuration =
+          _pendingDisplay?.duration ?? remainingNow ?? block.cascadeDuration;
+    } else if (widget.now) {
+      // In-progress event or priority-led gap → remaining time.
+      displayedDuration = remainingNow;
     } else {
-      final dur = dateTimeRange?.duration;
-      if (dur != null && dur.inSeconds > 0) {
-        durationWidget = Text(
-          dur.format(),
-          style: TextStyle(
-            fontSize: secondarySize,
-            color: mutedColor,
-            height: _agendaRowLineHeight,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        );
-      }
+      displayedDuration = dateTimeRange?.duration;
+    }
+
+    Widget? durationWidget;
+    if (displayedDuration != null && displayedDuration.inSeconds > 0) {
+      durationWidget = Text(
+        _formatDuration(displayedDuration),
+        style: TextStyle(
+          fontSize: secondarySize,
+          color: mutedColor,
+          height: _agendaRowLineHeight,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
     final rowHeight = secondarySize * _agendaRowLineHeight;

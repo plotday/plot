@@ -255,7 +255,7 @@ void main() {
       // from threads. (Regression: it was silently dropped.)
       final root = _testPriority(title: 'Root', path: 'root');
       final row =
-          _focusRow(root, DateTime(2026, 5, 14, 10), const Duration(hours: 2));
+          _focusRow(root, DateTime(2026, 5, 14, 16), const Duration(hours: 2));
       final model = AgendaBuilder.build(
         threads: const [],
         context: root,
@@ -291,10 +291,14 @@ void main() {
 
     test('a read-only gap marks the free space between two events', () {
       final p = _testPriority();
+      // `morning` is in progress (13:30–14:30 spans the frozen now 14:00),
+      // so no leading "Now" gap precedes it; the free space until the
+      // evening event is the only gap.
       final morning = Thread(
         priority: p,
         title: 'morning',
-        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
+        at: DateTimeRange(
+            DateTime(2026, 5, 14, 13, 30), DateTime(2026, 5, 14, 14, 30)),
       );
       final evening = Thread(
         priority: p,
@@ -308,9 +312,147 @@ void main() {
       );
       final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
       expect(gaps, hasLength(1));
-      expect(gaps.single.range.start, DateTime(2026, 5, 14, 16));
+      expect(gaps.single.range.start, DateTime(2026, 5, 14, 14, 30));
       expect(gaps.single.range.end, DateTime(2026, 5, 14, 18));
       expect(gaps.single.threads, isEmpty, reason: 'gaps are read-only');
+    });
+
+    // Frozen now = 2026-05-14 14:00 (see group setUp).
+
+    test('an event that already ended today is dropped', () {
+      final p = _testPriority();
+      final ended = Thread(
+        priority: p,
+        title: 'this morning',
+        at: DateTimeRange(DateTime(2026, 5, 14, 9), DateTime(2026, 5, 14, 10)),
+      );
+      final upcoming = Thread(
+        priority: p,
+        title: 'this afternoon',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [ended, upcoming],
+        context: p,
+        horizonDays: 1,
+      );
+      final ids = threadIdsOf(model);
+      expect(ids, isNot(contains(ended.id)),
+          reason: 'a non-link event that ended before now is removed');
+      expect(ids, contains(upcoming.id));
+    });
+
+    test('an in-progress event is kept and marked current', () {
+      final p = _testPriority();
+      final ongoing = Thread(
+        priority: p,
+        title: 'happening now',
+        at: DateTimeRange(
+            DateTime(2026, 5, 14, 13, 30), DateTime(2026, 5, 14, 14, 30)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [ongoing],
+        context: p,
+        horizonDays: 1,
+      );
+      final events = model.allBlocks.whereType<ui.EventBlock>().toList();
+      expect(events, hasLength(1));
+      expect(events.single.event.id, ongoing.id);
+      expect(events.single.isCurrent, isTrue);
+    });
+
+    test('an in-progress focus block is marked current', () {
+      final p = _testPriority();
+      // 13:00–15:00 spans the frozen now (14:00).
+      final row =
+          _focusRow(p, DateTime(2026, 5, 14, 13), const Duration(hours: 2));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        priorityById: {p.id: p},
+      );
+      final blocks = model.allBlocks.whereType<ui.PriorityBlock>().toList();
+      expect(blocks, hasLength(1));
+      expect(blocks.single.isCurrent, isTrue);
+    });
+
+    test('a future focus block is not marked current', () {
+      final p = _testPriority();
+      final row =
+          _focusRow(p, DateTime(2026, 5, 14, 16), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        priorityById: {p.id: p},
+      );
+      final blocks = model.allBlocks.whereType<ui.PriorityBlock>().toList();
+      expect(blocks, hasLength(1));
+      expect(blocks.single.isCurrent, isFalse);
+    });
+
+    test('a focus block that already ended today is dropped', () {
+      final p = _testPriority();
+      // 9:00–10:00 ended before the frozen now (14:00).
+      final row =
+          _focusRow(p, DateTime(2026, 5, 14, 9), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 1,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        priorityById: {p.id: p},
+      );
+      expect(model.allBlocks.whereType<ui.PriorityBlock>(), isEmpty,
+          reason: 'a focus block that ended before now is removed');
+    });
+
+    test('free time before the next block surfaces as a current ("Now") gap',
+        () {
+      final p = _testPriority();
+      // No in-progress block, next event at 16:00 → the agenda synthesizes
+      // a gap from now (14:00) to 16:00, marked current.
+      final later = Thread(
+        priority: p,
+        title: 'late meeting',
+        at: DateTimeRange(DateTime(2026, 5, 14, 16), DateTime(2026, 5, 14, 17)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [later],
+        context: p,
+        horizonDays: 1,
+      );
+      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
+      expect(gaps, hasLength(1));
+      expect(gaps.single.range.start, DateTime(2026, 5, 14, 14));
+      expect(gaps.single.range.end, DateTime(2026, 5, 14, 16));
+      expect(gaps.single.isCurrent, isTrue);
+    });
+
+    test('no "Now" gap when the first block is already in progress', () {
+      final p = _testPriority();
+      final ongoing = Thread(
+        priority: p,
+        title: 'happening now',
+        at: DateTimeRange(
+            DateTime(2026, 5, 14, 13, 30), DateTime(2026, 5, 14, 15)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [ongoing],
+        context: p,
+        horizonDays: 1,
+      );
+      // The in-progress event leads; nothing is synthesized before it.
+      expect(model.allBlocks.whereType<ui.GapBlock>(), isEmpty);
     });
   });
 }

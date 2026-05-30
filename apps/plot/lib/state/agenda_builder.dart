@@ -91,10 +91,12 @@ class AgendaBuilder {
       if (!seen.add(key)) continue;
       final date = t.agendaAt.toDate();
       if (date.isBefore(today)) continue;
-      // On today, drop link-schedule events that already ended — they're
-      // read-only external occurrences that need no attention once passed.
+      // On today, drop events that have already ended so the top of the
+      // agenda is always the current or next-upcoming event. An event
+      // still in progress (start passed, end in the future) is kept and
+      // rendered as "Now". Events without an end can't be judged past, so
+      // they stay.
       if (date == today &&
-          t.isLinkScheduleInstance &&
           t.at?.end != null &&
           t.at!.end!.isBefore(effectiveNow)) {
         continue;
@@ -123,9 +125,14 @@ class AgendaBuilder {
             at.microsecond == 0) {
           continue;
         }
-        focusByDate
-            .putIfAbsent(Date(at.year, at.month, at.day), () => [])
-            .add((row: row, priority: priority));
+        final blockDate = Date(at.year, at.month, at.day);
+        // On today, drop focus blocks that already ended so the agenda
+        // starts at the current or next-upcoming row. A block still in
+        // progress (ends in the future) is kept and rendered as "Now".
+        if (blockDate == today && at.add(d).isBefore(effectiveNow)) continue;
+        focusByDate.putIfAbsent(blockDate, () => []).add(
+          (row: row, priority: priority),
+        );
       }
     }
 
@@ -198,6 +205,8 @@ class AgendaBuilder {
           cascadeDuration: entry.row.duration,
           windowStart: start,
           windowEnd: end,
+          isCurrent:
+              isToday && !start.isAfter(effectiveNow) && end.isAfter(effectiveNow),
           sourceRow: entry.row,
         );
         anchored.add((start: start, end: end, block: block));
@@ -213,17 +222,26 @@ class AgendaBuilder {
       });
 
       // Interleave read-only gap markers in the free space between
-      // consecutive anchored blocks.
+      // consecutive anchored blocks. On today, seed `prevEnd` at "now" so
+      // free time between now and the first upcoming block surfaces as an
+      // in-progress ("Now") gap. Past rows are already dropped, so nothing
+      // earlier than now needs a gap; when the first block is in progress
+      // (starts at or before now) no leading gap is produced.
       final blocks = <AgendaBlock>[];
-      DateTime? prevEnd;
+      DateTime? prevEnd = isToday ? effectiveNow : null;
       for (final a in anchored) {
         if (prevEnd != null && a.start.isAfter(prevEnd)) {
+          final gapStart = prevEnd;
+          final gapEnd = a.start;
           blocks.add(
             GapBlock(
               id: 'g_${sectionId}_${prevEnd.millisecondsSinceEpoch}',
               priority: context,
-              range: DateTimeRange(prevEnd, a.start),
+              range: DateTimeRange(gapStart, gapEnd),
               threads: const [],
+              isCurrent: isToday &&
+                  !gapStart.isAfter(effectiveNow) &&
+                  gapEnd.isAfter(effectiveNow),
             ),
           );
         }
