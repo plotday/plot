@@ -636,14 +636,40 @@ FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
   );
 }
 
+/// Pre-filled values for the [NewFocus] step-1 form. Onboarding uses this to
+/// open the create modal with a sample focus already populated, so a single
+/// tap surfaces an editable, ready-to-create focus.
+class FocusPrefill {
+  const FocusPrefill({
+    required this.title,
+    required this.description,
+    required this.iconKey,
+    this.color,
+  });
+
+  /// Focus name pre-filled into the title field.
+  final String title;
+
+  /// Description pre-filled into the (required) description field. Transient —
+  /// it feeds matching but isn't stored on the focus.
+  final String description;
+
+  /// Key into [PlotIcon.focusIcons] for the pre-selected icon.
+  final String iconKey;
+
+  /// Optional pre-selected colour. Null leaves the picker on "Default".
+  final ThemeColor? color;
+}
+
 /// Two-step focus creation. Step 1 collects the focus's name, description,
 /// icon, colour and sharing. Step 2 surfaces the existing threads that match
 /// the description so the user can review and deselect before the focus is
 /// created with the kept ones filed in (and the deselected ones recorded as
 /// negative examples). [skipMatching] creates the focus straight from step 1 —
-/// used by onboarding, where no threads are synced yet.
+/// used by onboarding, where no threads are synced yet. [prefill] opens step 1
+/// with its fields populated (also used by onboarding's sample focuses).
 class NewFocus extends Command {
-  NewFocus({this.skipMatching = false})
+  NewFocus({this.skipMatching = false, this.prefill})
     : super(
         title: 'Add a focus',
         icon: PlotIcon.add,
@@ -652,6 +678,7 @@ class NewFocus extends Command {
       );
 
   final bool skipMatching;
+  final FocusPrefill? prefill;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -669,6 +696,7 @@ class NewFocus extends Command {
         ctx,
         root: root,
         primaryTitle: skipMatching ? 'Create focus' : 'Find matching threads',
+        prefill: prefill,
         onSubmit: (values) => input = values,
       ),
     ).run(context);
@@ -695,6 +723,7 @@ Future<FormData> _buildFocusDetailsForm(
   BuildContext context, {
   required Priority root,
   required String primaryTitle,
+  FocusPrefill? prefill,
   required void Function(Map<String, dynamic> values) onSubmit,
 }) async {
   // Team selector (only when the user belongs to a team). "Personal" → null.
@@ -730,20 +759,26 @@ Future<FormData> _buildFocusDetailsForm(
     groups: [
       StaticFormGroup(
         items: [
-          FormTextInput(key: 'title', label: 'Focus name', required: true),
+          FormTextInput(
+            key: 'title',
+            label: 'Focus name',
+            required: true,
+            initialValue: prefill?.title,
+          ),
           FormTextInput(
             key: 'description',
             label: 'Description',
             required: true,
             maxLines: 3,
             placeholder: 'What kind of threads belong in this focus?',
+            initialValue: prefill?.description,
           ),
-          _focusIconSelect(),
+          _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
           ?teamSelect,
           FormSelect<ThemeColor?>(
             key: 'color',
             label: 'Color',
-            initialValue: null,
+            initialValue: prefill?.color,
             hasInitialValue: true,
             items: (search) async => [null, ...ThemeColor.options]
                 .where(

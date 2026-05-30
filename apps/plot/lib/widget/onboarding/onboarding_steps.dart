@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:plot/state/onboarding.dart';
 import 'package:plot/store/store.dart' show ThreadId;
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/onboarding/onboarding_calendars.dart';
@@ -158,11 +156,11 @@ class OnboardingSteps {
     const FullScreenStep(
       title: 'What fills your days?',
       body:
-          "Start with the roles you play. You'll add priorities under each one.",
+          "Pick a few focuses to start with. Each one gathers the threads — "
+          "messages, tasks, and docs — for that part of your life.",
       background: ThemeColor(1), // Call to Adventure
       contentMaxWidth: 540,
       contentBuilder: _buildRoles,
-      onBeforeNext: _commitRoles,
     ),
     FullScreenStep(
       title: 'Connect your calendar',
@@ -179,14 +177,14 @@ class OnboardingSteps {
       contentBuilder: (context) => const OnboardingTools(),
     ),
     const HighlightStep(
-      title: 'Your priorities',
+      title: 'Your focuses',
       body:
-          "Priorities capture what matters to you. You'll add projects and goals to your roles. Then you can zoom in on any priority to filter and focus, or zoom out to see everything.",
+          "Focuses capture what matters to you — projects, goals, and the areas of your life. Zoom in on any focus to filter and concentrate, or zoom out to see everything.",
       target: PanelTarget.priorities,
       overlay: ThemeColor(4), // Turning Point
-      // In multi-panel the left panel stacks agenda on top of priorities, so
-      // anchor this step's text to the bottom — visually next to the
-      // priorities list it describes.
+      // In multi-panel the left panel stacks agenda on top of the focuses, so
+      // anchor this step's text to the bottom — visually next to the focuses
+      // list it describes.
       multiPanelAlignment: MultiPanelContentAlignment.bottom,
     ),
     const HighlightStep(
@@ -227,7 +225,7 @@ class OnboardingSteps {
     FullScreenStep(
       title: 'Carry on',
       body:
-          "You're set up with your initial priorities and connections. Start simple — focus on one or two areas you most want to invest in."
+          "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"
           "Questions or stuck on something? Reply on the welcome thread in Using Plot — we read every one.",
       background: const ThemeColor(0), // Catalyst — bookend the opener
@@ -270,7 +268,3 @@ Widget _buildClosingQuote(BuildContext context) => const Padding(
     ],
   ),
 );
-
-Future<void> _commitRoles(BuildContext context) async {
-  await context.read<OnboardingBloc>().commitRoles();
-}
