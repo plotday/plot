@@ -349,17 +349,11 @@ class AgendaTile extends StatelessWidget {
       );
     }
 
-    // Empty gap rows: a quiet time + free-time-duration line with a
-    // trailing + that schedules a focus block inside the gap. The whole
-    // row is a tap target (the + is revealed on hover on non-touch). The
-    // vertical padding matches the event rows ([_BlockHeader]) so gaps and
-    // events read at the same rhythm.
+    // Empty gap rows render through [_GapHeaderRow]: a quiet time +
+    // free-time-duration line whose duration is overlaid by a + (on hover
+    // on non-touch, always on touch) that schedules a focus block in the
+    // gap. The whole row is the tap target.
     if (isGapHeader) {
-      final spacing = context.theme.spacing;
-      final veryMuted = context.theme.plotColors.veryMuted;
-      final timeColWidth = agendaLeadingWidth(context);
-      final timeStyle = TextStyle(color: veryMuted, fontSize: fontSize);
-
       // Anchor the new focus block at the gap's start. A gap already in
       // progress (start in the past) falls back to the form's default
       // (the next quarter-hour today); either way the default duration is
@@ -375,48 +369,15 @@ class AgendaTile extends StatelessWidget {
           ? gapEnd.difference(effStart)
           : null;
 
-      return _AddHeaderRow(
+      return _GapHeaderRow(
         command: OpenScheduleFocusModal(
           date: Date(effStart.year, effStart.month, effStart.day),
           defaultPriority: priorityBloc.state.context,
           start: startForModal,
           maxDuration: maxDur,
         ),
-        addColor: veryMuted,
-        outerPadding: EdgeInsets.symmetric(vertical: spacing.md),
-        leading: [
-          // Time in the gutter, column-aligned with event times.
-          SizedBox(
-            width: timeColWidth,
-            child: Padding(
-              padding: EdgeInsets.only(right: agendaGutterGap(context)),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: centerText != null
-                    ? Text(
-                        centerText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: timeStyle,
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ),
-          ),
-          // Free-time duration floats to the trailing edge, just left of
-          // the + affordance.
-          Expanded(
-            child: durationText != null
-                ? Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      durationText,
-                      style: TextStyle(color: veryMuted, fontSize: fontSize),
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
+        timeText: centerText,
+        durationText: durationText,
       );
     }
 
@@ -657,6 +618,152 @@ class _AddHeaderRowState extends State<_AddHeaderRow> {
       behavior: HitTestBehavior.opaque,
       onTap: () => context.run(widget.command),
       child: content,
+    );
+
+    if (!touch) {
+      result = MouseRegion(
+        onEnter: (_) {
+          if (!_hovered) setState(() => _hovered = true);
+        },
+        onExit: (_) {
+          if (_hovered) setState(() => _hovered = false);
+        },
+        child: result,
+      );
+    }
+    return result;
+  }
+}
+
+/// Empty-gap agenda row: a quiet time + free-time-duration line whose
+/// trailing duration is overlaid — on hover (non-touch) or always (touch)
+/// — by a + that schedules a focus block in the gap. The + is layered over
+/// the duration (a [Stack], mirroring the [_BlockHeader] gutter affordance)
+/// so it never reflows the row; the row height ([rowHeight] + symmetric
+/// [spacing.md]) and the trailing edge ([rightPad]) match the event rows
+/// so gaps and events read at the same rhythm. The whole row is the tap
+/// target running [command].
+class _GapHeaderRow extends StatefulWidget {
+  const _GapHeaderRow({
+    required this.command,
+    required this.timeText,
+    required this.durationText,
+  });
+
+  /// Run by a tap anywhere on the row (and surfaced as the overlaid +).
+  final Command command;
+
+  /// Gutter time label ("Now", a start time, or null at midnight).
+  final String? timeText;
+
+  /// Free-time label shown at the trailing edge, or null (e.g. the last
+  /// gap of the day, which runs to midnight).
+  final String? durationText;
+
+  @override
+  State<_GapHeaderRow> createState() => _GapHeaderRowState();
+}
+
+class _GapHeaderRowState extends State<_GapHeaderRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.theme.spacing;
+    final veryMuted = context.theme.plotColors.veryMuted;
+    final fontSize = context.theme.typography.sm.fontSize ?? 13;
+    final rowHeight = fontSize * _agendaRowLineHeight;
+    final timeColWidth = agendaLeadingWidth(context);
+    final isWide = context.isMultiPanel;
+    // Land the trailing duration/edit affordance at the same x as the event
+    // rows' trailing durations (see [_BlockHeader.rightPad]).
+    final rightPad = isWide
+        ? spacing.lg
+        : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+              .resolve(TextDirection.ltr)
+              .right;
+    final touch = isTouchPlatform();
+    final showPlus = touch || _hovered;
+    final textStyle = TextStyle(
+      color: veryMuted,
+      fontSize: fontSize,
+      height: _agendaRowLineHeight,
+    );
+
+    final gutter = SizedBox(
+      width: timeColWidth,
+      child: Padding(
+        padding: EdgeInsets.only(right: agendaGutterGap(context)),
+        child: SizedBox(
+          height: rowHeight,
+          child: widget.timeText != null
+              ? Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    widget.timeText!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textStyle,
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    // The duration and the + share one trailing slot. The + fades in over
+    // the duration (which fades out), so the duration's resting position
+    // never moves and the row never reflows.
+    final trailing = SizedBox(
+      height: rowHeight,
+      child: Stack(
+        alignment: Alignment.centerRight,
+        children: [
+          AnimatedOpacity(
+            opacity: showPlus ? 0 : 1,
+            duration: const Duration(milliseconds: 120),
+            child: widget.durationText != null
+                ? Text(
+                    widget.durationText!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textStyle,
+                  )
+                : const SizedBox.shrink(),
+          ),
+          IgnorePointer(
+            ignoring: !showPlus,
+            child: AnimatedOpacity(
+              opacity: showPlus ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              child: Icon(PlotIcon.plus, size: fontSize, color: veryMuted),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Widget result = Padding(
+      padding: EdgeInsets.only(
+        top: spacing.md,
+        bottom: spacing.md,
+        right: rightPad,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          gutter,
+          Expanded(
+            child: Align(alignment: Alignment.centerRight, child: trailing),
+          ),
+        ],
+      ),
+    );
+
+    result = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.run(widget.command),
+      child: result,
     );
 
     if (!touch) {
