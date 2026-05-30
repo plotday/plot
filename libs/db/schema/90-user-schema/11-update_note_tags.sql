@@ -74,7 +74,7 @@ BEGIN
             --   1  = 'todo' (per-user assignment)
             --   3  = 'done' (per-user completion)
             --   12 = 'twist' (runtime-managed Twisting indicator)
-            -- Others (archived, attachment, link, private, unread, task, reading)
+            -- Others (archived, attachment, link, private, unread)
             -- are calculated from note state and cannot be written directly.
             IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3, 12) THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - this tag is calculated from note state', tag_id_int;

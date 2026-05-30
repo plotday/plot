@@ -451,37 +451,28 @@ export type Database = {
       device: {
         Row: {
           app_version: string | null
-          capabilities: Json
           created_at: string
-          device_id: string | null
           id: string
-          last_seen_at: string
           platform: string
-          push_token: string | null
+          push_token: string
           updated_at: string
           user_id: string
         }
         Insert: {
           app_version?: string | null
-          capabilities?: Json
           created_at?: string
-          device_id?: string | null
           id?: string
-          last_seen_at?: string
           platform: string
-          push_token?: string | null
+          push_token: string
           updated_at?: string
           user_id: string
         }
         Update: {
           app_version?: string | null
-          capabilities?: Json
           created_at?: string
-          device_id?: string | null
           id?: string
-          last_seen_at?: string
           platform?: string
-          push_token?: string | null
+          push_token?: string
           updated_at?: string
           user_id?: string
         }
@@ -892,64 +883,6 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      local_sync_lease: {
-        Row: {
-          attempt_id: string
-          capability: string
-          created_at: string
-          device_id: string
-          fail_streak: number
-          last_completed_at: string | null
-          last_error: string | null
-          last_heartbeat_at: string
-          last_result: string | null
-          lease_token: string
-          leased_until: string
-          next_eligible_at: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          attempt_id: string
-          capability: string
-          created_at?: string
-          device_id: string
-          fail_streak?: number
-          last_completed_at?: string | null
-          last_error?: string | null
-          last_heartbeat_at: string
-          last_result?: string | null
-          lease_token: string
-          leased_until: string
-          next_eligible_at?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          attempt_id?: string
-          capability?: string
-          created_at?: string
-          device_id?: string
-          fail_streak?: number
-          last_completed_at?: string | null
-          last_error?: string | null
-          last_heartbeat_at?: string
-          last_result?: string | null
-          lease_token?: string
-          leased_until?: string
-          next_eligible_at?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "local_sync_lease_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -2033,7 +1966,6 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[]
           preview: string | null
-          private_to_creator: boolean
           seq: unknown
           sync_depth: number | null
           title: string | null
@@ -2061,7 +1993,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
-          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -2089,7 +2020,6 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
-          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
           title?: string | null
@@ -2434,9 +2364,7 @@ export type Database = {
           order: number | null
           read_at: string | null
           seq: unknown
-          task: boolean
           thread_id: string
-          to_read: boolean
           updated_at: string
           urgent: boolean
           user_id: string
@@ -2450,9 +2378,7 @@ export type Database = {
           order?: number | null
           read_at?: string | null
           seq?: unknown
-          task?: boolean
           thread_id: string
-          to_read?: boolean
           updated_at?: string
           urgent?: boolean
           user_id: string
@@ -2466,9 +2392,7 @@ export type Database = {
           order?: number | null
           read_at?: string | null
           seq?: unknown
-          task?: boolean
           thread_id?: string
-          to_read?: boolean
           updated_at?: string
           urgent?: boolean
           user_id?: string
@@ -4409,9 +4333,7 @@ export type Database = {
           priority_id: string | null
           read_at: string | null
           seq: unknown
-          task: boolean | null
           thread_id: string | null
-          to_read: boolean | null
           twist_instance_id: string | null
           updated_at: string | null
           user_id: string | null
@@ -5479,9 +5401,7 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
-          task: boolean | null
           title: string | null
-          to_read: boolean | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
@@ -5664,9 +5584,7 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
-          task: boolean | null
           title: string | null
-          to_read: boolean | null
           topic: string | null
           unread: boolean | null
           updated_at: string | null
@@ -6167,12 +6085,8 @@ export type Database = {
           p_set_on?: boolean
           p_set_order?: boolean
           p_set_read_at?: boolean
-          p_set_task?: boolean
-          p_set_to_read?: boolean
           p_set_urgent?: boolean
-          p_task?: boolean
           p_thread_id: string
-          p_to_read?: boolean
           p_urgent?: boolean
           user_id: string
         }

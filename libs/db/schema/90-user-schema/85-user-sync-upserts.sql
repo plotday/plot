@@ -839,16 +839,14 @@ $function$;
 -- schedule. Every parameter follows the explicit-set pattern (p_set_*) so
 -- partial updates from the client don't clobber fields set elsewhere.
 --
--- active/task/to_read are three independent booleans replacing the old
--- single-valued action_type. The caller sets each one only when it has
--- meaningful information about that flag (p_set_active etc.); otherwise
--- the existing value on the row is preserved.
+-- `active` is an independent boolean (replacing the old single-valued
+-- action_type). The caller sets it only when it has meaningful information
+-- about the flag (p_set_active); otherwise the existing value on the row is
+-- preserved.
 CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     user_id uuid,
     p_thread_id uuid,
     p_active boolean DEFAULT FALSE,
-    p_task boolean DEFAULT FALSE,
-    p_to_read boolean DEFAULT FALSE,
     p_urgent boolean DEFAULT FALSE,
     p_importance smallint DEFAULT 50,
     p_read_at timestamptz DEFAULT NULL::timestamptz,
@@ -858,8 +856,6 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     p_on daterange DEFAULT NULL,
     p_at tstzrange DEFAULT NULL,
     p_set_active boolean DEFAULT FALSE,
-    p_set_task boolean DEFAULT FALSE,
-    p_set_to_read boolean DEFAULT FALSE,
     p_set_urgent boolean DEFAULT FALSE,
     p_set_importance boolean DEFAULT FALSE,
     p_set_read_at boolean DEFAULT FALSE,
@@ -887,13 +883,11 @@ BEGIN
         RAISE EXCEPTION 'Thread not found';
     END IF;
 
-    INSERT INTO thread_state (user_id, thread_id, active, task, to_read, urgent, importance, read_at, bumped_at, "order", "on", "at")
+    INSERT INTO thread_state (user_id, thread_id, active, urgent, importance, read_at, bumped_at, "order", "on", "at")
         VALUES (
             upsert_thread_state.user_id,
             p_thread_id,
             COALESCE(p_active, FALSE),
-            COALESCE(p_task, FALSE),
-            COALESCE(p_to_read, FALSE),
             COALESCE(p_urgent, FALSE),
             COALESCE(p_importance, 50),
             -- If the caller didn't opt in to writing read_at, default to now()
@@ -922,8 +916,6 @@ BEGIN
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
             active = CASE WHEN p_set_active THEN EXCLUDED.active ELSE thread_state.active END,
-            task = CASE WHEN p_set_task THEN EXCLUDED.task ELSE thread_state.task END,
-            to_read = CASE WHEN p_set_to_read THEN EXCLUDED.to_read ELSE thread_state.to_read END,
             urgent = CASE WHEN p_set_urgent THEN EXCLUDED.urgent ELSE thread_state.urgent END,
             importance = CASE WHEN p_set_importance THEN EXCLUDED.importance ELSE thread_state.importance END,
             -- See INSERT branch above for why we default order on activation.

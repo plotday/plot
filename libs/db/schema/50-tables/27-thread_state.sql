@@ -9,13 +9,6 @@
 --     "low importance" filter. Set with high confidence by the AI for
 --     direct asks; otherwise the user (or a connector like Gmail-star)
 --     sets it themselves.
---   task — the thread is on the user's task list. Set by connectors that
---     surface task-shaped state (Linear/Todoist assignment) so the user
---     doesn't get flooded with their entire backlog under `active`.
---     Independent of `active`: a task can also be active, or just a task.
---   to_read — the thread is on the user's reading list. Set by the AI for
---     long-form content (newsletters, long docs) or by the user manually.
---     Independent of `active` and `task`.
 --   urgent — bypasses the per-priority `see_within` delay for push/email.
 --     Reserved for time-sensitive material where the user should be notified
 --     before the next scheduled response window.
@@ -33,8 +26,6 @@ CREATE TABLE "public"."thread_state" (
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
     "active" boolean NOT NULL DEFAULT FALSE,
-    "task" boolean NOT NULL DEFAULT FALSE,
-    "to_read" boolean NOT NULL DEFAULT FALSE,
     "urgent" boolean NOT NULL DEFAULT FALSE,
     "importance" smallint NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
     "read_at" timestamptz,          -- NULL = unread; set when user reads
@@ -67,7 +58,5 @@ CREATE INDEX idx_thread_state_thread_id ON "public"."thread_state" ("thread_id")
 CREATE INDEX idx_thread_state_on ON "public"."thread_state" USING gist ("on") WHERE "on" IS NOT NULL;
 CREATE INDEX idx_thread_state_at ON "public"."thread_state" USING gist ("at") WHERE "at" IS NOT NULL;
 
--- Partial indexes for the new section queries (Doing reorder, task / reading filters)
+-- Partial index for the Doing reorder section query.
 CREATE INDEX idx_thread_state_active  ON "public"."thread_state" ("user_id", "order") WHERE active;
-CREATE INDEX idx_thread_state_task    ON "public"."thread_state" ("user_id")          WHERE task;
-CREATE INDEX idx_thread_state_to_read ON "public"."thread_state" ("user_id")          WHERE to_read;

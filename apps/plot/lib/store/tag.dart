@@ -40,25 +40,6 @@ enum Tag {
     shortcodes: ['private', 'lock'],
   ),
   unread(9, PlotIcon.unread, 'Unread', type: TagType.compute, addable: false),
-  /// Task list filter — threads where the user has set `task = true`
-  /// (typically connector-driven assignments like Linear / Todoist).
-  task(
-    10,
-    PlotIcon.activity,
-    'Task list',
-    type: TagType.compute,
-    addable: false,
-    shortcodes: ['task', 'tasklist'],
-  ),
-  /// Reading list filter — threads where the user has set `to_read = true`.
-  reading(
-    11,
-    PlotIcon.bookOpenLines,
-    'Reading list',
-    type: TagType.compute,
-    addable: false,
-    shortcodes: ['reading', 'readinglist'],
-  ),
   /// Runtime-managed Twisting indicator — the twist runtime sets this on
   /// notes it's currently processing. Reassigned from legacy id 109 to 12
   /// (compute range) when toggle tags were retired.

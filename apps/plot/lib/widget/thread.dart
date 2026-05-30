@@ -728,22 +728,7 @@ class ThreadCommands extends HookWidget {
     final hoverCommands = rawHoverCommands.where(
       (cmd) => cmd is! PickScheduleThread && cmd is! PickThreadShared,
     );
-    Widget buildCommandButton(Command cmd) {
-      // Task / reading list toggles render in the accent color when their
-      // underlying per-user flag is set — the on-state matches an enabled
-      // tag.
-      final bool toggleActive =
-          (cmd is ToggleThreadTask && activity.task) ||
-          (cmd is ToggleThreadToRead && activity.toRead);
-      if (toggleActive) {
-        return Button.icon(
-          cmd,
-          selected: true,
-          selectedColor: context.colour.accent,
-        );
-      }
-      return Button.icon(cmd);
-    }
+    Widget buildCommandButton(Command cmd) => Button.icon(cmd);
 
     final threadCommandButtons = showCommands
         ? hoverCommands.map(buildCommandButton).toList()
@@ -803,14 +788,10 @@ class ThreadCommands extends HookWidget {
         ?trailingShareButton,
       ];
     } else {
-      // Task list / Reading list / Mute toggles are treated like enabled
-      // tags: when the underlying flag is set, the icon stays visible even
-      // when the row isn't hovered (hover surfaces the full command set,
-      // including these — so no duplication). All render in the accent
-      // color since they only appear in their on-state here.
+      // Mute toggle is treated like an enabled tag: when the flag is set the
+      // icon stays visible even when the row isn't hovered (hover surfaces
+      // the full command set, including it — so no duplication).
       allButtons = [
-        if (activity.task) buildCommandButton(ToggleThreadTask(activity)),
-        if (activity.toRead) buildCommandButton(ToggleThreadToRead(activity)),
         if (activity.muteByThreadId != null)
           buildCommandButton(MuteSimilarThreads(activity)),
       ];

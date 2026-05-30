@@ -314,32 +314,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
-                  // ⌘T / Ctrl+T — toggle the task-list flag.
-                  if (event.logicalKey == LogicalKeyboardKey.keyT &&
-                      (HardwareKeyboard.instance.isMetaPressed ||
-                          HardwareKeyboard.instance.isControlPressed) &&
-                      !HardwareKeyboard.instance.isShiftPressed &&
-                      !HardwareKeyboard.instance.isAltPressed) {
-                    final thread = context.read<PriorityBloc>().state.thread;
-                    if (thread != null) {
-                      ToggleThreadTask(thread).run(context);
-                      return KeyEventResult.handled;
-                    }
-                  }
-
-                  // ⌘E / Ctrl+E — toggle the reading-list flag.
-                  if (event.logicalKey == LogicalKeyboardKey.keyE &&
-                      (HardwareKeyboard.instance.isMetaPressed ||
-                          HardwareKeyboard.instance.isControlPressed) &&
-                      !HardwareKeyboard.instance.isShiftPressed &&
-                      !HardwareKeyboard.instance.isAltPressed) {
-                    final thread = context.read<PriorityBloc>().state.thread;
-                    if (thread != null) {
-                      ToggleThreadToRead(thread).run(context);
-                      return KeyEventResult.handled;
-                    }
-                  }
-
                   // ⌘⏎ / Ctrl+⏎ — finish the open thread (was ⌘D before
                   // the move-to-tab commands took it).
                   if (event.logicalKey == LogicalKeyboardKey.enter &&
@@ -1376,24 +1350,9 @@ class _ThreadActionsRow extends StatelessWidget {
       tooltipBelow: true,
     );
 
-    final taskListButton = Button.icon(
-      ToggleThreadTask(thread),
-      selected: thread.task,
-      selectedColor: context.colour.accent,
-      tooltipBelow: true,
-    );
-    final readingListButton = Button.icon(
-      ToggleThreadToRead(thread),
-      selected: thread.toRead,
-      selectedColor: context.colour.accent,
-      tooltipBelow: true,
-    );
-
     final startGroup = <Widget>[
       todoButton,
       scheduleButton,
-      taskListButton,
-      readingListButton,
       if (!readOnly) Button.icon(EditThread(thread), tooltipBelow: true),
     ];
 

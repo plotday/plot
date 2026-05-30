@@ -49,8 +49,6 @@ enum _OverrideField {
   on,
   order,
   active,
-  task,
-  toRead,
 }
 
 /// A per-thread optimistic override applied to stream results until the
@@ -124,10 +122,6 @@ class _OptimisticOverride {
         return actual.order.value == expected.order.value;
       case _OverrideField.active:
         return actual.active == expected.active;
-      case _OverrideField.task:
-        return actual.task == expected.task;
-      case _OverrideField.toRead:
-        return actual.toRead == expected.toRead;
     }
   }
 }
@@ -2255,8 +2249,6 @@ class PriorityBloc extends Cubit<PriorityState> {
             _OverrideField.on,
             if (watchOrder) _OverrideField.order,
             if (watchScheduleAction) _OverrideField.active,
-            if (watchScheduleAction) _OverrideField.task,
-            if (watchScheduleAction) _OverrideField.toRead,
           }
         : null;
     _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(

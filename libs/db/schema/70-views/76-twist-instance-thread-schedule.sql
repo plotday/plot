@@ -13,8 +13,6 @@ SELECT
     ts."on",
     ts."at",
     ts.active,
-    ts.task,
-    ts.to_read,
     ts.read_at,
     ts.updated_at,
     ts.seq,
