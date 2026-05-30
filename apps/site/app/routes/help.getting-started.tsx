@@ -70,21 +70,20 @@ export default function GettingStarted() {
 
         <div>
           <Title order={2} size="h3" mb="md">
-            3. Choose Your Priorities
+            3. Choose Your Focuses
           </Title>
           <Text mb="sm">
-            Priorities are the contexts your conversations and work get
-            organized into — projects, relationships, and areas of
-            responsibility. Start with roles or areas of your life, such as work
-            or school and add other such as health, social, volunteer roles, and
-            personal development. Get the most out of Plot by nesting your
-            priorities. For example, you probably mave multiple roles and
-            projects at work (e.g. manager, project lead), and within each, you
-            may have areas of focus (e.g. customer development, planning).
+            Focuses are the contexts your conversations and work get organized
+            into — projects, relationships, and areas of responsibility. Start
+            with the roles or areas of your life, such as work or school, and
+            add others like health, social, volunteer roles, and personal
+            development.
           </Text>
           <Text mb="sm">
-            When you organize your priorities this way, you can zoom into a
-            particular are to focus and zoom out to pick up everything else.
+            When you create a focus, Plot finds the conversations that belong
+            there and keeps matching new ones automatically. Anything that isn't
+            matched to a focus waits in your Inbox, and the Everything view
+            brings it all together in one place.
           </Text>
         </div>
 
@@ -115,8 +114,7 @@ export default function GettingStarted() {
             <List.Item>Customize Plot to fit your workflow</List.Item>
           </List>
           <Text mt="sm">
-            Add twists to a priority to give them access to that priority and
-            its descendants.
+            Add twists to a focus to give them access to that focus.
           </Text>
         </div>
 
@@ -125,7 +123,7 @@ export default function GettingStarted() {
             6. Start Working
           </Title>
           <Text>
-            Pick a priority to focus on. Plot proposes a window to work through
+            Pick a focus to work on. Plot proposes a window to work through
             the conversations and work that belong there. Reply, add follow-ups,
             take notes — everything stays organized for next time. Outside the
             window, the rest of your day is yours.

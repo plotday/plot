@@ -125,7 +125,7 @@ export default function Home() {
         body="Conversations land in the projects, relationships, and areas they belong to — sorted by what's important and what's urgent. You always know where to look, who's waiting on you, and what to move forward next. Nothing slips."
         image="/assets/priorities.png"
         imageDark="/assets/priorities-d.png"
-        imageAlt="Plot priorities view showing conversations grouped by project and area"
+        imageAlt="Plot focuses view showing conversations grouped by project and area"
         reverse
         background="gray"
       />

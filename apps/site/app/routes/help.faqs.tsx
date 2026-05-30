@@ -82,8 +82,7 @@ export default function FAQs() {
               functionality with integrations and automate workflows. You can
               install twists created by Plot, build your own using the Twist
               Creator (Twister), or use twists published by other users. Twists
-              are added to a priority where they have access to only that
-              priority.
+              are added to a focus where they have access to only that focus.
             </Accordion.Panel>
           </Accordion.Item>
 
@@ -93,8 +92,8 @@ export default function FAQs() {
             </Accordion.Control>
             <Accordion.Panel>
               They're still here. Plot includes scheduled events and tasks
-              alongside the conversations they relate to — agenda, priority
-              tree, and Pomodoro timer included. They just take a back seat to
+              alongside the conversations they relate to — agenda, focuses, and
+              Pomodoro timer included. They just take a back seat to
               keeping up with the people you work with.
             </Accordion.Panel>
           </Accordion.Item>
