@@ -394,7 +394,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       selectedValue: isAuto
           ? const AutoOrganizeChoice()
           : PickedPriorityChoice(state.draft.priority),
-      prompt: 'Select priority',
+      prompt: 'Select focus',
       onAdd: (ctx) => createPriorityInline(
         ctx,
         parent: state.draft.priority,

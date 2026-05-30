@@ -212,7 +212,10 @@ Future<Map<String, String>> getHeaders() async {
     if (token != null) 'Authorization': 'Bearer $token',
     'X-Plot-Client':
         '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
-    'X-Plot-API-Version': '3',
+    // v4: flat Focus model. The server projects the per-user root as "Inbox"
+    // and former nested children as their flat ancestry label; this client no
+    // longer renders priority nesting.
+    'X-Plot-API-Version': '4',
   };
 }
 

@@ -72,7 +72,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
       itemBuilder: (priority, _) =>
           ListTile(body: FocusLabel(priority: priority)),
       selectedValue: _selectedPriority,
-      prompt: 'Priority',
+      prompt: 'Focus',
       onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),
       filter: (priority, search) => priority.matchesSearch(search),
     );

@@ -799,7 +799,7 @@ class EditThread extends ShowForm {
                   ),
                   FormSelect<Priority>(
                     key: 'priority',
-                    label: 'Priority',
+                    label: 'Focus',
                     initialValue: thread.priority,
                     required: true,
                     items: (search) async {
@@ -1845,10 +1845,10 @@ class MoveThreadToPriority extends ShowCommands {
         .toList();
 
     return Commands(
-      prompt: 'Move thread to priority',
+      prompt: 'Move thread to focus',
       groups: [
         StaticCommandGroup(
-          title: 'Priorities',
+          title: 'Focuses',
           commands: filteredPriorities
               .map((priority) => MoveToPriority(thread, priority))
               .toList(),
@@ -1862,7 +1862,7 @@ class MoveThreadToPriority extends ShowCommands {
 class _CreateAndMoveToNewPriority extends Command {
   _CreateAndMoveToNewPriority(this.thread)
     : super(
-        title: 'Add a priority',
+        title: 'Add a focus',
         icon: PlotIcon.add,
         eventObject: EventObject.activity,
         eventAction: EventAction.moved,

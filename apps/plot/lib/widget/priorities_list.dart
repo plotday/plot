@@ -156,7 +156,7 @@ class _PrioritiesListState extends State<PrioritiesList> {
 
               ListTile(
                 command: CommandWrapper(
-                  NewPriority(parent: widget.root),
+                  NewFocus(),
                   icon: Value(null),
                   title: 'Add a focus',
                 ),

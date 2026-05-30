@@ -74,7 +74,7 @@ class PriorityComposeField extends StatelessWidget {
         : FocusLabel(priority: currentPriority, fontSize: fontSize);
 
     return ComposeSelectField(
-      tooltip: 'Priority',
+      tooltip: 'Focus',
       shortcut: platformSingleActivator(
         LogicalKeyboardKey.keyP,
         shift: true,

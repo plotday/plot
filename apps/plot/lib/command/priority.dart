@@ -193,7 +193,7 @@ class ChangeCurrentPriorityCommands extends Commands {
     : super(
         groups: [
           PriorityGroup(
-            title: 'Priorities',
+            title: 'Focuses',
             builder: (priority) => ChangeCurrentPriority(priority!),
           ),
         ],
@@ -265,7 +265,7 @@ class OpenPriority extends Command {
 class PickCurrentPriority extends ShowCommands {
   PickCurrentPriority()
     : super(
-        title: 'Switch priorities',
+        title: 'Switch focuses',
         icon: PlotIcon.priority,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyP, alt: kIsWeb),
         commands: ChangeCurrentPriorityCommands(),
@@ -462,23 +462,9 @@ Future<FormData> _buildNewPriorityForm(
     }
   }
 
-  final parentSelect = FormSelect<Priority>(
-    key: 'parent',
-    label: 'Parent',
-    initialValue: defaultParent,
-    items: (search) async {
-      final priorities = await Priority.get(order: PriorityOrder.nested);
-      return priorities.where((p) {
-        if (p.isPlot) return false;
-        if (search == null || search.isEmpty) return true;
-        return p.matchesSearch(search);
-      }).toList();
-    },
-    labelBuilder: (p) => FocusLabel(priority: p),
-    titleBuilder: (p) => p.ancestorsLabel() != null
-        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-        : p.title,
-  );
+  // Focuses are flat — no parent selector. A focus is created under the root
+  // (the Inbox); the server defaults the parent to root for flat clients.
+  final iconSelect = _focusIconSelect();
 
   // Team selector: only shown when creating a top-level priority and the user
   // belongs to at least one team. "Personal" maps to null (no team).
@@ -503,12 +489,12 @@ Future<FormData> _buildNewPriorityForm(
       : null;
 
   return FormData(
-    title: parent == null ? 'Add a priority' : 'Add a sub-priority',
+    title: 'Add a focus',
     groups: [
       StaticFormGroup(
         items: [
-          FormTextInput(key: 'title', label: 'Priority Name', required: true),
-          parentSelect,
+          FormTextInput(key: 'title', label: 'Focus name', required: true),
+          iconSelect,
           ?teamSelect,
           FormSelect<ThemeColor?>(
             key: 'color',
@@ -537,32 +523,9 @@ Future<FormData> _buildNewPriorityForm(
           FormButton(
             key: 'create',
             isPrimary: true,
-            buildCommand: (values) {
-              final title = values['title'] as String;
-              final selectedParent = values['parent'] as Priority;
-              final color = values['color'] as ThemeColor?;
-              final shared =
-                  (values['shared'] as SharedSelection?) ??
-                  const SharedSelection();
-              final selectedTeam = values['team'] as TeamUsage?;
-              final teamId = selectedTeam != null
-                  ? BigInt.parse(selectedTeam.id)
-                  : null;
-              return submitBuilder(
-                Future.value(
-                  Priority(
-                    title: title,
-                    parent: selectedParent,
-                    color: color,
-                    draft: true,
-                    defaultContacts: shared.contacts,
-                    defaultGroups: shared.groups,
-                    defaultInviteEmails: shared.inviteEmails,
-                    teamId: teamId,
-                  ),
-                ),
-              );
-            },
+            buildCommand: (values) => submitBuilder(
+              Future.value(_priorityFromValues(values, defaultParent)),
+            ),
           ),
         ],
       ),
@@ -573,9 +536,7 @@ Future<FormData> _buildNewPriorityForm(
 class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
-        title: parent == null || parent.root == true
-            ? 'Add a priority'
-            : 'Add a sub-priority',
+        title: 'Add a focus',
         icon: PlotIcon.add,
         form: (context) => _buildNewPriorityForm(
           context,
@@ -615,9 +576,7 @@ Future<Priority?> createPriorityInline(
   Priority? result;
 
   final command = ShowForm(
-    title: parent == null || parent.root == true
-        ? 'Add a priority'
-        : 'Add a sub-priority',
+    title: 'Add a focus',
     icon: PlotIcon.add,
     form: (context) => _buildNewPriorityForm(
       context,
@@ -631,10 +590,396 @@ Future<Priority?> createPriorityInline(
   return result;
 }
 
+/// Builds an unsaved flat focus from the create-form [values], filed under
+/// [root]. `icon` isn't a constructor field, so it's applied via copyWith.
+Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
+  final shared =
+      (values['shared'] as SharedSelection?) ?? const SharedSelection();
+  final team = values['team'] as TeamUsage?;
+  return Priority(
+    title: values['title'] as String,
+    parent: root,
+    color: values['color'] as ThemeColor?,
+    draft: true,
+    defaultContacts: shared.contacts,
+    defaultGroups: shared.groups,
+    defaultInviteEmails: shared.inviteEmails,
+    teamId: team != null ? BigInt.parse(team.id) : null,
+  ).copyWith(icon: Value(values['icon'] as String?));
+}
+
+/// Icon picker over the curated focus icon set ([PlotIcon.focusIcons]).
+FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
+  final keys = PlotIcon.focusIcons.keys.toList();
+  return FormSelect<String>(
+    key: 'icon',
+    label: 'Icon',
+    initialValue: keys.contains(initial) ? initial : keys.first,
+    hasInitialValue: true,
+    items: (search) async {
+      if (search == null || search.isEmpty) return keys;
+      final lower = search.toLowerCase();
+      return keys
+          .where((k) => _focusIconLabel(k).toLowerCase().contains(lower))
+          .toList();
+    },
+    titleBuilder: _focusIconLabel,
+    leadingBuilder: (k) => Icon(PlotIcon.focusIcon(k), size: 16),
+  );
+}
+
+/// Humanises a focus-icon key: 'userGroup' -> 'User group'.
+String _focusIconLabel(String key) {
+  if (key.isEmpty) return key;
+  final buf = StringBuffer();
+  for (var i = 0; i < key.length; i++) {
+    final c = key[i];
+    final isUpper = c.toUpperCase() == c && c.toLowerCase() != c;
+    if (i == 0) {
+      buf.write(c.toUpperCase());
+    } else if (isUpper) {
+      buf
+        ..write(' ')
+        ..write(c.toLowerCase());
+    } else {
+      buf.write(c);
+    }
+  }
+  return buf.toString();
+}
+
+/// Two-step focus creation. Step 1 collects the focus's name, description,
+/// icon, colour and sharing. Step 2 surfaces the existing threads that match
+/// the description so the user can review and deselect before the focus is
+/// created with the kept ones filed in (and the deselected ones recorded as
+/// negative examples). [skipMatching] creates the focus straight from step 1 —
+/// used by onboarding, where no threads are synced yet.
+class NewFocus extends Command {
+  NewFocus({this.skipMatching = false})
+    : super(
+        title: 'Add a focus',
+        icon: PlotIcon.add,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.added,
+      );
+
+  final bool skipMatching;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final root =
+        context.read<PrioritiesBloc>().state.root ??
+        await Priority.getDefault();
+    if (!context.mounted) return const CommandSkipped();
+
+    // Step 1: collect the focus details.
+    Map<String, dynamic>? input;
+    await ShowForm(
+      title: 'Add a focus',
+      icon: PlotIcon.add,
+      form: (ctx) => _buildFocusDetailsForm(
+        ctx,
+        root: root,
+        primaryTitle: skipMatching ? 'Create focus' : 'Find matching threads',
+        onSubmit: (values) => input = values,
+      ),
+    ).run(context);
+
+    final values = input;
+    if (values == null) return const CommandDone(); // cancelled
+
+    if (skipMatching) {
+      if (!context.mounted) return const CommandSkipped();
+      return AddPriority(Future.value(_priorityFromValues(values, root)))
+          .run(context);
+    }
+
+    // Step 2: review matching threads, then create.
+    if (!context.mounted) return const CommandSkipped();
+    return _ShowFocusMatches(values: values, root: root).run(context);
+  }
+}
+
+/// Step 1 form for [NewFocus]. The description feeds the matching step; it is
+/// not stored on the focus.
+Future<FormData> _buildFocusDetailsForm(
+  BuildContext context, {
+  required Priority root,
+  required String primaryTitle,
+  required void Function(Map<String, dynamic> values) onSubmit,
+}) async {
+  // Team selector (only when the user belongs to a team). "Personal" → null.
+  List<TeamUsage> teams = const [];
+  try {
+    final usage = await UpgradeApi.getUsage();
+    teams = usage.teams;
+  } catch (_) {
+    // Non-critical — proceed without team options.
+  }
+  final teamSelect = teams.isNotEmpty
+      ? FormSelect<TeamUsage?>(
+          key: 'team',
+          label: 'Team',
+          initialValue: null,
+          hasInitialValue: true,
+          items: (search) async {
+            final all = [null, ...teams];
+            if (search == null || search.isEmpty) return all;
+            final lower = search.toLowerCase();
+            return all
+                .where(
+                  (t) => t == null || t.name.toLowerCase().startsWith(lower),
+                )
+                .toList();
+          },
+          titleBuilder: (t) => t?.name ?? 'Personal',
+        )
+      : null;
+
+  return FormData(
+    title: 'Add a focus',
+    groups: [
+      StaticFormGroup(
+        items: [
+          FormTextInput(key: 'title', label: 'Focus name', required: true),
+          FormTextInput(
+            key: 'description',
+            label: 'Description',
+            required: true,
+            maxLines: 3,
+            placeholder: 'What kind of threads belong in this focus?',
+          ),
+          _focusIconSelect(),
+          ?teamSelect,
+          FormSelect<ThemeColor?>(
+            key: 'color',
+            label: 'Color',
+            initialValue: null,
+            hasInitialValue: true,
+            items: (search) async => [null, ...ThemeColor.options]
+                .where(
+                  (c) =>
+                      search == null ||
+                      (c?.label.toLowerCase() ?? 'default').startsWith(
+                        search.toLowerCase(),
+                      ),
+                )
+                .toList(),
+            titleBuilder: (c) => c?.label ?? 'Default',
+            leadingBuilder: (c) => ColorDot(color: c ?? root.displayColor),
+          ),
+          FormShareSelect(
+            key: 'shared',
+            label: 'Share new threads',
+            placeholder: 'No one',
+            priority: root,
+          ),
+          FormButton(
+            key: 'next',
+            isPrimary: true,
+            buildCommand: (values) => _CaptureFocusInput(
+              values: values,
+              title: primaryTitle,
+              onCapture: onSubmit,
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// Captures the step-1 form values and closes the modal so [NewFocus] can
+/// proceed to the matching step. Its [title] is the step-1 button label.
+class _CaptureFocusInput extends Command {
+  _CaptureFocusInput({
+    required this.values,
+    required super.title,
+    required this.onCapture,
+  }) : super(
+         icon: PlotIcon.add,
+         eventObject: EventObject.modal,
+         eventAction: EventAction.opened,
+       );
+
+  final Map<String, dynamic> values;
+  final void Function(Map<String, dynamic>) onCapture;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    onCapture(values);
+    return const CommandDone();
+  }
+}
+
+/// One matched thread surfaced in the focus-creation review step.
+class _FocusMatch {
+  const _FocusMatch({required this.threadId, required this.title});
+  final String threadId;
+  final String title;
+}
+
+/// Step 2 of [NewFocus]: review the threads that match the description.
+class _ShowFocusMatches extends ShowForm {
+  _ShowFocusMatches({
+    required Map<String, dynamic> values,
+    required Priority root,
+  }) : super(
+         title: 'Add a focus',
+         icon: PlotIcon.add,
+         form: (ctx) => _buildFocusMatchesForm(ctx, values: values, root: root),
+       );
+}
+
+Future<FormData> _buildFocusMatchesForm(
+  BuildContext context, {
+  required Map<String, dynamic> values,
+  required Priority root,
+}) async {
+  final description = (values['description'] as String? ?? '').trim();
+  final title = (values['title'] as String? ?? '').trim();
+
+  var matches = <_FocusMatch>[];
+  try {
+    final resp = await api.post<Map<String, dynamic>>(
+      '/sync/priorities/find-matching-threads',
+      body: {'description': description, 'title': title},
+    );
+    final raw = (resp['matches'] as List?) ?? const [];
+    matches = [
+      for (final m in raw)
+        if (m is Map && m['thread_id'] is String)
+          _FocusMatch(
+            threadId: m['thread_id'] as String,
+            title: (m['title'] as String?)?.trim().isNotEmpty == true
+                ? m['title'] as String
+                : 'Untitled thread',
+          ),
+    ];
+  } catch (e, stackTrace) {
+    Tracker.captureException(e, stackTrace);
+    // Fall through with no matches — the user can still create the focus.
+  }
+
+  return FormData(
+    title: 'Add a focus',
+    groups: [
+      StaticFormGroup(
+        items: [
+          if (matches.isEmpty)
+            FormInfo(
+              key: 'no_matches',
+              text:
+                  'No matching threads found yet. Create the focus and file '
+                  'threads into it as they come in.',
+            )
+          else ...[
+            FormInfo(
+              key: 'matches_hint',
+              text:
+                  'These threads look like they belong in this focus. Uncheck '
+                  'any that don’t.',
+            ),
+            for (final m in matches)
+              FormToggle(
+                key: 'match_${m.threadId}',
+                label: m.title,
+                initialValue: true,
+              ),
+          ],
+          FormButton(
+            key: 'create',
+            isPrimary: true,
+            buildCommand: (selections) => _CreateFocusWithThreads(
+              values: values,
+              root: root,
+              matches: matches,
+              selections: selections,
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// Creates the focus, files the kept matches into it (positive examples), and
+/// records the deselected matches as negatives. Navigates to the new focus.
+class _CreateFocusWithThreads extends Command {
+  _CreateFocusWithThreads({
+    required this.values,
+    required this.root,
+    required this.matches,
+    required this.selections,
+  }) : super(
+         title: 'Create focus',
+         icon: PlotIcon.add,
+         eventObject: EventObject.priority,
+         eventAction: EventAction.added,
+       );
+
+  final Map<String, dynamic> values;
+  final Priority root;
+  final List<_FocusMatch> matches;
+  final Map<String, dynamic> selections;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final focus = await _priorityFromValues(values, root).save();
+
+    final selected = <String>[];
+    final deselected = <String>[];
+    for (final m in matches) {
+      (selections['match_${m.threadId}'] == true ? selected : deselected).add(
+        m.threadId,
+      );
+    }
+
+    // File the kept threads into the focus (mirrors a user move: a local
+    // priority change plus the positive learning signal).
+    for (final id in selected) {
+      try {
+        final thread = await Thread.getOne(Uuid.fromString(id));
+        await thread.copyWith(priority: focus).save();
+        await api.post<dynamic>(
+          '/sync/priority-moves',
+          body: {'thread_id': id, 'priority_id': focus.id.toString()},
+        );
+      } catch (e, stackTrace) {
+        Tracker.captureException(e, stackTrace);
+      }
+    }
+
+    // Record the deselected matches as negative examples for future matching.
+    if (deselected.isNotEmpty) {
+      try {
+        await api.post<dynamic>(
+          '/sync/priorities/negatives',
+          body: {
+            'negatives': [
+              for (final id in deselected)
+                {
+                  'thread_id': id,
+                  'priority_id': focus.id.toString(),
+                  'source': 'deselected',
+                },
+            ],
+          },
+        );
+      } catch (e, stackTrace) {
+        Tracker.captureException(e, stackTrace);
+      }
+    }
+
+    if (!context.mounted) return const CommandDone();
+    return ChangeCurrentPriority(focus).run(context);
+  }
+}
+
 class EditPriorityCommand extends ShowForm {
   EditPriorityCommand(Priority priority)
     : super(
-        title: 'Edit priority',
+        title: 'Edit focus',
         icon: PlotIcon.settings,
         form: (context) async {
           // Re-fetch priority to get latest data (e.g. after a previous save)
@@ -760,13 +1105,13 @@ class EditPriorityCommand extends ShowForm {
           }
 
           return FormData(
-            title: 'Edit priority',
+            title: 'Edit focus',
             groups: [
               StaticFormGroup(
                 items: [
                   FormTextInput(
                     key: 'title',
-                    label: 'Priority Name',
+                    label: 'Focus name',
                     initialValue: p.title,
                     required: true,
                   ),
@@ -918,7 +1263,7 @@ List<Command> currentPriorityCommands(
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
   StaticCommandGroup(
-    title: 'Priority: ${priority.title}',
+    title: 'Focus: ${priority.title}',
     commands: priorityCommands(priority),
   ),
 ];
@@ -929,7 +1274,7 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
   NowState? nowState,
 }) => [
   StaticCommandGroup(
-    title: 'Priority: ${priority.title}',
+    title: 'Focus: ${priority.title}',
     commands: currentPriorityCommands(
       priority,
       context: context,
@@ -1010,7 +1355,7 @@ class ToggleMuteFilter extends Command {
 }
 
 /// Toggle archived visibility across the current priority's threads and
-/// notes (and, via the priorities-list watcher, archived priorities too).
+/// notes (and, via the priorities-list watcher, archived focuses too).
 /// Backed by `showArchived` on `PriorityBloc` (and `ThreadBloc` when a thread
 /// is open) so it stays independent of search and filter state.
 class ToggleArchivedVisibility extends Command {
@@ -1018,8 +1363,8 @@ class ToggleArchivedVisibility extends Command {
     : super(
         title: showingArchived ? 'Hide archived' : 'Show archived',
         subtitle: showingArchived
-            ? 'Hide archived threads, notes and priorities'
-            : 'Show archived threads, notes and priorities',
+            ? 'Hide archived threads, notes and focuses'
+            : 'Show archived threads, notes and focuses',
         eventObject: EventObject.archived,
         eventAction: EventAction.viewed,
         icon: PlotIcon.archived,
@@ -1094,8 +1439,8 @@ class ToggleArchivedPrioritiesFilter extends Command {
   ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
     : super(
         title: showAllPriorities
-            ? 'Hide archived priorities'
-            : 'Show archived priorities',
+            ? 'Hide archived focuses'
+            : 'Show archived focuses',
         subtitle: showAllPriorities
             ? 'Showing all priorities (active & archived)'
             : 'Showing active priorities only',

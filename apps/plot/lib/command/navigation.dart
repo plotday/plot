@@ -55,7 +55,7 @@ class ToggleLeftSidebarCommand extends Command {
   ToggleLeftSidebarCommand({required this.isVisible})
     : super(
         title: isVisible
-            ? 'Hide agenda and priorities'
+            ? 'Hide agenda and focuses'
             : 'Open sidebar',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
@@ -110,7 +110,7 @@ class CyclePanelsCommand extends Command {
     // sidebar) panels — the middle is always visible. The only thing to
     // cycle is the left sidebar.
     return layoutState.leftPanelVisible
-        ? 'Hide agenda and priorities'
+        ? 'Hide agenda and focuses'
         : 'Open sidebar';
   }
 
@@ -172,7 +172,7 @@ class ToggleSearchCommand extends Command {
 class BackToPrioritiesTabCommand extends Command {
   BackToPrioritiesTabCommand()
     : super(
-        title: 'Priorities',
+        title: 'Focuses',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: PlotIcon.back,
