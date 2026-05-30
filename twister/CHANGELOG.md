@@ -1,5 +1,20 @@
 # @plotday/twister
 
+## 0.54.0
+
+### Added
+
+- `note.handler` Plot option for a single conversational mention handler (bypasses intent matching), `AIRequest.webSearch` for provider-native web search, `AIRequest.maxSteps` for agentic multi-step tool use, and `AICapabilities.webSearch`. `AITool.parameters` is now an optional deprecated alias for `inputSchema`. `AI.available()` return type widened to `AICapabilities | Promise<AICapabilities>` to reflect that it resolves asynchronously over RPC (await it). ([#159](https://github.com/plotday/plot/pull/159) [`9104196`](https://github.com/plotday/plot/commit/9104196d8924a51320c77e67b1644f160e485c0b))
+- `ResolvedRecipient.role` so `onCreateLink` connectors can honor a contact's thread role (e.g. to/cc/bcc). The runtime resolves each recipient's role from the originating thread's `contact_meta`; connectors like Gmail use it to keep CC/BCC recipients out of the visible To header. ([#156](https://github.com/plotday/plot/pull/156) [`3143e09`](https://github.com/plotday/plot/commit/3143e094464b4bd42ba6c489bdad236d309f048d))
+
+### Changed
+
+- renamed the Priority concept to Focus across the SDK public surface. `Priority`/`NewPriority`/`PriorityUpdate` are now `Focus`/`NewFocus`/`FocusUpdate`; `PriorityAccess` is now `FocusAccess`; the `Plot` tool methods `createPriority`/`getPriority`/`updatePriority`/`getPriorities` are now `createFocus`/`getFocus`/`updateFocus`/`getFocuses`; `Thread.priority` is now `Thread.focus`; search/list `priorityId` options are now `focusId`; and the `PlanOperation` priority shapes are now focus shapes (`updateFocus`, `focusId`, `focusTitle`). Focuses are flat — `parent` (nesting) has been removed from `NewFocus`/`FocusUpdate` and the list options no longer take `parentId`/`includeDescendants`. Added `Focus.icon`. ([#160](https://github.com/plotday/plot/pull/160) [`ce0549c`](https://github.com/plotday/plot/commit/ce0549c86e7ecdffac299cf68284526492031312))
+
+### Removed
+
+- `task` and `toRead` link-status flags. The task list and reading list features they fed have been dropped from Plot. The `todo` status flag is unchanged and still marks the connector's to-do state for agenda restore. ([#160](https://github.com/plotday/plot/pull/160) [`1f9be90`](https://github.com/plotday/plot/commit/1f9be90624eceeb36b9e9fd29de77db500c1dcf5))
+
 ## 0.53.0
 
 ### Added
