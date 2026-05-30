@@ -193,7 +193,7 @@ class ChangeCurrentPriorityCommands extends Commands {
     : super(
         groups: [
           PriorityGroup(
-            title: 'Priorities',
+            title: 'Focuses',
             builder: (priority) => ChangeCurrentPriority(priority!),
           ),
         ],
@@ -265,7 +265,7 @@ class OpenPriority extends Command {
 class PickCurrentPriority extends ShowCommands {
   PickCurrentPriority()
     : super(
-        title: 'Switch priorities',
+        title: 'Switch focuses',
         icon: PlotIcon.priority,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyP, alt: kIsWeb),
         commands: ChangeCurrentPriorityCommands(),
@@ -979,7 +979,7 @@ class _CreateFocusWithThreads extends Command {
 class EditPriorityCommand extends ShowForm {
   EditPriorityCommand(Priority priority)
     : super(
-        title: 'Edit priority',
+        title: 'Edit focus',
         icon: PlotIcon.settings,
         form: (context) async {
           // Re-fetch priority to get latest data (e.g. after a previous save)
@@ -1105,13 +1105,13 @@ class EditPriorityCommand extends ShowForm {
           }
 
           return FormData(
-            title: 'Edit priority',
+            title: 'Edit focus',
             groups: [
               StaticFormGroup(
                 items: [
                   FormTextInput(
                     key: 'title',
-                    label: 'Priority Name',
+                    label: 'Focus name',
                     initialValue: p.title,
                     required: true,
                   ),
@@ -1263,7 +1263,7 @@ List<Command> currentPriorityCommands(
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
   StaticCommandGroup(
-    title: 'Priority: ${priority.title}',
+    title: 'Focus: ${priority.title}',
     commands: priorityCommands(priority),
   ),
 ];
@@ -1274,7 +1274,7 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
   NowState? nowState,
 }) => [
   StaticCommandGroup(
-    title: 'Priority: ${priority.title}',
+    title: 'Focus: ${priority.title}',
     commands: currentPriorityCommands(
       priority,
       context: context,
@@ -1355,7 +1355,7 @@ class ToggleMuteFilter extends Command {
 }
 
 /// Toggle archived visibility across the current priority's threads and
-/// notes (and, via the priorities-list watcher, archived priorities too).
+/// notes (and, via the priorities-list watcher, archived focuses too).
 /// Backed by `showArchived` on `PriorityBloc` (and `ThreadBloc` when a thread
 /// is open) so it stays independent of search and filter state.
 class ToggleArchivedVisibility extends Command {
@@ -1363,8 +1363,8 @@ class ToggleArchivedVisibility extends Command {
     : super(
         title: showingArchived ? 'Hide archived' : 'Show archived',
         subtitle: showingArchived
-            ? 'Hide archived threads, notes and priorities'
-            : 'Show archived threads, notes and priorities',
+            ? 'Hide archived threads, notes and focuses'
+            : 'Show archived threads, notes and focuses',
         eventObject: EventObject.archived,
         eventAction: EventAction.viewed,
         icon: PlotIcon.archived,
@@ -1439,8 +1439,8 @@ class ToggleArchivedPrioritiesFilter extends Command {
   ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
     : super(
         title: showAllPriorities
-            ? 'Hide archived priorities'
-            : 'Show archived priorities',
+            ? 'Hide archived focuses'
+            : 'Show archived focuses',
         subtitle: showAllPriorities
             ? 'Showing all priorities (active & archived)'
             : 'Showing active priorities only',

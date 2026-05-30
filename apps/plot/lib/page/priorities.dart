@@ -305,7 +305,7 @@ class _SearchMatchesList extends StatelessWidget {
                 vertical: context.theme.spacing.xl,
               ),
               child: Text(
-                'No priorities with matching threads yet.',
+                'No focuses with matching threads yet.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: context.theme.plotColors.veryMuted,

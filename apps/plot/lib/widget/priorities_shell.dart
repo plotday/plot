@@ -398,7 +398,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
             );
           },
         ),
-        label: _buildNavLabel('Priorities'),
+        label: _buildNavLabel('Focuses'),
       ),
       FBottomNavigationBarItem(
         icon: Icon(PlotIcon.agenda),

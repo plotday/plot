@@ -277,20 +277,20 @@ class _SignInPageState extends State<SignInPage> {
                                     ],
                                     const TextSpan(
                                       text:
-                                          ' and make progress on your priorities.',
+                                          ' and make progress on what matters.',
                                     ),
                                   ],
                                 ),
                               )
                             else
                               Text(
-                                "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on your priorities.",
+                                "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on what matters.",
                                 textAlign: TextAlign.center,
                                 style: context.theme.typography.md,
                               ),
                           ] else
                             Text(
-                              'Sign in to make progress on your priorities',
+                              'Sign in to make progress on what matters',
                               textAlign: TextAlign.center,
                               style: context.theme.typography.md,
                             ),
