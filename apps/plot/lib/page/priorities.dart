@@ -119,6 +119,8 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                     final selected = nowState is NowLoaded
                         ? nowState.context
                         : null;
+                    final everything =
+                        nowState is NowLoaded && nowState.everything;
                     final root = state.root;
                     if (root == null) {
                       return const SizedBox.shrink();
@@ -142,6 +144,7 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                                     root: root,
                                     priorities: state.priorities,
                                     selected: selected,
+                                    everything: everything,
                                   ),
                           ),
                         ),

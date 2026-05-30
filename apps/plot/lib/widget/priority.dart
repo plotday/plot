@@ -184,12 +184,9 @@ class _PriorityWidgetState extends State<PriorityWidget> {
                     priority: priority,
                     selected: widget.selected,
                   )
-                else ...[
-                  Button.icon(
-                    SetTopPriority(priority, priority.topOrder == null),
-                  ),
+                else
+                  // Focuses are flat — no "pin to top" affordance.
                   Button.icon(ShowPriorityCommands(priority)),
-                ],
               ],
             ),
           ),

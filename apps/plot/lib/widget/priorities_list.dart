@@ -7,176 +7,53 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
+/// The flat-focus sidebar: drag-reorderable focuses, then a fixed Inbox tile
+/// (the root — unfiled threads), then a fixed Everything tile (the unscoped
+/// feed across the Inbox and every focus), then "Add a focus".
+///
+/// Focuses are flat in the new model — no nesting, no top-pinning, no
+/// expansion. Reordering writes the existing `order` column via
+/// [Order.between]. A "More" affordance truncates a long list down to the
+/// active/unread focuses.
 class PrioritiesList extends StatefulWidget {
-  final List<Priority> topPriorities;
+  final List<Priority> focuses;
   final Priority root;
   final Priority? selected;
+
+  /// True when the synthetic "Everything" feed is the active view. Both Inbox
+  /// and Everything are rooted on [root], so the highlight is driven by this
+  /// flag (from `NowBloc.everything`) rather than by [selected] alone.
+  final bool everything;
 
   PrioritiesList({
     super.key,
     required this.root,
     required List<Priority> priorities,
     this.selected,
-  }) : topPriorities = priorities.where((p) => p.topOrder != null).toList()
-         ..sort(
-           (a, b) => (a.topOrder?.value ?? 0).compareTo(b.topOrder?.value ?? 0),
-         );
+    this.everything = false,
+  }) : focuses = (priorities.where((p) => !p.root).toList()..sort(_byOrder));
+
+  static int _byOrder(Priority a, Priority b) {
+    final c = a.order.value.compareTo(b.order.value);
+    return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
+  }
 
   @override
   State<PrioritiesList> createState() => _PrioritiesListState();
 }
 
-class _PrioritiesListState extends State<PrioritiesList>
-    with TickerProviderStateMixin {
-  // Animation state
-  final Map<String, AnimationController> _controllers = {};
-  final Map<String, bool> _expansionState = {};
-  bool _isFirstBuild = true;
-  final Set<String> _showAllChildren = {};
+class _PrioritiesListState extends State<PrioritiesList> {
+  /// When false, the focus list is truncated to active/unread focuses (plus
+  /// enough to reach [_truncateAt]); tapping "More" reveals the rest.
+  bool _showAll = false;
 
-  // Manual expansion state for single panel mode
-  final Map<String, bool> _manualExpansion = {};
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_isFirstBuild) {
-      _updateExpansionState();
-    }
-  }
-
-  @override
-  void didUpdateWidget(PrioritiesList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _updateExpansionState();
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _controllers.values) {
-      controller.dispose();
-    }
-    _controllers.clear();
-    super.dispose();
-  }
-
-  void _updateExpansionState() {
-    if (_isFirstBuild) {
-      _isFirstBuild = false;
-      _initializeExpansionState();
-      return;
-    }
-
-    final currentExpansions = _computeAllExpansions();
-
-    // Detect changes and trigger animations
-    for (final entry in currentExpansions.entries) {
-      final priorityId = entry.key;
-      final shouldExpandNow = entry.value;
-      final wasExpanded = _expansionState[priorityId];
-
-      if (wasExpanded != shouldExpandNow) {
-        final controller = _getOrCreateController(priorityId);
-        if (shouldExpandNow) {
-          controller.forward();
-        } else {
-          controller.reverse();
-          _showAllChildren.remove(priorityId);
-        }
-      }
-    }
-
-    // Clean up controllers for removed priorities
-    final removedIds = _expansionState.keys
-        .where((id) => !currentExpansions.containsKey(id))
-        .toList();
-    for (final id in removedIds) {
-      _controllers[id]?.dispose();
-      _controllers.remove(id);
-    }
-
-    _expansionState.clear();
-    _expansionState.addAll(currentExpansions);
-  }
-
-  void _initializeExpansionState() {
-    final currentExpansions = _computeAllExpansions();
-    _expansionState.addAll(currentExpansions);
-  }
-
-  AnimationController _getOrCreateController(String priorityId) {
-    return _controllers.putIfAbsent(
-      priorityId,
-      () => AnimationController(
-        duration: const Duration(milliseconds: 250),
-        vsync: this,
-      )..value = _expansionState[priorityId] == true ? 1.0 : 0.0,
-    );
-  }
-
-  Map<String, bool> _computeAllExpansions() {
-    final result = <String, bool>{};
-    final layoutState = context.read<LayoutBloc>().state;
-    final isMultiPanel = layoutState.multiPanel;
-
-    void addPriority(Priority priority) {
-      final expanded = _shouldExpand(priority, isMultiPanel);
-      if (priority.children.isNotEmpty) {
-        result[priority.id.toString()] = expanded;
-      }
-      for (final child in priority.children) {
-        addPriority(child);
-      }
-    }
-
-    for (final child in widget.root.children) {
-      addPriority(child);
-    }
-    for (final topPriority in widget.topPriorities) {
-      addPriority(topPriority);
-    }
-
-    return result;
-  }
-
-  bool _shouldExpand(Priority priority, bool isMultiPanel) {
-    // Manual caret toggles override automatic expansion in both layouts.
-    final manual = _manualExpansion[priority.id.toString()];
-    if (manual != null) return manual;
-    if (!isMultiPanel) return false;
-    if (widget.selected == null) return true;
-
-    // Collapse all when root ("Everything") is selected
-    if (widget.selected!.id == widget.root.id) {
-      return false;
-    }
-
-    final selectedAncestors = widget.selected!.ancestors(includeSelf: false);
-    if (selectedAncestors.any((a) => a.id == priority.id)) {
-      return true;
-    }
-
-    if (widget.selected!.id == priority.id) {
-      return true;
-    }
-
-    if (widget.selected!.isParent(priority)) {
-      return true;
-    }
-
-    return false;
-  }
+  /// Show every focus when there are at most this many; truncate beyond it.
+  static const int _truncateAt = 5;
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
-        final isMultiPanel = layoutState.multiPanel;
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
         final itemStyle =
@@ -184,364 +61,129 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ? context.theme.typography.sm
                     : context.theme.typography.md)
                 .copyWith(fontWeight: FontWeight.w500);
-        // In the left panel of multi-panel mode, the priorities list floats
-        // on the tinted frame with horizontal insets — round the hover/
-        // selection highlights so they read as discrete pills. In single
-        // panel mode the list goes edge-to-edge, so keep it rectangular.
+        // In the left panel the list floats on the tinted frame with
+        // horizontal insets — round the hover/selection highlights so they
+        // read as discrete pills. Single-panel mode goes edge-to-edge, so
+        // keep it rectangular. Tiles outside the squircles render monochrome
+        // at rest and reintroduce focus colour on hover/selection.
         final BorderRadius? itemBorderRadius = isLeftPanel
             ? BorderRadius.circular(6)
             : null;
-        // Tiles outside the squircles (the left-panel priorities frame)
-        // render in a monochrome resting state, reintroducing priority color
-        // on hover or when selected.
         final bool monochrome = isLeftPanel;
 
-        // Automatic expansion logic
-        bool shouldExpand(Priority priority) {
-          return _shouldExpand(priority, isMultiPanel);
-        }
+        final focuses = widget.focuses;
+        final visible = _visibleFocuses(focuses);
+        final truncated = visible.length < focuses.length;
 
-        // Build priority items recursively
-        List<Widget> buildPriorityItems(
-          BuildContext context,
-          Priority priority, {
-          int indentLevel = 0,
-          bool topSection = false,
-          required TextStyle textStyle,
-          int? reorderableIndex,
-        }) {
-          final priorityExpanded = shouldExpand(priority);
-
-          return [
-            PriorityWidget(
-              key: ValueKey('${topSection ? 'top' : 'all'}-${priority.id}'),
-              priority: priority,
-              monochrome: monochrome,
-              selected: widget.selected?.id == priority.id,
-              selectedBorder: topSection || priority.topOrder == null,
-              borderRadius: itemBorderRadius,
-              indentLevel: indentLevel,
-              textStyle: textStyle.copyWith(
-                color: priority.archivedAt != null
-                    ? context.theme.colors.mutedForeground
-                    : textStyle.color,
-              ),
-              showAncestry: topSection,
-              boldLeaf: topSection,
-              unread: topSection
-                  ? _hasDescendantUnread(priority)
-                  : (!priorityExpanded && _hasDescendantUnread(priority)
-                        ? true
-                        : null),
-              expandable: priority.children.isNotEmpty,
-              expanded: priorityExpanded,
-              onToggleExpand: priority.children.isNotEmpty
-                  ? () => _toggleManualExpansion(priority)
-                  : null,
-              reorderableIndex: reorderableIndex,
-            ),
-            if (priority.children.isNotEmpty)
-              _AnimatedPriorityChildren(
-                controller: _getOrCreateController(priority.id.toString()),
-                children: priority.children
-                    .expand(
-                      (child) => buildPriorityItems(
-                        context,
-                        child,
-                        indentLevel: indentLevel + 1,
-                        topSection: topSection,
-                        textStyle: textStyle.copyWith(
-                          color: child.archivedAt != null
-                              ? context.theme.colors.mutedForeground
-                              : context.colour.colours.fromTheme(
-                                  child.displayColor,
-                                ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-          ];
-        }
-
-        // Build reorderable priority items
-        List<Widget> buildReorderablePriorityItems(
-          BuildContext context,
-          List<Priority> priorities, {
-          int indentLevel = 0,
-          required TextStyle textStyle,
-        }) {
-          if (priorities.isEmpty) return [];
-
-          if (priorities.length == 1) {
-            final priority = priorities.first;
-            final priorityExpanded = shouldExpand(priority);
-            final parentId = priority.id.toString();
-            final truncated = _truncatedChildren(parentId, priority.children);
-            final visibleChildren = truncated ?? priority.children;
-
-            return [
-              PriorityWidget(
-                key: ValueKey('all-${priority.id}'),
-                priority: priority,
-                monochrome: monochrome,
-                selected: widget.selected?.id == priority.id,
-                selectedBorder: true,
-                borderRadius: itemBorderRadius,
-                indentLevel: indentLevel,
-                textStyle: textStyle.copyWith(
-                  color: priority.archivedAt != null
-                      ? context.theme.colors.mutedForeground
-                      : context.colour.colours.fromTheme(
-                          priority.displayColor,
-                          muted:
-                              !monochrome &&
-                              !(priorityExpanded
-                                  ? priority.unread
-                                  : _hasDescendantUnread(priority)),
-                        ),
+        TextStyle focusStyle(Priority p) => itemStyle.copyWith(
+          color: p.archivedAt != null
+              ? context.theme.colors.mutedForeground
+              : context.colour.colours.fromTheme(
+                  p.displayColor,
+                  muted: !monochrome && !p.unread,
                 ),
-                unread: !priorityExpanded && _hasDescendantUnread(priority)
-                    ? true
-                    : null,
-                expandable: priority.children.isNotEmpty,
-                expanded: priorityExpanded,
-                onToggleExpand: priority.children.isNotEmpty
-                    ? () => _toggleManualExpansion(priority)
-                    : null,
-              ),
-              if (priority.children.isNotEmpty)
-                _AnimatedPriorityChildren(
-                  controller: _getOrCreateController(parentId),
-                  children: [
-                    ...buildReorderablePriorityItems(
-                      context,
-                      visibleChildren,
-                      indentLevel: indentLevel + 1,
-                      textStyle: textStyle,
-                    ),
-                    if (truncated != null)
-                      _ShowMoreItem(
-                        indentLevel: indentLevel + 1,
-                        textStyle: textStyle,
-                        onTap: () =>
-                            setState(() => _showAllChildren.add(parentId)),
-                      ),
-                  ],
-                ),
-            ];
-          }
-
-          return [
-            ReorderableListView<Priority>(
-              list: priorities,
-              shrinkWrap: true,
-              // Key on `id` (not on the Priority instance) so the row's
-              // element identity survives unread/active state mutations.
-              // Priority.== folds in `unread`/`active`, which flip when
-              // the user switches priorities, and a key change would
-              // remount the row and reset `_PriorityWeeklyTotal`'s
-              // cached StreamBuilder (causing the duration to flicker).
-              keyExtractor: (p) => ValueKey(p.id),
-              itemBuilder: (context, priority, reorderableIndex) {
-                final priorityExpanded = shouldExpand(priority);
-                final parentId = priority.id.toString();
-                final truncated = _truncatedChildren(
-                  parentId,
-                  priority.children,
-                );
-                final visibleChildren = truncated ?? priority.children;
-
-                return Column(
-                  key: ValueKey('all-${priority.id}'),
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PriorityWidget(
-                      priority: priority,
-                      monochrome: monochrome,
-                      selected: widget.selected?.id == priority.id,
-                      selectedBorder: true,
-                      borderRadius: itemBorderRadius,
-                      indentLevel: indentLevel,
-                      textStyle: textStyle.copyWith(
-                        color: priority.archivedAt != null
-                            ? context.theme.colors.mutedForeground
-                            : context.colour.colours.fromTheme(
-                                priority.displayColor,
-                                muted:
-                                    !monochrome &&
-                                    !(priorityExpanded
-                                        ? priority.unread
-                                        : _hasDescendantUnread(priority)),
-                              ),
-                      ),
-                      unread:
-                          !priorityExpanded && _hasDescendantUnread(priority)
-                          ? true
-                          : null,
-                      expandable: priority.children.isNotEmpty,
-                      expanded: priorityExpanded,
-                      onToggleExpand: priority.children.isNotEmpty
-                          ? () => _toggleManualExpansion(priority)
-                          : null,
-                      reorderableIndex: reorderableIndex,
-                    ),
-                    if (priority.children.isNotEmpty)
-                      _AnimatedPriorityChildren(
-                        controller: _getOrCreateController(parentId),
-                        children: [
-                          ...buildReorderablePriorityItems(
-                            context,
-                            visibleChildren,
-                            indentLevel: indentLevel + 1,
-                            textStyle: textStyle,
-                          ),
-                          if (truncated != null)
-                            _ShowMoreItem(
-                              indentLevel: indentLevel + 1,
-                              textStyle: textStyle,
-                              onTap: () => setState(
-                                () => _showAllChildren.add(parentId),
-                              ),
-                            ),
-                        ],
-                      ),
-                  ],
-                );
-              },
-              onReorder: (int oldIndex, int newIndex) =>
-                  _onReorderPriority(priorities, oldIndex, newIndex),
-            ),
-          ];
-        }
-
-        // Everything (root) priority tile, rendered at the top of the
-        // all-priorities list. The "Top Priorities" / "All Priorities"
-        // headers were dropped here so the priorities panel renders as one
-        // continuous dark block; the dark-frame treatment alone separates
-        // it from the agenda above. A different visual treatment for the
-        // two sections will land later.
-        final everythingTile = _EverythingTile(
-          root: widget.root,
-          isSelected: widget.selected?.id == widget.root.id,
-          borderRadius: itemBorderRadius,
-          textStyle: itemStyle,
-          monochrome: monochrome,
-          hasUnread: _hasDescendantUnread(widget.root),
         );
 
-        final hasTopPriorities = widget.topPriorities.isNotEmpty;
         return SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // lg top padding sets the priorities panel apart from the
-              // agenda above it.
+              // lg top padding sets the panel apart from the agenda above it.
               SizedBox(height: context.theme.spacing.md),
-              // Top Priorities — no header (treatment landing later).
-              if (hasTopPriorities) ...[
-                ReorderableListView<Priority>(
-                  list: widget.topPriorities,
-                  shrinkWrap: true,
-                  // See note above — key on id so unread/active churn
-                  // doesn't remount the top-section rows.
-                  keyExtractor: (p) => ValueKey('top-${p.id}'),
-                  itemBuilder: (context, priority, reorderableIndex) => Column(
-                    key: ValueKey('top-${priority.id}'),
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: buildPriorityItems(
-                      context,
-                      priority,
-                      topSection: true,
-                      textStyle: itemStyle.copyWith(
-                        color: context.colour.colours.fromTheme(
-                          priority.displayColor,
-                        ),
-                      ),
+
+              // Flat, drag-reorderable focuses.
+              ReorderableListView<Priority>(
+                list: visible,
+                shrinkWrap: true,
+                // Key on `id` (not the instance) so a row survives
+                // unread/active churn without remounting.
+                keyExtractor: (p) => ValueKey(p.id),
+                itemBuilder: (context, priority, reorderableIndex) =>
+                    PriorityWidget(
+                      key: ValueKey('focus-${priority.id}'),
+                      priority: priority,
+                      monochrome: monochrome,
+                      selected:
+                          !widget.everything &&
+                          widget.selected?.id == priority.id,
+                      selectedBorder: true,
+                      borderRadius: itemBorderRadius,
+                      textStyle: focusStyle(priority),
+                      unread: priority.unread ? true : null,
                       reorderableIndex: reorderableIndex,
                     ),
-                  ),
-                  onReorder: (int oldIndex, int newIndex) async {
-                    var previousIndex =
-                        newIndex + (newIndex < oldIndex ? -1 : 0);
-                    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+                onReorder: (oldIndex, newIndex) =>
+                    _onReorderFocus(visible, oldIndex, newIndex),
+              ),
 
-                    final currentPriority = widget.topPriorities[oldIndex];
-                    Priority? previous;
-                    if (previousIndex >= 0) {
-                      previous = widget.topPriorities[previousIndex];
-                    }
-                    Priority? next;
-                    if (nextIndex < widget.topPriorities.length) {
-                      next = widget.topPriorities[nextIndex];
-                    }
-
-                    await currentPriority
-                        .copyWith(
-                          topOrder: Value(
-                            Order.between(previous?.topOrder, next?.topOrder),
-                          ),
-                        )
-                        .save();
-                  },
+              if (truncated)
+                _ShowMoreItem(
+                  indentLevel: 0,
+                  textStyle: itemStyle,
+                  onTap: () => setState(() => _showAll = true),
                 ),
-                // Divider separates Top Priorities from the rest, with sm
-                // padding above and below.
+
+              // Fixed Inbox tile — the root focus, holding unfiled threads.
+              // Not reorderable, not archivable. Its title comes from the
+              // server projection ("Inbox" once apiVersion >= 4).
+              _FixedFocusTile(
+                accent: widget.root,
+                title: widget.root.title,
+                isSelected:
+                    !widget.everything && widget.selected?.id == widget.root.id,
+                command: ChangeCurrentPriority(widget.root),
+                menuCommand: ShowPriorityCommands(widget.root),
+                hasUnread: widget.root.unread,
+                borderRadius: itemBorderRadius,
+                textStyle: itemStyle,
+                monochrome: monochrome,
+              ),
+
+              // Fixed Everything tile — the unscoped feed across the Inbox and
+              // every focus. Rooted on the root with Everything mode on.
+              _FixedFocusTile(
+                accent: widget.root,
+                title: 'Everything',
+                isSelected: widget.everything,
+                command: ChangeCurrentPriority(widget.root, everything: true),
+                menuCommand: null,
+                hasUnread: false,
+                borderRadius: itemBorderRadius,
+                textStyle: itemStyle,
+                monochrome: monochrome,
+              ),
+
+              ListTile(
+                command: CommandWrapper(
+                  NewPriority(parent: widget.root),
+                  icon: Value(null),
+                  title: 'Add a focus',
+                ),
+                icon: PlotIcon.add,
+                iconOnly: true,
+                muted: true,
+                // Same hover treatment as the header icon buttons: no rounded
+                // background pill, just the icon/text shift.
+                highlightColor: monochrome ? const Color(0x00000000) : null,
+                borderRadius: monochrome ? null : itemBorderRadius,
+              ),
+
+              if (focuses.isEmpty)
                 Padding(
                   padding: EdgeInsets.symmetric(
-                    vertical: context.theme.spacing.sm,
+                    horizontal: context.contentPaddingH,
+                    vertical: context.theme.spacing.xl,
                   ),
-                  child: Container(
-                    height: 1,
-                    color: context.theme.colors.border,
+                  child: Text(
+                    'Focuses put your work in context. Add your roles, goals, and projects.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.theme.plotColors.veryMuted,
+                      fontSize: context.theme.typography.sm.fontSize,
+                    ),
                   ),
                 ),
-              ],
-
-              // All priorities — no header (treatment landing later).
-              ...() {
-                final allPriorities = widget.root.children;
-
-                return [
-                  everythingTile,
-                  ...buildReorderablePriorityItems(
-                    context,
-                    allPriorities,
-                    textStyle: itemStyle,
-                  ),
-                  ListTile(
-                    command: CommandWrapper(
-                      NewPriority(parent: widget.root),
-                      icon: Value(null),
-                      title: 'Add a priority',
-                    ),
-                    icon: PlotIcon.add,
-                    iconOnly: true,
-                    muted: true,
-                    // Same hover treatment as the header icon buttons: no
-                    // rounded background pill, just the icon/text shift.
-                    highlightColor: monochrome ? const Color(0x00000000) : null,
-                    borderRadius: monochrome ? null : itemBorderRadius,
-                  ),
-
-                  if (allPriorities.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: context.contentPaddingH,
-                        vertical: context.theme.spacing.xl,
-                      ),
-                      child: Text(
-                        'Priorities put your work in context. Add your roles, goals, and projects.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: context.theme.plotColors.veryMuted,
-                          fontSize: context.theme.typography.sm.fontSize,
-                        ),
-                      ),
-                    ),
-                ];
-              }(),
             ],
           ),
         );
@@ -549,78 +191,38 @@ class _PrioritiesListState extends State<PrioritiesList>
     );
   }
 
-  /// Toggles the manual expansion state of a priority. Used by the caret
-  /// affordance on priorities with children — taps on the rest of the row
-  /// always navigate.
-  void _toggleManualExpansion(Priority priority) {
-    final id = priority.id.toString();
-    final isExpanded = _expansionState[id] ?? false;
-    setState(() {
-      _manualExpansion[id] = !isExpanded;
-    });
-    _updateExpansionState();
-  }
-
-  /// Returns true if the priority or any of its descendants has unread activities
-  bool _hasDescendantUnread(Priority priority) {
-    if (priority.unread) return true;
-    return priority.descendants().any((p) => p.unread);
-  }
-
-  /// Returns the visible subset of children when truncating, or null if no truncation needed.
-  List<Priority>? _truncatedChildren(String parentId, List<Priority> children) {
-    if (children.length <= 5) return null;
-    if (_showAllChildren.contains(parentId)) return null;
-
-    final importantChildren = children
-        .where((c) => _hasDescendantUnread(c))
-        .toList();
-
-    // Case 1: All children are important — show top 4 by order
-    if (importantChildren.length == children.length) {
-      return children.take(4).toList();
+  /// The focuses to render: every focus when [_showAll] is set or the list is
+  /// short; otherwise the active/unread focuses always, filling the remaining
+  /// slots by order, with the rest collapsed behind "More" (preserving the
+  /// natural order).
+  List<Priority> _visibleFocuses(List<Priority> focuses) {
+    if (_showAll || focuses.length <= _truncateAt) return focuses;
+    final keep = <Priority>{};
+    for (final p in focuses) {
+      if (p.active || p.unread) keep.add(p);
     }
-
-    // Case 2: 5+ important — show all important
-    if (importantChildren.length >= 5) {
-      // Return in natural (original) order
-      final visible = importantChildren.toSet();
-      return children.where((c) => visible.contains(c)).toList();
+    for (final p in focuses) {
+      if (keep.length >= _truncateAt) break;
+      keep.add(p);
     }
-
-    // Case 3: <5 important — fill 4 slots, important first then top-by-order
-    final slotsForOrdered = 4 - importantChildren.length;
-    final importantSet = importantChildren.toSet();
-    final topByOrder = children
-        .where((c) => !importantSet.contains(c))
-        .take(slotsForOrdered)
-        .toList();
-    final visible = <Priority>{...topByOrder, ...importantChildren};
-    // Return in natural (original) order
-    return children.where((c) => visible.contains(c)).toList();
+    return focuses.where(keep.contains).toList();
   }
 
-  Future<void> _onReorderPriority(
+  Future<void> _onReorderFocus(
     List<Priority> peers,
     int oldIndex,
     int newIndex,
   ) async {
-    // Calculate adjacent items before removal
-    var previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
-    var nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
+    final previousIndex = newIndex + (newIndex < oldIndex ? -1 : 0);
+    final nextIndex = newIndex + (newIndex < oldIndex ? 0 : 1);
 
-    final currentPriority = peers[oldIndex];
+    final current = peers[oldIndex];
     Priority? previous;
-    if (previousIndex >= 0) {
-      previous = peers[previousIndex];
-    }
+    if (previousIndex >= 0) previous = peers[previousIndex];
     Priority? next;
-    if (nextIndex < peers.length) {
-      next = peers[nextIndex];
-    }
+    if (nextIndex < peers.length) next = peers[nextIndex];
 
-    // Update order to position between previous and next
-    await currentPriority
+    await current
         .copyWith(
           order: Order.between(previous?.order, next?.order),
           pending: const Value(2),
@@ -629,58 +231,72 @@ class _PrioritiesListState extends State<PrioritiesList>
   }
 }
 
-class _EverythingTile extends StatefulWidget {
-  final Priority root;
+/// A fixed (non-reorderable) sidebar tile for the Inbox and Everything views.
+/// Mirrors [PriorityWidget]'s left-panel treatment — a leading notification
+/// dot in [accent]'s colour, monochrome at rest — but without the reorder
+/// handle, weekly-total chip, or expansion affordances.
+class _FixedFocusTile extends StatefulWidget {
+  /// The focus whose colour the tile borrows (the root for both Inbox and
+  /// Everything) and whose menu [menuCommand] targets.
+  final Priority accent;
+  final String title;
   final bool isSelected;
+
+  /// Run on tap.
+  final Command command;
+
+  /// Optional hover/long-press menu. Null for the synthetic Everything view.
+  final Command? menuCommand;
+  final bool hasUnread;
   final BorderRadius? borderRadius;
   final TextStyle textStyle;
   final bool monochrome;
-  final bool hasUnread;
 
-  const _EverythingTile({
-    required this.root,
+  const _FixedFocusTile({
+    required this.accent,
+    required this.title,
     required this.isSelected,
+    required this.command,
+    required this.menuCommand,
+    required this.hasUnread,
     required this.borderRadius,
     required this.textStyle,
     required this.monochrome,
-    required this.hasUnread,
   });
 
   @override
-  State<_EverythingTile> createState() => _EverythingTileState();
+  State<_FixedFocusTile> createState() => _FixedFocusTileState();
 }
 
-class _EverythingTileState extends State<_EverythingTile> {
+class _FixedFocusTileState extends State<_FixedFocusTile> {
   bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
     final isActive = widget.isSelected || _isHovered;
-    final rootAccent = context.colour.colours.fromTheme(
-      widget.root.displayColor,
+    final accent = context.colour.colours.fromTheme(
+      widget.accent.displayColor,
       muted: !widget.monochrome && !widget.hasUnread,
     );
-    final rootAccentBg = widget.monochrome
-        ? context.colour.colours.backgroundFromTheme(widget.root.displayColor)
+    final accentBg = widget.monochrome
+        ? context.colour.colours.backgroundFromTheme(widget.accent.displayColor)
         : null;
-    // Match PriorityWidget: at rest, the body text keeps the priority's own
-    // colour. Only the leading dot dims to the resting tone in monochrome
-    // mode, so the root tile reads in line with its siblings.
     final restingColor = context.colour.muted;
-    final textColor = rootAccent;
     final indicatorColor = widget.monochrome && !isActive
         ? restingColor
-        : context.colour.colours.fromTheme(widget.root.displayColor);
+        : context.colour.colours.fromTheme(widget.accent.displayColor);
+
+    final menuCommand = widget.menuCommand;
 
     final listTile = ListTile(
-      title: widget.root.title,
-      command: ChangeCurrentPriority(widget.root),
+      title: widget.title,
+      command: widget.command,
       // Menu opens via long-left swipe on touch (see wrapper below); long-
-      // press is reserved for reorder drag.
+      // press is reserved for reorder drag elsewhere.
       longPressCommand: null,
       selected: widget.isSelected,
-      selectedColor: rootAccentBg,
-      highlightColor: rootAccentBg,
+      selectedColor: accentBg,
+      highlightColor: accentBg,
       borderRadius: widget.borderRadius,
       onHover: (hovered) {
         if (mounted && _isHovered != hovered) {
@@ -695,62 +311,38 @@ class _EverythingTileState extends State<_EverythingTile> {
         ),
         child: PriorityNotification(
           unread: widget.hasUnread,
-          color: widget.root.displayColor,
-          // Keep the monochrome resting tone for the empty leading slot,
-          // but let the unread dot render in the priority's own color.
+          color: widget.accent.displayColor,
           colorOverride: widget.monochrome && !widget.hasUnread
               ? indicatorColor
               : null,
         ),
       ),
-      textStyle: widget.textStyle.copyWith(color: textColor),
-      trailingBuilder: (isHovered, hasFocus) {
-        final button = Padding(
-          padding: EdgeInsets.only(right: context.theme.spacing.sm),
-          child: Button.icon(ShowPriorityCommands(widget.root)),
-        );
-        if (isHovered || hasFocus) return button;
-        return Visibility(
-          visible: false,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: button,
-        );
-      },
+      textStyle: widget.textStyle.copyWith(color: accent),
+      trailingBuilder: menuCommand == null
+          ? null
+          : (isHovered, hasFocus) {
+              final button = Padding(
+                padding: EdgeInsets.only(right: context.theme.spacing.sm),
+                child: Button.icon(menuCommand),
+              );
+              if (isHovered || hasFocus) return button;
+              return Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: button,
+              );
+            },
     );
 
-    if (hasPhysicalKeyboard()) return listTile;
+    if (menuCommand == null || hasPhysicalKeyboard()) return listTile;
 
-    // Touch: open the priority menu via a long-left swipe.
+    // Touch: open the menu via a long-left swipe.
     return Swipeable(
-      key: ValueKey(widget.root.id),
-      endLongCommand: ShowPriorityCommands(widget.root),
+      key: ValueKey('fixed-${widget.title}'),
+      endLongCommand: menuCommand,
       child: listTile,
-    );
-  }
-}
-
-class _AnimatedPriorityChildren extends StatelessWidget {
-  final AnimationController controller;
-  final List<Widget> children;
-
-  const _AnimatedPriorityChildren({
-    required this.controller,
-    required this.children,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizeTransition(
-      sizeFactor: CurvedAnimation(parent: controller, curve: Curves.easeInOut),
-      alignment: const Alignment(-1.0, -1.0),
-      child: ClipRect(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
-        ),
-      ),
     );
   }
 }
@@ -798,7 +390,7 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
                     right: 0,
                   ),
                   child: Text(
-                    'More\u2026',
+                    'More…',
                     style: (widget.textStyle ?? context.theme.typography.sm)
                         .copyWith(
                           color: _isHovered
