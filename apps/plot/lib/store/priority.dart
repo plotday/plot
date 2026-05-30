@@ -22,6 +22,11 @@ class Priorities extends Table
       .map(const DurationConverter())();
   IntColumn get color =>
       integer().nullable().map(const ThemeColorConverter())();
+
+  /// The focus's own icon: a curated key string (see `PlotIcon.focusIcons`),
+  /// resolved to a glyph in the widget layer via `PlotIcon.focusIcon`. Null
+  /// renders the default focus icon.
+  TextColumn get icon => text().nullable()();
   TextColumn get key => text().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
@@ -1379,6 +1384,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Order? order,
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
+    Value<String?> icon = const Value.absent(),
     Value<String?> key = const Value.absent(),
     bool? root,
     Priority? parent,
@@ -1426,6 +1432,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         order: order,
         pomodoro: pomodoro,
         color: color,
+        icon: icon,
         key: key,
         root: root,
         teamId: teamId,

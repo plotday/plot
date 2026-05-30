@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class PlotIcon {
@@ -16,8 +17,56 @@ class PlotIcon {
   static const edit = FontAwesomeIcons.pen;
   static const remove = FontAwesomeIcons.minus;
   static const startOfDay = FontAwesomeIcons.sunHaze;
-  static const priority = FontAwesomeIcons.bullseyeArrow;
-  static const priorities = FontAwesomeIcons.listTree;
+  // Focuses (formerly nested "priorities") use the bullseye-pointer icon
+  // consistently. `priorities` is the flat-list nav icon (no longer a tree).
+  static const priority = FontAwesomeIcons.bullseyePointer;
+  static const priorities = FontAwesomeIcons.list;
+
+  /// The default icon for a focus when none is chosen.
+  static const focusDefault = FontAwesomeIcons.bullseyePointer;
+
+  /// Curated set of icons a user can pick for a focus, keyed by a stable
+  /// string stored in `priority.icon`. The key (not the glyph) is persisted,
+  /// so renaming a glyph never changes stored data. Resolve with [focusIcon].
+  static const Map<String, IconData> focusIcons = {
+    'bullseyePointer': FontAwesomeIcons.bullseyePointer,
+    'briefcase': FontAwesomeIcons.briefcase,
+    'userGroup': FontAwesomeIcons.userGroup,
+    'bookOpen': FontAwesomeIcons.bookOpen,
+    'userPlus': FontAwesomeIcons.userPlus,
+    'gear': FontAwesomeIcons.gear,
+    'piggyBank': FontAwesomeIcons.piggyBank,
+    'house': FontAwesomeIcons.house,
+    'user': FontAwesomeIcons.user,
+    'code': FontAwesomeIcons.code,
+    'rocket': FontAwesomeIcons.rocket,
+    'flask': FontAwesomeIcons.flask,
+    'paintbrush': FontAwesomeIcons.paintbrush,
+    'penNib': FontAwesomeIcons.penNib,
+    'chartLine': FontAwesomeIcons.chartLine,
+    'calendarDays': FontAwesomeIcons.calendarDays,
+    'listCheck': FontAwesomeIcons.listCheck,
+    'lightbulb': FontAwesomeIcons.lightbulb,
+    'heart': FontAwesomeIcons.heart,
+    'dumbbell': FontAwesomeIcons.dumbbell,
+    'graduationCap': FontAwesomeIcons.graduationCap,
+    'plane': FontAwesomeIcons.plane,
+    'cartShopping': FontAwesomeIcons.cartShopping,
+    'handshake': FontAwesomeIcons.handshake,
+    'scaleBalanced': FontAwesomeIcons.scaleBalanced,
+    'building': FontAwesomeIcons.building,
+    'bullhorn': FontAwesomeIcons.bullhorn,
+    'seedling': FontAwesomeIcons.seedling,
+    'music': FontAwesomeIcons.music,
+    'camera': FontAwesomeIcons.camera,
+    'globe': FontAwesomeIcons.globe,
+    'shield': FontAwesomeIcons.shield,
+  };
+
+  /// Resolves a stored focus icon key to its glyph, falling back to the
+  /// default focus icon for null/unknown keys.
+  static IconData focusIcon(String? key) =>
+      focusIcons[key] ?? focusDefault;
   static const activity = FontAwesomeIcons.listCheck;
   static const open = FontAwesomeIcons.arrowRight;
   static const menu = FontAwesomeIcons.ellipsisVertical;
