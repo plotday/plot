@@ -13,28 +13,43 @@ class PrioritySelector extends StatelessWidget {
   final Priority? selected;
   final void Function(Priority)? onSelect;
 
-  /// Optional caret rendered after the leaf priority — forwarded to the
-  /// underlying [PriorityLabel] so the selector can host a scope toggle
-  /// or other affordance without an extra button.
+  /// Optional caret rendered after the focus label — a separate tap target
+  /// (see [onLeafTap]) so the selector can host a scope toggle or other
+  /// affordance without an extra button.
   final IconData? leafTrailingIcon;
 
-  /// Tap callback for the combined leaf + [leafTrailingIcon] hit area.
+  /// Tap callback for the [leafTrailingIcon] hit area.
   final VoidCallback? onLeafTap;
-
-  void _onSelect(PriorityId id) async {
-    if (onSelect == null) return;
-    final priority = await Priority.getOne(id);
-    onSelect!(priority);
-  }
 
   @override
   Widget build(BuildContext context) {
-    return PriorityLabel(
-      priority: selected,
-      onSelect: _onSelect,
+    final priority = selected;
+    // Focuses are flat — tapping the label selects this focus.
+    final label = FocusLabel(
+      priority: priority,
       boldLeaf: true,
-      leafTrailingIcon: leafTrailingIcon,
-      onLeafTap: onLeafTap,
+      onLeafTap: (priority != null && onSelect != null)
+          ? () => onSelect!(priority)
+          : null,
+    );
+
+    final caret = leafTrailingIcon;
+    if (caret == null) return label;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(child: label),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onLeafTap,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Icon(caret, size: 10),
+          ),
+        ),
+      ],
     );
   }
 }

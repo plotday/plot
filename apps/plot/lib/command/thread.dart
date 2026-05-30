@@ -811,7 +811,7 @@ class EditThread extends ShowForm {
                           .where((p) => p.matchesSearch(search))
                           .toList();
                     },
-                    labelBuilder: (p) => PriorityLabel(priority: p),
+                    labelBuilder: (p) => FocusLabel(priority: p),
                     titleBuilder: (p) => p.ancestorsLabel() != null
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,

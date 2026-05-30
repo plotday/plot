@@ -1481,14 +1481,12 @@ class _PriorityHoverAreaState extends State<_PriorityHoverArea> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.run(command),
-          child: PriorityLabel(
+          child: FocusLabel(
             priority: widget.activity.priority,
-            context: widget.priorityContext,
             color: widget.headerFg,
             fontSize: widget.fontSize,
             height: 1,
             muted: widget.headerFg == null && !_hovered,
-            onSelect: (_) => context.run(command),
           ),
         ),
       ),

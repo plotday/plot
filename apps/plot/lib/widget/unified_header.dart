@@ -645,7 +645,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             }
             if (!layoutState.multiPanel) {
               return withTrackingPill(
-                PriorityLabel(
+                FocusLabel(
                   priority: state.context,
                   boldLeaf: true,
                   leafTrailingIcon: scopeCaret,

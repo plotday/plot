@@ -70,7 +70,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
         return [SelectGroup(title: null, items: priorities)];
       },
       itemBuilder: (priority, _) =>
-          ListTile(body: PriorityLabel(priority: priority)),
+          ListTile(body: FocusLabel(priority: priority)),
       selectedValue: _selectedPriority,
       prompt: 'Priority',
       onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),
@@ -130,7 +130,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
                       vertical: 8,
                     ),
                     child: Center(
-                      child: PriorityLabel(priority: _selectedPriority),
+                      child: FocusLabel(priority: _selectedPriority),
                     ),
                   ),
                 ),

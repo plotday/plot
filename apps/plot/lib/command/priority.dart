@@ -51,7 +51,7 @@ abstract class PriorityCommand extends Command {
   @override
   Widget? buildBody(BuildContext context) {
     if (priority == null) return null;
-    return PriorityLabel(priority: priority!);
+    return FocusLabel(priority: priority!);
   }
 }
 
@@ -462,7 +462,7 @@ Future<FormData> _buildNewPriorityForm(
         return p.matchesSearch(search);
       }).toList();
     },
-    labelBuilder: (p) => PriorityLabel(priority: p),
+    labelBuilder: (p) => FocusLabel(priority: p),
     titleBuilder: (p) => p.ancestorsLabel() != null
         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
         : p.title,
@@ -695,7 +695,7 @@ class EditPriorityCommand extends ShowForm {
                 return true;
               }).toList();
             },
-            labelBuilder: (item) => PriorityLabel(priority: item),
+            labelBuilder: (item) => FocusLabel(priority: item),
             titleBuilder: (item) => item.ancestorsLabel() != null
                 ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
                 : item.title,

@@ -71,7 +71,7 @@ class PriorityComposeField extends StatelessWidget {
               const Text('Auto-organize'),
             ],
           )
-        : PriorityLabel(priority: currentPriority, fontSize: fontSize);
+        : FocusLabel(priority: currentPriority, fontSize: fontSize);
 
     return ComposeSelectField(
       tooltip: 'Priority',

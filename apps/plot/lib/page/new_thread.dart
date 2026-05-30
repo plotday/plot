@@ -388,7 +388,7 @@ class NewThreadPageState extends State<NewThreadPage> {
           title: 'Auto-organize',
         ),
         PickedPriorityChoice(:final priority) => ListTile(
-          body: PriorityLabel(priority: priority),
+          body: FocusLabel(priority: priority),
         ),
       },
       selectedValue: isAuto

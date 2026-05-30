@@ -366,9 +366,9 @@ class _ExpandCaretButtonState extends State<_ExpandCaretButton> {
 /// background where the muted theme colors lose contrast).
 ///
 /// Use this in all priority selection UIs:
-/// - In SelectModal: `itemBuilder: (p) => ListTile(body: PriorityLabel(priority: p))`
-/// - In FormSelect: `labelBuilder: (p) => PriorityLabel(priority: p)`
-/// - For display: `PriorityLabel(priority: priority, muted: true)` for subdued appearance
+/// - In SelectModal: `itemBuilder: (p) => ListTile(body: FocusLabel(priority: p))`
+/// - In FormSelect: `labelBuilder: (p) => FocusLabel(priority: p)`
+/// - For display: `FocusLabel(priority: priority, muted: true)` for subdued appearance
 /// A flat label for a focus: its icon, in its colour, followed by its title.
 ///
 /// Focuses are flat — there is no ancestry chain. (At apiVersion >= 4 the
