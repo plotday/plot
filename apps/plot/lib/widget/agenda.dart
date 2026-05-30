@@ -1,4 +1,7 @@
 import 'dart:async';
+// The app re-exports its own `Path` (via store.dart) which shadows
+// `dart:ui`'s `Path` inside CustomPainters — use the `ui.` prefix there.
+import 'dart:ui' as ui;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -753,9 +756,27 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           gutter,
+          // Title area: a quiet wavy squiggle marks the empty free-time
+          // span where an event/focus title would sit. It fills the slot
+          // between the gutter and the (constant-width) trailing duration,
+          // so it never reflows when the duration swaps to the + on hover.
           Expanded(
-            child: Align(alignment: Alignment.centerRight, child: trailing),
+            child: Padding(
+              padding: EdgeInsets.only(right: spacing.sm),
+              child: SizedBox(
+                height: rowHeight,
+                child: CustomPaint(
+                  painter: _SquigglePainter(
+                    // Half the muted tone's opacity — a faint, easily
+                    // ignored marker rather than a strong rule.
+                    color: veryMuted.withValues(alpha: veryMuted.a * 0.5),
+                  ),
+                  size: Size.infinite,
+                ),
+              ),
+            ),
           ),
+          trailing,
         ],
       ),
     );
@@ -779,6 +800,50 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
     }
     return result;
   }
+}
+
+/// Paints a gentle horizontal wave across its width — the empty-title
+/// marker for [_GapHeaderRow]. Drawn as a run of alternating quadratic
+/// half-waves (each peaks at ±[_amplitude] over its midpoint) so the line
+/// reads as a smooth squiggle. Uses `ui.Path` because the app's own `Path`
+/// (re-exported via store.dart) shadows `dart:ui`'s here.
+class _SquigglePainter extends CustomPainter {
+  const _SquigglePainter({required this.color});
+
+  final Color color;
+
+  static const double _wavelength = 16;
+  static const double _amplitude = 2;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final midY = size.height / 2;
+    final half = _wavelength / 2;
+    final path = ui.Path()..moveTo(0, midY);
+    var x = 0.0;
+    var up = true;
+    while (x < size.width) {
+      final endX = (x + half) > size.width ? size.width : x + half;
+      final ctrlX = (x + endX) / 2;
+      final ctrlY = midY + (up ? -_amplitude : _amplitude) * 2;
+      path.quadraticBezierTo(ctrlX, ctrlY, endX, midY);
+      x = endX;
+      up = !up;
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SquigglePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// Combined block header: block priority's breadcrumb in the main area,
@@ -1189,7 +1254,11 @@ class _BlockHeaderState extends State<_BlockHeader> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (block is PriorityBlock) ...[
-                          Icon(PlotIcon.priority, size: secondarySize, color: fg),
+                          Icon(
+                            PlotIcon.priority,
+                            size: secondarySize,
+                            color: fg,
+                          ),
                           SizedBox(width: spacing.sm),
                         ],
                         Flexible(
@@ -1741,10 +1810,7 @@ class _EventSecondRow extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) ...[
-                SizedBox(width: gap),
-                trailing!,
-              ],
+              if (trailing != null) ...[SizedBox(width: gap), trailing!],
             ],
           ),
         );
