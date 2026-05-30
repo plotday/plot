@@ -24,7 +24,7 @@ export async function search(
   }
 
   const scopePriorityId =
-    options?.priorityId ?? (await plot.getRootPriorityId());
+    options?.focusId ?? (await plot.getRootPriorityId());
   await plot.validatePriorityAccess(scopePriorityId);
 
   const limit = Math.min(options?.limit ?? SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);
@@ -121,7 +121,7 @@ export async function search(
           type: 'note',
           id: r.result_id,
           thread: { id: r.thread_id, title: r.thread_title },
-          priority: { id: r.priority_id, title: r.priority_title },
+          focus: { id: r.priority_id, title: r.priority_title },
           content: r.content,
           similarity: r.similarity,
         }
@@ -129,7 +129,7 @@ export async function search(
           type: 'link',
           id: r.result_id,
           thread: { id: r.thread_id, title: r.thread_title },
-          priority: { id: r.priority_id, title: r.priority_title },
+          focus: { id: r.priority_id, title: r.priority_title },
           title: r.title,
           sourceUrl: r.source_url,
           content: r.content,

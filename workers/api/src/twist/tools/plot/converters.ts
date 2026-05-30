@@ -9,7 +9,7 @@ import {
   type ActorId,
   ActorType,
   type Action,
-  type Priority,
+  type Focus,
   type Tags,
   type Uuid,
 } from "@plotday/twister/plot";
@@ -31,12 +31,13 @@ export async function fromDbThread(
     accessContacts: await resolveAccessContacts(plot, dbThread.contacts),
     archived: dbThread.archived_at !== null,
     type: (dbThread.icon as ThreadType) ?? null,
-    priority: {
+    focus: {
       id: (dbThread as any).priority_id as Uuid ?? ("" as Uuid),
       title: dbThread.title ?? "Untitled",
       archived: false,
       key: null,
       color: null,
+      icon: null,
     },
     tags: (dbThread.tags as Tags) || {},
     reactions: {},
@@ -156,13 +157,15 @@ export function fromDbPriority(
     archived_at: Date | string | null;
     key: string | null;
     color: number | null;
+    icon?: string | null;
   }
-): Priority {
+): Focus {
   return {
     id: dbPriority.id as Uuid,
     title: dbPriority.title,
     archived: dbPriority.archived_at !== null,
     key: dbPriority.key,
     color: dbPriority.color,
+    icon: dbPriority.icon ?? null,
   };
 }

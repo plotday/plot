@@ -39,7 +39,7 @@ import {
   type LinkFilter,
   type SearchResult,
   type SearchOptions,
-  PriorityAccess,
+  FocusAccess,
 } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
@@ -208,9 +208,9 @@ export class Plot extends Tool implements IPlot {
 
     if (options?.priority?.access !== undefined) {
       let flags = [] as PermissionFlag[];
-      if (options.priority.access === PriorityAccess.Create) {
+      if (options.priority.access === FocusAccess.Create) {
         flags = ["write"];
-      } else if (options.priority.access === PriorityAccess.Full) {
+      } else if (options.priority.access === FocusAccess.Full) {
         flags = ["read", "write", "update"];
       }
       perms.push({
@@ -1104,7 +1104,7 @@ export class Plot extends Tool implements IPlot {
    * are workspace-level, so they can touch any priority owned by their
    * user (and only those priorities).
    */
-  async validatePriorityAccess(priorityId: string): Promise<void> {
+  async validateFocusAccess(priorityId: string): Promise<void> {
     const userId = await this.getUserId();
     const data = await this.db
       .selectFrom("priority")
@@ -1146,28 +1146,28 @@ export class Plot extends Tool implements IPlot {
    * Checks if the twist has the required priority access permission.
    * @throws Error if permission is not granted
    */
-  requirePriorityAccess(required: PriorityAccess): void {
+  requireFocusAccess(required: FocusAccess): void {
     const granted = this.plotOptions?.priority?.access;
     if (granted === undefined) {
       throw new Error(
-        `Priority access not requested. Required: ${PriorityAccess[required]}`
+        `Priority access not requested. Required: ${FocusAccess[required]}`
       );
     }
 
     // Check if granted permission is sufficient
     // Full includes Create permissions
     if (
-      required === PriorityAccess.Create &&
-      granted >= PriorityAccess.Create
+      required === FocusAccess.Create &&
+      granted >= FocusAccess.Create
     ) {
       return;
     }
-    if (required === PriorityAccess.Full && granted >= PriorityAccess.Full) {
+    if (required === FocusAccess.Full && granted >= FocusAccess.Full) {
       return;
     }
 
     throw new Error(
-      `Insufficient priority access. Required: ${PriorityAccess[required]}, Granted: ${PriorityAccess[granted]}`
+      `Insufficient priority access. Required: ${FocusAccess[required]}, Granted: ${FocusAccess[granted]}`
     );
   }
 
