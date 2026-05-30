@@ -13,7 +13,7 @@ CREATE OR REPLACE VIEW "user"."priority_unread" --
 AS
 SELECT
     tp.user_id,
-    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    "user".effective_priority_id(tp.priority_id, tp.user_id) AS priority_id,
     TRUE AS unread,
     MAX(ts.updated_at) AS updated_at
 FROM
@@ -36,7 +36,7 @@ FROM
     -- Effective priority for the team-firewall check. Case-A pending
     -- rows surface at root via COALESCE, and root priorities are
     -- user-owned (team_id IS NULL) so the team check passes trivially.
-    JOIN priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+    JOIN priority p ON p.id = "user".effective_priority_id(tp.priority_id, tp.user_id)
         AND (
             p.team_id IS NULL
             OR EXISTS (
@@ -54,4 +54,4 @@ FROM
         AND (ts.importance >= 50 OR ts.urgent = TRUE)
 GROUP BY
     tp.user_id,
-    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id));
+    "user".effective_priority_id(tp.priority_id, tp.user_id);

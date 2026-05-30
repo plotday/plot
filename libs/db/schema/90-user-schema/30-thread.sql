@@ -50,7 +50,7 @@ SELECT
     -- Pending case-A rows (priority_id IS NULL, past the visibility
     -- window) surface at the user's root via COALESCE. The visibility
     -- filter below keeps fresh pending rows hidden entirely.
-    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    "user".effective_priority_id(tp.priority_id, tp.user_id) AS priority_id,
     upe.path AS priority_path,
     a.draft,
     a.contacts,
@@ -190,13 +190,13 @@ FROM
     JOIN thread_priority tp ON tp.thread_id = a.id
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
-        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+        AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
     -- Effective priority join: case-A pending rows (priority_id NULL)
     -- fall back to the user's root priority for the team-firewall check
     -- below. Root priorities are user-owned, so team_id IS NULL and the
     -- check trivially passes — which matches the COALESCE-to-root
     -- behavior of the priority_id column the view exposes.
-    JOIN priority p ON p.id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+    JOIN priority p ON p.id = "user".effective_priority_id(tp.priority_id, tp.user_id)
     LEFT JOIN thread_state ts ON ts.user_id = tp.user_id
         AND ts.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
@@ -267,7 +267,7 @@ SELECT
     tp.seq,
     a.updated_by,
     tp.revoked_at AS archived_at,
-    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id)) AS priority_id,
+    "user".effective_priority_id(tp.priority_id, tp.user_id) AS priority_id,
     upe.path AS priority_path,
     a.draft,
     CAST(ARRAY[]::uuid[] AS uuid[]) AS contacts,
@@ -300,7 +300,7 @@ FROM
     JOIN thread_priority tp ON tp.thread_id = a.id
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
-        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+        AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
 WHERE
     tp.revoked_at IS NOT NULL;
 

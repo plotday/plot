@@ -34,7 +34,7 @@ SELECT
     l.source_url,
     l.channel_id,
     l.logo,
-    COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id), l.priority_id) AS priority_id,
+    COALESCE("user".effective_priority_id(tp.priority_id, tp.user_id), l.priority_id) AS priority_id,
     l.merged_from_thread_id,
     COALESCE(upe.path, pp.path) AS priority_path
 FROM
@@ -61,7 +61,7 @@ FROM
         AND (l.twist_id IS NULL OR ti.owner_id = tp.user_id)
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
-        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id))
+        AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
     -- Threadless links: use link's own priority_id
     LEFT JOIN priority pp ON pp.id = l.priority_id AND l.thread_id IS NULL
     LEFT JOIN priority p ON p.id = l.priority_id AND l.thread_id IS NULL

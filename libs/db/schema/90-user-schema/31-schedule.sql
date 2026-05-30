@@ -85,4 +85,4 @@ FROM
     -- Get priority path from the user's filing (case-A → root via COALESCE)
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
-        AND upe.priority_id = COALESCE(tp.priority_id, "user".root_priority_id(tp.user_id));
+        AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id);

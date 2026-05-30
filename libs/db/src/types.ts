@@ -2265,6 +2265,67 @@ export type Database = {
           },
         ]
       }
+      thread_priority_negative: {
+        Row: {
+          created_at: string
+          priority_id: string
+          source: string
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          priority_id: string
+          source: string
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          priority_id?: string
+          source?: string
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_priority_negative_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_negative_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_negative_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_negative_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_negative_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_negative_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       thread_reaction: {
         Row: {
           actor_id: string
@@ -5677,13 +5738,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5778,6 +5839,10 @@ export type Database = {
       delete_thread_read: {
         Args: { p_thread_id: string; user_id: string }
         Returns: undefined
+      }
+      effective_priority_id: {
+        Args: { p_priority_id: string; p_user_id: string }
+        Returns: string
       }
       find_mute_candidates: {
         Args: { p_seed_thread_id: string; p_user_id: string }
