@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 347;
+  int get schemaVersion => 348;
 
   @override
   MigrationStrategy get migration {
@@ -2473,7 +2473,7 @@ class Store extends _$Store {
         // twist_instances (v302/v307), groups (v308), or threads.topic
         // (v308) triggers a rebuild alongside priorities drift.
         const probes = [
-          'SELECT id, archived_at, root, created_at FROM priorities LIMIT 0',
+          'SELECT id, archived_at, root, created_at, icon FROM priorities LIMIT 0',
           'SELECT id, updated_at, multiple_instances, is_builtin FROM twist_instances LIMIT 0',
           'SELECT id, updated_at FROM groups LIMIT 0',
           'SELECT id, topic, groups FROM threads LIMIT 0',
@@ -3740,10 +3740,27 @@ class Store extends _$Store {
       // blocks; only the early-notifications half remains. TableMigration
       // rebuilds the table keeping only the columns Drift still knows
       // about, so the respond_* columns disappear.
-      await m.alterTable(TableMigration(priorities));
+      //
+      // `icon` is declared as a new column: it was added to the Dart schema
+      // after this step shipped, so it doesn't exist in pre-347 databases.
+      // Without this, the rebuild's INSERT...SELECT would copy a nonexistent
+      // `icon` and throw, forcing a full reset. Listing it here excludes it
+      // from the copy (it gets its NULL default instead).
+      await m.alterTable(
+        TableMigration(priorities, newColumns: [priorities.icon]),
+      );
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priorities'",
       );
+    }
+    if (from < 348) {
+      // The focus icon column was added to the priorities schema (focus A7.1)
+      // without a migration or version bump, so databases already at 347 never
+      // gained the column and priority queries crashed with
+      // "no such column: base.icon". Add it for them. `_safeAddColumn` ignores
+      // the duplicate-column error from clients that upgraded through the
+      // amended `from < 347` rebuild above, which already creates the column.
+      await _safeAddColumn(m, priorities, priorities.icon);
     }
   }
 
