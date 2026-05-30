@@ -3211,13 +3211,7 @@ SELECT
   /// but with the unified-feed cursor shape — see [_watchAllTabIds].
   static Stream<({
     List<Thread> threads,
-    ({
-      int unread,
-      int urgent,
-      int importance,
-      String activityAt,
-      ThreadId id,
-    })? tailCursor,
+    ({String activityAt, ThreadId id})? tailCursor,
     bool saturated,
   })> watchAllTabHead({
     PriorityId? priorityId,
@@ -3261,13 +3255,7 @@ SELECT
       final last = idRows.last;
       return (
         threads: threads,
-        tailCursor: (
-          unread: last.unread,
-          urgent: last.urgent,
-          importance: last.importance,
-          activityAt: last.activityAt,
-          id: last.id,
-        ),
+        tailCursor: (activityAt: last.activityAt, id: last.id),
         saturated: idRows.length >= limit,
       );
     });
@@ -3276,13 +3264,7 @@ SELECT
   /// Page result for the All tab's cursor pagination.
   static Future<({
     List<Thread> threads,
-    ({
-      int unread,
-      int urgent,
-      int importance,
-      String activityAt,
-      ThreadId id,
-    })? nextCursor,
+    ({String activityAt, ThreadId id})? nextCursor,
     bool saturated,
   })> fetchAllTabPage({
     PriorityId? priorityId,
@@ -3294,13 +3276,7 @@ SELECT
     List<Reaction>? reactionFilter,
     List<String>? iconFilter,
     required int limit,
-    ({
-      int unread,
-      int urgent,
-      int importance,
-      String activityAt,
-      ThreadId id,
-    })? after,
+    ({String activityAt, ThreadId id})? after,
   }) async {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final idRows = await _watchAllTabIds(
@@ -3334,30 +3310,21 @@ SELECT
     final last = idRows.last;
     return (
       threads: threads,
-      nextCursor: (
-        unread: last.unread,
-        urgent: last.urgent,
-        importance: last.importance,
-        activityAt: last.activityAt,
-        id: last.id,
-      ),
+      nextCursor: (activityAt: last.activityAt, id: last.id),
       saturated: idRows.length >= limit,
     );
   }
 
-  /// Phase 1 of the All tab's query. Returns
-  /// `(id, unread, urgent, importance, activity_at)` per row for every
-  /// visible thread, ordered by
-  /// `unread DESC, urgent DESC, importance DESC, activity_at DESC, id DESC`.
-  /// The unread-first ordering ensures the head page always surfaces
-  /// unread threads (which cluster at the top of Doing in the client
-  /// builder) before any read thread, even when read threads have more
-  /// recent activity_at.
+  /// Phase 1 of the All tab's query. Returns `(id, activity_at)` per row for
+  /// every visible thread, ordered by `activity_at DESC, id DESC`.
+  ///
+  /// The flat feed (Everything / search / filter / icon) loads and sorts
+  /// purely by recency, exactly like the Done section's [_watchDoneIds] — read
+  /// state and importance do not lift a thread above a more recently-active
+  /// one. (The unread cluster's importance/urgent ordering lives in the
+  /// sectioned feeds' [watchUnreadHead], which this query never feeds.)
   static Stream<List<({
     ThreadId id,
-    int unread,
-    int urgent,
-    int importance,
     String activityAt,
   })>> _watchAllTabIds({
     PriorityId? priorityId,
@@ -3371,33 +3338,15 @@ SELECT
     List<String>? iconFilter,
     required int limit,
     int offset = 0,
-    ({
-      int unread,
-      int urgent,
-      int importance,
-      String activityAt,
-      ThreadId id,
-    })? after,
+    ({String activityAt, ThreadId id})? after,
   }) {
     final variables = <Variable>[];
     final sqlBuf = StringBuffer();
     final now = Time.now();
 
-    // `urgent` and `importance` are sort keys for the *unread* cluster only —
-    // they decide which unread threads surface (and notify) first. The read
-    // tail (the Done section) must order purely by recency (`activity_at`), so
-    // gate both to `0` for read rows. Without this, a read thread with no
-    // importance score (e.g. a freshly self-authored thread, importance 0)
-    // sorts below the whole importance-50 band and falls outside the LIMITed
-    // load window, so it never reaches the top of Done despite being newest.
-    // The cursor (built from these aliases) stores the gated values, so
-    // pagination stays monotonic under the same ORDER BY.
     sqlBuf.writeln('''
 SELECT
   a.id AS id,
-  COALESCE(a.unread, 0) AS unread,
-  CASE WHEN COALESCE(a.unread, 0) = 1 THEN COALESCE(a.urgent, 0) ELSE 0 END AS urgent,
-  CASE WHEN COALESCE(a.unread, 0) = 1 THEN a.importance ELSE 0 END AS importance,
   MAX(MAX(
     COALESCE(a.last_note_source_created_at, l.source_created_at, a.created_at),
     COALESCE(a.bumped_at, '0000'),
@@ -3426,20 +3375,12 @@ SELECT
     sqlBuf.writeln('GROUP BY a.id');
 
     if (after != null) {
-      sqlBuf.writeln(
-        'HAVING (unread, urgent, importance, activity_at, a.id) < (?, ?, ?, ?, ?)',
-      );
-      variables.add(Variable.withInt(after.unread));
-      variables.add(Variable.withInt(after.urgent));
-      variables.add(Variable.withInt(after.importance));
+      sqlBuf.writeln('HAVING (activity_at, a.id) < (?, ?)');
       variables.add(Variable.withString(after.activityAt));
       variables.add(Variable.withBlob(after.id.toBytes()));
     }
 
-    sqlBuf.writeln(
-      'ORDER BY unread DESC, urgent DESC, importance DESC, '
-      'activity_at DESC, a.id DESC',
-    );
+    sqlBuf.writeln('ORDER BY activity_at DESC, a.id DESC');
     sqlBuf.writeln('LIMIT ? OFFSET ?');
     variables.add(Variable.withInt(limit));
     variables.add(Variable.withInt(offset));
@@ -3456,9 +3397,6 @@ SELECT
               .map(
                 (row) => (
                   id: Uuid.fromBytes(row.read<Uint8List>('id')),
-                  unread: row.read<int>('unread'),
-                  urgent: row.read<int>('urgent'),
-                  importance: row.read<int>('importance'),
                   activityAt: row.read<String>('activity_at'),
                 ),
               )

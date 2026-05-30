@@ -3,16 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:injector/injector.dart';
 import 'package:plot/store/store.dart';
 
-/// Integration tests for the unified activity feed's load order
-/// ([Thread.watchAllTabHead] → `_watchAllTabIds`) against an in-memory
+/// Integration tests for the unified ("Everything") activity feed's load
+/// order ([Thread.watchAllTabHead] → `_watchAllTabIds`) against an in-memory
 /// database.
 ///
-/// Invariant under test: importance (and urgent) drive the order of the
-/// *unread* cluster only. The read tail (the "Done" section) must load and
-/// sort purely by recency (`activity_at`). A freshly-authored read thread —
-/// which has no importance score — must therefore reach the top of Done
-/// ahead of older, higher-importance read threads, even though importance is
-/// a higher sort key in the SQL.
+/// Invariant under test: the flat feed (Everything / search / filter / icon)
+/// loads and sorts purely by recency (`activity_at`), exactly like the Done
+/// section of sectioned feeds. Read state and importance do NOT lift a thread
+/// above a more recently-active one. (The unread cluster's importance/urgent
+/// ordering lives in the sectioned feeds' `watchUnreadHead`, not here.)
 void main() {
   late Store store;
 
@@ -93,7 +92,7 @@ void main() {
     return result.threads.map((t) => t.id).toList();
   }
 
-  test('Done (read) threads load by recency, not importance', () async {
+  test('flat feed loads by recency, not importance', () async {
     await seedSelf();
     await insertPriority();
 
@@ -120,12 +119,41 @@ void main() {
     expect(
       iNew,
       lessThan(iOld),
-      reason: 'the newer read thread must sort above the older one in Done '
-          'regardless of importance',
+      reason: 'the newer thread must sort above the older one regardless of '
+          'importance',
     );
   });
 
-  test('unread threads still order by importance', () async {
+  test('an older unread thread does not float above a newer read thread',
+      () async {
+    await seedSelf();
+    await insertPriority();
+
+    // Newer, but already read.
+    final newRead = await insertThread(
+      unread: false,
+      importance: 0,
+      createdAt: DateTime(2026, 5, 30),
+    );
+    // Older, still unread and high-importance — under the old unread-first
+    // ordering this would wrongly sort to the top of Everything.
+    final oldUnread = await insertThread(
+      unread: true,
+      importance: 75,
+      createdAt: DateTime(2026, 5, 25),
+    );
+
+    final order = await feedOrder();
+
+    expect(
+      order.indexOf(newRead),
+      lessThan(order.indexOf(oldUnread)),
+      reason: 'Everything sorts purely by activity_at: the more recently '
+          'active thread leads, even if older threads are unread/important',
+    );
+  });
+
+  test('unread threads order by recency, not importance', () async {
     await seedSelf();
     await insertPriority();
 
@@ -145,9 +173,10 @@ void main() {
     final order = await feedOrder();
 
     expect(
-      order.indexOf(oldHigh),
-      lessThan(order.indexOf(newLow)),
-      reason: 'within the unread cluster, importance still wins over recency',
+      order.indexOf(newLow),
+      lessThan(order.indexOf(oldHigh)),
+      reason: 'in the flat feed, recency wins over importance even among '
+          'unread threads',
     );
   });
 }

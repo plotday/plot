@@ -601,12 +601,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// this: flat pages the all-tab query; sectioned pages the Done stream.
   bool _activeTabFlatMode = false;
 
-  /// Flat-mode (search/filter) head + append cursors for the single
-  /// unified query. Unused in sectioned mode.
-  ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
-  _allTabHeadTailCursor;
-  ({int unread, int urgent, int importance, String activityAt, ThreadId id})?
-  _allTabAppendCursor;
+  /// Flat-mode (Everything / search / filter / icon) head + append cursors
+  /// for the single unified query, ordered purely by `activity_at` like the
+  /// Done section. Unused in sectioned mode.
+  ({String activityAt, ThreadId id})? _allTabHeadTailCursor;
+  ({String activityAt, ThreadId id})? _allTabAppendCursor;
 
   /// Sectioned-mode Done head + append cursors. Only the Done section
   /// paginates on scroll; Unread and Active+Scheduled are loaded whole at a
@@ -795,7 +794,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     final iconFilter = state.iconFilter.isNotEmpty ? state.iconFilter : null;
     final search = isSearching ? state.search : null;
 
-    // Flat mode (search / filter / icon) renders one unsectioned list, so a
+    // Flat mode (Everything / search / filter / icon) renders one unsectioned
+    // list ordered purely by `activity_at` (like the Done section), so a
     // single query is both correct and cheaper. Sectioned mode runs three
     // independently-sorted streams so the bounded Unread / Active+Scheduled
     // sets always surface regardless of how deep the Done tail is — the bug
@@ -1117,26 +1117,44 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    if (tab == ActivityTab.catchUp) {
-      for (final entry in _overlay.entries) {
-        if (entry.value.expected != null && !byId.containsKey(entry.key)) {
-          patched.add(entry.value.expected!);
-        }
+    // `tab` is always [ActivityTab.unified] (the enum collapsed to one value;
+    // `catchUp`/`all`/… are aliases), so this branch always runs. Re-inject
+    // sticky overlay entries whose live row fell past the SQL LIMIT, then
+    // re-sort. The flat feed (Everything / search / filter / icon) must keep
+    // the pure-recency order its SQL produces; sectioned mode re-buckets
+    // afterward, so its within-bucket order follows the catch-up keys.
+    for (final entry in _overlay.entries) {
+      if (entry.value.expected != null && !byId.containsKey(entry.key)) {
+        patched.add(entry.value.expected!);
       }
-      patched.sort(_catchUpCompare);
     }
+    patched.sort(_activeTabFlatMode ? _flatFeedCompare : _catchUpCompare);
 
     return patched;
   }
 
-  /// Mirror of the SQL `ORDER BY unread DESC, urgent DESC,
-  /// importance DESC, activity_at DESC, id DESC` used by
-  /// [Thread.watchAllTabHead]. Used to position sticky-unread injections
-  /// (overlay entries whose live row fell past the SQL LIMIT) in the
-  /// merged list. The merger substitutes the live thread with the
-  /// overlay's `expected` thread, so the expected's cached fields
-  /// (including `unread = true` at sticky-creation time) keep the row
-  /// pinned in the unread cluster even after `unread` flips to false.
+  /// Mirror of the flat feed's SQL `ORDER BY activity_at DESC, id DESC`
+  /// ([Thread.watchAllTabHead]). Used to re-place overlay substitutions and
+  /// injections in the Everything / search / filter / icon feed so an
+  /// optimistic mutation keeps the pure-recency order the SQL produced —
+  /// importance and read state never reorder this feed.
+  int _flatFeedCompare(Thread a, Thread b) {
+    final atCmp = b.activityAt.compareTo(a.activityAt);
+    if (atCmp != 0) return atCmp;
+    return b.id.toString().compareTo(a.id.toString());
+  }
+
+  /// Mirror of the SQL `ORDER BY urgent DESC, importance DESC,
+  /// activity_at DESC, id DESC` used by [Thread.watchCatchUpHead], with a
+  /// leading `unread DESC` key for the sticky behavior below. Used in
+  /// **sectioned mode only** (see [_applyOverlay]) to position sticky-unread
+  /// injections (overlay entries whose live row fell past the SQL LIMIT) in
+  /// the merged list before it is re-bucketed into sections. The merger
+  /// substitutes the live thread with the overlay's `expected` thread, so the
+  /// expected's cached fields (including `unread = true` at sticky-creation
+  /// time) keep the row pinned in the unread cluster even after `unread` flips
+  /// to false. The flat "Everything" feed sorts purely by `activity_at` via
+  /// [_flatFeedCompare] instead.
   int _catchUpCompare(Thread a, Thread b) {
     final aUn = a.unread ? 1 : 0;
     final bUn = b.unread ? 1 : 0;
@@ -1301,14 +1319,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activeTabAppendInFlight = completer.future;
       ({
         List<Thread> threads,
-        ({
-          int unread,
-          int urgent,
-          int importance,
-          String activityAt,
-          ThreadId id,
-        })?
-        nextCursor,
+        ({String activityAt, ThreadId id})? nextCursor,
         bool saturated,
       })?
       page;
