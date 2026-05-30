@@ -8,7 +8,6 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
-import 'package:plot/util/theme_color.dart';
 
 class PriorityWidget extends StatefulWidget {
   const PriorityWidget({
@@ -282,23 +281,16 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     Color restingColor,
   ) {
     final priority = widget.priority;
-    final Widget label = widget.showAncestry
-        ? PriorityLabel(
-            priority: priority,
-            fontSize: widget.textStyle?.fontSize,
-            height: 1,
-            color: widget.monochrome && !isActive ? restingColor : null,
-            mutedAncestorColor: widget.monochrome && !isActive
-                ? restingColor
-                : null,
-            boldLeaf: widget.boldLeaf,
-          )
-        : Text(
-            priority.title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: widget.textStyle,
-          );
+    // Focuses are flat — the list row renders its own leading icon, so the
+    // label is just the (already-flattened) title in the focus colour.
+    final Widget label = FocusLabel(
+      priority: priority,
+      fontSize: widget.textStyle?.fontSize,
+      height: 1,
+      color: widget.monochrome && !isActive ? restingColor : null,
+      boldLeaf: widget.boldLeaf,
+      showIcon: false,
+    );
 
     if (!widget.expandable) return label;
 
@@ -377,331 +369,94 @@ class _ExpandCaretButtonState extends State<_ExpandCaretButton> {
 /// - In SelectModal: `itemBuilder: (p) => ListTile(body: PriorityLabel(priority: p))`
 /// - In FormSelect: `labelBuilder: (p) => PriorityLabel(priority: p)`
 /// - For display: `PriorityLabel(priority: priority, muted: true)` for subdued appearance
-class PriorityLabel extends StatelessWidget {
-  PriorityLabel({
-    List<PriorityAncestor>? ancestors,
+/// A flat label for a focus: its icon, in its colour, followed by its title.
+///
+/// Focuses are flat — there is no ancestry chain. (At apiVersion >= 4 the
+/// server already projects the full label into `priority.title`, e.g. a
+/// migrated "Work › Marketing".) Renamed from the former `PriorityLabel`.
+class FocusLabel extends StatelessWidget {
+  const FocusLabel({
     this.priority,
-    Priority? context,
-    this.onSelect,
     this.fontSize,
     this.height,
     this.muted = false,
     this.color,
-    this.mutedAncestorColor,
+    this.showIcon = true,
     this.boldLeaf = false,
     this.leafTrailingIcon,
     this.onLeafTap,
     super.key,
-  }) : ancestors = (() {
-         final computed =
-             ancestors ?? priority?.ancestors(context: context) ?? const [];
-         return computed;
-       }());
+  });
 
-  final List<PriorityAncestor> ancestors;
   final Priority? priority;
-  final void Function(PriorityId)? onSelect;
   final double? fontSize;
   final double? height;
   final bool muted;
   final Color? color;
 
-  /// Optional color for ancestor crumbs and the separator. When set,
-  /// ancestor names + the trailing `>` use this color while the leaf
-  /// (current priority) keeps [color]. When unset, ancestors default to
-  /// the muted variant of their own theme colors so the leaf stays
-  /// visually prominent.
-  final Color? mutedAncestorColor;
+  /// Whether to render the focus icon before the title. Off in contexts that
+  /// already show the icon separately (e.g. a list row with its own leading).
+  final bool showIcon;
 
-  /// When true, render ancestor crumbs at regular weight and the leaf
-  /// (this priority) at semibold so the leaf reads as the primary label.
+  /// When true, render the title at semibold.
   final bool boldLeaf;
 
-  /// Optional icon (typically a small caret) rendered immediately after
-  /// the leaf title. When [onLeafTap] is also provided, the leaf and the
-  /// trailing icon share a single tap target — the caller can use this
-  /// to attach a scope toggle / expand affordance to the priority name
-  /// without a separate button. The caret renders in the same color as
-  /// the leaf text.
+  /// Optional trailing icon (typically a caret) sharing a tap target with the
+  /// title via [onLeafTap].
   final IconData? leafTrailingIcon;
 
-  /// Tap handler for the combined leaf + [leafTrailingIcon] hit area.
-  /// Only honored when [leafTrailingIcon] is set.
+  /// Tap handler for the combined title + [leafTrailingIcon] hit area.
   final VoidCallback? onLeafTap;
 
   @override
   Widget build(BuildContext context) {
-    // Compute display colors for each ancestor (with inheritance)
-    ThemeColor currentColor = const ThemeColor.defaultColor();
-    final displayColors = <ThemeColor>[];
-    for (final ancestor in ancestors) {
-      currentColor = ThemeColor(ancestor.color);
-      displayColors.add(currentColor);
-    }
+    final p = priority;
+    if (p == null) return const SizedBox.shrink();
 
-    // Update current color with priority's color if present
-    if (priority?.displayColor != null) {
-      currentColor = priority!.displayColor;
-    }
-
-    // When ancestors aren't individually tappable, render the whole label as
-    // a single Text.rich so ellipsis truncation happens at the end of the
-    // line without leaving leftover space between the content and the
-    // trailing slot (a multi-Flexible Row layout leaves a visible gap when
-    // one Flexible underuses its allocation). The trailing-caret variant
-    // still goes through Text.rich for the label and only places the caret
-    // as a sibling inside a shared tap target.
-    if (onSelect == null) {
-      final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
-      final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
-      final leafWeight = boldLeaf ? FontWeight.w600 : null;
-      final restLeafColor =
-          color ?? context.colour.colours.fromTheme(currentColor, muted: muted);
-
-      Widget buildRichText(Color leafColor) {
-        final spans = <InlineSpan>[];
-        for (var i = 0; i < ancestors.length; i++) {
-          final ancestor = ancestors[i];
-          final isLast = i == ancestors.length - 1;
-          final ancestorColor =
-              mutedAncestorColor ??
-              color ??
-              context.colour.colours.fromTheme(displayColors[i], muted: true);
-          spans.add(
-            TextSpan(
-              text: ancestor.title,
-              style: TextStyle(
-                color: ancestorColor,
-                fontSize: resolvedFontSize,
-                height: height,
-                fontWeight: ancestorWeight,
-              ),
-            ),
-          );
-          if (!isLast || priority != null) {
-            spans.add(
-              TextSpan(
-                text: Priority.separator,
-                style: TextStyle(
-                  color:
-                      mutedAncestorColor ??
-                      color ??
-                      context.theme.colors.mutedForeground,
-                  fontSize: resolvedFontSize,
-                  height: height ?? 1,
-                  fontWeight: ancestorWeight,
-                ),
-              ),
-            );
-          }
-        }
-        if (priority != null) {
-          spans.add(
-            TextSpan(
-              text: priority!.title,
-              style: TextStyle(
-                color: leafColor,
-                fontSize: resolvedFontSize,
-                height: height,
-                fontWeight: leafWeight,
-              ),
-            ),
-          );
-        }
-        return Text.rich(
-          TextSpan(children: spans),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        );
-      }
-
-      if (leafTrailingIcon == null) {
-        return buildRichText(restLeafColor);
-      }
-
-      // Caret variant: keep the label inside a single Text.rich so it
-      // ellipsizes against the full available width, and render the
-      // caret as a sibling. Wrapping both in a Row+Flexible lets the
-      // text shrink before the caret while the caret stays flush with
-      // whatever the text actually rendered to.
-      Widget body(Color leafColor) => Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Flexible(child: buildRichText(leafColor)),
-          const SizedBox(width: 4),
-          Icon(leafTrailingIcon, size: 10, color: leafColor),
-        ],
-      );
-
-      if (onLeafTap == null) {
-        return body(restLeafColor);
-      }
-
-      return _HoverColored(
-        restColor: restLeafColor,
-        hoverColor: context.colour.foreground,
-        builder: (context, c) => GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onLeafTap,
-          child: body(c),
-        ),
-      );
-    }
-
-    final ancestorWeight = boldLeaf ? FontWeight.w400 : null;
-    final leafWeight = boldLeaf ? FontWeight.w600 : null;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ...ancestors.indexed.expand((entry) {
-          final i = entry.$1;
-          final ancestor = entry.$2;
-          final isLast = i == ancestors.length - 1;
-          final ancestorColor =
-              mutedAncestorColor ??
-              color ??
-              context.colour.colours.fromTheme(displayColors[i], muted: true);
-          TextStyle ancestorTextStyle(Color c) =>
-              DefaultTextStyle.of(context).style.copyWith(
-                color: c,
-                fontSize: fontSize ?? context.theme.typography.md.fontSize,
-                height: height,
-                fontWeight: ancestorWeight,
-              );
-          final Widget ancestorCell;
-          if (onSelect != null) {
-            // Clickable segments resolve to the foreground colour on
-            // hover so the user can see the priority name lift out of
-            // the muted crumb tone before clicking.
-            ancestorCell = _HoverColored(
-              restColor: ancestorColor,
-              hoverColor: context.colour.foreground,
-              builder: (context, c) => DefaultTextStyle(
-                style: ancestorTextStyle(c),
-                child: Tapable(
-                  onTap: () => onSelect!.call(ancestor.id),
-                  child: Text(
-                    ancestor.title,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-              ),
-            );
-          } else {
-            ancestorCell = DefaultTextStyle(
-              style: ancestorTextStyle(ancestorColor),
-              child: Text(
-                ancestor.title,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            );
-          }
-          return [
-            Flexible(
-              key: ValueKey('ancestor_${ancestor.id}'),
-              child: ancestorCell,
-            ),
-            if (!isLast || priority != null)
-              DefaultTextStyle(
-                key: ValueKey('separator_${ancestor.id}'),
-                style: DefaultTextStyle.of(context).style.copyWith(
-                  color:
-                      mutedAncestorColor ??
-                      color ??
-                      context.theme.colors.mutedForeground,
-                  fontSize: fontSize ?? context.theme.typography.md.fontSize,
-                  height: height ?? 1,
-                  fontWeight: ancestorWeight,
-                ),
-                child: Text(Priority.separator),
-              ),
-          ];
-        }),
-        if (priority != null)
-          Flexible(
-            child: _buildLeafCell(
-              context: context,
-              currentColor: currentColor,
-              leafWeight: leafWeight,
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// Renders the leaf priority's title cell. When [leafTrailingIcon] is
-  /// set, the leaf and trailing icon share a single GestureDetector so a
-  /// tap anywhere on the combined area fires [onLeafTap] (e.g. the
-  /// sub-priorities scope toggle in the unified header). When the cell
-  /// is clickable ([onLeafTap] non-null), the leaf text and trailing
-  /// icon both shift to the foreground colour on hover — matching the
-  /// ancestor crumbs' hover affordance.
-  Widget _buildLeafCell({
-    required BuildContext context,
-    required ThemeColor currentColor,
-    required FontWeight? leafWeight,
-  }) {
-    final restLeafColor =
-        color ?? context.colour.colours.fromTheme(currentColor, muted: muted);
     final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
+    final accent =
+        color ?? context.colour.colours.fromTheme(p.displayColor, muted: muted);
 
-    Widget leafTextWith(Color c) => DefaultTextStyle(
-      style: DefaultTextStyle.of(context).style.copyWith(
-        color: c,
+    final title = Text(
+      p.title,
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+      style: TextStyle(
+        color: accent,
         fontSize: resolvedFontSize,
         height: height,
-        fontWeight: leafWeight,
-      ),
-      child: Text(
-        priority!.title,
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
+        fontWeight: boldLeaf ? FontWeight.w600 : null,
       ),
     );
 
-    if (leafTrailingIcon == null) {
-      return leafTextWith(restLeafColor);
-    }
+    final children = <Widget>[
+      if (showIcon) ...[
+        Icon(PlotIcon.focusIcon(p.icon), size: resolvedFontSize, color: accent),
+        const SizedBox(width: 6),
+      ],
+      Flexible(child: title),
+      if (leafTrailingIcon != null) ...[
+        const SizedBox(width: 4),
+        Icon(leafTrailingIcon, size: 10, color: accent),
+      ],
+    ];
 
-    // Combined leaf + caret hit area. The Flexible above already bounds
-    // the cell, so an inner Row with mainAxisSize.min sits flush to the
-    // trailing icon without an extra gap. Caret matches [_ExpandCaretButton]'s
-    // size so the affordance reads the same as the priorities-list carets.
-    Widget body(Color c) => Row(
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Flexible(child: leafTextWith(c)),
-        const SizedBox(width: 4),
-        Icon(leafTrailingIcon, size: 10, color: c),
-      ],
+      children: children,
     );
 
-    if (onLeafTap == null) {
-      return body(restLeafColor);
-    }
-
-    return _HoverColored(
-      restColor: restLeafColor,
-      hoverColor: context.colour.foreground,
-      builder: (context, c) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onLeafTap,
-        child: body(c),
-      ),
+    if (onLeafTap == null) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onLeafTap,
+      child: row,
     );
   }
 }
 
-/// Tracks pointer hover and rebuilds with the resolved colour. Lets
-/// clickable [PriorityLabel] segments shift their text + icon to the
-/// foreground tone on hover without each segment owning its own
-/// stateful boilerplate. The hit area is whatever [builder] produces —
-/// callers wrap the eventual `GestureDetector` / `Tapable` inside the
-/// returned widget so the hover region matches the click region.
+/// Tracks pointer hover and rebuilds with the resolved colour.
 class _HoverColored extends StatefulWidget {
   const _HoverColored({
     required this.restColor,
