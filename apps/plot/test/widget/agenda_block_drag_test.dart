@@ -781,7 +781,8 @@ void main() {
 
   group('BlockSlotCollapse', () {
     testWidgets(
-      'collapses its child while its slot is active, restores on drag end',
+      'collapses while a drop adjacent to the gap is active (even when the '
+      'active slot is the one AFTER the gap), restores on drag end',
       (tester) async {
         final controller = BlockDragController();
         final sourceKey = GlobalKey();
@@ -838,11 +839,16 @@ void main() {
                       ),
                     ),
                     const SizedBox(height: 50, width: 200),
-                    // A "gap row" keyed to the same slot as S1, placed
-                    // below every activation slot so its collapse never
-                    // shifts the geometry the activation reads.
+                    // A "gap row" for gap block 'B', placed below every
+                    // activation slot so its collapse never shifts the
+                    // geometry the activation reads. S1's target has
+                    // prevBlockId == 'B' (a drop just AFTER the gap, which
+                    // anchors to the gap start), so activating S1 must
+                    // collapse this gap even though S1 is not the gap's own
+                    // in-gap slot — the case the old slotKey-only logic
+                    // missed ("sometimes the gap is not merged").
                     BlockSlotCollapse(
-                      slotKey: 'S1',
+                      blockId: 'B',
                       child: SizedBox(key: gapKey, height: 30, width: 200),
                     ),
                   ],
@@ -887,7 +893,8 @@ void main() {
         expect(
           tester.getSize(find.byType(BlockSlotCollapse)).height,
           0,
-          reason: 'gap row collapses while its slot is active',
+          reason: 'gap row collapses while a drop adjacent to it (S1, '
+              'prevBlockId==B) is active',
         );
         expect(
           find.byKey(gapKey),
@@ -956,6 +963,80 @@ void main() {
           64,
           reason: 'source RO already covers the row; fallback must NOT '
               'add an extra row height (would produce 64 + 56 = 120)',
+        );
+      },
+    );
+
+    // Single-tile block (agenda focus block) immediately followed by an
+    // empty gap. The gap's drop slot is rendered BELOW the gap tile (so
+    // the drop preview lands inside the gap), so the K_after_source slot
+    // sits past the gap row. With visibleThreadCount=0 the source's own
+    // RenderBox already spans the full block, so the captured height must
+    // be the source height (100) — NOT the distance to the slot below the
+    // gap tile (100 + 40), which would reserve too much space and inflate
+    // the activation expansion band.
+    testWidgets(
+      'uses source RO height (not the gap-below slot) when '
+      'visibleThreadCount=0 and the next slot sits below a gap tile',
+      (tester) async {
+        final controller = BlockDragController();
+        final sourceKey = GlobalKey();
+        final pid = Uuid.fromString('00000000-0000-0000-0000-000000000001');
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: BlockDragScope(
+                controller: controller,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Source focus-block tile (full block height).
+                    SizedBox(key: sourceKey, height: 100, width: 200),
+                    // The empty gap's tile sits between the source and its
+                    // in-gap drop slot.
+                    const SizedBox(height: 40, width: 200),
+                    // In-gap drop slot: prevBlockId == source, but rendered
+                    // 40px below the source's true bottom.
+                    const BlockDropZone(
+                      slotKey: 'in_gap',
+                      target: BlockDropTarget(
+                        targetDate: null,
+                        targetPeriodStart: null,
+                        prevBlockId: 'source',
+                        prevPriorityId: null,
+                        nextBlockId: 'gap',
+                        nextPriorityId: null,
+                      ),
+                    ),
+                    const SizedBox(height: 50, width: 200),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        controller.start(
+          BlockDragPayload(
+            blockId: 'source',
+            priorityId: pid,
+            sourceDate: null,
+            sourcePeriodStart: null,
+            visibleThreadCount: 0,
+          ),
+          sourceContextProvider: () => sourceKey.currentContext!,
+        );
+
+        expect(
+          controller.sourceTotalHeight,
+          100,
+          reason: 'single-tile block uses its own RO height; the slot '
+              'below the gap tile (at y=140) must NOT inflate it to 140',
         );
       },
     );

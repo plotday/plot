@@ -1262,14 +1262,14 @@ class _BlockDragHiddenState extends State<BlockDragHidden> {
   }
 }
 
-/// Collapses its child to zero height (animated) while [slotKey] is the
-/// controller's active drop slot. Used by the agenda's empty-gap rows:
-/// the in-gap [BlockDropZone] is a sibling rendered directly below the
-/// gap row, and when a block is dragged onto the gap that zone expands
-/// to the dragged block's height and shows its preview. Collapsing the
-/// gap's own row in lockstep makes the preview occupy the gap's
-/// position — the gap "grows into" the dropped block — instead of a
-/// placeholder opening up below an unchanged gap row.
+/// Collapses an empty-gap row to zero height (animated) while a block is
+/// being dropped INTO that gap. The gap's in-gap [BlockDropZone] is a
+/// sibling rendered directly below the row; when the drop lands in the
+/// gap that zone (or the next block's slot — see below) expands to the
+/// dragged block's height and shows its preview. Collapsing the gap's
+/// own row in lockstep makes the preview occupy the gap's position — the
+/// gap "grows into" the dropped block — instead of a placeholder opening
+/// up below an unchanged gap row.
 ///
 /// This is also what keeps the drop stable. Dropping a block into a gap
 /// replaces the gap row (height `g`) with the block (height `H`), so the
@@ -1279,17 +1279,30 @@ class _BlockDragHiddenState extends State<BlockDragHidden> {
 /// instant the block lands. Collapsing the gap row makes the during-drag
 /// total already match the post-drop total, so the block lands without a
 /// jump. Non-active: child renders unchanged.
+///
+/// **Why key off the gap's block id, not a single slot key.** The empty
+/// gap's in-gap slot is rendered below the gap tile, so it sits at the
+/// SAME Y as the following block's before-slot. Both land the dragged
+/// block at the gap's start (the in-gap slot drops "into" the gap; the
+/// next block's slot drops "right after" the gap, which a gap anchors to
+/// its start — see [resolveFocusBlockDropAnchor]). Which of the two
+/// coincident slots wins activation is not stable across rebuilds, so
+/// keying the collapse on one slot key alone makes the gap merge only
+/// *sometimes*. Instead, collapse whenever the active drop is adjacent to
+/// this gap on either side: `nextBlockId == blockId` (into the gap) or
+/// `prevBlockId == blockId` (right after it). Both replace the gap, so
+/// both collapse it — consistently.
 class BlockSlotCollapse extends StatefulWidget {
   const BlockSlotCollapse({
-    required this.slotKey,
+    required this.blockId,
     required this.child,
     super.key,
   });
 
-  /// The drop slot whose activation collapses this row. Matches the
-  /// `slotKey` of the sibling [BlockDropZone] so the two animate
-  /// together — gap row out as the zone's preview comes in.
-  final Object slotKey;
+  /// The id of the gap block this row introduces. The row collapses while
+  /// the controller's active drop target flanks this gap (its drop lands
+  /// at the gap's start, replacing the gap).
+  final String blockId;
 
   final Widget child;
 
@@ -1324,12 +1337,15 @@ class _BlockSlotCollapseState extends State<BlockSlotCollapse> {
 
   @override
   Widget build(BuildContext context) {
-    // Collapse only when this exact slot is the active one. The agenda's
-    // in-gap zones are a 1:1 slotKey↔target case (no phantom siblings),
-    // so the controller always sets `activeSlotKey` to the in-gap key
-    // when the cursor is over the gap — matching the same key the
-    // sibling [BlockDropZone] uses to expand keeps the two in step.
-    final collapsed = _controller?.activeSlotKey == widget.slotKey;
+    final target = _controller?.activeTarget;
+    // Collapse when the active drop lands in this gap — the in-gap slot
+    // (next == this gap) or the slot just after the gap (prev == this
+    // gap, which anchors to the gap start). Adjacent empty gaps don't
+    // occur (a gap always sits between time-anchored blocks), so neither
+    // check matches a neighbouring gap.
+    final collapsed = target != null &&
+        (target.nextBlockId == widget.blockId ||
+            target.prevBlockId == widget.blockId);
     return AnimatedSize(
       duration: kBlockBoundaryAnimDuration,
       curve: Curves.easeOut,

@@ -490,15 +490,22 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         );
 
         // Dropping a block into an empty gap replaces the gap row rather
-        // than inserting a new row. Collapse the gap's own row as its
-        // in-gap drop zone (rendered directly below) expands to the
-        // dragged block's height, so the preview grows into the gap's
-        // position instead of opening a placeholder beneath an unchanged
-        // gap row. This also keeps the drop from jumping: the during-drag
-        // height already matches the post-drop layout (block where the
-        // gap was). See [BlockSlotCollapse].
-        if (beforeBoundary != null && isEmptyGapHeader) {
-          tile = BlockSlotCollapse(slotKey: inGapSlotKey, child: tile);
+        // than inserting a new row. Collapse the gap's own row while the
+        // drop lands in it, so the dragged block's preview grows into the
+        // gap's position instead of opening a placeholder beneath an
+        // unchanged gap row. This also keeps the drop from jumping: the
+        // during-drag height already matches the post-drop layout (block
+        // where the gap was). [BlockSlotCollapse] keys off the gap's block
+        // id (not a single slot) so it merges consistently regardless of
+        // which of the two coincident drop slots at the gap's lower edge
+        // wins activation. See [BlockSlotCollapse].
+        if (beforeBoundary != null &&
+            isEmptyGapHeader &&
+            current.parentBlockId != null) {
+          tile = BlockSlotCollapse(
+            blockId: current.parentBlockId!,
+            child: tile,
+          );
         }
 
         return Column(
