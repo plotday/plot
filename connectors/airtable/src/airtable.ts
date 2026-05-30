@@ -112,7 +112,6 @@ export class Airtable extends Connector<Airtable> {
         {
           status: STATUS_TODO,
           label: "To Do",
-          task: true as const,
         },
         {
           status: STATUS_DONE,
@@ -226,7 +225,7 @@ export class Airtable extends Connector<Airtable> {
       if (isDone) {
         statuses.push({ status, label, done: true });
       } else {
-        statuses.push({ status, label, task: true });
+        statuses.push({ status, label });
       }
     };
 

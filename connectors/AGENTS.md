@@ -396,7 +396,7 @@ Opt a link type in by adding a `compose` block to its `LinkTypeConfig`:
   label: "Issue",
   statuses: [
     { status: "backlog", label: "Backlog" },
-    { status: "unstarted", label: "To Do", task: true },
+    { status: "unstarted", label: "To Do" },
     { status: "completed", label: "Done", done: true },
   ],
   compose: { status: "unstarted" },        // targets defaults to "channels"

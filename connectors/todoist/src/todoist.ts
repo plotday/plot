@@ -67,7 +67,7 @@ export class Todoist extends Connector<Todoist> {
       logo: "https://api.iconify.design/logos/todoist-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
       statuses: [
-        { status: "open", label: "Open", task: true },
+        { status: "open", label: "Open" },
         { status: "done", label: "Done", done: true },
       ],
       supportsAssignee: true,

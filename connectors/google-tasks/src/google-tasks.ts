@@ -70,7 +70,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       logo: "https://plot.day/assets/logo-google-tasks.svg",
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
-        { status: "open", label: "Open", task: true },
+        { status: "open", label: "Open" },
         { status: "done", label: "Done", done: true },
       ],
       supportsAssignee: false,
