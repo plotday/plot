@@ -87,7 +87,7 @@ export async function createLink(
       ...(link.unread !== undefined ? { unread: link.unread } : {}),
       ...(link.archived !== undefined ? { archived: link.archived } : {}),
       ...(link.preview !== undefined ? { preview: link.preview } : {}),
-      ...(link.priority ? { priority: link.priority } : {}),
+      ...(link.focus ? { focus: link.focus } : {}),
       // Notes are created AFTER the link row exists (see createNotes call
       // later in this function) so note.link_id can be set on the first write.
     };

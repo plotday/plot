@@ -17,12 +17,12 @@ import {
   type NewLinkWithNotes,
   type NewContact,
   type NewNote,
-  type NewPriority,
+  type NewFocus,
   type Note,
   type NoteUpdate,
   type PlanOperation,
-  type Priority,
-  type PriorityUpdate,
+  type Focus,
+  type FocusUpdate,
   type Uuid,
   ActionType,
 } from "@plotday/twister/plot";
@@ -206,11 +206,11 @@ export class Plot extends Tool implements IPlot {
       }
     }
 
-    if (options?.priority?.access !== undefined) {
+    if (options?.focus?.access !== undefined) {
       let flags = [] as PermissionFlag[];
-      if (options.priority.access === FocusAccess.Create) {
+      if (options.focus.access === FocusAccess.Create) {
         flags = ["write"];
-      } else if (options.priority.access === FocusAccess.Full) {
+      } else if (options.focus.access === FocusAccess.Full) {
         flags = ["read", "write", "update"];
       }
       perms.push({
@@ -1104,7 +1104,7 @@ export class Plot extends Tool implements IPlot {
    * are workspace-level, so they can touch any priority owned by their
    * user (and only those priorities).
    */
-  async validateFocusAccess(priorityId: string): Promise<void> {
+  async validatePriorityAccess(priorityId: string): Promise<void> {
     const userId = await this.getUserId();
     const data = await this.db
       .selectFrom("priority")
@@ -1146,8 +1146,8 @@ export class Plot extends Tool implements IPlot {
    * Checks if the twist has the required priority access permission.
    * @throws Error if permission is not granted
    */
-  requireFocusAccess(required: FocusAccess): void {
-    const granted = this.plotOptions?.priority?.access;
+  requirePriorityAccess(required: FocusAccess): void {
+    const granted = this.plotOptions?.focus?.access;
     if (granted === undefined) {
       throw new Error(
         `Priority access not requested. Required: ${FocusAccess[required]}`
@@ -1469,18 +1469,18 @@ export class Plot extends Tool implements IPlot {
   }
 
   // Priority operations
-  async createPriority(priority: NewPriority): Promise<Priority & { created: boolean }> {
-    return priorityOps.createPriority(this, priority);
+  async createFocus(focus: NewFocus): Promise<Focus & { created: boolean }> {
+    return priorityOps.createFocus(this, focus);
   }
 
-  async getPriority(
-    priority: { id: Uuid } | { key: string }
-  ): Promise<Priority | null> {
-    return priorityOps.getPriority(this, priority);
+  async getFocus(
+    focus: { id: Uuid } | { key: string }
+  ): Promise<Focus | null> {
+    return priorityOps.getFocus(this, focus);
   }
 
-  async updatePriority(update: PriorityUpdate): Promise<void> {
-    return priorityOps.updatePriority(this, update);
+  async updateFocus(update: FocusUpdate): Promise<void> {
+    return priorityOps.updateFocus(this, update);
   }
 
   // Contact operations
@@ -1574,8 +1574,7 @@ export class Plot extends Tool implements IPlot {
 
   // Admin read operations
   async getThreads(options?: {
-    priorityId?: Uuid;
-    includeDescendants?: boolean;
+    focusId?: Uuid;
     includeArchived?: boolean;
     limit?: number;
     offset?: number;
@@ -1584,12 +1583,10 @@ export class Plot extends Tool implements IPlot {
     return threadOps.getThreads(this, options);
   }
 
-  async getPriorities(options?: {
-    parentId?: Uuid;
-    includeDescendants?: boolean;
+  async getFocuses(options?: {
     includeArchived?: boolean;
-  }): Promise<Priority[]> {
-    return priorityOps.getPriorities(this, options);
+  }): Promise<Focus[]> {
+    return priorityOps.getFocuses(this, options);
   }
 
   // Link update operation

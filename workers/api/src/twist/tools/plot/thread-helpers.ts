@@ -1157,8 +1157,8 @@ export async function prepareThreadForDb(
     }
   }
 
-  if ("priority" in activity && activity.priority?.id) {
-    targetPriorityId = activity.priority.id;
+  if ("focus" in activity && activity.focus?.id) {
+    targetPriorityId = activity.focus.id;
   } else {
     // Classify via the production hybrid-LLM classifier. Pre-insert
     // case: no threadId yet, only the embedding is available. On

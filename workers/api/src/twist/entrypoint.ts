@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-import { type Priority } from "@plotday/twister/plot";
+import { type Focus } from "@plotday/twister/plot";
 import { type ITool } from "@plotday/twister/tool";
 
 const MODULE = `
@@ -905,7 +905,7 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
 
   abstract activate(
     _twistInit: TwistInit,
-    _priority: Pick<Priority, "id">,
+    _priority: Pick<Focus, "id">,
     _context?: { actor: { id: string; type: number } }
   ): Promise<void>;
 

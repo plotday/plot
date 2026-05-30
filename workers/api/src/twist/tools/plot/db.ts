@@ -69,12 +69,13 @@ export async function buildThreadFromDbRecord(
     // @ts-ignore - threadRecord.id is a string from DB, but Uuid is a branded type
     id: threadRecord.id as any,
     created: threadRecord.created_at ? new Date(threadRecord.created_at) : new Date(),
-    priority: {
+    focus: {
       id: threadRecord.priority_id as Uuid,
       title: threadRecord.priority_title ?? "",
       archived: false,
       key: null,
       color: null,
+      icon: null,
     },
     type: null,
     title: threadRecord.title || "",

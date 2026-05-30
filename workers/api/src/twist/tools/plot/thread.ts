@@ -1592,12 +1592,13 @@ export async function getThreads(
 
     // Enrich priority info from the batch fetch
     if (priorityInfo) {
-      thread.priority = {
+      thread.focus = {
         id: priorityInfo.id as Uuid,
         title: priorityInfo.title ?? "Untitled",
         archived: priorityInfo.archived_at !== null,
         key: priorityInfo.key,
         color: priorityInfo.color,
+        icon: null,
       };
     }
 

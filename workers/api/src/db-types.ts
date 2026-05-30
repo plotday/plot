@@ -187,10 +187,13 @@ export interface CustomEmoji {
 
 export interface Device {
   app_version: string | null;
+  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
+  device_id: string | null;
   id: Generated<string>;
+  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string;
+  push_token: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -449,6 +452,23 @@ export interface LinkX {
   updated_by: number | null;
 }
 
+export interface LocalSyncLease {
+  attempt_id: string;
+  capability: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  fail_streak: Generated<number>;
+  last_completed_at: Timestamp | null;
+  last_error: string | null;
+  last_heartbeat_at: Timestamp;
+  last_result: string | null;
+  lease_token: string;
+  leased_until: Timestamp;
+  next_eligible_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Note {
   /**
    * Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.
@@ -552,6 +572,7 @@ export interface Priority {
   default_groups: Generated<string[]>;
   default_invite_emails: Generated<string[]>;
   default_thread_icon: string | null;
+  icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;
   key: string | null;
@@ -770,6 +791,7 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
+  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -815,6 +837,14 @@ export interface ThreadPriority {
   updated_at: Generated<Timestamp>;
   user_id: string;
   user_moved: Generated<boolean>;
+}
+
+export interface ThreadPriorityNegative {
+  created_at: Generated<Timestamp>;
+  priority_id: string;
+  source: string;
+  thread_id: string;
+  user_id: string;
 }
 
 export interface ThreadReaction {
@@ -1485,7 +1515,9 @@ export interface UserPriority {
   default_invite_emails: string[] | null;
   early_notifications_enabled: boolean | null;
   early_notifications_enabled_set: boolean | null;
+  flat_title: string | null;
   global_path: string | null;
+  icon: string | null;
   id: string | null;
   inherit_members: boolean | null;
   key: string | null;
@@ -1795,6 +1827,7 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
+  local_sync_lease: LocalSyncLease;
   note: Note;
   note_reaction: NoteReaction;
   note_reactions: NoteReactions;
@@ -1818,6 +1851,7 @@ export interface DB {
   thread: Thread;
   thread_association: ThreadAssociation;
   thread_priority: ThreadPriority;
+  thread_priority_negative: ThreadPriorityNegative;
   thread_reaction: ThreadReaction;
   thread_reactions: ThreadReactions;
   thread_read: ThreadRead;

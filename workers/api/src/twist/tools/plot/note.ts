@@ -1202,7 +1202,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
 export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
   try {
     // Validate access to the priority
-    await plot.validatePriorityAccess(activity.priority.id);
+    await plot.validatePriorityAccess(activity.focus.id);
 
     // Get all notes for this activity
     const rows = await plot.db

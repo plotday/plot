@@ -1550,7 +1550,7 @@ export class Integrations extends Tool implements IAuth {
       thread: {
         id: item.thread_id,
         title: item.thread_title,
-        priority: { id: item.priority_id },
+        focus: { id: item.priority_id },
       } as any,
       author: {
         id: item.author_id ?? item.created_by,
@@ -1592,7 +1592,7 @@ export class Integrations extends Tool implements IAuth {
     const thread: Thread = {
       id: item.thread_id,
       title: item.thread_title,
-      priority: { id: item.priority_id },
+      focus: { id: item.priority_id },
       meta,
     } as Thread;
 
@@ -1683,7 +1683,7 @@ export class Integrations extends Tool implements IAuth {
         thread: {
           id: item.thread_id,
           title: item.thread_title,
-          priority: { id: item.priority_id },
+          focus: { id: item.priority_id },
         } as any,
         author: {
           id: item.author_id ?? item.created_by,
@@ -1727,7 +1727,7 @@ export class Integrations extends Tool implements IAuth {
       const thread = {
         id: item.thread_id,
         title: item.thread_title,
-        priority: { id: item.priority_id },
+        focus: { id: item.priority_id },
         meta,
       };
 
