@@ -97,8 +97,8 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         commands: [PageBackCommand()],
       ),
       StaticCommandGroup(
-        title: 'Priorities',
-        commands: [PickCurrentPriority(), NewPriority()],
+        title: 'Focuses',
+        commands: [PickCurrentPriority(), NewFocus()],
       ),
       ...settingsCommandsFromState(
         prioritiesState,
