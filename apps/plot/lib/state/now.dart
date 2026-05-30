@@ -77,6 +77,12 @@ class NowBloc extends Cubit<NowState> {
               currentEvent: prior?.currentEvent,
               selectedBlockId: prior?.selectedBlockId,
               previewPomodoro: prior?.previewPomodoro,
+              // Preserve the synthetic "Everything" feed flag across watcher
+              // re-emissions. Without this, any background sync or the
+              // 1-minute track tick rebuilds NowLoaded with the constructor
+              // default (false), silently dropping the user from Everything
+              // back to Inbox. Mirrors the other prior-forwarded fields above.
+              everything: prior?.everything ?? false,
             );
           },
         ).listen(
