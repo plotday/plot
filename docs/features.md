@@ -19,16 +19,17 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Private activities (visible only to creator)
 - @-mentions for users, contacts, and twists
 
-### Priorities
-- Per-user priority trees — each user owns their own hierarchy, no shared folders
-- Hierarchical organization (unlimited nesting depth)
-- Path-based structure (e.g., Work/Q1/Marketing)
-- Custom colors with inheritance to children
-- Per-priority Pomodoro timer settings (default 25 min)
-- Pin favorites with top order
-- Search scoped to priority trees
-- Unread indicators per priority
-- Multi-thread notification taps open the priority on the Catch up tab (single-thread taps still jump straight to the thread)
+### Focuses
+- Per-user focuses — each user owns their own flat list of focuses (formerly "priorities"); no nesting, no shared folders
+- A focus has a name, a custom color, and an icon from a curated set
+- Inbox — the catch-all for threads not sorted into any focus; moving a thread into a focus removes it from the Inbox
+- Everything — a single unscoped view of all threads across the Inbox and every focus, with no sections
+- Two-step focus creation: describe what belongs in the focus, then review the existing threads Plot matches to that description (semantic + AI) and deselect any that don't fit before creating. Deselected matches (and threads later moved out) are recorded as negative examples that sharpen future matching
+- Archiving a focus releases its threads to the Inbox without losing the assignment, so un-archiving restores them
+- Drag to reorder focuses; a "More" affordance collapses a long list down to the active/unread focuses
+- Per-focus Pomodoro timer settings (default 25 min)
+- Unread indicators per focus
+- Multi-thread notification taps open the focus on the Catch up tab (single-thread taps still jump straight to the thread)
 
 ### Thread Sharing
 - Threads are shared by adding contacts via the "With" field at creation

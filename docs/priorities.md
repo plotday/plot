@@ -2,6 +2,42 @@
 
 This document explains how the priority system works in Plot.
 
+## Flat "Focus" model (Phase A — current)
+
+Priorities are being replaced by a **flat Focus** concept on the client, while
+the server's stored data model stays nested during the transition:
+
+- **Focus** = a flat priority: no parent, no children. A focus has a name, a
+  color, and an `icon` (curated set; defaults to `bullseyePointer`).
+- **Inbox** = the per-user root priority. It holds threads not sorted into any
+  focus. The client scopes the Inbox feed to the root exactly (not a path
+  roll-up). The server projects the root's title as "Inbox" for flat clients.
+- **Everything** = a client-only view (no entity): the unscoped feed of all
+  threads across the Inbox and every focus. The Flutter client drives it with a
+  `NowBloc.everything` flag mirrored into `PriorityState.everything`; the feed
+  query passes `priorityId = priorityPath = null`.
+- **Archive releases threads**: `"user".effective_priority_id()` returns the
+  root for an archived focus's threads at read time, so archiving a focus
+  surfaces its threads in the Inbox without mutating `thread_priority.priority_id`
+  (un-archive restores them for free).
+- **Negative tracking**: `thread_priority_negative` records threads moved out of
+  a focus or deselected during two-step creation; the matcher down-weights them.
+- **Two-step creation**: `POST /sync/priorities/find-matching-threads` ranks the
+  user's existing threads against a focus description (embeddings + LLM rerank);
+  selected matches are filed (`/sync/priority-moves`), deselected ones recorded
+  as negatives.
+
+**Version-gated transition.** The transition is gated on `X-Plot-API-Version`:
+clients `>= 4` get the flat projection (`user.priority.flat_title` as the title,
+root → "Inbox", `path` retained but unused); clients `< 4` get today's nested
+shape unchanged. The new Flutter client sends `4` and renders no nesting UI.
+
+**Phase B (deferred until old clients age out)** bakes `flat_title` into `title`
+and deletes the nesting machinery (`path`/ltree/GiST, `move_priority`,
+`generate_path`/`parent_path`, ancestor inheritance, the version gate),
+switching root-identification to the existing `root` boolean. Everything below
+describes that still-present nested machinery.
+
 ## Overview
 
 Priorities in Plot are hierarchical entities organized using PostgreSQL's ltree extension. Each priority is **owned by a single user** (`priority.user_id`). There are no shared priorities — each user has their own priority tree, and threads are filed independently per user via the `thread_priority` join table.
