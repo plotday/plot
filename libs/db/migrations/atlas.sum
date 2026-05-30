@@ -1,4 +1,4 @@
-h1:vpwNPNmBIBgYtxXwrjPu5EQY5XpINblkAJCB2084VRQ=
+h1:ijqN1lPKT0OGYg6V8C2rSu6v1P0PRdpmY5gETJG+woA=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -436,4 +436,4 @@ h1:vpwNPNmBIBgYtxXwrjPu5EQY5XpINblkAJCB2084VRQ=
 20260530022403_archive_release_and_negative_tracking.sql h1:TZBKDTc8Rmj1GJZWCYt0z/MlLEY9XitUyUdLJqIy1P0=
 20260530023000_bump_archived_focus_threads.sql h1:rQ6CXLVErAkABcfOWtjOudAqKr5OKyG5TK5Hya9/4Jk=
 20260530023252_classify_negative_downweight.sql h1:MwNXDyHyU0PxAbaRuoUVNF9/Gn8X6cHI+3fi6zquXr8=
-20260530180000_update_onboarding_threads_flat_focus.sql h1:k+A13BI4IoBpUrr3zIUKwbrgXleOV0VR5gTg9RoH9y8=
+20260530200000_update_onboarding_threads_flat_focus.sql h1:AUJvvjVfz2z5vMDMOpYx8ZPzRHC5rfKLDK8IUkZMrq8=
