@@ -62,27 +62,11 @@ export type LinkTypeConfig = {
      */
     active?: boolean;
     /**
-     * Mark the thread `task=true` in Plot when a link enters this status.
-     * Use for project-tracker assignments — Linear / Todoist / Jira / etc.
-     * `task` puts the thread on the user's task list without flooding their
-     * inbox under `active`: the user explicitly flips it to `active` when
-     * they decide to start.
-     */
-    task?: boolean;
-    /**
-     * Mark the thread `to_read=true` in Plot when a link enters this status.
-     * Use for connectors that explicitly track read-later state (Pocket
-     * archives, Slack "remind me", etc).
-     */
-    toRead?: boolean;
-    /**
-     * @deprecated Use `active` (messaging) or `task` (project tracker) instead.
-     * Treated as `task: true` for backward compatibility.
-     *
-     * Original meaning: whether this status represents the connector's
-     * "to-do" / active state. When a user adds a thread to Plot's agenda,
-     * done-status links flip to the status marked `todo: true` (e.g.,
-     * Gmail's "starred", Linear's "todo").
+     * Marks this status as the connector's "to-do" / active state. When a
+     * user brings a done thread back into Plot's agenda, done-status links
+     * are flipped to the status marked `todo: true` (e.g. Gmail's "starred",
+     * Linear's "unstarted"); connectors that don't mark one fall back to the
+     * first non-done status.
      */
     todo?: boolean;
   }>;
@@ -316,7 +300,7 @@ export abstract class Integrations extends ITool {
   abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
 
   /**
-   * Saves a link with notes to the connector's priority.
+   * Saves a link with notes to the connector's focus.
    *
    * Creates a thread+link pair. The thread is a lightweight container;
    * the link holds the external entity data (source, meta, type, status, etc.).
@@ -355,7 +339,7 @@ export abstract class Integrations extends ITool {
   abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
 
   /**
-   * Upserts contacts into the connector's priority without requiring a Link.
+   * Upserts contacts into the connector's focus without requiring a Link.
    *
    * Use this for messaging connectors to bulk-sync workspace members so the
    * recipient picker can filter contacts by reachable platform account. Populate

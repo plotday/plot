@@ -14,7 +14,7 @@ export { Uuid } from "./utils/uuid";
  * Represents a schedule entry for a thread.
  *
  * Schedules define when a thread occurs in time. A thread may have zero or more schedules:
- * - Shared schedules (userId is null): visible to all members of the thread's priority
+ * - Shared schedules (userId is null): visible to all members of the thread's focus
  * - Per-user schedules (userId set): private ordering/scheduling for a specific user
  *
  * For recurring events in the SDK, start/end represent the first occurrence's

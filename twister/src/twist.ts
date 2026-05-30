@@ -10,9 +10,9 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  * Base class for all twists.
  *
  * A twist is installed at the workspace level and is owned by a single user
- * (see `this.userId`). It has no inherent priority scope: threads, notes, and
- * links it creates are filed against the owner's priorities, with automatic
- * priority matching when no explicit target is provided.
+ * (see `this.userId`). It has no inherent focus scope: threads, notes, and
+ * links it creates are filed against the owner's focuses, with automatic
+ * focus matching when no explicit target is provided.
  *
  * Override `build()` to declare tool dependencies and lifecycle methods to
  * handle events.

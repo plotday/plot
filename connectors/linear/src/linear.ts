@@ -80,7 +80,7 @@ export class Linear extends Connector<Linear> {
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
         { status: "backlog", label: "Backlog" },
-        { status: "unstarted", label: "To Do", task: true },
+        { status: "unstarted", label: "To Do" },
         { status: "started", label: "In Progress" },
         { status: "completed", label: "Done", done: true },
         { status: "cancelled", label: "Cancelled", done: true },
@@ -177,7 +177,6 @@ export class Linear extends Connector<Linear> {
         const statuses = sortedStates.map((s) => ({
           status: s.id,
           label: s.name,
-          ...(s.type === "unstarted" ? { task: true as const } : {}),
           ...(s.type === "completed" ? { done: true as const } : {}),
           ...(s.type === "cancelled" ? { done: true as const } : {}),
         }));

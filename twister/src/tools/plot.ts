@@ -10,12 +10,12 @@ import {
   type NewThread,
   type NewThreadWithNotes,
   type NewNote,
-  type NewPriority,
+  type NewFocus,
   type Note,
   type NoteUpdate,
   type PlanOperation,
-  type Priority,
-  type PriorityUpdate,
+  type Focus,
+  type FocusUpdate,
   Uuid,
 } from "..";
 import {
@@ -38,23 +38,23 @@ export enum ThreadAccess {
   Create,
   /**
    * List/query all Threads owned by the twist's user.
-   * Update any Thread (title, tags, archived, type, priority) regardless of creator.
+   * Update any Thread (title, tags, archived, type, focus) regardless of creator.
    * Create Notes on any Thread (not just own or mentioned).
    * All Create permissions.
    */
   Full,
 }
 
-export enum PriorityAccess {
+export enum FocusAccess {
   /**
-   * Create new Priorities under the twist owner's priority tree.
-   * Update Priorities created by the twist.
+   * Create new Focuses for the twist owner.
+   * Update Focuses created by the twist.
    */
   Create,
   /**
-   * Read all Priorities owned by the twist's user.
-   * Create new Priorities under the twist owner's priority tree.
-   * Update and archive any Priority owned by the twist's user.
+   * Read all Focuses owned by the twist's user.
+   * Create new Focuses for the twist owner.
+   * Update and archive any Focus owned by the twist's user.
    */
   Full,
 }
@@ -100,7 +100,7 @@ export type LinkFilter = {
 
 type SearchResultBase = {
   thread: { id: string; title: string | null };
-  priority: { id: string; title: string | null };
+  focus: { id: string; title: string | null };
   similarity: number;
 };
 
@@ -131,18 +131,17 @@ export type SearchOptions = {
   /** Minimum similarity score 0-1 (default: 0.3) */
   threshold?: number;
   /**
-   * Scope search to this priority + descendants. Must be owned by the twist
-   * owner. When omitted, the server scopes the search to the owner's entire
-   * priority tree.
+   * Scope search to this focus. Must be owned by the twist owner. When
+   * omitted, the server scopes the search across all of the owner's focuses.
    */
-  priorityId?: string;
+  focusId?: string;
 };
 
 /**
  * Built-in tool for interacting with the core Plot data layer.
  *
  * The Plot tool provides twists with the ability to create and manage threads,
- * priorities, and contacts within the Plot system. This is the primary interface
+ * focuses, and contacts within the Plot system. This is the primary interface
  * for twists to persist data and interact with the Plot database.
  *
  * @example
@@ -203,8 +202,8 @@ export abstract class Plot extends ITool {
    *         }],
    *       },
    *       link: true,
-   *       priority: {
-   *         access: PriorityAccess.Full
+   *       focus: {
+   *         access: FocusAccess.Full
    *       },
    *       contact: {
    *         access: ContactAccess.Read
@@ -274,8 +273,8 @@ export abstract class Plot extends ITool {
       /** Access level for links. When omitted with `link: true`, only source channel links are accessible. */
       access?: LinkAccess;
     };
-    priority?: {
-      access?: PriorityAccess;
+    focus?: {
+      access?: FocusAccess;
     };
     contact?: {
       access?: ContactAccess;
@@ -283,7 +282,7 @@ export abstract class Plot extends ITool {
     /** Enable semantic search across notes and links owned by the twist's user. */
     search?: true;
     /**
-     * When true, admin write operations (on threads/notes/links/priorities not created by this twist)
+     * When true, admin write operations (on threads/notes/links/focuses not created by this twist)
      * require user approval via plan actions instead of executing immediately.
      * Read operations and operations on the twist's own content still work directly.
      */
@@ -334,8 +333,7 @@ export abstract class Plot extends ITool {
    * For tags, provide a Record<number, boolean> where true adds a tag and false removes it.
    * Tags not included in the update remain unchanged.
    *
-   * When updating the parent, the thread's path will be automatically recalculated to
-   * maintain the correct hierarchical structure.
+   * Set `focus` to move the thread to a different focus.
    *
    * Scheduling is handled separately via `createSchedule()` / `updateSchedule()`.
    *
@@ -502,41 +500,41 @@ export abstract class Plot extends ITool {
   abstract getNote(note: { id: Uuid } | { key: string }): Promise<Note | null>;
 
   /**
-   * Creates a new priority in the Plot system.
+   * Creates a new focus in the Plot system.
    *
-   * Priorities serve as organizational containers for threads and twists.
-   * The created priority will be automatically assigned a unique ID.
+   * Focuses serve as organizational containers for threads and twists.
+   * The created focus will be automatically assigned a unique ID.
    *
-   * @param priority - The priority data to create
-   * @returns Promise resolving to the complete created priority
+   * @param focus - The focus data to create
+   * @returns Promise resolving to the complete created focus
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract createPriority(priority: NewPriority): Promise<Priority & { created: boolean }>;
+  abstract createFocus(focus: NewFocus): Promise<Focus & { created: boolean }>;
 
   /**
-   * Retrieves a priority by ID or key.
+   * Retrieves a focus by ID or key.
    *
-   * Archived priorities are included in the results.
+   * Archived focuses are included in the results.
    *
-   * @param priority - Priority lookup by ID or key
-   * @returns Promise resolving to the matching priority or null if not found
+   * @param focus - Focus lookup by ID or key
+   * @returns Promise resolving to the matching focus or null if not found
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getPriority(
-    priority: { id: Uuid } | { key: string }
-  ): Promise<Priority | null>;
+  abstract getFocus(
+    focus: { id: Uuid } | { key: string }
+  ): Promise<Focus | null>;
 
   /**
-   * Updates an existing priority in the Plot system.
+   * Updates an existing focus in the Plot system.
    *
-   * The priority is identified by either its ID or key.
+   * The focus is identified by either its ID or key.
    * Only the fields specified in the update will be changed.
    *
-   * @param update - Priority update containing ID/key and fields to change
+   * @param update - Focus update containing ID/key and fields to change
    * @returns Promise that resolves when the update is complete
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract updatePriority(update: PriorityUpdate): Promise<void>;
+  abstract updateFocus(update: FocusUpdate): Promise<void>;
 
   /**
    * Retrieves actors by their IDs.
@@ -632,12 +630,10 @@ export abstract class Plot extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getThreads(options?: {
     /**
-     * Priority to list threads from. Must be owned by the twist owner.
-     * When omitted, defaults to the owner's root priority.
+     * Focus to list threads from. Must be owned by the twist owner.
+     * When omitted, defaults to the owner's Inbox.
      */
-    priorityId?: Uuid;
-    /** Include threads from descendant priorities. Default: true. */
-    includeDescendants?: boolean;
+    focusId?: Uuid;
     /** Include archived threads. Default: false. */
     includeArchived?: boolean;
     /** Maximum number of threads to return. Default: 50, max: 200. */
@@ -647,25 +643,18 @@ export abstract class Plot extends ITool {
   }): Promise<Thread[]>;
 
   /**
-   * Lists priorities owned by the twist's user.
+   * Lists focuses owned by the twist's user.
    *
-   * Requires `PriorityAccess.Full`.
+   * Requires `FocusAccess.Full`.
    *
-   * @param options - Query options for filtering priorities
-   * @returns Promise resolving to array of priorities
+   * @param options - Query options for filtering focuses
+   * @returns Promise resolving to array of focuses
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getPriorities(options?: {
-    /**
-     * Parent priority to list children of. Must be owned by the twist
-     * owner. When omitted, defaults to the owner's root priority.
-     */
-    parentId?: Uuid;
-    /** Include all descendants, not just direct children. Default: false. */
-    includeDescendants?: boolean;
-    /** Include archived priorities. Default: false. */
+  abstract getFocuses(options?: {
+    /** Include archived focuses. Default: false. */
     includeArchived?: boolean;
-  }): Promise<Priority[]>;
+  }): Promise<Focus[]>;
 
   /**
    * Updates a link.
