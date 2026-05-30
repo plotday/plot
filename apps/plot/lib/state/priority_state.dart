@@ -37,6 +37,7 @@ class PriorityState extends Equatable {
     bool remoteSearchOffline = false,
     bool hasArchivedMatches = false,
     bool showSubPriorities = true,
+    bool everything = false,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -87,6 +88,7 @@ class PriorityState extends Equatable {
       remoteSearchOffline: remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches,
       showSubPriorities: showSubPriorities,
+      everything: everything,
     );
   }
 
@@ -121,6 +123,7 @@ class PriorityState extends Equatable {
     this.remoteSearchOffline = false,
     this.hasArchivedMatches = false,
     this.showSubPriorities = true,
+    this.everything = false,
   });
 
   final Priority context;
@@ -202,6 +205,12 @@ class PriorityState extends Equatable {
   /// matching the long-standing "roll up sub-priorities" behavior. When
   /// false, only threads filed directly on [context] are shown.
   final bool showSubPriorities;
+
+  /// When true, this bloc renders the synthetic "Everything" feed: every
+  /// thread across the Inbox and all focuses, unscoped and unsectioned.
+  /// Mirrored from [NowBloc.everything] by the priority page. [context]
+  /// stays the root so drafts land in the Inbox.
+  final bool everything;
 
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
@@ -332,6 +341,7 @@ class PriorityState extends Equatable {
     bool? remoteSearchOffline,
     bool? hasArchivedMatches,
     bool? showSubPriorities,
+    bool? everything,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -391,6 +401,7 @@ class PriorityState extends Equatable {
       remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
       showSubPriorities: showSubPriorities ?? this.showSubPriorities,
+      everything: everything ?? this.everything,
     );
   }
 
@@ -426,6 +437,7 @@ class PriorityState extends Equatable {
     remoteSearchOffline,
     hasArchivedMatches,
     showSubPriorities,
+    everything,
   ];
 
   @override

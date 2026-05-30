@@ -61,6 +61,7 @@ final class NowLoaded extends NowState {
     this.selectedBlockId,
     this.trackingPausedAt,
     this.previewPomodoro,
+    this.everything = false,
   }) : now = Time.now(),
        // ignore: prefer_initializing_formals
        _day = day;
@@ -121,6 +122,14 @@ final class NowLoaded extends NowState {
   /// persisted — purely a UI staging value before [StartTimer] writes
   /// `pomodoro`/`pomodoroAt` to the session row.
   final Duration? previewPomodoro;
+
+  /// When true, the user is viewing the synthetic "Everything" feed — all
+  /// threads across the Inbox and every focus, unscoped. [context] stays the
+  /// root (so drafts/new threads land in the Inbox); only the feed scope and
+  /// the sidebar highlight differ. Set by [ShowEverything]; cleared by any
+  /// ordinary [ChangeCurrentPriority]. Mirrored into `PriorityState.everything`
+  /// by the priority page so the feed query can read it.
+  final bool everything;
 
   List<Thread> get scheduled =>
       _day.scheduled.where((event) => event.at!.includes(now)).toList();
@@ -225,6 +234,7 @@ final class NowLoaded extends NowState {
     // flip of [trackingPaused] should re-emit.
     trackingPaused,
     previewPomodoro,
+    everything,
   ];
 
   /// The "current priority" — what the user should be working on right
@@ -410,6 +420,7 @@ final class NowLoaded extends NowState {
     Object? selectedBlockId = _sentinel,
     Object? trackingPausedAt = _sentinel,
     Object? previewPomodoro = _sentinel,
+    bool? everything,
   }) {
     return NowLoaded(
       session: session ?? this.session,
@@ -431,6 +442,7 @@ final class NowLoaded extends NowState {
       previewPomodoro: identical(previewPomodoro, _sentinel)
           ? this.previewPomodoro
           : previewPomodoro as Duration?,
+      everything: everything ?? this.everything,
     );
   }
 }

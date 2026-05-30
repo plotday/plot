@@ -817,6 +817,20 @@ class _PriorityPageState extends State<PriorityPage>
             context.read<PriorityBloc>().setCurrentEventForFeed(event);
           },
         ),
+        // Mirror NowBloc.everything into PriorityBloc so the activity feed
+        // re-scopes to the unscoped "Everything" list (or back to the scoped
+        // focus/Inbox view) when the user toggles the sidebar tiles.
+        BlocListener<NowBloc, NowState>(
+          listenWhen: (previous, current) {
+            final p = previous is NowLoaded && previous.everything;
+            final n = current is NowLoaded && current.everything;
+            return p != n;
+          },
+          listener: (context, nowState) {
+            final everything = nowState is NowLoaded && nowState.everything;
+            context.read<PriorityBloc>().setEverything(everything);
+          },
+        ),
       ],
       child: BlocBuilder<PriorityBloc, PriorityState>(
         builder: (context, state) {
@@ -1206,7 +1220,10 @@ class _PriorityPageState extends State<PriorityPage>
             ),
           ),
           children: [
-            if (dropAbove != null)
+            // The Everything feed spans every focus, so per-row gap drop
+            // targets (which schedule into the current scope) don't apply —
+            // suppress them and render one plain unsectioned list.
+            if (dropAbove != null && !state.everything)
               BlockDropZone(
                 target: dropAbove.target,
                 silent: dropAbove.silent,
@@ -1310,7 +1327,7 @@ class _PriorityPageState extends State<PriorityPage>
                 ];
               },
             ),
-            if (tail != null)
+            if (tail != null && !state.everything)
               BlockDropZone(
                 target: tail.target,
                 silent: tail.silent,

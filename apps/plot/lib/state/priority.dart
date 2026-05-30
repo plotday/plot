@@ -254,19 +254,23 @@ class PriorityBloc extends Cubit<PriorityState> {
     return future;
   }
 
-  PriorityBloc({required Priority priority, Thread? thread})
-    : _subscriptions = [],
-      _threadSubscription = null,
-      _agendaSubscription = null,
-      _tagsSubscription = null,
-      _reactionsSubscription = null,
-      _draftModified = false,
-      super(
-        PriorityState(
-          context: priority,
-          thread: thread,
-        ),
-      ) {
+  PriorityBloc({
+    required Priority priority,
+    Thread? thread,
+    bool everything = false,
+  }) : _subscriptions = [],
+       _threadSubscription = null,
+       _agendaSubscription = null,
+       _tagsSubscription = null,
+       _reactionsSubscription = null,
+       _draftModified = false,
+       super(
+         PriorityState(
+           context: priority,
+           thread: thread,
+           everything: everything,
+         ),
+       ) {
     _allInstances.add(this);
     _loadPriority();
     _restartActiveTabSubscription();
@@ -293,6 +297,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     final next = !state.showSubPriorities;
     log.info('Toggling showSubPriorities to $next');
     emit(state.copyWith(showSubPriorities: next));
+    _restartActiveTabSubscription();
+  }
+
+  /// Mirror of [NowBloc.everything] for this bloc. The priority page calls
+  /// this whenever the user switches between a scoped focus/Inbox view and
+  /// the synthetic "Everything" feed, so the activity-feed query re-scopes
+  /// (unscoped when true) and renders one unsectioned list. No-op when
+  /// unchanged.
+  void setEverything(bool everything) {
+    if (state.everything == everything) return;
+    log.info('Setting everything feed mode to $everything');
+    emit(state.copyWith(everything: everything));
     _restartActiveTabSubscription();
   }
 
@@ -758,17 +774,37 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscribeAllTabHead();
   }
 
-  void _subscribeAllTabHead() {
-    final priorityToLoad = state.context;
+  /// Resolve the `(priorityId, priorityPath)` scope for the activity-feed
+  /// queries. Flat-focus rules:
+  ///   • Everything → both null: every thread, unscoped.
+  ///   • Root (Inbox) → exact `priorityId` so only unfiled threads show; the
+  ///     synthetic Everything view is the way to see all of them at once.
+  ///     Searching from the root still goes global (both null).
+  ///   • A focus → unchanged behaviour: roll up by path while searching,
+  ///     rolling up sub-priorities, or showing an event agenda; exact
+  ///     otherwise. Focuses are leaves, so path == exact in the flat model.
+  ({PriorityId? priorityId, Path? priorityPath}) _feedScope() {
+    if (state.everything) return (priorityId: null, priorityPath: null);
+    final p = state.context;
     final isSearching = state.search.isNotEmpty;
+    if (p.root) {
+      return isSearching
+          ? (priorityId: null, priorityPath: null)
+          : (priorityId: p.id, priorityPath: null);
+    }
     final scopeByPath =
         isSearching || state.showSubPriorities || _currentEventForFeed != null;
-    final searchGlobal = isSearching && priorityToLoad.root;
+    return (
+      priorityId: scopeByPath ? null : p.id,
+      priorityPath: scopeByPath ? p.path : null,
+    );
+  }
 
-    final priorityId = scopeByPath ? null : priorityToLoad.id;
-    final priorityPath = scopeByPath
-        ? (searchGlobal ? null : priorityToLoad.path)
-        : null;
+  void _subscribeAllTabHead() {
+    final isSearching = state.search.isNotEmpty;
+    final scope = _feedScope();
+    final priorityId = scope.priorityId;
+    final priorityPath = scope.priorityPath;
     final archived = state.showArchived;
     final filter = state.filter.isNotEmpty ? state.filter : null;
     final reactionFilter =
@@ -782,7 +818,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     // sets always surface regardless of how deep the Done tail is — the bug
     // this fixes was active threads being buried past the LIMIT of a single
     // `activity_at`-ordered page at rolled-up priorities.
-    final flatMode = state.search.isNotEmpty ||
+    final flatMode = state.everything ||
+        state.search.isNotEmpty ||
         state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty;
 
@@ -910,6 +947,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Search / filter mode: flat list, no sections (per spec).
     final flatMode =
+        state.everything ||
         state.search.isNotEmpty ||
         state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty;
@@ -1192,13 +1230,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
 
       final gen = _activeTabAppendGeneration;
-      final priorityToLoad = state.context;
-      final isSearching = state.search.isNotEmpty;
-      final scopeByPath =
-          isSearching ||
-          state.showSubPriorities ||
-          _currentEventForFeed != null;
-      final searchGlobal = isSearching && priorityToLoad.root;
+      final scope = _feedScope();
 
       final completer = Completer<void>();
       _activeTabAppendInFlight = completer.future;
@@ -1210,10 +1242,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       page;
       try {
         page = await Thread.fetchDonePage(
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
+          priorityId: scope.priorityId,
+          priorityPath: scope.priorityPath,
           archived: state.showArchived,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
@@ -1282,13 +1312,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
 
       final gen = _activeTabAppendGeneration;
-      final priorityToLoad = state.context;
-      final isSearching = state.search.isNotEmpty;
-      final scopeByPath =
-          isSearching ||
-          state.showSubPriorities ||
-          _currentEventForFeed != null;
-      final searchGlobal = isSearching && priorityToLoad.root;
+      final scope = _feedScope();
 
       final completer = Completer<void>();
       _activeTabAppendInFlight = completer.future;
@@ -1307,16 +1331,14 @@ class PriorityBloc extends Cubit<PriorityState> {
       page;
       try {
         page = await Thread.fetchAllTabPage(
-          priorityId: scopeByPath ? null : priorityToLoad.id,
-          priorityPath: scopeByPath
-              ? (searchGlobal ? null : priorityToLoad.path)
-              : null,
+          priorityId: scope.priorityId,
+          priorityPath: scope.priorityPath,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
           reactionFilter:
               state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
           iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-          search: isSearching ? state.search : null,
+          search: state.search.isNotEmpty ? state.search : null,
           limit: _activityFeedLimit,
           after: cursor,
         );
@@ -3866,6 +3888,11 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
   }
 
   Future<_LoadResult> _loadPriorityWithFallback() async {
+    // Capture the current Everything-feed flag before any await so a fresh
+    // PriorityBloc (e.g. navigating from a focus straight to Everything)
+    // starts in the right feed mode. The priority page keeps it in sync
+    // afterwards via setEverything.
+    final everything = context.read<NowBloc>().everything;
     // PriorityState eagerly creates a Note.draft (which reads Base.actorId!),
     // so ensure identity is complete before constructing the bloc. An
     // incomplete identity (userId present but actorId missing) usually means
@@ -3910,7 +3937,9 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         });
       }
 
-      return _LoadResult.success(PriorityBloc(priority: priority));
+      return _LoadResult.success(
+        PriorityBloc(priority: priority, everything: everything),
+      );
     } catch (e, stackTrace) {
       // Level 1 failed - log and try fallback
       log.warning(
@@ -3940,7 +3969,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         }
 
         return _LoadResult.success(
-          PriorityBloc(priority: defaultPriority),
+          PriorityBloc(priority: defaultPriority, everything: everything),
           isFallback: true,
         );
       } catch (fallbackError, fallbackStack) {

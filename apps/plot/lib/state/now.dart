@@ -14,6 +14,9 @@ class NowBloc extends Cubit<NowState> {
   bool get loading => super.state is NowLoading;
   NowLoaded get loadedState => super.state as NowLoaded;
 
+  /// Whether the user is currently viewing the synthetic "Everything" feed.
+  bool get everything => state is NowLoaded && loadedState.everything;
+
   StreamSubscription<void>? _subscription;
   Timer? _trackTick;
 
@@ -354,17 +357,35 @@ class NowBloc extends Cubit<NowState> {
   ///     [PriorityPage] calling this on mount with the priority the
   ///     agenda tap just selected — preserves it, so the highlight
   ///     survives the navigation that the tap itself triggered.
-  void setContext(Priority? priority, {String? selectedBlockId}) async {
+  void setContext(
+    Priority? priority, {
+    String? selectedBlockId,
+    bool? everything,
+  }) async {
     final prior = loadedState;
     final samePriority = prior.context?.id == priority?.id;
     final newSelectedBlockId =
         selectedBlockId ?? (samePriority ? prior.selectedBlockId : null);
+    // `everything` is nullable so callers that don't care (e.g. the bloc
+    // provider re-publishing the loaded context) preserve the current value,
+    // while commands set it explicitly: Everything = true, any ordinary
+    // priority navigation = false.
+    final newEverything = everything ?? prior.everything;
 
     if (samePriority) {
-      // No real navigation — only the agenda selection can change
-      // (re-tapping a different block of the priority in view).
-      if (prior.selectedBlockId == newSelectedBlockId) return;
-      emit(prior.copyWith(selectedBlockId: newSelectedBlockId));
+      // No real navigation — only the agenda selection or the Everything
+      // flag can change (e.g. toggling Inbox ⇄ Everything, both rooted on
+      // the same root priority).
+      if (prior.selectedBlockId == newSelectedBlockId &&
+          prior.everything == newEverything) {
+        return;
+      }
+      emit(
+        prior.copyWith(
+          selectedBlockId: newSelectedBlockId,
+          everything: newEverything,
+        ),
+      );
       return;
     }
 
@@ -381,6 +402,7 @@ class NowBloc extends Cubit<NowState> {
         // Staged duration is per-priority — drop it whenever the user
         // navigates to a different priority.
         previewPomodoro: null,
+        everything: newEverything,
       ),
     );
 

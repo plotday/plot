@@ -60,10 +60,18 @@ class ChangeCurrentPriority extends PriorityCommand {
     Priority super.priority, {
     super.ancestry = true,
     this.selectedBlockId,
+    this.everything = false,
   }) : super(
          eventObject: EventObject.priority,
          eventAction: EventAction.viewed,
        );
+
+  /// When true, switch to the synthetic "Everything" feed rooted on this
+  /// priority (the root): every thread across the Inbox and all focuses,
+  /// unscoped. Sets [NowBloc.everything], which the priority page mirrors
+  /// into the feed scope. Any ordinary navigation passes false, so moving to
+  /// a focus or the Inbox leaves Everything mode.
+  final bool everything;
 
   /// When this change originates from tapping a block in the agenda,
   /// the tapped [AgendaBlock.id]. Passed through to
@@ -84,7 +92,11 @@ class ChangeCurrentPriority extends PriorityCommand {
       // chosen priority is the same as the event's priority (setContext
       // would otherwise preserve it).
       nowBloc.setCurrentEvent(null);
-      nowBloc.setContext(priority, selectedBlockId: selectedBlockId);
+      nowBloc.setContext(
+        priority,
+        selectedBlockId: selectedBlockId,
+        everything: everything,
+      );
     }
 
     final tabsRouter = _tabsRouterOrNull(context);
