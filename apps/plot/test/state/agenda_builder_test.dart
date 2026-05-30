@@ -311,10 +311,18 @@ void main() {
         horizonDays: 1,
       );
       final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
-      expect(gaps, hasLength(1));
-      expect(gaps.single.range.start, DateTime(2026, 5, 14, 14, 30));
-      expect(gaps.single.range.end, DateTime(2026, 5, 14, 18));
-      expect(gaps.single.threads, isEmpty, reason: 'gaps are read-only');
+      // The between-events gap, plus a trailing edge gap from the evening
+      // event's end (19:00) to midnight.
+      expect(gaps, hasLength(2));
+      final between = gaps.firstWhere(
+        (g) => g.range.start == DateTime(2026, 5, 14, 14, 30),
+      );
+      expect(between.range.end, DateTime(2026, 5, 14, 18));
+      expect(between.threads, isEmpty, reason: 'gaps are read-only');
+      final trailing = gaps.firstWhere(
+        (g) => g.range.start == DateTime(2026, 5, 14, 19),
+      );
+      expect(trailing.range.end, DateTime(2026, 5, 15));
     });
 
     // Frozen now = 2026-05-14 14:00 (see group setUp).
@@ -432,10 +440,19 @@ void main() {
         horizonDays: 1,
       );
       final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
-      expect(gaps, hasLength(1));
-      expect(gaps.single.range.start, DateTime(2026, 5, 14, 14));
-      expect(gaps.single.range.end, DateTime(2026, 5, 14, 16));
-      expect(gaps.single.isCurrent, isTrue);
+      // The current "Now" gap, plus a trailing edge gap from the event's
+      // end (17:00) to midnight.
+      expect(gaps, hasLength(2));
+      final nowGap = gaps.firstWhere(
+        (g) => g.range.start == DateTime(2026, 5, 14, 14),
+      );
+      expect(nowGap.range.end, DateTime(2026, 5, 14, 16));
+      expect(nowGap.isCurrent, isTrue);
+      final trailing = gaps.firstWhere(
+        (g) => g.range.start == DateTime(2026, 5, 14, 17),
+      );
+      expect(trailing.range.end, DateTime(2026, 5, 15));
+      expect(trailing.isCurrent, isFalse);
     });
 
     test('no "Now" gap when the first block is already in progress', () {
@@ -451,8 +468,14 @@ void main() {
         context: p,
         horizonDays: 1,
       );
-      // The in-progress event leads; nothing is synthesized before it.
-      expect(model.allBlocks.whereType<ui.GapBlock>(), isEmpty);
+      // No leading "Now" gap is synthesized before the in-progress event;
+      // the only gap is the trailing edge gap from its end (15:00) to
+      // midnight.
+      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
+      expect(gaps, hasLength(1));
+      expect(gaps.single.range.start, DateTime(2026, 5, 14, 15));
+      expect(gaps.single.range.end, DateTime(2026, 5, 15));
+      expect(gaps.single.isCurrent, isFalse);
     });
   });
 }

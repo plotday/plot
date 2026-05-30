@@ -229,6 +229,32 @@ class AgendaBuilder {
       // (starts at or before now) no leading gap is produced.
       final blocks = <AgendaBlock>[];
       DateTime? prevEnd = isToday ? effectiveNow : null;
+
+      // Day boundaries for the leading/trailing edge gaps. These mark the
+      // free time before the day's first scheduled row and after its last,
+      // and only appear when the day actually has scheduled rows.
+      final midnight = date.toDateTime();
+      final nextMidnight = date.addDays(1).toDateTime();
+
+      // Leading edge gap: midnight → the day's first scheduled row. Only on
+      // future days — today's pre-first-row free time is the "Now" gap (the
+      // loop seeds `prevEnd` at now), and a midnight-anchored span would be
+      // wholly in the past. The renderer omits its time (midnight) and its
+      // duration (it touches a day boundary).
+      if (!isToday &&
+          anchored.isNotEmpty &&
+          anchored.first.start.isAfter(midnight)) {
+        blocks.add(
+          GapBlock(
+            id: 'g_lead_$sectionId',
+            priority: context,
+            range: DateTimeRange(midnight, anchored.first.start),
+            threads: const [],
+            isCurrent: false,
+          ),
+        );
+      }
+
       for (final a in anchored) {
         if (prevEnd != null && a.start.isAfter(prevEnd)) {
           final gapStart = prevEnd;
@@ -247,6 +273,24 @@ class AgendaBuilder {
         }
         blocks.add(a.block);
         if (prevEnd == null || a.end.isAfter(prevEnd)) prevEnd = a.end;
+      }
+
+      // Trailing edge gap: the day's last scheduled row → midnight. Applies
+      // to today and future days; skipped when the last row runs to/past
+      // midnight. The renderer keeps its time (the last row's end) but omits
+      // its duration (it touches a day boundary).
+      if (anchored.isNotEmpty &&
+          prevEnd != null &&
+          prevEnd.isBefore(nextMidnight)) {
+        blocks.add(
+          GapBlock(
+            id: 'g_trail_$sectionId',
+            priority: context,
+            range: DateTimeRange(prevEnd, nextMidnight),
+            threads: const [],
+            isCurrent: false,
+          ),
+        );
       }
 
       // scheduleAt: the default time the day-header "+" pre-fills when

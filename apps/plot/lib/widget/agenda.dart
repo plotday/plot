@@ -188,21 +188,22 @@ class AgendaTile extends StatelessWidget {
       }
     }
 
-    // Determine if this is the last gap of the day (until midnight)
-    bool isLastGapOfDay = false;
-    if (dateTimeRange != null &&
-        thread == null && // It's a gap, not a scheduled event
-        dateTimeRange!.end != null) {
-      // Check if the end time is at midnight (start of next day)
-      final endTime = dateTimeRange!.end!;
-      isLastGapOfDay =
-          endTime.hour == 0 && endTime.minute == 0 && endTime.second == 0;
+    // Determine if this gap touches a day boundary — the leading edge gap
+    // (start at midnight) or the trailing one (end at midnight). Edge gaps
+    // omit their duration; the leading one also renders no time, since a
+    // midnight start has no label.
+    bool gapTouchesMidnight = false;
+    if (dateTimeRange != null && thread == null) {
+      bool isMidnight(DateTime? t) =>
+          t != null && t.hour == 0 && t.minute == 0 && t.second == 0;
+      gapTouchesMidnight =
+          isMidnight(dateTimeRange!.start) || isMidnight(dateTimeRange!.end);
     }
 
     // Determine duration text. A gap in progress shows its remaining free
     // time (end − now); otherwise the full gap duration.
     String? durationText;
-    if (dateTimeRange != null && !isLastGapOfDay) {
+    if (dateTimeRange != null && !gapTouchesMidnight) {
       if (now) {
         final end = dateTimeRange!.end;
         final currentTime = Time.now();
@@ -357,17 +358,28 @@ class AgendaTile extends StatelessWidget {
     // on non-touch, always on touch) that schedules a focus block in the
     // gap. The whole row is the tap target.
     if (isGapHeader) {
-      // Anchor the new focus block at the gap's start. A gap already in
-      // progress (start in the past) falls back to the form's default
-      // (the next quarter-hour today); either way the default duration is
-      // capped to the free time remaining in the gap.
+      // Anchor the new focus block at the gap's start. A gap that's already
+      // in progress (start in the past) or a leading edge gap (whose start
+      // is just the midnight day boundary) falls back to the form's default
+      // time for the day; either way the default duration is capped to the
+      // free time remaining in the gap.
       final priorityBloc = context.read<PriorityBloc>();
       final gapStart = dateTimeRange!.start;
       final gapEnd = dateTimeRange!.end;
       final nowTime = Time.now();
+      final startIsMidnight =
+          gapStart != null &&
+          gapStart.hour == 0 &&
+          gapStart.minute == 0 &&
+          gapStart.second == 0;
       final DateTime? startForModal =
-          (gapStart != null && gapStart.isAfter(nowTime)) ? gapStart : null;
-      final effStart = startForModal ?? nowTime;
+          (gapStart != null && !startIsMidnight && gapStart.isAfter(nowTime))
+          ? gapStart
+          : null;
+      // Anchors the modal's date (and the duration cap). For the leading
+      // edge gap this is midnight — the correct day — while [startForModal]
+      // stays null so the form picks the day's default time.
+      final effStart = startForModal ?? gapStart ?? nowTime;
       final Duration? maxDur = (gapEnd != null && gapEnd.isAfter(effStart))
           ? gapEnd.difference(effStart)
           : null;
