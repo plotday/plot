@@ -254,6 +254,9 @@ class FormSelect<T> extends FormItem {
     T? initialValue,
     this.onChanged,
     this.onAdd,
+    this.gridColumns,
+    this.gridCellSize = 36,
+    this.gridCellSpacing = 4,
     bool hasInitialValue = false,
   }) : assert(
          labelBuilder != null || titleBuilder != null,
@@ -297,6 +300,20 @@ class FormSelect<T> extends FormItem {
   /// Optional callback to create a new item inline.
   /// When provided, a "+" button is shown in the selection modal.
   final Future<T?> Function(BuildContext context)? onAdd;
+
+  /// When non-null, the selection modal renders items in a grid with this many
+  /// columns (like the emoji reaction picker) instead of the default list.
+  /// Each cell shows the item's [leadingBuilder] widget with its
+  /// [titleBuilder] text as a tooltip. The form field display is unchanged.
+  final int? gridColumns;
+
+  /// Edge length of each grid cell in logical pixels. Only used when
+  /// [gridColumns] is set.
+  final double gridCellSize;
+
+  /// Spacing between grid cells in logical pixels. Only used when
+  /// [gridColumns] is set.
+  final double gridCellSpacing;
 
   T? _value;
   bool _hasValue;
@@ -362,75 +379,84 @@ class FormSelect<T> extends FormItem {
         final itemsList = await items(search);
         return [SelectGroup(title: null, items: itemsList)];
       },
-      itemBuilder: (item, _) {
-        final leading = leadingBuilder?.call(item);
+      itemBuilder: gridColumns != null
+          ? (item, _) => _buildGridCell(context, item)
+          : (item, _) {
+              final leading = leadingBuilder?.call(item);
 
-        // Use Widget-based label if provided
-        if (labelBuilder != null) {
-          final labelWidget = labelBuilder!(item);
-          return Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.theme.spacing.lg,
-              vertical: context.theme.spacing.md,
-            ),
-            child: Row(
-              children: [
-                if (leading != null) ...[
-                  IconTheme(
-                    data: IconThemeData(color: context.theme.colors.foreground),
-                    child: leading,
+              // Use Widget-based label if provided
+              if (labelBuilder != null) {
+                final labelWidget = labelBuilder!(item);
+                return Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.theme.spacing.lg,
+                    vertical: context.theme.spacing.md,
                   ),
-                  SizedBox(width: context.theme.spacing.md),
-                ],
-                Expanded(child: labelWidget),
-              ],
-            ),
-          );
-        }
-
-        // Otherwise use String-based title+subtitle
-        final title = titleBuilder!(item);
-        final subtitle = subtitleBuilder?.call(item);
-
-        return Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: context.theme.spacing.lg,
-            vertical: context.theme.spacing.md,
-          ),
-          child: Row(
-            children: [
-              if (leading != null) ...[
-                IconTheme(
-                  data: IconThemeData(color: context.theme.colors.foreground),
-                  child: leading,
-                ),
-                SizedBox(width: context.theme.spacing.md),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(title, overflow: TextOverflow.ellipsis),
-                    if (subtitle != null)
-                      Text(
-                        subtitle,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0x80FFFFFF),
+                  child: Row(
+                    children: [
+                      if (leading != null) ...[
+                        IconTheme(
+                          data: IconThemeData(
+                            color: context.theme.colors.foreground,
+                          ),
+                          child: leading,
                         ),
+                        SizedBox(width: context.theme.spacing.md),
+                      ],
+                      Expanded(child: labelWidget),
+                    ],
+                  ),
+                );
+              }
+
+              // Otherwise use String-based title+subtitle
+              final title = titleBuilder!(item);
+              final subtitle = subtitleBuilder?.call(item);
+
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: context.theme.spacing.lg,
+                  vertical: context.theme.spacing.md,
+                ),
+                child: Row(
+                  children: [
+                    if (leading != null) ...[
+                      IconTheme(
+                        data: IconThemeData(
+                          color: context.theme.colors.foreground,
+                        ),
+                        child: leading,
                       ),
+                      SizedBox(width: context.theme.spacing.md),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(title, overflow: TextOverflow.ellipsis),
+                          if (subtitle != null)
+                            Text(
+                              subtitle,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0x80FFFFFF),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              );
+            },
       selectedValue: _value,
       prompt: label ?? key,
       onAdd: onAdd,
+      gridColumns: gridColumns,
+      gridCellSize: gridCellSize,
+      gridCellSpacing: gridCellSpacing,
     );
     if (result.present) {
       _value = result.value;
@@ -439,6 +465,26 @@ class FormSelect<T> extends FormItem {
       onChanged?.call();
       _notifyListeners();
     }
+  }
+
+  /// Builds a compact cell for the selection modal's grid mode: the item's
+  /// leading widget centered, with its title shown as a tooltip. Falls back to
+  /// the title text when no leading widget is provided.
+  Widget _buildGridCell(BuildContext context, T item) {
+    final leading = leadingBuilder?.call(item);
+    final title = titleBuilder?.call(item);
+    final cell = Center(
+      child: IconTheme(
+        data: IconThemeData(color: context.theme.colors.foreground),
+        child:
+            leading ??
+            (title != null
+                ? Text(title, overflow: TextOverflow.ellipsis)
+                : const SizedBox.shrink()),
+      ),
+    );
+    if (title == null) return cell;
+    return FTooltip(tipBuilder: (ctx, _) => Text(title), child: cell);
   }
 
   @override

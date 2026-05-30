@@ -609,6 +609,9 @@ Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
 }
 
 /// Icon picker over the curated focus icon set ([PlotIcon.focusIcons]).
+/// Renders as a grid (like the emoji reaction picker) so icons are browsed
+/// visually; labels are searchable and shown as tooltips. [initial] seeds the
+/// selection — pass the focus's stored icon key when editing.
 FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
   final keys = PlotIcon.focusIcons.keys.toList();
   return FormSelect<String>(
@@ -620,32 +623,17 @@ FormSelect<String> _focusIconSelect({String initial = 'bullseyePointer'}) {
       if (search == null || search.isEmpty) return keys;
       final lower = search.toLowerCase();
       return keys
-          .where((k) => _focusIconLabel(k).toLowerCase().contains(lower))
+          .where(
+            (k) => PlotIcon.focusIconLabel(k).toLowerCase().contains(lower),
+          )
           .toList();
     },
-    titleBuilder: _focusIconLabel,
-    leadingBuilder: (k) => Icon(PlotIcon.focusIcon(k), size: 16),
+    titleBuilder: PlotIcon.focusIconLabel,
+    leadingBuilder: (k) => Icon(PlotIcon.focusIcon(k), size: 20),
+    gridColumns: 6,
+    gridCellSize: 48,
+    gridCellSpacing: 8,
   );
-}
-
-/// Humanises a focus-icon key: 'userGroup' -> 'User group'.
-String _focusIconLabel(String key) {
-  if (key.isEmpty) return key;
-  final buf = StringBuffer();
-  for (var i = 0; i < key.length; i++) {
-    final c = key[i];
-    final isUpper = c.toUpperCase() == c && c.toLowerCase() != c;
-    if (i == 0) {
-      buf.write(c.toUpperCase());
-    } else if (isUpper) {
-      buf
-        ..write(' ')
-        ..write(c.toLowerCase());
-    } else {
-      buf.write(c);
-    }
-  }
-  return buf.toString();
 }
 
 /// Two-step focus creation. Step 1 collects the focus's name, description,
@@ -690,8 +678,9 @@ class NewFocus extends Command {
 
     if (skipMatching) {
       if (!context.mounted) return const CommandSkipped();
-      return AddPriority(Future.value(_priorityFromValues(values, root)))
-          .run(context);
+      return AddPriority(
+        Future.value(_priorityFromValues(values, root)),
+      ).run(context);
     }
 
     // Step 2: review matching threads, then create.
@@ -1030,34 +1019,6 @@ class EditPriorityCommand extends ShowForm {
             }
           }
 
-          final parentSelect = FormSelect<Priority>(
-            key: 'parent',
-            label: 'Parent',
-            initialValue: parent,
-            enabled: !isRoot,
-            placeholder: 'None',
-            items: (search) async {
-              final priorities = await Priority.get(
-                order: PriorityOrder.nested,
-              );
-              return priorities.where((candidate) {
-                if (candidate.id == p.id) return false;
-                if (p.path.isParent(candidate.path)) return false;
-                if (candidate.isPlot) return false;
-                if (search != null &&
-                    search.isNotEmpty &&
-                    !candidate.matchesSearch(search)) {
-                  return false;
-                }
-                return true;
-              }).toList();
-            },
-            labelBuilder: (item) => FocusLabel(priority: item),
-            titleBuilder: (item) => item.ancestorsLabel() != null
-                ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
-                : item.title,
-          );
-
           // Team selector for top-level priorities:
           // - If team_id is already set: read-only (show team name, no editing)
           // - If team_id is null and user is in teams: editable selector
@@ -1115,7 +1076,7 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: p.title,
                     required: true,
                   ),
-                  parentSelect,
+                  _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
                   ?teamSelect,
                   FormSelect<ThemeColor?>(
                     key: 'color',
@@ -1162,8 +1123,8 @@ class EditPriorityCommand extends ShowForm {
                     isPrimary: true,
                     buildCommand: (values) {
                       final title = values['title'] as String;
-                      final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
+                      final icon = values['icon'] as String?;
                       final shared = values['shared'] as SharedSelection?;
                       // Team: only update when editable (team was null before).
                       // Otherwise leave the existing team_id alone — locked
@@ -1188,14 +1149,14 @@ class EditPriorityCommand extends ShowForm {
                           shared == null
                               ? p.copyWith(
                                   title: title,
-                                  parent: newParent,
                                   color: Value(color),
+                                  icon: Value(icon),
                                   teamId: newTeamId,
                                 )
                               : p.copyWith(
                                   title: title,
-                                  parent: newParent,
                                   color: Value(color),
+                                  icon: Value(icon),
                                   teamId: newTeamId,
                                   defaultContacts: Value(shared.contacts),
                                   defaultGroups: Value(shared.groups),
@@ -1231,7 +1192,8 @@ class ShowPriorityCommands extends ShowCommands {
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
-  if (!priority.isViewer) EditPriorityCommand(priority),
+  // The Inbox (root) is a fixed tile — no name/icon/colour to edit.
+  if (!priority.isViewer && !priority.root) EditPriorityCommand(priority),
   if (!priority.isViewer) ShowEarlyNotificationsSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer && !priority.isPlot) NewPriority(parent: priority),
@@ -1387,49 +1349,6 @@ class ToggleArchivedVisibility extends Command {
       // No thread open — nothing to toggle.
     }
 
-    return const CommandDone();
-  }
-}
-
-/// Toggle whether the activity feed and todo list on the priority page
-/// roll up threads from descendant priorities, or show only threads filed
-/// directly under the current priority.
-///
-/// On (showSubPriorities = true) = the long-standing rollup behaviour
-/// (descendant threads are visible inline). Off = only direct threads, so
-/// sub-priorities surface as their own pages instead.
-class ToggleShowSubPriorities extends Command {
-  ToggleShowSubPriorities._({required this.showingSubPriorities})
-    : super(
-        title: showingSubPriorities
-            ? 'Hide sub-priorities'
-            : 'Show sub-priorities',
-        subtitle: showingSubPriorities
-            ? 'Rolling up threads from sub-priorities into this view'
-            : 'Showing only threads filed directly on this priority',
-        eventObject: EventObject.filter,
-        eventAction: EventAction.filtered,
-        // Mirror the PrioritiesList caret semantics: chevronDown when the
-        // sub-priority *content* is visible inline (the long-standing
-        // rollup behaviour where descendant threads expand into this
-        // feed), chevronRight when that content is collapsed away
-        // (direct-only feed; sub-priorities are reached as their own
-        // pages instead).
-        icon: showingSubPriorities
-            ? FontAwesomeIcons.chevronDown
-            : FontAwesomeIcons.chevronRight,
-      );
-
-  factory ToggleShowSubPriorities({required BuildContext context}) {
-    final showing = context.read<PriorityBloc>().state.showSubPriorities;
-    return ToggleShowSubPriorities._(showingSubPriorities: showing);
-  }
-
-  final bool showingSubPriorities;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    context.read<PriorityBloc>().toggleShowSubPriorities();
     return const CommandDone();
   }
 }

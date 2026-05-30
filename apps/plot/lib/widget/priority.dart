@@ -141,9 +141,12 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     final effectiveTextStyle = widget.monochrome && !isActive
         ? widget.textStyle?.copyWith(color: restingColor)
         : widget.textStyle;
-    final indicatorColor = widget.monochrome && !isActive
+    // The leading focus icon and the trailing unread dot follow the title's
+    // monochrome-at-rest treatment: a muted tone at rest on the left-panel
+    // frame, the focus colour on hover or when selected.
+    final accentColor = widget.monochrome && !isActive
         ? restingColor
-        : priorityAccent;
+        : (widget.textStyle?.color ?? priorityAccent);
 
     final navigationCommand = !isContext
         ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
@@ -209,23 +212,20 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       indentLevel: widget.indentLevel,
       textStyle: effectiveTextStyle,
       leadingBuilder: (isHovered, hasFocus) {
-        final isUnread = widget.unread ?? priority.unread;
+        final iconSize = buildContext.theme.iconSizes.base;
+        // Leading focus icon, positioned with the standard command-tile
+        // metrics: 20px from the panel edge, then a 12px gap to the title
+        // (mirrors ListTile._buildContent's icon slot). The unread dot now
+        // trails the title — see _buildLabel.
         return Padding(
-          padding: EdgeInsets.only(
-            left: leadingH,
-            right: buildContext.theme.spacing.sm,
-            bottom: 2,
-          ),
-          child: PriorityNotification(
-            unread: isUnread,
-            color: priority.displayColor,
-            // Keep the monochrome resting tone for the empty leading slot,
-            // but let the unread dot render in the priority's own color so
-            // it reads as a priority-tinted notification against the
-            // monochrome frame.
-            colorOverride: widget.monochrome && !isUnread
-                ? indicatorColor
-                : null,
+          padding: const EdgeInsets.only(left: 20, right: 12),
+          child: SizedBox.square(
+            dimension: iconSize,
+            child: Icon(
+              PlotIcon.focusIcon(priority.icon),
+              size: iconSize,
+              color: accentColor,
+            ),
           ),
         );
       },
@@ -289,21 +289,39 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       showIcon: false,
     );
 
-    if (!widget.expandable) return label;
+    // The unread dot trails the title now that the focus icon owns the
+    // leading slot. It sits outside the Flexible title so it stays visible
+    // even when the title ellipsizes.
+    final bool isUnread = widget.unread ?? priority.unread;
+    final Widget? notification = isUnread
+        ? Padding(
+            padding: EdgeInsets.only(left: buildContext.theme.spacing.sm),
+            child: PriorityNotification(
+              unread: true,
+              color: priority.displayColor,
+            ),
+          )
+        : null;
 
-    final caretColor = widget.monochrome && !isActive
-        ? restingColor
-        : (widget.textStyle?.color ?? buildContext.colour.muted);
+    final Widget? caret = widget.expandable
+        ? _ExpandCaretButton(
+            key: _caretKey,
+            expanded: widget.expanded,
+            color: widget.monochrome && !isActive
+                ? restingColor
+                : (widget.textStyle?.color ?? buildContext.colour.muted),
+            onTap: widget.onToggleExpand,
+          )
+        : null;
+
+    if (notification == null && caret == null) return label;
+
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
         Flexible(child: label),
-        _ExpandCaretButton(
-          key: _caretKey,
-          expanded: widget.expanded,
-          color: caretColor,
-          onTap: widget.onToggleExpand,
-        ),
+        ?notification,
+        ?caret,
       ],
     );
   }
@@ -380,7 +398,6 @@ class FocusLabel extends StatelessWidget {
     this.color,
     this.showIcon = true,
     this.boldLeaf = false,
-    this.leafTrailingIcon,
     this.onLeafTap,
     super.key,
   });
@@ -398,11 +415,7 @@ class FocusLabel extends StatelessWidget {
   /// When true, render the title at semibold.
   final bool boldLeaf;
 
-  /// Optional trailing icon (typically a caret) sharing a tap target with the
-  /// title via [onLeafTap].
-  final IconData? leafTrailingIcon;
-
-  /// Tap handler for the combined title + [leafTrailingIcon] hit area.
+  /// Tap handler for the title hit area.
   final VoidCallback? onLeafTap;
 
   @override
@@ -432,10 +445,6 @@ class FocusLabel extends StatelessWidget {
         const SizedBox(width: 6),
       ],
       Flexible(child: title),
-      if (leafTrailingIcon != null) ...[
-        const SizedBox(width: 4),
-        Icon(leafTrailingIcon, size: 10, color: accent),
-      ],
     ];
 
     final row = Row(

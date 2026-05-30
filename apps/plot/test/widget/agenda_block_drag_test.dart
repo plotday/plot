@@ -779,6 +779,134 @@ void main() {
     );
   });
 
+  group('BlockSlotCollapse', () {
+    testWidgets(
+      'collapses its child while its slot is active, restores on drag end',
+      (tester) async {
+        final controller = BlockDragController();
+        final sourceKey = GlobalKey();
+        final gapKey = GlobalKey();
+        final pid = Uuid.fromString('00000000-0000-0000-0000-000000000001');
+
+        const slot1Key = ValueKey('S1');
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: BlockDragScope(
+                controller: controller,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const BlockDropZone(
+                      slotKey: 'pre',
+                      target: BlockDropTarget(
+                        targetDate: null,
+                        targetPeriodStart: null,
+                        prevBlockId: null,
+                        prevPriorityId: null,
+                        nextBlockId: 'source',
+                        nextPriorityId: null,
+                      ),
+                    ),
+                    SizedBox(key: sourceKey, height: 100, width: 200),
+                    const BlockDropZone(
+                      slotKey: 'S0',
+                      target: BlockDropTarget(
+                        targetDate: null,
+                        targetPeriodStart: null,
+                        prevBlockId: 'source',
+                        prevPriorityId: null,
+                        nextBlockId: 'B',
+                        nextPriorityId: null,
+                      ),
+                    ),
+                    const SizedBox(height: 50, width: 200),
+                    const BlockDropZone(
+                      key: slot1Key,
+                      slotKey: 'S1',
+                      target: BlockDropTarget(
+                        targetDate: null,
+                        targetPeriodStart: null,
+                        prevBlockId: 'B',
+                        prevPriorityId: null,
+                        nextBlockId: null,
+                        nextPriorityId: null,
+                      ),
+                    ),
+                    const SizedBox(height: 50, width: 200),
+                    // A "gap row" keyed to the same slot as S1, placed
+                    // below every activation slot so its collapse never
+                    // shifts the geometry the activation reads.
+                    BlockSlotCollapse(
+                      slotKey: 'S1',
+                      child: SizedBox(key: gapKey, height: 30, width: 200),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        // The collapse swaps its child for [SizedBox.shrink] when active,
+        // so measure the [BlockSlotCollapse]'s own box (whose height
+        // tracks its child) rather than the now-detachable keyed child.
+        expect(
+          tester.getSize(find.byType(BlockSlotCollapse)).height,
+          30,
+          reason: 'gap row is at full height before any drag',
+        );
+
+        final payload = BlockDragPayload(
+          blockId: 'source',
+          priorityId: pid,
+          sourceDate: null,
+          sourcePeriodStart: null,
+          visibleThreadCount: 0,
+        );
+
+        controller.start(
+          payload,
+          sourceContextProvider: () => sourceKey.currentContext!,
+        );
+        expect(controller.sourceTotalHeight, 100);
+
+        // Activate S1: cursor in B's region (Y in [100, 150]).
+        controller.updatePointer(const Offset(100, 130));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          tester.getSize(find.byKey(slot1Key)).height,
+          100,
+          reason: 'S1 should be fully expanded',
+        );
+        expect(
+          tester.getSize(find.byType(BlockSlotCollapse)).height,
+          0,
+          reason: 'gap row collapses while its slot is active',
+        );
+        expect(
+          find.byKey(gapKey),
+          findsNothing,
+          reason: 'collapsed gap row detaches its child entirely',
+        );
+
+        controller.end(dispatch: false);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          tester.getSize(find.byType(BlockSlotCollapse)).height,
+          30,
+          reason: 'gap row restores to full height on drag end',
+        );
+      },
+    );
+  });
+
   group('BlockDragController source-height fallback', () {
     // Activity-feed-shaped source: the draggable IS the entire row
     // (no separate breadcrumb header). When the dragged thread sits

@@ -952,6 +952,24 @@ class BlockDragController extends ChangeNotifier {
     final sourceHeaderHeight = sourceRO.size.height;
     _sourceAtRestTopY = sourceTopY;
 
+    // Single-tile block (the agenda's focus blocks): the whole block —
+    // priority breadcrumb + joined summary line — is one [AgendaTile]
+    // with no separate thread rows, so `visibleThreadCount` is 0 and the
+    // source's own RenderBox already spans the full block. Use it
+    // directly. The K_after_source measurement below OVERSHOOTS for these
+    // when the block is immediately followed by an empty gap: that gap's
+    // drop slot is rendered BELOW the gap tile (so the drop preview lands
+    // inside the gap), so `afterSourceY` sits past the gap row and the
+    // captured height would include the gap row's height — reserving too
+    // much space for the drag (and inflating `activeSlotExpansion`, which
+    // skews activation). Multi-row blocks (the activity feed, where the
+    // draggable is a single row of a taller block) carry a non-zero
+    // `visibleThreadCount` and fall through to the slot-based measurement.
+    if (payload != null && payload.visibleThreadCount == 0) {
+      _sourceTotalHeight = sourceHeaderHeight;
+      return;
+    }
+
     // Find the K_after_source slot. When a thread appears in multiple
     // places (e.g. the activity feed's "Event Agenda" section shows an
     // associated copy of a thread that also lives in Today), several
@@ -1240,6 +1258,83 @@ class _BlockDragHiddenState extends State<BlockDragHidden> {
       child: visible
           ? Opacity(opacity: 0.4, child: widget.child)
           : const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Collapses its child to zero height (animated) while [slotKey] is the
+/// controller's active drop slot. Used by the agenda's empty-gap rows:
+/// the in-gap [BlockDropZone] is a sibling rendered directly below the
+/// gap row, and when a block is dragged onto the gap that zone expands
+/// to the dragged block's height and shows its preview. Collapsing the
+/// gap's own row in lockstep makes the preview occupy the gap's
+/// position — the gap "grows into" the dropped block — instead of a
+/// placeholder opening up below an unchanged gap row.
+///
+/// This is also what keeps the drop stable. Dropping a block into a gap
+/// replaces the gap row (height `g`) with the block (height `H`), so the
+/// post-drop agenda is `g` shorter than at rest. Leaving the gap row at
+/// full height during the drag (zone expands, gap unchanged) keeps the
+/// running total conserved *during* the drag but then drops by `g` the
+/// instant the block lands. Collapsing the gap row makes the during-drag
+/// total already match the post-drop total, so the block lands without a
+/// jump. Non-active: child renders unchanged.
+class BlockSlotCollapse extends StatefulWidget {
+  const BlockSlotCollapse({
+    required this.slotKey,
+    required this.child,
+    super.key,
+  });
+
+  /// The drop slot whose activation collapses this row. Matches the
+  /// `slotKey` of the sibling [BlockDropZone] so the two animate
+  /// together — gap row out as the zone's preview comes in.
+  final Object slotKey;
+
+  final Widget child;
+
+  @override
+  State<BlockSlotCollapse> createState() => _BlockSlotCollapseState();
+}
+
+class _BlockSlotCollapseState extends State<BlockSlotCollapse> {
+  BlockDragController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newController = BlockDragScope.maybeOf(context);
+    if (newController != _controller) {
+      _controller?.removeListener(_onChanged);
+      _controller = newController;
+      _controller?.addListener(_onChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Collapse only when this exact slot is the active one. The agenda's
+    // in-gap zones are a 1:1 slotKey↔target case (no phantom siblings),
+    // so the controller always sets `activeSlotKey` to the in-gap key
+    // when the cursor is over the gap — matching the same key the
+    // sibling [BlockDropZone] uses to expand keeps the two in step.
+    final collapsed = _controller?.activeSlotKey == widget.slotKey;
+    return AnimatedSize(
+      duration: kBlockBoundaryAnimDuration,
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: collapsed ? const SizedBox.shrink() : widget.child,
     );
   }
 }

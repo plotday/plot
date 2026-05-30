@@ -469,6 +469,38 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
 
         final selected = index == selectedIndex;
 
+        final inGapSlotKey = 'agenda_drop_in_gap_${current.stableKey}';
+
+        Widget tile = AgendaTile(
+          key: ValueKey('agendatile_${current.stableKey}'),
+          dateTimeRange: current.dateTimeRange,
+          date: current.date,
+          now: current.now,
+          isNext: current.isNext,
+          thread: current.thread,
+          focusNode: focusNode,
+          text: current.text,
+          scheduleAt: current.scheduleAt,
+          block: current.block,
+          parentBlockId: current.parentBlockId,
+          sourceDate: current.sourceDate,
+          sourcePeriodStart: current.sourcePeriodStart,
+          parentBlockVisibleCount: current.parentBlockVisibleCount,
+          selected: selected,
+        );
+
+        // Dropping a block into an empty gap replaces the gap row rather
+        // than inserting a new row. Collapse the gap's own row as its
+        // in-gap drop zone (rendered directly below) expands to the
+        // dragged block's height, so the preview grows into the gap's
+        // position instead of opening a placeholder beneath an unchanged
+        // gap row. This also keeps the drop from jumping: the during-drag
+        // height already matches the post-drop layout (block where the
+        // gap was). See [BlockSlotCollapse].
+        if (beforeBoundary != null && isEmptyGapHeader) {
+          tile = BlockSlotCollapse(slotKey: inGapSlotKey, child: tile);
+        }
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           key: ValueKey('agenda_${current.stableKey}'),
@@ -484,27 +516,11 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
                 // as a distinct slot from the row beneath.
                 dividerBelow: true,
               ),
-            AgendaTile(
-              key: ValueKey('agendatile_${current.stableKey}'),
-              dateTimeRange: current.dateTimeRange,
-              date: current.date,
-              now: current.now,
-              isNext: current.isNext,
-              thread: current.thread,
-              focusNode: focusNode,
-              text: current.text,
-              scheduleAt: current.scheduleAt,
-              block: current.block,
-              parentBlockId: current.parentBlockId,
-              sourceDate: current.sourceDate,
-              sourcePeriodStart: current.sourcePeriodStart,
-              parentBlockVisibleCount: current.parentBlockVisibleCount,
-              selected: selected,
-            ),
+            tile,
             if (beforeBoundary != null && isEmptyGapHeader)
               BlockDropZone(
                 key: ValueKey('agenda_drop_in_gap_${current.stableKey}'),
-                slotKey: 'agenda_drop_in_gap_${current.stableKey}',
+                slotKey: inGapSlotKey,
                 target: beforeBoundary,
                 // Sits directly below the gap-header AgendaTile in this
                 // column with no separator between them, so the top edge

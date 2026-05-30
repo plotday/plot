@@ -22,6 +22,11 @@ class PlotIcon {
   static const priority = FontAwesomeIcons.bullseyePointer;
   static const priorities = FontAwesomeIcons.list;
 
+  /// The fixed Inbox tile (unfiled threads) and the Everything feed (the
+  /// unscoped feed across the Inbox and every focus).
+  static const inbox = FontAwesomeIcons.inbox;
+  static const inboxes = FontAwesomeIcons.inboxes;
+
   /// The default icon for a focus when none is chosen.
   static const focusDefault = FontAwesomeIcons.bullseyePointer;
 
@@ -65,8 +70,75 @@ class PlotIcon {
 
   /// Resolves a stored focus icon key to its glyph, falling back to the
   /// default focus icon for null/unknown keys.
-  static IconData focusIcon(String? key) =>
-      focusIcons[key] ?? focusDefault;
+  static IconData focusIcon(String? key) => focusIcons[key] ?? focusDefault;
+
+  /// Human-friendly labels for the curated focus icons, keyed identically to
+  /// [focusIcons]. Labels are intentionally suggestive of what a focus using
+  /// the icon might represent or how it might be applied (e.g. "Reading"
+  /// rather than "Open book", "Team" rather than "Users group") so they read
+  /// as focus categories in the picker rather than literal glyph names.
+  static const Map<String, String> focusIconLabels = {
+    'bullseyePointer': 'Goal',
+    'briefcase': 'Work',
+    'userGroup': 'Team',
+    'bookOpen': 'Reading',
+    'userPlus': 'Hiring',
+    'gear': 'Operations',
+    'piggyBank': 'Savings',
+    'house': 'Home',
+    'user': 'Personal',
+    'code': 'Engineering',
+    'rocket': 'Launch',
+    'flask': 'Research',
+    'paintbrush': 'Design',
+    'penNib': 'Writing',
+    'chartLine': 'Analytics',
+    'calendarDays': 'Planning',
+    'listCheck': 'Tasks',
+    'lightbulb': 'Ideas',
+    'heart': 'Wellness',
+    'dumbbell': 'Fitness',
+    'graduationCap': 'Learning',
+    'plane': 'Travel',
+    'cartShopping': 'Shopping',
+    'handshake': 'Partnerships',
+    'scaleBalanced': 'Legal',
+    'building': 'Company',
+    'bullhorn': 'Marketing',
+    'seedling': 'Growth',
+    'music': 'Music',
+    'camera': 'Photography',
+    'globe': 'World',
+    'shield': 'Security',
+  };
+
+  /// The display label for a focus icon [key], falling back to a humanised
+  /// version of the key ('userGroup' -> 'User group') for any icon not present
+  /// in [focusIconLabels].
+  static String focusIconLabel(String key) =>
+      focusIconLabels[key] ?? _humanizeIconKey(key);
+
+  /// Humanises a focus-icon key: 'userGroup' -> 'User group'. Used as a
+  /// fallback for keys missing from [focusIconLabels].
+  static String _humanizeIconKey(String key) {
+    if (key.isEmpty) return key;
+    final buf = StringBuffer();
+    for (var i = 0; i < key.length; i++) {
+      final c = key[i];
+      final isUpper = c.toUpperCase() == c && c.toLowerCase() != c;
+      if (i == 0) {
+        buf.write(c.toUpperCase());
+      } else if (isUpper) {
+        buf
+          ..write(' ')
+          ..write(c.toLowerCase());
+      } else {
+        buf.write(c);
+      }
+    }
+    return buf.toString();
+  }
+
   static const activity = FontAwesomeIcons.listCheck;
   static const open = FontAwesomeIcons.arrowRight;
   static const menu = FontAwesomeIcons.ellipsisVertical;

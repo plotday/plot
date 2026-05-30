@@ -289,17 +289,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
   }
 
-  /// Toggle whether the activity feed and todo list roll up threads from
-  /// descendant priorities. Reloads those streams so the change takes effect
-  /// immediately. The agenda is unaffected — it's a global stream that
-  /// surfaces threads by date regardless of which priority page is active.
-  void toggleShowSubPriorities() {
-    final next = !state.showSubPriorities;
-    log.info('Toggling showSubPriorities to $next');
-    emit(state.copyWith(showSubPriorities: next));
-    _restartActiveTabSubscription();
-  }
-
   /// Mirror of [NowBloc.everything] for this bloc. The priority page calls
   /// this whenever the user switches between a scoped focus/Inbox view and
   /// the synthetic "Everything" feed, so the activity-feed query re-scopes

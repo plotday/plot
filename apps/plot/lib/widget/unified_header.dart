@@ -605,12 +605,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
-    final IconData scopeCaret = state.showSubPriorities
-        ? FontAwesomeIcons.chevronDown
-        : FontAwesomeIcons.chevronRight;
-    void toggleScope() =>
-        context.run(ToggleShowSubPriorities(context: context));
-
     return Expanded(
       child: Align(
         alignment: alignment,
@@ -648,8 +642,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 FocusLabel(
                   priority: state.context,
                   boldLeaf: true,
-                  leafTrailingIcon: scopeCaret,
-                  onLeafTap: toggleScope,
                 ),
               );
             }
@@ -657,8 +649,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               PrioritySelector(
                 selected: state.context,
                 onSelect: (p) => context.run(ChangeCurrentPriority(p)),
-                leafTrailingIcon: scopeCaret,
-                onLeafTap: toggleScope,
               ),
             );
           },

@@ -3,8 +3,10 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/widget.dart';
 
 /// The flat-focus sidebar: drag-reorderable focuses, then a fixed Inbox tile
@@ -124,36 +126,8 @@ class _PrioritiesListState extends State<PrioritiesList> {
                   onTap: () => setState(() => _showAll = true),
                 ),
 
-              // Fixed Inbox tile — the root focus, holding unfiled threads.
-              // Not reorderable, not archivable. Its title comes from the
-              // server projection ("Inbox" once apiVersion >= 4).
-              _FixedFocusTile(
-                accent: widget.root,
-                title: widget.root.title,
-                isSelected:
-                    !widget.everything && widget.selected?.id == widget.root.id,
-                command: ChangeCurrentPriority(widget.root),
-                menuCommand: ShowPriorityCommands(widget.root),
-                hasUnread: widget.root.unread,
-                borderRadius: itemBorderRadius,
-                textStyle: itemStyle,
-                monochrome: monochrome,
-              ),
-
-              // Fixed Everything tile — the unscoped feed across the Inbox and
-              // every focus. Rooted on the root with Everything mode on.
-              _FixedFocusTile(
-                accent: widget.root,
-                title: 'Everything',
-                isSelected: widget.everything,
-                command: ChangeCurrentPriority(widget.root, everything: true),
-                menuCommand: null,
-                hasUnread: false,
-                borderRadius: itemBorderRadius,
-                textStyle: itemStyle,
-                monochrome: monochrome,
-              ),
-
+              // "Add a focus" sits directly above the fixed Inbox/Everything
+              // tiles, closing off the reorderable focus list.
               ListTile(
                 command: CommandWrapper(
                   NewFocus(),
@@ -167,6 +141,40 @@ class _PrioritiesListState extends State<PrioritiesList> {
                 // background pill, just the icon/text shift.
                 highlightColor: monochrome ? const Color(0x00000000) : null,
                 borderRadius: monochrome ? null : itemBorderRadius,
+              ),
+
+              // Fixed Inbox tile — the root focus, holding unfiled threads.
+              // Not reorderable, not archivable. Always labelled "Inbox": it
+              // is a fixed, semantic tile (the server projects the root as
+              // "Inbox" at apiVersion >= 4, but older synced roots may still
+              // carry the legacy "Everything" title).
+              _FixedFocusTile(
+                title: 'Inbox',
+                icon: PlotIcon.inbox,
+                isSelected:
+                    !widget.everything && widget.selected?.id == widget.root.id,
+                command: ChangeCurrentPriority(widget.root),
+                menuCommand: ShowPriorityCommands(widget.root),
+                hasUnread: widget.root.unread,
+                borderRadius: itemBorderRadius,
+                textStyle: itemStyle,
+                monochrome: monochrome,
+              ),
+
+              // Fixed Everything tile — the unscoped feed across the Inbox and
+              // every focus. Rooted on the root with Everything mode on.
+              _FixedFocusTile(
+                title: 'Everything',
+                icon: PlotIcon.inboxes,
+                isSelected: widget.everything,
+                command: ChangeCurrentPriority(widget.root, everything: true),
+                menuCommand: null,
+                // Everything is the unscoped feed — it never carries its own
+                // unread indicator.
+                hasUnread: false,
+                borderRadius: itemBorderRadius,
+                textStyle: itemStyle,
+                monochrome: monochrome,
               ),
 
               if (focuses.isEmpty)
@@ -232,14 +240,15 @@ class _PrioritiesListState extends State<PrioritiesList> {
 }
 
 /// A fixed (non-reorderable) sidebar tile for the Inbox and Everything views.
-/// Mirrors [PriorityWidget]'s left-panel treatment — a leading notification
-/// dot in [accent]'s colour, monochrome at rest — but without the reorder
-/// handle, weekly-total chip, or expansion affordances.
+/// Mirrors [PriorityWidget]'s left-panel treatment — monochrome at rest,
+/// colour on hover/selection — but without the reorder handle, weekly-total
+/// chip, or expansion affordances. Both tiles render in the fixed Resolution
+/// brand colour rather than the root's own colour.
 class _FixedFocusTile extends StatefulWidget {
-  /// The focus whose colour the tile borrows (the root for both Inbox and
-  /// Everything) and whose menu [menuCommand] targets.
-  final Priority accent;
   final String title;
+
+  /// The leading icon (an inbox glyph for Inbox, inboxes for Everything).
+  final IconData icon;
   final bool isSelected;
 
   /// Run on tap.
@@ -253,8 +262,8 @@ class _FixedFocusTile extends StatefulWidget {
   final bool monochrome;
 
   const _FixedFocusTile({
-    required this.accent,
     required this.title,
+    required this.icon,
     required this.isSelected,
     required this.command,
     required this.menuCommand,
@@ -274,22 +283,24 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
   @override
   Widget build(BuildContext context) {
     final isActive = widget.isSelected || _isHovered;
+    // Inbox and Everything are fixed, semantic tiles — both render in the
+    // Resolution brand colour (index 7) regardless of the root's own colour.
+    const tileColor = ThemeColor.defaultColor();
     final accent = context.colour.colours.fromTheme(
-      widget.accent.displayColor,
+      tileColor,
       muted: !widget.monochrome && !widget.hasUnread,
     );
     final accentBg = widget.monochrome
-        ? context.colour.colours.backgroundFromTheme(widget.accent.displayColor)
+        ? context.colour.colours.backgroundFromTheme(tileColor)
         : null;
     final restingColor = context.colour.muted;
     final indicatorColor = widget.monochrome && !isActive
         ? restingColor
-        : context.colour.colours.fromTheme(widget.accent.displayColor);
+        : context.colour.colours.fromTheme(tileColor);
 
     final menuCommand = widget.menuCommand;
 
     final listTile = ListTile(
-      title: widget.title,
       command: widget.command,
       // Menu opens via long-left swipe on touch (see wrapper below); long-
       // press is reserved for reorder drag elsewhere.
@@ -303,37 +314,65 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
           setState(() => _isHovered = hovered);
         }
       },
-      leadingBuilder: (isHovered, hasFocus) => Padding(
-        padding: EdgeInsets.only(
-          left: context.theme.spacing.sm,
-          right: context.theme.spacing.sm,
-          bottom: 2,
-        ),
-        child: PriorityNotification(
-          unread: widget.hasUnread,
-          color: widget.accent.displayColor,
-          colorOverride: widget.monochrome && !widget.hasUnread
-              ? indicatorColor
-              : null,
-        ),
+      leadingBuilder: (isHovered, hasFocus) {
+        final iconSize = context.theme.iconSizes.base;
+        // Standard command-tile leading metrics: 20px from the panel edge,
+        // then a 12px gap to the title (mirrors PriorityWidget).
+        return Padding(
+          padding: const EdgeInsets.only(left: 20, right: 12),
+          child: SizedBox.square(
+            dimension: iconSize,
+            child: Icon(widget.icon, size: iconSize, color: indicatorColor),
+          ),
+        );
+      },
+      // Title in the accent colour, with the unread dot trailing it (kept
+      // outside the Flexible so it survives title truncation).
+      body: Row(
+        children: [
+          Flexible(
+            child: Text(
+              widget.title,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: widget.textStyle.copyWith(color: accent, height: 1),
+            ),
+          ),
+          if (widget.hasUnread)
+            Padding(
+              padding: EdgeInsets.only(left: context.theme.spacing.sm),
+              child: const PriorityNotification(
+                unread: true,
+                color: tileColor,
+              ),
+            ),
+        ],
       ),
-      textStyle: widget.textStyle.copyWith(color: accent),
-      trailingBuilder: menuCommand == null
-          ? null
-          : (isHovered, hasFocus) {
-              final button = Padding(
-                padding: EdgeInsets.only(right: context.theme.spacing.sm),
-                child: Button.icon(menuCommand),
-              );
-              if (isHovered || hasFocus) return button;
-              return Visibility(
-                visible: false,
-                maintainSize: true,
-                maintainAnimation: true,
-                maintainState: true,
-                child: button,
-              );
-            },
+      // Always reserve the menu-button slot height so the Everything tile
+      // (which has no menu) matches the Inbox row height — and both match
+      // the focus tiles. Mirrors PriorityWidget's buttonSlotHeight.
+      trailingBuilder: (isHovered, hasFocus) {
+        final buttonSlotHeight = context.theme.iconSizes.base * 2;
+        return SizedBox(
+          height: buttonSlotHeight,
+          child: menuCommand == null
+              ? null
+              : Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: context.theme.spacing.sm),
+                    child: (isHovered || hasFocus)
+                        ? Button.icon(menuCommand)
+                        : Visibility(
+                            visible: false,
+                            maintainSize: true,
+                            maintainAnimation: true,
+                            maintainState: true,
+                            child: Button.icon(menuCommand),
+                          ),
+                  ),
+                ),
+        );
+      },
     );
 
     if (menuCommand == null || hasPhysicalKeyboard()) return listTile;
@@ -379,10 +418,8 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
           ),
           child: Row(
             children: [
-              // Match PriorityWidget leading: spacing.sm + 16px notification + spacing.sm
-              SizedBox(
-                width: context.theme.spacing.sm + 16 + context.theme.spacing.sm,
-              ),
+              // Match PriorityWidget leading: 20px inset + 16px icon + 12px gap.
+              const SizedBox(width: 20 + 16 + 12),
               Expanded(
                 child: Padding(
                   padding: context.theme.spacing.paddingSm.copyWith(
