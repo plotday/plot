@@ -126,6 +126,32 @@ export async function scoringStage(
 
   const expandedCandidateContacts = await expandContacts(ctx, candidate.contacts);
 
+  // Negative examples: for each priority, the max embedding similarity between
+  // the candidate and threads the user moved out of / deselected for that
+  // focus (thread_priority_negative). Subtracted from the priority's score
+  // below — the mirror of the user_moved positive set.
+  const negByPriority = new Map<string, number>();
+  if (params.negativePenaltyWeight > 0 && candidate.embedding) {
+    const negRes = await ctx.rawQuery(
+      `SELECT n.priority_id,
+              CASE WHEN mt.embedding IS NULL THEN NULL ELSE mt.embedding::text END AS embedding
+         FROM public.thread_priority_negative n
+         JOIN public.thread mt ON mt.id = n.thread_id
+        WHERE n.user_id = $1::uuid
+          AND mt.archived_at IS NULL
+          AND mt.embedding IS NOT NULL`,
+      [ctx.userId]
+    );
+    for (const r of negRes.rows as Array<{
+      priority_id: string;
+      embedding: string | null;
+    }>) {
+      const s = sem(parseEmbedding(r.embedding), candidate.embedding);
+      const prev = negByPriority.get(r.priority_id) ?? 0;
+      if (s > prev) negByPriority.set(r.priority_id, s);
+    }
+  }
+
   const scored: ScoredNeighbor[] = [];
   const debugTop: ScoringExplain["topNeighbors"] = [];
 
@@ -243,7 +269,8 @@ export async function scoringStage(
       score:
         agg.neighborScore +
         params.priorityTitleMatchWeight * tm +
-        params.accountHierarchyBonusWeight * aff,
+        params.accountHierarchyBonusWeight * aff -
+        params.negativePenaltyWeight * (negByPriority.get(pid) ?? 0),
       neighborScore: agg.neighborScore,
       titleMatch: tm,
       accountHierarchyAffinity: aff,

@@ -28,6 +28,7 @@ import threadState from "./thread-state";
 import groups from "./groups";
 import topics from "./topics";
 import priorityMoves from "./priority-moves";
+import priorityMatch from "./priority-match";
 import priorityArchiveLeave from "./priority-archive-leave";
 import teamUsers from "./team-users";
 
@@ -59,6 +60,7 @@ sync.route("/", threadAssociations);
 sync.route("/", groups);
 sync.route("/", topics);
 sync.route("/", priorityMoves);
+sync.route("/", priorityMatch);
 sync.route("/", priorityArchiveLeave);
 sync.route("/", teamUsers);
 

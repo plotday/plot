@@ -97,6 +97,14 @@ export type HybridParams = {
    * disable.
    */
   accountHierarchyBonusWeight: number;
+  /**
+   * Post-aggregation penalty: for each priority, subtract this weight times
+   * the max embedding similarity between the candidate and that priority's
+   * NEGATIVE examples — threads the user moved out of the focus, or
+   * deselected when creating it (stored in thread_priority_negative). The
+   * mirror image of the user_moved positive training set. Set to 0 to disable.
+   */
+  negativePenaltyWeight: number;
 
   highConfidenceFloor: number;
   marginFloor: number;
@@ -135,6 +143,10 @@ export const DEFAULTS: HybridParams = {
   // account → Plot hierarchy with 67% of historical filings) contributes
   // 0.13 to the final score — meaningful but not dominating.
   accountHierarchyBonusWeight: 0.2,
+  // 0.3: a strong negative (candidate ~0.8 cosine to a moved-out/deselected
+  // thread) subtracts ~0.24 — enough to demote a focus the user has rejected
+  // for similar threads without overriding strong positive evidence.
+  negativePenaltyWeight: 0.3,
 
   // Calibrated for the post-/k aggregation: scoring scores cluster in
   // [0.10, 0.30] on noisy real corpora. The first-round (hcf=0.30,
