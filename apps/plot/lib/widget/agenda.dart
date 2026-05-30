@@ -1099,8 +1099,8 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // Row 2 surfaces the event's physical location and/or
     // videoconferencing join link via a [StreamBuilder] over the event
     // thread's links. For non-event blocks, row 1 keeps the priority
-    // breadcrumb (with a leading focus-mode icon for [PriorityBlock]s)
-    // and row 2 keeps the joined thread summary.
+    // breadcrumb (a [FocusLabel], which carries its own leading focus
+    // icon) and row 2 keeps the joined thread summary.
     final mutedColor = context.theme.plotColors.veryMuted;
     final TextSpan summarySpan = TextSpan(
       text: summary,
@@ -1262,26 +1262,15 @@ class _BlockHeaderState extends State<_BlockHeader> {
                         height: _agendaRowLineHeight,
                       ),
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (block is PriorityBlock) ...[
-                          Icon(
-                            PlotIcon.priority,
-                            size: secondarySize,
-                            color: fg,
-                          ),
-                          SizedBox(width: spacing.sm),
-                        ],
-                        Flexible(
-                          child: FocusLabel(
-                            priority: priority,
-                            color: fg,
-                            fontSize: secondarySize,
-                            height: _agendaRowLineHeight,
-                          ),
-                        ),
-                      ],
+                  // [FocusLabel] renders its own leading focus icon (the
+                  // priority's chosen glyph), so no separate icon is added
+                  // here — doing so produced a duplicate icon on
+                  // [PriorityBlock] headers.
+                  : FocusLabel(
+                      priority: priority,
+                      color: fg,
+                      fontSize: secondarySize,
+                      height: _agendaRowLineHeight,
                     ),
             ),
           ),
