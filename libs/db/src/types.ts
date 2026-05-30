@@ -1250,6 +1250,7 @@ export type Database = {
           default_groups: string[]
           default_invite_emails: string[]
           default_thread_icon: string | null
+          icon: string | null
           id: string
           inherit_members: boolean
           key: string | null
@@ -1272,6 +1273,7 @@ export type Database = {
           default_groups?: string[]
           default_invite_emails?: string[]
           default_thread_icon?: string | null
+          icon?: string | null
           id?: string
           inherit_members?: boolean
           key?: string | null
@@ -1294,6 +1296,7 @@ export type Database = {
           default_groups?: string[]
           default_invite_emails?: string[]
           default_thread_icon?: string | null
+          icon?: string | null
           id?: string
           inherit_members?: boolean
           key?: string | null
@@ -5143,7 +5146,9 @@ export type Database = {
           default_invite_emails: string[] | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
+          flat_title: string | null
           global_path: unknown
+          icon: string | null
           id: string | null
           inherit_members: boolean | null
           key: string | null
@@ -5918,7 +5923,9 @@ export type Database = {
           default_invite_emails: string[] | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
+          flat_title: string | null
           global_path: unknown
+          icon: string | null
           id: string | null
           inherit_members: boolean | null
           key: string | null

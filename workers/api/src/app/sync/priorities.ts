@@ -62,10 +62,26 @@ priorities.get("/sync/priorities", async (c) => {
     return { rows: fetchedRows, horizon: horizonValue };
   });
 
+  // Version-gated projection: flat (apiVersion >= 4) clients render priorities
+  // as a flat list of "focuses" with no nesting. Project the ancestry label
+  // (flat_title) as the title and label the per-user root "Inbox". Older
+  // (nested) clients get the row unchanged — they keep using `path`/`title`.
+  // flat_title is an internal computed column; strip it for flat clients.
+  const apiVersion = c.var.apiVersion ?? 0;
+  const project = (row: any) => {
+    if (apiVersion < 4) {
+      const { flat_title: _flat, ...rest } = row;
+      return rest;
+    }
+    const { flat_title, ...rest } = row;
+    return { ...rest, title: row.root ? "Inbox" : (flat_title ?? row.title) };
+  };
+  const outRows = rows.map(project);
+
   if (useSeqCursor) {
-    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+    return c.json(seqEnvelope(outRows as any, limit, horizon) as any);
   }
-  return c.json(rows as any);
+  return c.json(outRows as any);
 });
 
 // POST /sync/priorities - Upsert via the user.priority view (INSTEAD OF trigger)

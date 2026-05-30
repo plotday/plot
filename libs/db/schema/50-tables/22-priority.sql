@@ -22,6 +22,11 @@ CREATE TABLE "public"."priority" (
     -- inherit_members is vestigial: with per-user priorities there are no
     "inherit_members" boolean NOT NULL DEFAULT TRUE,
     "default_thread_icon" text,
+    -- The focus's own icon: a curated FontAwesome key string (see
+    -- kFocusIcons in the Flutter app). Distinct from default_thread_icon,
+    -- which sets the icon for threads filed under this priority. NULL =
+    -- the client renders the default focus icon.
+    "icon" text,
     -- Sparse per-priority configuration. Not user-editable; set directly in
     -- the DB. Recognized keys: topic (string, default thread.topic),
     -- view ('activity' to hide the agenda tab on the priority page).

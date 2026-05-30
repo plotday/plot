@@ -99,7 +99,23 @@ SELECT
     p.config,
     p.default_contacts,
     p.default_groups,
-    p.default_invite_emails
+    p.default_invite_emails,
+    -- New columns appended at the END so CREATE OR REPLACE VIEW works without
+    -- dropping dependents. Order is irrelevant: clients map by column name.
+    p.icon,
+    -- flat_title: the ancestry label ("Work › Marketing") used by flat
+    -- (apiVersion >= 4) clients that render priorities as a flat list. Joins
+    -- the titles of this priority and its non-root ancestors. For a genuinely
+    -- top-level focus this equals the title; the root's flat_title is NULL
+    -- (the flat projection labels the root "Inbox"). Nested clients ignore it.
+    (
+        SELECT
+            string_agg(a.title, ' › ' ORDER BY nlevel(a.path))
+        FROM priority a
+        WHERE a.user_id = p.user_id
+            AND a.path @> p.path
+            AND nlevel(a.path) >= 2
+    ) AS flat_title
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id

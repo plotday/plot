@@ -465,6 +465,33 @@ BEGIN
             AND up.id = _input.id;
         _old_path := _old.path;
     END IF;
+    -- Flat-client compatibility: clients on the flattened model (apiVersion
+    -- >= 4) have no nesting and do not send a path. Keep the existing path on
+    -- update; on insert synthesize a child-of-root path so nested (old)
+    -- clients can still place the new focus under the user's root. path is
+    -- NOT NULL, so this must never leave it null.
+    IF _input.path IS NULL THEN
+        IF _priority_exists THEN
+            _input.path := _old_path;
+        ELSE
+            DECLARE
+                _root_path ltree;
+            BEGIN
+                SELECT
+                    path INTO _root_path
+                FROM priority
+                WHERE user_id = upsert_priority.user_id AND nlevel(path) = 1
+                ORDER BY created_at ASC
+                LIMIT 1;
+                IF _root_path IS NULL THEN
+                    -- No root yet: treat this as the root itself.
+                    _input.path := generate_path(NULL);
+                ELSE
+                    _input.path := _root_path || generate_path(NULL);
+                END IF;
+            END;
+        END IF;
+    END IF;
     -- Detect if this is a move (path changed on existing priority)
     _is_move := (_priority_exists
         AND _input.path IS DISTINCT FROM _old_path);
@@ -496,13 +523,13 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by,
+        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by,
             default_contacts, default_groups, default_invite_emails)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.path, _input.created_by, _input.updated_by,
+                END, _input.icon, _input.path, _input.created_by, _input.updated_by,
                 COALESCE(_input.default_contacts, '{}'::uuid[]),
                 COALESCE(_input.default_groups, '{}'::uuid[]),
                 COALESCE(_input.default_invite_emails, '{}'::text[]))
@@ -515,6 +542,9 @@ BEGIN
                 ELSE
                     priority.color
                 END,
+                -- COALESCE: old (nested) clients don't send icon; preserve the
+                -- existing value rather than wiping it on every edit.
+                icon = COALESCE(_input.icon, priority.icon),
                 updated_by = _input.updated_by,
                 default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
                 default_groups = COALESCE(_input.default_groups, priority.default_groups),
@@ -533,6 +563,7 @@ BEGIN
             ELSE
                 priority.color
             END,
+            icon = COALESCE(_input.icon, priority.icon),
             updated_by = _input.updated_by,
             default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
             default_groups = COALESCE(_input.default_groups, priority.default_groups),
