@@ -13,16 +13,29 @@ import 'base.dart';
 /// analytics tracking (via [BuildContextCommandExtension.run]) and the standard
 /// [Button] hover treatment instead of a bare `FButton`.
 class OpenScheduleFocusModal extends Command {
-  OpenScheduleFocusModal({required this.date, this.defaultPriority})
-    : super(
-        title: 'Schedule focus block',
-        icon: PlotIcon.plus,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.opened,
-      );
+  OpenScheduleFocusModal({
+    required this.date,
+    this.defaultPriority,
+    this.start,
+    this.maxDuration,
+  }) : super(
+         title: 'Schedule focus block',
+         icon: PlotIcon.plus,
+         eventObject: EventObject.priority,
+         eventAction: EventAction.opened,
+       );
 
   final Date date;
   final Priority? defaultPriority;
+
+  /// Explicit start anchor for the new block (e.g. the agenda gap's start
+  /// time). When null the form falls back to its [date]-based default.
+  final DateTime? start;
+
+  /// Upper bound on the block's default duration (e.g. the free time left
+  /// in a gap). The default 30-minute block is shrunk to fit when this is
+  /// smaller; null leaves the default untouched.
+  final Duration? maxDuration;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -30,6 +43,8 @@ class OpenScheduleFocusModal extends Command {
       context,
       date: date,
       initialPriority: defaultPriority,
+      startTime: start,
+      maxDuration: maxDuration,
     );
     return const CommandDone();
   }
@@ -157,11 +172,15 @@ FormData scheduleFocusBlockForm({
   Date? date,
   Priority? initialPriority,
   PriorityBlockRow? existingRow,
+  DateTime? startTime,
+  Duration? maxDuration,
 }) {
   final isEdit = existingRow != null;
 
-  // Initial range: edit → from the row; create → next 15-min boundary today
-  // (or 09:00 on a future date), 30-minute default.
+  // Initial range: edit → from the row; create → [startTime] when given
+  // (e.g. an agenda gap's start), else the next 15-min boundary today (or
+  // 09:00 on a future date). 30-minute default, shrunk to [maxDuration]
+  // when the available window is smaller.
   final DateTimeRange initialRange;
   if (isEdit) {
     final start = existingRow.effectiveAt;
@@ -175,7 +194,9 @@ FormData scheduleFocusBlockForm({
         base.month == today.month &&
         base.day == today.day;
     final DateTime start;
-    if (isToday) {
+    if (startTime != null) {
+      start = startTime;
+    } else if (isToday) {
       final now = Time.now();
       final remainder = now.minute % 15;
       final pad = remainder == 0 ? 0 : 15 - remainder;
@@ -183,7 +204,14 @@ FormData scheduleFocusBlockForm({
     } else {
       start = DateTime(base.year, base.month, base.day, 9, 0);
     }
-    initialRange = DateTimeRange(start, start.add(const Duration(minutes: 30)));
+    const defaultDuration = Duration(minutes: 30);
+    final duration =
+        (maxDuration != null &&
+            maxDuration > Duration.zero &&
+            maxDuration < defaultDuration)
+        ? maxDuration
+        : defaultDuration;
+    initialRange = DateTimeRange(start, start.add(duration));
   }
 
   final priorityField = FormSelect<Priority>(
@@ -198,7 +226,7 @@ FormData scheduleFocusBlockForm({
       return priorities.where((p) => p.matchesSearch(search)).toList();
     },
     titleBuilder: (p) => p.title,
-    labelBuilder: (p) => PriorityLabel(priority: p),
+    labelBuilder: (p) => FocusLabel(priority: p),
     onAdd: (ctx) => createPriorityInline(ctx, parent: initialPriority),
   );
 
@@ -256,11 +284,15 @@ Future<void> openScheduleFocusModal(
   Date? date,
   Priority? initialPriority,
   PriorityBlockRow? existingRow,
+  DateTime? startTime,
+  Duration? maxDuration,
 }) async {
   final form = scheduleFocusBlockForm(
     date: date,
     initialPriority: initialPriority,
     existingRow: existingRow,
+    startTime: startTime,
+    maxDuration: maxDuration,
   );
   final groups = await form.list();
   if (!context.mounted) return;

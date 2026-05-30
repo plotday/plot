@@ -280,13 +280,6 @@ class AgendaTile extends StatelessWidget {
         fontWeight: FontWeight.w700,
       );
       final priorityBloc = context.read<PriorityBloc>();
-      final addButton = Button.icon(
-        OpenScheduleFocusModal(
-          date: date!,
-          defaultPriority: priorityBloc.state.context,
-        ),
-        color: context.theme.plotColors.veryMuted,
-      );
 
       // The day number is always shown; the month falls back to its short
       // form (e.g. "Sep") when the full name would overflow the narrow
@@ -307,9 +300,19 @@ class AgendaTile extends StatelessWidget {
           ? monthFull
           : date!.format(format: 'MMM');
 
-      final child = Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
+      // A subtle full-width band sets each day apart; the symmetric vertical
+      // padding keeps the label breathing inside it. The whole row is a tap
+      // target that schedules a focus block on this day, with the trailing +
+      // hidden until hover on non-touch devices.
+      return _AddHeaderRow(
+        command: OpenScheduleFocusModal(
+          date: date!,
+          defaultPriority: priorityBloc.state.context,
+        ),
+        addColor: context.theme.plotColors.veryMuted,
+        background: context.colour.sectionHeaderBackground,
+        outerPadding: EdgeInsets.symmetric(vertical: spacing.sm),
+        leading: [
           // Gutter: "May 28" — right-aligned, column-aligned with the leading
           // time labels on event/gap rows (right padding = the gutter→content
           // gap so the weekday lines up with the titles beside it).
@@ -342,119 +345,152 @@ class AgendaTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Padding(
-            padding: EdgeInsets.only(right: spacing.sm),
-            child: addButton,
-          ),
         ],
-      );
-
-      // A subtle full-width band sets each day apart; the symmetric vertical
-      // padding keeps the label breathing inside it.
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: context.colour.sectionHeaderBackground,
-        ),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: spacing.sm),
-          child: child,
-        ),
       );
     }
 
-    // Gap/event time headers: centered time, rendered outside ListTile
-    // to match date header centering
-    if (isGapHeader || (!now && date == null && centerText != null)) {
+    // Empty gap rows: a quiet time + free-time-duration line with a
+    // trailing + that schedules a focus block inside the gap. The whole
+    // row is a tap target (the + is revealed on hover on non-touch). The
+    // vertical padding matches the event rows ([_BlockHeader]) so gaps and
+    // events read at the same rhythm.
+    if (isGapHeader) {
+      final spacing = context.theme.spacing;
       final veryMuted = context.theme.plotColors.veryMuted;
-      final contentColor = isGapHeader ? veryMuted : textColor;
-      final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
+      final timeColWidth = agendaLeadingWidth(context);
+      final timeStyle = TextStyle(color: veryMuted, fontSize: fontSize);
+
+      // Anchor the new focus block at the gap's start. A gap already in
+      // progress (start in the past) falls back to the form's default
+      // (the next quarter-hour today); either way the default duration is
+      // capped to the free time remaining in the gap.
+      final priorityBloc = context.read<PriorityBloc>();
+      final gapStart = dateTimeRange!.start;
+      final gapEnd = dateTimeRange!.end;
+      final nowTime = Time.now();
+      final DateTime? startForModal =
+          (gapStart != null && gapStart.isAfter(nowTime)) ? gapStart : null;
+      final effStart = startForModal ?? nowTime;
+      final Duration? maxDur = (gapEnd != null && gapEnd.isAfter(effStart))
+          ? gapEnd.difference(effStart)
+          : null;
+
+      return _AddHeaderRow(
+        command: OpenScheduleFocusModal(
+          date: Date(effStart.year, effStart.month, effStart.day),
+          defaultPriority: priorityBloc.state.context,
+          start: startForModal,
+          maxDuration: maxDur,
+        ),
+        addColor: veryMuted,
+        outerPadding: EdgeInsets.symmetric(vertical: spacing.md),
+        leading: [
+          // Time in the gutter, column-aligned with event times.
+          SizedBox(
+            width: timeColWidth,
+            child: Padding(
+              padding: EdgeInsets.only(right: agendaGutterGap(context)),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: centerText != null
+                    ? Text(
+                        centerText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: timeStyle,
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          // Free-time duration floats to the trailing edge, just left of
+          // the + affordance.
+          Expanded(
+            child: durationText != null
+                ? Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      durationText,
+                      style: TextStyle(color: veryMuted, fontSize: fontSize),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+
+    // Plain text section headings (e.g. Activity tab "Today", "New",
+    // "Scheduled", "Done") and non-now event time headers: centered time,
+    // rendered outside ListTile to match date header centering.
+    if (!now && date == null && centerText != null) {
+      final veryMuted = context.theme.plotColors.veryMuted;
+      final timeStyle = TextStyle(color: textColor, fontSize: fontSize);
 
       // Match the ThreadWidget time position: the time right edge
       // aligns with the logo right edge (= agendaLeadingWidth).
       final timeColWidth = agendaLeadingWidth(context);
 
       final Widget child;
-      if (centerText != null) {
-        final spacing = context.theme.spacing;
-        if (dateTimeRange == null) {
-          // Plain text section heading (e.g. Activity tab "Today",
-          // "New", "Scheduled", "Done") — center, not in the time column.
-          child = Center(
-            child: Text(
-              centerText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: timeStyle.copyWith(fontWeight: FontWeight.w500),
-            ),
-          );
-        } else {
-          // Match the ListTile's right padding so duration aligns with
-          // the thread tag button icons.
-          final isWide = context.isMultiPanel;
-          child = Padding(
-            padding: EdgeInsets.only(
-              right: isWide
-                  ? spacing.lg
-                  : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
-                        .resolve(TextDirection.ltr)
-                        .right,
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: timeColWidth,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: agendaGutterGap(context)),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        centerText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: timeStyle,
-                      ),
+      if (dateTimeRange == null) {
+        // Plain text section heading — center, not in the time column.
+        child = Center(
+          child: Text(
+            centerText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: timeStyle.copyWith(fontWeight: FontWeight.w500),
+          ),
+        );
+      } else {
+        // Match the ListTile's right padding so duration aligns with
+        // the thread tag button icons.
+        final isWide = context.isMultiPanel;
+        child = Padding(
+          padding: EdgeInsets.only(
+            right: isWide
+                ? context.theme.spacing.lg
+                : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                      .resolve(TextDirection.ltr)
+                      .right,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: timeColWidth,
+                child: Padding(
+                  padding: EdgeInsets.only(right: agendaGutterGap(context)),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      centerText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: timeStyle,
                     ),
                   ),
                 ),
-                if (durationText != null)
-                  Expanded(
-                    // Empty gaps carry no title, so the duration right-aligns
-                    // at the end of the row instead of sitting in the title
-                    // slot. The time stays in the gutter (column-aligned with
-                    // event times) and the duration floats to the trailing
-                    // edge, keeping the row to a single quiet line.
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        durationText,
-                        style: TextStyle(color: veryMuted, fontSize: fontSize),
-                      ),
+              ),
+              if (durationText != null)
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      durationText,
+                      style: TextStyle(color: veryMuted, fontSize: fontSize),
                     ),
                   ),
-              ],
-            ),
-          );
-        }
-      } else {
-        final double textHeight = (TextPainter(
-          text: TextSpan(
-            text: "A",
-            style: TextStyle(fontSize: fontSize),
+                ),
+            ],
           ),
-          maxLines: 1,
-          textDirection: TextDirection.ltr,
-        )..layout()).height;
-        child = SizedBox(height: textHeight);
+        );
       }
 
-      // Text-only section headings (e.g. Activity tab "Today"/"New"/...)
-      // render as quiet dividers — no fill, just a muted centered label,
-      // relying on the preceding row's bottom border for separation —
-      // sharing the same visual language as the agenda date headers above.
-      // Empty gap headers (no priority) also render with no fill: an empty
-      // gap should read as quiet negative space, not compete with the
-      // visual weight of a real event row.
-      final isTextOnlyHeading = !isGapHeader && dateTimeRange == null;
+      // Text-only section headings render as quiet dividers — no fill, just
+      // a muted centered label, relying on the preceding row's bottom border
+      // for separation — sharing the same visual language as the agenda date
+      // headers above.
+      final isTextOnlyHeading = dateTimeRange == null;
       Widget result;
       if (isTextOnlyHeading) {
         result = DecoratedBox(
@@ -467,20 +503,13 @@ class AgendaTile extends StatelessWidget {
           ),
         );
       } else {
-        result = Container(
-          padding: EdgeInsets.symmetric(
-            vertical: isGapHeader
-                ? context.theme.spacing.xs
-                : context.theme.spacing.sm,
+        result = Padding(
+          padding: EdgeInsets.symmetric(vertical: verticalMargin),
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: context.theme.spacing.sm),
+            child: child,
           ),
-          child: child,
         );
-        if (!isGapHeader) {
-          result = Padding(
-            padding: EdgeInsets.symmetric(vertical: verticalMargin),
-            child: result,
-          );
-        }
       }
 
       final cmd = command;
@@ -550,6 +579,98 @@ class AgendaTile extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: verticalMargin),
       child: SizedBox(height: textHeight),
     );
+  }
+}
+
+/// An agenda section header (a date divider or an empty-gap row) that
+/// carries a trailing `+` for scheduling a focus block. The whole row is a
+/// tap target running [command]; on non-touch devices the `+` is hidden
+/// until the row is hovered, while touch devices always show it (there is
+/// no hover to reveal it). [leading] fills the row up to the trailing `+`.
+class _AddHeaderRow extends StatefulWidget {
+  const _AddHeaderRow({
+    required this.command,
+    required this.leading,
+    required this.addColor,
+    required this.outerPadding,
+    this.background,
+  });
+
+  /// Run by both the trailing `+` button and a tap anywhere on the row.
+  final Command command;
+
+  /// Row children rendered before the trailing `+`.
+  final List<Widget> leading;
+
+  /// Colour of the trailing `+` icon.
+  final Color addColor;
+
+  /// Padding wrapping the [Row] — vertical breathing room for the header.
+  final EdgeInsetsGeometry outerPadding;
+
+  /// Optional fill painted behind the whole row (date headers use the
+  /// section-header background; empty gaps stay unfilled).
+  final Color? background;
+
+  @override
+  State<_AddHeaderRow> createState() => _AddHeaderRowState();
+}
+
+class _AddHeaderRowState extends State<_AddHeaderRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final touch = isTouchPlatform();
+    // A small right inset lands the icon at the agenda's trailing edge.
+    final addButton = Padding(
+      padding: EdgeInsets.only(right: context.theme.spacing.sm),
+      child: Button.icon(widget.command, color: widget.addColor),
+    );
+    // Non-touch: keep the `+` laid out (so the row width never shifts when
+    // it appears) and fade it in only on hover. Touch: always visible.
+    final trailing = touch
+        ? addButton
+        : AnimatedOpacity(
+            opacity: _hovered ? 1 : 0,
+            duration: const Duration(milliseconds: 120),
+            child: addButton,
+          );
+
+    Widget content = Padding(
+      padding: widget.outerPadding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [...widget.leading, trailing],
+      ),
+    );
+
+    final bg = widget.background;
+    if (bg != null) {
+      content = DecoratedBox(
+        decoration: BoxDecoration(color: bg),
+        child: content,
+      );
+    }
+
+    Widget result = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.run(widget.command),
+      child: content,
+    );
+
+    if (!touch) {
+      result = MouseRegion(
+        onEnter: (_) {
+          if (!_hovered) setState(() => _hovered = true);
+        },
+        onExit: (_) {
+          if (_hovered) setState(() => _hovered = false);
+        },
+        child: result,
+      );
+    }
+    return result;
   }
 }
 
@@ -965,10 +1086,9 @@ class _BlockHeaderState extends State<_BlockHeader> {
                           SizedBox(width: spacing.sm),
                         ],
                         Flexible(
-                          child: PriorityLabel(
+                          child: FocusLabel(
                             priority: priority,
                             color: fg,
-                            mutedAncestorColor: mutedFg,
                             fontSize: secondarySize,
                             height: _agendaRowLineHeight,
                           ),
