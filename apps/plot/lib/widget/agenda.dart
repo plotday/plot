@@ -728,8 +728,14 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
 
     // The duration and the + share one trailing slot. The + fades in over
     // the duration (which fades out), so the duration's resting position
-    // never moves and the row never reflows.
+    // never moves and the row never reflows. The slot plus the outer
+    // [rightPad] together span the gutter's width ([timeColWidth]), so the
+    // squiggle's [Expanded] ends exactly [timeColWidth] from the panel's
+    // right edge — mirroring the leading gutter and centring the squiggle.
+    // The duration stays right-aligned at the same x (the rightPad edge), so
+    // resizing the slot doesn't shift it.
     final trailing = SizedBox(
+      width: timeColWidth - rightPad,
       height: rowHeight,
       child: Stack(
         alignment: Alignment.centerRight,
@@ -770,21 +776,20 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
           gutter,
           // Title area: a quiet wavy squiggle marks the empty free-time
           // span where an event/focus title would sit. It fills the slot
-          // between the gutter and the (constant-width) trailing duration,
-          // so it never reflows when the duration swaps to the + on hover.
+          // between the gutter and the trailing duration column; with that
+          // column sized so the right margin equals the gutter, the squiggle
+          // sits centred with equal margins on both sides and never reflows
+          // when the duration swaps to the + on hover.
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(right: spacing.sm),
-              child: SizedBox(
-                height: rowHeight,
-                child: CustomPaint(
-                  painter: _SquigglePainter(
-                    // Half the muted tone's opacity — a faint, easily
-                    // ignored marker rather than a strong rule.
-                    color: veryMuted.withValues(alpha: veryMuted.a * 0.5),
-                  ),
-                  size: Size.infinite,
+            child: SizedBox(
+              height: rowHeight,
+              child: CustomPaint(
+                painter: _SquigglePainter(
+                  // Half the muted tone's opacity — a faint, easily
+                  // ignored marker rather than a strong rule.
+                  color: veryMuted.withValues(alpha: veryMuted.a * 0.5),
                 ),
+                size: Size.infinite,
               ),
             ),
           ),
