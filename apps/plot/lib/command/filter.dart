@@ -144,51 +144,6 @@ class ToggleActivityFilter extends Command {
   }
 }
 
-/// Header-level toggle for the Task list / Reading list filters
-/// ([Tag.task] / [Tag.reading]). Mutually exclusive with each other —
-/// enabling one clears the other — and toggling the same tag twice
-/// clears it. Other active filters (icons, reactions, other tags) are
-/// preserved.
-class ToggleListFilter extends Command {
-  ToggleListFilter._({required this.tag, super.on})
-    : super(
-        title: tag.name,
-        eventObject: EventObject.filter,
-        eventAction: EventAction.filtered,
-        icon: tag.icon,
-      );
-
-  factory ToggleListFilter(Tag tag, {required BuildContext context}) {
-    assert(tag == Tag.task || tag == Tag.reading);
-    return ToggleListFilter._(tag: tag, on: _isActive(context, tag));
-  }
-
-  final Tag tag;
-
-  static bool? _isActive(BuildContext context, Tag tag) {
-    try {
-      return context.read<PriorityBloc>().state.filter.contains(tag);
-    } on ProviderNotFoundException {
-      return null;
-    }
-  }
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      final bloc = context.read<PriorityBloc>();
-      final current = List<Tag>.from(bloc.state.filter);
-      final wasOn = current.contains(tag);
-      current.removeWhere((t) => t == Tag.task || t == Tag.reading);
-      if (!wasOn) current.add(tag);
-      bloc.updateFilter(current);
-    } on ProviderNotFoundException {
-      // not in scope
-    }
-    return const CommandDone();
-  }
-}
-
 /// Toggle a tag filter for notes within an activity
 class ToggleNoteFilter extends Command {
   ToggleNoteFilter._({required this.tag, super.on})
@@ -521,16 +476,9 @@ class PickFilterCommand extends ShowCommands {
            //     no longer surface in the search modal (the unified feed
            //     already separates Updates / Doing / Activity).
            const hiddenTags = {Tag.archived, Tag.todo, Tag.unread};
-           const listTags = {Tag.task, Tag.reading};
            final tagFilters = commands
                .whereType<ToggleActivityFilter>()
                .where((c) => !hiddenTags.contains(c.tag))
-               .toList();
-           final listFilters = tagFilters
-               .where((c) => listTags.contains(c.tag))
-               .toList();
-           final otherTagFilters = tagFilters
-               .where((c) => !listTags.contains(c.tag))
                .toList();
            final reactionFilters =
                commands.whereType<ToggleReactionFilter>().toList();
@@ -538,20 +486,17 @@ class PickFilterCommand extends ShowCommands {
            // Split active vs. inactive across all filter types. Active
            // filters collect into a single "Filters" section at the top
            // (mirroring the share picker's "Shared" section). Inactive
-           // options stay grouped by type below — Lists first, then
-           // Thread type, then Tags, then Reactions.
+           // options stay grouped by type below — Thread type, then Tags,
+           // then Reactions.
            final activeFilters = <Command>[
              ...iconFilters.where((c) => c.on == true),
              ...tagFilters.where((c) => c.on == true),
              ...reactionFilters.where((c) => c.on == true),
            ];
-           final inactiveListFilters = listFilters
-               .where((c) => c.on != true)
-               .toList();
            final inactiveIconFilters = iconFilters
                .where((c) => c.on != true)
                .toList();
-           final inactiveOtherTagFilters = otherTagFilters
+           final inactiveTagFilters = tagFilters
                .where((c) => c.on != true)
                .toList();
            final inactiveReactionFilters = reactionFilters
@@ -565,20 +510,15 @@ class PickFilterCommand extends ShowCommands {
                    title: 'Filters',
                    commands: activeFilters,
                  ),
-               if (inactiveListFilters.isNotEmpty)
-                 StaticCommandGroup(
-                   title: 'Lists',
-                   commands: inactiveListFilters,
-                 ),
                if (inactiveIconFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Thread type',
                    commands: inactiveIconFilters,
                  ),
-               if (inactiveOtherTagFilters.isNotEmpty)
+               if (inactiveTagFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Tags',
-                   commands: inactiveOtherTagFilters,
+                   commands: inactiveTagFilters,
                  ),
                if (inactiveReactionFilters.isNotEmpty)
                  StaticCommandGroup(

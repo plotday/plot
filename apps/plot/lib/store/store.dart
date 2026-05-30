@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 348;
+  int get schemaVersion => 349;
 
   @override
   MigrationStrategy get migration {
@@ -3612,21 +3612,18 @@ class Store extends _$Store {
       );
     }
     if (from < 339) {
-      // Unify the feed: replace `action_type` with three independent
-      // booleans (`active`, `task`, `to_read`). Backfill from the existing
-      // string column before dropping it, then reset the threads cursor so
-      // the next sync pulls the new server-side columns.
+      // Unify the feed: replace `action_type` with the `active` boolean.
+      // Backfill from the existing string column before dropping it, then
+      // reset the threads cursor so the next sync pulls the new server-side
+      // columns. (This step originally also added `task`/`to_read` booleans
+      // for the task-list / reading-list features; those were removed in
+      // v349, and the TableMigration below already rebuilds to the current
+      // schema, so they're no longer added here.)
       await _safeAddColumn(m, threads, threads.active);
-      await _safeAddColumn(m, threads, threads.task);
-      await _safeAddColumn(m, threads, threads.toRead);
       await _safeCustomStatement(
         m,
         "UPDATE threads SET active = 1 "
         "WHERE action_type IN ('respond', 'do')",
-      );
-      await _safeCustomStatement(
-        m,
-        "UPDATE threads SET to_read = 1 WHERE action_type = 'read'",
       );
       await m.alterTable(TableMigration(threads));
       await m.database.customStatement(
@@ -3761,6 +3758,13 @@ class Store extends _$Store {
       // the duplicate-column error from clients that upgraded through the
       // amended `from < 347` rebuild above, which already creates the column.
       await _safeAddColumn(m, priorities, priorities.icon);
+    }
+    if (from < 349) {
+      // Drop the `task` and `to_read` columns from the threads table — the
+      // task-list and reading-list features were removed. TableMigration
+      // rebuilds the table keeping only the columns Drift still knows about,
+      // so the dropped columns disappear.
+      await m.alterTable(TableMigration(threads));
     }
   }
 

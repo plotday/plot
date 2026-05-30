@@ -68,12 +68,9 @@ interface NoteContext {
 }
 
 interface ThreadStateClassification {
-  // Independent state booleans. The AI sets at most one of `active` /
-  // `to_read` with high confidence; the user can flip flags themselves
-  // afterward. `task` is reserved for connectors (Linear/Todoist-style
-  // assignments) and is always false in AI output.
+  // The AI sets `active` with high confidence; the user can flip it
+  // themselves afterward.
   active: boolean;
-  to_read: boolean;
   urgent: boolean;
   importance: number; // 0-100
   // When true the caller should NOT create a thread_state row for this
@@ -307,26 +304,21 @@ async function classifyNote(
 
 All members are identified by sequential numbers (e.g. member #1).
 
-For each member, return five fields:
+For each member, return four fields:
 - active — does the recipient need to act on this NOW? (Doing section.)
-- to_read — is this long-form material the recipient should set aside time to read? (Reading list.)
 - urgent — should we notify BEFORE their next scheduled response window?
 - importance — 0-100, drives whether the thread shows up proactively at all.
 - skip — clearly passive material no thread_state row should be created for.
 
 Return a "default" plus per-member "overrides" where needed (use member numbers as keys). NEVER include the note author (skip=true for them; they are added automatically).
 
-The three state booleans (active / to_read / task) are independent — the user can also flip them themselves. ONLY flag with HIGH confidence; default each to false. \`task\` is reserved for connector-driven assignments (Linear/Todoist) and is NEVER set by you — leave it out of your output.
+ONLY flag active with HIGH confidence; default it to false. The user can also flip it themselves.
 
 active = true (be conservative — the user can set this themselves):
 - the recipient is being asked a direct question that needs their answer
 - the recipient has been explicitly asked to do something with a time pressure or response window
 - they are personally on the hook for the next step
 A short FYI, a status update, an @mention with no ask, an unsolicited pitch — none of these are active.
-
-to_read = true (be conservative):
-- longer-form material the recipient should set aside time to read — newsletters, long corporate communications, documents
-- NOT for short informational updates, status notes, or unsolicited material
 
 skip = true:
 - clearly passive records the recipient doesn't need to process — confirmation emails, account sign-in notifications, receipts, automated system acknowledgements
@@ -337,14 +329,14 @@ urgent (boolean): true only when the recipient should be notified BEFORE their n
 importance (0-100):
 - 50-100 means "this should surface to the recipient proactively" (drives push, email digest, priority unread indicators)
 - 0-49 means "this exists but won't push or trigger early response scheduling"
-- Score promotional / unsolicited / mass-distribution material BELOW 50 even when active/to_read are false — typically 5-30. Cold outreach with no relational signal: 10-25. Skipped material (skip=true) is ignored regardless of importance.
+- Score promotional / unsolicited / mass-distribution material BELOW 50 even when active is false — typically 5-30. Cold outreach with no relational signal: 10-25. Skipped material (skip=true) is ignored regardless of importance.
 - Personal direct messages between people who clearly know each other: 60-90.
 - Anything you flag urgent should also be >= 50.
 
 Respond with JSON only. No explanation.
 
 Output schema:
-{"state": {"default": {"active": false, "to_read": false, "urgent": false, "importance": 50, "skip": false}, "overrides": {"1": {"active": true, "urgent": false, "importance": 75}}}}`,
+{"state": {"default": {"active": false, "urgent": false, "importance": 50, "skip": false}, "overrides": {"1": {"active": true, "urgent": false, "importance": 75}}}}`,
     },
     {
       role: "user" as const,
@@ -370,7 +362,6 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
 
   const defaultClassification: ThreadStateClassification = {
     active: false,
-    to_read: false,
     urgent: false,
     importance: 50,
     skip: false,
@@ -419,7 +410,6 @@ function parseClassification(
   if (!raw || typeof raw !== "object") return fallback;
   return {
     active: typeof raw.active === "boolean" ? raw.active : fallback.active,
-    to_read: typeof raw.to_read === "boolean" ? raw.to_read : fallback.to_read,
     urgent: typeof raw.urgent === "boolean" ? raw.urgent : fallback.urgent,
     importance:
       typeof raw.importance === "number"
@@ -435,7 +425,6 @@ function parseClassificationOverride(
   if (!raw || typeof raw !== "object") return null;
   const result: Partial<ThreadStateClassification> = {};
   if (typeof raw.active === "boolean") result.active = raw.active;
-  if (typeof raw.to_read === "boolean") result.to_read = raw.to_read;
   if (typeof raw.urgent === "boolean") result.urgent = raw.urgent;
   if (typeof raw.importance === "number") {
     result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
@@ -459,7 +448,6 @@ async function applyThreadState(
 
     const override = state.overrides[member.id];
     const active = override?.active ?? state.default.active;
-    const toRead = override?.to_read ?? state.default.to_read;
     const urgent = override?.urgent ?? state.default.urgent;
     const importance = override?.importance ?? state.default.importance;
     const skip = override?.skip ?? state.default.skip;
@@ -470,14 +458,10 @@ async function applyThreadState(
         user_id: member.userId,
         p_thread_id: threadId,
         p_active: active,
-        p_task: false, // AI never sets task — that's reserved for connectors.
-        p_to_read: toRead,
         p_urgent: urgent,
         p_importance: importance,
         p_note_created_at: noteSourceCreatedAt.toISOString(),
         p_set_active: true,
-        p_set_task: false,
-        p_set_to_read: true,
         p_set_urgent: true,
         p_set_importance: true,
       });

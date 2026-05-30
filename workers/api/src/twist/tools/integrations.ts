@@ -55,7 +55,6 @@ import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import { Store } from "./store";
 import { Tool } from "./tool";
-import { createSchedule } from "../../app/sync/smart-schedule";
 import { unarchiveDoneLinksOnThread } from "../../app/sync/link-tags";
 
 /** Internal provider config used by the Integrations tool. */
@@ -1361,14 +1360,10 @@ export class Integrations extends Tool implements IAuth {
         user_id: contact.user_id,
         p_thread_id: link.thread_id,
         p_active: true,
-        p_task: false,
-        p_to_read: false,
         p_urgent: false,
         p_importance: 50,
         p_on: `[${dateStr},)`,
         p_set_active: true,
-        p_set_task: false,
-        p_set_to_read: false,
         p_set_urgent: false,
         p_set_importance: false,
         p_set_on: true,
@@ -1474,13 +1469,10 @@ export class Integrations extends Tool implements IAuth {
 
       if (!contact?.user_id) return;
 
-      // File a 'do' thread_state only if status is not done. When status flips
-      // to done, mark the user's thread_state read so it drops out of the
-      // action tabs.
+      // When status flips to done, mark the user's thread_state read so it
+      // drops out of the action tabs.
       const channelLinkTypes = await this.getChannelLinkTypesForThread(threadId);
-      if (!this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
-        await createSchedule(this.db, contact.user_id, threadId as string, "task");
-      } else {
+      if (this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
         await this.db
           .updateTable("thread_state")
           .set({ read_at: new Date() })

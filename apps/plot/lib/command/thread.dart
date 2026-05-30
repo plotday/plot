@@ -968,48 +968,6 @@ class ToggleThreadActive extends _UpdateThreadCommand {
   }
 }
 
-/// Toggles `thread.task` — the per-user "task list" flag. Independent of
-/// `active` / `toRead`. Surfaced as a hover-row command that stays visible
-/// when the flag is set (like an enabled tag).
-class ToggleThreadTask extends _UpdateThreadCommand {
-  ToggleThreadTask(super.thread, {super.onUpdate})
-    : super(
-        title: thread.task ? 'Remove from task list' : 'Add to task list',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.activity,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.withTask(!thread.task));
-    return const CommandDone();
-  }
-}
-
-/// Toggles `thread.toRead` — the per-user "reading list" flag. Independent
-/// of `active` / `task`. Surfaced as a hover-row command that stays
-/// visible when the flag is set (like an enabled tag).
-class ToggleThreadToRead extends _UpdateThreadCommand {
-  ToggleThreadToRead(super.thread, {super.onUpdate})
-    : super(
-        title: thread.toRead
-            ? 'Remove from reading list'
-            : 'Add to reading list',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.bookOpenLines,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyE),
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.withToRead(!thread.toRead));
-    return const CommandDone();
-  }
-}
-
 class DisassociateThread extends Command {
   DisassociateThread(this.thread, {this.finish = false, this.onBeforeRun})
     : super(
@@ -3647,16 +3605,6 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   ];
 }
 
-/// Returns the per-user list-toggle commands ([ToggleThreadTask] and
-/// [ToggleThreadToRead]) in display order. These surface in the hover
-/// row and stay visible — like enabled tags — when their underlying
-/// flag is set. Both flags are independent of `active` and of each
-/// other.
-List<Command> threadListToggleCommands(Thread thread) => [
-  ToggleThreadTask(thread),
-  ToggleThreadToRead(thread),
-];
-
 List<Command> threadCommands(
   Thread thread, {
   bool open = false,
@@ -3685,7 +3633,6 @@ List<Command> threadCommands(
     return [
       if (open) ChangeCurrentThread(thread),
       ?primary,
-      ...threadListToggleCommands(thread),
     ];
   }
 
@@ -3712,18 +3659,12 @@ List<Command> threadCommands(
     }
   }
 
-  // Per-user list-toggle commands (task list / reading list). Independent
-  // of `active` and of each other; they stay visible like enabled tags
-  // when the underlying flag is set (handled by the ThreadCommands widget).
-  final listToggleCommands = threadListToggleCommands(thread);
-
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;
   final hideArchive = showEventTiming && thread.isLinkScheduleInstance;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
-    ...listToggleCommands,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
     if (!skipInfrequent) EditThread(thread),

@@ -10,13 +10,15 @@ export type LinkTypeStatus = {
   tag?: number;
   done?: boolean;
   /**
-   * State-flag declarations. When a link enters a status carrying one of
-   * these, the framework writes thread_state.<flag>=true for the link's
-   * affected user. `todo` is a deprecated alias for `task`.
+   * When a link enters a status carrying `active`, the framework writes
+   * thread_state.active=true for the link's affected user.
    */
   active?: boolean;
-  task?: boolean;
-  toRead?: boolean;
+  /**
+   * Marks the connector's "to-do" / active status — the target a done link
+   * is flipped back to when a thread is brought back into the agenda
+   * (see unarchiveDoneLinksOnThread). Not a thread_state flag.
+   */
   todo?: boolean;
 };
 
@@ -393,15 +395,15 @@ async function getStatusDef(
 }
 
 /**
- * Propagate a link's status `active`/`task`/`toRead` flags to thread_state
- * for the affected user.
+ * Propagate a link's status `active` flag to thread_state for the affected
+ * user.
  *
  *  - Assignee-bearing links (Linear, Todoist, etc.): the assignee's user.
  *  - Messaging links (Gmail star, Slack later): the twist_instance owner
  *    (per-user connection — the link's creator).
  *
- * Done-status links are a no-op for active/task: completion is signaled by
- * the absence of the flag, not by writing FALSE (which would clobber a user's
+ * Done-status links are a no-op for active: completion is signaled by the
+ * absence of the flag, not by writing FALSE (which would clobber a user's
  * own manual flag). To clear, the connector emits a status that does NOT
  * carry the flag, and the existing schedule cleanup paths take over.
  *
@@ -444,24 +446,17 @@ export async function propagateLinkStateFlagsFromDb(
   }
   if (!userId) return;
 
-  // todo is the deprecated alias for task.
   const wantsActive = statusDef.active === true;
-  const wantsTask = statusDef.task === true || statusDef.todo === true;
-  const wantsToRead = statusDef.toRead === true;
-  if (!wantsActive && !wantsTask && !wantsToRead) return;
+  if (!wantsActive) return;
 
   try {
     await rpcUser(db, "upsert_thread_state", {
       user_id: userId,
       p_thread_id: link.thread_id,
       p_active: wantsActive,
-      p_task: wantsTask,
-      p_to_read: wantsToRead,
       p_urgent: false,
       p_importance: 50,
       p_set_active: wantsActive,
-      p_set_task: wantsTask,
-      p_set_to_read: wantsToRead,
       p_set_urgent: false,
       p_set_importance: false,
     });

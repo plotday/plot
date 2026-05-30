@@ -12,7 +12,6 @@ import {
 } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 import { isLinkStatusDone, propagateLinkStateFlagsFromDb, propagateLinkStatusTagsFromDb } from "./link-tags";
-import { createSchedule } from "./smart-schedule";
 import { twistFactory } from "../../twist/factory";
 
 const links = new Hono<{ Bindings: Bindings }>();
@@ -116,7 +115,7 @@ links.post("/sync/links", async (c) => {
     } catch {
       // Non-critical: tag propagation failure shouldn't break the sync
     }
-    // Propagate active/task/toRead state flags declared on the LinkStatus
+    // Propagate the active state flag declared on the LinkStatus
     // to per-user thread_state. Best-effort.
     try {
       await propagateLinkStateFlagsFromDb(c.var.db, result);
@@ -125,35 +124,8 @@ links.post("/sync/links", async (c) => {
     }
   }
 
-  // Create task schedule when link is assigned to a user
-  // Uses its own DB connection since the request-scoped one is destroyed after the response
   const assigneeId = result.assignee_id;
   const linkThreadId = result.thread_id;
-  if (assigneeId && linkThreadId) {
-    c.executionCtx.waitUntil(
-      (async () => {
-        const db = createDb(c.env);
-        try {
-          const contact = await db
-            .selectFrom("contact")
-            .select("user_id")
-            .where("id", "=", assigneeId)
-            .executeTakeFirst();
-          if (!contact?.user_id) return;
-
-          // Only file task=true thread_state if the link's status is not "done"
-          const isDone = await isLinkStatusDone(db, result);
-          if (!isDone) {
-            await createSchedule(db, contact.user_id, linkThreadId, 'task');
-          }
-        } catch (error) {
-          console.error("[thread_state] Failed to file thread_state from link assignment:", error);
-        } finally {
-          await db.destroy();
-        }
-      })()
-    );
-  }
 
   // When a link status becomes "done", clear the assignee's thread_state
   // todo intent (mark it read so the row drops out of action tabs). The

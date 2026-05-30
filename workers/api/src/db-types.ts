@@ -187,13 +187,10 @@ export interface CustomEmoji {
 
 export interface Device {
   app_version: string | null;
-  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
-  device_id: string | null;
   id: Generated<string>;
-  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string | null;
+  push_token: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -450,23 +447,6 @@ export interface LinkX {
   type: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-}
-
-export interface LocalSyncLease {
-  attempt_id: string;
-  capability: string;
-  created_at: Generated<Timestamp>;
-  device_id: string;
-  fail_streak: Generated<number>;
-  last_completed_at: Timestamp | null;
-  last_error: string | null;
-  last_heartbeat_at: Timestamp;
-  last_result: string | null;
-  lease_token: string;
-  leased_until: Timestamp;
-  next_eligible_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
 }
 
 export interface Note {
@@ -791,7 +771,6 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
-  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -890,9 +869,7 @@ export interface ThreadState {
   order: number | null;
   read_at: Timestamp | null;
   seq: Generated<string>;
-  task: Generated<boolean>;
   thread_id: string;
-  to_read: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   urgent: Generated<boolean>;
   user_id: string;
@@ -1285,9 +1262,7 @@ export interface TwistInstanceThreadSchedule {
   priority_id: string | null;
   read_at: Timestamp | null;
   seq: string | null;
-  task: boolean | null;
   thread_id: string | null;
-  to_read: boolean | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1674,9 +1649,7 @@ export interface UserThread {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
-  task: boolean | null;
   title: string | null;
-  to_read: boolean | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
@@ -1736,9 +1709,7 @@ export interface UserThreadRedacted {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
-  task: boolean | null;
   title: string | null;
-  to_read: boolean | null;
   topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
@@ -1827,7 +1798,6 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
-  local_sync_lease: LocalSyncLease;
   note: Note;
   note_reaction: NoteReaction;
   note_reactions: NoteReactions;
