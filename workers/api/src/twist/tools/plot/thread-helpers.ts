@@ -332,6 +332,33 @@ export function cleanConvertedMarkdown(markdown: string): string {
     }
   );
 
+  // Restore whitespace that ai.toMarkdown() drops between adjacent inline
+  // elements. The converter emits a link/bold run glued to the next word or
+  // element — `[a](u)and[b](u)`, `**bold**word` — instead of keeping the space
+  // that was in the source HTML. Besides reading wrong, the missing space can
+  // break rendering: a Markdown renderer that isn't strict CommonMark shows the
+  // literal `**` for `**bold**word`.
+  //
+  // We anchor on the glued *boundary* (a link close, a word-before-link, a bold
+  // close) rather than matching a whole `**…**`/`[…](…)` span — span matching
+  // can't tell an opening delimiter from a closing one and would pair the
+  // closing `**` of one bold run with the opening `**` of the next (turning
+  // `**a**. Then **b**` into `**a**. Then ** b**`). A space is inserted only
+  // when the neighbour is a word character or another inline element, so
+  // punctuation stays attached (`[x](u).`, `**x**,`) and already-spaced input
+  // is unchanged (idempotent). The link sub-patterns forbid newlines so a
+  // malformed link can't swallow the rest of the document. Turndown (the
+  // read-later path) keeps these spaces, so this only ever rewrites
+  // ai.toMarkdown output.
+  markdown = markdown
+    // link close `](url)` glued to a following word or inline element
+    .replace(/(\]\([^)\n]*\))(?=[A-Za-z0-9[])/g, "$1 ")
+    // word glued to a following link `[label](url)` — images `![alt](src)` are
+    // safe because the character before `[` is `!`, not a word character
+    .replace(/([A-Za-z0-9])(\[[^\]\n]*\]\([^)\n]*\))/g, "$1 $2")
+    // bold close `**` glued to a following word or inline element
+    .replace(/([A-Za-z0-9])\*\*(?=[A-Za-z0-9[])/g, "$1** ");
+
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
 

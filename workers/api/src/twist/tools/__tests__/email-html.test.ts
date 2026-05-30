@@ -305,3 +305,66 @@ describe("cleanConvertedMarkdown — empty-alt images", () => {
     expect(out).toBe("");
   });
 });
+
+describe("cleanConvertedMarkdown — glued inline elements", () => {
+  // ai.toMarkdown drops the whitespace between adjacent inline elements,
+  // emitting `[a](u)and[b](u)` and `**bold**word`. The missing space is not
+  // just ugly: a `**…**` run wedged between two word characters
+  // (`Romanow**was`) is neither left- nor right-flanking per CommonMark, so it
+  // can't close emphasis — the literal asterisks render as text. These repairs
+  // restore the spacing so the Markdown both reads correctly and parses.
+
+  it("restores spaces around a word wedged between two links", () => {
+    const input =
+      "Thanks to [gameon](https://gameon.example)and[Fasken](https://fasken.example) for sponsoring.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(
+      "Thanks to [gameon](https://gameon.example) and [Fasken](https://fasken.example) for sponsoring."
+    );
+  });
+
+  it("restores the space after bold text glued to the next word", () => {
+    const input = "**Michele Romanow**was direct about the challenges.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("**Michele Romanow** was direct about the challenges.");
+  });
+
+  it("separates two directly adjacent links", () => {
+    const input = "[gameon](https://a.example)[Fasken](https://b.example)";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("[gameon](https://a.example) [Fasken](https://b.example)");
+  });
+
+  it("separates a word directly followed by a link", () => {
+    const input = "see[the post](https://example.com/post) below";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("see [the post](https://example.com/post) below");
+  });
+
+  it("does not insert a space when a link is followed by punctuation", () => {
+    const input =
+      "Read [the post](https://example.com/post), [docs](https://example.com/docs).";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("does not insert a space when bold is followed by punctuation", () => {
+    const input = "She was **direct**. Then **blunt**, then kind.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+
+  it("leaves already-spaced links and bold untouched (idempotent)", () => {
+    const links =
+      "Thanks to [gameon](https://a.example) and [Fasken](https://b.example) for sponsoring.";
+    const bold = "**Michele Romanow** was direct about the challenges.";
+    expect(cleanConvertedMarkdown(links)).toBe(links);
+    expect(cleanConvertedMarkdown(bold)).toBe(bold);
+  });
+
+  it("does not split an inline image from its surrounding text", () => {
+    const input = "Read ![Logo](https://cdn.example.com/logo.png) now.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe(input);
+  });
+});
