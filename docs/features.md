@@ -47,6 +47,26 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Private notes (author-only visibility)
 - Full-text search across titles and content
 
+### Composing notes
+
+Plot threads can be created as a **Note** (private to you), a **Task** (first
+note tagged for follow-up), or a **Chat** (shared with one or more contacts).
+The body editor's placeholder reflects which one you're creating.
+
+Inside a thread, the editor's top bar shows the active **mode** as a pill:
+
+- **Plot threads (unshared)** — Note · Task
+- **Plot threads (shared)** — Reply · Task · Private note, plus a one-click
+  "Reply to {original author}" shortcut when there are 3+ people on the thread.
+- **Gmail-style threads** — Reply · Private note. Tap the avatars on Reply to
+  choose who receives a specific message (per-message recipient picker).
+- **Linear-style channels** — Comment · Private note.
+- **Personal connectors** (Google Keep–style) — just the mode pill (no Private
+  needed because the connector is already personal).
+
+Replying to a specific note from the feed replaces the pill row with a
+"Replying to: …" chrome; clicking the X returns to the pill row.
+
 ## Platform Support
 
 - Web application (full-featured)
