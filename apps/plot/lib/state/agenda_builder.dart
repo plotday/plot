@@ -36,9 +36,16 @@ class AgendaBuilder {
     /// [Priority] is resolved from this map — never derived from
     /// [threads]. A block whose priority is absent here is skipped.
     Map<PriorityId, Priority>? priorityById,
+
+    /// A paused focus block whose remaining time should slide forward
+    /// from `now`. When set, [AgendaBuilder] synthesizes a `PriorityBlock`
+    /// at `[now, now + remaining)` on today's section, shrunk so it
+    /// never overlaps the next anchored item (event or future focus
+    /// block). Dropped if zero room remains.
+    ({Priority priority, Duration remaining})? pausedFocus,
   }) {
     final blocksByPriority = priorityBlocksByPriority ?? const {};
-    if (threads.isEmpty && blocksByPriority.isEmpty) {
+    if (threads.isEmpty && blocksByPriority.isEmpty && pausedFocus == null) {
       return AgendaModel.empty;
     }
 
@@ -309,6 +316,48 @@ class AgendaBuilder {
             isCurrent: false,
           ),
         );
+      }
+
+      // Paused focus block (sliding from `now`) — today only. Computes
+      // the start of the next anchored item (event or future focus
+      // block) strictly after `now` to cap the paused block's end; if
+      // no anchored item follows, the cap is the next midnight. The
+      // sliding block is inserted into [blocks] at the correct sorted
+      // position by start time. Dropped when zero room remains.
+      if (isToday && pausedFocus != null) {
+        DateTime? nextAnchored;
+        for (final a in anchored) {
+          if (!a.start.isBefore(effectiveNow)) {
+            if (nextAnchored == null || a.start.isBefore(nextAnchored)) {
+              nextAnchored = a.start;
+            }
+          }
+        }
+        final cap = nextAnchored ?? nextMidnight;
+        var end = effectiveNow.add(pausedFocus.remaining);
+        if (end.isAfter(cap)) end = cap;
+        if (end.isAfter(effectiveNow)) {
+          final pausedBlock = PriorityBlock(
+            id: 'fp_${pausedFocus.priority.id}',
+            priority: pausedFocus.priority,
+            threads: const [],
+            cascadeDuration: end.difference(effectiveNow),
+            windowStart: effectiveNow,
+            windowEnd: end,
+            isCurrent: true,
+          );
+          // Splice in at the correct position — before any block whose
+          // start follows or equals `now`.
+          int insertAt = blocks.length;
+          for (var i = 0; i < blocks.length; i++) {
+            final start = blocks[i].start;
+            if (!start.isBefore(effectiveNow)) {
+              insertAt = i;
+              break;
+            }
+          }
+          blocks.insert(insertAt, pausedBlock);
+        }
       }
 
       // scheduleAt: the default time the day-header "+" pre-fills when
