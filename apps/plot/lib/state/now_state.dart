@@ -26,7 +26,7 @@ const Duration kPomodoroGrace = Duration(minutes: 5);
 /// Default pomodoro duration when the focused priority has no
 /// `priority_block.duration` set. Long enough to be useful, short
 /// enough that the user notices when it's wrong.
-const Duration kDefaultPomodoro = Duration(minutes: 15);
+const Duration kDefaultPomodoro = Duration(minutes: 30);
 
 /// Default pomodoro duration when the user switches to a different
 /// priority while a session is already active — short on purpose so
