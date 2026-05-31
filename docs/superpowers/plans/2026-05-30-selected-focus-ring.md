@@ -14,7 +14,7 @@
 
 ## Background facts (verified in the codebase)
 
-- `OklchColours` lives in `apps/plot/lib/style/colors.dart`. It is built via the factory `OklchColours.fromTheme(ThemeColor themeColor, Brightness brightness)` (line ~70) and holds private `_themeColor` / `_brightness` fields. `backgroundFromTheme(ThemeColor?)` (line ~202) returns a per-color tinted `accentBackground` and is the template for the new helper.
+- `OklchColours` lives in `apps/plot/lib/style/colors.dart` (class at line ~17) and holds private `_themeColor` / `_brightness` fields. It is normally reached via `ColourSchemeData(themeColor:, brightness:).colours` (the `.colours` getter at line ~223 returns the `OklchColours`); this is exactly how `apps/plot/test/style/colors_test.dart` constructs it. `backgroundFromTheme(ThemeColor?)` (line ~202) returns a per-color tinted `accentBackground` and is the template for the new helper.
 - The OKLCH value `accentBackground` (a `package:ray` color) supports `.withHue()`, `.withChroma()`, `.withLightness()`, and `.toColor()`. The agent/activity feed's selected border already uses `accentBackground.withLightness(0.85 light / 0.35 dark)` in `ListTile`.
 - `apps/plot/lib/widget/list_tile.dart`: `selectedBorder` defaults to `true` (line ~98); the border is drawn in the `BoxDecoration` at lines ~375-392. Crucially, when `borderRadius != null` the border is `null` — so rounded tiles never get a ring today.
 - Sidebar focus tiles: `apps/plot/lib/widget/priority.dart` (`PriorityWidget`) passes `borderRadius` + `selectedColor: priorityAccentBg` + `highlightColor: priorityAccentBg` (lines ~207-212); `priorityAccentBg` is computed at lines ~125-127. Left-panel mode is `monochrome == true`.
@@ -53,11 +53,13 @@ import 'package:plot/util/theme_color.dart';
 
 void main() {
   group('OklchColours.borderFromTheme', () {
+    OklchColours coloursFor(Brightness brightness) => ColourSchemeData(
+      themeColor: const ThemeColor.defaultColor(),
+      brightness: brightness,
+    ).colours;
+
     test('ring differs from the tint background (more visible) in light mode', () {
-      final colours = OklchColours.fromTheme(
-        const ThemeColor.defaultColor(),
-        Brightness.light,
-      );
+      final colours = coloursFor(Brightness.light);
       const purple = ThemeColor(2);
       // The ring is the tinted background pushed to a more visible lightness,
       // so it must NOT equal the fill it sits on — otherwise it is invisible.
@@ -68,10 +70,7 @@ void main() {
     });
 
     test('ring differs from the tint background in dark mode', () {
-      final colours = OklchColours.fromTheme(
-        const ThemeColor.defaultColor(),
-        Brightness.dark,
-      );
+      final colours = coloursFor(Brightness.dark);
       const purple = ThemeColor(2);
       expect(
         colours.borderFromTheme(purple),
@@ -80,18 +79,12 @@ void main() {
     });
 
     test('ring is fully opaque', () {
-      final colours = OklchColours.fromTheme(
-        const ThemeColor.defaultColor(),
-        Brightness.light,
-      );
+      final colours = coloursFor(Brightness.light);
       expect(colours.borderFromTheme(const ThemeColor(2)).a, 1.0);
     });
 
     test('ring hue tracks the focus color (different colors → different rings)', () {
-      final colours = OklchColours.fromTheme(
-        const ThemeColor.defaultColor(),
-        Brightness.light,
-      );
+      final colours = coloursFor(Brightness.light);
       expect(
         colours.borderFromTheme(const ThemeColor(2)), // purple
         isNot(equals(colours.borderFromTheme(const ThemeColor(4)))), // red
@@ -99,10 +92,7 @@ void main() {
     });
 
     test('null color falls back to the default focus color', () {
-      final colours = OklchColours.fromTheme(
-        const ThemeColor.defaultColor(),
-        Brightness.light,
-      );
+      final colours = coloursFor(Brightness.light);
       expect(
         colours.borderFromTheme(null),
         equals(colours.borderFromTheme(const ThemeColor.defaultColor())),
