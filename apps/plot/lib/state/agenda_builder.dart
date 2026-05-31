@@ -306,7 +306,7 @@ class AgendaBuilder {
       // time label and the day-boundary touch omits the duration — with the +
       // to schedule. Today is no exception: "Now" is reserved for a block
       // actually in progress, which an empty day has none of.
-      if (anchored.isEmpty) {
+      if (anchored.isEmpty && !(isToday && pausedFocus != null)) {
         blocks.add(
           GapBlock(
             id: 'g_empty_$sectionId',
@@ -328,9 +328,8 @@ class AgendaBuilder {
         DateTime? nextAnchored;
         for (final a in anchored) {
           if (!a.start.isBefore(effectiveNow)) {
-            if (nextAnchored == null || a.start.isBefore(nextAnchored)) {
-              nextAnchored = a.start;
-            }
+            nextAnchored = a.start;
+            break;
           }
         }
         final cap = nextAnchored ?? nextMidnight;

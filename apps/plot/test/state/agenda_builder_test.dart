@@ -688,5 +688,39 @@ void main() {
           .where((b) => b.id.startsWith('fp_'));
       expect(pausedBlocks, isEmpty);
     });
+
+    test('does not emit an empty-day gap when paused focus fills today',
+        () {
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 20),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+
+      final emptyGaps = section.blocks
+          .whereType<ui.GapBlock>()
+          .where((b) => b.id.startsWith('g_empty_'));
+      expect(emptyGaps, isEmpty,
+          reason: 'empty-day gap must not be emitted alongside the '
+              'synthesized paused focus block');
+
+      final pausedBlocks = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fp_'));
+      expect(pausedBlocks.length, 1);
+    });
   });
 }
