@@ -101,52 +101,55 @@ class BlockListSeparator extends StatelessWidget {
 
     Widget separator;
 
+    // Hover/focus highlight on either flank — only when the row's type opts
+    // in, and never while a block-level drag is in progress (block drag
+    // drives its own drop indicator). Computed first because hover takes
+    // precedence over selection: when the row above or below a selected row
+    // is hovered, the shared divider should read as the hover highlight, not
+    // the selection colour.
+    final draggingIndex = controller.draggingIndex;
+    final hovered = controller.hoveredIndex;
+    final focused = controller.focusedIndex;
+    final prevHighlighted = prev != null &&
+        !dragging &&
+        canHighlight(prev) &&
+        (hovered == index - 1 || focused == index - 1) &&
+        draggingIndex != index - 1;
+    final nextHighlighted = next != null &&
+        !dragging &&
+        canHighlight(next) &&
+        (hovered == index || focused == index) &&
+        draggingIndex != index;
+
     final prevAccent = prev != null ? selectedAccent(prev) : null;
     final nextAccent = next != null ? selectedAccent(next) : null;
     final accent = prevAccent ?? nextAccent;
-    if (accent != null) {
+    if (prevHighlighted || nextHighlighted) {
+      final bright = borderColor.withValues(
+        alpha: (borderColor.a * 2).clamp(0.0, 1.0),
+      );
+      separator = Container(
+        height: 1,
+        color: Color.alphaBlend(bright, bg),
+      );
+    } else if (accent != null) {
       // Selection: the per-focus [borderFromTheme] ring colour, painted at
       // full opacity to match the sidebar's selected-focus ring exactly.
-      // Painted regardless of hover/focus or drag — selection is a
-      // persistent state, not an interaction affordance.
+      // Painted regardless of focus or drag — selection is a persistent
+      // state, not an interaction affordance — but hover (handled above)
+      // takes precedence on a shared divider.
       separator = Container(
         height: 1,
         color: accent,
       );
     } else {
-      // Hover/focus highlight on either flank — only when the row's
-      // type opts in, and never while a block-level drag is in
-      // progress (block drag drives its own drop indicator).
-      final draggingIndex = controller.draggingIndex;
-      final hovered = controller.hoveredIndex;
-      final focused = controller.focusedIndex;
-      final prevHighlighted = prev != null &&
-          !dragging &&
-          canHighlight(prev) &&
-          (hovered == index - 1 || focused == index - 1) &&
-          draggingIndex != index - 1;
-      final nextHighlighted = next != null &&
-          !dragging &&
-          canHighlight(next) &&
-          (hovered == index || focused == index) &&
-          draggingIndex != index;
-      if (prevHighlighted || nextHighlighted) {
-        final bright = borderColor.withValues(
-          alpha: (borderColor.a * 2).clamp(0.0, 1.0),
-        );
-        separator = Container(
-          height: 1,
-          color: Color.alphaBlend(bright, bg),
-        );
-      } else {
-        // Default: transparent for the first item (avoids a double
-        // line above any leading section header), otherwise the
-        // standard border color.
-        separator = Container(
-          height: 1,
-          color: prev == null ? bg : baseBorder,
-        );
-      }
+      // Default: transparent for the first item (avoids a double
+      // line above any leading section header), otherwise the
+      // standard border color.
+      separator = Container(
+        height: 1,
+        color: prev == null ? bg : baseBorder,
+      );
     }
 
     return AnimatedSize(
