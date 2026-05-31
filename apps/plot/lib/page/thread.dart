@@ -13,6 +13,7 @@ import 'package:plot/state/priority.dart';
 
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/util/note_initial_view.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -81,6 +82,14 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   // Timer for delayed read marking
   Timer? _markReadTimer;
 
+  // Snapshot of the thread's read state captured when the page opened,
+  // BEFORE the 750ms mark-as-read timer resets readAt. Drives which notes
+  // start expanded and which note the list scrolls to. See
+  // util/note_initial_view.dart.
+  DateTime? _initialReadAt;
+  bool _initialThreadUnread = false;
+  bool _readSnapshotTaken = false;
+
   // Flag to ensure setActivity is only called once on initial load
   bool _hasSetInitialActivity = false;
 
@@ -91,7 +100,14 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     _priorityBloc = context.read<PriorityBloc>();
-    _threadId = context.read<ThreadBloc>().state.thread.id;
+    final thread = context.read<ThreadBloc>().state.thread;
+    _threadId = thread.id;
+    // Snapshot read state once, before _scheduleMarkAsRead's timer resets it.
+    if (!_readSnapshotTaken) {
+      _readSnapshotTaken = true;
+      _initialReadAt = thread.readAt;
+      _initialThreadUnread = thread.unread;
+    }
     // Schedule marking thread as read after 750ms
     _scheduleMarkAsRead();
 
@@ -602,6 +618,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         reorderableIndex: reorderableIndex,
         showAuthor: state.hasOtherAuthors,
         searchHighlight: state.search.isNotEmpty ? state.search : null,
+        initiallyExpanded: noteInitiallyExpanded(
+          note,
+          noteCount: state.notes.length,
+          threadUnread: _initialThreadUnread,
+          readAt: _initialReadAt,
+        ),
       );
     }
     return const SizedBox.shrink();
