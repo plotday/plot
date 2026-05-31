@@ -1125,7 +1125,7 @@ class _PriorityHeaderTrackingControlState
       });
     }
 
-    // Inactive: render a plain header-style "Start timer" icon
+    // Inactive: render a plain header-style "Start focus" icon
     // button. Active/grace: render the countdown pill. AnimatedSize
     // animates the trailing-widget width so the title slides
     // smoothly across the swap.
@@ -1168,7 +1168,7 @@ class _PriorityHeaderTrackingControlState
         : () => context.run(StopTimer());
     final String centerTooltip = live.fromEvent
         ? 'End event'
-        : (isGrace ? 'Stop timer' : 'Pause timer');
+        : (isGrace ? 'Stop focus' : 'Pause focus');
     final ShortcutActivator? centerTooltipShortcut = live.fromEvent
         ? null
         : (isGrace ? timerEndShortcut : timerToggleShortcut);

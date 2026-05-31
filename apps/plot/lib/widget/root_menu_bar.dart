@@ -205,13 +205,13 @@ class RootMenuBar extends StatelessWidget {
                 ? () => _runCommand(inactive ? StartTimer() : StopTimer())
                 : null,
             shortcut: timerToggleShortcut,
-            label: inactive ? 'Start timer' : 'Pause timer',
+            label: inactive ? 'Start focus' : 'Pause focus',
           ),
           if (!inactive)
             PlatformMenuItem(
               onSelected: () => _runCommand(EndTimer()),
               shortcut: timerEndShortcut,
-              label: 'Stop timer',
+              label: 'Stop focus',
             ),
         ],
       ),
