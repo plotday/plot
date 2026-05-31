@@ -260,6 +260,46 @@ void main() {
       expect(fb.sourceRow?.id, row.id);
     });
 
+    test('a focus block scheduled at exactly midnight renders at the top of '
+        'its day with no leading gap before it', () {
+      final p = _testPriority();
+      final tomorrow = today.addDays(1);
+      // Midnight (00:00) focus block, 1h long — a real user-scheduled block,
+      // not an order-timeline anchor.
+      final row = _focusRow(p, tomorrow.toDateTime(), const Duration(hours: 1));
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 2,
+        priorityBlocksByPriority: {
+          p.id: [row],
+        },
+        priorityById: {p.id: p},
+      );
+      final fb = model.allBlocks
+          .whereType<ui.PriorityBlock>()
+          .firstWhere((b) => b.id == 'fb_${row.id}');
+      expect(fb.windowStart, tomorrow.toDateTime());
+      expect(
+        fb.windowEnd,
+        tomorrow.toDateTime().add(const Duration(hours: 1)),
+      );
+      // No leading-edge gap before it (its start IS the day boundary); only
+      // the trailing gap from 01:00 to the next midnight.
+      final gaps = gapsOn(model, tomorrow);
+      expect(
+        gaps.where((g) => g.range.start == tomorrow.toDateTime()),
+        isEmpty,
+        reason: 'a midnight block suppresses the leading-edge gap',
+      );
+      expect(gaps, hasLength(1));
+      expect(
+        gaps.single.range.start,
+        tomorrow.toDateTime().add(const Duration(hours: 1)),
+      );
+      expect(gaps.single.range.end, tomorrow.addDays(1).toDateTime());
+    });
+
     test('a focus block renders from priorityById without any threads '
         '(root-priority regression)', () {
       // The root priority's agenda shows only descendants' events, so the

@@ -5,7 +5,8 @@ import 'package:plot/store/store.dart';
 /// user-scheduled focus block (`priority_block` row with a positive
 /// duration and a real time-of-day) covers a given moment. Mirrors the
 /// agenda's focus-block selection: window is `[effectiveAt, effectiveAt +
-/// duration)`, midnight-anchored and pre-today rows are ignored.
+/// duration)`; pre-today rows and null/zero-duration order anchors are
+/// ignored, but a positive-duration row at exactly midnight is a real block.
 void main() {
   group('activeFocusBlockPriorityAt', () {
     final priorityA = Uuid.generate();
@@ -154,7 +155,11 @@ void main() {
       expect(got, isNull);
     });
 
-    test('midnight-anchored rows are ignored (order anchors, not blocks)', () {
+    test('a midnight-anchored focus block with positive duration is honored',
+        () {
+      // A user can schedule a focus block at exactly midnight; it is a real
+      // block (order-timeline anchors carry order only — null/zero duration —
+      // or sit before today), so it counts as active within its window.
       final got = activeFocusBlockPriorityAt(
         moment: DateTime(2026, 5, 1, 9, 30),
         blocksByPriority: {
@@ -167,7 +172,7 @@ void main() {
           ],
         },
       );
-      expect(got, isNull);
+      expect(got, priorityA);
     });
 
     test('rows starting before the moment\'s local midnight are ignored', () {

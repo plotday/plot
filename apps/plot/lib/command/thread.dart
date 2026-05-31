@@ -1696,7 +1696,7 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 }
 
 class MoveToPriority extends PriorityCommand {
-  MoveToPriority(this.thread, Priority priority)
+  MoveToPriority(this.thread, Priority priority, {super.label, super.glyph})
     : super(
         priority,
         eventObject: EventObject.activity,
@@ -1798,18 +1798,30 @@ class MoveThreadToPriority extends ShowCommands {
     // displays — so the modal opens immediately instead of stalling on the
     // enrichment round-trip.
     final priorities = await Priority.getRaw(order: PriorityOrder.recent);
-    final filteredPriorities = priorities
-        .where((p) => p.id != thread.priority.id)
-        .toList();
+    // Partition out the root (Inbox), which `getRaw` returns alongside the
+    // focuses, so it can be pinned to the bottom as a branded "Inbox" row
+    // instead of appearing inline as a plain focus.
+    Priority? root;
+    final focuses = <Priority>[];
+    for (final p in priorities) {
+      if (p.root) {
+        root = p;
+      } else if (p.id != thread.priority.id) {
+        focuses.add(p);
+      }
+    }
+    final commands = <Command>[
+      ...focuses.map((priority) => MoveToPriority(thread, priority)),
+      if (root != null && thread.priority.id != root.id)
+        MoveToPriority(thread, root, label: 'Inbox', glyph: PlotIcon.inbox),
+    ];
 
     return Commands(
       prompt: 'Move thread to focus',
       groups: [
         StaticCommandGroup(
           title: 'Focuses',
-          commands: filteredPriorities
-              .map((priority) => MoveToPriority(thread, priority))
-              .toList(),
+          commands: commands,
         ),
       ],
       secondaryCommand: (prompt) => _CreateAndMoveToNewPriority(thread),

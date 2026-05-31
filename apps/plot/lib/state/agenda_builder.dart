@@ -105,8 +105,14 @@ class AgendaBuilder {
     }
 
     // --- Focus blocks ---------------------------------------------------
-    // priority_block rows with a real time-of-day + positive duration. A
-    // midnight-anchored row is an order-timeline anchor, not a focus block.
+    // priority_block rows with a real positive duration. Order-timeline
+    // anchors carry order only: they have null/zero duration (skipped by the
+    // duration guard) and the carry-forward baseline row sits before today
+    // (skipped by the `isBefore(todayMidnight)` guard). So a positive-
+    // duration row anchored today or later is always a real focus block —
+    // including one the user scheduled at exactly midnight (00:00), which
+    // renders at the top of its day and, because its start equals the day
+    // boundary, suppresses the leading-edge gap below.
     final focusByDate =
         <Date, List<({PriorityBlockRow row, Priority priority})>>{};
     for (final entry in blocksByPriority.entries) {
@@ -118,13 +124,6 @@ class AgendaBuilder {
         if (d == null || d <= Duration.zero) continue;
         final at = row.effectiveAt;
         if (at.isBefore(todayMidnight)) continue;
-        if (at.hour == 0 &&
-            at.minute == 0 &&
-            at.second == 0 &&
-            at.millisecond == 0 &&
-            at.microsecond == 0) {
-          continue;
-        }
         final blockDate = Date(at.year, at.month, at.day);
         // On today, drop focus blocks that already ended so the agenda
         // starts at the current or next-upcoming row. A block still in

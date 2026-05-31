@@ -123,8 +123,8 @@ double effectivePriorityOrderAt({
 /// covers [moment], or null if none does.
 ///
 /// A focus block is a non-archived `priority_block` row with a positive
-/// `duration` and a real time-of-day (a midnight-anchored row is an
-/// order-timeline anchor, not a block). Its window is
+/// `duration` (order-timeline anchors carry order only — null/zero
+/// duration — and are skipped). Its window is
 /// `[effectiveAt, effectiveAt + duration)` — start inclusive, end
 /// exclusive. Rows whose `effectiveAt` falls before [moment]'s local
 /// midnight are ignored, matching the agenda's same-day focus-block
@@ -147,14 +147,10 @@ PriorityId? activeFocusBlockPriorityAt({
       if (d == null || d <= Duration.zero) continue;
       final start = row.effectiveAt;
       if (start.isBefore(midnight)) continue;
-      // Midnight-anchored rows carry order only, never a focus block.
-      if (start.hour == 0 &&
-          start.minute == 0 &&
-          start.second == 0 &&
-          start.millisecond == 0 &&
-          start.microsecond == 0) {
-        continue;
-      }
+      // Order-timeline anchors carry order only — null/zero duration
+      // (skipped above) or a baseline row before today (skipped above) — so
+      // a positive-duration row here is a real focus block, including one
+      // anchored at exactly midnight.
       if (start.isAfter(moment)) continue;
       final end = start.add(d);
       if (!moment.isBefore(end)) continue; // moment >= end

@@ -368,24 +368,42 @@ class NewThreadPageState extends State<NewThreadPage> {
         final priorities = await Priority.get(order: PriorityOrder.nested);
         final query = search?.trim().toLowerCase() ?? '';
         final includeAuto = query.isEmpty || 'auto'.contains(query);
-        final filteredPriorities = priorities
-            .where((p) => query.isEmpty || p.matchesSearch(search ?? ''))
-            .map<PriorityChoice>(PickedPriorityChoice.new)
-            .toList();
+        // Partition out the root (Inbox), which `get` returns alongside the
+        // focuses, so it's pinned to the bottom as a branded "Inbox" row
+        // instead of appearing inline as a plain focus.
+        Priority? root;
+        final focuses = <PriorityChoice>[];
+        for (final p in priorities) {
+          if (p.root) {
+            root = p;
+          } else if (query.isEmpty || p.matchesSearch(search ?? '')) {
+            focuses.add(PickedPriorityChoice(p));
+          }
+        }
         return [
           SelectGroup<PriorityChoice>(
             title: null,
             items: [
               if (includeAuto) const AutoOrganizeChoice(),
-              ...filteredPriorities,
+              ...focuses,
+              if (root != null &&
+                  (query.isEmpty || root.matchesSearch(search ?? '')))
+                PickedPriorityChoice(root),
             ],
           ),
         ];
       },
       itemBuilder: (choice, _) => switch (choice) {
+        // Use IconLabel (not the tile's leading icon/title slots) so the icon
+        // size, 6px gap, and text line-height match the focus rows and the
+        // Inbox row exactly — otherwise Auto-organize sits indented/offset.
         AutoOrganizeChoice() => ListTile(
-          icon: PlotIcon.sparkles,
-          title: 'Auto-organize',
+          body: IconLabel(icon: PlotIcon.sparkles, label: 'Auto-organize'),
+        ),
+        PickedPriorityChoice(:final priority) when priority.root => ListTile(
+          body: Builder(
+            builder: (context) => inboxLabel(context, priority),
+          ),
         ),
         PickedPriorityChoice(:final priority) => ListTile(
           body: FocusLabel(priority: priority),

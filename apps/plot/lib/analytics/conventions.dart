@@ -31,8 +31,6 @@
 /// - finished: Activity/process completed
 /// - scheduled: Time assigned to activity
 /// - rescheduled: Time changed for activity
-/// - pinned: Entity pinned to top
-/// - unpinned: Entity unpinned
 /// - tagged: Tag added to entity
 /// - untagged: Tag removed from entity
 /// - unfinished: Activity marked incomplete
@@ -130,8 +128,6 @@ enum EventAction {
   scheduled('scheduled'),
   rescheduled('rescheduled'),
   unscheduled('unscheduled'),
-  pinned('pinned'),
-  unpinned('unpinned'),
   tagged('tagged'),
   untagged('untagged'),
   unfinished('unfinished'),

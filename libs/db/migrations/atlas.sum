@@ -1,4 +1,4 @@
-h1:fEEWqelb5hxV4zE3jyrY4H0umy5QgTpX6GbHP4o7mso=
+h1:RwT/n1iowOUfbil1ACTFmhD3YOMdf2IL3TQy6pky0wM=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -439,3 +439,4 @@ h1:fEEWqelb5hxV4zE3jyrY4H0umy5QgTpX6GbHP4o7mso=
 20260530195250_drop_task_and_reading_list_thread_state.sql h1:mYwSTr9hLIOsZ1GBpAFMFA093iw2uXw2fTrbCh6o5Jc=
 20260530200000_update_onboarding_threads_flat_focus.sql h1:T9162Ddcrjh1+LmRu7cQj/TfapC6VSqJRAdyQ0gUJLs=
 20260530210000_scrub_task_reading_list_onboarding_copy.sql h1:syfbjYroM1PRE8p2E4teBe5Q2oAm8/Iq8KUxgDJpdfg=
+20260530220000_add_switch_focus_shortcut_to_onboarding.sql h1:nfqug3tfHw7onxWnLnIsAawYj/kMi6/zdosvlbdA1a0=

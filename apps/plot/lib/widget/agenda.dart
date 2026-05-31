@@ -1085,11 +1085,19 @@ class _BlockHeaderState extends State<_BlockHeader> {
 
     final hasTime = dateTimeRange != null;
     final timeOfDay = dateTimeRange?.start?.toTimeOfDay();
+    // Show a midnight (12:00 am) start time for genuinely time-scheduled
+    // rows — user-scheduled focus blocks and timed events — instead of
+    // omitting it. All-day events keep no time label: their start is
+    // midnight only because they carry a date (`on`), not a time-of-day.
+    final showMidnightStart = block is PriorityBlock ||
+        (block is EventBlock && block.event.on == null);
     // An event/block/gap in progress shows "Now" in the gutter instead of
     // its start time.
     final timeText = widget.now
         ? 'Now'
-        : (hasTime && timeOfDay != null && !timeOfDay.isMidnight
+        : (hasTime &&
+                  timeOfDay != null &&
+                  (!timeOfDay.isMidnight || showMidnightStart)
               ? (context.isMultiPanel
                     ? timeOfDay.formatShort(context)
                     : timeOfDay.formatNarrow(context))

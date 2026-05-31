@@ -34,9 +34,16 @@ abstract class PriorityCommand extends Command {
     required super.eventObject,
     required super.eventAction,
     bool ancestry = true,
-  }) : super(
-         title: priority?.title ?? 'None',
-         subtitle: ancestry
+    String? label,
+    IconData? glyph,
+  }) : _label = label,
+       // Public names so subclasses forward via `super.label` / `super.glyph`;
+       // that rules out an initializing formal (which needs a private name).
+       // ignore: prefer_initializing_formals
+       _glyph = glyph,
+       super(
+         title: label ?? priority?.title ?? 'None',
+         subtitle: ancestry && label == null
              ? (priority?.root == true
                    ? null
                    : (priority?.ancestorsLabel() ?? priority?.title))
@@ -45,12 +52,27 @@ abstract class PriorityCommand extends Command {
 
   final Priority? priority;
 
+  /// When set, the row renders as a fixed semantic view (the Inbox /
+  /// Everything feeds) with this wording and [_glyph] in the brand colour
+  /// instead of the root focus's own title, icon, and colour. [label] also
+  /// becomes the searchable [Command.title].
+  final String? _label;
+  final IconData? _glyph;
+
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) => null;
 
   @override
   Widget? buildBody(BuildContext context) {
     if (priority == null) return null;
+    if (_label != null) {
+      return FocusLabel(
+        priority: priority!,
+        titleOverride: _label,
+        iconOverride: _glyph,
+        color: context.colour.colours.fromTheme(const ThemeColor.defaultColor()),
+      );
+    }
     return FocusLabel(priority: priority!);
   }
 }
@@ -61,6 +83,8 @@ class ChangeCurrentPriority extends PriorityCommand {
     super.ancestry = true,
     this.selectedBlockId,
     this.everything = false,
+    super.label,
+    super.glyph,
   }) : super(
          eventObject: EventObject.priority,
          eventAction: EventAction.viewed,
@@ -173,30 +197,45 @@ TabsRouter? _tabsRouterOrNull(BuildContext context) {
   }
 }
 
-class PriorityGroup extends CommandGroup {
-  PriorityGroup({required super.title, required this.builder});
-
-  final Command Function(Priority? priority) builder;
+/// The focus switcher: every focus, then the two fixed semantic views — the
+/// Inbox (root) and the synthetic Everything feed — pinned to the bottom. The
+/// group is header-less; Inbox and Everything reuse [ChangeCurrentPriority]
+/// (rooted on the root priority) with branded labels.
+class _FocusSwitchGroup extends CommandGroup {
+  _FocusSwitchGroup();
 
   @override
   Future<List<Command>> list({String? search}) async {
     final priorities = await Priority.get(order: PriorityOrder.recent);
-    final filtered = search == null || search.isEmpty
-        ? priorities
-        : priorities.where((p) => p.matchesSearch(search)).toList();
-    return filtered.map((priority) => builder(priority)).toList();
+    Priority? root;
+    final focuses = <Priority>[];
+    for (final priority in priorities) {
+      if (priority.root) {
+        root = priority;
+      } else {
+        focuses.add(priority);
+      }
+    }
+    final commands = <Command>[
+      ...focuses.map((priority) => ChangeCurrentPriority(priority)),
+      if (root != null) ...[
+        ChangeCurrentPriority(root, label: 'Inbox', glyph: PlotIcon.inbox),
+        ChangeCurrentPriority(
+          root,
+          everything: true,
+          label: 'Everything',
+          glyph: PlotIcon.inboxes,
+        ),
+      ],
+    ];
+    return CommandGroup.filter(commands, search);
   }
 }
 
 class ChangeCurrentPriorityCommands extends Commands {
   ChangeCurrentPriorityCommands({Priority? initialPriority})
     : super(
-        groups: [
-          PriorityGroup(
-            title: 'Focuses',
-            builder: (priority) => ChangeCurrentPriority(priority!),
-          ),
-        ],
+        groups: [_FocusSwitchGroup()],
         secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
       );
 }
@@ -267,7 +306,7 @@ class PickCurrentPriority extends ShowCommands {
     : super(
         title: 'Switch focuses',
         icon: PlotIcon.priority,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyP, alt: kIsWeb),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyJ, alt: kIsWeb),
         commands: ChangeCurrentPriorityCommands(),
       );
 }
@@ -1217,8 +1256,6 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   // The Inbox (root) is a fixed tile — no name/icon/colour to edit.
   if (!priority.isViewer && !priority.root) EditPriorityCommand(priority),
   if (!priority.isViewer) ShowEarlyNotificationsSettings(priority),
-  if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
-  if (!priority.isViewer && !priority.isPlot) NewPriority(parent: priority),
   ShowTimeLog(priority),
   if (!priority.root && !priority.isViewer && !priority.isPlot)
     TogglePriorityArchived(priority),
@@ -1247,7 +1284,7 @@ List<Command> currentPriorityCommands(
 
 List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
   StaticCommandGroup(
-    title: 'Focus: ${priority.title}',
+    title: priority.root ? 'Inbox' : 'Focus: ${priority.title}',
     commands: priorityCommands(priority),
   ),
 ];
@@ -1258,7 +1295,7 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
   NowState? nowState,
 }) => [
   StaticCommandGroup(
-    title: 'Focus: ${priority.title}',
+    title: priority.root ? 'Inbox' : 'Focus: ${priority.title}',
     commands: currentPriorityCommands(
       priority,
       context: context,
@@ -1266,27 +1303,6 @@ List<StaticCommandGroup> currentPriorityCommandGroups(
     ),
   ),
 ];
-
-class SetTopPriority extends Command {
-  SetTopPriority(this.priority, this.add)
-    : super(
-        title: add ? 'Add to top priorities' : 'Remove from top priorities',
-        eventObject: EventObject.priority,
-        eventAction: add ? EventAction.pinned : EventAction.unpinned,
-        icon: add ? PlotIcon.pin : PlotIcon.unpin,
-      );
-
-  final Priority priority;
-  final bool add;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await priority
-        .copyWith(topOrder: add ? Value(Order.first()) : const Value(null))
-        .save();
-    return const CommandDone();
-  }
-}
 
 class ToggleShowArchived extends Command {
   ToggleShowArchived({required this.showArchived})

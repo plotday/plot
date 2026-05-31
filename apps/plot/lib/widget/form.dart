@@ -1197,9 +1197,8 @@ class _AddWindowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: 'Add time window',
+      title: 'Add notification window',
       icon: PlotIcon.add,
-      style: ListTileStyle.button,
       padding: EdgeInsets.symmetric(
         horizontal: context.theme.spacing.xl,
         vertical: context.theme.spacing.sm,
@@ -1209,7 +1208,7 @@ class _AddWindowTile extends StatelessWidget {
       focusNode: focusNode,
       command: CommandWrapper(
         _FormSubmitCommand(),
-        title: 'Add time window',
+        title: 'Add notification window',
         icon: Value(PlotIcon.add),
         run: (_, _) async {
           onTap();

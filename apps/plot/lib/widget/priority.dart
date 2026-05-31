@@ -501,6 +501,48 @@ class FocusLabel extends StatelessWidget {
   }
 }
 
+/// A flat icon-plus-label row with the exact geometry of [FocusLabel] — icon
+/// sized to the text, a 6px gap, single-line with ellipsis, and a bare
+/// [TextStyle] (no typography line-height). Use for non-focus rows that must
+/// line up pixel-for-pixel with focus rows in the same picker (e.g. the
+/// "Auto-organize" choice), which a plain `ListTile(icon:, title:)` does not.
+class IconLabel extends StatelessWidget {
+  const IconLabel({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.fontSize,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final double? fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
+    final resolvedColor = color ?? context.theme.colors.foreground;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, size: resolvedFontSize, color: resolvedColor),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(color: resolvedColor, fontSize: resolvedFontSize),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Branded label for the Inbox (the root focus): the inbox glyph in the
 /// Resolution brand colour with the fixed "Inbox" wording, matching how the
 /// sidebar and header already draw it. Use this in every focus picker so the

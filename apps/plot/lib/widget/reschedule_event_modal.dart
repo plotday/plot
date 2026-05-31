@@ -67,10 +67,32 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
       context,
       items: (search) async {
         final priorities = await Priority.get(order: PriorityOrder.nested);
-        return [SelectGroup(title: null, items: priorities)];
+        // Pin the root (Inbox) to the bottom as a branded row rather than
+        // letting it appear inline as a plain focus.
+        Priority? root;
+        final focuses = <Priority>[];
+        for (final p in priorities) {
+          if (p.root) {
+            root = p;
+          } else {
+            focuses.add(p);
+          }
+        }
+        return [
+          SelectGroup(
+            title: null,
+            items: [
+              ...focuses,
+              ?root,
+            ],
+          ),
+        ];
       },
-      itemBuilder: (priority, _) =>
-          ListTile(body: FocusLabel(priority: priority)),
+      itemBuilder: (priority, _) => ListTile(
+        body: priority.root
+            ? Builder(builder: (context) => inboxLabel(context, priority))
+            : FocusLabel(priority: priority),
+      ),
       selectedValue: _selectedPriority,
       prompt: 'Focus',
       onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),

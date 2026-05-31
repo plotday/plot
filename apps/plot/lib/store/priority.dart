@@ -1089,12 +1089,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          order: row.order,
          pomodoro: row.pomodoro,
          color: row.color,
+         icon: row.icon,
          key: row.key,
          root: row.root,
          path: row.path,
          createdBy: row.createdBy,
          unread: row.unread,
          role: row.role,
+         teamId: row.teamId,
          attentionWindow: row.attentionWindow,
          seeWithin: row.seeWithin,
          attentionWindowSet: row.attentionWindowSet,
@@ -1191,20 +1193,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .where((w) => w.isNotEmpty)
         .toList();
     return tokens.every((t) => words.any((w) => w.startsWith(t)));
-  }
-
-  /// Get the effective topOrder for sorting, considering both this priority's
-  /// topOrder and the minimum topOrder from its ancestry.
-  /// Returns the minimum (earliest) value, as lower Order values sort first.
-  Order? get effectiveTopOrder {
-    // If both exist, return the minimum (earliest)
-    if (topOrder != null && minAncestorTopOrder != null) {
-      return topOrder!.value < minAncestorTopOrder!.value
-          ? topOrder
-          : minAncestorTopOrder;
-    }
-    // Return whichever one exists, or null if neither exists
-    return topOrder ?? minAncestorTopOrder;
   }
 
   final Priority? parent;
@@ -1603,22 +1591,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   @override
   int compareTo(Priority other) {
-    // Get effective topOrder (considering ancestry) for both priorities
-    final thisEffectiveOrder = effectiveTopOrder;
-    final otherEffectiveOrder = other.effectiveTopOrder;
-
-    // Sort by effective topOrder if both have it
-    if (thisEffectiveOrder != null && otherEffectiveOrder != null) {
-      final orderCompare = thisEffectiveOrder.value.compareTo(
-        otherEffectiveOrder.value,
-      );
-      if (orderCompare != 0) return orderCompare;
-    }
-
-    // If only one has effective topOrder, that one comes first
-    if (thisEffectiveOrder != null && otherEffectiveOrder == null) return -1;
-    if (thisEffectiveOrder == null && otherEffectiveOrder != null) return 1;
-
     // For peers (same parent), sort by order
     if (parent?.id == other.parent?.id) {
       final orderCompare = order.value.compareTo(other.order.value);

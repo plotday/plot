@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:plot/store/store.dart' show Date;
 import 'package:plot/util/uuid.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
 
@@ -1247,6 +1248,100 @@ void main() {
       );
       expect(result.anchor, isNull);
       expect(result.isExact, isFalse);
+    });
+  });
+
+  group('resolveFocusBlockDropAnchorOnDate — keep dropped block on its day', () {
+    final targetDate = Date(2026, 6, 1);
+
+    test(
+        'a midnight anchor (leading-edge / empty-day gap start) is moved to '
+        'the source time-of-day on the dropped day — otherwise the builder '
+        'drops it as an order-timeline anchor and the block disappears', () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 6, 1), // June 1 midnight
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 14, 30),
+      );
+      expect(result, DateTime(2026, 6, 1, 14, 30));
+    });
+
+    test(
+        'an anchor on the previous evening (before-first-block computed '
+        'against a day-boundary gap) is moved onto the target day', () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 5, 31, 23), // June 1 midnight − 1h
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 9),
+      );
+      expect(result, DateTime(2026, 6, 1, 9));
+    });
+
+    test('a valid same-day, non-midnight anchor is returned unchanged', () {
+      final raw = DateTime(2026, 6, 1, 10, 15);
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: raw,
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 9),
+      );
+      expect(result, raw);
+    });
+
+    test('falls back to 09:00 when the source is itself midnight-anchored', () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 6, 1),
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28), // midnight
+      );
+      expect(result, DateTime(2026, 6, 1, 9));
+    });
+
+    test('before the first row: keeps the source time when the block fits',
+        () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 5, 31, 23), // leading-gap raw anchor (off-day)
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 8),
+        duration: const Duration(hours: 1),
+        nextRowStart: DateTime(2026, 6, 1, 10),
+      );
+      expect(result, DateTime(2026, 6, 1, 8));
+    });
+
+    test('before the first row: shifts earlier to fit when it would overlap',
+        () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 5, 31, 23),
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 9, 30),
+        duration: const Duration(hours: 1),
+        nextRowStart: DateTime(2026, 6, 1, 10),
+      );
+      expect(result, DateTime(2026, 6, 1, 9));
+    });
+
+    test('before the first row: never shifts earlier than midnight (clamps)',
+        () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 5, 31, 23),
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 9, 30),
+        duration: const Duration(hours: 11),
+        nextRowStart: DateTime(2026, 6, 1, 10),
+      );
+      expect(result, DateTime(2026, 6, 1)); // clamped to midnight
+    });
+
+    test('empty day keeps the source time (next-day-midnight is no '
+        'constraint)', () {
+      final result = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: DateTime(2026, 5, 31, 23),
+        targetDate: targetDate,
+        sourceEffectiveAt: DateTime(2026, 5, 28, 16),
+        duration: const Duration(hours: 2),
+        nextRowStart: DateTime(2026, 6, 2), // next-day midnight (empty day)
+      );
+      expect(result, DateTime(2026, 6, 1, 16));
     });
   });
 }

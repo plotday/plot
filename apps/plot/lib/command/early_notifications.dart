@@ -10,19 +10,24 @@ import 'package:plot/store/attention.dart';
 import 'base.dart';
 import 'logging.dart';
 
-/// Modal for the per-priority "Early notifications" settings: a master toggle +
+/// Modal for the per-priority notification settings: a master toggle +
 /// active hours + see-within deadline. Inheritance UX: when a sub-priority's
 /// value equals the inherited value on save, the override is cleared instead
 /// of stored, so the priority reverts to inheritance.
 class ShowEarlyNotificationsSettings extends ShowForm {
   ShowEarlyNotificationsSettings(this.priority)
     : super(
-        title: 'Early notifications',
+        title: 'Notifications',
         icon: PlotIcon.notification,
         form: (context) => _buildForm(context, priority),
       );
 
   final Priority priority;
+
+  /// User-facing focus name for titles/copy. The root focus is always shown
+  /// as "Inbox" regardless of its stored title.
+  static String _focusName(Priority priority) =>
+      priority.root ? 'Inbox' : priority.title;
 
   /// "See within" preset options.
   static const _seeWithinOptions = [
@@ -200,16 +205,15 @@ class ShowEarlyNotificationsSettings extends ShowForm {
           priority.earlyNotificationsEnabled ??
           inherited.earlyNotificationsEnabled,
       notifyWindow: priority.notifyWindows ?? inherited.notifyWindow,
-      seeWithin: _matchOption(
-        priority.seeWithinTime ?? inherited.seeWithin,
-      ),
+      seeWithin: _matchOption(priority.seeWithinTime ?? inherited.seeWithin),
     );
 
     final notifyEnabledToggle = FormToggle(
       key: 'early_notifications_enabled',
-      label: 'Early notifications',
-      details:
-          'Notify when an unread thread arrives, before its next focus block.',
+      label: 'Notifications',
+      details: isRoot
+          ? 'Notify for new and updated threads in the Inbox.'
+          : 'Notify for new and updated threads in this focus.',
       initialValue: initial.earlyNotificationsEnabled,
     );
 
@@ -271,14 +275,10 @@ class ShowEarlyNotificationsSettings extends ShowForm {
     );
 
     return FormData(
-      title: 'Early notifications',
+      title: 'Notifications for ${_focusName(priority)}',
       groups: [
         StaticFormGroup(
-          items: [
-            notifyEnabledToggle,
-            notifyWindowList,
-            seeWithinSelect,
-          ],
+          items: [notifyEnabledToggle, seeWithinSelect, notifyWindowList],
         ),
         StaticFormGroup(
           items: [
@@ -463,9 +463,7 @@ class _SaveEarlyNotifications extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final body = <String, dynamic>{
-      'priority_id': priorityId.toString(),
-    };
+    final body = <String, dynamic>{'priority_id': priorityId.toString()};
     final companion = PrioritiesCompanion();
     var hasChanges = false;
     var notifyWindowChanged = false;
@@ -473,11 +471,13 @@ class _SaveEarlyNotifications extends Command {
     if (current.earlyNotificationsEnabled !=
         initial.earlyNotificationsEnabled) {
       hasChanges = true;
-      final matchesInherited = !isRoot &&
+      final matchesInherited =
+          !isRoot &&
           current.earlyNotificationsEnabled ==
               inherited.earlyNotificationsEnabled;
-      body['early_notifications_enabled'] =
-          matchesInherited ? null : current.earlyNotificationsEnabled;
+      body['early_notifications_enabled'] = matchesInherited
+          ? null
+          : current.earlyNotificationsEnabled;
       body['set_early_notifications_enabled'] = true;
       await _write(
         companion.copyWith(
@@ -492,7 +492,8 @@ class _SaveEarlyNotifications extends Command {
     if (!_windowListEquals(current.notifyWindow, initial.notifyWindow)) {
       hasChanges = true;
       notifyWindowChanged = true;
-      final matchesInherited = !isRoot &&
+      final matchesInherited =
+          !isRoot &&
           _windowListEquals(current.notifyWindow, inherited.notifyWindow);
       body['notify_window'] = matchesInherited
           ? null
@@ -514,8 +515,7 @@ class _SaveEarlyNotifications extends Command {
       hasChanges = true;
       final matchesInherited =
           !isRoot && current.seeWithin == inherited.seeWithin;
-      body['see_within'] =
-          matchesInherited ? null : current.seeWithin.toJson();
+      body['see_within'] = matchesInherited ? null : current.seeWithin.toJson();
       body['set_see_within'] = true;
       await _write(
         companion.copyWith(

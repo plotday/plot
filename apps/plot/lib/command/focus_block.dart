@@ -229,11 +229,28 @@ FormData scheduleFocusBlockForm({
     initialValue: initialPriority,
     items: (search) async {
       final priorities = await Priority.get(order: PriorityOrder.nested);
-      if (search == null || search.isEmpty) return priorities;
-      return priorities.where((p) => p.matchesSearch(search)).toList();
+      // Pin the root (Inbox) to the bottom as a branded row rather than
+      // letting it appear inline as a plain focus.
+      Priority? root;
+      final focuses = <Priority>[];
+      for (final p in priorities) {
+        if (p.root) {
+          root = p;
+        } else if (search == null || search.isEmpty || p.matchesSearch(search)) {
+          focuses.add(p);
+        }
+      }
+      return [
+        ...focuses,
+        if (root != null &&
+            (search == null || search.isEmpty || root.matchesSearch(search)))
+          root,
+      ];
     },
     titleBuilder: (p) => p.title,
-    labelBuilder: (p) => FocusLabel(priority: p),
+    labelBuilder: (p) => p.root
+        ? Builder(builder: (context) => inboxLabel(context, p))
+        : FocusLabel(priority: p),
     onAdd: (ctx) => createPriorityInline(ctx, parent: initialPriority),
   );
 

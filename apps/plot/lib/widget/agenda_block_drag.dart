@@ -282,6 +282,78 @@ typedef BlockDropDispatcher =
   return (anchor: null, isExact: false);
 }
 
+/// The clock time a dragged focus block should actually be stored at on
+/// the day it was dropped.
+///
+/// [rawAnchor] is the geometric anchor resolved from the drop slot (see
+/// [resolveFocusBlockDropAnchor]); [targetDate] is the day the user dropped
+/// onto; [sourceEffectiveAt] is the dragged block's current scheduled time;
+/// [duration] is the dragged block's length; [nextRowStart] is the start of
+/// the first scheduled row at/after the drop (the leading-edge gap's end),
+/// or null/next-day-midnight when nothing on the day constrains it.
+///
+///   * A valid same-day, non-midnight [rawAnchor] (drop after a block, or
+///     into a mid-day gap) is used verbatim.
+///   * Otherwise the block is re-homed onto [targetDate] at the source
+///     block's own time-of-day (09:00 when the source is itself midnight) —
+///     the "empty day → keep its time" case. A degenerate raw anchor is
+///     midnight (a leading-edge or full-day empty gap starts there, and the
+///     builder would otherwise drop a midnight row) or a different calendar
+///     day (the "before the first block" rule can subtract the duration into
+///     the previous evening).
+///   * When a real same-day [nextRowStart] constrains the drop (dropping
+///     before the day's first row), the source time is kept only if the
+///     block ends by then; otherwise it is shifted earlier so it ends
+///     exactly as the first row begins — but never before midnight (a clamp
+///     to 00:00, which renders as a midnight block).
+DateTime resolveFocusBlockDropAnchorOnDate({
+  required DateTime rawAnchor,
+  required Date targetDate,
+  required DateTime sourceEffectiveAt,
+  Duration? duration,
+  DateTime? nextRowStart,
+}) {
+  bool isMidnight(DateTime t) =>
+      t.hour == 0 &&
+      t.minute == 0 &&
+      t.second == 0 &&
+      t.millisecond == 0 &&
+      t.microsecond == 0;
+  final dayStart = targetDate.toDateTime();
+  final onTargetDay = rawAnchor.year == dayStart.year &&
+      rawAnchor.month == dayStart.month &&
+      rawAnchor.day == dayStart.day;
+  if (onTargetDay && !isMidnight(rawAnchor)) return rawAnchor;
+
+  final hasTimeOfDay = !isMidnight(sourceEffectiveAt);
+  var anchor = DateTime(
+    dayStart.year,
+    dayStart.month,
+    dayStart.day,
+    hasTimeOfDay ? sourceEffectiveAt.hour : 9,
+    hasTimeOfDay ? sourceEffectiveAt.minute : 0,
+    hasTimeOfDay ? sourceEffectiveAt.second : 0,
+  );
+
+  // Dropping before the day's first scheduled row: keep the source time if
+  // the block fits before it, else shift earlier so it ends as the row
+  // begins, clamped to midnight. A next-day-midnight [nextRowStart] (empty
+  // day) isn't a same-day constraint, so the source time is kept as-is.
+  if (duration != null && nextRowStart != null) {
+    final firstRowSameDay = nextRowStart.year == dayStart.year &&
+        nextRowStart.month == dayStart.month &&
+        nextRowStart.day == dayStart.day;
+    if (firstRowSameDay &&
+        nextRowStart.isAfter(dayStart) &&
+        anchor.add(duration).isAfter(nextRowStart)) {
+      var shifted = nextRowStart.subtract(duration);
+      if (shifted.isBefore(dayStart)) shifted = dayStart;
+      anchor = shifted;
+    }
+  }
+  return anchor;
+}
+
 /// Builds a dimmed preview widget representing the dragged block's
 /// content (its header + visible thread rows). The active
 /// [BlockDropZone] renders this so the gap shows what will land there
