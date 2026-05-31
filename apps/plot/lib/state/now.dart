@@ -42,6 +42,12 @@ class NowBloc extends Cubit<NowState> {
   Duration? _intendedPomodoro;
   Uuid? _intendedSessionId;
 
+  /// Bumped before every `pausedFocus` clear or new derivation. The
+  /// listener captures its generation before awaiting; when an in-flight
+  /// derivation completes after the counter has moved on, its result is
+  /// dropped instead of overwriting a newer (often explicit-null) value.
+  int _pausedFocusGeneration = 0;
+
   @override
   Future<void> close() {
     stop();
@@ -88,9 +94,10 @@ class NowBloc extends Cubit<NowState> {
         ).listen(
           (state) async {
             final ctx = state.context;
+            final generation = ++_pausedFocusGeneration;
             final pausedFocus =
                 ctx == null ? null : await _resolvePausedFocus(ctx);
-            if (isClosed) return;
+            if (isClosed || generation != _pausedFocusGeneration) return;
             emit(state.copyWith(pausedFocus: pausedFocus));
             // Watcher caught up: if the emitted session matches our
             // tracked intent (or is a different session entirely),
@@ -459,6 +466,11 @@ class NowBloc extends Cubit<NowState> {
   /// session to explicit (and a real duration) by pressing Add time,
   /// which flips the row's `explicit` flag and bumps the pomodoro.
   Future<void> _startDistraction() async {
+    // Note: we don't clear `pausedFocus` here. `_startDistraction` only
+    // fires after [setContext] has emitted a new context priority — the
+    // next combineLatest tick will call `_resolvePausedFocus(newCtx)`,
+    // which typically returns null for the new priority. The asymmetry
+    // with [startSession]'s explicit clear is intentional.
     if (state is! NowLoaded) return;
     final s = loadedState;
     final ctx = s.context;
@@ -559,6 +571,10 @@ class NowBloc extends Cubit<NowState> {
     // stops showing it the instant the user presses Start. The next
     // stream emission will recompute pausedFocus from scratch (and
     // return null because the session will then be active, not paused).
+    // Bump the generation counter first so any in-flight `_resolvePausedFocus`
+    // that started before the user pressed Start is discarded rather than
+    // overwriting this explicit null once it completes.
+    _pausedFocusGeneration++;
     emit(s.copyWith(pausedFocus: null));
 
     final now = Time.now();
