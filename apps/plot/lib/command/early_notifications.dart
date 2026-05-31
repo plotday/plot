@@ -26,8 +26,7 @@ class ShowEarlyNotificationsSettings extends ShowForm {
 
   /// User-facing focus name for titles/copy. The root focus is always shown
   /// as "Inbox" regardless of its stored title.
-  static String _focusName(Priority priority) =>
-      priority.root ? 'Inbox' : priority.title;
+  static String _focusName(Priority priority) => priority.displayTitle;
 
   /// "See within" preset options.
   static const _seeWithinOptions = [

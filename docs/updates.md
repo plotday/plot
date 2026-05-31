@@ -1,3 +1,4 @@
+- Your Inbox now reads "Inbox" everywhere you pick a focus — scheduling a focus block, moving a thread, choosing where a new thread goes — instead of occasionally showing its old internal name "Everything". It also carries the inbox icon in those pickers, matching the sidebar.
 - Opening a thread now starts you at the first unread note — opened up in full so you can read it right away — instead of always dropping you at the newest message with older unread notes scrolled past. A thread with a single note opens scrolled to the top of that note.
 - The item you're viewing now stands out more clearly with a subtle colored outline — the same treatment across the sidebar focus list, the agenda, and your thread list.
 - On phones, tapping Search now jumps straight to the Everything view so you're searching across all your threads from the first keystroke, instead of staying scoped to whatever priority you were on.

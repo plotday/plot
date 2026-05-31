@@ -190,7 +190,7 @@ class OnboardingSteps {
     const HighlightStep(
       title: 'Your agenda',
       body:
-          "Choose where to invest your focus each day. Plot fills in your scheduled events and the priorities you're actively working on, then groups everything by day so you can shape your best day.",
+          "Choose where to invest your focus each day. Plot fills in your scheduled events and the focuses you're actively working on, then groups everything by day so you can shape your best day.",
       target: PanelTarget.agenda,
       overlay: ThemeColor(5), // Breakthrough
       // Multi-panel: agenda sits at the top of the left panel, so anchor the

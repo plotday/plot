@@ -223,9 +223,9 @@ FormData scheduleFocusBlockForm({
 
   final priorityField = FormSelect<Priority>(
     key: 'priority',
-    label: 'Priority',
+    label: 'Focus',
     required: true,
-    placeholder: 'Select priority',
+    placeholder: 'Select focus',
     initialValue: initialPriority,
     items: (search) async {
       final priorities = await Priority.get(order: PriorityOrder.nested);
@@ -247,10 +247,8 @@ FormData scheduleFocusBlockForm({
           root,
       ];
     },
-    titleBuilder: (p) => p.title,
-    labelBuilder: (p) => p.root
-        ? Builder(builder: (context) => inboxLabel(context, p))
-        : FocusLabel(priority: p),
+    titleBuilder: (p) => p.displayTitle,
+    labelBuilder: (p) => FocusLabel(priority: p),
     onAdd: (ctx) => createPriorityInline(ctx, parent: initialPriority),
   );
 

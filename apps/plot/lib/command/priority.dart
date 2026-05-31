@@ -382,7 +382,7 @@ class TogglePriorityArchived extends Command {
     final priority = await _priority;
     if (priority.root) {
       return CommandMessage(
-        "The default priority can't be archived",
+        "The default focus can't be archived",
         isError: true,
       );
     }
@@ -1399,8 +1399,8 @@ class ToggleArchivedPrioritiesFilter extends Command {
             ? 'Hide archived focuses'
             : 'Show archived focuses',
         subtitle: showAllPriorities
-            ? 'Showing all priorities (active & archived)'
-            : 'Showing active priorities only',
+            ? 'Showing all focuses (active & archived)'
+            : 'Showing active focuses only',
         eventObject: EventObject.filter,
         eventAction: EventAction.filtered,
         icon: PlotIcon.archived,

@@ -1238,6 +1238,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Whether this is the Twist Development priority.
   bool get isTwistDev => key == '@plot.twist-dev';
 
+  /// The user-facing name for this priority. The per-user root focus is
+  /// stored as "Everything" in the database (the server projects it as
+  /// "Inbox" at apiVersion >= 4, but older synced roots still carry the raw
+  /// title), yet it is always presented to users as "Inbox". Read this
+  /// anywhere a priority name is shown to the user instead of the raw
+  /// [title], so the stored "Everything" never leaks into the UI.
+  String get displayTitle => root ? 'Inbox' : title;
+
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>
       AttentionWindow.fromJsonString(attentionWindow);

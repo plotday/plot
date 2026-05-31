@@ -400,11 +400,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         AutoOrganizeChoice() => ListTile(
           body: IconLabel(icon: PlotIcon.sparkles, label: 'Auto-organize'),
         ),
-        PickedPriorityChoice(:final priority) when priority.root => ListTile(
-          body: Builder(
-            builder: (context) => inboxLabel(context, priority),
-          ),
-        ),
+        // FocusLabel brands the root focus as "Inbox" on its own, so the
+        // picked-priority arm covers the Inbox row too.
         PickedPriorityChoice(:final priority) => ListTile(
           body: FocusLabel(priority: priority),
         ),

@@ -4104,7 +4104,7 @@ class _ErrorPage extends StatelessWidget {
                 FButton(
                   onPress: onViewPriorities,
                   variant: FButtonVariant.secondary,
-                  child: const Text('View Priorities'),
+                  child: const Text('View Focuses'),
                 ),
                 FButton(
                   onPress: onRetry,
