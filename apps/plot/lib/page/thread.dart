@@ -98,6 +98,11 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   int? _scrollTargetIndex;
   bool _initialScrollScheduled = false;
 
+  // Owned by this page and passed to the note list's InfiniteList so the
+  // initial-scroll logic can drive it. (ScrollControllerContext has no
+  // provider in the app, so it cannot supply one.)
+  final ScrollController _scrollController = ScrollController();
+
   // Flag to ensure setActivity is only called once on initial load
   bool _hasSetInitialActivity = false;
 
@@ -168,6 +173,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   void dispose() {
     // Cancel the mark-as-read timer if still pending
     _markReadTimer?.cancel();
+    _scrollController.dispose();
     // Unregister from the focus coordination provider
     // Use saved reference instead of looking up during dispose()
     _provider?.unregisterActivityPanel();
@@ -206,8 +212,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   /// the initial bottom view), so we nudge toward older notes a page at a
   /// time until it builds, then reveal it precisely. Bounded retries.
   void _revealScrollTarget({required int attempt}) {
-    final controller = ScrollControllerContext.of(context);
-    if (controller == null || !controller.hasClients) {
+    final controller = _scrollController;
+    if (!controller.hasClients) {
       if (attempt >= 10) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _revealScrollTarget(attempt: attempt + 1);
@@ -653,7 +659,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
 
     return InfiniteList(
       controller: listController,
-      scrollController: ScrollControllerContext.of(context),
+      scrollController: _scrollController,
       count: totalItems,
       reverse: true,
       doneEnd: true,
