@@ -893,9 +893,13 @@ class SharedCommandButton extends HookWidget {
         } catch (_) {
           return null;
         }
-      }, [assigneeId?.toString()]),
+      }, [assigneeId?.toString(), thread.id]),
     );
-    final assignee = assigneeSnapshot.data;
+    // Synchronous cache fallback to avoid a first-frame "Assign" flicker
+    // on warm cache hits, mirroring the shared-AvatarGroup branch's
+    // synchronous fallback to command.sharedDisplayActors.
+    final assignee = assigneeSnapshot.data ??
+        (assigneeId != null ? Actor.fromCache(assigneeId) : null);
 
     // Channel-mode: derive the human-readable channel title from the primary
     // (earliest-created) link. Falls back to null when the channel isn't in
