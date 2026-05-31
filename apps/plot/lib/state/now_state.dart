@@ -61,6 +61,7 @@ final class NowLoaded extends NowState {
     this.selectedBlockId,
     this.trackingPausedAt,
     this.previewPomodoro,
+    this.pausedFocus,
     this.everything = false,
   }) : now = Time.now(),
        // ignore: prefer_initializing_formals
@@ -122,6 +123,12 @@ final class NowLoaded extends NowState {
   /// persisted — purely a UI staging value before [StartTimer] writes
   /// `pomodoro`/`pomodoroAt` to the session row.
   final Duration? previewPomodoro;
+
+  /// The latest paused, explicit focus session — drives the agenda's
+  /// synthesized sliding "remaining" block. Null when no paused session
+  /// exists, when the paused session is for a priority other than
+  /// [context], or when remaining ≤ 0.
+  final PausedFocus? pausedFocus;
 
   /// When true, the user is viewing the synthetic "Everything" feed — all
   /// threads across the Inbox and every focus, unscoped. [context] stays the
@@ -234,6 +241,7 @@ final class NowLoaded extends NowState {
     // flip of [trackingPaused] should re-emit.
     trackingPaused,
     previewPomodoro,
+    pausedFocus,
     everything,
   ];
 
@@ -420,6 +428,7 @@ final class NowLoaded extends NowState {
     Object? selectedBlockId = _sentinel,
     Object? trackingPausedAt = _sentinel,
     Object? previewPomodoro = _sentinel,
+    Object? pausedFocus = _sentinel,
     bool? everything,
   }) {
     return NowLoaded(
@@ -442,9 +451,26 @@ final class NowLoaded extends NowState {
       previewPomodoro: identical(previewPomodoro, _sentinel)
           ? this.previewPomodoro
           : previewPomodoro as Duration?,
+      pausedFocus: identical(pausedFocus, _sentinel)
+          ? this.pausedFocus
+          : pausedFocus as PausedFocus?,
       everything: everything ?? this.everything,
     );
   }
+}
+
+/// A paused, explicit focus session whose remaining time should slide
+/// forward on the agenda from `now` until the user resumes or stops.
+/// Surfaced by [NowBloc] so [AgendaBuilder] can synthesize the
+/// sliding block without re-querying.
+class PausedFocus extends Equatable {
+  const PausedFocus({required this.priority, required this.remaining});
+
+  final Priority priority;
+  final Duration remaining;
+
+  @override
+  List<Object?> get props => [priority.id, remaining];
 }
 
 const Object _sentinel = Object();
