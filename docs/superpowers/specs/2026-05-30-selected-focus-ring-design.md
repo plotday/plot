@@ -89,12 +89,24 @@ real screenshots (via the `run-app` skill), not added speculatively.
    `selectedBorderColor` constructor field. In the `BoxDecoration` border logic:
    - **Rounded branch (`borderRadius != null`):** when `selectedBorderColor` is
      provided, draw `Border.all(color: showBorder ? selectedBorderColor :
-     transparent, width: 1)`; when it is `null`, keep `null` (today's behavior).
-     This makes the ring strictly opt-in for rounded tiles — no other rounded
-     selected tile is restyled.
+     const Color(0x00000000), width: 1)` — i.e. the border is **always present
+     at width 1** and only its color changes between selected (the ring) and
+     unselected (fully transparent). When `selectedBorderColor` is `null`, keep
+     `null` (today's behavior). This makes the ring strictly opt-in for rounded
+     tiles — no other rounded selected tile is restyled.
    - **Edge-to-edge branch (`borderRadius == null`):** unchanged behavior; may
      honor an explicit `selectedBorderColor` if passed, otherwise the existing
      inline feed formula.
+
+   **No content shift (required):** the border width must be constant (1) for a
+   given tile across selected/unselected — a tile that participates in the ring
+   always reserves the 1px border, painting it transparent when unselected, so
+   selecting a focus only changes the border *color*, never the layout, and the
+   text/icon never jump. This mirrors the existing edge-to-edge branch, which
+   already does `color: showBorder ? <ring> : transparent` at a fixed width.
+   Because every sidebar tile (focus tiles, Inbox, Everything, and the
+   priorities search list) opts in, they all carry the same 1px reserved border
+   and stay aligned with each other.
 
 3. **`apps/plot/lib/widget/priority.dart`** — compute the ring color from
    `priority.displayColor` via `borderFromTheme` and pass it to the `ListTile`
@@ -129,3 +141,6 @@ Only one: `ListTile.selectedBorderColor` (new nullable `Color?`, defaults
   focus tile, the Inbox and Everything fixed tiles, and the priorities search
   list, in both light and dark mode. Confirm selected is clearly distinct from
   hover and from the frame, and the ring hue matches each focus's color.
+- **No content shift:** toggle selection on a focus and confirm the title and
+  icon do not move by 1px — the reserved transparent border must hold the layout
+  stable.
