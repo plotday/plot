@@ -267,6 +267,7 @@ class PriorityBloc extends Cubit<PriorityState> {
          ),
        ) {
     _allInstances.add(this);
+    _nowBloc = nowBloc;
     _loadPriority();
     _restartActiveTabSubscription();
 
@@ -1667,6 +1668,29 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
       await saver.save();
     });
+
+    // Session routing: align the running timer with the new window.
+    final newDuration = source.duration ?? Duration.zero;
+    final newEnd = targetTime.add(newDuration);
+    final coversNow = !targetTime.isAfter(now) && newEnd.isAfter(now);
+    final isCurrentFocus =
+        _nowBloc.state is NowLoaded &&
+        (_nowBloc.state as NowLoaded).context?.id == source.priorityId;
+    if (coversNow && isCurrentFocus && newDuration > Duration.zero) {
+      // Drop covers now and the focus is current — start (or resume) the
+      // session matched to the remaining window.
+      await _nowBloc.startSession(override: newEnd.difference(now));
+    } else if (!coversNow) {
+      // Drop is wholly in the past or wholly in the future. If a session
+      // was active for this priority, stop it.
+      final s = _nowBloc.state;
+      if (s is NowLoaded &&
+          s.session?.priority?.id == source.priorityId &&
+          s.session?.at.isNow() == true &&
+          s.session?.source == 'active') {
+        await _nowBloc.stopSession();
+      }
+    }
   }
 
   static DateTime _resolveFocusBlockTargetTime({
@@ -3833,6 +3857,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// while paused. Used to gate 1-second-advance rebuilds and avoid
   /// redundant emits.
   DateTime _lastNowForPaused = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Reference to [NowBloc] for session routing in [moveFocusBlock].
+  late final NowBloc _nowBloc;
 
   /// Subscription to [NowBloc.stream] for [_pausedFocus] updates.
   StreamSubscription<NowState>? _nowSubscription;

@@ -1,4 +1,6 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/store/store.dart' hide PriorityBlock;
 import 'package:plot/store/store.dart' as store show PriorityBlock;
 import 'package:plot/widget/form_scheduler.dart';
@@ -90,6 +92,9 @@ class ScheduleFocusBlock extends Command {
       );
     }
 
+    // Capture before any await to satisfy use_build_context_synchronously.
+    final nowBloc = context.read<NowBloc>();
+
     final existing = existingRow;
     final movedSlot =
         existing != null &&
@@ -115,6 +120,22 @@ class ScheduleFocusBlock extends Command {
       blockStart: start,
       newDuration: duration,
     );
+
+    // Session routing (mirrors PriorityBloc.moveFocusBlock).
+    final nowMoment = DateTime.now();
+    final newEnd = start.add(duration);
+    final coversNow = !start.isAfter(nowMoment) && newEnd.isAfter(nowMoment);
+    final s = nowBloc.state;
+    final isCurrentFocus = s is NowLoaded && s.context?.id == priorityId;
+    if (coversNow && isCurrentFocus && duration > Duration.zero) {
+      await nowBloc.startSession(override: newEnd.difference(nowMoment));
+    } else if (!coversNow &&
+        s is NowLoaded &&
+        s.session?.priority?.id == priorityId &&
+        s.session?.at.isNow() == true &&
+        s.session?.source == 'active') {
+      await nowBloc.stopSession();
+    }
 
     return const CommandDone();
   }
