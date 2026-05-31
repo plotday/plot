@@ -4741,6 +4741,28 @@ SELECT
     return cfg?.sharingModel ?? SharingModel.thread;
   }
 
+  /// Returns the link whose assignee should be shown in the thread row /
+  /// unified header avatar slot, or null when the thread is not in
+  /// "assignment mode".
+  ///
+  /// A thread is in assignment mode when its primary (earliest-created)
+  /// link's [LinkTypeConfig] has BOTH `sharingModel == channel` AND
+  /// `supportsAssignee == true`. Only the primary link participates; other
+  /// qualifying links remain visible inside the thread page via the
+  /// per-link assignee badge.
+  static Link? resolvePrimaryAssignmentLink(List<Link> links) {
+    if (links.isEmpty) return null;
+    final primary = [...links]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final candidate = primary.first;
+    final cfg = candidate.getTypeConfig();
+    if (cfg?.sharingModel == SharingModel.channel &&
+        cfg?.supportsAssignee == true) {
+      return candidate;
+    }
+    return null;
+  }
+
   /// Per-viewer visible-contacts derivation for message-mode threads.
   /// Returns the union of [Note.accessContacts] across notes the viewer
   /// can see, plus each visible note's author. For non-message-mode
