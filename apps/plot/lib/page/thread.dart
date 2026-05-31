@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -89,6 +90,13 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   DateTime? _initialReadAt;
   bool _initialThreadUnread = false;
   bool _readSnapshotTaken = false;
+
+  // Initial scroll: the note whose top the list scrolls to on open, tagged
+  // with this GlobalKey so its render object can be located. Computed once
+  // when notes first arrive; the scroll runs once post-layout.
+  final GlobalKey _scrollTargetKey = GlobalKey();
+  int? _scrollTargetIndex;
+  bool _initialScrollScheduled = false;
 
   // Flag to ensure setActivity is only called once on initial load
   bool _hasSetInitialActivity = false;
@@ -193,6 +201,54 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     });
   }
 
+  /// Scrolls the (reverse) note list so the scroll-target note's top aligns
+  /// to the viewport top. The target may not be laid out yet (it sits above
+  /// the initial bottom view), so we nudge toward older notes a page at a
+  /// time until it builds, then reveal it precisely. Bounded retries.
+  void _revealScrollTarget({required int attempt}) {
+    final controller = ScrollControllerContext.of(context);
+    if (controller == null || !controller.hasClients) {
+      if (attempt >= 10) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _revealScrollTarget(attempt: attempt + 1);
+      });
+      return;
+    }
+
+    final renderObject = _scrollTargetKey.currentContext?.findRenderObject();
+    if (renderObject != null && renderObject.attached) {
+      final viewport = RenderAbstractViewport.of(renderObject);
+      // alignment 1.0: in the reverse (AxisDirection.up) list the note's top
+      // edge (its trailing edge) aligns to the viewport's trailing edge —
+      // i.e. the note's top sits at the visual top of the viewport.
+      final reveal = viewport
+          .getOffsetToReveal(renderObject, 1.0)
+          .offset
+          .clamp(
+            controller.position.minScrollExtent,
+            controller.position.maxScrollExtent,
+          )
+          .toDouble();
+      controller.jumpTo(reveal);
+      return;
+    }
+
+    // Target not built yet: scroll toward older notes (up, increasing offset
+    // in a reverse list) by a page and retry.
+    if (attempt >= 10) return;
+    final next = (controller.offset + controller.position.viewportDimension)
+        .clamp(
+          controller.position.minScrollExtent,
+          controller.position.maxScrollExtent,
+        )
+        .toDouble();
+    if (next <= controller.offset) return; // already at the top; cannot reveal
+    controller.jumpTo(next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _revealScrollTarget(attempt: attempt + 1);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // Force forui defaults with an explicit `decoration: TextDecoration.none`
@@ -248,6 +304,24 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   }
 
   Widget _buildContent(BuildContext context, ThreadState state) {
+    // One-time: once notes exist, pick the scroll target and (if any) scroll
+    // to its top after layout. Computing the index here (before the item
+    // builders run) ensures the target note gets _scrollTargetKey on its
+    // first build.
+    if (!_initialScrollScheduled && state.notes.isNotEmpty) {
+      _initialScrollScheduled = true;
+      _scrollTargetIndex = initialScrollTargetIndex(
+        state.notes,
+        threadUnread: _initialThreadUnread,
+        readAt: _initialReadAt,
+      );
+      if (_scrollTargetIndex != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _revealScrollTarget(attempt: 0);
+        });
+      }
+    }
+
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutStateForPanels) {
         return PopScope(
@@ -614,7 +688,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         selected: false, // No selection on ThreadPage
         dimmed: state.editingNote?.id == note.id,
         focusNode: focusNode,
-        key: ValueKey(note.id),
+        key: _scrollTargetIndex == index
+            ? _scrollTargetKey
+            : ValueKey(note.id),
         reorderableIndex: reorderableIndex,
         showAuthor: state.hasOtherAuthors,
         searchHighlight: state.search.isNotEmpty ? state.search : null,
