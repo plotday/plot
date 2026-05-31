@@ -602,6 +602,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         );
       },
       selected: selected,
+      // The selected-row outline is drawn by the BlockListSeparator between
+      // rows (a single borderFromTheme line, matching the agenda). Suppress
+      // the ListTile's own top/bottom selected border so the two don't stack
+      // into a thicker, doubled line.
+      selectedBorder: false,
       focusNode: focusNode,
       onHover: onHover,
       reorderableIndex: reorderableIndex,
