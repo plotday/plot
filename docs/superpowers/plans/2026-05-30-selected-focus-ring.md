@@ -10,16 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-30-selected-focus-ring-design.md`
 
+**Status:** Implemented (all four code commits landed). Remaining: run-app visual verification.
+
 ---
 
 ## Background facts (verified in the codebase)
 
-- `OklchColours` lives in `apps/plot/lib/style/colors.dart` (class at line ~17) and holds private `_themeColor` / `_brightness` fields. It is normally reached via `ColourSchemeData(themeColor:, brightness:).colours` (the `.colours` getter at line ~223 returns the `OklchColours`); this is exactly how `apps/plot/test/style/colors_test.dart` constructs it. `backgroundFromTheme(ThemeColor?)` (line ~202) returns a per-color tinted `accentBackground` and is the template for the new helper.
+- `OklchColours` lives in `apps/plot/lib/style/colors.dart` (class at line ~17) and holds private `_themeColor` / `_brightness` fields. It is normally reached via `ColourSchemeData(themeColor:, brightness:).colours` (the `.colours` getter returns the `OklchColours`); this is exactly how `apps/plot/test/style/colors_test.dart` constructs it. `backgroundFromTheme(ThemeColor?)` returns a per-color tinted `accentBackground` and is the template for the new helper.
 - The OKLCH value `accentBackground` (a `package:ray` color) supports `.withHue()`, `.withChroma()`, `.withLightness()`, and `.toColor()`. The agent/activity feed's selected border already uses `accentBackground.withLightness(0.85 light / 0.35 dark)` in `ListTile`.
-- `apps/plot/lib/widget/list_tile.dart`: `selectedBorder` defaults to `true` (line ~98); the border is drawn in the `BoxDecoration` at lines ~375-392. Crucially, when `borderRadius != null` the border is `null` — so rounded tiles never get a ring today.
-- Sidebar focus tiles: `apps/plot/lib/widget/priority.dart` (`PriorityWidget`) passes `borderRadius` + `selectedColor: priorityAccentBg` + `highlightColor: priorityAccentBg` (lines ~207-212); `priorityAccentBg` is computed at lines ~125-127. Left-panel mode is `monochrome == true`.
+- `apps/plot/lib/widget/list_tile.dart`: `selectedBorder` defaults to `true`; the border is drawn in the `BoxDecoration`. When `borderRadius != null` the border was `null` — so rounded tiles never got a ring before this change.
+- Sidebar focus tiles: `apps/plot/lib/widget/priority.dart` (`PriorityWidget`) passes `borderRadius` + `selectedColor: priorityAccentBg` + `highlightColor: priorityAccentBg`; `priorityAccentBg` is computed from `backgroundFromTheme(priority.displayColor)`. Left-panel mode is `monochrome == true`.
 - Fixed tiles: `apps/plot/lib/widget/priorities_list.dart` `_FixedFocusTile` builds a `ListTile` with `selectedColor: accentBg` / `highlightColor: accentBg`; `accentBg` from `backgroundFromTheme(tileColor)` where `tileColor = const ThemeColor.defaultColor()`.
-- Existing pure-color unit tests live in `apps/plot/test/style/oklch_test.dart` and import `package:plot/style/colors.dart` + `package:plot/util/theme_color.dart` + `package:flutter/widgets.dart` (for `Brightness`).
+- Existing pure-color unit tests live in `apps/plot/test/style/colors_test.dart`.
 
 All commands below assume the working directory is `apps/plot` unless noted.
 
@@ -35,15 +37,13 @@ All commands below assume the working directory is `apps/plot` unless noted.
 
 ---
 
-### Task 1: Add `borderFromTheme` to `OklchColours`
+### Task 1: Add `borderFromTheme` to `OklchColours`  ✅ done
 
 **Files:**
 - Test: `apps/plot/test/style/border_from_theme_test.dart`
-- Modify: `apps/plot/lib/style/colors.dart` (after `backgroundFromTheme`, ~line 210)
+- Modify: `apps/plot/lib/style/colors.dart` (after `backgroundFromTheme`)
 
-- [ ] **Step 1: Write the failing test**
-
-Create `apps/plot/test/style/border_from_theme_test.dart`:
+- [x] **Step 1: Write the failing test**
 
 ```dart
 import 'package:flutter/widgets.dart';
@@ -61,8 +61,6 @@ void main() {
     test('ring differs from the tint background (more visible) in light mode', () {
       final colours = coloursFor(Brightness.light);
       const purple = ThemeColor(2);
-      // The ring is the tinted background pushed to a more visible lightness,
-      // so it must NOT equal the fill it sits on — otherwise it is invisible.
       expect(
         colours.borderFromTheme(purple),
         isNot(equals(colours.backgroundFromTheme(purple))),
@@ -80,7 +78,7 @@ void main() {
 
     test('ring is fully opaque', () {
       final colours = coloursFor(Brightness.light);
-      expect(colours.borderFromTheme(const ThemeColor(2)).a, 1.0);
+      expect(colours.borderFromTheme(const ThemeColor(2)).opacity, 1.0);
     });
 
     test('ring hue tracks the focus color (different colors → different rings)', () {
@@ -102,16 +100,11 @@ void main() {
 }
 ```
 
-> Note: `Color.a` is the 0.0–1.0 alpha channel in current Flutter. If `flutter analyze` flags `.a` as undefined on this SDK, replace the opacity assertion with `expect(colours.borderFromTheme(const ThemeColor(2)).opacity, 1.0);`.
+> Note: this codebase's Flutter SDK exposes alpha as `Color.opacity` (the `.a` accessor is not available), hence the opacity assertion above.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run to verify it fails** — `flutter test test/style/border_from_theme_test.dart` → FAIL (`borderFromTheme` not defined).
 
-Run: `flutter test test/style/border_from_theme_test.dart`
-Expected: FAIL — compile error `The method 'borderFromTheme' isn't defined for the type 'OklchColours'`.
-
-- [ ] **Step 3: Implement `borderFromTheme`**
-
-In `apps/plot/lib/style/colors.dart`, immediately after the closing brace of `backgroundFromTheme` (the method ending with `.toColor();` at ~line 210), add:
+- [x] **Step 3: Implement `borderFromTheme`** — in `apps/plot/lib/style/colors.dart`, after `backgroundFromTheme`:
 
 ```dart
   /// The selection-ring colour for a given priority colour: the per-colour
@@ -134,52 +127,18 @@ In `apps/plot/lib/style/colors.dart`, immediately after the closing brace of `ba
   }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
-
-Run: `flutter test test/style/border_from_theme_test.dart`
-Expected: PASS (5 tests).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/plot/lib/style/colors.dart apps/plot/test/style/border_from_theme_test.dart
-git commit --no-verify -m "focus: add borderFromTheme helper for selection ring"
-```
-
-> Use `--no-verify`: husky's pre-commit hook is unavailable in Flutter-only checkouts. In the full monorepo tree it is fine either way.
+- [x] **Step 4: Run to verify it passes** — all 5 tests PASS.
+- [x] **Step 5: Commit** — `focus: add borderFromTheme helper for selection ring`.
 
 ---
 
-### Task 2: Add `selectedBorderColor` to `ListTile` (constant-width rounded border)
+### Task 2: Add `selectedBorderColor` to `ListTile` (constant-width rounded border)  ✅ done
 
-**Files:**
-- Modify: `apps/plot/lib/widget/list_tile.dart` (constructor ~line 91, fields ~line 184, border block ~lines 375-392)
+**Files:** `apps/plot/lib/widget/list_tile.dart`
 
-This is a pure styling/layout change to a widget with heavy runtime dependencies; it is verified by `flutter analyze` plus the Task 5 visual check rather than a widget test.
+- [x] **Step 1: Add the constructor parameter** — after `this.selectedColor,` add `this.selectedBorderColor,`.
 
-- [ ] **Step 1: Add the constructor parameter**
-
-In `apps/plot/lib/widget/list_tile.dart`, find the constructor line:
-
-```dart
-    this.selectedColor,
-```
-
-and add immediately after it:
-
-```dart
-    this.selectedBorderColor,
-```
-
-- [ ] **Step 2: Add the field declaration**
-
-Find the field declaration:
-
-```dart
-  final Color? selectedColor;
-```
-
-and add immediately after it:
+- [x] **Step 2: Add the field declaration** — after `final Color? selectedColor;`:
 
 ```dart
   /// When non-null, the tile reserves a constant 1px border that paints this
@@ -190,32 +149,7 @@ and add immediately after it:
   final Color? selectedBorderColor;
 ```
 
-- [ ] **Step 3: Replace the border logic**
-
-Find this exact block (around lines 375-392):
-
-```dart
-                  borderRadius: widget.borderRadius,
-                  border: widget.borderRadius != null
-                      ? null
-                      : Border.symmetric(
-                          horizontal: BorderSide(
-                            color: showBorder
-                                ? context.colour.colours.accentBackground
-                                      .withLightness(
-                                        context.colour.brightness ==
-                                                Brightness.light
-                                            ? 0.85
-                                            : 0.35,
-                                      )
-                                      .toColor()
-                                : const Color(0x00000000),
-                            width: 1,
-                          ),
-                        ),
-```
-
-Replace it with:
+- [x] **Step 3: Replace the border logic** with:
 
 ```dart
                   borderRadius: widget.borderRadius,
@@ -251,36 +185,16 @@ Replace it with:
                         ),
 ```
 
-- [ ] **Step 4: Analyze**
-
-Run: `flutter analyze lib/widget/list_tile.dart`
-Expected: "No issues found!" (or only pre-existing, unrelated infos).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/plot/lib/widget/list_tile.dart
-git commit --no-verify -m "focus: add opt-in selectedBorderColor to ListTile"
-```
+- [x] **Step 4: Analyze** — `flutter analyze lib/widget/list_tile.dart` → no issues.
+- [x] **Step 5: Commit** — `focus: add opt-in selectedBorderColor to ListTile`.
 
 ---
 
-### Task 3: Draw the ring on sidebar focus tiles (`PriorityWidget`)
+### Task 3: Draw the ring on sidebar focus tiles (`PriorityWidget`)  ✅ done
 
-**Files:**
-- Modify: `apps/plot/lib/widget/priority.dart` (compute ~lines 125-127, pass ~lines 207-212)
+**Files:** `apps/plot/lib/widget/priority.dart`
 
-- [ ] **Step 1: Compute the ring color**
-
-In `apps/plot/lib/widget/priority.dart`, find:
-
-```dart
-    final priorityAccentBg = widget.monochrome
-        ? buildContext.colour.colours.backgroundFromTheme(priority.displayColor)
-        : null;
-```
-
-and add immediately after it:
+- [x] **Step 1: Compute the ring color** — after the `priorityAccentBg` assignment:
 
 ```dart
     // The selected focus gets a crisp ring in its own colour (see the
@@ -291,57 +205,17 @@ and add immediately after it:
         : null;
 ```
 
-- [ ] **Step 2: Pass it to the `ListTile`**
-
-Find:
-
-```dart
-      selected: widget.selected,
-      selectedBorder: widget.selectedBorder,
-      selectedColor: priorityAccentBg,
-      highlightColor: priorityAccentBg,
-```
-
-and change to:
-
-```dart
-      selected: widget.selected,
-      selectedBorder: widget.selectedBorder,
-      selectedColor: priorityAccentBg,
-      selectedBorderColor: priorityRing,
-      highlightColor: priorityAccentBg,
-```
-
-- [ ] **Step 3: Analyze**
-
-Run: `flutter analyze lib/widget/priority.dart`
-Expected: "No issues found!" (or only pre-existing, unrelated infos).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add apps/plot/lib/widget/priority.dart
-git commit --no-verify -m "focus: draw selection ring on sidebar focus tiles"
-```
+- [x] **Step 2: Pass it to the `ListTile`** — add `selectedBorderColor: priorityRing,` after `selectedColor: priorityAccentBg,`.
+- [x] **Step 3: Analyze** — no issues.
+- [x] **Step 4: Commit** — `focus: draw selection ring on sidebar focus tiles`.
 
 ---
 
-### Task 4: Draw the ring on the fixed Inbox/Everything tiles (`_FixedFocusTile`)
+### Task 4: Draw the ring on the fixed Inbox/Everything tiles (`_FixedFocusTile`)  ✅ done
 
-**Files:**
-- Modify: `apps/plot/lib/widget/priorities_list.dart` (`_FixedFocusTileState.build`)
+**Files:** `apps/plot/lib/widget/priorities_list.dart`
 
-- [ ] **Step 1: Compute the ring color**
-
-In `apps/plot/lib/widget/priorities_list.dart`, inside `_FixedFocusTileState.build`, find:
-
-```dart
-    final accentBg = widget.monochrome
-        ? context.colour.colours.backgroundFromTheme(tileColor)
-        : null;
-```
-
-and add immediately after it:
+- [x] **Step 1: Compute the ring color** — after the `accentBg` assignment:
 
 ```dart
     // Matching selection ring for the fixed tiles, in the Resolution/brand
@@ -351,96 +225,31 @@ and add immediately after it:
         : null;
 ```
 
-- [ ] **Step 2: Pass it to the `ListTile`**
-
-Find (inside the same `build`):
-
-```dart
-      selected: widget.isSelected,
-      selectedColor: accentBg,
-      highlightColor: accentBg,
-```
-
-and change to:
-
-```dart
-      selected: widget.isSelected,
-      selectedColor: accentBg,
-      selectedBorderColor: ringColor,
-      highlightColor: accentBg,
-```
-
-- [ ] **Step 3: Analyze**
-
-Run: `flutter analyze lib/widget/priorities_list.dart`
-Expected: "No issues found!" (or only pre-existing, unrelated infos).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add apps/plot/lib/widget/priorities_list.dart
-git commit --no-verify -m "focus: draw selection ring on Inbox and Everything tiles"
-```
+- [x] **Step 2: Pass it to the `ListTile`** — add `selectedBorderColor: ringColor,` after `selectedColor: accentBg,`.
+- [x] **Step 3: Analyze** — no issues.
+- [x] **Step 4: Commit** — `focus: draw selection ring on Inbox and Everything tiles`.
 
 ---
 
 ### Task 5: Full analyze + visual verification
 
-**Files:** none (verification only).
+**Files:** `docs/updates.md` (+ verification only).
 
-- [ ] **Step 1: Run the new unit tests and analyze the changed app code**
-
-Run:
-```bash
-flutter test test/style/border_from_theme_test.dart
-flutter analyze lib/style/colors.dart lib/widget/list_tile.dart lib/widget/priority.dart lib/widget/priorities_list.dart
-```
-Expected: tests PASS; analyze reports no new issues.
-
-- [ ] **Step 2: Launch the app and inspect the sidebar (use the `run-app` skill)**
-
-Invoke the `run-app` skill to launch Plot.app in the isolated `agent` profile, then verify in the left-panel sidebar:
-- Selected focus shows a 1px ring in its own color, clearly distinct from both a hovered (ring-less) tile and the panel frame.
-- Hover on a non-selected focus shows the tint only (no ring); the selected tile keeps its ring.
-- Inbox and Everything fixed tiles show the matching ring when selected.
-- Repeat in dark mode (toggle the app theme — not system brightness).
-
-- [ ] **Step 3: Confirm no content shift**
-
-Toggle selection between two focuses and confirm the title text and leading icon do **not** move by 1px — the reserved transparent border must keep every tile's layout identical between selected and unselected. Spot-check the same for the Inbox/Everything tiles.
-
-- [ ] **Step 4: Update user-facing changelog**
-
-Add a bullet to the top section of `docs/updates.md` in plain language, e.g.:
-
-```markdown
-- The focus you're viewing now stands out more clearly in the sidebar with a subtle colored outline.
-```
-
-Then commit:
-```bash
-git add docs/updates.md
-git commit --no-verify -m "docs: note clearer selected-focus highlight in updates"
-```
-
-- [ ] **Step 5: Finalize**
-
-Run the `/finalize` checklist (lint of changed packages, backwards-compat, error capture, docs). No public-submodule changes are involved in this plan.
+- [x] **Step 1:** `flutter test test/style/border_from_theme_test.dart` PASS; `flutter analyze` on the four changed app files reports no new issues.
+- [ ] **Step 2:** Launch the app (`run-app` skill) and verify resting / hover / selected for a focus tile, Inbox, Everything, and the priorities search list, in light and dark mode.
+- [ ] **Step 3:** Confirm no content shift — title/icon do not move by 1px on selection toggle.
+- [x] **Step 4:** Add a plain-language bullet to the top of `docs/updates.md`.
+- [ ] **Step 5:** Run `/finalize` (no public-submodule changes involved).
 
 ---
 
 ## Self-Review
 
 **Spec coverage:**
-- Root-cause (rounded tiles skip the border) → Task 2 fixes the rounded branch.
+- Root-cause (rounded tiles skip the border) → Task 2.
 - Focus-hued ring matching the feed's lightness → Task 1 (`borderFromTheme` = `backgroundFromTheme` + `.withLightness(0.85/0.35)`).
-- Hover/selected backgrounds unchanged → Tasks 3/4 leave `selectedColor`/`highlightColor` as `priorityAccentBg`/`accentBg`; only add `selectedBorderColor`.
+- Hover/selected backgrounds unchanged → Tasks 3/4 only add `selectedBorderColor`.
 - No content shift (constant-width reserved border) → Task 2 border always `width: 1`, transparent when unselected; Task 5 Step 3 verifies.
 - Opt-in / no unrelated restyle → Task 2 rounded branch is `null` unless `selectedBorderColor` is provided; only `PriorityWidget` and `_FixedFocusTile` opt in.
-- Priorities search list also benefits → it reuses `PriorityWidget` (Task 3); no extra task needed.
-- Single-panel (non-monochrome) unchanged → Tasks 3/4 pass `null` when `!monochrome`.
-- Verification (analyze + run-app, light & dark) → Task 5.
-
-**Placeholder scan:** No TODO/TBD; every code step shows full code. Opacity-assertion fallback is spelled out.
-
-**Type consistency:** New surface is one symbol, `borderFromTheme` (Task 1), consumed identically in Tasks 3/4; one widget field, `selectedBorderColor` (Task 2), set in Tasks 2/3/4. Names match throughout.
+- Priorities search list benefits → reuses `PriorityWidget` (Task 3).
+- Single-panel unchanged → Tasks 3/4 pass `null` when `!monochrome`.

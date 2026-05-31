@@ -1,7 +1,7 @@
 # Selected focus selection ring — design
 
 **Date:** 2026-05-30
-**Status:** Approved (design); pending implementation plan
+**Status:** Approved (design); implemented
 
 ## Problem
 
@@ -16,12 +16,10 @@ left-panel frame the contrast is insufficient.
 The sidebar focus tiles already request the same selection border the agent /
 activity feed uses, but it never renders for them:
 
-- `widget/priorities_list.dart:115` and `widget/priority.dart:208` pass
+- `widget/priorities_list.dart` and `widget/priority.dart` pass
   `selectedBorder: true`.
-- The same tiles pass `borderRadius: 6` (left-panel pills —
-  `widget/priorities_list.dart:74`).
-- In `widget/list_tile.dart:376` the border is only drawn for non-rounded
-  tiles:
+- The same tiles pass `borderRadius: 6` (left-panel pills).
+- In `widget/list_tile.dart` the border is only drawn for non-rounded tiles:
 
   ```dart
   border: widget.borderRadius != null
@@ -35,8 +33,8 @@ activity feed uses, but it never renders for them:
   background tint.
 
 - The tint itself is the same color for hover and selected:
-  `widget/priority.dart:209-210` sets both `selectedColor` and `highlightColor`
-  to `priorityAccentBg` (`backgroundFromTheme(priority.displayColor)`). Selected
+  `widget/priority.dart` sets both `selectedColor` and `highlightColor` to
+  `priorityAccentBg` (`backgroundFromTheme(priority.displayColor)`). Selected
   therefore equals hover.
 
 ## Design
@@ -114,7 +112,7 @@ real screenshots (via the `run-app` skill), not added speculatively.
    (`null` otherwise, so single-panel keeps current behavior). Computed
    internally from existing `priority` + `monochrome` — no new `PriorityWidget`
    constructor param. This also benefits the priorities search list
-   (`page/priorities.dart:293`), which reuses `PriorityWidget`.
+   (`page/priorities.dart`), which reuses `PriorityWidget`.
 
 4. **`apps/plot/lib/widget/priorities_list.dart`** (`_FixedFocusTile`) — same
    treatment for the fixed Inbox and Everything tiles, using the fixed tile's
@@ -137,6 +135,7 @@ Only one: `ListTile.selectedBorderColor` (new nullable `Color?`, defaults
 ## Verification
 
 - `cd apps/plot && flutter analyze` clean on changed files.
+- `flutter test test/style/border_from_theme_test.dart`.
 - Visual check via the `run-app` skill: resting / hover / selected states for a
   focus tile, the Inbox and Everything fixed tiles, and the priorities search
   list, in both light and dark mode. Confirm selected is clearly distinct from
