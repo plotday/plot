@@ -3768,7 +3768,11 @@ class Store extends _$Store {
     }
 
     if (from < 350) {
-      await m.addColumn(notes, notes.accessGroups);
+      // Use _safeAddColumn so test harnesses that open the store at the
+      // current schema and roll back user_version don't trip a duplicate-
+      // column error (same rationale as the `_safeAddColumn` call above for
+      // priorities.icon).
+      await _safeAddColumn(m, notes, notes.accessGroups);
     }
   }
 
