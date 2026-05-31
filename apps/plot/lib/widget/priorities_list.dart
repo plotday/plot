@@ -306,6 +306,11 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
     final accentBg = widget.monochrome
         ? context.colour.colours.backgroundFromTheme(tileColor)
         : null;
+    // Matching selection ring for the fixed tiles, in the Resolution/brand
+    // colour they already render in.
+    final ringColor = widget.monochrome
+        ? context.colour.colours.borderFromTheme(tileColor)
+        : null;
 
     final menuCommand = widget.menuCommand;
 
@@ -316,6 +321,7 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
       longPressCommand: null,
       selected: widget.isSelected,
       selectedColor: accentBg,
+      selectedBorderColor: ringColor,
       highlightColor: accentBg,
       borderRadius: widget.borderRadius,
       onHover: (hovered) {
