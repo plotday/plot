@@ -985,7 +985,7 @@ class _LinkAssigneeBadge extends StatelessWidget {
               ),
             ),
           ),
-          onPress: () => _showAssigneePicker(context),
+          onPress: () => pickLinkAssignee(context, link),
           child: Text(
             label,
             style: context.theme.typography.xs.copyWith(
@@ -1008,8 +1008,6 @@ class _LinkAssigneeBadge extends StatelessWidget {
     }
   }
 
-  Future<void> _showAssigneePicker(BuildContext context) =>
-      pickLinkAssignee(context, link);
 }
 
 /// Small badge showing the link's status label.
