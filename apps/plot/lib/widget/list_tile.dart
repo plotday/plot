@@ -114,6 +114,7 @@ class ListTile extends StatefulWidget {
 
     /// Overrides the default selected background color.
     this.selectedColor,
+    this.selectedBorderColor,
 
     this.onHover,
 
@@ -188,6 +189,13 @@ class ListTile extends StatefulWidget {
   final bool noBackground;
   final Color? highlightColor;
   final Color? selectedColor;
+
+  /// When non-null, the tile reserves a constant 1px border that paints this
+  /// colour while selected and transparent otherwise — so selection never
+  /// shifts content. For rounded tiles (non-null [borderRadius]) this is the
+  /// only way the selection ring is drawn; rounded tiles with a null
+  /// [selectedBorderColor] keep their borderless behaviour.
+  final Color? selectedBorderColor;
   final Widget? details;
   final Command? command;
   final Command? longPressCommand;
@@ -373,19 +381,32 @@ class _ListTileState extends State<ListTile> {
                             context.theme.plotColors.highlight)
                       : null,
                   borderRadius: widget.borderRadius,
+                  // Rounded tiles only get a border when a caller opts in via
+                  // [selectedBorderColor]; the width is constant (1) so toggling
+                  // selection changes only the colour, never the layout. The
+                  // edge-to-edge (non-rounded) feed border is unchanged but will
+                  // honour an explicit [selectedBorderColor] when provided.
                   border: widget.borderRadius != null
-                      ? null
+                      ? (widget.selectedBorderColor != null
+                            ? Border.all(
+                                color: showBorder
+                                    ? widget.selectedBorderColor!
+                                    : const Color(0x00000000),
+                                width: 1,
+                              )
+                            : null)
                       : Border.symmetric(
                           horizontal: BorderSide(
                             color: showBorder
-                                ? context.colour.colours.accentBackground
-                                      .withLightness(
-                                        context.colour.brightness ==
-                                                Brightness.light
-                                            ? 0.85
-                                            : 0.35,
-                                      )
-                                      .toColor()
+                                ? (widget.selectedBorderColor ??
+                                      context.colour.colours.accentBackground
+                                          .withLightness(
+                                            context.colour.brightness ==
+                                                    Brightness.light
+                                                ? 0.85
+                                                : 0.35,
+                                          )
+                                          .toColor())
                                 : const Color(0x00000000),
                             width: 1,
                           ),
