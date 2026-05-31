@@ -105,14 +105,13 @@ class BlockListSeparator extends StatelessWidget {
     final nextAccent = next != null ? selectedAccent(next) : null;
     final accent = prevAccent ?? nextAccent;
     if (accent != null) {
-      // Selection: priority accent at low alpha blended into the
-      // border color. Painted regardless of hover/focus or drag —
-      // selection is a persistent state, not an interaction
-      // affordance.
-      final tinted = accent.withValues(alpha: 0.3);
+      // Selection: the per-focus [borderFromTheme] ring colour, painted at
+      // full opacity to match the sidebar's selected-focus ring exactly.
+      // Painted regardless of hover/focus or drag — selection is a
+      // persistent state, not an interaction affordance.
       separator = Container(
         height: 1,
-        color: Color.alphaBlend(tinted, baseBorder),
+        color: accent,
       );
     } else {
       // Hover/focus highlight on either flank — only when the row's

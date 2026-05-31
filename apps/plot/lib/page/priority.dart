@@ -1059,7 +1059,9 @@ class _PriorityPageState extends State<PriorityPage>
       index: index,
       selectedAccent: (item) {
         if (item is AgendaThreadItem && item.thread.id == selectedId) {
-          return context.colour.colours.fromTheme(
+          // Match the sidebar's selection ring: the lighter, per-focus
+          // [borderFromTheme] hue rather than the full-saturation accent.
+          return context.colour.colours.borderFromTheme(
             item.thread.priority.displayColor,
           );
         }

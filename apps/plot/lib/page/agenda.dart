@@ -411,7 +411,9 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         index: index,
         selectedAccent: (item) {
           if (!identical(item, selectedItem)) return null;
-          return context.colour.colours.fromTheme(
+          // Match the sidebar's selection ring: the lighter, per-focus
+          // [borderFromTheme] hue rather than the full-saturation accent.
+          return context.colour.colours.borderFromTheme(
             selectedItem!.blockPriority!.displayColor,
           );
         },
@@ -644,16 +646,42 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
     // empty date section): use the period/date anchor and let
     // [moveFocusBlock] preserve the source row's existing time-of-day.
     var focusAnchor = resolved.anchor;
+    var anchorIsExact = resolved.isExact;
     focusAnchor ??= target.targetPeriodStart;
     if (focusAnchor == null && target.targetDate != null) {
       focusAnchor = target.targetDate!.toDateTime();
+      anchorIsExact = false;
     }
     if (focusAnchor == null) return;
+
+    // Keep the dropped block visible on the day it was dropped. A future
+    // day's leading-edge gap and a full-day empty gap both start at
+    // midnight, so dropping into them resolves to a midnight anchor —
+    // which the agenda builder reads as an order-timeline anchor and omits
+    // (the block vanishes) — or, via the "before the first block" rule, to
+    // the previous evening. Re-anchor such degenerate results to the
+    // source block's time-of-day on the target date. See
+    // [resolveFocusBlockDropAnchorOnDate].
+    final targetDate = target.targetDate;
+    if (targetDate != null) {
+      final corrected = resolveFocusBlockDropAnchorOnDate(
+        rawAnchor: focusAnchor,
+        targetDate: targetDate,
+        sourceEffectiveAt: sourceRow.effectiveAt,
+        duration: sourceRow.duration,
+        nextRowStart: blockEnd(nextBlock),
+      );
+      if (corrected != focusAnchor) {
+        focusAnchor = corrected;
+        anchorIsExact = true;
+      }
+    }
+
     unawaited(
       bloc.moveFocusBlock(
         source: sourceRow,
         targetAnchor: focusAnchor,
-        anchorIsExact: resolved.isExact,
+        anchorIsExact: anchorIsExact,
       ),
     );
   }
