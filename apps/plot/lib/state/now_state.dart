@@ -393,14 +393,42 @@ final class NowLoaded extends NowState {
   /// but never returns the in-flight pomodoro's own end — using that as
   /// a cap creates a feedback loop where each `+` press clamps the new
   /// duration back down to the existing remaining time.
+  ///
+  /// The cap is the minimum of:
+  ///   1. The end of the in-progress scheduled event for this priority
+  ///      (when [priority] matches [this.priority]).
+  ///   2. The start of the next scheduled event.
+  ///   3. The start of the next non-archived focus block across all
+  ///      priorities whose `effective_at` strictly follows [now].
   DateTime? pomodoroEndCap(Priority? priority) {
+    DateTime? cap;
     if (priority == this.priority) {
       final scheduledEnd = scheduled.firstOrNull?.priority == priority
           ? scheduled.firstOrNull?.at?.end
           : null;
-      if (scheduledEnd != null) return scheduledEnd;
+      if (scheduledEnd != null) cap = scheduledEnd;
     }
-    return next.firstOrNull?.at?.start;
+    final nextEventStart = next.firstOrNull?.at?.start;
+    if (nextEventStart != null &&
+        (cap == null || nextEventStart.isBefore(cap))) {
+      cap = nextEventStart;
+    }
+    // Also clamp against the start of the next non-archived focus block
+    // whose `effective_at` strictly follows `now`. A focus block on any
+    // priority still bounds this session because it'll trigger an
+    // auto-start (or distraction handoff) at its start time.
+    for (final rows in priorityBlocksByPriority.values) {
+      for (final row in rows) {
+        if (row.archivedAt != null) continue;
+        final d = row.duration;
+        if (d == null || d <= Duration.zero) continue;
+        if (!row.effectiveAt.isAfter(now)) continue;
+        if (cap == null || row.effectiveAt.isBefore(cap)) {
+          cap = row.effectiveAt;
+        }
+      }
+    }
+    return cap;
   }
 
   Duration? get elapsed =>
