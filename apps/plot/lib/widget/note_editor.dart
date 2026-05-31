@@ -954,14 +954,14 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _activateReplyToOriginal(Uuid originalAuthor) {
-    context.read<ThreadBloc>().editNoteRecipients(
+    context.read<ThreadBloc>().setDraftRecipients(
       accessContacts: [Base.actorId, ActorId.fromUuid(originalAuthor)],
       accessGroups: const [],
     );
   }
 
   void _activatePrivate() {
-    context.read<ThreadBloc>().editNoteRecipients(
+    context.read<ThreadBloc>().setDraftRecipients(
       accessContacts: [Base.actorId],
       accessGroups: const [],
     );

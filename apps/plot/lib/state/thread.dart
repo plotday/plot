@@ -126,15 +126,37 @@ class ThreadBloc extends Cubit<ThreadState> {
           )
         : state.thread;
 
-    // Persist draft (and thread if recipients changed) sequentially.
-    // Thread save first so visibility rules are in place before the note
-    // is pushed; both saves are remote-dirty and will sync independently.
+    // Save order: draft FIRST (the restrictive per-note constraint), thread
+    // SECOND (the audience-widening extension). If only the second fails, the
+    // draft is still restrictive — the worst-case is "user has to re-add the
+    // contact next time" rather than "audience leaks." The reverse order
+    // could leak (thread widened without draft restriction in place).
+    // We do NOT wrap in Store.transaction because note.save() may trigger
+    // an internal push; the memory note on drift txn zone capture shows that
+    // fire-and-forget pushes started inside a transaction capture the txn
+    // zone and throw "transaction used after it was closed."
+    await newDraft.save();
     if (threadChanged) {
       await newThread.save();
     }
-    await newDraft.save();
 
     emit(state.copyWith(draft: newDraft, thread: newThread));
+  }
+
+  /// Updates the draft note's per-message recipient subset in memory only —
+  /// no DB persistence. Used by mode pills where the draft already lives in
+  /// memory and persists on the next save trigger. The recipient picker uses
+  /// [editNoteRecipients] instead because picker results may also extend
+  /// thread.contacts / thread.groups, which DO need persisting.
+  void setDraftRecipients({
+    required List<ActorId>? accessContacts,
+    required List<ActorId>? accessGroups,
+  }) {
+    final newDraft = state.draft.copyWith(
+      accessContacts: Value(accessContacts),
+      accessGroups: Value(accessGroups),
+    );
+    emit(state.copyWith(draft: newDraft));
   }
 
   /// Sets the note being replied to. Pass null to clear.
