@@ -724,6 +724,31 @@ class NowBloc extends Cubit<NowState> {
     );
   }
 
+  /// Soft-archive the non-archived focus block row that covers [moment]
+  /// on [priority]. No-op if no such row exists. Used by Pause (so the
+  /// agenda stops rendering the running block at its slot and shows the
+  /// synthesized sliding `pausedFocus` block instead) and by Stop.
+  Future<void> _archiveCoveringRow(Priority priority, DateTime moment) async {
+    if (state is! NowLoaded) return;
+    final rows =
+        (state as NowLoaded).priorityBlocksByPriority[priority.id] ??
+        const <PriorityBlockRow>[];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      if (!r.effectiveAt.isAfter(moment) &&
+          r.effectiveAt.add(d).isAfter(moment)) {
+        await PriorityBlock.setBlockDuration(
+          priorityId: priority.id,
+          blockStart: r.effectiveAt,
+          newDuration: null, // null → soft-archive in setBlockDuration
+        );
+        return;
+      }
+    }
+  }
+
   /// Pause the active session: close it without altering its planned
   /// pomodoro window, so a future Start on the same priority can resume
   /// from the remaining time. See [endSession] for the variant that
@@ -735,6 +760,10 @@ class NowBloc extends Cubit<NowState> {
     if (session == null || !session.at.isNow()) return;
     if (session.source != 'active') return;
     await _closeActiveSession(session);
+    final ctx = s.context;
+    if (ctx != null) {
+      await _archiveCoveringRow(ctx, Time.now());
+    }
   }
 
   /// Fully end the active session — the next Start on the same priority
@@ -765,6 +794,10 @@ class NowBloc extends Cubit<NowState> {
       ),
     );
     await closed.save();
+    final ctx = s.context;
+    if (ctx != null) {
+      await _archiveCoveringRow(ctx, now);
+    }
   }
 
   /// Run [op] after any in-flight pomodoro adjustment finishes. Two
