@@ -8,6 +8,7 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/theme_color.dart';
 
 class PriorityWidget extends StatefulWidget {
   const PriorityWidget({
@@ -125,6 +126,12 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     final priorityAccentBg = widget.monochrome
         ? buildContext.colour.colours.backgroundFromTheme(priority.displayColor)
         : null;
+    // The selected focus gets a crisp ring in its own colour (see the
+    // agent/activity feed). Only in the left-panel monochrome frame — single-
+    // panel mode keeps the plain edge-to-edge treatment.
+    final priorityRing = widget.monochrome
+        ? buildContext.colour.colours.borderFromTheme(priority.displayColor)
+        : null;
     final priorityAccent = buildContext.colour.colours.fromTheme(
       priority.displayColor,
     );
@@ -207,6 +214,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
       selected: widget.selected,
       selectedBorder: widget.selectedBorder,
       selectedColor: priorityAccentBg,
+      selectedBorderColor: priorityRing,
       highlightColor: priorityAccentBg,
       highlighted: widget.selected,
       borderRadius: widget.borderRadius,
@@ -491,6 +499,21 @@ class FocusLabel extends StatelessWidget {
       child: row,
     );
   }
+}
+
+/// Branded label for the Inbox (the root focus): the inbox glyph in the
+/// Resolution brand colour with the fixed "Inbox" wording, matching how the
+/// sidebar and header already draw it. Use this in every focus picker so the
+/// Inbox row looks identical everywhere instead of falling back to the root
+/// focus's own icon and colour.
+Widget inboxLabel(BuildContext context, Priority root, {double? fontSize}) {
+  return FocusLabel(
+    priority: root,
+    fontSize: fontSize,
+    titleOverride: 'Inbox',
+    iconOverride: PlotIcon.inbox,
+    color: context.colour.colours.fromTheme(const ThemeColor.defaultColor()),
+  );
 }
 
 /// Tracks pointer hover and rebuilds with the resolved colour.
