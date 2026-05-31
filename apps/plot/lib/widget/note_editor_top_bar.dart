@@ -137,8 +137,11 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    final activeBackground = colors.primary;
-    final activeForeground = colors.primaryForeground;
+    // Use the sidebar-strength accent fill (accentBackground, exposed as
+    // primaryForeground by the project's FColors mapping) for a subtle,
+    // consistent selected-item look matching list_tile.dart.
+    final activeBackground = colors.primaryForeground;
+    final activeForeground = colors.primary;
     final inactiveForeground = colors.mutedForeground;
 
     final backgroundColor = isActive ? activeBackground : null;
