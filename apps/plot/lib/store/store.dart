@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 349;
+  int get schemaVersion => 350;
 
   @override
   MigrationStrategy get migration {
@@ -3765,6 +3765,10 @@ class Store extends _$Store {
       // rebuilds the table keeping only the columns Drift still knows about,
       // so the dropped columns disappear.
       await m.alterTable(TableMigration(threads));
+    }
+
+    if (from < 350) {
+      await m.addColumn(notes, notes.accessGroups);
     }
   }
 
