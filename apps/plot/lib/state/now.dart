@@ -108,8 +108,11 @@ class NowBloc extends Cubit<NowState> {
           },
         );
     // Maintenance tick: refresh the active session's `end` so
-    // `at.isNow()` stays true, and auto-stop when the 5-minute grace
-    // expires. No auto-start — sessions begin only via [startSession].
+    // `at.isNow()` stays true, auto-stop when the 5-minute grace expires,
+    // and drive auto-start when the context priority has a covering focus
+    // block row.
+    // Auto-start can fire from [_onTrackTick] when the context priority has
+    // a covering focus block row.
     _trackTick = Timer.periodic(
       const Duration(minutes: 1),
       (_) => _onTrackTick(),
@@ -126,18 +129,20 @@ class NowBloc extends Cubit<NowState> {
     emit(const NowLoading());
   }
 
-  /// Maintenance tick for the active pomodoro session. Does NOT start
-  /// sessions — start is exclusively user-driven via [startSession].
+  /// Maintenance tick for the active pomodoro session.
   ///
-  /// Two responsibilities:
-  ///   1. While the pomodoro is within its `pomodoroAt + pomodoro + 5m`
-  ///      window, keep the row's `end` bumped to `Time.now() + 3m` so
-  ///      `Session.watchCurrent` keeps reporting it (otherwise its
-  ///      `at.isNow()` check would fail and the pill would drop back to
-  ///      inactive).
-  ///   2. Once the grace period elapses, auto-close the session via
-  ///      [_closeActiveSession] (which also writes the
-  ///      consumed time back to `priority_block`).
+  /// Behavior:
+  ///   1. Skip when the in-flight day has changed (date rollover).
+  ///   2. While a `source='active'` session exists for the context:
+  ///      - When `pomodoroAt + pomodoro + kPomodoroGrace` is reached,
+  ///        close the session (and archive the covering focus block
+  ///        row to prevent immediate auto-restart).
+  ///      - When the session's [end] is about to be reached, bump it
+  ///        forward so the watcher's window stays open.
+  ///   3. Drive auto-start: if [context] has a focus block row whose
+  ///      window covers `now`, start (or resume) a session for it. The
+  ///      idempotency guard in [_maybeAutoStart] makes this safe to
+  ///      call every tick.
   Future<void> _onTrackTick() async {
     final tickNow = Time.now();
     final tickDate = DateTime(tickNow.year, tickNow.month, tickNow.day);
@@ -165,6 +170,10 @@ class NowBloc extends Cubit<NowState> {
           .add(kPomodoroGrace);
       if (!now.isBefore(graceEnd)) {
         await _closeActiveSession(session);
+        final ctx = s.context;
+        if (ctx != null) {
+          await _archiveCoveringRow(ctx, now);
+        }
       } else if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
         // Extend forward so `at.isNow()` keeps holding through the next
         // tick. Mirrors the 3-minute lookahead that `setFocus` originally
