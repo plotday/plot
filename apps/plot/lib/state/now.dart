@@ -562,6 +562,7 @@ class NowBloc extends Cubit<NowState> {
             pomodoroAt: shiftedPomodoroAt,
             now: now,
           );
+          await _ensureFocusRow(ctx, shiftedPomodoroAt, originalPomodoro);
           await Session.resume(
             ctx,
             end: now.add(const Duration(minutes: 3)),
@@ -618,6 +619,7 @@ class NowBloc extends Cubit<NowState> {
                 pomodoroAt: shiftedPomodoroAt,
                 now: now,
               );
+              await _ensureFocusRow(ctx, shiftedPomodoroAt, newPomodoro);
               await Session.fromStore(skip.copyWith(end: now)).save();
               await Session.resume(
                 ctx,
@@ -647,6 +649,7 @@ class NowBloc extends Cubit<NowState> {
       pomodoroAt: now,
       now: now,
     );
+    await _ensureFocusRow(ctx, now, pomodoro);
     await Session.resume(
       ctx,
       end: now.add(const Duration(minutes: 3)),
@@ -679,6 +682,46 @@ class NowBloc extends Cubit<NowState> {
       explicit: true,
     );
     emit(s.copyWith(session: optimistic, previewPomodoro: null));
+  }
+
+  /// Ensure a non-archived focus block row covers `[start, start + duration)`
+  /// on [priority]. Reuses any existing covering row by extending its
+  /// duration when needed; otherwise writes a fresh row. Idempotent for
+  /// the common case where the scheduled row already matches.
+  Future<void> _ensureFocusRow(
+    Priority priority,
+    DateTime start,
+    Duration duration,
+  ) async {
+    if (state is! NowLoaded) return;
+    final rows =
+        (state as NowLoaded).priorityBlocksByPriority[priority.id] ??
+        const <PriorityBlockRow>[];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      if (!r.effectiveAt.isAfter(start) &&
+          r.effectiveAt.add(d).isAfter(start)) {
+        // Existing row covers `start`. Extend it if we'll outrun it.
+        final coveringEnd = r.effectiveAt.add(d);
+        final neededEnd = start.add(duration);
+        if (neededEnd.isAfter(coveringEnd)) {
+          await PriorityBlock.setBlockDuration(
+            priorityId: priority.id,
+            blockStart: r.effectiveAt,
+            newDuration: neededEnd.difference(r.effectiveAt),
+          );
+        }
+        return;
+      }
+    }
+    // No covering row — create one at `start`.
+    await PriorityBlock.setBlockDuration(
+      priorityId: priority.id,
+      blockStart: start,
+      newDuration: duration,
+    );
   }
 
   /// Pause the active session: close it without altering its planned
