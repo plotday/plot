@@ -39,6 +39,28 @@ export type LinkTypeConfig = {
    * when omitted. Use the singular noun in title case (e.g. "Comment").
    */
   noteLabel?: string;
+  /**
+   * Placeholder shown in the editor when this link type is the target of a
+   * new thread (NewThreadPage). Example: "Send a Gmail email".
+   * If unset, Plot derives "Create a new {connector} {label.toLowerCase()}".
+   */
+  composePlaceholder?: string;
+  /**
+   * Label for the Send button on NewThreadPage when this link type is the
+   * target. Example: "Send". If unset, defaults to "Create".
+   */
+  composeVerb?: string;
+  /**
+   * Placeholder shown in the in-thread editor for the default reply mode.
+   * Example: "Reply" (Gmail), "Add a comment" (Linear). If unset, Plot derives
+   * "Add a {noteLabel.toLowerCase()}" or "Add a note".
+   */
+  replyPlaceholder?: string;
+  /**
+   * Label for the Send button in the in-thread editor. Example: "Send"
+   * (Gmail), "Comment" (Linear). If unset, defaults to "Send".
+   */
+  replyVerb?: string;
   /** URL to an icon for this link type (light mode). Prefer Iconify `logos/*` URLs. */
   logo?: string;
   /** URL to an icon for dark mode. Use when the default logo is invisible on dark backgrounds (e.g., Iconify `simple-icons/*` with `?color=`). */
