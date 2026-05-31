@@ -109,6 +109,42 @@ function fnv1aHex(input: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
+/**
+ * Compute the outbound email recipient list for a single role (To, Cc, or Bcc),
+ * applying the per-note access_contacts constraint when set.
+ *
+ * @param args.accessContactEmails - Allowed email addresses derived from
+ *   note.accessContacts (contact IDs resolved to emails via thread.accessContacts),
+ *   or null when the note has no access restriction (send to everyone).
+ * @param args.candidates - Email addresses for this role from the Gmail headers.
+ * @param args.self - Sender email; always excluded regardless of constraint.
+ * @returns Filtered list of email addresses for the role.
+ *
+ * @example
+ * // Private note — accessContactEmails is an empty set → empty result
+ * recipientsFor({ accessContactEmails: new Set(), candidates: ["a@b.com"], self: "me@b.com" })
+ * // => []
+ *
+ * @example
+ * // No constraint — send to all non-self candidates
+ * recipientsFor({ accessContactEmails: null, candidates: ["a@b.com", "me@b.com"], self: "me@b.com" })
+ * // => ["a@b.com"]
+ */
+export function recipientsFor(args: {
+  accessContactEmails: Set<string> | null;
+  candidates: string[];
+  self: string;
+}): string[] {
+  const { accessContactEmails, candidates, self } = args;
+  const selfLower = self.toLowerCase();
+  return candidates.filter((email) => {
+    const lower = email.toLowerCase();
+    if (lower === selfLower) return false; // sender is never a recipient
+    if (accessContactEmails === null) return true; // no constraint: include all
+    return accessContactEmails.has(lower); // constrained: only allowed contacts
+  });
+}
+
 /** Persisted per-channel initial-backfill cursor. */
 type InitialSyncState = {
   pageToken?: string;
@@ -1427,32 +1463,62 @@ export class Gmail extends Connector<Gmail> {
     const profile = await api.getProfile();
     const senderEmail = profile.emailAddress.toLowerCase();
 
-    // Build reply-all recipients: all From + To + Cc minus sender, deduplicated
-    const allRecipients = new Set<string>();
+    // Build per-note access constraint: when note.accessContacts is set, resolve
+    // contact IDs to lowercase email addresses using thread.accessContacts so we
+    // can filter the outbound recipient list. null means no constraint (send to all).
+    //
+    // This implements the design rule: a note with accessContacts = [self] is a
+    // Private note and must not be sent via Gmail at all.
+    let accessContactEmails: Set<string> | null = null;
+    if (note.accessContacts !== null) {
+      const allowedIds = new Set<ActorId>(note.accessContacts);
+      accessContactEmails = new Set<string>();
+      for (const contact of thread.accessContacts ?? []) {
+        if (allowedIds.has(contact.id) && contact.email) {
+          accessContactEmails.add(contact.email.toLowerCase());
+        }
+      }
+    }
+
+    // Build reply-all candidates: all From + To + Cc, deduplicated
+    const allCandidates = new Set<string>();
     for (const email of parseEmailAddresses(fromHeader)) {
-      allRecipients.add(email.toLowerCase());
+      allCandidates.add(email.toLowerCase());
     }
     for (const email of parseEmailAddresses(toHeader)) {
-      allRecipients.add(email.toLowerCase());
+      allCandidates.add(email.toLowerCase());
     }
 
-    const ccRecipients = new Set<string>();
+    const ccCandidates = new Set<string>();
     for (const email of parseEmailAddresses(ccHeader)) {
-      ccRecipients.add(email.toLowerCase());
+      ccCandidates.add(email.toLowerCase());
     }
 
-    // Remove sender from all sets
-    allRecipients.delete(senderEmail);
-    ccRecipients.delete(senderEmail);
-
-    // To = all direct recipients (From + To minus sender), Cc = remaining Cc
-    const to = Array.from(allRecipients).filter(
-      (email) => !ccRecipients.has(email)
+    // To = all direct recipients (From + To), Cc = remaining Cc.
+    // Apply the per-note access constraint (and always exclude sender).
+    const toCandidates = Array.from(allCandidates).filter(
+      (email) => !ccCandidates.has(email)
     );
-    const cc = Array.from(ccRecipients);
+    const to = recipientsFor({
+      accessContactEmails,
+      candidates: toCandidates,
+      self: senderEmail,
+    });
+    const cc = recipientsFor({
+      accessContactEmails,
+      candidates: Array.from(ccCandidates),
+      self: senderEmail,
+    });
 
     if (to.length === 0 && cc.length === 0) {
-      console.error("No recipients for Gmail reply");
+      if (note.accessContacts !== null) {
+        // Private note or custom subset that excluded everyone — do not send.
+        console.log(
+          `[gmail] onNoteCreated: note ${note.id} has access_contacts constraint with no outbound recipients; skipping send`
+        );
+      } else {
+        console.error("No recipients for Gmail reply");
+      }
       return;
     }
 
