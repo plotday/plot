@@ -153,25 +153,31 @@ class NowBloc extends Cubit<NowState> {
     if (state is! NowLoaded) return;
     final s = loadedState;
     final session = s.session;
-    if (session == null) return;
-    if (session.source != 'active') return;
-    if (session.pomodoroAt == null || session.pomodoro == null) return;
 
-    final now = Time.now();
-    final graceEnd = session.pomodoroAt!
-        .add(session.pomodoro!)
-        .add(kPomodoroGrace);
-    if (!now.isBefore(graceEnd)) {
-      await _closeActiveSession(session);
-      return;
+    // Session maintenance: bump end, auto-close on grace expiry.
+    if (session != null &&
+        session.source == 'active' &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null) {
+      final now = Time.now();
+      final graceEnd = session.pomodoroAt!
+          .add(session.pomodoro!)
+          .add(kPomodoroGrace);
+      if (!now.isBefore(graceEnd)) {
+        await _closeActiveSession(session);
+      } else if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
+        // Extend forward so `at.isNow()` keeps holding through the next
+        // tick. Mirrors the 3-minute lookahead that `setFocus` originally
+        // wrote when sessions were auto-started.
+        await Session.fromStore(
+          session.copyWith(end: now.add(const Duration(minutes: 3))),
+        ).save();
+      }
     }
-    if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
-      // Extend forward so `at.isNow()` keeps holding through the next
-      // tick. Mirrors the 3-minute lookahead that `setFocus` originally
-      // wrote when sessions were auto-started.
-      await Session.fromStore(
-        session.copyWith(end: now.add(const Duration(minutes: 3))),
-      ).save();
+
+    final ctx = s.context;
+    if (ctx != null) {
+      await _maybeAutoStart(ctx);
     }
   }
 
@@ -420,6 +426,12 @@ class NowBloc extends Cubit<NowState> {
         prior.session!.priority?.id == prior.context?.id;
     if (wasActive && priority != null) {
       await _startDistraction();
+    }
+
+    if (priority != null) {
+      // Fire-and-forget — the resulting session emission is observed by
+      // PriorityBloc through the existing NowBloc subscription.
+      unawaited(_maybeAutoStart(priority));
     }
   }
 
@@ -746,6 +758,33 @@ class NowBloc extends Cubit<NowState> {
         );
         return;
       }
+    }
+  }
+
+  /// If [ctx] has a non-archived focus block row covering `now` and no
+  /// active session for [ctx] exists, start one matched to the row's
+  /// remaining window (`[now, effectiveAt + duration)`). Idempotent —
+  /// safe to call from both [setContext] and [_onTrackTick].
+  Future<void> _maybeAutoStart(Priority ctx) async {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    // Already running for this priority — no-op.
+    if (s.pomodoroState != PomodoroState.inactive &&
+        s.session?.priority?.id == ctx.id) {
+      return;
+    }
+    final now = Time.now();
+    final rows = s.priorityBlocksByPriority[ctx.id] ?? const [];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      final end = r.effectiveAt.add(d);
+      if (r.effectiveAt.isAfter(now) || !end.isAfter(now)) continue;
+      // Covering row found — start the session for the remaining window.
+      final remaining = end.difference(now);
+      await startSession(override: remaining);
+      return;
     }
   }
 
