@@ -250,6 +250,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   PriorityBloc({
     required Priority priority,
+    required NowBloc nowBloc,
     Thread? thread,
     bool everything = false,
   }) : _subscriptions = [],
@@ -268,6 +269,30 @@ class PriorityBloc extends Cubit<PriorityState> {
     _allInstances.add(this);
     _loadPriority();
     _restartActiveTabSubscription();
+
+    // Seed pausedFocus from current NowBloc state immediately so the
+    // first agenda build already has the sliding block if paused.
+    final initialNow = nowBloc.state;
+    if (initialNow is NowLoaded) {
+      _pausedFocus = initialNow.pausedFocus;
+      _lastNowForPaused = initialNow.now;
+    }
+
+    // Subscribe to NowBloc so the agenda re-builds when the paused-focus
+    // state changes or when `now` advances while paused (sliding block).
+    _nowSubscription = nowBloc.stream.listen((nowState) {
+      if (nowState is! NowLoaded) return;
+      final pausedChanged = nowState.pausedFocus != _pausedFocus;
+      _pausedFocus = nowState.pausedFocus;
+      // NowBloc ticks at 1-minute intervals while paused — rebuild so
+      // the synthesized sliding block advances with `now`.
+      final nowAdvanced = _pausedFocus != null &&
+          nowState.now.difference(_lastNowForPaused).inSeconds >= 1;
+      if (pausedChanged || nowAdvanced) {
+        _lastNowForPaused = nowState.now;
+        _rebuildAgendaModel();
+      }
+    });
 
     // Register callback to reload agenda when time changes (e.g., via TimeTravel)
     Time.setOnTimeChanged(() {
@@ -655,6 +680,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
       priorityById: _priorityById,
+      pausedFocus: _pausedFocus == null
+          ? null
+          : (
+              priority: _pausedFocus!.priority,
+              remaining: _pausedFocus!.remaining,
+            ),
     );
     emit(
       state.copyWith(
@@ -1530,6 +1561,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
       priorityById: _priorityById,
+      pausedFocus: _pausedFocus == null
+          ? null
+          : (
+              priority: _pausedFocus!.priority,
+              remaining: _pausedFocus!.remaining,
+            ),
     );
     final flat = agenda.flatItems();
     emit(
@@ -2078,6 +2115,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Unregister time change callback
     Time.setOnTimeChanged(null);
 
+    _nowSubscription?.cancel();
     _fullResyncSubscription?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -2478,6 +2516,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       associationsByParentId: _associations,
       priorityBlocksByPriority: _priorityBlocksByPriority,
       priorityById: _priorityById,
+      pausedFocus: _pausedFocus == null
+          ? null
+          : (
+              priority: _pausedFocus!.priority,
+              remaining: _pausedFocus!.remaining,
+            ),
     );
     emit(
       state.copyWith(
@@ -3563,6 +3607,12 @@ class PriorityBloc extends Cubit<PriorityState> {
                 associationsByParentId: _associations,
                 priorityBlocksByPriority: _priorityBlocksByPriority,
                 priorityById: _priorityById,
+                pausedFocus: _pausedFocus == null
+                    ? null
+                    : (
+                        priority: _pausedFocus!.priority,
+                        remaining: _pausedFocus!.remaining,
+                      ),
               );
               if (buildStart != null) {
                 profile?.mark(
@@ -3774,6 +3824,19 @@ class PriorityBloc extends Cubit<PriorityState> {
     return _fetchMoreDone(first, count);
   }
 
+  /// Latest [PausedFocus] observed from [NowBloc]. Passed to every
+  /// [AgendaBuilder.build] call so the agenda renders the sliding block
+  /// while a focus session is paused.
+  PausedFocus? _pausedFocus;
+
+  /// The `now` value at the last agenda rebuild triggered by a NowBloc tick
+  /// while paused. Used to gate 1-second-advance rebuilds and avoid
+  /// redundant emits.
+  DateTime _lastNowForPaused = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Subscription to [NowBloc.stream] for [_pausedFocus] updates.
+  StreamSubscription<NowState>? _nowSubscription;
+
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<void>? _fullResyncSubscription;
   StreamSubscription<void>? _threadSubscription;
@@ -3884,11 +3947,12 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
   }
 
   Future<_LoadResult> _loadPriorityWithFallback() async {
-    // Capture the current Everything-feed flag before any await so a fresh
-    // PriorityBloc (e.g. navigating from a focus straight to Everything)
-    // starts in the right feed mode. The priority page keeps it in sync
-    // afterwards via setEverything.
-    final everything = context.read<NowBloc>().everything;
+    // Capture the NowBloc and current Everything-feed flag before any await
+    // so a fresh PriorityBloc (e.g. navigating from a focus straight to
+    // Everything) starts in the right feed mode. The priority page keeps
+    // it in sync afterwards via setEverything.
+    final nowBloc = context.read<NowBloc>();
+    final everything = nowBloc.everything;
     // PriorityState eagerly creates a Note.draft (which reads Base.actorId!),
     // so ensure identity is complete before constructing the bloc. An
     // incomplete identity (userId present but actorId missing) usually means
@@ -3934,7 +3998,11 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       }
 
       return _LoadResult.success(
-        PriorityBloc(priority: priority, everything: everything),
+        PriorityBloc(
+          priority: priority,
+          nowBloc: nowBloc,
+          everything: everything,
+        ),
       );
     } catch (e, stackTrace) {
       // Level 1 failed - log and try fallback
@@ -3965,7 +4033,11 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
         }
 
         return _LoadResult.success(
-          PriorityBloc(priority: defaultPriority, everything: everything),
+          PriorityBloc(
+            priority: defaultPriority,
+            nowBloc: nowBloc,
+            everything: everything,
+          ),
           isFallback: true,
         );
       } catch (fallbackError, fallbackStack) {
