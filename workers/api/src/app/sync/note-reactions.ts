@@ -225,9 +225,10 @@ async function fetchNoteReactionsBySeq(
       )
       AND (n.draft = FALSE OR n.created_by = tp.user_id)
       AND (
-        n.access_contacts IS NULL
-        OR n.created_by = tp.user_id
-        OR n.access_contacts && "user".user_contact_ids(tp.user_id)
+        n.created_by = tp.user_id
+        OR (n.access_contacts IS NULL AND n.access_groups IS NULL)
+        OR (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(tp.user_id))
+        OR (n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(tp.user_id))
       )
       -- The CTE guarantees at least one reaction is in the cursor window;
       -- the row's seq is MAX(all reactions) and can exceed horizon if a

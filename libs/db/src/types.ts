@@ -5910,6 +5910,7 @@ export type Database = {
       upsert_note: {
         Args: {
           p_access_contacts: string[]
+          p_access_groups: string[]
           p_actions: Json
           p_archived_at: string
           p_author_id: string

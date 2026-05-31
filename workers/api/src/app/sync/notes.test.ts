@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveAccessContactsForSend } from "./notes";
+import { resolveAccessContactsForSend, resolveAccessGroupsForSend } from "./notes";
 
 describe("resolveAccessContactsForSend", () => {
   it("returns body.access_contacts unchanged when sharing model is thread", () => {
@@ -50,5 +50,36 @@ describe("resolveAccessContactsForSend", () => {
         threadContacts: ["c1", "c2"],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("resolveAccessGroupsForSend", () => {
+  it("returns null when body has no access_groups", () => {
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: null })).toBeNull();
+  });
+
+  it("returns null when body access_groups is undefined", () => {
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: undefined })).toBeNull();
+  });
+
+  it("returns null when body access_groups is a non-array value", () => {
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: "g1" })).toBeNull();
+  });
+
+  it("returns the array when body provides access_groups", () => {
+    expect(
+      resolveAccessGroupsForSend({ bodyAccessGroups: ["g1", "g2"] }),
+    ).toEqual(["g1", "g2"]);
+  });
+
+  it("returns an explicit empty array unchanged (no group restriction)", () => {
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: [] })).toEqual([]);
+  });
+
+  it("does not apply a message-mode invariant (groups are always pass-through)", () => {
+    // Groups have no 'never-null-in-message-mode' rule; null stays null
+    // regardless of sharing model. This test documents that contract explicitly.
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: null })).toBeNull();
+    expect(resolveAccessGroupsForSend({ bodyAccessGroups: ["g1"] })).toEqual(["g1"]);
   });
 });

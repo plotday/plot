@@ -39,6 +39,15 @@ export function resolveAccessContactsForSend(args: {
   return [...threadContacts];
 }
 
+export function resolveAccessGroupsForSend(args: {
+  bodyAccessGroups: unknown;
+}): string[] | null {
+  // Groups don't have a message-mode invariant (Gmail threads typically have
+  // no Plot groups), so this is a straight pass-through with type coercion.
+  const { bodyAccessGroups } = args;
+  return Array.isArray(bodyAccessGroups) ? bodyAccessGroups : null;
+}
+
 const notes = new Hono<{ Bindings: Bindings }>();
 
 // GET /sync/notes
@@ -239,6 +248,10 @@ notes.post("/sync/notes", async (c) => {
       threadContacts: (threadWithLink?.contacts ?? []) as string[],
     });
 
+    const resolvedAccessGroups = resolveAccessGroupsForSend({
+      bodyAccessGroups: body.access_groups ?? null,
+    });
+
     return rpcUser(trx, "upsert_note", {
       user_id: c.var.user.id,
       p_id: body.id || null,
@@ -250,6 +263,9 @@ notes.post("/sync/notes", async (c) => {
       p_draft: body.draft || false,
       p_access_contacts: (resolvedAccessContacts
         ? `{${resolvedAccessContacts.join(",")}}`
+        : null) as any,
+      p_access_groups: (resolvedAccessGroups
+        ? `{${resolvedAccessGroups.join(",")}}`
         : null) as any,
       p_content: body.content || null,
       p_actions: body.actions || null,
