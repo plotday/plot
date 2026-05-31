@@ -210,6 +210,25 @@ class OklchColours {
         .withChroma(accentBackground.chroma * chromaScale)
         .toColor();
   }
+
+  /// The selection-ring colour for a given priority colour: the per-colour
+  /// tinted [accentBackground] (as in [backgroundFromTheme]) pushed to a more
+  /// visible lightness so it reads as a crisp edge around a selected tile.
+  /// Mirrors the selected-item border treatment used by the agent / activity
+  /// feed (see [ListTile]'s selected border) — same lightness, applied to each
+  /// focus's own hue.
+  Color borderFromTheme(ThemeColor? color) {
+    final c = color ?? const ThemeColor.defaultColor();
+    final isDark = _brightness == Brightness.dark;
+    final currentChroma = _themeColor.toChroma(isDark: isDark);
+    final targetChroma = c.toChroma(isDark: isDark);
+    final chromaScale = currentChroma > 0 ? targetChroma / currentChroma : 0.0;
+    return accentBackground
+        .withHue(c.toHue())
+        .withChroma(accentBackground.chroma * chromaScale)
+        .withLightness(isDark ? 0.35 : 0.85)
+        .toColor();
+  }
 }
 
 class ColourSchemeData extends Equatable {
