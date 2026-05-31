@@ -191,9 +191,22 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// route) we first switch to the Activity tab, navigating to the user's
   /// default/root priority if its stack is empty. If we're already on a
   /// priority page, the existing header just expands its search inline.
+  ///
+  /// Single-panel search runs across the Everything feed, so switch to it
+  /// up front — before any query is typed — so the results span every
+  /// thread. This method only runs from the single-panel bottom nav;
+  /// multi-panel keeps its own deferred switch (priorities.dart's
+  /// `_handleSearchTransition`), which waits for a query and restores the
+  /// prior priority when the search clears.
   void _openSearch(BuildContext context, TabsRouter tabsRouter) {
     final layoutBloc = LayoutBloc.instance;
     final onActivityTab = tabsRouter.activeIndex == _kTabActivity;
+
+    final nowBloc = context.read<NowBloc>();
+    final nowState = nowBloc.state;
+    if (nowState is NowLoaded && !nowState.everything) {
+      nowBloc.setContext(nowState.defaultPriority, everything: true);
+    }
 
     if (onActivityTab &&
         layoutBloc != null &&

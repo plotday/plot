@@ -106,6 +106,19 @@ void main() {
     Iterable<Uuid> threadIdsOf(ui.AgendaModel model) =>
         model.allThreads.map((t) => t.id);
 
+    // Frozen now = 2026-05-14 14:00 (group setUp).
+    final today = Date(2026, 5, 14);
+
+    // Gaps filed under [date]'s section. Empty days now each carry a
+    // full-day gap, so gap assertions scope to one day rather than counting
+    // every gap in the model.
+    List<ui.GapBlock> gapsOn(ui.AgendaModel model, Date date) => model.sections
+        .whereType<ui.DateSection>()
+        .where((s) => s.date == date)
+        .expand((s) => s.blocks)
+        .whereType<ui.GapBlock>()
+        .toList();
+
     test('a timed event appears as an EventBlock at its time', () {
       final p = _testPriority();
       final event = Thread(
@@ -164,8 +177,8 @@ void main() {
         context: p,
         horizonDays: 1,
       );
-      expect(model.allBlocks, isEmpty,
-          reason: 'today section is the only section and it carries no blocks');
+      expect(model.allBlocks.where((b) => b is! ui.GapBlock), isEmpty,
+          reason: 'a pinned task must not create a content block');
       expect(threadIdsOf(model), isNot(contains(pinned.id)));
     });
 
@@ -310,9 +323,9 @@ void main() {
         context: p,
         horizonDays: 1,
       );
-      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
-      // The between-events gap, plus a trailing edge gap from the evening
-      // event's end (19:00) to midnight.
+      // Today's gaps: the between-events gap, plus a trailing edge gap from
+      // the evening event's end (19:00) to midnight.
+      final gaps = gapsOn(model, today);
       expect(gaps, hasLength(2));
       final between = gaps.firstWhere(
         (g) => g.range.start == DateTime(2026, 5, 14, 14, 30),
@@ -439,9 +452,9 @@ void main() {
         context: p,
         horizonDays: 1,
       );
-      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
       // The current "Now" gap, plus a trailing edge gap from the event's
       // end (17:00) to midnight.
+      final gaps = gapsOn(model, today);
       expect(gaps, hasLength(2));
       final nowGap = gaps.firstWhere(
         (g) => g.range.start == DateTime(2026, 5, 14, 14),
@@ -471,11 +484,76 @@ void main() {
       // No leading "Now" gap is synthesized before the in-progress event;
       // the only gap is the trailing edge gap from its end (15:00) to
       // midnight.
-      final gaps = model.allBlocks.whereType<ui.GapBlock>().toList();
+      final gaps = gapsOn(model, today);
       expect(gaps, hasLength(1));
       expect(gaps.single.range.start, DateTime(2026, 5, 14, 15));
       expect(gaps.single.range.end, DateTime(2026, 5, 15));
       expect(gaps.single.isCurrent, isFalse);
+    });
+
+    test('a future empty day gets one full-day (midnight→midnight) gap', () {
+      final p = _testPriority();
+      // One event today keeps the agenda non-empty; tomorrow is empty and
+      // should surface a single full-day gap.
+      final event = Thread(
+        priority: p,
+        title: 'standup',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [event],
+        context: p,
+        horizonDays: 30,
+      );
+      final tomorrow = today.addDays(1);
+      final gaps = gapsOn(model, tomorrow);
+      expect(gaps, hasLength(1));
+      expect(gaps.single.range.start, tomorrow.toDateTime());
+      expect(gaps.single.range.end, tomorrow.addDays(1).toDateTime());
+      expect(gaps.single.threads, isEmpty);
+      expect(gaps.single.isCurrent, isFalse);
+    });
+
+    test('an empty today gets the same full-day gap, not "Now"', () {
+      final p = _testPriority();
+      // Content only on a later day, so today renders but is empty.
+      final later = Thread(
+        priority: p,
+        title: 'later',
+        at: DateTimeRange(DateTime(2026, 5, 17, 10), DateTime(2026, 5, 17, 11)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [later],
+        context: p,
+        horizonDays: 30,
+      );
+      final gaps = gapsOn(model, today);
+      expect(gaps, hasLength(1));
+      expect(gaps.single.range.start, today.toDateTime());
+      expect(gaps.single.range.end, today.addDays(1).toDateTime());
+      // "Now" is reserved for an in-progress block; an empty day has none.
+      expect(gaps.single.isCurrent, isFalse);
+    });
+
+    test('a day with a scheduled event gets no full-day empty-day gap', () {
+      final p = _testPriority();
+      final event = Thread(
+        priority: p,
+        title: 'standup',
+        at: DateTimeRange(DateTime(2026, 5, 14, 15), DateTime(2026, 5, 14, 16)),
+      );
+      final model = AgendaBuilder.build(
+        threads: [event],
+        context: p,
+        horizonDays: 1,
+      );
+      // The full-day empty-day gap spans the whole day; edge gaps never do.
+      final fullDay = gapsOn(model, today).where(
+        (g) =>
+            g.range.start == today.toDateTime() &&
+            g.range.end == today.addDays(1).toDateTime(),
+      );
+      expect(fullDay, isEmpty);
     });
   });
 }

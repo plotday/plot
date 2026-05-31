@@ -293,6 +293,25 @@ class AgendaBuilder {
         );
       }
 
+      // Empty day: nothing scheduled (mutually exclusive with the
+      // leading/between/trailing gaps, which all require an anchored row).
+      // Mark the whole day free with one full-day gap (midnight → midnight).
+      // The renderer shows just the squiggle — the midnight start omits the
+      // time label and the day-boundary touch omits the duration — with the +
+      // to schedule. Today is no exception: "Now" is reserved for a block
+      // actually in progress, which an empty day has none of.
+      if (anchored.isEmpty) {
+        blocks.add(
+          GapBlock(
+            id: 'g_empty_$sectionId',
+            priority: context,
+            range: DateTimeRange(midnight, nextMidnight),
+            threads: const [],
+            isCurrent: false,
+          ),
+        );
+      }
+
       // scheduleAt: the default time the day-header "+" pre-fills when
       // scheduling a focus block — the first hour-long opening in the day.
       final nineAm = date.toStart().add(const Duration(hours: 9));

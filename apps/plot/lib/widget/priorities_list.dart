@@ -58,11 +58,14 @@ class _PrioritiesListState extends State<PrioritiesList> {
       builder: (context, layoutState) {
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
+        // Every sidebar tile (focuses, More, Inbox, Everything) shares one
+        // default weight — regular. Focus tiles and the Inbox go bold when
+        // they have active threads; see PriorityWidget / _FixedFocusTile.
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
                     : context.theme.typography.md)
-                .copyWith(fontWeight: FontWeight.w500);
+                .copyWith(fontWeight: FontWeight.w400);
         // In the left panel the list floats on the tinted frame with
         // horizontal insets — round the hover/selection highlights so they
         // read as discrete pills. Single-panel mode goes edge-to-edge, so
@@ -156,6 +159,8 @@ class _PrioritiesListState extends State<PrioritiesList> {
                 command: ChangeCurrentPriority(widget.root),
                 menuCommand: ShowPriorityCommands(widget.root),
                 hasUnread: widget.root.unread,
+                // Bold when the Inbox has active threads, like a focus tile.
+                active: widget.root.active,
                 borderRadius: itemBorderRadius,
                 textStyle: itemStyle,
                 monochrome: monochrome,
@@ -170,8 +175,9 @@ class _PrioritiesListState extends State<PrioritiesList> {
                 command: ChangeCurrentPriority(widget.root, everything: true),
                 menuCommand: null,
                 // Everything is the unscoped feed — it never carries its own
-                // unread indicator.
+                // unread indicator and never goes bold.
                 hasUnread: false,
+                active: false,
                 borderRadius: itemBorderRadius,
                 textStyle: itemStyle,
                 monochrome: monochrome,
@@ -257,6 +263,10 @@ class _FixedFocusTile extends StatefulWidget {
   /// Optional hover/long-press menu. Null for the synthetic Everything view.
   final Command? menuCommand;
   final bool hasUnread;
+
+  /// When true, render the title bold — matching the focus tiles' active-
+  /// threads treatment. Everything always passes false.
+  final bool active;
   final BorderRadius? borderRadius;
   final TextStyle textStyle;
   final bool monochrome;
@@ -268,6 +278,7 @@ class _FixedFocusTile extends StatefulWidget {
     required this.command,
     required this.menuCommand,
     required this.hasUnread,
+    required this.active,
     required this.borderRadius,
     required this.textStyle,
     required this.monochrome,
@@ -286,17 +297,15 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
     // Inbox and Everything are fixed, semantic tiles — both render in the
     // Resolution brand colour (index 7) regardless of the root's own colour.
     const tileColor = ThemeColor.defaultColor();
-    final accent = context.colour.colours.fromTheme(
-      tileColor,
-      muted: !widget.monochrome && !widget.hasUnread,
-    );
+    final restingColor = context.colour.muted;
+    // Muted at rest, like the focus tiles; the Resolution colour shows when
+    // the tile is bold (active threads — Inbox only) or on hover/selection.
+    final labelColor = widget.monochrome && !isActive && !widget.active
+        ? restingColor
+        : context.colour.colours.fromTheme(tileColor);
     final accentBg = widget.monochrome
         ? context.colour.colours.backgroundFromTheme(tileColor)
         : null;
-    final restingColor = context.colour.muted;
-    final indicatorColor = widget.monochrome && !isActive
-        ? restingColor
-        : context.colour.colours.fromTheme(tileColor);
 
     final menuCommand = widget.menuCommand;
 
@@ -322,12 +331,14 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
           padding: const EdgeInsets.only(left: 20, right: 12),
           child: SizedBox.square(
             dimension: iconSize,
-            child: Icon(widget.icon, size: iconSize, color: indicatorColor),
+            // Icon shares the title's colour so the two always match.
+            child: Icon(widget.icon, size: iconSize, color: labelColor),
           ),
         );
       },
       // Title in the accent colour, with the unread dot trailing it (kept
-      // outside the Flexible so it survives title truncation).
+      // outside the Flexible so it survives title truncation). Bold when the
+      // tile has active threads (Inbox only — Everything never bolds).
       body: Row(
         children: [
           Flexible(
@@ -335,7 +346,13 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
               widget.title,
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
-              style: widget.textStyle.copyWith(color: accent, height: 1),
+              style: widget.textStyle.copyWith(
+                color: labelColor,
+                height: 1,
+                fontWeight: widget.active
+                    ? FontWeight.w600
+                    : FontWeight.w400,
+              ),
             ),
           ),
           if (widget.hasUnread)

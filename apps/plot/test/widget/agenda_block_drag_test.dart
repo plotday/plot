@@ -86,6 +86,56 @@ void main() {
     });
   });
 
+  group(
+      'computeBlockDragActivation — single-direction stability (no '
+      'oscillation)', () {
+    test(
+        'downward drag holds the active slot when its live top Y lags '
+        'mid-animation — pointerDirection prevents the ping-pong flip back '
+        'to the slot above',
+        () {
+      // Source B0 already collapsed; just after a downward swap activated
+      // s3 its live top Y still lags at 220 (the just-collapsed s2 above it
+      // has not finished shrinking) though its settled band is [180, 220].
+      // s0/s1 are B0's filtered flanks.
+      final slots = <_Slot>[
+        _slot(key: 's0', y: 100, prev: null, next: 'B0'),
+        _slot(key: 's1', y: 100, prev: 'B0', next: 'B1'),
+        _slot(key: 's2', y: 140, prev: 'B1', next: 'B2'),
+        _slot(key: 's3', y: 220, prev: 'B2', next: null),
+      ];
+
+      // The controller supplies the pointer's travel direction (+1 = down).
+      // Cursor at 190 sits in s3's settled band but below its lagging live
+      // top — the fix must HOLD s3, not flip back up to s2.
+      final fixed = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'B0',
+        pointerY: 190,
+        activeSlotKey: 's3',
+        activeSlotExpansion: 40,
+        sourceAtRestTopY: 100,
+        pointerDirection: 1,
+      );
+      expect(fixed.key, 's3',
+          reason: 'downward drag holds s3 despite the mid-animation lag');
+
+      // Without a direction (legacy geometry path) the lagging live top
+      // flips it back to s2 — the oscillation the controller now avoids.
+      final legacy = computeBlockDragActivation(
+        slots: slots,
+        draggingId: 'B0',
+        pointerY: 190,
+        activeSlotKey: 's3',
+        activeSlotExpansion: 40,
+        sourceAtRestTopY: 100,
+      );
+      expect(legacy.key, 's2',
+          reason: 'documents the geometry-only fallback the controller no '
+              'longer uses');
+    });
+  });
+
   group('computeBlockDragActivation — direction-aware drag-up rule', () {
     test(
         'drag-up (cursor above source\'s at-rest top): cursor in block X '

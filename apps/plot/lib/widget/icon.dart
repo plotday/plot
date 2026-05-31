@@ -11,8 +11,7 @@ class PlotIcon {
   static const addActivity = FontAwesomeIcons.arrowUp;
   static const pipe = FontAwesomeIcons.pipe;
   static const schedule = FontAwesomeIcons.calendar;
-  static const add = FontAwesomeIcons.plusLarge;
-  static const plus = FontAwesomeIcons.plus;
+  static const add = FontAwesomeIcons.plus;
   static const addNote = FontAwesomeIcons.penToSquare;
   static const edit = FontAwesomeIcons.pen;
   static const remove = FontAwesomeIcons.minus;
@@ -35,37 +34,41 @@ class PlotIcon {
   /// so renaming a glyph never changes stored data. Resolve with [focusIcon].
   static const Map<String, IconData> focusIcons = {
     'bullseyePointer': FontAwesomeIcons.bullseyePointer,
-    'briefcase': FontAwesomeIcons.briefcase,
+    'user': FontAwesomeIcons.user,
     'userGroup': FontAwesomeIcons.userGroup,
+    'userMagnifyingGlass': FontAwesomeIcons.userMagnifyingGlass,
+    'family': FontAwesomeIcons.family,
+    'briefcase': FontAwesomeIcons.briefcase,
     'bookOpen': FontAwesomeIcons.bookOpen,
-    'userPlus': FontAwesomeIcons.userPlus,
-    'gear': FontAwesomeIcons.gear,
+    'listCheck': FontAwesomeIcons.listCheck,
     'piggyBank': FontAwesomeIcons.piggyBank,
     'house': FontAwesomeIcons.house,
-    'user': FontAwesomeIcons.user,
     'code': FontAwesomeIcons.code,
+    'conveyorBelt': FontAwesomeIcons.conveyorBelt,
+    'receipt': FontAwesomeIcons.receipt,
+    'bullhorn': FontAwesomeIcons.bullhorn,
+    'handshake': FontAwesomeIcons.handshake,
+    'scaleBalanced': FontAwesomeIcons.scaleBalanced,
     'rocket': FontAwesomeIcons.rocket,
+    'chartLine': FontAwesomeIcons.chartLine,
+    'building': FontAwesomeIcons.building,
+    'calendarDays': FontAwesomeIcons.calendarDays,
+    'lightbulb': FontAwesomeIcons.lightbulb,
+    'heart': FontAwesomeIcons.heart,
     'flask': FontAwesomeIcons.flask,
     'paintbrush': FontAwesomeIcons.paintbrush,
     'penNib': FontAwesomeIcons.penNib,
-    'chartLine': FontAwesomeIcons.chartLine,
-    'calendarDays': FontAwesomeIcons.calendarDays,
-    'listCheck': FontAwesomeIcons.listCheck,
-    'lightbulb': FontAwesomeIcons.lightbulb,
-    'heart': FontAwesomeIcons.heart,
     'dumbbell': FontAwesomeIcons.dumbbell,
     'graduationCap': FontAwesomeIcons.graduationCap,
-    'plane': FontAwesomeIcons.plane,
     'cartShopping': FontAwesomeIcons.cartShopping,
-    'handshake': FontAwesomeIcons.handshake,
-    'scaleBalanced': FontAwesomeIcons.scaleBalanced,
-    'building': FontAwesomeIcons.building,
-    'bullhorn': FontAwesomeIcons.bullhorn,
     'seedling': FontAwesomeIcons.seedling,
+    'balloons': FontAwesomeIcons.balloons,
     'music': FontAwesomeIcons.music,
-    'camera': FontAwesomeIcons.camera,
+    'microphoneStand': FontAwesomeIcons.microphoneStand,
+    'bowlHot': FontAwesomeIcons.bowlHot,
+    'plane': FontAwesomeIcons.plane,
+    'mountain': FontAwesomeIcons.mountain,
     'globe': FontAwesomeIcons.globe,
-    'shield': FontAwesomeIcons.shield,
   };
 
   /// Resolves a stored focus icon key to its glyph, falling back to the
@@ -78,13 +81,16 @@ class PlotIcon {
   /// rather than "Open book", "Team" rather than "Users group") so they read
   /// as focus categories in the picker rather than literal glyph names.
   static const Map<String, String> focusIconLabels = {
+    'receipt': 'Admin',
+    'balloons': 'Event',
     'bullseyePointer': 'Goal',
     'briefcase': 'Work',
     'userGroup': 'Team',
     'bookOpen': 'Reading',
-    'userPlus': 'Hiring',
-    'gear': 'Operations',
-    'piggyBank': 'Savings',
+    'userMagnifyingGlass': 'Hiring',
+    'family': 'Family',
+    'conveyorBelt': 'Operations',
+    'piggyBank': 'Finances',
     'house': 'Home',
     'user': 'Personal',
     'code': 'Engineering',
@@ -107,9 +113,10 @@ class PlotIcon {
     'bullhorn': 'Marketing',
     'seedling': 'Growth',
     'music': 'Music',
-    'camera': 'Photography',
+    'microphoneStand': 'Recording',
+    'bowlHot': 'Food',
+    'mountain': 'Challenge',
     'globe': 'World',
-    'shield': 'Security',
   };
 
   /// The display label for a focus icon [key], falling back to a humanised

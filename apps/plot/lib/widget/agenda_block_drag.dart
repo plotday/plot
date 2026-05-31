@@ -407,6 +407,13 @@ class BlockDragActivation {
 ///
 /// [activeSlotKey]/[activeSlotExpansion] describe the currently-active
 /// slot at call time. Pass `null` and `0` for a fresh activation.
+///
+/// [pointerDirection] is the pointer's travel direction (+1 down, -1 up,
+/// 0 = derive from geometry). The live controller always supplies it;
+/// once a slot is active it becomes the drag-direction reference,
+/// replacing the active slot's live top Y — that Y lags its settled
+/// position during the slot animation, so using it ping-pongs the
+/// placeholder between two slots during a single-direction drag.
 @visibleForTesting
 BlockDragActivation computeBlockDragActivation({
   required List<({Object key, double y, BlockDropTarget target})> slots,
@@ -415,6 +422,7 @@ BlockDragActivation computeBlockDragActivation({
   Object? activeSlotKey,
   double activeSlotExpansion = 0,
   double? sourceAtRestTopY,
+  int pointerDirection = 0,
 }) {
   if (slots.isEmpty) return BlockDragActivation.none;
   final ordered = [
@@ -636,17 +644,29 @@ BlockDragActivation computeBlockDragActivation({
   // for cursor-over-source's-immediate-neighbor cases; this
   // fallback covers degenerate edges (unknown direction with a
   // filtered preferred slot).
-  double? referenceTopY;
-  if (activeSlotKey != null) {
-    for (final s in ordered) {
-      if (s.key == activeSlotKey) {
-        referenceTopY = s.y;
-        break;
+  // Drag-direction reference. Once a slot is active the live controller
+  // supplies the pointer's travel direction ([pointerDirection]); using
+  // the active slot's live top Y instead lags its settled position during
+  // the slot animation and ping-pongs the placeholder (see the function
+  // doc). The geometry fallback (no direction supplied — unit tests, or
+  // no slot active yet) tracks the active slot's live top, else source's
+  // stable at-rest top.
+  final bool isDragUp;
+  if (activeSlotKey != null && pointerDirection != 0) {
+    isDragUp = pointerDirection < 0;
+  } else {
+    double? referenceTopY;
+    if (activeSlotKey != null) {
+      for (final s in ordered) {
+        if (s.key == activeSlotKey) {
+          referenceTopY = s.y;
+          break;
+        }
       }
     }
+    referenceTopY ??= sourceAtRestTopY;
+    isDragUp = referenceTopY != null && pointerY < referenceTopY;
   }
-  referenceTopY ??= sourceAtRestTopY;
-  final isDragUp = referenceTopY != null && pointerY < referenceTopY;
   final preferred = isDragUp ? kAbove : kAfter;
   final fallback = isDragUp ? kAfter : kAbove;
   if (!isFiltered(preferred.target)) {
@@ -732,6 +752,23 @@ class BlockDragController extends ChangeNotifier {
   BlockDropTarget? _activeTarget;
   BlockDropDispatcher? _dispatcher;
   BlockDragPreviewBuilder? _previewBuilder;
+
+  /// Minimum pointer reversal (logical px) before [_dragDirSign] flips, so
+  /// jitter during the slot animation doesn't toggle the drag direction.
+  static const double _kDirFlipThreshold = 6;
+
+  /// Pointer travel direction during the current drag (+1 down, -1 up),
+  /// used as the drag-direction reference once a slot is active. Read from
+  /// pointer motion rather than the active slot's live top Y — that Y lags
+  /// its settled position during the 150 ms slot expand/collapse animation
+  /// and would flip the detected direction mid-animation, ping-ponging the
+  /// placeholder between two slots while the user drags one way.
+  int _dragDirSign = 1;
+
+  /// Most extreme pointer Y reached in the current [_dragDirSign]
+  /// direction; the direction only flips after the pointer reverses past
+  /// [_kDirFlipThreshold] from it.
+  double? _dirExtremeY;
 
   /// Drives slot-height transitions via a single coordinated animation
   /// instead of per-[BlockDropZone] [AnimatedContainer]s. Critical for
@@ -906,6 +943,8 @@ class BlockDragController extends ChangeNotifier {
     if (_draggingBlockId == payload.blockId) return;
     _draggingBlockId = payload.blockId;
     _draggingPayload = payload;
+    _dragDirSign = 1;
+    _dirExtremeY = null;
 
     // Confirm the long-press lift on touch with a medium impact —
     // matches the iOS standard for reorderable lists. Desktop drags
@@ -1017,9 +1056,35 @@ class BlockDragController extends ChangeNotifier {
     _sourceTotalHeight = sourceHeaderHeight;
   }
 
+  /// Update [_dragDirSign] from the latest pointer Y, with hysteresis so
+  /// jitter doesn't toggle the direction. See [_dragDirSign].
+  void _updateDragDirection(double y) {
+    final extreme = _dirExtremeY;
+    if (extreme == null) {
+      _dirExtremeY = y;
+      return;
+    }
+    if (_dragDirSign >= 0) {
+      if (y > extreme) {
+        _dirExtremeY = y;
+      } else if (extreme - y > _kDirFlipThreshold) {
+        _dragDirSign = -1;
+        _dirExtremeY = y;
+      }
+    } else {
+      if (y < extreme) {
+        _dirExtremeY = y;
+      } else if (y - extreme > _kDirFlipThreshold) {
+        _dragDirSign = 1;
+        _dirExtremeY = y;
+      }
+    }
+  }
+
   void updatePointer(Offset global) {
     _pointerPosition = global;
     if (isDragging) {
+      _updateDragDirection(global.dy);
       _recomputeActiveSlot();
     } else {
       notifyListeners();
@@ -1037,6 +1102,8 @@ class BlockDragController extends ChangeNotifier {
     _draggingBlockId = null;
     _draggingPayload = null;
     _pointerPosition = null;
+    _dragDirSign = 1;
+    _dirExtremeY = null;
     // Snap slot heights to 0 immediately on drag end. `_setActive(null,
     // null)` would animate them, but that leaves an in-flight 150ms
     // close animation racing the user's next drag — and reading from
@@ -1096,6 +1163,7 @@ class BlockDragController extends ChangeNotifier {
       activeSlotKey: _activeSlotKey,
       activeSlotExpansion: _sourceTotalHeight ?? 0,
       sourceAtRestTopY: _sourceAtRestTopY,
+      pointerDirection: _dragDirSign,
     );
 
     _setActive(result.key, result.target);

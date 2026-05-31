@@ -757,7 +757,7 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
             child: AnimatedOpacity(
               opacity: showPlus ? 1 : 0,
               duration: const Duration(milliseconds: 120),
-              child: Icon(PlotIcon.plus, size: fontSize, color: veryMuted),
+              child: Icon(PlotIcon.add, size: fontSize, color: veryMuted),
             ),
           ),
         ],

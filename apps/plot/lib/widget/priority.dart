@@ -128,25 +128,32 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     final priorityAccent = buildContext.colour.colours.fromTheme(
       priority.displayColor,
     );
-    // Resting color matches the `muted: true` color used by ListTile for the
-    // sibling connection / account tiles, so the whole left-panel frame reads
-    // as a single tone at rest. The title's fontWeight (w500) keeps it more
-    // prominent than the same-color subtitle.
-    final restingColor = buildContext.colour.muted;
+    // At rest a focus shows a muted version of its own colour (not a flat
+    // monochrome tone), so the colour is always legible and edits to it are
+    // visible without hovering. Hover / selection promotes it to the full
+    // accent. The title's fontWeight (w500) keeps it prominent.
+    final restingColor = buildContext.colour.colours.fromTheme(
+      priority.displayColor,
+      muted: true,
+    );
 
-    // In monochrome mode, the resting text color is a single monochrome tone
-    // and the priority's own color only shows on hover or when selected. The
+    // In monochrome mode, the resting text color is the muted focus colour and
+    // the priority's own (full) color only shows on hover or when selected. The
     // hover background matches the selected background so the two states
     // look identical.
     final effectiveTextStyle = widget.monochrome && !isActive
         ? widget.textStyle?.copyWith(color: restingColor)
         : widget.textStyle;
-    // The leading focus icon and the trailing unread dot follow the title's
-    // monochrome-at-rest treatment: a muted tone at rest on the left-panel
-    // frame, the focus colour on hover or when selected.
-    final accentColor = widget.monochrome && !isActive
+    // A focus is "bold" when it has active threads (or for search's
+    // ancestry-leaf emphasis). Bold tiles are never muted — their colour
+    // shows at rest, just like on hover/selection.
+    final bool bold = priority.active || widget.boldLeaf;
+    // The leading focus icon and the title share one colour so they always
+    // match: a muted tone at rest on the left-panel frame, the focus colour
+    // when bold, hovered, or selected.
+    final labelColor = widget.monochrome && !isActive && !bold
         ? restingColor
-        : (widget.textStyle?.color ?? priorityAccent);
+        : priorityAccent;
 
     final navigationCommand = !isContext
         ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
@@ -196,7 +203,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         );
       },
       title: null,
-      body: _buildLabel(buildContext, isActive, restingColor),
+      body: _buildLabel(buildContext, isActive, restingColor, labelColor, bold),
       selected: widget.selected,
       selectedBorder: widget.selectedBorder,
       selectedColor: priorityAccentBg,
@@ -224,7 +231,7 @@ class _PriorityWidgetState extends State<PriorityWidget> {
             child: Icon(
               PlotIcon.focusIcon(priority.icon),
               size: iconSize,
-              color: accentColor,
+              color: labelColor,
             ),
           ),
         );
@@ -276,16 +283,19 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     BuildContext buildContext,
     bool isActive,
     Color restingColor,
+    Color labelColor,
+    bool bold,
   ) {
     final priority = widget.priority;
     // Focuses are flat — the list row renders its own leading icon, so the
-    // label is just the (already-flattened) title in the focus colour.
+    // label is just the (already-flattened) title in the focus colour, kept
+    // the same colour as the leading icon. Bold (active) when [bold].
     final Widget label = FocusLabel(
       priority: priority,
       fontSize: widget.textStyle?.fontSize,
       height: 1,
-      color: widget.monochrome && !isActive ? restingColor : null,
-      boldLeaf: widget.boldLeaf,
+      color: labelColor,
+      fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
       showIcon: false,
     );
 
@@ -398,7 +408,10 @@ class FocusLabel extends StatelessWidget {
     this.color,
     this.showIcon = true,
     this.boldLeaf = false,
+    this.fontWeight,
     this.onLeafTap,
+    this.titleOverride,
+    this.iconOverride,
     super.key,
   });
 
@@ -408,12 +421,26 @@ class FocusLabel extends StatelessWidget {
   final bool muted;
   final Color? color;
 
+  /// Renders this text instead of `priority.title`. Lets fixed semantic views
+  /// (the Inbox / Everything feeds) reuse this label with their own wording.
+  final String? titleOverride;
+
+  /// Renders this glyph instead of the priority's chosen icon. Pair with
+  /// [titleOverride] (and usually [color]) for the Inbox / Everything labels,
+  /// which the sidebar draws with the inbox / inboxes glyphs in the brand
+  /// colour rather than the root focus's own icon and colour.
+  final IconData? iconOverride;
+
   /// Whether to render the focus icon before the title. Off in contexts that
   /// already show the icon separately (e.g. a list row with its own leading).
   final bool showIcon;
 
   /// When true, render the title at semibold.
   final bool boldLeaf;
+
+  /// Explicit title weight. Overrides [boldLeaf] when set; callers that want a
+  /// uniform default weight (e.g. the sidebar list) pass this directly.
+  final FontWeight? fontWeight;
 
   /// Tap handler for the title hit area.
   final VoidCallback? onLeafTap;
@@ -428,20 +455,24 @@ class FocusLabel extends StatelessWidget {
         color ?? context.colour.colours.fromTheme(p.displayColor, muted: muted);
 
     final title = Text(
-      p.title,
+      titleOverride ?? p.title,
       overflow: TextOverflow.ellipsis,
       maxLines: 1,
       style: TextStyle(
         color: accent,
         fontSize: resolvedFontSize,
         height: height,
-        fontWeight: boldLeaf ? FontWeight.w600 : null,
+        fontWeight: fontWeight ?? (boldLeaf ? FontWeight.w600 : null),
       ),
     );
 
     final children = <Widget>[
       if (showIcon) ...[
-        Icon(PlotIcon.focusIcon(p.icon), size: resolvedFontSize, color: accent),
+        Icon(
+          iconOverride ?? PlotIcon.focusIcon(p.icon),
+          size: resolvedFontSize,
+          color: accent,
+        ),
         const SizedBox(width: 6),
       ],
       Flexible(child: title),

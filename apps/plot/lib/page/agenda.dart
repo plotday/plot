@@ -489,6 +489,15 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
           selected: selected,
         );
 
+        // A full-day empty-day gap (id `g_empty_*`) spans a whole empty day.
+        // Unlike a between-block gap, the dropped block does NOT replace it:
+        // after the drop the day rebuilds into a leading gap → block →
+        // trailing gap, so the squiggle stays as the gap that will sit
+        // before the dropped event. Keep it visible (don't collapse) — only
+        // the in-gap drop zone below it opens the placeholder.
+        final isFullDayEmptyGap =
+            current.parentBlockId?.startsWith('g_empty_') ?? false;
+
         // Dropping a block into an empty gap replaces the gap row rather
         // than inserting a new row. Collapse the gap's own row while the
         // drop lands in it, so the dragged block's preview grows into the
@@ -498,9 +507,11 @@ class _AgendaListState extends State<AgendaList> with TickerProviderStateMixin {
         // where the gap was). [BlockSlotCollapse] keys off the gap's block
         // id (not a single slot) so it merges consistently regardless of
         // which of the two coincident drop slots at the gap's lower edge
-        // wins activation. See [BlockSlotCollapse].
+        // wins activation. See [BlockSlotCollapse]. Full-day empty-day gaps
+        // are excluded — they persist as the leading gap before the drop.
         if (beforeBoundary != null &&
             isEmptyGapHeader &&
+            !isFullDayEmptyGap &&
             current.parentBlockId != null) {
           tile = BlockSlotCollapse(
             blockId: current.parentBlockId!,

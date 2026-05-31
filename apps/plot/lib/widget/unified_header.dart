@@ -22,6 +22,7 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority.dart';
@@ -313,7 +314,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   notifier,
                 );
               case HeaderVariant.sidebar:
-                return _buildSidebarHeader(context, layoutState);
+                return _buildSidebarHeader(context, layoutState, state);
               case HeaderVariant.main:
                 return _buildMainHeader(context, layoutState, state, notifier);
             }
@@ -333,6 +334,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     List<Widget> titleChildren, {
     List<Widget> suffixes = const <Widget>[],
     BoxDecoration? decoration,
+    EdgeInsets contentPadding = const EdgeInsets.symmetric(horizontal: 12),
   }) {
     Widget header = ClipRect(
       key: _headerKey,
@@ -349,9 +351,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               // overflows the FLabel column by exactly 4px. Zero out
               // vertical padding so the title row gets the full header
               // band; horizontal page padding is preserved.
-              padding: EdgeInsetsGeometryDelta.value(
-                const EdgeInsets.symmetric(horizontal: 12),
-              ),
+              padding: EdgeInsetsGeometryDelta.value(contentPadding),
             ),
             title: Row(spacing: 8, children: titleChildren),
             suffixes: suffixes,
@@ -481,16 +481,33 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   // ---------------------------------------------------------------------------
   // Multi-panel sidebar header (left column).
 
-  Widget _buildSidebarHeader(BuildContext context, LayoutState layoutState) {
+  Widget _buildSidebarHeader(
+    BuildContext context,
+    LayoutState layoutState,
+    PriorityState state,
+  ) {
     final resolvedToolbarPadding = Window.toolbarPadding.resolve(
       TextDirection.ltr,
     );
-    return _wrapHeader(context, layoutState, <Widget>[
-      if (resolvedToolbarPadding.left != 0)
-        SizedBox(width: resolvedToolbarPadding.left),
-      const Expanded(child: SizedBox.shrink()),
-      Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
-    ]);
+    return _wrapHeader(
+      context,
+      layoutState,
+      <Widget>[
+        if (resolvedToolbarPadding.left != 0)
+          SizedBox(width: resolvedToolbarPadding.left),
+        // The timer pill (or, when no timer is running, the start-timer
+        // button) lives at the start of the sidebar header while the
+        // sidebar is open. It collapses to nothing when nothing is
+        // trackable for the context priority.
+        if (!state.context.isTwistDev)
+          _PriorityHeaderTrackingControl(priority: state.context),
+        const Expanded(child: SizedBox.shrink()),
+        Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
+      ],
+      // Drop the trailing page padding so the collapse button sits flush
+      // against the panel gutter on the right.
+      contentPadding: const EdgeInsets.only(left: 12),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -521,7 +538,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     final Widget titleSection = _searchExpanded
         ? _buildSearchField(context, layoutState, state, notifier)
-        : _buildTitleSection(context, layoutState, state, alignLeft: true);
+        : _buildTitleSection(
+            context,
+            layoutState,
+            state,
+            alignLeft: true,
+            // The sidebar already shows the selected focus highlighted, so
+            // repeating its name here is redundant — drop the priority title
+            // whenever the left panel is visible. The tracking control also
+            // relocates to the sidebar header in that case.
+            showPriority: !layoutState.leftPanelVisible,
+            showTracking: !layoutState.leftPanelVisible,
+          );
 
     final List<Widget> trailing = <Widget>[
       if (!state.context.isTwistDev) Button.icon(NewThread()),
@@ -568,6 +596,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     LayoutState layoutState,
     PriorityState state, {
     required bool alignLeft,
+    bool showPriority = true,
+    bool showTracking = true,
   }) {
     final alignment = alignLeft ? Alignment.centerLeft : Alignment.center;
 
@@ -585,7 +615,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           Flexible(child: _tightTextBox(child: title)),
           SizedBox(width: layoutState.multiPanel ? 4 : 8),
           if (layoutState.multiPanel) _searchButton(),
-          _PriorityHeaderTrackingControl(priority: state.context),
+          // When the sidebar is open the tracking control moves to the
+          // start of the sidebar header instead.
+          if (showTracking)
+            _PriorityHeaderTrackingControl(priority: state.context),
         ],
       );
     }
@@ -619,6 +652,32 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                     fontWeight: FontWeight.w600,
                     color: context.theme.colors.foreground,
                   ),
+                ),
+              );
+            }
+            // Sidebar visible: keep the tracking pill / search controls but
+            // drop the priority name itself (shown in the sidebar already).
+            if (!showPriority) {
+              return withTrackingPill(const SizedBox.shrink());
+            }
+            // Inbox (the root focus) and the synthetic Everything feed are
+            // fixed semantic views. The sidebar draws both with the inbox /
+            // inboxes glyph in the Resolution brand colour rather than the
+            // root focus's own icon and colour — match that here instead of
+            // letting FocusLabel fall back to the root's appearance.
+            if (state.everything || state.context.root) {
+              final accent = context.colour.colours.fromTheme(
+                const ThemeColor.defaultColor(),
+              );
+              return withTrackingPill(
+                FocusLabel(
+                  priority: state.context,
+                  boldLeaf: true,
+                  color: accent,
+                  iconOverride: state.everything
+                      ? PlotIcon.inboxes
+                      : PlotIcon.inbox,
+                  titleOverride: state.everything ? 'Everything' : 'Inbox',
                 ),
               );
             }

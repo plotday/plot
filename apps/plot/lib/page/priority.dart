@@ -1088,14 +1088,31 @@ class _PriorityPageState extends State<PriorityPage>
     // Reuse the incoming `items` reference unchanged in the common case
     // (no extras) so the boundary-cache below can hit by identity.
     final isSearching = state.search.isNotEmpty;
+    // The Everything feed spans every focus and is otherwise unsectioned, so
+    // — in multi-panel mode — it leads with a single section header (the same
+    // AgendaTile heading other feeds use for Active/Done/etc.) labelled
+    // "Everything". Only added when the feed actually has threads, so the
+    // header never floats above an empty state.
+    final everythingHeader =
+        state.everything &&
+        context.read<LayoutBloc>().state.multiPanel &&
+        items.whereType<AgendaThreadItem>().isNotEmpty;
     final List<AgendaItem> displayItems;
     if (isSearching && state.remoteSearchExtras.isNotEmpty) {
-      final merged = <AgendaItem>[...items];
+      final merged = <AgendaItem>[
+        if (everythingHeader) const AgendaHeaderItem(text: 'Everything'),
+        ...items,
+      ];
       merged.add(const AgendaHeaderItem(text: 'From the server'));
       for (final t in state.remoteSearchExtras) {
         merged.add(AgendaThreadItem(t));
       }
       displayItems = merged;
+    } else if (everythingHeader) {
+      displayItems = <AgendaItem>[
+        const AgendaHeaderItem(text: 'Everything'),
+        ...items,
+      ];
     } else {
       displayItems = items;
     }

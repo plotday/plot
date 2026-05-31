@@ -496,23 +496,20 @@ Future<FormData> _buildNewPriorityForm(
           FormTextInput(key: 'title', label: 'Focus name', required: true),
           iconSelect,
           ?teamSelect,
-          FormSelect<ThemeColor?>(
+          FormSelect<ThemeColor>(
             key: 'color',
             label: 'Color',
-            initialValue: null,
+            initialValue: const ThemeColor.defaultColor(),
             hasInitialValue: true,
-            items: (search) async => [null, ...ThemeColor.options]
+            items: (search) async => ThemeColor.options
                 .where(
                   (c) =>
                       search == null ||
-                      (c?.label.toLowerCase() ?? 'inherit').startsWith(
-                        search.toLowerCase(),
-                      ),
+                      c.label.toLowerCase().startsWith(search.toLowerCase()),
                 )
                 .toList(),
-            titleBuilder: (c) => c?.label ?? 'Inherit',
-            leadingBuilder: (c) =>
-                ColorDot(color: c ?? defaultParent.displayColor),
+            titleBuilder: (c) => c.label,
+            leadingBuilder: (c) => ColorDot(color: c),
           ),
           FormShareSelect(
             key: 'shared',
@@ -657,7 +654,8 @@ class FocusPrefill {
   /// Key into [PlotIcon.focusIcons] for the pre-selected icon.
   final String iconKey;
 
-  /// Optional pre-selected colour. Null leaves the picker on "Default".
+  /// Optional pre-selected colour. Null seeds the picker with the default
+  /// colour.
   final ThemeColor? color;
 }
 
@@ -775,22 +773,20 @@ Future<FormData> _buildFocusDetailsForm(
           ),
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
           ?teamSelect,
-          FormSelect<ThemeColor?>(
+          FormSelect<ThemeColor>(
             key: 'color',
             label: 'Color',
-            initialValue: prefill?.color,
+            initialValue: prefill?.color ?? const ThemeColor.defaultColor(),
             hasInitialValue: true,
-            items: (search) async => [null, ...ThemeColor.options]
+            items: (search) async => ThemeColor.options
                 .where(
                   (c) =>
                       search == null ||
-                      (c?.label.toLowerCase() ?? 'default').startsWith(
-                        search.toLowerCase(),
-                      ),
+                      c.label.toLowerCase().startsWith(search.toLowerCase()),
                 )
                 .toList(),
-            titleBuilder: (c) => c?.label ?? 'Default',
-            leadingBuilder: (c) => ColorDot(color: c ?? root.displayColor),
+            titleBuilder: (c) => c.label,
+            leadingBuilder: (c) => ColorDot(color: c),
           ),
           FormShareSelect(
             key: 'shared',
@@ -1113,31 +1109,22 @@ class EditPriorityCommand extends ShowForm {
                   ),
                   _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
                   ?teamSelect,
-                  FormSelect<ThemeColor?>(
+                  FormSelect<ThemeColor>(
                     key: 'color',
                     label: 'Color',
-                    initialValue: isRoot
-                        ? (p.color ?? const ThemeColor.defaultColor())
-                        : p.color,
+                    initialValue: p.color ?? const ThemeColor.defaultColor(),
                     hasInitialValue: true,
-                    items: (search) async =>
-                        (isRoot
-                                ? ThemeColor.options
-                                : [null, ...ThemeColor.options])
-                            .where(
-                              (c) =>
-                                  search == null ||
-                                  (c?.label.toLowerCase() ?? 'inherit')
-                                      .startsWith(search.toLowerCase()),
-                            )
-                            .toList(),
-                    titleBuilder: (c) => c?.label ?? 'Inherit',
-                    leadingBuilder: (c) => ColorDot(
-                      color:
-                          c ??
-                          parent?.displayColor ??
-                          const ThemeColor.defaultColor(),
-                    ),
+                    items: (search) async => ThemeColor.options
+                        .where(
+                          (c) =>
+                              search == null ||
+                              c.label.toLowerCase().startsWith(
+                                search.toLowerCase(),
+                              ),
+                        )
+                        .toList(),
+                    titleBuilder: (c) => c.label,
+                    leadingBuilder: (c) => ColorDot(color: c),
                   ),
                   if (!p.isPlot)
                     FormShareSelect(

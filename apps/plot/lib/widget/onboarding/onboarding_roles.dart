@@ -36,13 +36,13 @@ const List<FocusPrefill> kSampleFocuses = [
   FocusPrefill(
     title: 'Recruiting',
     description: 'Candidates, interviews, and your hiring pipeline.',
-    iconKey: 'userPlus',
+    iconKey: 'userMagnifyingGlass',
     color: ThemeColor(5),
   ),
   FocusPrefill(
     title: 'Admin',
     description: 'Expenses, paperwork, and operational odds and ends.',
-    iconKey: 'gear',
+    iconKey: 'receipt',
     color: ThemeColor(7),
   ),
   FocusPrefill(

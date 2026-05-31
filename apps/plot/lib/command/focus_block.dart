@@ -20,7 +20,7 @@ class OpenScheduleFocusModal extends Command {
     this.maxDuration,
   }) : super(
          title: 'Schedule focus block',
-         icon: PlotIcon.plus,
+         icon: PlotIcon.add,
          eventObject: EventObject.priority,
          eventAction: EventAction.opened,
        );
@@ -91,7 +91,8 @@ class ScheduleFocusBlock extends Command {
     }
 
     final existing = existingRow;
-    final movedSlot = existing != null &&
+    final movedSlot =
+        existing != null &&
         (existing.priorityId != priorityId ||
             !existing.effectiveAt.isAtSameMomentAs(start));
 
@@ -200,7 +201,13 @@ FormData scheduleFocusBlockForm({
       final now = Time.now();
       final remainder = now.minute % 15;
       final pad = remainder == 0 ? 0 : 15 - remainder;
-      start = DateTime(now.year, now.month, now.day, now.hour, now.minute + pad);
+      start = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        now.hour,
+        now.minute + pad,
+      );
     } else {
       start = DateTime(base.year, base.month, base.day, 9, 0);
     }
