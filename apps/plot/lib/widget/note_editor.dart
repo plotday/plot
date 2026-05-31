@@ -31,6 +31,7 @@ class NoteEditor extends StatefulWidget {
     this.onDraftChanged,
     this.showScheduleActions = true,
     this.hint,
+    this.sendLabel,
     this.additionalMentions,
     this.onSubmitted,
     this.submitValidator,
@@ -60,6 +61,11 @@ class NoteEditor extends StatefulWidget {
   /// Hint text shown in the editor when empty.
   /// Only used in new-thread mode (note mode derives hint from editing state).
   final String? hint;
+
+  /// Label for the primary Save/Send button in new-thread mode.
+  /// When null the button falls back to the [AddThread] command's default title.
+  /// Only used in new-thread mode.
+  final String? sendLabel;
 
   /// Additional actor IDs to include in the note's mentions on submit.
   /// Only used in new-thread mode.
@@ -1269,6 +1275,7 @@ class NoteEditorState extends State<NoteEditor> {
                     .firstOrNull,
               ),
             ),
+            title: widget.sendLabel,
             run: (action, context) async {
               _editorKey.currentState?.submit(false);
               return const CommandDone();
