@@ -79,6 +79,64 @@ class ThreadBloc extends Cubit<ThreadState> {
     emit(state.copyWith(thread: updated));
   }
 
+  /// Updates the draft note's per-message recipient subset and, optionally,
+  /// extends the thread's contacts / groups with newly-added members from the
+  /// recipient picker.
+  ///
+  /// - [accessContacts]: new per-note contact subset. null = thread default
+  ///   (no per-note narrowing).
+  /// - [accessGroups]: new per-note group subset. null = thread default.
+  /// - [threadContactsAdded]: contacts the picker added that weren't already
+  ///   on the thread. Will be appended to [thread.contacts].
+  /// - [threadGroupsAdded]: groups added by the picker. Will be appended to
+  ///   [thread.groups].
+  Future<void> editNoteRecipients({
+    required List<ActorId>? accessContacts,
+    required List<ActorId>? accessGroups,
+    List<ActorId> threadContactsAdded = const [],
+    List<ActorId> threadGroupsAdded = const [],
+  }) async {
+    final newDraft = state.draft.copyWith(
+      accessContacts: Value(accessContacts),
+      accessGroups: Value(accessGroups),
+    );
+
+    final contactsToAdd = threadContactsAdded.map((a) => a.value).toList();
+    final groupsToAdd = threadGroupsAdded.map((a) => a.value).toList();
+
+    final newThreadContacts = contactsToAdd.isEmpty
+        ? state.thread.contacts
+        : [
+            ...state.thread.contacts,
+            ...contactsToAdd.where((id) => !state.thread.contacts.contains(id)),
+          ];
+    final newThreadGroups = groupsToAdd.isEmpty
+        ? state.thread.groups
+        : [
+            ...state.thread.groups,
+            ...groupsToAdd.where((id) => !state.thread.groups.contains(id)),
+          ];
+
+    final threadChanged =
+        contactsToAdd.isNotEmpty || groupsToAdd.isNotEmpty;
+    final newThread = threadChanged
+        ? state.thread.copyWith(
+            contacts: Value(newThreadContacts),
+            groups: Value(newThreadGroups),
+          )
+        : state.thread;
+
+    // Persist draft (and thread if recipients changed) sequentially.
+    // Thread save first so visibility rules are in place before the note
+    // is pushed; both saves are remote-dirty and will sync independently.
+    if (threadChanged) {
+      await newThread.save();
+    }
+    await newDraft.save();
+
+    emit(state.copyWith(draft: newDraft, thread: newThread));
+  }
+
   /// Sets the note being replied to. Pass null to clear.
   /// Clears editing state when replying (mutual exclusion).
   /// When replying to a private note, auto-marks the draft as private and
