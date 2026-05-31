@@ -86,8 +86,12 @@ class NowBloc extends Cubit<NowState> {
             );
           },
         ).listen(
-          (state) {
-            emit(state);
+          (state) async {
+            final ctx = state.context;
+            final pausedFocus =
+                ctx == null ? null : await _resolvePausedFocus(ctx);
+            if (isClosed) return;
+            emit(state.copyWith(pausedFocus: pausedFocus));
             // Watcher caught up: if the emitted session matches our
             // tracked intent (or is a different session entirely),
             // drop the intent so subsequent ops read from state again.
@@ -551,6 +555,12 @@ class NowBloc extends Cubit<NowState> {
     final ctx = s.context;
     if (ctx == null) return;
 
+    // Clear the sliding paused-focus block immediately so the agenda
+    // stops showing it the instant the user presses Start. The next
+    // stream emission will recompute pausedFocus from scratch (and
+    // return null because the session will then be active, not paused).
+    emit(s.copyWith(pausedFocus: null));
+
     final now = Time.now();
     final hadOtherActive =
         s.session != null &&
@@ -768,6 +778,23 @@ class NowBloc extends Cubit<NowState> {
         return;
       }
     }
+  }
+
+  /// Resolve a [PausedFocus] descriptor for [ctx], if any. Drives the
+  /// agenda's sliding remaining-time block. Returns null when:
+  ///   - the latest explicit session for [ctx] is not paused
+  ///     (no paused-session row exists), or
+  ///   - the computed remaining ≤ 0.
+  Future<PausedFocus?> _resolvePausedFocus(Priority ctx) async {
+    final paused = await Session.latestPausedFor(ctx.id);
+    if (paused == null) return null;
+    final pomo = paused.pomodoro;
+    final pomoAt = paused.pomodoroAt;
+    if (pomo == null || pomoAt == null) return null;
+    final elapsed = paused.end.difference(pomoAt);
+    final remaining = pomo - elapsed;
+    if (remaining <= Duration.zero) return null;
+    return PausedFocus(priority: ctx, remaining: remaining);
   }
 
   /// If [ctx] has a non-archived focus block row covering `now` and no
