@@ -93,6 +93,7 @@ class NoteWidget extends StatefulWidget {
     this.reorderableIndex,
     this.showAuthor = true,
     this.searchHighlight,
+    this.initiallyExpanded = false,
     super.key,
   });
 
@@ -104,6 +105,11 @@ class NoteWidget extends StatefulWidget {
   final int? reorderableIndex;
   final bool showAuthor;
   final String? searchHighlight;
+
+  /// Whether the note's content should start fully expanded (untruncated)
+  /// instead of height-truncated with the "View all" fade. Set by ThreadPage
+  /// for a lone note or for unread notes. See `util/note_initial_view.dart`.
+  final bool initiallyExpanded;
 
   @override
   State<NoteWidget> createState() => _NoteWidgetState();
@@ -191,6 +197,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                 note: widget.note,
                 searchHighlight: widget.searchHighlight,
                 noteHovered: _hovered,
+                initiallyExpanded: widget.initiallyExpanded,
               ),
             ),
           if (noteLinks.isNotEmpty)
@@ -399,6 +406,7 @@ class _TruncatedNoteContent extends StatefulWidget {
     required this.note,
     required this.noteHovered,
     this.searchHighlight,
+    this.initiallyExpanded = false,
   });
 
   final Note note;
@@ -408,6 +416,9 @@ class _TruncatedNoteContent extends StatefulWidget {
   /// signifier only renders while this is true; otherwise it stays hidden
   /// so the inline view is uncluttered.
   final bool noteHovered;
+
+  /// Whether the note starts expanded (untruncated) on first build.
+  final bool initiallyExpanded;
 
   /// Fallback cap when no [NotePanelMetrics] ancestor is available
   /// (e.g. previews, tests). Comfortably fits a screenful of prose.
@@ -429,7 +440,13 @@ class _TruncatedNoteContent extends StatefulWidget {
 class _TruncatedNoteContentState extends State<_TruncatedNoteContent> {
   bool _overflow = false;
   bool _fadeHovered = false;
-  bool _expanded = false;
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
 
   /// Identifies the [_OverflowAwareBox] render object so [_expandInline]
   /// can read its already-measured natural height and predict the layout
