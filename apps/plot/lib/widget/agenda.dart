@@ -283,7 +283,6 @@ class AgendaTile extends StatelessWidget {
         color: context.theme.plotColors.muted,
         fontWeight: FontWeight.w700,
       );
-      final priorityBloc = context.read<PriorityBloc>();
 
       // The day number is always shown; the month falls back to its short
       // form (e.g. "Sep") when the full name would overflow the narrow
@@ -305,51 +304,54 @@ class AgendaTile extends StatelessWidget {
           : date!.format(format: 'MMM');
 
       // A subtle full-width band sets each day apart; the symmetric vertical
-      // padding keeps the label breathing inside it. The whole row is a tap
-      // target that schedules a focus block on this day, with the trailing +
-      // hidden until hover on non-touch devices.
-      return _AddHeaderRow(
-        command: OpenScheduleFocusModal(
-          date: date!,
-          defaultPriority: priorityBloc.state.context,
+      // padding keeps the label breathing inside it. The header is purely a
+      // label — scheduling a focus block happens on the gap rows below it,
+      // which always sit beneath each date header.
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.colour.sectionHeaderBackground,
         ),
-        addColor: context.theme.plotColors.veryMuted,
-        background: context.colour.sectionHeaderBackground,
-        outerPadding: EdgeInsets.symmetric(vertical: spacing.sm),
-        leading: [
-          // Gutter: "May 28" — right-aligned, column-aligned with the leading
-          // time labels on event/gap rows (right padding = the gutter→content
-          // gap so the weekday lines up with the titles beside it).
-          SizedBox(
-            width: timeColWidth,
-            child: Padding(
-              padding: EdgeInsets.only(right: agendaGutterGap(context)),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: '$monthText ', style: labelStyle),
-                      TextSpan(text: dateDay, style: dayStyle),
-                    ],
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: spacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Gutter: "May 28" — right-aligned, column-aligned with the
+              // leading time labels on event/gap rows (right padding = the
+              // gutter→content gap so the weekday lines up with the titles
+              // beside it).
+              SizedBox(
+                width: timeColWidth,
+                child: Padding(
+                  padding: EdgeInsets.only(right: agendaGutterGap(context)),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: '$monthText ', style: labelStyle),
+                          TextSpan(text: dateDay, style: dayStyle),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                ),
+              ),
+              // Weekday in the content column, aligned with the titles on
+              // other rows.
+              Expanded(
+                child: Text(
+                  dateWeekday!,
+                  style: labelStyle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
+            ],
           ),
-          // Weekday in the content column, aligned with the titles on other
-          // rows. The + button stays vertically centred at the trailing edge.
-          Expanded(
-            child: Text(
-              dateWeekday!,
-              style: labelStyle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
+        ),
       );
     }
 
@@ -558,98 +560,6 @@ class AgendaTile extends StatelessWidget {
   }
 }
 
-/// An agenda section header (a date divider or an empty-gap row) that
-/// carries a trailing `+` for scheduling a focus block. The whole row is a
-/// tap target running [command]; on non-touch devices the `+` is hidden
-/// until the row is hovered, while touch devices always show it (there is
-/// no hover to reveal it). [leading] fills the row up to the trailing `+`.
-class _AddHeaderRow extends StatefulWidget {
-  const _AddHeaderRow({
-    required this.command,
-    required this.leading,
-    required this.addColor,
-    required this.outerPadding,
-    this.background,
-  });
-
-  /// Run by both the trailing `+` button and a tap anywhere on the row.
-  final Command command;
-
-  /// Row children rendered before the trailing `+`.
-  final List<Widget> leading;
-
-  /// Colour of the trailing `+` icon.
-  final Color addColor;
-
-  /// Padding wrapping the [Row] — vertical breathing room for the header.
-  final EdgeInsetsGeometry outerPadding;
-
-  /// Optional fill painted behind the whole row (date headers use the
-  /// section-header background; empty gaps stay unfilled).
-  final Color? background;
-
-  @override
-  State<_AddHeaderRow> createState() => _AddHeaderRowState();
-}
-
-class _AddHeaderRowState extends State<_AddHeaderRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final touch = isTouchPlatform();
-    // A small right inset lands the icon at the agenda's trailing edge.
-    final addButton = Padding(
-      padding: EdgeInsets.only(right: context.theme.spacing.sm),
-      child: Button.icon(widget.command, color: widget.addColor),
-    );
-    // Non-touch: keep the `+` laid out (so the row width never shifts when
-    // it appears) and fade it in only on hover. Touch: always visible.
-    final trailing = touch
-        ? addButton
-        : AnimatedOpacity(
-            opacity: _hovered ? 1 : 0,
-            duration: const Duration(milliseconds: 120),
-            child: addButton,
-          );
-
-    Widget content = Padding(
-      padding: widget.outerPadding,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [...widget.leading, trailing],
-      ),
-    );
-
-    final bg = widget.background;
-    if (bg != null) {
-      content = DecoratedBox(
-        decoration: BoxDecoration(color: bg),
-        child: content,
-      );
-    }
-
-    Widget result = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => context.run(widget.command),
-      child: content,
-    );
-
-    if (!touch) {
-      result = MouseRegion(
-        onEnter: (_) {
-          if (!_hovered) setState(() => _hovered = true);
-        },
-        onExit: (_) {
-          if (_hovered) setState(() => _hovered = false);
-        },
-        child: result,
-      );
-    }
-    return result;
-  }
-}
-
 /// Empty-gap agenda row: a quiet time + free-time-duration line whose
 /// trailing duration is overlaid — on hover (non-touch) or always (touch)
 /// — by a + that schedules a focus block in the gap. The + is layered over
@@ -815,7 +725,11 @@ class _GapHeaderRowState extends State<_GapHeaderRow> {
         child: result,
       );
     }
-    return result;
+
+    return FTooltip(
+      tipBuilder: (context, controller) => const Text('Add focus block'),
+      child: result,
+    );
   }
 }
 
