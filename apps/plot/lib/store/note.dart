@@ -215,9 +215,14 @@ class Note extends Equatable implements Comparable<Note> {
   final bool draft;
   final List<ActorId>? accessContacts;
   final List<ActorId>? accessGroups;
-  bool get isPrivate =>
-      accessContacts != null &&
-      (accessGroups == null || accessGroups!.isEmpty);
+  bool get isPrivate {
+    final ac = accessContacts;
+    if (ac == null) return false;
+    if (ac.length != 1) return false;
+    if (ac.first != authorId) return false;
+    final ag = accessGroups;
+    return ag == null || ag.isEmpty;
+  }
   bool get isAuthorOnly =>
       accessContacts != null && accessContacts!.isEmpty &&
       (accessGroups == null || accessGroups!.isEmpty);

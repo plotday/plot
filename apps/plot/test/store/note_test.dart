@@ -49,12 +49,20 @@ void main() {
     });
 
     test(
-        'accessContacts=[self, alice], accessGroups=null → private (multi-contact restriction still private)',
+        'accessContacts=[self, alice], accessGroups=null → NOT private (custom subset, not the Private-pill state)',
         () {
-      // isPrivate means accessContacts is restricted (non-null) and no groups
-      // are included. Having multiple contacts still counts as private/restricted.
+      // isPrivate is specifically the "Private pill active" state: exactly
+      // [authorId] with no groups.  A custom subset like [self, alice] is a
+      // custom-recipients note, not a private note.
       final note = _note(accessContacts: [_selfId, _aliceId]);
-      expect(note.isPrivate, isTrue);
+      expect(note.isPrivate, isFalse);
+    });
+
+    test(
+        'accessContacts=[alice] (not self), accessGroups=null → NOT private (author not the sole contact)',
+        () {
+      final note = _note(accessContacts: [_aliceId]);
+      expect(note.isPrivate, isFalse);
     });
   });
 
