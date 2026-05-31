@@ -1042,17 +1042,21 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     final items = <AgendaItem>[...eventPrefix];
 
-    // Doing header is always emitted so it remains a drop target.
-    items.add(
-      AgendaHeaderItem(
-        text: ActivitySectionMarker.encode(ActivitySection.doing),
-      ),
-    );
-    for (final t in unreadDoing) {
-      items.add(AgendaThreadItem(t));
-    }
-    for (final t in readDoing) {
-      items.add(AgendaThreadItem(t));
+    // Doing header is emitted only when the section has threads, so an
+    // empty Active section doesn't render a floating header (e.g. when the
+    // feed contains only Done threads).
+    if (unreadDoing.isNotEmpty || readDoing.isNotEmpty) {
+      items.add(
+        AgendaHeaderItem(
+          text: ActivitySectionMarker.encode(ActivitySection.doing),
+        ),
+      );
+      for (final t in unreadDoing) {
+        items.add(AgendaThreadItem(t));
+      }
+      for (final t in readDoing) {
+        items.add(AgendaThreadItem(t));
+      }
     }
 
     // Scheduled: per-day headers.
