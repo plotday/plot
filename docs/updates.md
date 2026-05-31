@@ -1,3 +1,4 @@
+- Plain Plot threads now show the Plot logo instead of a generic note icon, so your own threads are easy to tell apart from ones that came in from a connected app (which keep their source's logo).
 - Your Inbox now reads "Inbox" everywhere you pick a focus — scheduling a focus block, moving a thread, choosing where a new thread goes — instead of occasionally showing its old internal name "Everything". It also carries the inbox icon in those pickers, matching the sidebar.
 - Opening a thread now starts you at the first unread note — opened up in full so you can read it right away — instead of always dropping you at the newest message with older unread notes scrolled past. A thread with a single note opens scrolled to the top of that note.
 - The item you're viewing now stands out more clearly with a subtle colored outline — the same treatment across the sidebar focus list, the agenda, and your thread list.

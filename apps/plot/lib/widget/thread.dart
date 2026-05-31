@@ -1256,9 +1256,9 @@ class _ThreadLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final brightness = context.colour.brightness;
 
-    // Plot threads (system priorities like @plot.app) show the Plot mark
-    // unless the thread has its own source icon (twist, connector, URL).
-    if (activity.priority.isPlot && _hasNoExplicitSource) {
+    // Plot threads show the Plot mark unless the thread has its own source
+    // icon (twist, connector, URL).
+    if (_hasNoExplicitSource) {
       return SvgPicture.asset('assets/plot-icon.svg', width: 16, height: 16);
     }
 
