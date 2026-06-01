@@ -164,6 +164,26 @@ export class Plot extends Tool implements IPlot {
    * values.
    */
   public sourceProvider: { provider?: string } | null = null;
+  /**
+   * The triggering note for the in-flight dispatch, set in `dispatch()` when
+   * a new mention routes to a note handler. Lives only for the duration of
+   * one twist worker invocation — the Plot instance is created per dispatch
+   * (see `twist/tools/factory.ts createTool`) and disposed afterward.
+   *
+   * Consumed by `validateActivityUpdateAccess` /
+   * `validateNoteCreateAccess` so that tool calls a twist makes while
+   * responding to its own @-mention (`updateThread`, `createNote`, etc.) see
+   * the mention even though the parent thread's `mentions` column is always
+   * null post-migration. Without this the approval gate would fire on the
+   * very mention-and-respond round-trip the twist is configured for —
+   * notably for PlotTwist (`twists/plot/src/index.ts`), which combines
+   * `thread.access: Full` + `requireApproval: true` + `defaultMention: true`.
+   */
+  private triggeringNote: {
+    id: string;
+    threadId: string;
+    mentions: readonly string[];
+  } | null = null;
   private _actor?: Actor;
   private _owner?: Actor;
   private _twistId?: number;
@@ -603,6 +623,15 @@ export class Plot extends Tool implements IPlot {
         this.twistInstanceId
       );
       if (isMentioned && isCreate) {
+        // Stash the triggering note so tool calls the twist makes while
+        // responding to this mention (e.g. updateThread, createNote on the
+        // same thread) see the mention. See the field doc on `triggeringNote`
+        // for why this is necessary.
+        this.triggeringNote = {
+          id: currentNote.id,
+          threadId: currentNote.thread.id,
+          mentions: currentNote.mentions ?? [],
+        };
         try {
           const result = await intentOps.handleIntent(this, currentNote);
 
@@ -1277,8 +1306,10 @@ export class Plot extends Tool implements IPlot {
           .executeTakeFirstOrThrow();
 
         created_by = activity.created_by;
-        // Thread no longer stores mentions; note-level mentions are used for twist callbacks
-        mentions = null;
+        // Thread no longer stores mentions; note-level mentions are used for
+        // twist callbacks. The in-flight triggering note (if any) supplies
+        // them — see the `triggeringNote` field doc.
+        mentions = this.mentionsFromTriggeringNote(activityId);
       } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }
@@ -1309,6 +1340,22 @@ export class Plot extends Tool implements IPlot {
     throw new Error(
       `Cannot create note on activity: twist was not mentioned and did not create the activity`
     );
+  }
+
+  /**
+   * Returns the triggering note's mentions when the in-flight dispatch is
+   * for that note's own thread; otherwise null. Used by the validators to
+   * grant Respond access for tool calls the twist makes while handling its
+   * own @-mention. See the `triggeringNote` field doc.
+   */
+  private mentionsFromTriggeringNote(activityId: string): string[] | null {
+    if (
+      this.triggeringNote !== null &&
+      this.triggeringNote.threadId === activityId
+    ) {
+      return [...this.triggeringNote.mentions];
+    }
+    return null;
   }
 
   /**
@@ -1346,8 +1393,11 @@ export class Plot extends Tool implements IPlot {
           .executeTakeFirstOrThrow();
 
         created_by = activity.created_by;
-        // Thread no longer stores mentions; note-level mentions are used for twist callbacks
+        // Thread no longer stores mentions; note-level mentions are used for
+        // twist callbacks. The in-flight triggering note (if any) supplies
+        // them via `triggering_note_mentions` below.
         mentions = null;
+        triggering_note_mentions = this.mentionsFromTriggeringNote(activityId);
       } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }
