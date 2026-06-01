@@ -131,5 +131,8 @@ CREATE OR REPLACE VIEW "user"."note_tags" (
 
 -- Force re-sync of all existing notes so clients pick up the new access_groups
 -- column. Without this bump, rows whose seq predates the migration would never
--- re-emit through /sync/notes.
-UPDATE public.note SET updated_at = now();
+-- re-emit through /sync/notes. Filter to live notes only (matches the
+-- 20260526183033 thread migration precedent) and disable statement_timeout for
+-- the bulk write; SET LOCAL reverts at the end of Atlas's migration transaction.
+SET LOCAL statement_timeout = 0;
+UPDATE public.note SET updated_at = now() WHERE archived_at IS NULL;
