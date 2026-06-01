@@ -4751,16 +4751,15 @@ SELECT
   /// qualifying links remain visible inside the thread page via the
   /// per-link assignee badge.
   static Link? resolvePrimaryAssignmentLink(List<Link> links) {
-    if (links.isEmpty) return null;
-    final primary = [...links]
+    final qualifying = links
+        .where((l) {
+          final cfg = l.getTypeConfig();
+          return cfg?.sharingModel == SharingModel.channel &&
+              cfg?.supportsAssignee == true;
+        })
+        .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final candidate = primary.first;
-    final cfg = candidate.getTypeConfig();
-    if (cfg?.sharingModel == SharingModel.channel &&
-        cfg?.supportsAssignee == true) {
-      return candidate;
-    }
-    return null;
+    return qualifying.isEmpty ? null : qualifying.first;
   }
 
   /// Per-viewer visible-contacts derivation for message-mode threads.
