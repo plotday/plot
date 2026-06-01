@@ -798,8 +798,13 @@ class NowBloc extends Cubit<NowState> {
 
   /// Resolve a [PausedFocus] descriptor for [ctx], if any. Drives the
   /// agenda's sliding remaining-time block. Returns null when:
-  ///   - the latest explicit session for [ctx] is not paused
-  ///     (no paused-session row exists), or
+  ///   - no paused-session row exists for [ctx],
+  ///   - the row's pomodoro fields are missing,
+  ///   - the original planned window (`pomodoroAt + pomodoro`) has
+  ///     already elapsed — the session is effectively over even though
+  ///     it was paused, so surfacing it as a sliding block would be a
+  ///     stale phantom (e.g. a session paused this morning that
+  ///     the user never came back to), or
   ///   - the computed remaining ≤ 0.
   Future<PausedFocus?> _resolvePausedFocus(Priority ctx) async {
     final paused = await Session.latestPausedFor(ctx.id);
@@ -807,6 +812,7 @@ class NowBloc extends Cubit<NowState> {
     final pomo = paused.pomodoro;
     final pomoAt = paused.pomodoroAt;
     if (pomo == null || pomoAt == null) return null;
+    if (!pomoAt.add(pomo).isAfter(Time.now())) return null;
     final elapsed = paused.end.difference(pomoAt);
     final remaining = pomo - elapsed;
     if (remaining <= Duration.zero) return null;
