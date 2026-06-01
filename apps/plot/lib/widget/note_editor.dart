@@ -724,6 +724,8 @@ class NoteEditorState extends State<NoteEditor> {
 
   /// Returns the avatar UUIDs for the "Reply" pill: every other thread
   /// contact (excluding self / aliases of self) followed by every group.
+  /// Returns an empty list when there's only one recipient — the "Reply"
+  /// label alone already conveys who's being replied to.
   List<String> _replyAllAvatars(Thread thread) {
     final result = <String>[];
     for (final c in thread.activeContacts) {
@@ -733,6 +735,7 @@ class NoteEditorState extends State<NoteEditor> {
     for (final g in thread.groups) {
       result.add(g.toString());
     }
+    if (result.length < 2) return const [];
     return result;
   }
 
