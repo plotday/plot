@@ -89,22 +89,26 @@ class NoteEditorTopBar extends StatelessWidget {
     return switch (state) {
       final PillRowState s => _PillRow(state: s),
       final ReplyingState s => _TakeoverBar(
-          icon: FontAwesomeIcons.reply,
-          label: 'Replying',
-          quotePreview: s.quotePreview,
-          onClear: onClearReply,
-          context: context,
-        ),
+        icon: FontAwesomeIcons.reply,
+        label: 'Replying',
+        quotePreview: s.quotePreview,
+        onClear: onClearReply,
+        context: context,
+      ),
       final EditingState s => _TakeoverBar(
-          icon: FontAwesomeIcons.penToSquare,
-          label: 'Editing',
-          quotePreview: s.quotePreview,
-          onClear: onCancelEdit,
-          context: context,
-        ),
+        icon: FontAwesomeIcons.penToSquare,
+        label: 'Editing',
+        quotePreview: s.quotePreview,
+        onClear: onCancelEdit,
+        context: context,
+      ),
     };
   }
 }
+
+// Shared height for the pill row and takeover bar so the chrome doesn't shift
+// when the state switches between them.
+const double _topBarHeight = 32;
 
 // ---------------------------------------------------------------------------
 // Pill row (PillRowState)
@@ -117,64 +121,79 @@ class _PillRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    final colors = context.theme.colors;
+    return Container(
+      height: _topBarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: colors.mutedForeground.withValues(alpha: 0.05),
+        border: Border(bottom: BorderSide(color: colors.border)),
+      ),
       child: Row(
         children: [
-          for (final pill in state.pills) _Pill(pill: pill, isActive: pill.id == state.activeId),
+          for (final pill in state.pills)
+            _Pill(pill: pill, isActive: pill.id == state.activeId),
         ],
       ),
     );
   }
 }
 
-class _Pill extends StatelessWidget {
+class _Pill extends StatefulWidget {
   final TopBarPill pill;
   final bool isActive;
 
   const _Pill({required this.pill, required this.isActive});
 
   @override
+  State<_Pill> createState() => _PillState();
+}
+
+class _PillState extends State<_Pill> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    // Use the sidebar-strength accent fill (accentBackground, exposed as
-    // primaryForeground by the project's FColors mapping) for a subtle,
-    // consistent selected-item look matching list_tile.dart.
-    final activeBackground = colors.primaryForeground;
     final activeForeground = colors.primary;
-    final inactiveForeground = colors.mutedForeground;
-
-    final backgroundColor = isActive ? activeBackground : null;
-    final foregroundColor = isActive ? activeForeground : inactiveForeground;
+    final inactiveForeground = _hovering
+        ? colors.foreground
+        : colors.mutedForeground;
+    final foregroundColor = widget.isActive
+        ? activeForeground
+        : inactiveForeground;
 
     return KeyedSubtree(
-      key: Key('pill-${pill.id}'),
-      child: GestureDetector(
-        onTap: pill.onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                pill.label,
-                style: context.theme.typography.sm.copyWith(
-                  color: foregroundColor,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+      key: Key('pill-${widget.pill.id}'),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.pill.onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.pill.label,
+                  style: context.theme.typography.sm.copyWith(
+                    color: foregroundColor,
+                    fontWeight: widget.isActive
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
                 ),
-              ),
-              if (pill.avatarSlot != null && pill.avatarSlot!.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                GestureDetector(
-                  onTap: pill.onAvatarsTap,
-                  child: _AvatarPlaceholderRow(ids: pill.avatarSlot!),
-                ),
+                if (widget.pill.avatarSlot != null &&
+                    widget.pill.avatarSlot!.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: widget.pill.onAvatarsTap,
+                    child: _AvatarPlaceholderRow(ids: widget.pill.avatarSlot!),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -200,7 +219,9 @@ class _AvatarPlaceholderRow extends StatelessWidget {
             height: 16,
             margin: const EdgeInsets.only(right: 2),
             decoration: BoxDecoration(
-              color: context.theme.colors.mutedForeground.withValues(alpha: 0.3),
+              color: context.theme.colors.mutedForeground.withValues(
+                alpha: 0.3,
+              ),
               shape: BoxShape.circle,
             ),
           ),
@@ -231,16 +252,16 @@ class _TakeoverBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext ctx) {
-    final accent = ctx.theme.colors.primary;
-    final muted = ctx.theme.colors.mutedForeground;
+    final colors = ctx.theme.colors;
+    final accent = colors.primary;
+    final muted = colors.mutedForeground;
 
     return Container(
-      padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 4),
+      height: _topBarHeight,
+      padding: const EdgeInsets.only(left: 12, right: 4),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.08),
-        border: Border(
-          bottom: BorderSide(color: accent.withValues(alpha: 0.35)),
-        ),
+        border: Border(bottom: BorderSide(color: colors.border)),
       ),
       child: Row(
         children: [

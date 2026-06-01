@@ -34,7 +34,7 @@ void main() {
       expect(find.text('Private note'), findsOneWidget);
     });
 
-    testWidgets('active pill has a background fill; inactive has none', (tester) async {
+    testWidgets('active tab label is heavier than inactive', (tester) async {
       await tester.pumpWidget(host(NoteEditorTopBar(
         state: PillRowState(
           pills: [pill('a', 'A'), pill('b', 'B')],
@@ -43,19 +43,11 @@ void main() {
         onClearReply: () {},
         onCancelEdit: () {},
       )));
-      // The pill container is keyed by 'pill-<id>'.
-      final activeContainerFinder = find.descendant(
-        of: find.byKey(const Key('pill-a')),
-        matching: find.byType(Container),
-      );
-      final inactiveContainerFinder = find.descendant(
-        of: find.byKey(const Key('pill-b')),
-        matching: find.byType(Container),
-      );
-      final active = tester.widget<Container>(activeContainerFinder.first);
-      final inactive = tester.widget<Container>(inactiveContainerFinder.first);
-      expect((active.decoration as BoxDecoration?)?.color, isNotNull);
-      expect((inactive.decoration as BoxDecoration?)?.color, isNull);
+      final active = tester.widget<Text>(find.text('A'));
+      final inactive = tester.widget<Text>(find.text('B'));
+      expect(active.style?.fontWeight, FontWeight.w600);
+      expect(inactive.style?.fontWeight, FontWeight.normal);
+      expect(active.style?.color, isNot(equals(inactive.style?.color)));
     });
 
     testWidgets('tapping a pill invokes its onTap', (tester) async {
