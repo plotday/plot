@@ -5,9 +5,9 @@ import {
   ActionType,
   type Actor,
   ActorType,
+  type Focus,
   type Note,
   type PlanOperation,
-  type Priority,
   Tag,
   type ToolBuilder,
   Twist,
@@ -15,8 +15,8 @@ import {
 } from "@plotday/twister";
 import { AI, type AISource } from "@plotday/twister/tools/ai";
 import {
+  FocusAccess,
   Plot,
-  PriorityAccess,
   ThreadAccess,
 } from "@plotday/twister/tools/plot";
 
@@ -24,9 +24,9 @@ const SYSTEM_PROMPT = `You are Plot's built-in AI assistant. You are a capable, 
 
 You have tools:
 - searchPlotData: semantically search the user's own notes, threads, and links. Use this whenever a question might be answered by the user's own content.
-- listThreads / listPriorities: browse the user's threads and priorities (projects/folders).
+- listThreads / listFocuses: browse the user's threads and focuses (projects/folders).
 - readThreadNotes: read the full conversation of a specific thread to summarize or dig deeper.
-- organizeContent: propose a plan to move, archive, rename, or create threads and priorities. The plan is shown to the user for approval — only use it when the user explicitly asks to reorganize.
+- organizeContent: propose a plan to move, archive, rename, or create threads and focuses. The plan is shown to the user for approval — only use it when the user explicitly asks to reorganize.
 - Web search is available for up-to-date, real-world information (news, weather, facts, current events). Use it when the answer depends on recent or external information.
 
 Guidelines:
@@ -49,8 +49,8 @@ class PlotTwist extends Twist<PlotTwist> {
           // assistant responds to anything (no fixed intent menu, no dead-end).
           handler: this.respond,
         },
-        priority: {
-          access: PriorityAccess.Full,
+        focus: {
+          access: FocusAccess.Full,
         },
         search: true,
         requireApproval: true,
@@ -123,7 +123,7 @@ class PlotTwist extends Twist<PlotTwist> {
             }),
             execute: async ({ query }: { query: string }) => {
               const results = await this.tools.plot.search(query, {
-                priorityId: note.thread.priority.id,
+                focusId: note.thread.focus.id,
                 limit: 8,
               });
               for (const r of results) {
@@ -132,7 +132,7 @@ class PlotTwist extends Twist<PlotTwist> {
               return results.map((r) => ({
                 kind: r.type,
                 title: r.thread.title ?? (r.type === "link" ? r.title : null),
-                priority: r.priority?.title ?? null,
+                focus: r.focus.title ?? null,
                 content: r.content ?? (r.type === "link" ? r.title : null),
                 url: r.type === "link" ? r.sourceUrl ?? null : null,
               }));
@@ -140,7 +140,7 @@ class PlotTwist extends Twist<PlotTwist> {
           },
           listThreads: {
             description:
-              "List the user's threads in the current priority (and its descendants).",
+              "List the user's threads in the current focus.",
             inputSchema: Type.Object({
               includeArchived: Type.Optional(
                 Type.Boolean({
@@ -154,7 +154,7 @@ class PlotTwist extends Twist<PlotTwist> {
               includeArchived?: boolean;
             }) => {
               const threads = await this.tools.plot.getThreads({
-                priorityId: note.thread.priority.id,
+                focusId: note.thread.focus.id,
                 includeArchived: includeArchived ?? false,
                 limit: 50,
               });
@@ -162,19 +162,17 @@ class PlotTwist extends Twist<PlotTwist> {
                 id: t.id,
                 title: t.title,
                 archived: t.archived,
-                priority: t.priority.title,
+                focus: t.focus.title,
               }));
             },
           },
-          listPriorities: {
+          listFocuses: {
             description:
-              "List the user's priorities (projects/folders), including nested ones.",
+              "List the user's focuses (projects/folders).",
             inputSchema: Type.Object({}),
             execute: async () => {
-              const priorities = await this.tools.plot.getPriorities({
-                includeDescendants: true,
-              });
-              return priorities.map((p) => ({ id: p.id, title: p.title }));
+              const focuses = await this.tools.plot.getFocuses();
+              return focuses.map((p) => ({ id: p.id, title: p.title }));
             },
           },
           readThreadNotes: {
@@ -208,7 +206,7 @@ class PlotTwist extends Twist<PlotTwist> {
           },
           organizeContent: {
             description:
-              "Propose a plan to move, archive, rename, or create threads and priorities. The plan is shown to the user for approval. Only use when the user explicitly asks to reorganize.",
+              "Propose a plan to move, archive, rename, or create threads and focuses. The plan is shown to the user for approval. Only use when the user explicitly asks to reorganize.",
             inputSchema: Type.Object({
               request: Type.String({
                 description:
@@ -332,7 +330,7 @@ class PlotTwist extends Twist<PlotTwist> {
     }
 
     const results = await this.tools.plot.search(query, {
-      priorityId: note.thread.priority.id,
+      focusId: note.thread.focus.id,
     });
 
     if (results.length === 0) {
@@ -366,33 +364,33 @@ class PlotTwist extends Twist<PlotTwist> {
    * user approval, and return a short status string for the assistant to relay.
    */
   private async buildAndPostPlan(note: Note, request: string): Promise<string> {
-    // Gather context: threads, priorities, and search results in parallel
-    const [threads, priorities, searchResults] = await Promise.all([
+    // Gather context: threads, focuses, and search results in parallel
+    const [threads, focuses, searchResults] = await Promise.all([
       this.tools.plot.getThreads({
-        priorityId: note.thread.priority.id,
+        focusId: note.thread.focus.id,
         limit: 200,
       }),
-      this.tools.plot.getPriorities({ includeDescendants: true }),
+      this.tools.plot.getFocuses(),
       this.tools.plot.search(request, {
-        priorityId: note.thread.priority.id,
+        focusId: note.thread.focus.id,
         limit: 30,
       }),
     ]);
 
     if (threads.length === 0) {
-      return "There are no threads in this priority to organize.";
+      return "There are no threads in this focus to organize.";
     }
 
     const threadsContext = threads
       .map(
         (t) =>
-          `${t.id} | ${t.title} | Priority: ${t.priority.title} (${
-            t.priority.id
+          `${t.id} | ${t.title} | Focus: ${t.focus.title} (${
+            t.focus.id
           }) | Archived: ${t.archived ? "yes" : "no"}`
       )
       .join("\n");
 
-    const prioritiesContext = priorities
+    const focusesContext = focuses
       .map((p) => `${p.id} | ${p.title}`)
       .join("\n");
 
@@ -413,7 +411,7 @@ class PlotTwist extends Twist<PlotTwist> {
             archived: Type.Optional(Type.Boolean()),
             title: Type.Optional(Type.String()),
             type: Type.Optional(Type.String()),
-            priority: Type.Optional(
+            focus: Type.Optional(
               Type.Object({ id: Type.String(), title: Type.String() })
             ),
           }),
@@ -421,8 +419,8 @@ class PlotTwist extends Twist<PlotTwist> {
         Type.Object({
           type: Type.Literal("createThread"),
           title: Type.String(),
-          priorityId: Type.String(),
-          priorityTitle: Type.String(),
+          focusId: Type.String(),
+          focusTitle: Type.String(),
         }),
         Type.Object({
           type: Type.Literal("createNote"),
@@ -431,22 +429,17 @@ class PlotTwist extends Twist<PlotTwist> {
           content: Type.String(),
         }),
         Type.Object({
-          type: Type.Literal("updatePriority"),
-          priorityId: Type.String(),
-          priorityTitle: Type.String(),
+          type: Type.Literal("updateFocus"),
+          focusId: Type.String(),
+          focusTitle: Type.String(),
           changes: Type.Object({
             title: Type.Optional(Type.String()),
             archived: Type.Optional(Type.Boolean()),
-            parent: Type.Optional(
-              Type.Object({ id: Type.String(), title: Type.String() })
-            ),
           }),
         }),
         Type.Object({
-          type: Type.Literal("_createPriority"),
+          type: Type.Literal("_createFocus"),
           title: Type.String(),
-          parentId: Type.String(),
-          parentTitle: Type.String(),
         }),
       ])
     );
@@ -458,14 +451,14 @@ class PlotTwist extends Twist<PlotTwist> {
         "You are an organizational assistant for a workspace. The user wants to reorganize their content.\n\n" +
         "Given the user's request and the available data, produce a JSON array of operations.\n\n" +
         "Available operation types:\n" +
-        "- updateThread: Change a thread's title, archived status, or move it to a different priority. Use changes.priority with {id, title} to move. Set changes.archived to true to archive.\n" +
-        "- createThread: Create a new thread in a specific priority.\n" +
+        "- updateThread: Change a thread's title, archived status, or move it to a different focus. Use changes.focus with {id, title} to move. Set changes.archived to true to archive.\n" +
+        "- createThread: Create a new thread in a specific focus.\n" +
         "- createNote: Add a note to an existing thread.\n" +
-        "- updatePriority: Rename a priority, archive it, or move it under a different parent.\n" +
-        "- _createPriority: Signal that a new priority should be created. Use this when the user asks to move threads to a priority that doesn't exist yet. Include parentId/parentTitle for where to create it.\n\n" +
+        "- updateFocus: Rename a focus or archive it.\n" +
+        "- _createFocus: Signal that a new focus should be created. Use this when the user asks to move threads to a focus that doesn't exist yet. Focuses are flat — they have no parent.\n\n" +
         "Rules:\n" +
-        "- Only reference thread IDs and priority IDs from the provided data (except for _createPriority).\n" +
-        "- Include the current title in threadTitle/priorityTitle fields for display purposes.\n" +
+        "- Only reference thread IDs and focus IDs from the provided data (except for _createFocus).\n" +
+        "- Include the current title in threadTitle/focusTitle fields for display purposes.\n" +
         "- Be conservative: only include operations that clearly match the user's request.\n" +
         "- Tag changes are not supported. If the user asks about tags, return an empty array.\n" +
         "- Only active (non-archived) threads are included in the list below. Already-archived threads cannot be targeted.\n" +
@@ -473,7 +466,7 @@ class PlotTwist extends Twist<PlotTwist> {
       prompt:
         `Request: ${request}\n\n` +
         `Threads (${threads.length}):\n${threadsContext}\n\n` +
-        `Priorities (${priorities.length}):\n${prioritiesContext}\n\n` +
+        `Focuses (${focuses.length}):\n${focusesContext}\n\n` +
         `Search results for "${request}":\n${searchContext}`,
       outputSchema: operationsSchema,
     });
@@ -484,59 +477,54 @@ class PlotTwist extends Twist<PlotTwist> {
     }
 
     const threadIds = new Set<string>(threads.map((t) => t.id));
-    const priorityIds = new Set<string>(priorities.map((p) => p.id));
+    const focusIds = new Set<string>(focuses.map((p) => p.id));
 
-    // Create signalled priorities eagerly, then map them by title.
-    const newPriorityMap = new Map<string, Priority>();
+    // Create signalled focuses eagerly, then map them by title.
+    const newFocusMap = new Map<string, Focus>();
     for (const op of aiOperations) {
-      if (op.type === "_createPriority") {
-        if (!priorityIds.has(op.parentId)) continue;
-        const created = await this.tools.plot.createPriority({
+      if (op.type === "_createFocus") {
+        const created = await this.tools.plot.createFocus({
           title: op.title,
-          parent: { id: op.parentId as Uuid },
         });
-        newPriorityMap.set(op.title.toLowerCase(), created);
-        priorityIds.add(created.id);
+        newFocusMap.set(op.title.toLowerCase(), created);
+        focusIds.add(created.id);
       }
     }
 
     const validOperations: PlanOperation[] = [];
     for (const op of aiOperations) {
-      if (op.type === "_createPriority") continue;
+      if (op.type === "_createFocus") continue;
 
       if (op.type === "updateThread") {
         if (!threadIds.has(op.threadId)) continue;
-        if (op.changes.priority) {
-          const newPriority = newPriorityMap.get(
-            op.changes.priority.title.toLowerCase()
+        if (op.changes.focus) {
+          const newFocus = newFocusMap.get(
+            op.changes.focus.title.toLowerCase()
           );
-          if (newPriority) {
-            op.changes.priority = {
-              id: newPriority.id,
-              title: newPriority.title,
+          if (newFocus) {
+            op.changes.focus = {
+              id: newFocus.id,
+              title: newFocus.title,
             };
-          } else if (!priorityIds.has(op.changes.priority.id)) {
+          } else if (!focusIds.has(op.changes.focus.id)) {
             continue;
           }
         }
         validOperations.push(op as PlanOperation);
       } else if (op.type === "createThread") {
-        const newPriority = newPriorityMap.get(op.priorityTitle.toLowerCase());
-        if (newPriority) {
-          op.priorityId = newPriority.id;
-          op.priorityTitle = newPriority.title;
-        } else if (!priorityIds.has(op.priorityId)) {
+        const newFocus = newFocusMap.get(op.focusTitle.toLowerCase());
+        if (newFocus) {
+          op.focusId = newFocus.id;
+          op.focusTitle = newFocus.title;
+        } else if (!focusIds.has(op.focusId)) {
           continue;
         }
         validOperations.push(op as PlanOperation);
       } else if (op.type === "createNote") {
         if (!threadIds.has(op.threadId)) continue;
         validOperations.push(op as PlanOperation);
-      } else if (op.type === "updatePriority") {
-        if (!priorityIds.has(op.priorityId)) continue;
-        if (op.changes.parent && !priorityIds.has(op.changes.parent.id)) {
-          continue;
-        }
+      } else if (op.type === "updateFocus") {
+        if (!focusIds.has(op.focusId)) continue;
         validOperations.push(op as PlanOperation);
       }
     }
@@ -551,24 +539,22 @@ class PlotTwist extends Twist<PlotTwist> {
       .map((op) => {
         switch (op.type) {
           case "updateThread":
-            if (op.changes.priority)
-              return `- Move **${op.threadTitle}** to **${op.changes.priority.title}**`;
+            if (op.changes.focus)
+              return `- Move **${op.threadTitle}** to **${op.changes.focus.title}**`;
             if (op.changes.archived) return `- Archive **${op.threadTitle}**`;
             if (op.changes.title)
               return `- Rename **${op.threadTitle}** to **${op.changes.title}**`;
             return `- Update **${op.threadTitle}**`;
           case "createThread":
-            return `- Create thread **${op.title}** in **${op.priorityTitle}**`;
+            return `- Create thread **${op.title}** in **${op.focusTitle}**`;
           case "createNote":
             return `- Add note to **${op.threadTitle}**`;
-          case "updatePriority":
-            if (op.changes.parent)
-              return `- Move priority **${op.priorityTitle}** under **${op.changes.parent.title}**`;
+          case "updateFocus":
             if (op.changes.archived)
-              return `- Archive priority **${op.priorityTitle}**`;
+              return `- Archive focus **${op.focusTitle}**`;
             if (op.changes.title)
-              return `- Rename priority **${op.priorityTitle}** to **${op.changes.title}**`;
-            return `- Update priority **${op.priorityTitle}**`;
+              return `- Rename focus **${op.focusTitle}** to **${op.changes.title}**`;
+            return `- Update focus **${op.focusTitle}**`;
           default:
             return `- Unknown operation`;
         }
