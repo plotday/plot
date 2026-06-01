@@ -50,6 +50,18 @@ class LinkTypeConfig {
   /// How sharing on threads of this link type is scoped. See
   /// [SharingModel]. Defaults to thread.
   final SharingModel sharingModel;
+  /// Placeholder text for the compose (new message) input field. Null falls
+  /// back to a generic default.
+  final String? composePlaceholder;
+  /// Verb shown on the compose submit button (e.g. "Send"). Null falls back
+  /// to a generic default.
+  final String? composeVerb;
+  /// Placeholder text for the reply input field. Null falls back to a generic
+  /// default.
+  final String? replyPlaceholder;
+  /// Verb shown on the reply submit button (e.g. "Send"). Null falls back to
+  /// a generic default.
+  final String? replyVerb;
 
   const LinkTypeConfig({
     required this.type,
@@ -64,6 +76,10 @@ class LinkTypeConfig {
     this.contactRoles,
     this.supportsContactChanges = false,
     this.sharingModel = SharingModel.thread,
+    this.composePlaceholder,
+    this.composeVerb,
+    this.replyPlaceholder,
+    this.replyVerb,
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -94,6 +110,14 @@ class LinkTypeConfig {
       sharingModel: SharingModel.fromJson(
         json['sharingModel'] as String? ?? json['sharing_model'] as String?,
       ),
+      composePlaceholder: json['composePlaceholder'] as String? ??
+          json['compose_placeholder'] as String?,
+      composeVerb:
+          json['composeVerb'] as String? ?? json['compose_verb'] as String?,
+      replyPlaceholder: json['replyPlaceholder'] as String? ??
+          json['reply_placeholder'] as String?,
+      replyVerb:
+          json['replyVerb'] as String? ?? json['reply_verb'] as String?,
     );
   }
 

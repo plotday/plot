@@ -458,12 +458,23 @@ class FocusLabel extends StatelessWidget {
     final p = priority;
     if (p == null) return const SizedBox.shrink();
 
+    // The per-user root focus is stored as "Everything" but is always
+    // presented to users as the branded "Inbox": the inbox glyph in the
+    // Resolution brand colour rather than the root focus's own icon and
+    // colour. Apply that here so every focus picker renders the Inbox
+    // identically without each caller special-casing it. Explicit overrides
+    // still win (e.g. the unified header's synthetic "Everything" view).
+    final isInbox = p.root;
+
     final resolvedFontSize = fontSize ?? context.theme.typography.md.fontSize;
     final accent =
-        color ?? context.colour.colours.fromTheme(p.displayColor, muted: muted);
+        color ??
+        (isInbox
+            ? context.colour.colours.fromTheme(const ThemeColor.defaultColor())
+            : context.colour.colours.fromTheme(p.displayColor, muted: muted));
 
     final title = Text(
-      titleOverride ?? p.title,
+      titleOverride ?? p.displayTitle,
       overflow: TextOverflow.ellipsis,
       maxLines: 1,
       style: TextStyle(
@@ -477,7 +488,8 @@ class FocusLabel extends StatelessWidget {
     final children = <Widget>[
       if (showIcon) ...[
         Icon(
-          iconOverride ?? PlotIcon.focusIcon(p.icon),
+          iconOverride ??
+              (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon)),
           size: resolvedFontSize,
           color: accent,
         ),
@@ -549,13 +561,10 @@ class IconLabel extends StatelessWidget {
 /// Inbox row looks identical everywhere instead of falling back to the root
 /// focus's own icon and colour.
 Widget inboxLabel(BuildContext context, Priority root, {double? fontSize}) {
-  return FocusLabel(
-    priority: root,
-    fontSize: fontSize,
-    titleOverride: 'Inbox',
-    iconOverride: PlotIcon.inbox,
-    color: context.colour.colours.fromTheme(const ThemeColor.defaultColor()),
-  );
+  // [FocusLabel] now brands the root focus as "Inbox" (glyph, wording, and
+  // brand colour) on its own, so this is a thin convenience wrapper kept for
+  // its existing callers.
+  return FocusLabel(priority: root, fontSize: fontSize);
 }
 
 /// Tracks pointer hover and rebuilds with the resolved colour.

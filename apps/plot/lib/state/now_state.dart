@@ -26,7 +26,7 @@ const Duration kPomodoroGrace = Duration(minutes: 5);
 /// Default pomodoro duration when the focused priority has no
 /// `priority_block.duration` set. Long enough to be useful, short
 /// enough that the user notices when it's wrong.
-const Duration kDefaultPomodoro = Duration(minutes: 15);
+const Duration kDefaultPomodoro = Duration(minutes: 30);
 
 /// Default pomodoro duration when the user switches to a different
 /// priority while a session is already active — short on purpose so
@@ -61,6 +61,7 @@ final class NowLoaded extends NowState {
     this.selectedBlockId,
     this.trackingPausedAt,
     this.previewPomodoro,
+    this.pausedFocus,
     this.everything = false,
   }) : now = Time.now(),
        // ignore: prefer_initializing_formals
@@ -122,6 +123,12 @@ final class NowLoaded extends NowState {
   /// persisted — purely a UI staging value before [StartTimer] writes
   /// `pomodoro`/`pomodoroAt` to the session row.
   final Duration? previewPomodoro;
+
+  /// The latest paused, explicit focus session — drives the agenda's
+  /// synthesized sliding "remaining" block. Null when no paused session
+  /// exists, when the paused session is for a priority other than
+  /// [context], or when remaining ≤ 0.
+  final PausedFocus? pausedFocus;
 
   /// When true, the user is viewing the synthetic "Everything" feed — all
   /// threads across the Inbox and every focus, unscoped. [context] stays the
@@ -234,6 +241,7 @@ final class NowLoaded extends NowState {
     // flip of [trackingPaused] should re-emit.
     trackingPaused,
     previewPomodoro,
+    pausedFocus,
     everything,
   ];
 
@@ -385,14 +393,42 @@ final class NowLoaded extends NowState {
   /// but never returns the in-flight pomodoro's own end — using that as
   /// a cap creates a feedback loop where each `+` press clamps the new
   /// duration back down to the existing remaining time.
+  ///
+  /// The cap is the minimum of:
+  ///   1. The end of the in-progress scheduled event for this priority
+  ///      (when [priority] matches [this.priority]).
+  ///   2. The start of the next scheduled event.
+  ///   3. The start of the next non-archived focus block across all
+  ///      priorities whose `effective_at` strictly follows [now].
   DateTime? pomodoroEndCap(Priority? priority) {
+    DateTime? cap;
     if (priority == this.priority) {
       final scheduledEnd = scheduled.firstOrNull?.priority == priority
           ? scheduled.firstOrNull?.at?.end
           : null;
-      if (scheduledEnd != null) return scheduledEnd;
+      if (scheduledEnd != null) cap = scheduledEnd;
     }
-    return next.firstOrNull?.at?.start;
+    final nextEventStart = next.firstOrNull?.at?.start;
+    if (nextEventStart != null &&
+        (cap == null || nextEventStart.isBefore(cap))) {
+      cap = nextEventStart;
+    }
+    // Also clamp against the start of the next non-archived focus block
+    // whose `effective_at` strictly follows `now`. A focus block on any
+    // priority still bounds this session because it'll trigger an
+    // auto-start (or distraction handoff) at its start time.
+    for (final rows in priorityBlocksByPriority.values) {
+      for (final row in rows) {
+        if (row.archivedAt != null) continue;
+        final d = row.duration;
+        if (d == null || d <= Duration.zero) continue;
+        if (!row.effectiveAt.isAfter(now)) continue;
+        if (cap == null || row.effectiveAt.isBefore(cap)) {
+          cap = row.effectiveAt;
+        }
+      }
+    }
+    return cap;
   }
 
   Duration? get elapsed =>
@@ -420,6 +456,7 @@ final class NowLoaded extends NowState {
     Object? selectedBlockId = _sentinel,
     Object? trackingPausedAt = _sentinel,
     Object? previewPomodoro = _sentinel,
+    Object? pausedFocus = _sentinel,
     bool? everything,
   }) {
     return NowLoaded(
@@ -442,9 +479,26 @@ final class NowLoaded extends NowState {
       previewPomodoro: identical(previewPomodoro, _sentinel)
           ? this.previewPomodoro
           : previewPomodoro as Duration?,
+      pausedFocus: identical(pausedFocus, _sentinel)
+          ? this.pausedFocus
+          : pausedFocus as PausedFocus?,
       everything: everything ?? this.everything,
     );
   }
+}
+
+/// A paused, explicit focus session whose remaining time should slide
+/// forward on the agenda from `now` until the user resumes or stops.
+/// Surfaced by [NowBloc] so [AgendaBuilder] can synthesize the
+/// sliding block without re-querying.
+class PausedFocus extends Equatable {
+  const PausedFocus({required this.priority, required this.remaining});
+
+  final Priority priority;
+  final Duration remaining;
+
+  @override
+  List<Object?> get props => [priority.id, remaining];
 }
 
 const Object _sentinel = Object();

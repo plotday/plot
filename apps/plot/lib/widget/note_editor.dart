@@ -7,6 +7,8 @@ import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/note_editor_top_bar.dart';
+import 'package:plot/widget/recipient_picker_modal.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/platform.dart';
@@ -31,6 +33,7 @@ class NoteEditor extends StatefulWidget {
     this.onDraftChanged,
     this.showScheduleActions = true,
     this.hint,
+    this.sendLabel,
     this.additionalMentions,
     this.onSubmitted,
     this.submitValidator,
@@ -60,6 +63,11 @@ class NoteEditor extends StatefulWidget {
   /// Hint text shown in the editor when empty.
   /// Only used in new-thread mode (note mode derives hint from editing state).
   final String? hint;
+
+  /// Label for the primary Save/Send button in new-thread mode.
+  /// When null the button falls back to the [AddThread] command's default title.
+  /// Only used in new-thread mode.
+  final String? sendLabel;
 
   /// Additional actor IDs to include in the note's mentions on submit.
   /// Only used in new-thread mode.
@@ -528,18 +536,10 @@ class NoteEditorState extends State<NoteEditor> {
       }
 
       final String hint;
-      final bool isEditing;
       if (widget.isNewThreadMode) {
         hint = widget.hint ?? 'Start a new thread';
-        isEditing = false;
       } else {
-        final activityBloc = context.read<ThreadBloc>();
-        final editingNote = activityBloc.state.editingNote;
-        isEditing = editingNote != null;
-        final cfg = activityBloc.state.primaryLinkTypeConfig;
-        hint = isEditing
-            ? composerHintForEditNote(cfg)
-            : composerHintForNote(cfg);
+        hint = _resolvePlaceholder();
       }
 
       // Contacts already on this thread are surfaced first in @-mention
@@ -597,9 +597,10 @@ class NoteEditorState extends State<NoteEditor> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Reply / editing indicators sit flush against the editor border,
-            // separated from the content below by their own bottom border.
-            if (!widget.isNewThreadMode) _buildNoteIndicators(context),
+            // Top bar: pill row (note-type chooser) or takeover bar
+            // (reply / editing chrome). Hidden in new-thread mode — the top
+            // chrome there lives in NewThreadPage.
+            if (!widget.isNewThreadMode) _buildTopBar(context),
             Flexible(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -693,129 +694,372 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
-  // -- Indicators (note mode only) --
+  // -- Top bar (note mode only) --
 
-  /// Wraps reply, editing, and twist indicators in a single builder so that
-  /// empty indicators don't contribute spacing gaps in the parent Column.
-  Widget _buildNoteIndicators(BuildContext context) {
+  /// Note-mode top region. Renders either the pill row (note-type chooser)
+  /// or the loud takeover chrome for reply / editing flows. State + draft
+  /// drive which pills are shown and which one is active; the placeholder
+  /// and Send-button label derive from the same active pill.
+  Widget _buildTopBar(BuildContext context) {
     return BlocBuilder<ThreadBloc, ThreadState>(
       buildWhen: (prev, curr) =>
           prev.replyTo != curr.replyTo ||
-          prev.editingNote != curr.editingNote,
+          prev.editingNote != curr.editingNote ||
+          prev.draft != curr.draft ||
+          prev.thread != curr.thread ||
+          prev.links != curr.links,
       builder: (context, state) {
-        final indicators = <Widget>[
-          if (state.replyTo != null)
-            _buildReplyIndicatorContent(context, state.replyTo!),
-          if (state.editingNote != null)
-            _buildEditingIndicatorContent(context, state.editingNote!),
-        ];
-        if (indicators.isEmpty) return const SizedBox.shrink();
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: indicators,
+        final threadBloc = context.read<ThreadBloc>();
+        return NoteEditorTopBar(
+          state: _computeTopBarState(state),
+          onClearReply: () => threadBloc.setReplyTo(null),
+          onCancelEdit: () => threadBloc.setEditingNote(null),
         );
       },
     );
   }
 
-  Widget _buildIndicatorBar(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String preview,
-    required Widget cancelButton,
-  }) {
-    final accent = context.colour.accent;
-    return Container(
-      padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 4),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
-        border: Border(
-          bottom: BorderSide(color: accent.withValues(alpha: 0.35)),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: accent),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: context.theme.typography.xs.copyWith(
-              color: accent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (preview.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                preview,
-                style: context.theme.typography.xs.copyWith(
-                  color: context.colour.muted,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ] else
-            const Spacer(),
-          cancelButton,
-        ],
-      ),
+  /// Single-line preview of a quoted note's content, capped at 60 chars.
+  String _previewOf(String? content) {
+    if (content == null || content.isEmpty) return '';
+    final firstLine = content.split('\n').first;
+    return firstLine.length > 60
+        ? '${firstLine.substring(0, 60)}...'
+        : firstLine;
+  }
+
+  TopBarState _computeTopBarState(ThreadState s) {
+    final replyTo = s.replyTo;
+    if (replyTo != null) {
+      return ReplyingState(quotePreview: _previewOf(replyTo.content));
+    }
+    final editingNote = s.editingNote;
+    if (editingNote != null) {
+      return EditingState(quotePreview: _previewOf(editingNote.content));
+    }
+    return PillRowState(
+      pills: _buildPills(s),
+      activeId: _activePillId(s),
     );
   }
 
-  Widget _buildReplyIndicatorContent(BuildContext context, Note replyTo) {
-    final raw = replyTo.content ?? '';
-    final firstLine = raw.split('\n').first;
-    final preview = firstLine.length > 60
-        ? '${firstLine.substring(0, 60)}...'
-        : firstLine;
-    final threadBloc = context.read<ThreadBloc>();
-    return _buildIndicatorBar(
-      context,
-      icon: FontAwesomeIcons.reply,
-      label: 'Replying',
-      preview: preview,
-      cancelButton: GestureDetector(
-        onTap: () => threadBloc.setReplyTo(null),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Icon(
-            FontAwesomeIcons.xmark,
-            size: 12,
-            color: context.colour.muted,
-          ),
-        ),
-      ),
+  /// Whether any of the user's linked actors matches the candidate. Threads
+  /// can list contacts under any of the user's email aliases, so canonical
+  /// identity is used for matching against [Base.actorId].
+  bool _isSelfContact(Uuid contactId) {
+    final selfIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    return selfIds.contains(contactId);
+  }
+
+  /// Returns the avatar UUIDs for the "Reply" pill: every other thread
+  /// contact (excluding self / aliases of self) followed by every group.
+  List<String> _replyAllAvatars(Thread thread) {
+    final result = <String>[];
+    for (final c in thread.activeContacts) {
+      if (_isSelfContact(c)) continue;
+      result.add(c.toString());
+    }
+    for (final g in thread.groups) {
+      result.add(g.toString());
+    }
+    return result;
+  }
+
+  /// Returns the original-thread author when the "Reply to original" pill
+  /// should be visible: original author isn't the current user AND the
+  /// thread has 2+ other people. Returns the author UUID (a contact UUID)
+  /// or null when the pill should not appear.
+  Uuid? _originalAuthorIfDistinct(ThreadState s) {
+    final firstNote = s.notes.isNotEmpty ? s.notes.first : null;
+    if (firstNote == null) return null;
+    final authorUuid = firstNote.authorId.toUuid();
+    if (_isSelfContact(authorUuid)) return null;
+    final otherCount = s.thread.activeContacts
+        .where((c) => !_isSelfContact(c))
+        .length;
+    if (otherCount < 2) return null;
+    return authorUuid;
+  }
+
+  /// Display name for a contact UUID. Falls back to "them" when the cache
+  /// can't resolve it.
+  String _displayName(Uuid contactId) {
+    final actor = Actor.fromCache(ActorId.fromUuid(contactId));
+    if (actor == null) return 'them';
+    return actor.nameOrEmail;
+  }
+
+  /// Resolves the active pill id for the current state. The same value
+  /// drives placeholder and Send-button copy.
+  String _activePillId(ThreadState s) {
+    final draft = widget.draft;
+    if (draft.isPrivate) return 'private';
+    if (draft.isAssignedTo(Base.actorId)) return 'task';
+    final cfg = s.primaryLinkTypeConfig;
+    final isPlotThread = cfg == null;
+    final hasSharing =
+        s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
+        s.thread.groups.isNotEmpty;
+    if (isPlotThread) return hasSharing ? 'reply' : 'note';
+    switch (cfg.sharingModel) {
+      case SharingModel.message:
+        return 'reply';
+      case SharingModel.channel:
+      case SharingModel.thread:
+        return 'comment';
+    }
+  }
+
+  List<TopBarPill> _buildPills(ThreadState s) {
+    final pills = <TopBarPill>[];
+    final cfg = s.primaryLinkTypeConfig;
+    final isPlotThread = cfg == null;
+    final hasSharing =
+        s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
+        s.thread.groups.isNotEmpty;
+
+    if (isPlotThread) {
+      if (!hasSharing) {
+        // Unshared Plot thread: just Note / Task.
+        pills.add(TopBarPill(
+          id: 'note',
+          label: 'Note',
+          onTap: _activatePlotNote,
+        ));
+        pills.add(TopBarPill(
+          id: 'task',
+          label: 'Task',
+          onTap: _activatePlotTask,
+        ));
+        return pills;
+      }
+
+      // Shared Plot thread.
+      pills.add(TopBarPill(
+        id: 'reply',
+        label: 'Reply',
+        avatarSlot: _replyAllAvatars(s.thread),
+        onTap: _activatePlotReply,
+        onAvatarsTap: _openRecipientPicker,
+      ));
+      final orig = _originalAuthorIfDistinct(s);
+      if (orig != null) {
+        pills.add(TopBarPill(
+          id: 'replyOriginal',
+          label: 'Reply to ${_displayName(orig)}',
+          avatarSlot: [orig.toString()],
+          onTap: () => _activateReplyToOriginal(orig),
+        ));
+      }
+      pills.add(TopBarPill(
+        id: 'task',
+        label: 'Task',
+        onTap: _activatePlotTask,
+      ));
+      pills.add(TopBarPill(
+        id: 'private',
+        label: 'Private note',
+        onTap: _activatePrivate,
+      ));
+      return pills;
+    }
+
+    // Connector-backed thread.
+    final noteLabel = cfg.noteLabel ?? 'Note';
+    switch (cfg.sharingModel) {
+      case SharingModel.message:
+        pills.add(TopBarPill(
+          id: 'reply',
+          label: cfg.noteLabel ?? 'Reply',
+          avatarSlot: _replyAllAvatars(s.thread),
+          onTap: _activateConnectorReply,
+          onAvatarsTap: _openRecipientPicker,
+        ));
+        final orig = _originalAuthorIfDistinct(s);
+        if (orig != null) {
+          pills.add(TopBarPill(
+            id: 'replyOriginal',
+            label: 'Reply to ${_displayName(orig)}',
+            avatarSlot: [orig.toString()],
+            onTap: () => _activateReplyToOriginal(orig),
+          ));
+        }
+        pills.add(TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ));
+        return pills;
+      case SharingModel.channel:
+      case SharingModel.thread:
+        pills.add(TopBarPill(
+          id: 'comment',
+          label: noteLabel,
+          onTap: _activateConnectorReply,
+        ));
+        pills.add(TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ));
+        return pills;
+    }
+  }
+
+  // -- Pill activation handlers --
+
+  /// Returns the canonical "thread default" draft: not assigned to the
+  /// current user (Task off) and accessContacts/accessGroups cleared so
+  /// the audience is the whole thread.
+  Note _draftAsThreadDefault() {
+    var draft = widget.draft;
+    if (draft.isAssignedTo(Base.actorId)) {
+      draft = draft.toggleTag(Tag.todo, Base.actorId);
+    }
+    draft = draft.copyWith(
+      accessContacts: const Value(null),
+      accessGroups: const Value(null),
+    );
+    return draft;
+  }
+
+  void _activatePlotNote() {
+    final draft = _draftAsThreadDefault();
+    context.read<ThreadBloc>().updateDraft(draft);
+  }
+
+  void _activatePlotTask() {
+    // Toggle on Tag.todo for the current user. Clear access constraints so
+    // the task is visible to the whole thread (matches the previous
+    // ToggleSelfTask UX in the bottom bar).
+    var draft = widget.draft;
+    if (!draft.isAssignedTo(Base.actorId)) {
+      draft = draft.toggleTag(Tag.todo, Base.actorId);
+    }
+    draft = draft.copyWith(
+      accessContacts: const Value(null),
+      accessGroups: const Value(null),
+    );
+    context.read<ThreadBloc>().updateDraft(draft);
+  }
+
+  void _activatePlotReply() {
+    context.read<ThreadBloc>().updateDraft(_draftAsThreadDefault());
+  }
+
+  void _activateConnectorReply() {
+    context.read<ThreadBloc>().updateDraft(_draftAsThreadDefault());
+  }
+
+  void _activateReplyToOriginal(Uuid originalAuthor) {
+    context.read<ThreadBloc>().setDraftRecipients(
+      accessContacts: [Base.actorId, ActorId.fromUuid(originalAuthor)],
+      accessGroups: const [],
     );
   }
 
-  Widget _buildEditingIndicatorContent(BuildContext context, Note editingNote) {
-    final raw = editingNote.content ?? '';
-    final firstLine = raw.split('\n').first;
-    final preview = firstLine.length > 60
-        ? '${firstLine.substring(0, 60)}...'
-        : firstLine;
-    final activityBloc = context.read<ThreadBloc>();
-    return _buildIndicatorBar(
-      context,
-      icon: FontAwesomeIcons.penToSquare,
-      label: 'Editing',
-      preview: preview,
-      cancelButton: Button.icon(
-        CommandWrapper(
-          EditNote(editingNote, activityBloc: activityBloc),
-          title: 'Cancel editing',
-          icon: Value(FontAwesomeIcons.xmark),
-          run: (action, ctx) async {
-            activityBloc.setEditingNote(null);
-            return const CommandDone();
-          },
-        ),
-      ),
+  void _activatePrivate() {
+    context.read<ThreadBloc>().setDraftRecipients(
+      accessContacts: [Base.actorId],
+      accessGroups: const [],
     );
+  }
+
+  Future<void> _openRecipientPicker() async {
+    final bloc = context.read<ThreadBloc>();
+    final s = bloc.state;
+    final draft = widget.draft;
+    final self = Base.actorId;
+    final orig = _originalAuthorIfDistinct(s);
+
+    final picker = RecipientPickerModal(
+      threadContacts: s.thread.activeContacts
+          .map((c) => c.toString())
+          .toList(),
+      threadGroups: s.thread.groups.map((g) => g.toString()).toList(),
+      initialContactSelection:
+          (draft.accessContacts?.map((a) => a.toUuid().toString()).toList()) ??
+              s.thread.activeContacts.map((c) => c.toString()).toList(),
+      initialGroupSelection:
+          (draft.accessGroups?.map((a) => a.toUuid().toString()).toList()) ??
+              s.thread.groups.map((g) => g.toString()).toList(),
+      self: self.toString(),
+      originalAuthor: orig?.toString(),
+    );
+
+    final result = await picker.run(context);
+    if (result == null) return;
+    if (!mounted) return;
+    await bloc.editNoteRecipients(
+      accessContacts: result.accessContacts
+          ?.map(ActorId.fromString)
+          .toList(),
+      accessGroups: result.accessGroups
+          ?.map(ActorId.fromString)
+          .toList(),
+      threadContactsAdded:
+          result.threadContactsAdded.map(ActorId.fromString).toList(),
+      threadGroupsAdded:
+          result.threadGroupsAdded.map(ActorId.fromString).toList(),
+    );
+  }
+
+  // -- Placeholder + Send label --
+
+  /// Computes the editor placeholder from the active pill / takeover state.
+  /// Falls back to the existing connector-aware helpers when the active
+  /// pill doesn't have a dedicated string.
+  String _resolvePlaceholder() {
+    final s = context.read<ThreadBloc>().state;
+    final cfg = s.primaryLinkTypeConfig;
+    if (s.editingNote != null) return composerHintForEditNote(cfg);
+    if (s.replyTo != null) return composerHintForNote(cfg);
+    final pillId = _activePillId(s);
+    switch (pillId) {
+      case 'note':
+        return 'Add a note';
+      case 'task':
+        return 'Add a task';
+      case 'reply':
+        if (cfg == null) return 'Reply';
+        return cfg.replyPlaceholder?.isNotEmpty == true
+            ? cfg.replyPlaceholder!
+            : composerHintForNote(cfg);
+      case 'replyOriginal':
+        return 'Reply';
+      case 'comment':
+        return composerHintForNote(cfg);
+      case 'private':
+        return 'Add a private note';
+      default:
+        return composerHintForNote(cfg);
+    }
+  }
+
+  /// Note-mode Send button label. New-thread mode is unaffected — that
+  /// path already uses [NoteEditor.sendLabel] in [_buildNewThreadBottomBar].
+  String _sendLabelForState(ThreadState s) {
+    if (widget.sendLabel != null) return widget.sendLabel!;
+    final cfg = s.primaryLinkTypeConfig;
+    final pillId = _activePillId(s);
+    switch (pillId) {
+      case 'note':
+        return 'Save';
+      case 'task':
+        return 'Save task';
+      case 'reply':
+        return cfg == null ? 'Send' : composerVerbForNote(cfg);
+      case 'replyOriginal':
+        return 'Send';
+      case 'comment':
+        return composerVerbForNote(cfg);
+      case 'private':
+        return 'Save';
+      default:
+        return 'Send';
+    }
   }
 
   // -- Attachment rows (both modes) --
@@ -1096,13 +1340,6 @@ class NoteEditorState extends State<NoteEditor> {
                 opacity: _saving ? 0.6 : 1.0,
                 child: Row(
                   children: [
-                    if (!isCurrentlyEditing) ...[
-                      // Task toggle
-                      Button.icon(
-                        ToggleSelfTask(widget.draft),
-                        selected: widget.draft.isAssignedTo(Base.actorId),
-                      ),
-                    ],
                     // Link button
                     Button.icon(
                       AddLink(
@@ -1127,20 +1364,6 @@ class NoteEditorState extends State<NoteEditor> {
                         ),
                       ),
                     if (!isCurrentlyEditing) ...[
-                      // Private toggle (only for threads with other contacts).
-                      // A private note is kept among the selected people and
-                      // is not sent to the thread's connector.
-                      if (threadState.thread.contacts.length > 1 &&
-                          (!widget.draft.isPrivate ||
-                              widget.draft.authorId.isCurrentUser))
-                        Button.icon(
-                          ToggleNoteTag(
-                            widget.draft,
-                            Tag.private,
-                            Base.actorId,
-                          ),
-                          selected: widget.draft.isPrivate,
-                        ),
                       // Twist button (only when thread has twists)
                       if (threadState.threadTwists.isNotEmpty)
                         _buildTwistButton(context),
@@ -1150,7 +1373,9 @@ class NoteEditorState extends State<NoteEditor> {
               ),
             ),
             const Spacer(),
-            // Right side: Save button (always visible)
+            // Right side: Save button (always visible). Label adapts to the
+            // active top-bar pill — Save, Save task, Send, or a connector
+            // verb like "Comment" / "Reply" from the LinkTypeConfig.
             Button.icon(
               isCurrentlyEditing
                   ? CommandWrapper(
@@ -1170,6 +1395,7 @@ class NoteEditorState extends State<NoteEditor> {
                         Future.value(widget.draft),
                         linkType: threadState.primaryLinkTypeConfig,
                       ),
+                      title: _sendLabelForState(activityState),
                       run: (action, context) async {
                         _editorKey.currentState?.submit(false);
                         return const CommandDone();
@@ -1269,6 +1495,7 @@ class NoteEditorState extends State<NoteEditor> {
                     .firstOrNull,
               ),
             ),
+            title: widget.sendLabel,
             run: (action, context) async {
               _editorKey.currentState?.submit(false);
               return const CommandDone();

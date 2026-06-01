@@ -9,9 +9,27 @@ import 'package:plot/store/store.dart'
 /// Slack, "Reply" for Gmail) so the app's note/thread surfaces feel native to
 /// the linked system.
 
+/// Placeholder for the NewThreadPage body editor when the target is a Plot
+/// thread (no connector). Driven by the (task, shared) flags.
+///
+/// - !task && !shared → "Add a note"
+/// - task             → "Add a task"
+/// - !task && shared  → "Start a chat"
+String composerHintForNewThreadPlot({required bool task, required bool shared}) {
+  if (task) return 'Add a task';
+  if (shared) return 'Start a chat';
+  return 'Add a note';
+}
+
 String composerHintForNote(LinkTypeConfig? cfg) {
-  final note = cfg?.noteLabel;
-  return note != null ? 'Add a ${note.toLowerCase()}' : 'Add a note';
+  if (cfg?.replyPlaceholder != null && cfg!.replyPlaceholder!.isNotEmpty) {
+    return cfg.replyPlaceholder!;
+  }
+  final noteLabel = cfg?.noteLabel?.toLowerCase();
+  if (noteLabel != null && noteLabel.isNotEmpty) {
+    return 'Add a $noteLabel';
+  }
+  return 'Add a note';
 }
 
 String composerHintForEditNote(LinkTypeConfig? cfg) {
@@ -19,9 +37,26 @@ String composerHintForEditNote(LinkTypeConfig? cfg) {
   return note != null ? 'Edit ${note.toLowerCase()}' : 'Edit note';
 }
 
-String composerHintForNewThread(LinkTypeConfig? cfg) {
+String composerHintForNewThread(LinkTypeConfig? cfg, {String? connectorName}) {
   if (cfg == null) return 'Start a thread';
-  return 'Create a new ${cfg.label.toLowerCase()}';
+  if (cfg.composePlaceholder != null && cfg.composePlaceholder!.isNotEmpty) {
+    return cfg.composePlaceholder!;
+  }
+  final label = cfg.label.toLowerCase();
+  if (connectorName != null && connectorName.isNotEmpty) {
+    return 'Create a new $connectorName $label';
+  }
+  return 'Create a new $label';
+}
+
+/// Send-button label on NewThreadPage when targeting a connector.
+String composerVerbForNewThread(LinkTypeConfig? cfg) {
+  return (cfg?.composeVerb?.isNotEmpty ?? false) ? cfg!.composeVerb! : 'Create';
+}
+
+/// Send-button label in the in-thread editor.
+String composerVerbForNote(LinkTypeConfig? cfg) {
+  return (cfg?.replyVerb?.isNotEmpty ?? false) ? cfg!.replyVerb! : 'Send';
 }
 
 String commandTitleAddNote(LinkTypeConfig? cfg) {

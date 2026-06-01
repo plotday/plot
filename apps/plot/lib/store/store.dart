@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 349;
+  int get schemaVersion => 350;
 
   @override
   MigrationStrategy get migration {
@@ -3765,6 +3765,14 @@ class Store extends _$Store {
       // rebuilds the table keeping only the columns Drift still knows about,
       // so the dropped columns disappear.
       await m.alterTable(TableMigration(threads));
+    }
+
+    if (from < 350) {
+      // Use _safeAddColumn so test harnesses that open the store at the
+      // current schema and roll back user_version don't trip a duplicate-
+      // column error (same rationale as the `_safeAddColumn` call above for
+      // priorities.icon).
+      await _safeAddColumn(m, notes, notes.accessGroups);
     }
   }
 

@@ -8,6 +8,7 @@ class Notes extends Table
   BlobColumn get threadId => blob().map(const UuidConverter())();
   BlobColumn get authorId => blob().map(const ActorIdConverter())();
   TextColumn get accessContacts => text().nullable().map(const ActorIdListConverter())();
+  TextColumn get accessGroups => text().nullable().map(const ActorIdListConverter())();
 
   TextColumn get content => text().nullable()();
   DateTimeColumn get sourceCreatedAt =>
@@ -102,6 +103,7 @@ class Note extends Equatable implements Comparable<Note> {
     required ActorId authorId,
     required bool draft,
     List<ActorId>? accessContacts,
+    List<ActorId>? accessGroups,
     String? content,
     List<UserAction>? actions,
     List<ActorId>? mentions,
@@ -124,6 +126,7 @@ class Note extends Equatable implements Comparable<Note> {
       authorId: authorId,
       draft: draft,
       accessContacts: accessContacts,
+      accessGroups: accessGroups,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
@@ -141,6 +144,7 @@ class Note extends Equatable implements Comparable<Note> {
   Note.draft({required this.threadId})
     : draft = true,
       accessContacts = null,
+      accessGroups = null,
       id = NoteId.generate(),
       authorId = Base.actorId,
       content = null,
@@ -161,6 +165,7 @@ class Note extends Equatable implements Comparable<Note> {
     required this.authorId,
     required this.draft,
     this.accessContacts,
+    this.accessGroups,
     this.content,
     this.actions,
     this.mentions,
@@ -189,6 +194,7 @@ class Note extends Equatable implements Comparable<Note> {
       authorId: noteRow.authorId,
       draft: noteRow.draft,
       accessContacts: noteRow.accessContacts,
+      accessGroups: noteRow.accessGroups,
       content: noteRow.content,
       sourceCreatedAt: noteRow.sourceCreatedAt,
       actions: noteRow.actions,
@@ -208,8 +214,18 @@ class Note extends Equatable implements Comparable<Note> {
   final ActorId authorId;
   final bool draft;
   final List<ActorId>? accessContacts;
-  bool get isPrivate => accessContacts != null;
-  bool get isAuthorOnly => accessContacts != null && accessContacts!.isEmpty;
+  final List<ActorId>? accessGroups;
+  bool get isPrivate {
+    final ac = accessContacts;
+    if (ac == null) return false;
+    if (ac.length != 1) return false;
+    if (ac.first != authorId) return false;
+    final ag = accessGroups;
+    return ag == null || ag.isEmpty;
+  }
+  bool get isAuthorOnly =>
+      accessContacts != null && accessContacts!.isEmpty &&
+      (accessGroups == null || accessGroups!.isEmpty);
 
   /// Whether this note's effective contacts (author + accessContacts) exactly
   /// match the thread's contacts — meaning everyone on the thread can see it,
@@ -620,6 +636,7 @@ class Note extends Equatable implements Comparable<Note> {
       authorId: authorId,
       draft: draft,
       accessContacts: accessContacts,
+      accessGroups: accessGroups,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
@@ -953,7 +970,10 @@ class Note extends Equatable implements Comparable<Note> {
     // empty array hides the note from everyone unless created_by matches
     // the viewer's user_id (not true for twist-created notes like emails).
     if (tag == Tag.private) {
-      return copyWith(accessContacts: Value(value ? [actorId] : null));
+      return copyWith(
+        accessContacts: Value(value ? [actorId] : null),
+        accessGroups: Value(value ? <ActorId>[] : null),
+      );
     }
 
     // Resolve the target to its canonical (primary) actor id and treat
@@ -1068,6 +1088,7 @@ class Note extends Equatable implements Comparable<Note> {
     ThreadId? threadId,
     bool? draft,
     Value<List<ActorId>?> accessContacts = const Value.absent(),
+    Value<List<ActorId>?> accessGroups = const Value.absent(),
     String? content,
     List<UserAction>? actions,
     List<ActorId>? mentions,
@@ -1142,6 +1163,7 @@ class Note extends Equatable implements Comparable<Note> {
         authorId: authorId,
         draft: draft ?? this.draft,
         accessContacts: accessContacts.present ? accessContacts.value : this.accessContacts,
+        accessGroups: accessGroups.present ? accessGroups.value : this.accessGroups,
         content: content ?? this.content,
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         actions: actions ?? this.actions,
@@ -1163,6 +1185,7 @@ class Note extends Equatable implements Comparable<Note> {
     authorId,
     draft,
     accessContacts,
+    accessGroups,
     content,
     actions,
     mentions,

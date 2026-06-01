@@ -22,6 +22,7 @@ SELECT
     n.thread_id,
     n.draft,
     n.access_contacts,
+    n.access_groups,
     n.content,
     n.actions,
     n.mentions,
@@ -39,9 +40,12 @@ FROM
 WHERE
     -- Note-level filtering
     (n.draft = FALSE OR n.created_by = tp.user_id)
-    AND (n.access_contacts IS NULL
-        OR n.created_by = tp.user_id
-        OR n.access_contacts && "user".user_contact_ids(tp.user_id))
+    AND (
+        n.created_by = tp.user_id
+        OR (n.access_contacts IS NULL AND n.access_groups IS NULL)
+        OR (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(tp.user_id))
+        OR (n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(tp.user_id))
+    )
     -- Thread-level filtering
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
     AND (
@@ -73,6 +77,7 @@ SELECT
     n.thread_id,
     n.draft,
     CAST(NULL AS uuid[]) AS access_contacts,
+    CAST(NULL AS uuid[]) AS access_groups,
     NULL::text AS content,
     NULL::jsonb AS actions,
     CAST(NULL AS uuid[]) AS mentions,
@@ -95,9 +100,12 @@ WHERE
         OR a.groups && "user".user_group_ids(tp.user_id)
     )
     -- Hidden by note-level access restriction
-    AND (n.access_contacts IS NOT NULL
-        AND n.created_by != tp.user_id
-        AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)))
+    AND n.created_by != tp.user_id
+    AND (n.access_contacts IS NOT NULL OR n.access_groups IS NOT NULL)
+    AND NOT (
+        (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(tp.user_id))
+        OR (n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(tp.user_id))
+    )
     -- Exclude users who are in this thread's dropped_contacts — they should
     -- not see redacted stubs for messages they never had access to. Without
     -- this filter, dropped users (still in thread.contacts for visibility)
@@ -147,7 +155,10 @@ FROM
         HAVING COUNT(*) > 0) nt ON TRUE
 WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
-    AND (n.access_contacts IS NULL
-        OR n.created_by = ua.user_id
-        OR n.access_contacts && "user".user_contact_ids(ua.user_id));
+    AND (
+        n.created_by = ua.user_id
+        OR (n.access_contacts IS NULL AND n.access_groups IS NULL)
+        OR (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(ua.user_id))
+        OR (n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(ua.user_id))
+    );
 

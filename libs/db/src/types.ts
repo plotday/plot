@@ -957,6 +957,7 @@ export type Database = {
       note: {
         Row: {
           access_contacts: string[] | null
+          access_groups: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string
@@ -982,6 +983,7 @@ export type Database = {
         }
         Insert: {
           access_contacts?: string[] | null
+          access_groups?: string[] | null
           actions?: Json | null
           archived_at?: string | null
           author_id: string
@@ -1007,6 +1009,7 @@ export type Database = {
         }
         Update: {
           access_contacts?: string[] | null
+          access_groups?: string[] | null
           actions?: Json | null
           archived_at?: string | null
           author_id?: string
@@ -4946,6 +4949,7 @@ export type Database = {
       note: {
         Row: {
           access_contacts: string[] | null
+          access_groups: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -5068,6 +5072,7 @@ export type Database = {
       note_redacted: {
         Row: {
           access_contacts: string[] | null
+          access_groups: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -5726,13 +5731,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -5905,6 +5910,7 @@ export type Database = {
       upsert_note: {
         Args: {
           p_access_contacts: string[]
+          p_access_groups: string[]
           p_actions: Json
           p_archived_at: string
           p_author_id: string

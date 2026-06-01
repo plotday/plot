@@ -79,6 +79,86 @@ class ThreadBloc extends Cubit<ThreadState> {
     emit(state.copyWith(thread: updated));
   }
 
+  /// Updates the draft note's per-message recipient subset and, optionally,
+  /// extends the thread's contacts / groups with newly-added members from the
+  /// recipient picker.
+  ///
+  /// - [accessContacts]: new per-note contact subset. null = thread default
+  ///   (no per-note narrowing).
+  /// - [accessGroups]: new per-note group subset. null = thread default.
+  /// - [threadContactsAdded]: contacts the picker added that weren't already
+  ///   on the thread. Will be appended to [thread.contacts].
+  /// - [threadGroupsAdded]: groups added by the picker. Will be appended to
+  ///   [thread.groups].
+  Future<void> editNoteRecipients({
+    required List<ActorId>? accessContacts,
+    required List<ActorId>? accessGroups,
+    List<ActorId> threadContactsAdded = const [],
+    List<ActorId> threadGroupsAdded = const [],
+  }) async {
+    final newDraft = state.draft.copyWith(
+      accessContacts: Value(accessContacts),
+      accessGroups: Value(accessGroups),
+    );
+
+    final contactsToAdd = threadContactsAdded.map((a) => a.value).toList();
+    final groupsToAdd = threadGroupsAdded.map((a) => a.value).toList();
+
+    final newThreadContacts = contactsToAdd.isEmpty
+        ? state.thread.contacts
+        : [
+            ...state.thread.contacts,
+            ...contactsToAdd.where((id) => !state.thread.contacts.contains(id)),
+          ];
+    final newThreadGroups = groupsToAdd.isEmpty
+        ? state.thread.groups
+        : [
+            ...state.thread.groups,
+            ...groupsToAdd.where((id) => !state.thread.groups.contains(id)),
+          ];
+
+    final threadChanged =
+        contactsToAdd.isNotEmpty || groupsToAdd.isNotEmpty;
+    final newThread = threadChanged
+        ? state.thread.copyWith(
+            contacts: Value(newThreadContacts),
+            groups: Value(newThreadGroups),
+          )
+        : state.thread;
+
+    // Save order: draft FIRST (the restrictive per-note constraint), thread
+    // SECOND (the audience-widening extension). If only the second fails, the
+    // draft is still restrictive — the worst-case is "user has to re-add the
+    // contact next time" rather than "audience leaks." The reverse order
+    // could leak (thread widened without draft restriction in place).
+    // We do NOT wrap in Store.transaction because note.save() may trigger
+    // an internal push; the memory note on drift txn zone capture shows that
+    // fire-and-forget pushes started inside a transaction capture the txn
+    // zone and throw "transaction used after it was closed."
+    await newDraft.save();
+    if (threadChanged) {
+      await newThread.save();
+    }
+
+    emit(state.copyWith(draft: newDraft, thread: newThread));
+  }
+
+  /// Updates the draft note's per-message recipient subset in memory only —
+  /// no DB persistence. Used by mode pills where the draft already lives in
+  /// memory and persists on the next save trigger. The recipient picker uses
+  /// [editNoteRecipients] instead because picker results may also extend
+  /// thread.contacts / thread.groups, which DO need persisting.
+  void setDraftRecipients({
+    required List<ActorId>? accessContacts,
+    required List<ActorId>? accessGroups,
+  }) {
+    final newDraft = state.draft.copyWith(
+      accessContacts: Value(accessContacts),
+      accessGroups: Value(accessGroups),
+    );
+    emit(state.copyWith(draft: newDraft));
+  }
+
   /// Sets the note being replied to. Pass null to clear.
   /// Clears editing state when replying (mutual exclusion).
   /// When replying to a private note, auto-marks the draft as private and

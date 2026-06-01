@@ -89,9 +89,8 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
         ];
       },
       itemBuilder: (priority, _) => ListTile(
-        body: priority.root
-            ? Builder(builder: (context) => inboxLabel(context, priority))
-            : FocusLabel(priority: priority),
+        // FocusLabel brands the root focus as "Inbox" on its own.
+        body: FocusLabel(priority: priority),
       ),
       selectedValue: _selectedPriority,
       prompt: 'Focus',

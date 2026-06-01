@@ -11,6 +11,7 @@ CREATE TABLE "public"."note" (
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
     "draft" boolean NOT NULL DEFAULT FALSE,
     "access_contacts" uuid[],
+    "access_groups" uuid[],
     "content" text, -- markdown
     "external_content_hash" text, -- SHA-256 of (contentType + "\n" + content) as last seen by the connector; baseline for sync-in preservation
     "actions" jsonb,
@@ -37,6 +38,12 @@ COMMENT ON COLUMN "public"."note"."access_contacts" IS 'Restricts note visibilit
 CREATE INDEX idx_note_access_contacts ON "public"."note" USING gin ("access_contacts")
 WHERE
     access_contacts IS NOT NULL;
+
+COMMENT ON COLUMN "public"."note"."access_groups" IS 'Restricts note visibility within thread viewers via group membership, parallel to access_contacts. NULL = thread-default groups can see, array of group_ids = author + members of listed groups (subset of thread.groups). Combines with access_contacts via OR: a non-author user sees the note iff their contact ids overlap access_contacts (when non-null) OR their group ids overlap access_groups (when non-null). When both are NULL, all thread viewers see it.';
+
+CREATE INDEX idx_note_access_groups ON "public"."note" USING gin ("access_groups")
+WHERE
+    access_groups IS NOT NULL;
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
 

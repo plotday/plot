@@ -189,6 +189,7 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_thread_id uuid,
     p_draft boolean,
     p_access_contacts uuid[],
+    p_access_groups uuid[],
     p_content text,
     p_actions jsonb,
     p_mentions uuid[],
@@ -265,8 +266,8 @@ BEGIN
     IF v_created_by = upsert_note.user_id
        AND NOT "user".user_has_thread_write_access(upsert_note.user_id, p_thread_id)
     THEN
-        IF p_access_contacts IS NULL THEN
-            RAISE EXCEPTION 'Read-only viewers must scope notes via access_contacts';
+        IF p_access_contacts IS NULL AND p_access_groups IS NULL THEN
+            RAISE EXCEPTION 'Read-only viewers must scope notes via access_contacts or access_groups';
         END IF;
         IF p_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM note
@@ -291,8 +292,8 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (thread_id, link_id, key)
             WHERE key IS NOT NULL
             DO UPDATE SET
@@ -302,6 +303,7 @@ BEGIN
                 archived_at = EXCLUDED.archived_at,
                 draft = EXCLUDED.draft,
                 access_contacts = EXCLUDED.access_contacts,
+                access_groups = EXCLUDED.access_groups,
                 content = EXCLUDED.content,
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
@@ -312,8 +314,8 @@ BEGIN
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, access_groups, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_access_groups, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -323,6 +325,7 @@ BEGIN
                 thread_id = EXCLUDED.thread_id,
                 draft = EXCLUDED.draft,
                 access_contacts = EXCLUDED.access_contacts,
+                access_groups = EXCLUDED.access_groups,
                 content = EXCLUDED.content,
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,

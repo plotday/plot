@@ -50,7 +50,7 @@ List<Command> timerCommands(NowState state) {
 class StartTimer extends Command {
   StartTimer()
     : super(
-        title: 'Start timer',
+        title: 'Start focus',
         icon: FontAwesomeIcons.play,
         eventObject: EventObject.priority,
         eventAction: EventAction.started,
@@ -77,7 +77,7 @@ class StartTimer extends Command {
 class StopTimer extends Command {
   StopTimer()
     : super(
-        title: 'Pause timer',
+        title: 'Pause focus',
         icon: FontAwesomeIcons.pause,
         eventObject: EventObject.priority,
         eventAction: EventAction.finished,
@@ -106,7 +106,7 @@ class StopTimer extends Command {
 class EndTimer extends Command {
   EndTimer()
     : super(
-        title: 'Stop',
+        title: 'Stop focus',
         icon: FontAwesomeIcons.stop,
         eventObject: EventObject.priority,
         eventAction: EventAction.finished,

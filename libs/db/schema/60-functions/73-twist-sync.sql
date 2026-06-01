@@ -220,6 +220,7 @@ BEGIN
                 OR n.actions IS DISTINCT FROM o.actions
                 OR n.draft IS DISTINCT FROM o.draft
                 OR n.access_contacts IS DISTINCT FROM o.access_contacts
+                OR n.access_groups IS DISTINCT FROM o.access_groups
                 OR n.updated_by IS DISTINCT FROM o.updated_by);
     END IF;
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN

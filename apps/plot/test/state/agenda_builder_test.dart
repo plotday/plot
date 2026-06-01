@@ -596,4 +596,131 @@ void main() {
       expect(fullDay, isEmpty);
     });
   });
+
+  group('pausedFocus synthesis', () {
+    test('synthesizes a sliding block at [now, now+remaining) when '
+        'pausedFocus is set', () {
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 20),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+      final paused = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .firstWhere((b) => b.id.startsWith('fp_'));
+      expect(paused.windowStart, now);
+      expect(paused.windowEnd, now.add(const Duration(minutes: 20)));
+      expect(paused.isCurrent, isTrue);
+      expect(paused.sourceRow, isNull);
+    });
+
+    test('shrinks the paused block to fit before the next anchored item',
+        () {
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      // A focus block at 10:10 — only 10 minutes of room.
+      final nextRow = _focusRow(
+        p,
+        DateTime(2026, 5, 31, 10, 10),
+        const Duration(minutes: 30),
+      );
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        priorityBlocksByPriority: {p.id: [nextRow]},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 30),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+      final paused = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .firstWhere((b) => b.id.startsWith('fp_'));
+      expect(paused.windowEnd, DateTime(2026, 5, 31, 10, 10));
+    });
+
+    test('drops the paused block when no room exists before the next '
+        'anchored item', () {
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      // A focus block starting exactly at now — zero room.
+      final nextRow = _focusRow(
+        p,
+        DateTime(2026, 5, 31, 10, 0),
+        const Duration(minutes: 30),
+      );
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        priorityBlocksByPriority: {p.id: [nextRow]},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 30),
+        ),
+      );
+      final pausedBlocks = model.sections
+          .expand((s) => s.blocks)
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fp_'));
+      expect(pausedBlocks, isEmpty);
+    });
+
+    test('does not emit an empty-day gap when paused focus fills today',
+        () {
+      final p = _testPriority();
+      final now = DateTime(2026, 5, 31, 10, 0);
+      final model = AgendaBuilder.build(
+        threads: const [],
+        context: p,
+        horizonDays: 7,
+        now: now,
+        priorityById: {p.id: p},
+        pausedFocus: (
+          priority: p,
+          remaining: const Duration(minutes: 20),
+        ),
+      );
+
+      final today = Date(2026, 5, 31);
+      final section = model.sections.firstWhere(
+        (s) => s is ui.DateSection && s.date == today,
+      ) as ui.DateSection;
+
+      final emptyGaps = section.blocks
+          .whereType<ui.GapBlock>()
+          .where((b) => b.id.startsWith('g_empty_'));
+      expect(emptyGaps, isEmpty,
+          reason: 'empty-day gap must not be emitted alongside the '
+              'synthesized paused focus block');
+
+      final pausedBlocks = section.blocks
+          .whereType<ui.PriorityBlock>()
+          .where((b) => b.id.startsWith('fp_'));
+      expect(pausedBlocks.length, 1);
+    });
+  });
 }

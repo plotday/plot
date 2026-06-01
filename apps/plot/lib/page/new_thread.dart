@@ -78,6 +78,17 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
 
+  /// True once the user has added at least one contact (including groups /
+  /// invite-emails) during this compose session. Keeps the Chat placeholder
+  /// and "Send" label active even if the user later removes all contacts.
+  bool _hadContactsThisSession = false;
+
+  void _markContactsAdded() {
+    if (!_hadContactsThisSession) {
+      setState(() => _hadContactsThisSession = true);
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -400,11 +411,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         AutoOrganizeChoice() => ListTile(
           body: IconLabel(icon: PlotIcon.sparkles, label: 'Auto-organize'),
         ),
-        PickedPriorityChoice(:final priority) when priority.root => ListTile(
-          body: Builder(
-            builder: (context) => inboxLabel(context, priority),
-          ),
-        ),
+        // FocusLabel brands the root focus as "Inbox" on its own, so the
+        // picked-priority arm covers the Inbox row too.
         PickedPriorityChoice(:final priority) => ListTile(
           body: FocusLabel(priority: priority),
         ),
@@ -665,6 +673,13 @@ class NewThreadPageState extends State<NewThreadPage> {
         onUpdate: (thread) async {
           if (!context.mounted) return;
           await priorityBloc.updateDraft(thread);
+          // Sticky Chat: mark contacts added if the updated thread has any
+          // contacts, groups, or invite-email recipients.
+          if (thread.contacts.isNotEmpty ||
+              thread.groups.isNotEmpty ||
+              thread.inviteEmails.isNotEmpty) {
+            _markContactsAdded();
+          }
         },
       ),
     );
@@ -755,11 +770,45 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  String get _editorHint {
+  /// Computes the body-editor placeholder for the current compose mode.
+  ///
+  /// Plot targets: driven by (task, shared) flags, where [shared] is true
+  /// when the draft has contacts/groups/emails OR the sticky
+  /// [_hadContactsThisSession] flag is set.
+  ///
+  /// Connector targets: uses [composerHintForNewThread] (SDK copy or fallback).
+  String _computeEditorHint(PriorityState state) {
     if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
     final cfg = _activeLinkTypeConfig;
     if (cfg != null) return composerHintForNewThread(cfg);
-    return 'Start a thread';
+    // Plot target: mode-aware placeholder.
+    final isTask = state.draftNote.isAssignedTo(Base.actorId);
+    final draft = state.draft;
+    final hasContacts = draft.contacts.isNotEmpty ||
+        draft.groups.isNotEmpty ||
+        draft.inviteEmails.isNotEmpty;
+    final shared = hasContacts || _hadContactsThisSession;
+    return composerHintForNewThreadPlot(task: isTask, shared: shared);
+  }
+
+  /// Computes the label for the primary Save/Send button in new-thread mode.
+  ///
+  /// Plot targets: "Save task" / "Send" (shared) / "Save" (private).
+  /// Connector targets: connector's composeVerb or "Create".
+  String _computeSendLabel(PriorityState state) {
+    final cfg = _activeLinkTypeConfig;
+    if (_selectedTwist != null || cfg != null) {
+      return composerVerbForNewThread(cfg);
+    }
+    // Plot target.
+    final isTask = state.draftNote.isAssignedTo(Base.actorId);
+    if (isTask) return 'Save task';
+    final draft = state.draft;
+    final hasContacts = draft.contacts.isNotEmpty ||
+        draft.groups.isNotEmpty ||
+        draft.inviteEmails.isNotEmpty;
+    final shared = hasContacts || _hadContactsThisSession;
+    return shared ? 'Send' : 'Save';
   }
 
   /// LinkTypeConfig of the connection target the user has selected for this
@@ -826,6 +875,12 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     // Update the bloc and persist changes.
     await bloc.updateDraft(updatedThread, note: note);
+
+    // Sticky Chat: mark that the user has added contacts this session so the
+    // Chat placeholder persists even if they remove contacts later.
+    if (nextContacts.isNotEmpty) {
+      _markContactsAdded();
+    }
   }
 
   /// The canonical connection key for whatever the compose surface currently
@@ -1011,7 +1066,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                                           showScheduleActions: false,
                                           hint: state.draft.priority.isPlotApp
                                               ? 'Ask for help or share feedback'
-                                              : _editorHint,
+                                              : _computeEditorHint(state),
+                                          sendLabel: state.draft.priority.isPlotApp
+                                              ? null
+                                              : _computeSendLabel(state),
                                           additionalMentions: _twistMentions,
                                           onSubmitted: _onChatSubmitted,
                                           submitValidator: _validateDmSubmit,
@@ -1087,7 +1145,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                         .priority
                                                         .isPlotApp
                                                     ? 'Ask for help or share feedback'
-                                                    : _editorHint,
+                                                    : _computeEditorHint(state),
+                                                sendLabel:
+                                                    state
+                                                        .draft
+                                                        .priority
+                                                        .isPlotApp
+                                                    ? null
+                                                    : _computeSendLabel(state),
                                                 additionalMentions:
                                                     _twistMentions,
                                                 onSubmitted: _onChatSubmitted,

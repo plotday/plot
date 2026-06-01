@@ -37,8 +37,12 @@ BEGIN
           AND n.archived_at IS NULL AND n.draft = FALSE
           AND t.archived_at IS NULL
           AND t.contacts && "user".user_contact_ids(requesting_user_id)
-          AND (n.access_contacts IS NULL OR n.created_by = requesting_user_id
-               OR n.access_contacts && "user".user_contact_ids(requesting_user_id))
+          AND (
+            n.created_by = requesting_user_id
+            OR (n.access_contacts IS NULL AND n.access_groups IS NULL)
+            OR (n.access_contacts IS NOT NULL AND n.access_contacts && "user".user_contact_ids(requesting_user_id))
+            OR (n.access_groups IS NOT NULL AND n.access_groups && "user".user_group_ids(requesting_user_id))
+          )
           AND (exclude_created_by IS NULL OR n.created_by != exclude_created_by)
           AND (1 - (n.embedding <=> query_embedding::halfvec)) >= similarity_threshold
 

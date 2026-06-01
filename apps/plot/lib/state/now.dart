@@ -42,6 +42,12 @@ class NowBloc extends Cubit<NowState> {
   Duration? _intendedPomodoro;
   Uuid? _intendedSessionId;
 
+  /// Bumped before every `pausedFocus` clear or new derivation. The
+  /// listener captures its generation before awaiting; when an in-flight
+  /// derivation completes after the counter has moved on, its result is
+  /// dropped instead of overwriting a newer (often explicit-null) value.
+  int _pausedFocusGeneration = 0;
+
   @override
   Future<void> close() {
     stop();
@@ -86,8 +92,13 @@ class NowBloc extends Cubit<NowState> {
             );
           },
         ).listen(
-          (state) {
-            emit(state);
+          (state) async {
+            final ctx = state.context;
+            final generation = ++_pausedFocusGeneration;
+            final pausedFocus =
+                ctx == null ? null : await _resolvePausedFocus(ctx);
+            if (isClosed || generation != _pausedFocusGeneration) return;
+            emit(state.copyWith(pausedFocus: pausedFocus));
             // Watcher caught up: if the emitted session matches our
             // tracked intent (or is a different session entirely),
             // drop the intent so subsequent ops read from state again.
@@ -108,8 +119,11 @@ class NowBloc extends Cubit<NowState> {
           },
         );
     // Maintenance tick: refresh the active session's `end` so
-    // `at.isNow()` stays true, and auto-stop when the 5-minute grace
-    // expires. No auto-start — sessions begin only via [startSession].
+    // `at.isNow()` stays true, auto-stop when the 5-minute grace expires,
+    // and drive auto-start when the context priority has a covering focus
+    // block row.
+    // Auto-start can fire from [_onTrackTick] when the context priority has
+    // a covering focus block row.
     _trackTick = Timer.periodic(
       const Duration(minutes: 1),
       (_) => _onTrackTick(),
@@ -126,18 +140,20 @@ class NowBloc extends Cubit<NowState> {
     emit(const NowLoading());
   }
 
-  /// Maintenance tick for the active pomodoro session. Does NOT start
-  /// sessions — start is exclusively user-driven via [startSession].
+  /// Maintenance tick for the active pomodoro session.
   ///
-  /// Two responsibilities:
-  ///   1. While the pomodoro is within its `pomodoroAt + pomodoro + 5m`
-  ///      window, keep the row's `end` bumped to `Time.now() + 3m` so
-  ///      `Session.watchCurrent` keeps reporting it (otherwise its
-  ///      `at.isNow()` check would fail and the pill would drop back to
-  ///      inactive).
-  ///   2. Once the grace period elapses, auto-close the session via
-  ///      [_closeActiveSession] (which also writes the
-  ///      consumed time back to `priority_block`).
+  /// Behavior:
+  ///   1. Skip when the in-flight day has changed (date rollover).
+  ///   2. While a `source='active'` session exists for the context:
+  ///      - When `pomodoroAt + pomodoro + kPomodoroGrace` is reached,
+  ///        close the session (and archive the covering focus block
+  ///        row to prevent immediate auto-restart).
+  ///      - When the session's [end] is about to be reached, bump it
+  ///        forward so the watcher's window stays open.
+  ///   3. Drive auto-start: if [context] has a focus block row whose
+  ///      window covers `now`, start (or resume) a session for it. The
+  ///      idempotency guard in [_maybeAutoStart] makes this safe to
+  ///      call every tick.
   Future<void> _onTrackTick() async {
     final tickNow = Time.now();
     final tickDate = DateTime(tickNow.year, tickNow.month, tickNow.day);
@@ -153,25 +169,35 @@ class NowBloc extends Cubit<NowState> {
     if (state is! NowLoaded) return;
     final s = loadedState;
     final session = s.session;
-    if (session == null) return;
-    if (session.source != 'active') return;
-    if (session.pomodoroAt == null || session.pomodoro == null) return;
 
-    final now = Time.now();
-    final graceEnd = session.pomodoroAt!
-        .add(session.pomodoro!)
-        .add(kPomodoroGrace);
-    if (!now.isBefore(graceEnd)) {
-      await _closeActiveSession(session);
-      return;
+    // Session maintenance: bump end, auto-close on grace expiry.
+    if (session != null &&
+        session.source == 'active' &&
+        session.pomodoroAt != null &&
+        session.pomodoro != null) {
+      final now = Time.now();
+      final graceEnd = session.pomodoroAt!
+          .add(session.pomodoro!)
+          .add(kPomodoroGrace);
+      if (!now.isBefore(graceEnd)) {
+        await _closeActiveSession(session);
+        final ctx = s.context;
+        if (ctx != null) {
+          await _archiveCoveringRow(ctx, now);
+        }
+      } else if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
+        // Extend forward so `at.isNow()` keeps holding through the next
+        // tick. Mirrors the 3-minute lookahead that `setFocus` originally
+        // wrote when sessions were auto-started.
+        await Session.fromStore(
+          session.copyWith(end: now.add(const Duration(minutes: 3))),
+        ).save();
+      }
     }
-    if (session.at.end.isBefore(now.add(const Duration(minutes: 1)))) {
-      // Extend forward so `at.isNow()` keeps holding through the next
-      // tick. Mirrors the 3-minute lookahead that `setFocus` originally
-      // wrote when sessions were auto-started.
-      await Session.fromStore(
-        session.copyWith(end: now.add(const Duration(minutes: 3))),
-      ).save();
+
+    final ctx = s.context;
+    if (ctx != null) {
+      await _maybeAutoStart(ctx);
     }
   }
 
@@ -421,6 +447,12 @@ class NowBloc extends Cubit<NowState> {
     if (wasActive && priority != null) {
       await _startDistraction();
     }
+
+    if (priority != null) {
+      // Fire-and-forget — the resulting session emission is observed by
+      // PriorityBloc through the existing NowBloc subscription.
+      unawaited(_maybeAutoStart(priority));
+    }
   }
 
   /// Distraction handoff: the user navigated away from a priority that
@@ -434,6 +466,11 @@ class NowBloc extends Cubit<NowState> {
   /// session to explicit (and a real duration) by pressing Add time,
   /// which flips the row's `explicit` flag and bumps the pomodoro.
   Future<void> _startDistraction() async {
+    // Note: we don't clear `pausedFocus` here. `_startDistraction` only
+    // fires after [setContext] has emitted a new context priority — the
+    // next combineLatest tick will call `_resolvePausedFocus(newCtx)`,
+    // which typically returns null for the new priority. The asymmetry
+    // with [startSession]'s explicit clear is intentional.
     if (state is! NowLoaded) return;
     final s = loadedState;
     final ctx = s.context;
@@ -530,6 +567,16 @@ class NowBloc extends Cubit<NowState> {
     final ctx = s.context;
     if (ctx == null) return;
 
+    // Clear the sliding paused-focus block immediately so the agenda
+    // stops showing it the instant the user presses Start. The next
+    // stream emission will recompute pausedFocus from scratch (and
+    // return null because the session will then be active, not paused).
+    // Bump the generation counter first so any in-flight `_resolvePausedFocus`
+    // that started before the user pressed Start is discarded rather than
+    // overwriting this explicit null once it completes.
+    _pausedFocusGeneration++;
+    emit(s.copyWith(pausedFocus: null));
+
     final now = Time.now();
     final hadOtherActive =
         s.session != null &&
@@ -562,6 +609,7 @@ class NowBloc extends Cubit<NowState> {
             pomodoroAt: shiftedPomodoroAt,
             now: now,
           );
+          await _ensureFocusRow(ctx, shiftedPomodoroAt, originalPomodoro);
           await Session.resume(
             ctx,
             end: now.add(const Duration(minutes: 3)),
@@ -618,6 +666,7 @@ class NowBloc extends Cubit<NowState> {
                 pomodoroAt: shiftedPomodoroAt,
                 now: now,
               );
+              await _ensureFocusRow(ctx, shiftedPomodoroAt, newPomodoro);
               await Session.fromStore(skip.copyWith(end: now)).save();
               await Session.resume(
                 ctx,
@@ -647,6 +696,7 @@ class NowBloc extends Cubit<NowState> {
       pomodoroAt: now,
       now: now,
     );
+    await _ensureFocusRow(ctx, now, pomodoro);
     await Session.resume(
       ctx,
       end: now.add(const Duration(minutes: 3)),
@@ -681,6 +731,115 @@ class NowBloc extends Cubit<NowState> {
     emit(s.copyWith(session: optimistic, previewPomodoro: null));
   }
 
+  /// Ensure a non-archived focus block row covers `[start, start + duration)`
+  /// on [priority]. Reuses any existing covering row by extending its
+  /// duration when needed; otherwise writes a fresh row. Idempotent for
+  /// the common case where the scheduled row already matches.
+  Future<void> _ensureFocusRow(
+    Priority priority,
+    DateTime start,
+    Duration duration,
+  ) async {
+    if (state is! NowLoaded) return;
+    final rows =
+        (state as NowLoaded).priorityBlocksByPriority[priority.id] ??
+        const <PriorityBlockRow>[];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      if (!r.effectiveAt.isAfter(start) &&
+          r.effectiveAt.add(d).isAfter(start)) {
+        // Existing row covers `start`. Extend it if we'll outrun it.
+        final coveringEnd = r.effectiveAt.add(d);
+        final neededEnd = start.add(duration);
+        if (neededEnd.isAfter(coveringEnd)) {
+          await PriorityBlock.setBlockDuration(
+            priorityId: priority.id,
+            blockStart: r.effectiveAt,
+            newDuration: neededEnd.difference(r.effectiveAt),
+          );
+        }
+        return;
+      }
+    }
+    // No covering row — create one at `start`.
+    await PriorityBlock.setBlockDuration(
+      priorityId: priority.id,
+      blockStart: start,
+      newDuration: duration,
+    );
+  }
+
+  /// Soft-archive the non-archived focus block row that covers [moment]
+  /// on [priority]. No-op if no such row exists. Used by Pause (so the
+  /// agenda stops rendering the running block at its slot and shows the
+  /// synthesized sliding `pausedFocus` block instead) and by Stop.
+  Future<void> _archiveCoveringRow(Priority priority, DateTime moment) async {
+    if (state is! NowLoaded) return;
+    final rows =
+        (state as NowLoaded).priorityBlocksByPriority[priority.id] ??
+        const <PriorityBlockRow>[];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      if (!r.effectiveAt.isAfter(moment) &&
+          r.effectiveAt.add(d).isAfter(moment)) {
+        await PriorityBlock.setBlockDuration(
+          priorityId: priority.id,
+          blockStart: r.effectiveAt,
+          newDuration: null, // null → soft-archive in setBlockDuration
+        );
+        return;
+      }
+    }
+  }
+
+  /// Resolve a [PausedFocus] descriptor for [ctx], if any. Drives the
+  /// agenda's sliding remaining-time block. Returns null when:
+  ///   - the latest explicit session for [ctx] is not paused
+  ///     (no paused-session row exists), or
+  ///   - the computed remaining ≤ 0.
+  Future<PausedFocus?> _resolvePausedFocus(Priority ctx) async {
+    final paused = await Session.latestPausedFor(ctx.id);
+    if (paused == null) return null;
+    final pomo = paused.pomodoro;
+    final pomoAt = paused.pomodoroAt;
+    if (pomo == null || pomoAt == null) return null;
+    final elapsed = paused.end.difference(pomoAt);
+    final remaining = pomo - elapsed;
+    if (remaining <= Duration.zero) return null;
+    return PausedFocus(priority: ctx, remaining: remaining);
+  }
+
+  /// If [ctx] has a non-archived focus block row covering `now` and no
+  /// active session for [ctx] exists, start one matched to the row's
+  /// remaining window (`[now, effectiveAt + duration)`). Idempotent —
+  /// safe to call from both [setContext] and [_onTrackTick].
+  Future<void> _maybeAutoStart(Priority ctx) async {
+    if (state is! NowLoaded) return;
+    final s = loadedState;
+    // Already running for this priority — no-op.
+    if (s.pomodoroState != PomodoroState.inactive &&
+        s.session?.priority?.id == ctx.id) {
+      return;
+    }
+    final now = Time.now();
+    final rows = s.priorityBlocksByPriority[ctx.id] ?? const [];
+    for (final r in rows) {
+      if (r.archivedAt != null) continue;
+      final d = r.duration;
+      if (d == null || d <= Duration.zero) continue;
+      final end = r.effectiveAt.add(d);
+      if (r.effectiveAt.isAfter(now) || !end.isAfter(now)) continue;
+      // Covering row found — start the session for the remaining window.
+      final remaining = end.difference(now);
+      await startSession(override: remaining);
+      return;
+    }
+  }
+
   /// Pause the active session: close it without altering its planned
   /// pomodoro window, so a future Start on the same priority can resume
   /// from the remaining time. See [endSession] for the variant that
@@ -692,6 +851,10 @@ class NowBloc extends Cubit<NowState> {
     if (session == null || !session.at.isNow()) return;
     if (session.source != 'active') return;
     await _closeActiveSession(session);
+    final ctx = s.context;
+    if (ctx != null) {
+      await _archiveCoveringRow(ctx, Time.now());
+    }
   }
 
   /// Fully end the active session — the next Start on the same priority
@@ -722,6 +885,10 @@ class NowBloc extends Cubit<NowState> {
       ),
     );
     await closed.save();
+    final ctx = s.context;
+    if (ctx != null) {
+      await _archiveCoveringRow(ctx, now);
+    }
   }
 
   /// Run [op] after any in-flight pomodoro adjustment finishes. Two

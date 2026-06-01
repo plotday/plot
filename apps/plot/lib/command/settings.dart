@@ -905,7 +905,7 @@ class OrgAiPreferences extends ShowForm {
     return [
       StaticFormGroup(
         title: 'AI providers',
-        subtitle: 'These providers are used for AI in $orgName priorities.',
+        subtitle: 'These providers are used for AI in $orgName focuses.',
         items: [
           builtinSelect,
           twistSelect,
