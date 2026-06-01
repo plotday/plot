@@ -846,6 +846,18 @@ $function$;
 -- action_type). The caller sets it only when it has meaningful information
 -- about the flag (p_set_active); otherwise the existing value on the row is
 -- preserved.
+--
+-- Race-tolerance: the Flutter client fires /sync/threads, /sync/notes and
+-- /sync/thread-state as independent Worker invocations and they can arrive
+-- out of order. When thread-state lands before the thread_priority row
+-- exists (or while it's still pending classification, or while it's
+-- revoked), this function stashes the payload in pending_thread_state and
+-- returns NULL. The apply_pending_thread_state trigger on thread_priority
+-- flushes the deferred payload as soon as a usable filing appears.
+--
+-- Return value: a thread_state row on the synchronous path, or NULL when
+-- the call was deferred. Existing callers (workers/api/src/app/sync/*)
+-- discard the return value, so adding NULL as a possible result is safe.
 CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
     user_id uuid,
     p_thread_id uuid,
@@ -873,17 +885,54 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_state (
 #variable_conflict use_column
 DECLARE
     v_priority_id uuid;
+    v_revoked_at timestamptz;
+    v_tp_found boolean;
     v_row thread_state;
 BEGIN
     SELECT
-        tp.priority_id INTO v_priority_id
+        tp.priority_id, tp.revoked_at, TRUE
+        INTO v_priority_id, v_revoked_at, v_tp_found
     FROM
         thread_priority tp
     WHERE
         tp.thread_id = p_thread_id
         AND tp.user_id = upsert_thread_state.user_id;
-    IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Thread not found';
+
+    -- Defer when the user has no usable filing yet (no row, pending
+    -- classification, or revoked). The apply_pending_thread_state trigger
+    -- on thread_priority will flush this row as soon as a settled,
+    -- unrevoked filing lands. Note: an UPDATE EXCLUDED overwrite means a
+    -- later push (e.g. the client retrying) wins over an earlier deferred
+    -- one — which mirrors normal upsert_thread_state semantics on a
+    -- successful write.
+    IF NOT COALESCE(v_tp_found, FALSE) OR v_priority_id IS NULL OR v_revoked_at IS NOT NULL THEN
+        INSERT INTO pending_thread_state (user_id, thread_id, payload)
+        VALUES (
+            upsert_thread_state.user_id,
+            p_thread_id,
+            jsonb_build_object(
+                'p_active', p_active,
+                'p_urgent', p_urgent,
+                'p_importance', p_importance,
+                'p_read_at', p_read_at,
+                'p_bumped_at', p_bumped_at,
+                'p_note_created_at', p_note_created_at,
+                'p_order', p_order,
+                'p_on', p_on,
+                'p_at', p_at,
+                'p_set_active', p_set_active,
+                'p_set_urgent', p_set_urgent,
+                'p_set_importance', p_set_importance,
+                'p_set_read_at', p_set_read_at,
+                'p_set_order', p_set_order,
+                'p_set_on', p_set_on,
+                'p_set_at', p_set_at
+            )
+        )
+        ON CONFLICT (user_id, thread_id) DO UPDATE SET
+            payload = EXCLUDED.payload,
+            created_at = now();
+        RETURN NULL;
     END IF;
 
     INSERT INTO thread_state (user_id, thread_id, active, urgent, importance, read_at, bumped_at, "order", "on", "at")
