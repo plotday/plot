@@ -135,9 +135,6 @@ class NoteEditorState extends State<NoteEditor> {
   // save that already passed the _finalized check.
   Future<void>? _pendingDraftSave;
 
-  /// Twist IDs toggled OFF by the user for the current note.
-  final Set<TwistInstanceId> _disabledTwists = {};
-
   /// Working copy of attachments while editing an existing note. Null when
   /// not editing — in that case attachments come from `widget.draft.actions`.
   /// On submit, this list replaces the edited note's actions.
@@ -171,33 +168,6 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
-  void _resetDisabledTwists() {
-    _disabledTwists.clear();
-    if (widget.isNewThreadMode) return;
-    final threadState = context.read<ThreadBloc>().state;
-    for (final twist in threadState.threadTwists) {
-      // Unconnected sources are never mentionable
-      if (twist.isSource && !twist.userConnected) {
-        _disabledTwists.add(twist.id);
-        continue;
-      }
-      // Connectors that don't handle replies are never mentionable
-      if (twist.isSource && !twist.defaultMentionCreated) continue;
-      // Sources with defaultMentionCreated always default ON —
-      // they appear in threadTwists because they created this thread
-      if (twist.isSource && twist.defaultMentionCreated) continue;
-      final isAuthor =
-          threadState.notes.any((n) => n.authorId.toUuid() == twist.id) ||
-          threadState.links.any((l) => l.createdBy == twist.id);
-      final shouldDefault =
-          (isAuthor && twist.defaultMentionCreated) ||
-          twist.defaultMentionMentioned;
-      if (!shouldDefault) {
-        _disabledTwists.add(twist.id);
-      }
-    }
-  }
-
   /// Resolved autofocus: the value handed to the inner [Editor]. New-thread
   /// editors and physical-keyboard platforms autofocus by default; callers can
   /// override via [NoteEditor.autofocus] (e.g. a note-mode editor on a touch
@@ -223,7 +193,6 @@ class NoteEditorState extends State<NoteEditor> {
     super.initState();
     _lastSavedContent = widget.draft.content ?? '';
     _lastDraftNoteId = widget.draft.id;
-    _resetDisabledTwists();
   }
 
   @override
@@ -796,6 +765,7 @@ class NoteEditorState extends State<NoteEditor> {
   String _activePillId(ThreadState s) {
     final draft = widget.draft;
     if (draft.isPrivate) return 'private';
+    if (_hasMentionableTwist(s)) return 'reply';
     if (draft.isAssignedTo(Base.actorId)) return 'task';
     final cfg = s.primaryLinkTypeConfig;
     final isPlotThread = cfg == null;
@@ -812,6 +782,12 @@ class NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  /// True when the thread has a non-source twist (e.g. Plot AI) the user
+  /// is chatting with. Source connectors (Gmail, Slack) don't count —
+  /// those keep their existing connector pill structure.
+  bool _hasMentionableTwist(ThreadState s) =>
+      s.threadTwists.any((t) => !t.isSource);
+
   List<TopBarPill> _buildPills(ThreadState s) {
     final pills = <TopBarPill>[];
     final cfg = s.primaryLinkTypeConfig;
@@ -819,6 +795,22 @@ class NoteEditorState extends State<NoteEditor> {
     final hasSharing =
         s.thread.activeContacts.where((c) => !_isSelfContact(c)).isNotEmpty ||
         s.thread.groups.isNotEmpty;
+
+    if (_hasMentionableTwist(s)) {
+      pills.add(TopBarPill(
+        id: 'reply',
+        label: 'Reply',
+        avatarSlot: _replyAllAvatars(s.thread),
+        onTap: _activatePlotReply,
+        onAvatarsTap: hasSharing ? _openRecipientPicker : null,
+      ));
+      pills.add(TopBarPill(
+        id: 'private',
+        label: 'Private note',
+        onTap: _activatePrivate,
+      ));
+      return pills;
+    }
 
     if (isPlotThread) {
       if (!hasSharing) {
@@ -1327,8 +1319,6 @@ class NoteEditorState extends State<NoteEditor> {
         final threadState = context.read<ThreadBloc>().state;
         final priorityId = threadState.thread.priority.id.toString();
 
-        // Attachment-related toolbar buttons are available in both modes.
-        // Task/assign/private/twist toggles only apply to new notes.
         void applyActions(List<UserAction> actions) =>
             _setCurrentActions(actions);
 
@@ -1363,11 +1353,6 @@ class NoteEditorState extends State<NoteEditor> {
                           onLinksChanged: applyActions,
                         ),
                       ),
-                    if (!isCurrentlyEditing) ...[
-                      // Twist button (only when thread has twists)
-                      if (threadState.threadTwists.isNotEmpty)
-                        _buildTwistButton(context),
-                    ],
                   ],
                 ),
               ),
@@ -1502,87 +1487,6 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
-  // -- Twist buttons --
-
-  /// Twist button for note mode (ThreadPage). Opens a modal showing
-  /// thread twists with toggle state. Source connectors are excluded here —
-  /// replies go to the thread's connector automatically unless private.
-  Widget _buildTwistButton(BuildContext context) {
-    final threadState = context.read<ThreadBloc>().state;
-    final mentionableTwists = threadState.threadTwists
-        .where((t) => !t.isSource)
-        .toList();
-    if (mentionableTwists.isEmpty) return const SizedBox.shrink();
-
-    final anyEnabled = mentionableTwists.any(
-      (t) => !_disabledTwists.contains(t.id),
-    );
-
-    return Button.icon(
-      CommandWrapper(
-        PickTwist(),
-        run: (action, ctx) async {
-          // Single twist: click toggles directly without opening a modal.
-          if (mentionableTwists.length == 1) {
-            setState(() {
-              final id = mentionableTwists.first.id;
-              if (_disabledTwists.contains(id)) {
-                _disabledTwists.remove(id);
-              } else {
-                _disabledTwists.add(id);
-              }
-            });
-            return const CommandDone();
-          }
-          await _openTwistToggleModal(ctx, mentionableTwists);
-          return const CommandDone();
-        },
-      ),
-      selected: anyEnabled,
-    );
-  }
-
-  Future<void> _openTwistToggleModal(
-    BuildContext context,
-    List<TwistInstance> twists,
-  ) async {
-    final result = await SelectModal.open<TwistInstance>(
-      context,
-      items: (_) async => [SelectGroup(title: null, items: twists)],
-      itemBuilder: (twist, _) {
-        final disabled = _disabledTwists.contains(twist.id);
-        final isDark = context.colour.brightness == Brightness.dark;
-        final logoUrl = isDark && twist.logoUrlDark != null
-            ? twist.logoUrlDark
-            : twist.logoUrl;
-        return ListTile(
-          selected: !disabled,
-          body: Row(
-            spacing: 8,
-            children: [
-              if (logoUrl != null)
-                LogoImage(url: logoUrl, size: 14)
-              else
-                Icon(PlotIcon.twist, size: 14),
-              Text(twist.displayName(allInstances: twists, teamName: null)),
-            ],
-          ),
-        );
-      },
-      prompt: 'Select twists',
-    );
-
-    if (!context.mounted || !result.present) return;
-    setState(() {
-      final twist = result.value;
-      if (_disabledTwists.contains(twist.id)) {
-        _disabledTwists.remove(twist.id);
-      } else {
-        _disabledTwists.add(twist.id);
-      }
-    });
-  }
-
   // -- Keyboard shortcuts --
 
   /// Builds keyboard shortcut bindings for note-level actions. These fire
@@ -1600,10 +1504,6 @@ class NoteEditorState extends State<NoteEditor> {
     // ⌘⇧L — add link
     bindings[platformSingleActivator(LogicalKeyboardKey.keyL, shift: true)] =
         () => _shortcutAddLink(context);
-
-    // ⌘⇧M — select twist
-    bindings[platformSingleActivator(LogicalKeyboardKey.keyM, shift: true)] =
-        () => _shortcutSelectTwist(context);
 
     return bindings;
   }
@@ -1628,30 +1528,6 @@ class NoteEditorState extends State<NoteEditor> {
         onNavigateToThread: widget.onNavigateToThread,
       ),
     );
-  }
-
-  void _shortcutSelectTwist(BuildContext context) {
-    if (_saving) return;
-    // New-thread mode no longer exposes a twist picker shortcut — selection
-    // moved to the connection field above the editor.
-    if (widget.isNewThreadMode) return;
-    final threadState = context.read<ThreadBloc>().state;
-    final mentionableTwists = threadState.threadTwists
-        .where((t) => !t.isSource)
-        .toList();
-    if (mentionableTwists.isEmpty) return;
-    if (mentionableTwists.length == 1) {
-      setState(() {
-        final id = mentionableTwists.first.id;
-        if (_disabledTwists.contains(id)) {
-          _disabledTwists.remove(id);
-        } else {
-          _disabledTwists.add(id);
-        }
-      });
-      return;
-    }
-    _openTwistToggleModal(context, mentionableTwists);
   }
 
   // -- Submit handlers --
@@ -1791,20 +1667,27 @@ class NoteEditorState extends State<NoteEditor> {
 
   // -- Finalize methods --
 
-  /// Returns the list of active (non-disabled) twist ActorIds from thread
-  /// mentions. Source connectors are included only when [includeConnectors]
-  /// is true — private notes pass `false` so they're never sent to the
-  /// thread's connector.
+  /// Returns the twist ActorIds to mention on submit. Source connectors are
+  /// included only when [includeConnectors] is true. Non-source twists are
+  /// included when they authored a note/link on the thread (with
+  /// `defaultMentionCreated`) or were @-mentioned (with
+  /// `defaultMentionMentioned`) — i.e. the ambient defaults that previously
+  /// seeded `_disabledTwists`.
   List<ActorId> _getActiveTwistMentions({required bool includeConnectors}) {
     if (widget.isNewThreadMode) return const [];
-    final threadState = context.read<ThreadBloc>().state;
-    return threadState.threadTwists
-        .where(
-          (t) => !t.isSource || (includeConnectors && t.defaultMentionCreated),
-        )
-        .where((t) => !_disabledTwists.contains(t.id))
-        .map((t) => ActorId.fromUuid(t.id))
-        .toList();
+    final s = context.read<ThreadBloc>().state;
+    return s.threadTwists.where((t) {
+      if (t.isSource) {
+        return includeConnectors &&
+            t.userConnected &&
+            t.defaultMentionCreated;
+      }
+      final isAuthor =
+          s.notes.any((n) => n.authorId.toUuid() == t.id) ||
+          s.links.any((l) => l.createdBy == t.id);
+      return (isAuthor && t.defaultMentionCreated) ||
+          t.defaultMentionMentioned;
+    }).map((t) => ActorId.fromUuid(t.id)).toList();
   }
 
   Future<Note> _finalizeNoteDraft(String body, {bool alt = false}) async {
@@ -1828,11 +1711,13 @@ class NoteEditorState extends State<NoteEditor> {
     final isPrivateNote =
         widget.viewerMode || replyRestricted || widget.draft.isPrivate;
 
-    // Merge active twist mentions into the note. Connectors only receive the
-    // reply when it isn't private.
-    final activeTwistMentions = _getActiveTwistMentions(
-      includeConnectors: !isPrivateNote,
-    );
+    // Merge active twist mentions into the note. Private notes don't trigger
+    // any twist — neither source connectors nor non-source twists (e.g. Plot
+    // AI) — since "Private note" semantically means the user wrote it for
+    // themselves and doesn't want a response.
+    final activeTwistMentions = isPrivateNote
+        ? const <ActorId>[]
+        : _getActiveTwistMentions(includeConnectors: true);
     final allAddMentions = [...activeTwistMentions, ...replyAccessContacts];
 
     // Default share targets for read-only-thread viewers: every contact on
