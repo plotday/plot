@@ -103,8 +103,13 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     // @ts-ignore - Partial Thread data from NoteItem payload
     thread: {
       id: noteRecord.thread_id,
-      priority: {
-        id: noteRecord.priority_id,
+      focus: {
+        id: noteRecord.priority_id as Uuid,
+        title: "",
+        archived: false,
+        key: null,
+        color: null,
+        icon: null,
       },
       // Include meta if available in payload (for note.created callbacks)
       ...(noteRecord.thread_meta && { meta: noteRecord.thread_meta }),
