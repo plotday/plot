@@ -1424,23 +1424,6 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                if (!widget.viewerMode && !thread.priority.isViewer) ...[
-                  // Task toggle — use CommandWrapper to update draft instead of saving
-                  Button.icon(
-                    CommandWrapper(
-                      ToggleSelfTask(draftNote),
-                      run: (action, ctx) async {
-                        final updatedNote = draftNote.toggleTag(
-                          Tag.todo,
-                          Base.actorId,
-                        );
-                        widget.onDraftChanged!(thread, note: updatedNote);
-                        return const CommandDone();
-                      },
-                    ),
-                    selected: draftNote.isAssignedTo(Base.actorId),
-                  ),
-                ],
                 // Link button
                 Button.icon(
                   AddLink(

@@ -128,7 +128,9 @@ class ConnectionPickerModal {
         .toList();
 
     final choices = <ConnectionChoice>[
-      ConnectionChoice.plotThread,
+      ConnectionChoice.plotNote,
+      ConnectionChoice.plotTask,
+      ConnectionChoice.plotChat,
       ...chatTwists.map(
         (t) => ConnectionChoice.twist(
           t,
@@ -149,7 +151,7 @@ class ConnectionPickerModal {
         return [SelectGroup(title: null, items: filtered)];
       },
       itemBuilder: (choice, _) => switch (choice) {
-        PlotThreadChoice() => ListTile(
+        PlotThreadChoice plot => ListTile(
             leadingBuilder: (_, _) => Builder(
               builder: (context) => Padding(
                 padding: EdgeInsets.only(
@@ -163,7 +165,7 @@ class ConnectionPickerModal {
                 ),
               ),
             ),
-            title: 'Plot thread',
+            title: plot.label,
           ),
         TargetConnectionChoice(:final target) =>
           connectionTargetTile(context, target),

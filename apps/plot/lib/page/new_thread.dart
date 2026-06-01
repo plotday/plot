@@ -184,7 +184,9 @@ class NewThreadPageState extends State<NewThreadPage> {
         .toList();
 
     final candidateKeys = <String>[
-      ConnectionChoice.plotThread.key,
+      ConnectionChoice.plotNote.key,
+      ConnectionChoice.plotTask.key,
+      ConnectionChoice.plotChat.key,
       ...chatTwists.map((t) => 'twist:${t.id}'),
       ..._allConnectionTargets.map((t) => t.key),
     ];
@@ -193,9 +195,19 @@ class NewThreadPageState extends State<NewThreadPage> {
       candidateKeys: candidateKeys,
       priorityId: draft.priority.id.toString(),
     );
-    // Null (no history) or the Plot-thread sentinel → keep the existing
-    // default; nothing to apply.
-    if (key == null || key == ConnectionChoice.plotThread.key) return;
+    if (key == null) return;
+    if (key.startsWith('plot:')) {
+      // Last-used was a Plot variant — apply its defaults (e.g. set the
+      // task tag for Plot task). Plot note is the existing default, so
+      // applying it is effectively a no-op.
+      final kind = switch (key) {
+        'plot:task' => PlotThreadKind.task,
+        'plot:chat' => PlotThreadKind.chat,
+        _ => PlotThreadKind.note,
+      };
+      await _applyConnectionChoice(ConnectionChoice.plotForKind(kind));
+      return;
+    }
 
     if (key.startsWith('twist:')) {
       final twist =
@@ -516,7 +528,9 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Routes a ConnectionChoice from the modal/dropdown into the draft.
-  /// - Plot thread: clear CreateLinkUserAction and clear any selected twist.
+  /// - Plot note/task/chat: clear CreateLinkUserAction and twist; apply the
+  ///   variant's default state (task tag for Plot task; sticky-chat flag for
+  ///   Plot chat).
   /// - CreateTarget: set CreateLinkUserAction; clear any selected twist.
   /// - Twist: clear CreateLinkUserAction; set the twist (icon + selected state).
   Future<void> _applyConnectionChoice(ConnectionChoice choice) async {
@@ -549,13 +563,31 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     final action = choice.toUserAction();
     if (action != null) actions.add(action);
+    // Apply Plot-variant defaults: Plot task adds Tag.todo to the first note;
+    // Plot note clears it (so switching back from task works); Plot chat
+    // marks the sticky-chat intent so the label/placeholder stay "Chat" even
+    // before the user has added a contact.
+    Note nextNote = note.copyWith(actions: actions);
+    if (choice is PlotThreadChoice) {
+      switch (choice.kind) {
+        case PlotThreadKind.task:
+          if (!nextNote.isAssignedTo(Base.actorId)) {
+            nextNote = nextNote.toggleTag(Tag.todo, Base.actorId);
+          }
+        case PlotThreadKind.note:
+          if (nextNote.isAssignedTo(Base.actorId)) {
+            nextNote = nextNote.toggleTag(Tag.todo, Base.actorId);
+          }
+        case PlotThreadKind.chat:
+          if (!_hadContactsThisSession) {
+            setState(() => _hadContactsThisSession = true);
+          }
+      }
+    }
     // Pass the list directly (even when empty) — Note.copyWith treats a
     // null `actions` arg as "keep existing", so the prior CreateLinkUserAction
     // would survive when the user picks "Plot thread".
-    await bloc.updateDraft(
-      bloc.state.draft,
-      note: note.copyWith(actions: actions),
-    );
+    await bloc.updateDraft(bloc.state.draft, note: nextNote);
   }
 
   Future<void> _openConnectionPicker() async {
@@ -587,7 +619,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     final active = state.draftNote.actions
         ?.whereType<CreateLinkUserAction>()
         .firstOrNull;
-    if (active == null) return ConnectionChoice.plotThread;
+    if (active == null) return _plotChoiceForDraft(state);
     for (final target in _allConnectionTargets) {
       // For DM/address-mode targets `target.channel` is null and the
       // active CreateLinkUserAction's channelId is also null — the null
@@ -599,7 +631,23 @@ class NewThreadPageState extends State<NewThreadPage> {
       }
     }
     // Target not yet loaded — fall back so the field always has a value.
-    return ConnectionChoice.plotThread;
+    return _plotChoiceForDraft(state);
+  }
+
+  /// Maps the draft's current state to one of the three Plot variants so the
+  /// connection chip stays in sync with whether the first note is a task and
+  /// whether the thread is (or has been) shared this compose session.
+  PlotThreadChoice _plotChoiceForDraft(PriorityState state) {
+    if (state.draftNote.isAssignedTo(Base.actorId)) {
+      return ConnectionChoice.plotTask;
+    }
+    final hasContacts = state.draft.contacts.isNotEmpty ||
+        state.draft.groups.isNotEmpty ||
+        state.draft.inviteEmails.isNotEmpty;
+    if (hasContacts || _hadContactsThisSession) {
+      return ConnectionChoice.plotChat;
+    }
+    return ConnectionChoice.plotNote;
   }
 
   /// The active create-link action attached to the draft note (if any).
@@ -885,13 +933,16 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// The canonical connection key for whatever the compose surface currently
   /// has selected: the selected twist, an attached create-link action, or the
-  /// "Plot thread" sentinel. Recorded on submit so the next new thread in this
-  /// priority defaults back to it (see _applyLastUsedConnectionDefault).
+  /// active Plot variant (note / task / chat). Recorded on submit so the next
+  /// new thread in this priority defaults back to it (see
+  /// _applyLastUsedConnectionDefault).
   String _currentConnectionKey() {
     if (_selectedTwist != null) return 'twist:${_selectedTwist!.id}';
     final action = _activeCreateAction;
     if (action != null) return createLinkActionKey(action);
-    return ConnectionChoice.plotThread.key;
+    final priorityState = _priorityBloc?.state;
+    if (priorityState == null) return ConnectionChoice.plotNote.key;
+    return _plotChoiceForDraft(priorityState).key;
   }
 
   void _onChatSubmitted() {

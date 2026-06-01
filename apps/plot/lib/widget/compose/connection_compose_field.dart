@@ -40,7 +40,7 @@ class ConnectionComposeField extends StatelessWidget {
           width: theme.iconSizes.base,
           height: theme.iconSizes.base,
         );
-        title = 'Plot thread';
+        title = activeChoice.label;
         subtitle = '';
       case TargetConnectionChoice(:final target):
         final url = isDark
