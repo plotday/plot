@@ -60,6 +60,7 @@ async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
       "twist.options_schema as twistOptions",
       "twist.shared",
       "twist.key_option as keyOption",
+      "twist.premium",
       "twist.twist_package_id as twistPackageId",
     ])
     .where("twist_instance.id", "=", twistInstanceId)
@@ -257,6 +258,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       return c.json({
         providers: [], accounts: [], syncables: [], optionsSchema,
         shared: twistInfo.shared, keyOption: twistInfo.keyOption,
+        premium: twistInfo.premium,
         accountLabel: twistInfo.accountLabel ?? null,
         teamName: twistInfo.teamName ?? null,
       });
@@ -362,6 +364,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       singleChannel: config.singleChannel,
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
+      premium: twistInfo.premium,
       teamDomains,
       accountLabel: twistInfo.accountLabel ?? null,
       teamName: twistInfo.teamName ?? null,
@@ -507,6 +510,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     optionsConfig,
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
+    premium: twistInfo.premium,
     teamDomains,
     accountLabel: twistInfo.accountLabel ?? null,
     teamName: twistInfo.teamName ?? null,

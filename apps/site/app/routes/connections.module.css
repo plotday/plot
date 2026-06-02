@@ -100,6 +100,26 @@
   border-radius: var(--mantine-radius-sm);
 }
 
+.premiumBadge {
+  font-size: rem(10px);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--mantine-color-brand-7);
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    rgba(var(--mantine-color-brand-9-rgb), 0.2)
+  );
+  padding: 2px 8px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.badgeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .entities {
   font-size: rem(12px);
   color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));

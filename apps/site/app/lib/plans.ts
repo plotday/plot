@@ -1,3 +1,8 @@
+// NOTE: Plan limits (regular and premium connections, twists, sync history)
+// are also encoded in the API at `workers/api/src/utils/limits.ts`
+// (`PLAN_LIMITS`). When changing the numbers here, update there in the same
+// PR. Tracked for extraction into a shared `@plot/plans` package.
+
 export type Billing = "monthly" | "annual";
 
 export const PRICES = {
@@ -83,6 +88,7 @@ export const PLANS: Plan[] = [
       "Unlimited connections and automations. Bring all your tools into one place.",
     features: [
       "Unlimited connections",
+      "1 premium connection (e.g. LinkedIn) included",
       "Unlimited Twists (optional AI usage extra)",
       "Import 1 year of historical items from connections",
       "No-code Twist builder",
@@ -108,6 +114,7 @@ export const PLANS: Plan[] = [
       "Provide your teams with the connections and automations to do their best work.",
     features: [
       "50+ connections shared across your team",
+      "Premium connections (e.g. LinkedIn) count as 3 from the pool",
       "Unlimited Twists (optional AI usage extra)",
       "Import 1 year of historical items from connections",
       "No-code Twist builder",

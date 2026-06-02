@@ -183,7 +183,9 @@ class ShowUpgradeOptions extends Command {
             title: isCore ? 'Core — \$14.99/month' : 'Pro — \$24.99/month',
             icon: isCore ? PlotIcon.connection : PlotIcon.sparkles,
             details: Text(
-              isCore ? 'Up to five connections' : 'Unlimited connections',
+              isCore
+                  ? 'Up to five connections'
+                  : 'Unlimited connections + 1 premium (LinkedIn)',
               style: context.theme.typography.sm.copyWith(
                 color: context.theme.plotColors.muted,
               ),

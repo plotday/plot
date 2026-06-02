@@ -67,6 +67,7 @@ class _ActiveSource extends _ConnectionItem {
   final int enabledCount;
   final String? teamName;
   final bool showScopeBadge;
+  final bool premium;
 
   _ActiveSource({
     required this.id,
@@ -79,6 +80,7 @@ class _ActiveSource extends _ConnectionItem {
     required this.enabledCount,
     this.teamName,
     this.showScopeBadge = false,
+    this.premium = false,
   });
 
   @override
@@ -381,6 +383,7 @@ class ManageConnections extends Command {
           enabledCount: summary.enabledCount,
           teamName: summary.teamName,
           showScopeBadge: showScopeBadge,
+          premium: summary.premium,
         ),
       );
     }
@@ -520,6 +523,10 @@ class _ActiveSourceRow extends StatelessWidget {
                     color: theme.colors.foreground,
                   ),
                 ),
+                if (item.premium) ...[
+                  const SizedBox(width: 6),
+                  const _PremiumBadge(),
+                ],
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
@@ -592,6 +599,10 @@ class _AvailableSourceRow extends StatelessWidget {
                     color: theme.colors.foreground,
                   ),
                 ),
+                if (item.twist.premium) ...[
+                  const SizedBox(width: 6),
+                  const _PremiumBadge(),
+                ],
                 if (item.twist.environment != 'public') ...[
                   const SizedBox(width: 6),
                   _EnvironmentBadge(environment: item.twist.environment),
@@ -817,6 +828,33 @@ class _EnvironmentBadge extends StatelessWidget {
   }
 }
 
+/// Badge identifying a connector as "premium" (has a real per-connection
+/// cost — currently Unipile-backed integrations like LinkedIn). Drives
+/// plan-specific metering separately from the regular connection pool.
+class _PremiumBadge extends StatelessWidget {
+  const _PremiumBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        'Premium',
+        style: TextStyle(
+          fontSize: theme.typography.xs.fontSize,
+          color: theme.colors.primary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 /// Displays a source logo from URL, falling back to provider icon.
 class _SourceLogo extends StatelessWidget {
   const _SourceLogo({
@@ -868,6 +906,92 @@ Command _connectionAtLimitCommand() => ShowUpgradeOptions(
   title: 'Upgrade to add more connections',
 );
 
+/// Returned when a Free/Core user tries to add a premium connection.
+Command _premiumBlockedCommand() => ShowUpgradeOptions(
+  title: 'Upgrade to Pro to add a premium connection',
+  subtitle:
+      'LinkedIn (and other premium connectors) are included with Pro. '
+      'Your current plan only includes standard connections.',
+);
+
+/// Returned when a Pro user has used their included premium connection,
+/// or a Team is too close to the pool ceiling to accommodate one
+/// (premium connections count as 3 from the team pool).
+Command _premiumAtLimitCommand({required bool isTeam}) => ShowUpgradeOptions(
+  title: isTeam
+      ? 'Premium connection limit reached'
+      : "You've used your included premium connection",
+  subtitle: isTeam
+      ? "Premium connections count as 3 from your team's pool. "
+            'Add another group of 50 connections to keep going. '
+            'Dedicated premium add-ons are coming soon.'
+      : 'Pro includes one premium connection. Premium add-ons are coming '
+            "soon — we'll let you know.",
+);
+
+/// Convenience wrapper around [_evaluatePremium]: returns a ready-to-run
+/// command for the premium-block / premium-at-limit cases, or null when the
+/// connector is not premium or the standard limit-check should proceed.
+Command? _premiumGateCommand({
+  required UsageData usage,
+  required String owner, // 'personal' or team id
+  required bool isPremium,
+}) {
+  if (!isPremium) return null;
+  switch (_evaluatePremium(usage: usage, owner: owner)) {
+    case _PremiumGate.allowed:
+      return null;
+    case _PremiumGate.blocked:
+      return _premiumBlockedCommand();
+    case _PremiumGate.atLimit:
+      return _premiumAtLimitCommand(isTeam: owner != 'personal');
+  }
+}
+
+enum _PremiumGate { allowed, atLimit, blocked }
+
+/// Decide whether the selected scope can accept another premium connection.
+/// Returns:
+///   - [_PremiumGate.allowed] when no further gating is needed (regular
+///     pool checks still apply for `weighted` scopes — handled separately).
+///   - [_PremiumGate.atLimit] when the scope's premium credit pool is
+///     exhausted, or a `weighted` scope can't fit another premium.
+///   - [_PremiumGate.blocked] when the scope's plan doesn't allow premium.
+_PremiumGate _evaluatePremium({
+  required UsageData usage,
+  required String owner, // 'personal' or team id
+}) {
+  final PremiumUsage? premium;
+  final ResourceUsage? poolForWeighted;
+  if (owner == 'personal') {
+    premium = usage.personal.premium;
+    poolForWeighted = null; // personal Pro is unlimited
+  } else {
+    final team = usage.teams.firstWhereOrNull((t) => t.id == owner);
+    premium = team?.premium;
+    poolForWeighted = team?.connections;
+  }
+  // Treat a missing payload (older server) as blocked so we never silently
+  // let a premium slip through pre-rollout.
+  if (premium == null) return _PremiumGate.blocked;
+  switch (premium.policy) {
+    case PremiumPolicy.blocked:
+      return _PremiumGate.blocked;
+    case PremiumPolicy.credits:
+      return premium.isAtLimit ? _PremiumGate.atLimit : _PremiumGate.allowed;
+    case PremiumPolicy.weighted:
+      // Premium uses `weight` slots from the regular pool. If the pool has
+      // fewer free slots than the weight, calling it "at limit" surfaces the
+      // correct premium-specific upgrade message instead of the generic one.
+      final weight = premium.weight ?? 1;
+      if (poolForWeighted == null || poolForWeighted.limit == null) {
+        return _PremiumGate.allowed; // unlimited pool — no gating
+      }
+      final remaining = poolForWeighted.limit! - poolForWeighted.count;
+      return remaining < weight ? _PremiumGate.atLimit : _PremiumGate.allowed;
+  }
+}
+
 /// Returns the at-limit command for a twist-limit case.
 Command _twistAtLimitCommand() => ShowUpgradeOptions(
   title: 'Upgrade to add more twists',
@@ -913,6 +1037,16 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
           ? '${personal.count} personal'
           : '${personal.count} of ${personal.limit} personal',
     );
+    final premium = usage.personal.premium;
+    // On Pro (policy=credits), surface the included premium slot so users see
+    // why a second LinkedIn would be blocked. On Team scopes the premium
+    // count folds into the regular pool via weighting, so we don't add a
+    // separate line per-team.
+    if (premium != null &&
+        premium.policy == PremiumPolicy.credits &&
+        premium.limit != null) {
+      parts.add('premium: ${premium.count} of ${premium.limit}');
+    }
     for (final org in usage.teams) {
       parts.add(
         org.connections.isUnlimited
@@ -1225,6 +1359,12 @@ class EditSource extends ShowForm {
                 // connections saving in place are exempt — they already count
                 // toward their current scope.
                 if (isNewlyActivated || owner != initialTeamId) {
+                  final premiumGate = _premiumGateCommand(
+                    usage: usage,
+                    owner: owner,
+                    isPremium: integrations.premium,
+                  );
+                  if (premiumGate != null) return premiumGate;
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit
@@ -1760,6 +1900,23 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(refreshed)!,
               ...refreshed.providers.map((provider) {
                 final initialOwner = refreshedDefault;
+                // Premium gate (Free/Core: blocked; Pro: at-limit if used;
+                // Team: at-limit when remaining pool < 3). Falls through to
+                // the regular at-limit logic when premium is allowed.
+                final premiumGate = teams.isEmpty
+                    ? _premiumGateCommand(
+                        usage: usage,
+                        owner: initialOwner,
+                        isPremium: twist.premium,
+                      )
+                    : null;
+                if (premiumGate != null) {
+                  return FormButton(
+                    key: 'upgrade_premium_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => premiumGate,
+                  );
+                }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
                 // save/connect path checks the selected team's limit.
@@ -1815,6 +1972,12 @@ class AddSourceDetail extends ShowForm {
                   isPrimary: true,
                   buildCommand: (values) {
                     final owner = values['team_id'] as String? ?? 'personal';
+                    final premiumGate = _premiumGateCommand(
+                      usage: usage,
+                      owner: owner,
+                      isPremium: twist.premium,
+                    );
+                    if (premiumGate != null) return premiumGate;
                     final team = teams.firstWhereOrNull((t) => t.id == owner);
                     final atLimit = team != null
                         ? team.connections.isAtLimit
@@ -1931,6 +2094,21 @@ class AddSourceDetail extends ShowForm {
                 buildTeamSelect(integrations)!,
               ...integrations.providers.map((provider) {
                 final initialOwner = defaultTeamFor(integrations);
+                // Premium gate (see twin block above for the variant flow).
+                final premiumGate = teams.isEmpty
+                    ? _premiumGateCommand(
+                        usage: usage,
+                        owner: initialOwner,
+                        isPremium: twist.premium,
+                      )
+                    : null;
+                if (premiumGate != null) {
+                  return FormButton(
+                    key: 'upgrade_premium_${provider.provider.name}',
+                    isPrimary: true,
+                    buildCommand: (_) => premiumGate,
+                  );
+                }
                 // Gate preemptively only when the user has no team to fall
                 // back to. When teams exist, let them authenticate — the
                 // save/connect path checks the selected team's limit.
@@ -1987,6 +2165,12 @@ class AddSourceDetail extends ShowForm {
                   isPrimary: true,
                   buildCommand: (values) {
                     final owner = values['team_id'] as String? ?? 'personal';
+                    final premiumGate = _premiumGateCommand(
+                      usage: usage,
+                      owner: owner,
+                      isPremium: twist.premium,
+                    );
+                    if (premiumGate != null) return premiumGate;
                     final team = teams.firstWhereOrNull((t) => t.id == owner);
                     final atLimit = team != null
                         ? team.connections.isAtLimit
@@ -2912,6 +3096,12 @@ class SetupTwist extends ShowForm {
                 key: 'connect',
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
+                  final premiumGate = _premiumGateCommand(
+                    usage: usage,
+                    owner: owner,
+                    isPremium: twist.premium,
+                  );
+                  if (premiumGate != null) return premiumGate;
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
                   final atLimit = team != null
                       ? team.connections.isAtLimit

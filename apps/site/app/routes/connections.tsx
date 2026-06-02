@@ -129,7 +129,12 @@ function ConnectionCard({
       </Badge>
       <Text className={classes.entities}>{connection.entities.join(", ")}</Text>
       {connection.available ? (
-        <span className={classes.availableBadge}>Available</span>
+        <span className={classes.badgeRow}>
+          <span className={classes.availableBadge}>Available</span>
+          {connection.premium && (
+            <span className={classes.premiumBadge}>Premium</span>
+          )}
+        </span>
       ) : hasVoted ? (
         <span className={classes.voteCount}>
           <IconThumbUp size={14} />

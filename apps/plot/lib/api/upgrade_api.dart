@@ -68,12 +68,102 @@ class ResourceUsage extends Equatable {
   List<Object?> get props => [count, limit];
 }
 
+/// Premium-connection policy for a scope, mirroring the backend's
+/// `PremiumPolicy` discriminated union.
+///
+/// - `blocked`: plan does not allow premium connections (Free / Core).
+/// - `credits`: plan includes a fixed number of premium slots (+ add-ons).
+///   Premium connections do not count against the regular pool.
+/// - `weighted`: premium connections share the regular pool but each one
+///   consumes `weight` slots from it.
+enum PremiumPolicy {
+  blocked,
+  credits,
+  weighted;
+
+  static PremiumPolicy fromJson(String? value) {
+    switch (value) {
+      case 'credits':
+        return PremiumPolicy.credits;
+      case 'weighted':
+        return PremiumPolicy.weighted;
+      case 'blocked':
+      default:
+        return PremiumPolicy.blocked;
+    }
+  }
+}
+
+class PremiumUsage extends Equatable {
+  final PremiumPolicy policy;
+
+  /// Number of premium connections currently in this scope.
+  final int count;
+
+  /// Allowed premium count when [policy] is [PremiumPolicy.credits]
+  /// (= `included + addons`). Null for `weighted` (no separate limit;
+  /// premium shares the regular pool) and `blocked` (none allowed).
+  final int? limit;
+
+  /// Plan-default premium slots. Only meaningful when [policy] is
+  /// [PremiumPolicy.credits]. Null otherwise.
+  final int? included;
+
+  /// Add-on premium slots beyond the plan default. Only meaningful when
+  /// [policy] is [PremiumPolicy.credits]. Null otherwise.
+  final int? addons;
+
+  /// Per-premium-connection cost in regular pool slots when [policy] is
+  /// [PremiumPolicy.weighted]. Null otherwise.
+  final int? weight;
+
+  const PremiumUsage({
+    required this.policy,
+    this.count = 0,
+    this.limit,
+    this.included,
+    this.addons,
+    this.weight,
+  });
+
+  factory PremiumUsage.fromJson(Map<String, dynamic> json) {
+    final policy = PremiumPolicy.fromJson(json['policy'] as String?);
+    return PremiumUsage(
+      policy: policy,
+      count: json['count'] as int? ?? 0,
+      limit: json['limit'] as int?,
+      included: json['included'] as int?,
+      addons: json['addons'] as int?,
+      weight: json['weight'] as int?,
+    );
+  }
+
+  bool get isBlocked => policy == PremiumPolicy.blocked;
+
+  /// True for `credits` plans whose limit is reached. Always false for
+  /// `weighted` (the regular pool limit governs) and `blocked` (handled
+  /// by [isBlocked] separately).
+  bool get isAtLimit =>
+      policy == PremiumPolicy.credits && limit != null && count >= limit!;
+
+  @override
+  List<Object?> get props => [policy, count, limit, included, addons, weight];
+}
+
 /// Usage data for the current user's personal account
 class PersonalUsage extends Equatable {
   final ResourceUsage connections;
   final ResourceUsage twists;
 
-  const PersonalUsage({required this.connections, required this.twists});
+  /// Premium-connection policy + usage. Null when the server predates the
+  /// premium-connections rollout — treat as blocked for safety.
+  final PremiumUsage? premium;
+
+  const PersonalUsage({
+    required this.connections,
+    required this.twists,
+    this.premium,
+  });
 
   factory PersonalUsage.fromJson(Map<String, dynamic> json) {
     return PersonalUsage(
@@ -81,11 +171,14 @@ class PersonalUsage extends Equatable {
         json['connections'] as Map<String, dynamic>,
       ),
       twists: ResourceUsage.fromJson(json['twists'] as Map<String, dynamic>),
+      premium: json['premium'] != null
+          ? PremiumUsage.fromJson(json['premium'] as Map<String, dynamic>)
+          : null,
     );
   }
 
   @override
-  List<Object?> get props => [connections, twists];
+  List<Object?> get props => [connections, twists, premium];
 }
 
 /// Usage data for a team the current user belongs to
@@ -94,6 +187,9 @@ class TeamUsage extends Equatable {
   final String name;
   final String plan; // 'free' | 'core' | 'pro' | 'team'
   final ResourceUsage connections;
+
+  /// Premium-connection policy + usage for the team scope.
+  final PremiumUsage? premium;
   final bool isAdmin;
 
   const TeamUsage({
@@ -101,6 +197,7 @@ class TeamUsage extends Equatable {
     required this.name,
     this.plan = 'free',
     required this.connections,
+    this.premium,
     required this.isAdmin,
   });
 
@@ -112,12 +209,15 @@ class TeamUsage extends Equatable {
       connections: ResourceUsage.fromJson(
         json['connections'] as Map<String, dynamic>,
       ),
+      premium: json['premium'] != null
+          ? PremiumUsage.fromJson(json['premium'] as Map<String, dynamic>)
+          : null,
       isAdmin: json['is_admin'] as bool? ?? false,
     );
   }
 
   @override
-  List<Object?> get props => [id, name, plan, connections, isAdmin];
+  List<Object?> get props => [id, name, plan, connections, premium, isAdmin];
 }
 
 /// Combined usage data for the current user

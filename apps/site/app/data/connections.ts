@@ -5,6 +5,10 @@ export type Connection = {
   category: string;
   entities: string[];
   available: boolean;
+  // True for "premium" connections (Unipile-backed, real per-connection cost).
+  // Pro plan includes 1; Team plan counts each as 3 from the shared pool;
+  // Free/Core can't enable premium connections.
+  premium?: boolean;
 };
 
 // simple-icons with brand color for light, lighter variant for dark
@@ -52,6 +56,14 @@ export const CONNECTIONS: Connection[] = [
     entities: ["Comment Threads"],
     available: true,
   },
+  {
+    name: "LinkedIn",
+    logo: "https://api.iconify.design/logos/linkedin-icon.svg",
+    category: "Communication",
+    entities: ["Messages", "Connection requests"],
+    available: true,
+    premium: true,
+  },
 
   // ── Written but not yet deployed ──
   {
@@ -81,13 +93,6 @@ export const CONNECTIONS: Connection[] = [
     logo: "https://api.iconify.design/logos/slack-icon.svg",
     category: "Communication",
     entities: ["Messages", "Channels"],
-    available: false,
-  },
-  {
-    name: "LinkedIn",
-    logo: "https://api.iconify.design/logos/linkedin-icon.svg",
-    category: "Communication",
-    entities: ["Messages", "Connection requests"],
     available: false,
   },
   {

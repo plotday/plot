@@ -10,6 +10,11 @@ CREATE TABLE "public"."team_subscription" (
     "billing_cycle_start" timestamp with time zone NOT NULL,
     "billing_cycle_end" timestamp with time zone NOT NULL,
     "connection_group_quantity" integer NOT NULL DEFAULT 1,
+    -- Additional premium connection credits beyond the plan default. Wired
+    -- now for forward-compatibility with paid add-ons; no UI yet. On Team
+    -- plans premium connections are normally weighted into the regular pool
+    -- (3× per connection); this column is reserved for explicit team add-ons.
+    "premium_connection_addons" integer NOT NULL DEFAULT 0,
     UNIQUE (team_id)
 );
 

@@ -34,6 +34,11 @@ CREATE TABLE "public"."twist" (
     "is_source" boolean NOT NULL DEFAULT false,
     "shared" boolean NOT NULL DEFAULT false,
     "key_option" text,
+    -- Premium connector flag. Set to true at deploy time for connectors with
+    -- real per-connection cost (e.g. Unipile-backed integrations like LinkedIn).
+    -- Drives plan-specific limits: blocked on Free/Core, 1 included on Pro,
+    -- counts as 3 against the team pool on Team plans.
+    "premium" boolean NOT NULL DEFAULT false,
     "logo_url" text,
     "logo_url_dark" text,
     "execution_limit" integer,

@@ -101,6 +101,7 @@ export class LinkedIn extends Connector<LinkedIn> {
   readonly provider = LINKEDIN_PROVIDER;
   readonly scopes = LinkedIn.SCOPES;
   readonly singleChannel = true;
+  readonly premium = true;
   readonly reactionCapabilities: ReactionCapabilities = {
     mode: "fixed",
     allowed: LINKEDIN_REACTIONS,

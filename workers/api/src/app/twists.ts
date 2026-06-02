@@ -184,6 +184,7 @@ twists.get("/sources/summary", async (c) => {
         "twist.twist_package_id",
         "twist.logo_url",
         "twist.logo_url_dark",
+        "twist.premium",
         "team.name as team_name",
       ])
       .where("twist.is_source", "=", true)
@@ -243,6 +244,7 @@ twists.get("/sources/summary", async (c) => {
         enabled_count: countMap.get(source.id) ?? 0,
         team_id: source.team_id ? String(source.team_id) : null,
         team_name: source.team_name ?? null,
+        premium: source.premium,
       };
     });
 

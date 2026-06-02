@@ -187,10 +187,13 @@ export interface CustomEmoji {
 
 export interface Device {
   app_version: string | null;
+  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
+  device_id: string | null;
   id: Generated<string>;
+  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string;
+  push_token: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -449,11 +452,32 @@ export interface LinkX {
   updated_by: number | null;
 }
 
+export interface LocalSyncLease {
+  attempt_id: string;
+  capability: string;
+  created_at: Generated<Timestamp>;
+  device_id: string;
+  fail_streak: Generated<number>;
+  last_completed_at: Timestamp | null;
+  last_error: string | null;
+  last_heartbeat_at: Timestamp;
+  last_result: string | null;
+  lease_token: string;
+  leased_until: Timestamp;
+  next_eligible_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Note {
   /**
    * Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.
    */
   access_contacts: string[] | null;
+  /**
+   * Restricts note visibility within thread viewers via group membership, parallel to access_contacts. NULL = thread-default groups can see, array of group_ids = author + members of listed groups (subset of thread.groups). Combines with access_contacts via OR: a non-author user sees the note iff their contact ids overlap access_contacts (when non-null) OR their group ids overlap access_groups (when non-null). When both are NULL, all thread viewers see it.
+   */
+  access_groups: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   /**
@@ -540,6 +564,13 @@ export interface NoteTags {
   tags: Json | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
+}
+
+export interface PendingThreadState {
+  created_at: Generated<Timestamp>;
+  payload: Json;
+  thread_id: string;
+  user_id: string;
 }
 
 export interface Priority {
@@ -708,6 +739,7 @@ export interface TeamSubscription {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   plan: Generated<SubscriptionPlan>;
+  premium_connection_addons: Generated<number>;
   status: Generated<SubscriptionStatus>;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
@@ -771,6 +803,7 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
+  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
@@ -957,6 +990,7 @@ export interface Twist {
   name: string;
   options_schema: Json | null;
   permissions: Json | null;
+  premium: Generated<boolean>;
   publisher_id: Int8 | null;
   seq: Generated<string>;
   shared: Generated<boolean>;
@@ -1417,6 +1451,7 @@ export interface UserLink {
 
 export interface UserNote {
   access_contacts: string[] | null;
+  access_groups: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
@@ -1449,6 +1484,7 @@ export interface UserNoteReactions {
 
 export interface UserNoteRedacted {
   access_contacts: string[] | null;
+  access_groups: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
@@ -1595,6 +1631,7 @@ export interface UserSubscription {
   id: Generated<Int8>;
   origin: Generated<string>;
   plan: Generated<SubscriptionPlan>;
+  premium_connection_addons: Generated<number>;
   status: Generated<SubscriptionStatus>;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
@@ -1798,11 +1835,13 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
+  local_sync_lease: LocalSyncLease;
   note: Note;
   note_reaction: NoteReaction;
   note_reactions: NoteReactions;
   note_tag: NoteTag;
   note_tags: NoteTags;
+  pending_thread_state: PendingThreadState;
   priority: Priority;
   priority_block: PriorityBlock;
   priority_child: PriorityChild;

@@ -10,11 +10,32 @@ export type PlanKey = "free" | "core" | "pro" | "team";
 /** twist.twist_package_id for the built-in Plot twist. */
 export const BUILTIN_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 
-export const PLAN_LIMITS = {
-  free: { connections: 2, twists: 1, syncHistoryDays: 7 },
-  core: { connections: 5, twists: 2, syncHistoryDays: 30 },
-  pro: { connections: Infinity, twists: Infinity, syncHistoryDays: 365 },
-  team: { connections: Infinity, twists: Infinity, syncHistoryDays: 365 }, // team pool handled separately
+/**
+ * Premium connection policy per plan.
+ *
+ * - `blocked`: connector is gated entirely; user must upgrade to enable it.
+ * - `credits`: plan includes a fixed number of premium slots (+ add-ons).
+ *   Premium connections do NOT count against the regular pool.
+ * - `weighted`: premium connections share the regular pool but each one
+ *   consumes `weightAsRegular` slots from it.
+ */
+export type PremiumPolicy =
+  | { type: "blocked" }
+  | { type: "credits"; included: number }
+  | { type: "weighted"; weightAsRegular: number };
+
+export type PlanLimits = {
+  connections: number;
+  twists: number;
+  syncHistoryDays: number;
+  premium: PremiumPolicy;
+};
+
+export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
+  free: { connections: 2, twists: 1, syncHistoryDays: 7, premium: { type: "blocked" } },
+  core: { connections: 5, twists: 2, syncHistoryDays: 30, premium: { type: "blocked" } },
+  pro: { connections: Infinity, twists: Infinity, syncHistoryDays: 365, premium: { type: "credits", included: 1 } },
+  team: { connections: Infinity, twists: Infinity, syncHistoryDays: 365, premium: { type: "weighted", weightAsRegular: 3 } }, // team pool handled separately
 };
 
 export const TEAM_CONNECTIONS_PER_GROUP = 50;
@@ -31,8 +52,14 @@ export function getSyncHistoryMinDate(plan: PlanKey): Date {
   return cutoff;
 }
 
+export type PlanLimitReason =
+  | "connection_limit"
+  | "premium_blocked"
+  | "premium_credit_exhausted";
+
 export class PlanLimitError extends Error {
   readonly limitType: "connection" | "twist";
+  readonly reason: PlanLimitReason;
   readonly plan: string;
   readonly currentCount: number;
   readonly limit: number;
@@ -42,6 +69,7 @@ export class PlanLimitError extends Error {
 
   constructor(opts: {
     limitType: "connection" | "twist";
+    reason?: PlanLimitReason;
     plan: string;
     currentCount: number;
     limit: number;
@@ -53,6 +81,7 @@ export class PlanLimitError extends Error {
     super(`You've reached your ${noun} limit.`);
     this.name = "PlanLimitError";
     this.limitType = opts.limitType;
+    this.reason = opts.reason ?? "connection_limit";
     this.plan = opts.plan;
     this.currentCount = opts.currentCount;
     this.limit = opts.limit;
@@ -66,6 +95,7 @@ export class PlanLimitError extends Error {
       message: this.message,
       code: "plan_limit_exceeded",
       limit_type: this.limitType,
+      reason: this.reason,
       plan: this.plan,
       current_count: this.currentCount,
       limit: this.limit,
@@ -107,6 +137,9 @@ export class SingleInstanceError extends Error {
  * always self-consistent. Counting `twist_instance_connection` rows would
  * undercount when a source borrows auth from a private auth twist or has
  * had its connection rows pruned while channels remain enabled.
+ *
+ * Excludes premium connectors — those are metered separately per
+ * `getPersonalPremiumConnectionCount`.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
@@ -120,6 +153,7 @@ export async function getPersonalConnectionCount(
     .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
     .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", false)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
@@ -134,18 +168,74 @@ export async function getPersonalConnectionCount(
 }
 
 /**
- * Count team connections: active source twist_instances owned by the given
- * team with at least one enabled channel. Mirrors the personal count above
- * so both totals match the Connections modal list.
+ * Count personal premium connections (where `twist.premium = true`).
+ * Premium credits are independent of the regular pool — used on plans
+ * with a `credits` policy (Pro).
  */
-export async function getTeamConnectionCount(
+export async function getPersonalPremiumConnectionCount(
   db: Kysely<DB>,
-  teamId: string
+  userId: string
 ): Promise<number> {
   const result = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as tw", "tw.id", "pt.twist_id")
     .select(sql<string>`count(*)`.as("count"))
+    .where("pt.owner_id", "=", userId)
+    .where("pt.team_id", "is", null)
+    .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", true)
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
+          .where("sc.enabled", "=", true)
+          .select(sql`1`.as("x"))
+      )
+    )
+    .executeTakeFirstOrThrow();
+
+  return Number(result.count);
+}
+
+/**
+ * Get add-on premium connection credits for a user (beyond their plan default).
+ * Wired now for forward-compatibility with paid add-ons; returns 0 today.
+ */
+export async function getPersonalPremiumAddons(
+  db: Kysely<DB>,
+  userId: string
+): Promise<number> {
+  const sub = await db
+    .selectFrom("user_subscription")
+    .select("premium_connection_addons")
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return sub?.premium_connection_addons ?? 0;
+}
+
+/**
+ * Count team connections, weighting premium connectors by their plan's
+ * `weightAsRegular` factor. Mirrors the personal count above so the total
+ * matches the Connections modal list, but each premium connection consumes
+ * more slots from the shared pool than a regular one.
+ *
+ * Currently the weight is taken from `PLAN_LIMITS.team.premium` (= 3); if
+ * we ever vary the team weight per-plan, thread the policy through.
+ */
+export async function getTeamConnectionCount(
+  db: Kysely<DB>,
+  teamId: string
+): Promise<number> {
+  const teamPolicy = PLAN_LIMITS.team.premium;
+  const weight =
+    teamPolicy.type === "weighted" ? teamPolicy.weightAsRegular : 1;
+  const result = await db
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(
+      sql<string>`COALESCE(SUM(CASE WHEN tw.premium THEN ${weight} ELSE 1 END), 0)`.as("count")
+    )
     .where("pt.team_id", "=", teamId)
     .where("pt.archived_at", "is", null)
     .where("tw.is_source", "=", true)
@@ -177,6 +267,21 @@ export async function getTeamConnectionLimit(
 
   if (!sub) return TEAM_CONNECTIONS_PER_GROUP; // default 1 group
   return sub.connection_group_quantity;
+}
+
+/**
+ * Get team premium connection add-on credits. Wired for forward-compat.
+ */
+export async function getTeamPremiumAddons(
+  db: Kysely<DB>,
+  teamId: string
+): Promise<number> {
+  const sub = await db
+    .selectFrom("team_subscription")
+    .select("premium_connection_addons")
+    .where("team_id", "=", teamId)
+    .executeTakeFirst();
+  return sub?.premium_connection_addons ?? 0;
 }
 
 /**
@@ -224,18 +329,22 @@ export async function getTeamTwistCount(
 }
 
 /**
- * Helper: look up the team_id of a twist_instance (null = personal).
+ * Helper: look up the team_id and premium flag of a twist_instance.
  */
-async function getTwistTeamId(
+async function getTwistInstanceMeta(
   db: Kysely<DB>,
   twistInstanceId: string
-): Promise<string | null> {
+): Promise<{ teamId: string | null; premium: boolean }> {
   const row = await db
-    .selectFrom("twist_instance")
-    .select("team_id")
-    .where("id", "=", twistInstanceId)
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(["pt.team_id", "tw.premium"])
+    .where("pt.id", "=", twistInstanceId)
     .executeTakeFirst();
-  return row?.team_id ? String(row.team_id) : null;
+  return {
+    teamId: row?.team_id ? String(row.team_id) : null,
+    premium: !!row?.premium,
+  };
 }
 
 async function isTeamAdmin(
@@ -289,7 +398,11 @@ export async function getPersonalPlan(
 /**
  * Check if enabling a channel would exceed connection limits.
  * Routes to the team-level or personal quota based on
- * `twist_instance.team_id`.
+ * `twist_instance.team_id`. Premium connectors (twist.premium = true) are
+ * metered per-plan via PremiumPolicy:
+ * - blocked: rejected outright with reason="premium_blocked"
+ * - credits: counted against the per-user premium credit pool
+ * - weighted: counted against the regular pool with a multiplier
  */
 export async function checkChannelConnectionLimit(
   db: Kysely<DB>,
@@ -308,7 +421,7 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  const teamId = await getTwistTeamId(db, twistInstanceId);
+  const { teamId, premium: isPremium } = await getTwistInstanceMeta(db, twistInstanceId);
 
   // Team-owned twist: team quota applies
   if (teamId) {
@@ -336,15 +449,58 @@ export async function checkChannelConnectionLimit(
       teamSub && teamSub.status === "active"
         ? (teamSub.plan as "free" | "core" | "pro" | "team")
         : "free";
+    const policy = PLAN_LIMITS[teamPlan].premium;
 
+    // Premium connector on a plan that blocks premium (team free/core)
+    if (isPremium && policy.type === "blocked") {
+      const admin = await isTeamAdmin(db, userId, teamId);
+      return {
+        allowed: false,
+        error: new PlanLimitError({
+          limitType: "connection",
+          reason: "premium_blocked",
+          plan: teamPlan,
+          currentCount: 0,
+          limit: 0,
+          isTeam: true,
+          isAdmin: admin,
+          teamId,
+        }),
+      };
+    }
+
+    // Team-Pro / Team-Core: regular pool unlimited; premium uses credits
     if (teamPlan === "pro" || teamPlan === "core") {
+      if (isPremium && policy.type === "credits") {
+        const addons = await getTeamPremiumAddons(db, teamId);
+        const limit = policy.included + addons;
+        const count = await getTeamPremiumConnectionCount(db, teamId);
+        if (count >= limit) {
+          const admin = await isTeamAdmin(db, userId, teamId);
+          return {
+            allowed: false,
+            error: new PlanLimitError({
+              limitType: "connection",
+              reason: "premium_credit_exhausted",
+              plan: teamPlan,
+              currentCount: count,
+              limit,
+              isTeam: true,
+              isAdmin: admin,
+              teamId,
+            }),
+          };
+        }
+      }
       return { allowed: true };
     }
 
     if (teamPlan === "team") {
       const count = await getTeamConnectionCount(db, teamId);
       const limit = await getTeamConnectionLimit(db, teamId);
-      if (count >= limit) {
+      const candidateWeight =
+        isPremium && policy.type === "weighted" ? policy.weightAsRegular : 1;
+      if (count + candidateWeight > limit) {
         const admin = await isTeamAdmin(db, userId, teamId);
         return {
           allowed: false,
@@ -397,6 +553,48 @@ export async function checkChannelConnectionLimit(
   const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
 
+  // Premium connector enforcement
+  if (isPremium) {
+    if (limits.premium.type === "blocked") {
+      return {
+        allowed: false,
+        error: new PlanLimitError({
+          limitType: "connection",
+          reason: "premium_blocked",
+          plan,
+          currentCount: 0,
+          limit: 0,
+          isTeam: false,
+          isAdmin: false,
+          teamId: null,
+        }),
+      };
+    }
+    if (limits.premium.type === "credits") {
+      const addons = await getPersonalPremiumAddons(db, userId);
+      const limit = limits.premium.included + addons;
+      const count = await getPersonalPremiumConnectionCount(db, userId);
+      if (count >= limit) {
+        return {
+          allowed: false,
+          error: new PlanLimitError({
+            limitType: "connection",
+            reason: "premium_credit_exhausted",
+            plan,
+            currentCount: count,
+            limit,
+            isTeam: false,
+            isAdmin: false,
+            teamId: null,
+          }),
+        };
+      }
+    }
+    // Premium under `credits` policy doesn't consume the regular pool.
+    return { allowed: true };
+  }
+
+  // Regular connector: classic personal pool check
   if (limits.connections === Infinity) {
     return { allowed: true };
   }
@@ -418,6 +616,37 @@ export async function checkChannelConnectionLimit(
   }
 
   return { allowed: true };
+}
+
+/**
+ * Count team premium connections (raw count, unweighted). Used when a team
+ * plan happens to use a `credits` policy for premium (currently only when
+ * the team subscription is on Pro/Core; the default `team` plan uses
+ * `weighted` instead and folds premium into the regular pool count).
+ */
+async function getTeamPremiumConnectionCount(
+  db: Kysely<DB>,
+  teamId: string
+): Promise<number> {
+  const result = await db
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(sql<string>`count(*)`.as("count"))
+    .where("pt.team_id", "=", teamId)
+    .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
+    .where("tw.premium", "=", true)
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
+          .where("sc.enabled", "=", true)
+          .select(sql`1`.as("x"))
+      )
+    )
+    .executeTakeFirstOrThrow();
+
+  return Number(result.count);
 }
 
 /**
@@ -488,6 +717,62 @@ export async function checkTwistLimit(
 }
 
 /**
+ * Shape the premium-usage payload for a personal or team scope. The
+ * discriminator (`policy`) mirrors PremiumPolicy so the client can render
+ * the right UI without knowing the plan tier directly.
+ */
+export type PremiumUsage =
+  | { policy: "blocked" }
+  | { policy: "credits"; count: number; included: number; addons: number; limit: number }
+  | { policy: "weighted"; count: number; weight: number };
+
+async function personalPremiumUsage(
+  db: Kysely<DB>,
+  userId: string,
+  plan: PlanKey
+): Promise<PremiumUsage> {
+  const policy = PLAN_LIMITS[plan].premium;
+  if (policy.type === "blocked") return { policy: "blocked" };
+  if (policy.type === "credits") {
+    const count = await getPersonalPremiumConnectionCount(db, userId);
+    const addons = await getPersonalPremiumAddons(db, userId);
+    return {
+      policy: "credits",
+      count,
+      included: policy.included,
+      addons,
+      limit: policy.included + addons,
+    };
+  }
+  // weighted
+  const count = await getPersonalPremiumConnectionCount(db, userId);
+  return { policy: "weighted", count, weight: policy.weightAsRegular };
+}
+
+async function teamPremiumUsage(
+  db: Kysely<DB>,
+  teamId: string,
+  plan: PlanKey
+): Promise<PremiumUsage> {
+  const policy = PLAN_LIMITS[plan].premium;
+  if (policy.type === "blocked") return { policy: "blocked" };
+  if (policy.type === "credits") {
+    const count = await getTeamPremiumConnectionCount(db, teamId);
+    const addons = await getTeamPremiumAddons(db, teamId);
+    return {
+      policy: "credits",
+      count,
+      included: policy.included,
+      addons,
+      limit: policy.included + addons,
+    };
+  }
+  // weighted (default team plan)
+  const count = await getTeamPremiumConnectionCount(db, teamId);
+  return { policy: "weighted", count, weight: policy.weightAsRegular };
+}
+
+/**
  * Get usage data for a user (for the usage endpoint).
  */
 export async function getUsage(
@@ -500,6 +785,7 @@ export async function getUsage(
 
   const connectionCount = await getPersonalConnectionCount(db, userId);
   const twistCount = await getPersonalTwistCount(db, userId);
+  const premium = await personalPremiumUsage(db, userId, plan);
 
   // Get team memberships with connection counts
   const teamMemberships = await db
@@ -538,6 +824,7 @@ export async function getUsage(
           : teamPlan === "team"
             ? team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP
             : 0;
+      const teamPremium = await teamPremiumUsage(db, teamId, teamPlan);
 
       return {
         id: teamId,
@@ -547,6 +834,7 @@ export async function getUsage(
           count: teamConnectionCount,
           limit: teamConnectionLimit,
         },
+        premium: teamPremium,
         is_admin: team.role === "admin",
       };
     })
@@ -574,6 +862,7 @@ export async function getUsage(
         count: twistCount,
         limit: limits.twists === Infinity ? null : limits.twists,
       },
+      premium,
       syncHistoryDays: limits.syncHistoryDays,
       ...(ai ? { ai } : {}),
     },

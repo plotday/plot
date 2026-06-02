@@ -1,4 +1,4 @@
-h1:S7jeQesucIQoxrHrpgRHofGjqGG1hSNdw/hYzFInAcc=
+h1:hfl9KinNIlw9U5mgumpqZwoLUctfSva71uONj3lDH6k=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -446,3 +446,4 @@ h1:S7jeQesucIQoxrHrpgRHofGjqGG1hSNdw/hYzFInAcc=
 20260602130008_gate_topic_trigger_thread_priority_update.sql h1:X0QOs/8eGGUIkUlertSen6c+9uS14YUGhrf13iFU9QQ=
 20260602130031_flatten_priority_child.sql h1:dtSXN11cxzJuoL0F0tGw4kQOndpbfqJSP/JwQrj5uGU=
 20260602131658_flatten_search_notes_and_links.sql h1:qLwd6szMklxqkAjJBLOrF/p7PxviUab99KOkKyo5L2c=
+20260602133006_add_premium_connection_columns.sql h1:poAg3nIYu3iSKwVemqbyoAtMMEklCF/7RAnb3wovcyw=

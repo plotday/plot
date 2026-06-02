@@ -41,6 +41,10 @@ class Twist {
   final List<AuthProvider> providers;
   final bool aiRequired;
   final bool multipleInstances;
+
+  /// True for "premium" connectors (Unipile-backed, real per-connection cost).
+  /// Metered separately by the API via plan-specific premium policy.
+  final bool premium;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -63,6 +67,7 @@ class Twist {
     this.providers = const [],
     this.aiRequired = false,
     this.multipleInstances = false,
+    this.premium = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -137,6 +142,7 @@ class Twist {
       providers: providers,
       aiRequired: aiRequired,
       multipleInstances: json['multiple_instances'] as bool? ?? false,
+      premium: json['premium'] as bool? ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -490,6 +496,7 @@ class SourceSummary {
   final int enabledCount;
   final String? teamId;
   final String? teamName;
+  final bool premium;
 
   const SourceSummary({
     required this.id,
@@ -504,6 +511,7 @@ class SourceSummary {
     required this.enabledCount,
     this.teamId,
     this.teamName,
+    this.premium = false,
   });
 
   factory SourceSummary.fromJson(Map<String, dynamic> json) {
@@ -529,6 +537,7 @@ class SourceSummary {
       enabledCount: json['enabled_count'] as int? ?? 0,
       teamId: json['team_id'] as String?,
       teamName: json['team_name'] as String?,
+      premium: json['premium'] as bool? ?? false,
     );
   }
 }
@@ -731,6 +740,10 @@ class TwistIntegrations {
   /// Name of the team owning this instance (null for personal).
   final String? teamName;
 
+  /// True for "premium" connectors (Unipile-backed). Carried here so the
+  /// EditSource form can route to a premium-specific upgrade prompt on save.
+  final bool premium;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
@@ -743,6 +756,7 @@ class TwistIntegrations {
     this.teamDomains,
     this.accountLabel,
     this.teamName,
+    this.premium = false,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -766,6 +780,7 @@ class TwistIntegrations {
       ),
       accountLabel: json['accountLabel'] as String?,
       teamName: json['teamName'] as String?,
+      premium: json['premium'] as bool? ?? false,
     );
   }
 

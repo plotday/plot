@@ -473,6 +473,7 @@ export default class extends WorkerEntrypoint {
         ...(twist.singleChannel ? { singleChannel: true } : {}),
         ...(twist.shared ? { shared: true } : {}),
         ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),
+        ...(twist.premium ? { premium: true } : {}),
       };
     } finally {
       tools?.disposeAll();
@@ -901,7 +902,7 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
 
   abstract getSourceMetadata(
     _twistInit: TwistInit
-  ): Promise<{ provider?: string; scopes?: string[]; linkTypes: any[]; shared?: boolean; keyOption?: string } | null>;
+  ): Promise<{ provider?: string; scopes?: string[]; linkTypes: any[]; shared?: boolean; keyOption?: string; premium?: boolean } | null>;
 
   abstract activate(
     _twistInit: TwistInit,

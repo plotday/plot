@@ -1953,6 +1953,7 @@ export type Database = {
           created_at: string
           id: number
           plan: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons: number
           status: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
@@ -1966,6 +1967,7 @@ export type Database = {
           created_at?: string
           id?: never
           plan?: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -1979,6 +1981,7 @@ export type Database = {
           created_at?: string
           id?: never
           plan?: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -2631,6 +2634,7 @@ export type Database = {
           name: string
           options_schema: Json | null
           permissions: Json | null
+          premium: boolean
           publisher_id: number | null
           seq: unknown
           shared: boolean
@@ -2657,6 +2661,7 @@ export type Database = {
           name: string
           options_schema?: Json | null
           permissions?: Json | null
+          premium?: boolean
           publisher_id?: number | null
           seq?: unknown
           shared?: boolean
@@ -2683,6 +2688,7 @@ export type Database = {
           name?: string
           options_schema?: Json | null
           permissions?: Json | null
+          premium?: boolean
           publisher_id?: number | null
           seq?: unknown
           shared?: boolean
@@ -3233,6 +3239,7 @@ export type Database = {
           id: number
           origin: string
           plan: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons: number
           status: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
@@ -3249,6 +3256,7 @@ export type Database = {
           id?: never
           origin?: string
           plan?: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -3265,6 +3273,7 @@ export type Database = {
           id?: never
           origin?: string
           plan?: Database["public"]["Enums"]["subscription_plan"]
+          premium_connection_addons?: number
           status?: Database["public"]["Enums"]["subscription_status"]
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -4612,6 +4621,7 @@ export type Database = {
           name: string
           options_schema: Json | null
           permissions: Json | null
+          premium: boolean
           publisher_id: number | null
           seq: unknown
           shared: boolean

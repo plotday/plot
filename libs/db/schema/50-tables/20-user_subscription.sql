@@ -21,6 +21,10 @@ CREATE TABLE "public"."user_subscription" (
     "origin" text NOT NULL DEFAULT 'stripe',
     "apple_original_transaction_id" text UNIQUE,
     "apple_product_id" text,
+    -- Additional premium connection credits beyond the plan default. Wired
+    -- now for forward-compatibility with paid add-ons; no UI yet. Pro plan
+    -- effective premium limit = (plan.included + premium_connection_addons).
+    "premium_connection_addons" integer NOT NULL DEFAULT 0,
     UNIQUE(user_id)
 );
 
