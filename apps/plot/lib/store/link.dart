@@ -47,6 +47,16 @@ class LinkTypeConfig {
   /// role changed. Email-style threads set this true; messaging connectors
   /// where the recipient list is fixed at creation set it false.
   final bool supportsContactChanges;
+  /// Whether a note/reply on this link type can carry a link (pasted URL or
+  /// connector-created item) that Plot forwards to the source. False (default)
+  /// hides the "Add link" button for threads of this link type. Private Plot
+  /// notes (no link type) always allow links.
+  final bool supportsLinks;
+  /// Whether a note/reply on this link type can carry an uploaded file that
+  /// Plot forwards to the source. False (default) hides the "Attach file"
+  /// button for threads of this link type. Private Plot notes always allow
+  /// attachments.
+  final bool supportsFileAttachments;
   /// How sharing on threads of this link type is scoped. See
   /// [SharingModel]. Defaults to thread.
   final SharingModel sharingModel;
@@ -75,6 +85,8 @@ class LinkTypeConfig {
     this.compose,
     this.contactRoles,
     this.supportsContactChanges = false,
+    this.supportsLinks = false,
+    this.supportsFileAttachments = false,
     this.sharingModel = SharingModel.thread,
     this.composePlaceholder,
     this.composeVerb,
@@ -107,6 +119,14 @@ class LinkTypeConfig {
           json['supportsContactChanges'] as bool? ??
               json['supports_contact_changes'] as bool? ??
               false,
+      supportsLinks:
+          json['supportsLinks'] as bool? ??
+          json['supports_links'] as bool? ??
+          false,
+      supportsFileAttachments:
+          json['supportsFileAttachments'] as bool? ??
+          json['supports_file_attachments'] as bool? ??
+          false,
       sharingModel: SharingModel.fromJson(
         json['sharingModel'] as String? ?? json['sharing_model'] as String?,
       ),

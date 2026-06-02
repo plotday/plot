@@ -1311,6 +1311,29 @@ class NoteEditorState extends State<NoteEditor> {
     _setCurrentActions(updatedActions);
   }
 
+  // -- Capability gating --
+
+  /// True when "Add link" should be shown for [cfg]. Null config = private Plot
+  /// note (always allowed); otherwise the link type must declare support.
+  bool _canAddLink(LinkTypeConfig? cfg) => cfg == null || cfg.supportsLinks;
+
+  /// True when "Attach file" should be shown for [cfg]. Null config = private
+  /// Plot note (always allowed); otherwise the link type must declare support.
+  bool _canAttachFile(LinkTypeConfig? cfg) =>
+      cfg == null || cfg.supportsFileAttachments;
+
+  /// The LinkTypeConfig governing the note currently being edited: the selected
+  /// create-action's type in new-thread mode, else the thread's primary link.
+  /// Null means a private Plot note (both actions allowed).
+  LinkTypeConfig? _activeLinkTypeConfig(BuildContext context) {
+    if (widget.isNewThreadMode) {
+      return linkTypeConfigForCreateAction(
+        widget.draft.actions?.whereType<CreateLinkUserAction>().firstOrNull,
+      );
+    }
+    return context.read<ThreadBloc>().state.primaryLinkTypeConfig;
+  }
+
   // -- Bottom bars --
 
   Widget _buildNoteBottomBar(BuildContext context) {
@@ -1333,21 +1356,23 @@ class NoteEditorState extends State<NoteEditor> {
                 opacity: _saving ? 0.6 : 1.0,
                 child: Row(
                   children: [
-                    // Link button
-                    Button.icon(
-                      AddLink(
-                        currentActions: _currentActions,
-                        onActionsChanged: applyActions,
-                        onNavigateToThread: widget.onNavigateToThread,
+                    // Link button — only when the source can carry a link.
+                    if (_canAddLink(threadState.primaryLinkTypeConfig))
+                      Button.icon(
+                        AddLink(
+                          currentActions: _currentActions,
+                          onActionsChanged: applyActions,
+                          onNavigateToThread: widget.onNavigateToThread,
+                        ),
                       ),
-                    ),
-                    Button.icon(
-                      AttachFile(
-                        priorityId: priorityId,
-                        currentLinks: _currentActions,
-                        onLinksChanged: applyActions,
+                    if (_canAttachFile(threadState.primaryLinkTypeConfig))
+                      Button.icon(
+                        AttachFile(
+                          priorityId: priorityId,
+                          currentLinks: _currentActions,
+                          onLinksChanged: applyActions,
+                        ),
                       ),
-                    ),
                     if (isMobilePlatform())
                       Button.icon(
                         TakePhoto(
@@ -1404,6 +1429,9 @@ class NoteEditorState extends State<NoteEditor> {
   Widget _buildNewThreadBottomBar() {
     final thread = widget.thread!;
     final draftNote = widget.draft;
+    final linkType = linkTypeConfigForCreateAction(
+      draftNote.actions?.whereType<CreateLinkUserAction>().firstOrNull,
+    );
     return Row(
       children: [
         IgnorePointer(
@@ -1412,31 +1440,33 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                // Link button
-                Button.icon(
-                  AddLink(
-                    currentActions: draftNote.actions ?? const [],
-                    onActionsChanged: (actions) {
-                      widget.onDraftChanged!(
-                        thread,
-                        note: draftNote.copyWith(actions: actions),
-                      );
-                    },
-                    onNavigateToThread: widget.onNavigateToThread,
+                // Link button — only when the target source can carry a link.
+                if (_canAddLink(linkType))
+                  Button.icon(
+                    AddLink(
+                      currentActions: draftNote.actions ?? const [],
+                      onActionsChanged: (actions) {
+                        widget.onDraftChanged!(
+                          thread,
+                          note: draftNote.copyWith(actions: actions),
+                        );
+                      },
+                      onNavigateToThread: widget.onNavigateToThread,
+                    ),
                   ),
-                ),
-                Button.icon(
-                  AttachFile(
-                    priorityId: thread.priority.id.toString(),
-                    currentLinks: draftNote.actions ?? const [],
-                    onLinksChanged: (actions) {
-                      widget.onDraftChanged!(
-                        thread,
-                        note: draftNote.copyWith(actions: actions),
-                      );
-                    },
+                if (_canAttachFile(linkType))
+                  Button.icon(
+                    AttachFile(
+                      priorityId: thread.priority.id.toString(),
+                      currentLinks: draftNote.actions ?? const [],
+                      onLinksChanged: (actions) {
+                        widget.onDraftChanged!(
+                          thread,
+                          note: draftNote.copyWith(actions: actions),
+                        );
+                      },
+                    ),
                   ),
-                ),
                 if (isMobilePlatform())
                   Button.icon(
                     TakePhoto(
@@ -1524,6 +1554,8 @@ class NoteEditorState extends State<NoteEditor> {
 
   void _shortcutAddLink(BuildContext context) {
     if (_saving) return;
+    // Respect the same per-link-type gating the toolbar button uses.
+    if (!_canAddLink(_activeLinkTypeConfig(context))) return;
     context.run(
       AddLink(
         currentActions: _currentActions,

@@ -44,5 +44,36 @@ void main() {
       expect(cfg.replyPlaceholder, 'Reply here');
       expect(cfg.replyVerb, 'Send reply');
     });
+
+    test('parses supportsLinks / supportsFileAttachments (camelCase)', () {
+      final cfg = LinkTypeConfig.fromJson({
+        'type': 'email',
+        'label': 'Thread',
+        'supportsLinks': true,
+        'supportsFileAttachments': true,
+      });
+      expect(cfg.supportsLinks, isTrue);
+      expect(cfg.supportsFileAttachments, isTrue);
+    });
+
+    test('parses supportsLinks / supportsFileAttachments (snake_case)', () {
+      final cfg = LinkTypeConfig.fromJson({
+        'type': 'email',
+        'label': 'Thread',
+        'supports_links': true,
+        'supports_file_attachments': true,
+      });
+      expect(cfg.supportsLinks, isTrue);
+      expect(cfg.supportsFileAttachments, isTrue);
+    });
+
+    test('supportsLinks / supportsFileAttachments default to false', () {
+      final cfg = LinkTypeConfig.fromJson({
+        'type': 'note',
+        'label': 'Note',
+      });
+      expect(cfg.supportsLinks, isFalse);
+      expect(cfg.supportsFileAttachments, isFalse);
+    });
   });
 }
