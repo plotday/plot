@@ -99,7 +99,6 @@ export function twistFactory({
       handleReplies?: boolean;
       shared?: boolean;
       keyOption?: string;
-      premium?: boolean;
     } | null = null;
 
     // Load twist_instance config for Options resolution at runtime

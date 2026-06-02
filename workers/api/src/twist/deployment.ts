@@ -10,6 +10,7 @@ import { notifyUserSyncByEnv } from "../app/sync/notify";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
 import { getPersonalPlan } from "../utils/limits";
+import { isPremiumTwistPackage } from "./premium-connectors";
 import { emitCustomDeploymentEvent } from "../utils/twist-events";
 
 export type DeploymentInput =
@@ -143,7 +144,7 @@ export async function deployTwist({
   let optionsSchema: Record<string, unknown> | undefined;
   let isNoProviderConnector = false;
   let multipleInstances = false;
-  let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string; premium?: boolean } | null = null;
+  let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -270,7 +271,7 @@ export async function deployTwist({
         is_source: providers.length > 0 || isNoProviderConnector,
         shared: sourceProvider?.shared ?? false,
         key_option: sourceProvider?.keyOption ?? null,
-        premium: sourceProvider?.premium ?? false,
+        premium: isPremiumTwistPackage(twistPackageId),
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
         multiple_instances: multipleInstances,
@@ -302,7 +303,7 @@ export async function deployTwist({
         is_source: providers.length > 0 || isNoProviderConnector,
         shared: sourceProvider?.shared ?? false,
         key_option: sourceProvider?.keyOption ?? null,
-        premium: sourceProvider?.premium ?? false,
+        premium: isPremiumTwistPackage(twistPackageId),
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
         multiple_instances: multipleInstances,
@@ -429,7 +430,7 @@ export async function deployTwist({
           is_source: providers.length > 0 || isNoProviderConnector,
           shared: sourceProvider?.shared ?? false,
           key_option: sourceProvider?.keyOption ?? null,
-          premium: sourceProvider?.premium ?? false,
+          premium: isPremiumTwistPackage(twistPackageId),
           logo_url: logoUrl ?? null,
           logo_url_dark: logoUrlDark ?? null,
           multiple_instances: multipleInstances,
@@ -449,7 +450,7 @@ export async function deployTwist({
               is_source: providers.length > 0 || isNoProviderConnector,
               shared: sourceProvider?.shared ?? false,
               key_option: sourceProvider?.keyOption ?? null,
-              premium: sourceProvider?.premium ?? false,
+              premium: isPremiumTwistPackage(twistPackageId),
               logo_url: logoUrl ?? null,
               logo_url_dark: logoUrlDark ?? null,
               multiple_instances: multipleInstances,
