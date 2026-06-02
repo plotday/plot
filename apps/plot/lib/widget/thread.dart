@@ -7,6 +7,7 @@ import 'package:prism_flutter/prism_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
+import 'package:plot/widget/link_assignee_picker.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -875,6 +876,31 @@ class SharedCommandButton extends HookWidget {
     final links = linksSnapshot.data ?? const <Link>[];
     final sharingModel = Thread.resolveSharingModel(links);
 
+    // Assignment mode: primary link is from a connector with channel
+    // sharing AND assignment. The avatar slot shows/edits the assignee
+    // instead of the channel title.
+    final assignmentLink = Thread.resolvePrimaryAssignmentLink(links);
+
+    // Resolve the assignee Actor for the AvatarGroup. useFuture rebuilds
+    // when assignmentLink.assigneeId changes; null assigneeId is the
+    // "unassigned" state.
+    final assigneeId = assignmentLink?.assigneeId;
+    final assigneeSnapshot = useFuture(
+      useMemoized(() async {
+        if (assigneeId == null) return null;
+        try {
+          return await Actor.getOne(assigneeId);
+        } catch (_) {
+          return null;
+        }
+      }, [assigneeId?.toString(), thread.id]),
+    );
+    // Synchronous cache fallback to avoid a first-frame "Assign" flicker
+    // on warm cache hits, mirroring the shared-AvatarGroup branch's
+    // synchronous fallback to command.sharedDisplayActors.
+    final assignee = assigneeSnapshot.data ??
+        (assigneeId != null ? Actor.fromCache(assigneeId) : null);
+
     // Channel-mode: derive the human-readable channel title from the primary
     // (earliest-created) link. Falls back to null when the channel isn't in
     // the local cache (deleted or not yet synced), in which case we fall
@@ -962,7 +988,33 @@ class SharedCommandButton extends HookWidget {
     //     unshared-icon fallback, same as before. For message-mode the actors
     //     are already derived per-viewer above.
     final Widget child;
-    if (sharingModel == SharingModel.channel && channelTitle != null) {
+    if (assignmentLink != null) {
+      if (assignee != null) {
+        // Assigned: single-avatar group, same sizing/styling as the
+        // shared variant so visual swap is seamless.
+        child = AvatarGroup(
+          actors: [assignee],
+          totalCount: 1,
+          size: avatarSize,
+          scheduleContacts: null,
+          tooltipBelow: tooltipBelow,
+          clickable: true,
+        );
+      } else {
+        // Unassigned: matches the unshared icon button's geometry.
+        child = SizedBox(
+          width: iconSize,
+          height: iconSize,
+          child: Center(
+            child: FaIcon(
+              PlotIcon.shareAdd, // userPlus glyph — see widget/icon.dart:202
+              size: iconSize,
+              color: iconColor,
+            ),
+          ),
+        );
+      }
+    } else if (sharingModel == SharingModel.channel && channelTitle != null) {
       // Render the channel name at the same vertical position as AvatarGroup
       // would occupy. SizedBox height matches avatarSize so the button row
       // stays stable when switching between thread/channel modes.
@@ -1030,21 +1082,29 @@ class SharedCommandButton extends HookWidget {
       variant: FButtonVariant.ghost,
       // Channel-mode is non-tappable per the spec ("no tap behavior"): the
       // channel title is informational only.
-      onPress: (sharingModel == SharingModel.channel && channelTitle != null)
-          ? null
-          : () => context.run(command),
+      onPress: assignmentLink != null
+          ? () => pickLinkAssignee(context, assignmentLink)
+          : (sharingModel == SharingModel.channel && channelTitle != null)
+              ? null
+              : () => context.run(command),
       child: child,
     );
 
-    // When shared (AvatarGroup) or showing a channel title, the child already
-    // conveys context — a generic tooltip would shadow the AvatarGroup's
-    // unified contact list or duplicate the visible channel name. Keep the
-    // title tooltip and hover-colour tracking only for the unshared share-icon
-    // state.
-    if (shared ||
+    // No tooltip wrap when the visible child already conveys context:
+    // - Assigned avatar (assignee name is in the AvatarGroup's own tooltip)
+    // - Channel-mode title (visible label)
+    // - Shared AvatarGroup (unified contact tooltip)
+    if ((assignmentLink != null && assignee != null) ||
+        shared ||
         (sharingModel == SharingModel.channel && channelTitle != null)) {
       return button;
     }
+
+    // Unassigned (assignment mode) → "Assign". Unshared → command.title ("Share").
+    final tooltipText = (assignmentLink != null && assignee == null)
+        ? 'Assign'
+        : command.title;
+
     return MouseRegion(
       onEnter: (_) => isHovered.value = true,
       onExit: (_) => isHovered.value = false,
@@ -1053,7 +1113,7 @@ class SharedCommandButton extends HookWidget {
         childAnchor: tooltipBelow
             ? Alignment.bottomCenter
             : Alignment.topCenter,
-        tipBuilder: (context, controller) => Text(command.title),
+        tipBuilder: (context, controller) => Text(tooltipText),
         child: button,
       ),
     );

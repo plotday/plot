@@ -9,6 +9,7 @@ import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/edit_link_modal.dart';
+import 'package:plot/widget/link_assignee_picker.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 
@@ -984,7 +985,7 @@ class _LinkAssigneeBadge extends StatelessWidget {
               ),
             ),
           ),
-          onPress: () => _showAssigneePicker(context),
+          onPress: () => pickLinkAssignee(context, link),
           child: Text(
             label,
             style: context.theme.typography.xs.copyWith(
@@ -1007,84 +1008,6 @@ class _LinkAssigneeBadge extends StatelessWidget {
     }
   }
 
-  Future<void> _showAssigneePicker(BuildContext context) async {
-    final result = await SelectModal.open<_AssigneeOption>(
-      context,
-      items: (search) async {
-        final actors = await Actor.get(
-          search: search,
-          types: [ActorType.user, ActorType.contact],
-          limit: 50,
-          inviteable: true,
-          primary: true,
-        );
-        // Sort self actors to the top, preserving existing depth-based order
-        actors.sort((a, b) {
-          if (a.self != b.self) return a.self ? -1 : 1;
-          return 0;
-        });
-        return [
-          SelectGroup(
-            items: [
-              const _AssigneeOption(null, 'Unassigned', null),
-              ...actors.map(
-                (a) => _AssigneeOption(a.id, a.nameOrEmail, a.email),
-              ),
-            ],
-          ),
-        ];
-      },
-      itemBuilder: (option, _) {
-        final isSelected = option.id == link.assigneeId;
-        return ListTile(
-          title: option.name,
-          subtitle:
-              (option.id != null &&
-                  option.email != null &&
-                  option.email != option.name)
-              ? option.email
-              : null,
-          leadingBuilder: (isHovered, hasFocus) => Padding(
-            padding: const EdgeInsets.only(left: 16, right: 8),
-            child: isSelected
-                ? Icon(
-                    PlotIcon.done,
-                    size: 14,
-                    color: context.theme.colors.primary,
-                  )
-                : const SizedBox(width: 14),
-          ),
-          disableInternalHover: true,
-        );
-      },
-      selectedValue: link.assigneeId != null
-          ? _AssigneeOption(link.assigneeId!, '', null)
-          : const _AssigneeOption(null, 'Unassigned', null),
-      prompt: 'Assign to',
-    );
-
-    if (!result.present || !context.mounted) return;
-    final newId = result.value.id;
-    if (newId != link.assigneeId) {
-      await Link.updateAssignee(link, newId);
-    }
-  }
-}
-
-/// Option for the assignee picker — equality based on actor id.
-class _AssigneeOption {
-  const _AssigneeOption(this.id, this.name, this.email);
-
-  final ActorId? id;
-  final String name;
-  final String? email;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) || other is _AssigneeOption && id == other.id;
-
-  @override
-  int get hashCode => id.hashCode;
 }
 
 /// Small badge showing the link's status label.
