@@ -1431,9 +1431,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     return chainDrafts.first;
   }
 
-  /// Watch all tags present in threads within a priority and its descendants.
+  /// Watch all tags present in threads. When [priorityPath] is provided the
+  /// counts are scoped to that priority and its descendants; when null
+  /// (the default) the counts are global across every priority — header
+  /// search is global, so the filter chips it offers must be too.
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
-  static Stream<List<(Tag, int)>> watchTagsForPriority(Path priorityPath) {
+  static Stream<List<(Tag, int)>> watchTagsForPriority([Path? priorityPath]) {
     final at = Store.get.threadTags;
     final a = Store.get.threads;
     final p = Store.get.priorities;
@@ -1441,13 +1444,17 @@ class Thread extends Equatable implements Comparable<Thread> {
     final now = Time.now();
     final today = Date.today().toString();
 
+    // Each query inner-joins the thread to its priority only when scoping to
+    // one (priorityPath != null); a fresh Join is built per statement.
+
     // Query for stored tags from activity_tags table
     final tagsQuery = Store.get.select(at).join([
       innerJoin(a, a.id.equalsExp(at.id)),
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-      ),
+      if (priorityPath != null)
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+        ),
     ]);
 
     tagsQuery.where(a.archivedAt.isNull());
@@ -1456,10 +1463,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     final s = Store.get.schedules;
     final nowQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     nowQuery.join([
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-      ),
+      if (priorityPath != null)
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+        ),
       leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
     nowQuery.where(
@@ -1480,10 +1488,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     // COUNT query for Tag.archived
     final archivedQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     archivedQuery.join([
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-      ),
+      if (priorityPath != null)
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+        ),
     ]);
     archivedQuery.where(a.archivedAt.isNotNull());
     final archivedCountStream = archivedQuery.watch().map(
@@ -1493,7 +1502,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     // COUNT query for archived priorities
     final archivedPriorityQuery = Store.get.selectOnly(p)..addColumns([p.id]);
     archivedPriorityQuery.where(
-      p.path.equalsValue(priorityPath) & p.archivedAt.isNotNull(),
+      priorityPath != null
+          ? p.path.equalsValue(priorityPath) & p.archivedAt.isNotNull()
+          : p.archivedAt.isNotNull(),
     );
     final archivedPriorityCountStream = archivedPriorityQuery.watch().map(
       (rows) => rows.length,
@@ -1502,10 +1513,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     // COUNT query for Tag.unread
     final unreadQuery = Store.get.selectOnly(a)..addColumns([a.id]);
     unreadQuery.join([
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-      ),
+      if (priorityPath != null)
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+        ),
     ]);
     unreadQuery.where(
       a.archivedAt.isNull() &
@@ -1566,23 +1578,26 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
-  /// Watch all reactions present on threads within a priority and its
-  /// descendants. Returns a stream of (Reaction, count) tuples sorted by
-  /// thread count descending. Scoped to thread-level reactions only —
-  /// note-level reaction filtering is handled by [Note.watch].
-  static Stream<List<(Reaction, int)>> watchReactionsForPriority(
-    Path priorityPath,
-  ) {
+  /// Watch all reactions present on threads. When [priorityPath] is provided
+  /// the counts are scoped to that priority and its descendants; when null
+  /// (the default) the counts are global across every priority. Returns a
+  /// stream of (Reaction, count) tuples sorted by thread count descending.
+  /// Scoped to thread-level reactions only — note-level reaction filtering is
+  /// handled by [Note.watch].
+  static Stream<List<(Reaction, int)>> watchReactionsForPriority([
+    Path? priorityPath,
+  ]) {
     final tr = Store.get.threadReactions;
     final a = Store.get.threads;
     final p = Store.get.priorities;
 
     final query = Store.get.select(tr).join([
       innerJoin(a, a.id.equalsExp(tr.id) & a.archivedAt.isNull()),
-      innerJoin(
-        p,
-        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-      ),
+      if (priorityPath != null)
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+        ),
     ]);
 
     return query.watch().map((rows) {
@@ -1603,20 +1618,23 @@ class Thread extends Equatable implements Comparable<Thread> {
     });
   }
 
-  /// Watches icon value counts for non-archived threads filed in a priority.
-  static Stream<List<(String, int)>> watchIconCountsForPriority(
-    Path priorityPath,
-  ) {
+  /// Watches icon value counts for non-archived threads. When [priorityPath]
+  /// is provided the counts are scoped to that priority and its descendants;
+  /// when null (the default) the counts are global across every priority.
+  static Stream<List<(String, int)>> watchIconCountsForPriority([
+    Path? priorityPath,
+  ]) {
     final a = Store.get.threads;
     final p = Store.get.priorities;
 
     final query = Store.get.selectOnly(a)
       ..addColumns([a.icon, a.id.count()])
       ..join([
-        innerJoin(
-          p,
-          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
-        ),
+        if (priorityPath != null)
+          innerJoin(
+            p,
+            p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
+          ),
       ])
       ..where(a.archivedAt.isNull() & a.draft.equals(false))
       ..groupBy([a.icon]);

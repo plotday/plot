@@ -3119,9 +3119,10 @@ class PriorityBloc extends Cubit<PriorityState> {
       _rebuildAgendaModel();
     });
 
-    // Watch tags for the priority
+    // Watch tags globally. Header search is global (no priority scoping),
+    // so the filter chips it offers are drawn from every priority too.
     _tagsSubscription?.cancel();
-    _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path).listen(
+    _tagsSubscription = Thread.watchTagsForPriority().listen(
       (tags) {
         // Common tags (excluding action tags)
         final commonTagsFiltered = tags
@@ -3144,18 +3145,18 @@ class PriorityBloc extends Cubit<PriorityState> {
       },
     );
 
-    // Watch reactions for the priority (thread-level only).
+    // Watch reactions globally (thread-level only) to match global search.
     _reactionsSubscription?.cancel();
-    _reactionsSubscription = Thread.watchReactionsForPriority(
-      priorityToLoad.path,
-    ).listen((reactions) {
+    _reactionsSubscription = Thread.watchReactionsForPriority().listen((
+      reactions,
+    ) {
       emit(state.copyWith(reactions: reactions));
     });
 
-    // Watch icon counts for the priority
+    // Watch icon counts globally to match global search.
     _iconCountsSubscription?.cancel();
     _iconCountsSubscription =
-        Thread.watchIconCountsForPriority(priorityToLoad.path).listen((counts) {
+        Thread.watchIconCountsForPriority().listen((counts) {
           final iconCounts = [...counts]..sort((a, b) => b.$2.compareTo(a.$2));
           emit(state.copyWith(iconCounts: iconCounts));
         });
