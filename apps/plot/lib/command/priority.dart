@@ -24,8 +24,6 @@ import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/api.dart' as api;
-import 'package:plot/api/api_exception.dart';
-import 'package:plot/api/network_exception.dart';
 import 'package:plot/router.dart';
 
 abstract class PriorityCommand extends Command {
@@ -387,82 +385,10 @@ class TogglePriorityArchived extends Command {
       );
     }
     final isArchived = priority.archivedAt != null;
-
-    // When unarchiving, or when the priority has no team, use the normal flow.
-    if (isArchived || priority.teamId == null) {
-      await priority
-          .copyWith(archivedAt: Value(isArchived ? null : DateTime.now()))
-          .save();
-      return const CommandDone();
-    }
-
-    // Check whether this is the last top-level team priority. If not, archive
-    // normally. If yes, route through the "leave team" confirmation flow.
-    final otherCount = await Priority.countOtherTopLevelTeamPriorities(
-      teamId: priority.teamId!,
-      excludeId: priority.id,
-    );
-
-    if (otherCount > 0) {
-      // Not the last — archive normally.
-      await priority.copyWith(archivedAt: Value(DateTime.now())).save();
-      return const CommandDone();
-    }
-
-    // This is the last top-level team priority — look up the team name and ask
-    // the user if they want to leave the team.
-    String teamName = 'this team';
-    try {
-      final usage = await UpgradeApi.getUsage();
-      final teamIdStr = priority.teamId!.toString();
-      final team = usage.teams.where((t) => t.id == teamIdStr).firstOrNull;
-      if (team != null) teamName = team.name;
-    } catch (_) {
-      // Non-critical — fall back to generic name.
-    }
-
-    if (!context.mounted) return const CommandSkipped();
-    final confirmed = await ConfirmModal(
-      title: 'Leave team',
-      message: 'Are you sure you want to leave the team $teamName?',
-      confirmLabel: 'Leave team',
-      cancelLabel: 'Cancel',
-      destructive: true,
-    ).run(context);
-    if (!confirmed) return const CommandSkipped();
-
-    // POST to the archive-or-leave endpoint and handle responses.
-    try {
-      final result = await api.post<Map<String, dynamic>>(
-        '/sync/priority/archive-or-leave',
-        body: {'priority_id': priority.id.toString()},
-      );
-      final status = result['status'] as String?;
-      if (status == 'archived' || status == 'left_team') {
-        // Locally archive the priority so the UI updates immediately; the
-        // server will also deliver the change on the next sync tick.
-        await priority.copyWith(archivedAt: Value(DateTime.now())).save();
-      }
-      return const CommandDone();
-    } on ApiException catch (e) {
-      if (e.statusCode == 409 && e.description == 'last_admin') {
-        if (!context.mounted) return const CommandSkipped();
-        await ConfirmModal(
-          title: 'Last admin',
-          message:
-              "You're the last admin of $teamName. Promote another admin first.",
-          confirmLabel: 'OK',
-          cancelLabel: 'Dismiss',
-        ).run(context);
-        return const CommandSkipped();
-      }
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException {
-      return const CommandMessage(
-        "You're offline. Please try again when connected.",
-        isError: true,
-      );
-    }
+    await priority
+        .copyWith(archivedAt: Value(isArchived ? null : DateTime.now()))
+        .save();
+    return const CommandDone();
   }
 }
 
@@ -1239,6 +1165,107 @@ class EditPriorityCommand extends ShowForm {
       );
 }
 
+/// Opens a focus picker to merge [source]'s threads into another focus.
+/// Selecting a target moves every thread filed under [source] into it and
+/// then archives [source]. Shown on a focus only when it has threads (an
+/// empty focus keeps the plain Archive command).
+class MergeFocusInto extends ShowCommands {
+  MergeFocusInto(this.source)
+    : super(
+        title: 'Merge into…',
+        icon: PlotIcon.move,
+        commandsBuilder: (context) => _buildTargets(source),
+      );
+
+  final Priority source;
+
+  static Future<Commands> _buildTargets(Priority source) async {
+    // `getRaw` skips the unread/active enrichment the picker doesn't display,
+    // so the modal opens immediately (same reasoning as MoveThreadToPriority).
+    final priorities = await Priority.getRaw(order: PriorityOrder.recent);
+    Priority? root;
+    final focuses = <Priority>[];
+    for (final p in priorities) {
+      if (p.root) {
+        root = p;
+      } else if (p.id != source.id) {
+        focuses.add(p);
+      }
+    }
+    final commands = <Command>[
+      ...focuses.map((target) => MergeFocus(source, target)),
+      if (root != null && source.id != root.id)
+        MergeFocus(source, root, label: 'Inbox', glyph: PlotIcon.inbox),
+    ];
+    return Commands(
+      prompt: 'Merge "${source.displayTitle}" into…',
+      groups: [StaticCommandGroup(title: 'Focuses', commands: commands)],
+    );
+  }
+}
+
+/// Moves every thread filed under [_source] into the target focus, then
+/// archives [_source]. Filing is per-user, so this only re-files the current
+/// user's view and archives their copy of the source focus — teammates are
+/// unaffected.
+class MergeFocus extends PriorityCommand {
+  MergeFocus(Priority source, super.target, {super.label, super.glyph})
+    : _source = source,
+      super(
+        eventObject: EventObject.priority,
+        eventAction: EventAction.archived,
+      );
+
+  final Priority _source;
+  Priority get _target => priority!;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Capture whether we're viewing the source focus before any await, so we
+    // can follow the threads to the target after archiving the source.
+    final nowBloc = context.read<NowBloc?>();
+    final viewingSource = nowBloc?.state is NowLoaded &&
+        (nowBloc!.state as NowLoaded).context?.id == _source.id;
+
+    try {
+      // Re-file every thread filed under the source — including archived
+      // threads and drafts — so nothing is stranded under the archived
+      // source. The thread save() is what syncs the re-filing (the mechanism
+      // MoveToPriority relies on). We intentionally skip the per-thread
+      // /sync/priority-moves learning signal: a bulk merge is a deliberate
+      // re-file, not N classifier-training events.
+      //
+      // Non-transactional by design for v1: a failure mid-loop leaves a
+      // partial re-file (some threads moved) with the source NOT archived,
+      // since archiving happens only after the loop completes. A future
+      // improvement could batch the saves or use a server-side merge endpoint.
+      final threads = await Thread.get(
+        priorityId: _source.id,
+        archived: null,
+        draft: null,
+      );
+      for (final thread in threads) {
+        await thread.copyWith(priority: _target).save();
+      }
+      // Archive the source focus.
+      await _source.copyWith(archivedAt: Value(DateTime.now())).save();
+    } catch (e, stackTrace) {
+      Tracker.captureException(e, stackTrace);
+      return const CommandMessage(
+        'Could not merge focus. Please try again.',
+        isError: true,
+      );
+    }
+
+    if (viewingSource) {
+      return CommandRoute(
+        PriorityRoute(priorityIdString: _target.id.toShortString()),
+      );
+    }
+    return const CommandDone();
+  }
+}
+
 class ShowPriorityCommands extends ShowCommands {
   ShowPriorityCommands(Priority priority, {bool current = false})
     : super(
@@ -1258,12 +1285,34 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer) ShowEarlyNotificationsSettings(priority),
   ShowTimeLog(priority),
   if (!priority.root && !priority.isViewer && !priority.isPlot)
-    TogglePriorityArchived(priority),
+    archiveOrMergeCommand(priority),
 ];
+
+/// The destructive slot on a focus menu. An archived focus offers Un-archive;
+/// an active focus with threads offers "Merge into…" (move its threads
+/// elsewhere, then archive); an active empty focus offers a one-click Archive.
+/// Inbox / viewer / Plot focuses never reach here (gated by the caller).
+Command archiveOrMergeCommand(Priority priority) {
+  if (priority.archivedAt != null) return TogglePriorityArchived(priority);
+  if (priority.hasThreads) return MergeFocusInto(priority);
+  return TogglePriorityArchived(priority);
+}
 
 List<Command> priorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
 ];
+
+/// Returns [focus] enriched with `hasThreads` taken from the sidebar's
+/// already-computed [loaded] priority list, so current-focus menus show the
+/// right Archive/"Merge into…" label without re-querying. Falls back to
+/// [focus] unchanged (hasThreads = false) when it isn't in the list (e.g. the
+/// sidebar is search-filtered).
+Priority enrichFocusFromList(Priority focus, List<Priority> loaded) {
+  for (final p in loaded) {
+    if (p.id == focus.id) return focus.withHasThreads(p.hasThreads);
+  }
+  return focus;
+}
 
 List<Command> currentPriorityCommands(
   Priority priority, {

@@ -26,6 +26,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Everything — a single unscoped view of all threads across the Inbox and every focus, with no sections
 - Two-step focus creation: describe what belongs in the focus, then review the existing threads Plot matches to that description (semantic + AI) and deselect any that don't fit before creating. Deselected matches (and threads later moved out) are recorded as negative examples that sharpen future matching
 - Archiving a focus releases its threads to the Inbox without losing the assignment, so un-archiving restores them
+- Merging a focus: the focus menu offers "Merge into…" when the focus has threads — pick a destination focus and all threads move there; the now-empty source focus is archived. An empty focus archives directly in one tap
 - Drag to reorder focuses; a "More" affordance collapses a long list down to the active/unread focuses
 - Per-focus Pomodoro timer settings (default 25 min)
 - Unread indicators per focus

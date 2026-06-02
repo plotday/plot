@@ -412,22 +412,25 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       self: self,
     ).watch();
 
-    // Watch active and unread priority IDs
+    // Watch active, unread, and non-empty priority IDs
     final activePriorityIdsStream = _watchActivePriorityIds();
     final unreadPriorityIdsStream = _watchUnreadPriorityIds();
+    final nonEmptyPriorityIdsStream = _watchNonEmptyPriorityIds();
 
-    // Combine all three streams
-    return Rx.combineLatest3(
+    // Combine all four streams
+    return Rx.combineLatest4(
           prioritiesStream,
           activePriorityIdsStream,
           unreadPriorityIdsStream,
-          (priorities, activeIds, unreadIds) =>
-              (priorities, activeIds, unreadIds),
+          nonEmptyPriorityIdsStream,
+          (priorities, activeIds, unreadIds, nonEmptyIds) =>
+              (priorities, activeIds, unreadIds, nonEmptyIds),
         )
         .map((tuple) {
           final priorities = tuple.$1;
           final activeIds = tuple.$2;
           final unreadIds = tuple.$3;
+          final nonEmptyIds = tuple.$4;
 
           return priorities.map((p) {
             return Priority.fromStore(
@@ -439,6 +442,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               minAncestorTopOrder: p.minAncestorTopOrder,
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
+              hasThreads: nonEmptyIds.contains(p.id),
               displayColor: p.displayColor,
             );
           }).toList();
@@ -584,6 +588,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Compute which priorities have active/unread status
     final activeIds = await _getActivePriorityIds(priorityIds);
     final unreadIds = await _getUnreadPriorityIds(priorityIds);
+    final nonEmptyIds = await _getNonEmptyPriorityIds(priorityIds);
 
     // Create new Priority objects with computed status
     return priorities.map((p) {
@@ -596,6 +601,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         minAncestorTopOrder: p.minAncestorTopOrder,
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
+        hasThreads: nonEmptyIds.contains(p.id),
         displayColor: p.displayColor,
       );
     }).toList();
@@ -701,6 +707,55 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               .toSet(),
         )
         .distinct();
+  }
+
+  /// Efficiently gets which of the given priority IDs have at least one
+  /// non-archived, non-draft thread filed directly under them.
+  static Future<Set<PriorityId>> _getNonEmptyPriorityIds(
+    List<PriorityId> ids,
+  ) async {
+    if (ids.isEmpty) return {};
+
+    final a = Store.get.threads;
+    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+    final idBytes = ids.map((id) => id.toBytes()).toList();
+
+    query.where(
+      a.priorityId.isIn(idBytes) &
+          a.archivedAt.isNull() &
+          a.draft.equals(false),
+    );
+
+    final results = await query.get();
+    return results
+        .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+        .toSet();
+  }
+
+  /// Watches which priorities have at least one non-archived, non-draft thread.
+  static Stream<Set<PriorityId>> _watchNonEmptyPriorityIds() {
+    final a = Store.get.threads;
+    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+
+    query.where(a.archivedAt.isNull() & a.draft.equals(false));
+
+    return query
+        .watch()
+        .map(
+          (results) => results
+              .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+              .toSet(),
+        )
+        .distinct();
+  }
+
+  /// Whether the focus identified by [id] currently has at least one
+  /// non-archived, non-draft thread filed directly under it. Used to resolve
+  /// the Archive-vs-"Merge into…" label for focuses loaded without
+  /// `_enrichWithStatus`.
+  static Future<bool> hasThreadsFor(PriorityId id) async {
+    final ids = await _getNonEmptyPriorityIds([id]);
+    return ids.contains(id);
   }
 
   /// Watches which priorities have active threads.
@@ -1005,6 +1060,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _originalPath = null,
        _activeComputed = null,
        _unreadComputed = null,
+       _hasThreadsComputed = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -1048,6 +1104,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? originalPath,
     bool? active,
     bool? unreadComputed,
+    bool? hasThreads,
     ThemeColor? displayColor,
   }) : children = children ?? [],
        _ancestors =
@@ -1078,6 +1135,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _activeComputed = active,
        // ignore: prefer_initializing_formals
        _unreadComputed = unreadComputed,
+       _hasThreadsComputed = hasThreads,
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -1218,6 +1276,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to row's unread value if not computed.
   final bool? _unreadComputed;
 
+  /// Computed "has threads" status from query: true when the focus has at
+  /// least one non-archived, non-draft thread filed directly under it. Falls
+  /// back to false when not computed (e.g. loaded without `_enrichWithStatus`).
+  final bool? _hasThreadsComputed;
 
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
@@ -1325,6 +1387,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
+  /// Returns true when this focus has at least one non-archived, non-draft
+  /// thread filed directly under it. Drives the Archive-vs-"Merge into…"
+  /// choice on the focus menu. Defaults to false when not computed.
+  bool get hasThreads => _hasThreadsComputed ?? false;
+
   /// Returns true if this priority has unread threads (considering local overrides).
   /// Falls back to the row's unread value if not computed.
   @override
@@ -1337,6 +1404,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           super == other &&
           _activeComputed == other._activeComputed &&
           _unreadComputed == other._unreadComputed &&
+          _hasThreadsComputed == other._hasThreadsComputed &&
           displayColor == other.displayColor);
 
   @override
@@ -1344,6 +1412,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.hashCode,
     _activeComputed,
     _unreadComputed,
+    _hasThreadsComputed,
     displayColor,
   );
 
@@ -1455,8 +1524,26 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       originalPath: _originalPath,
       active: _activeComputed,
       unreadComputed: _unreadComputed,
+      hasThreads: _hasThreadsComputed,
     );
   }
+
+  /// Returns a copy of this priority with the computed [hasThreads] flag set,
+  /// preserving every other computed-enrichment field. Used to enrich the
+  /// current focus where the owning bloc loads it without `_enrichWithStatus`
+  /// (header and command-scope menus).
+  Priority withHasThreads(bool value) => Priority.fromStore(
+        this,
+        parent: parent,
+        children: children,
+        draft: draft,
+        ancestors: _ancestors,
+        minAncestorTopOrder: minAncestorTopOrder,
+        originalPath: _originalPath,
+        active: _activeComputed,
+        unreadComputed: _unreadComputed,
+        hasThreads: value,
+      );
 
   void _removeFromParent(Priority parent) {
     parent.children = parent.children.where((child) => child.id != id).toList();

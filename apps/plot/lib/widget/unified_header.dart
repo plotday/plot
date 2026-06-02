@@ -951,14 +951,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       commandsBuilder: (context) async {
         final thread = state.thread;
         final priorityBloc = context.read<PriorityBloc?>();
-        final priorityGroups = currentPriorityCommandGroups(
-          state.thread?.priority ?? state.context,
-          context: context,
-          nowState: context.read<NowBloc?>()?.state,
-        );
+        final nowState = context.read<NowBloc?>()?.state;
+        final focus = state.thread?.priority ?? state.context;
+        final hasThreads = await Priority.hasThreadsFor(focus.id);
         final threadGroups = thread != null
             ? await threadCommandGroups(thread, priorityBloc: priorityBloc)
             : <StaticCommandGroup>[];
+        if (!context.mounted) return const Commands(groups: []);
+        final priorityGroups = currentPriorityCommandGroups(
+          focus.withHasThreads(hasThreads),
+          context: context,
+          nowState: nowState,
+        );
         return Commands(groups: [...threadGroups, ...priorityGroups]);
       },
     );
@@ -971,10 +975,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       title: 'More',
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
+        final nowState = context.read<NowBloc?>()?.state;
+        final focus = state.context;
+        final hasThreads = await Priority.hasThreadsFor(focus.id);
+        if (!context.mounted) return const Commands(groups: []);
         final priorityGroups = currentPriorityCommandGroups(
-          state.context,
+          focus.withHasThreads(hasThreads),
           context: context,
-          nowState: context.read<NowBloc?>()?.state,
+          nowState: nowState,
         );
         return Commands(groups: priorityGroups);
       },

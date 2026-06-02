@@ -13,6 +13,7 @@ import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/agenda.dart';
 import 'package:plot/state/activity_section.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
@@ -263,9 +264,13 @@ class _PriorityCommandScope extends StatelessWidget {
     // share the same shortcut, so the scope must register only the
     // currently-enabled one.
     final nowState = context.watch<NowBloc>().state;
+    // The sidebar's PrioritiesBloc list is enriched with hasThreads; reuse it
+    // so the command-palette focus menu shows the right Archive/Merge label.
+    final loaded = context.watch<PrioritiesBloc>().state.priorities;
+    final focus = bloc.state.thread?.priority ?? bloc.state.context;
     return CommandScope(
       commands: currentPriorityCommandGroups(
-        bloc.state.thread?.priority ?? bloc.state.context,
+        enrichFocusFromList(focus, loaded),
         nowState: nowState,
       ),
       child: child,
