@@ -3,6 +3,9 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/colors.dart';
+import 'package:plot/style/toaster.dart';
+
 import 'logging.dart';
 
 /// Extension for showing toasts with consistent styling and timing
@@ -20,7 +23,7 @@ extension ToastExtension on BuildContext {
     bool isError = false,
     Duration? duration,
   }) {
-    final colors = theme.colors;
+    final destructiveFg = destructiveToastForeground(colour);
 
     try {
       if (isError) {
@@ -33,7 +36,7 @@ extension ToastExtension on BuildContext {
           variant: FToastVariant.destructive,
           suffixBuilder: (context, entry) => _CopyButton(
             text: message,
-            color: colors.destructiveForeground,
+            color: destructiveFg,
           ),
         );
       } else {
@@ -66,7 +69,7 @@ extension ToastExtension on BuildContext {
     bool isError = false,
     Duration? duration,
   }) {
-    final colors = theme.colors;
+    final destructiveFg = destructiveToastForeground(colour);
 
     try {
       // Get the root overlay
@@ -88,7 +91,7 @@ extension ToastExtension on BuildContext {
               suffix: isError
                   ? _CopyButton(
                       text: message,
-                      color: colors.destructiveForeground,
+                      color: destructiveFg,
                     )
                   : null,
             ),

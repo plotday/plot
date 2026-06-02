@@ -5,6 +5,25 @@ import 'package:prism_flutter/prism_flutter.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 
+const _destructiveToastHue = 25.72;
+
+/// Foreground (text/icon) color for destructive toasts.
+///
+/// Destructive toasts use a pale background (see [buildToasterStyleDelta]), so
+/// the foreground is a dark red in light mode and a light red in dark mode —
+/// NOT forui's default `destructiveForeground` (near-white), which assumes a
+/// solid red background and is illegible on the pale surface. Any custom
+/// content placed inside a destructive toast (e.g. the copy button) must use
+/// this color to stay legible.
+Color destructiveToastForeground(ColourSchemeData colourScheme) {
+  final isLight = colourScheme.brightness == Brightness.light;
+  return RayOklch.fromComponents(
+    isLight ? 0.4 : 0.8,
+    0.15,
+    _destructiveToastHue,
+  ).toColor();
+}
+
 FToasterStyleDelta buildToasterStyleDelta(
   ColourSchemeData colourScheme,
   FBorderRadius borderRadius,
@@ -12,7 +31,7 @@ FToasterStyleDelta buildToasterStyleDelta(
   PlotIconSizes iconSizes,
 ) {
   final isLight = colourScheme.brightness == Brightness.light;
-  const hue = 25.72;
+  const hue = _destructiveToastHue;
 
   // Opaque background and contrasting foreground for destructive toasts
   final destructiveBg = RayOklch.fromComponents(
@@ -20,11 +39,7 @@ FToasterStyleDelta buildToasterStyleDelta(
     isLight ? 0.05 : 0.05,
     hue,
   ).toColor();
-  final destructiveFg = RayOklch.fromComponents(
-    isLight ? 0.4 : 0.8,
-    isLight ? 0.15 : 0.15,
-    hue,
-  ).toColor();
+  final destructiveFg = destructiveToastForeground(colourScheme);
   final destructiveBorder = RayOklch.fromComponents(
     isLight ? 0.8 : 0.35,
     isLight ? 0.1 : 0.1,
