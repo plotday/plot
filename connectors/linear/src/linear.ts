@@ -79,6 +79,7 @@ export class Linear extends Connector<Linear> {
       composeVerb: "Create",
       replyPlaceholder: "Add a comment",
       replyVerb: "Comment",
+      supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/linear-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
