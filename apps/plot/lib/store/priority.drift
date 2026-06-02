@@ -1,13 +1,5 @@
 import 'store.dart';
 
-CREATE VIEW IF NOT EXISTS priority_children AS
-SELECT
-    p.id,
-    c.id AS child_id
-FROM
-    priorities p
-    JOIN priorities c ON c.path LIKE p.path || '%';
-
 CREATE VIEW IF NOT EXISTS priority_ancestry AS
 WITH RECURSIVE ancestors (
     priority_id,

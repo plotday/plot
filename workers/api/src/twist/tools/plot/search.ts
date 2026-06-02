@@ -43,33 +43,25 @@ export async function search(
     .selectFrom("note")
     .innerJoin("thread", "thread.id", "note.thread_id")
     .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
-    .innerJoin("priority_child", (join) =>
-      join
-        .onRef("priority_child.child_id", "=", "thread_priority.priority_id")
-        .on("priority_child.priority_id", "=", scopePriorityId)
-    )
     .select(sql<number>`count(*)`.as("total"))
     .where("note.embedding", "is not", null)
     .where("note.archived_at", "is", null)
     .where("note.draft", "=", false)
     .where("thread.archived_at", "is", null)
     .where("thread_priority.user_id", "=", userId)
+    .where("thread_priority.priority_id", "=", scopePriorityId)
     .executeTakeFirst();
 
   const totalNotesInScope = await plot.db
     .selectFrom("note")
     .innerJoin("thread", "thread.id", "note.thread_id")
     .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
-    .innerJoin("priority_child", (join) =>
-      join
-        .onRef("priority_child.child_id", "=", "thread_priority.priority_id")
-        .on("priority_child.priority_id", "=", scopePriorityId)
-    )
     .select(sql<number>`count(*)`.as("total"))
     .where("note.archived_at", "is", null)
     .where("note.draft", "=", false)
     .where("thread.archived_at", "is", null)
     .where("thread_priority.user_id", "=", userId)
+    .where("thread_priority.priority_id", "=", scopePriorityId)
     .executeTakeFirst();
 
   logger.info("[search] Notes in scope", {

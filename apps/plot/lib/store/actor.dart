@@ -841,9 +841,7 @@ class Actor extends ActorRow {
       joins.add(
         innerJoin(
           p,
-          p.id.equalsExp(a.priorityId) &
-              (p.path.equalsValue(priorityPath) |
-                  p.path.likeExp(Constant('$priorityPath%'))),
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
         ),
       );
     }

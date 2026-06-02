@@ -1471,14 +1471,13 @@ export async function createThreads(
 }
 
 /**
- * Lists threads in a priority and optionally its descendants.
+ * Lists threads filed in a priority.
  * Requires ThreadAccess.Full.
  */
 export async function getThreads(
   plot: Plot,
   options?: {
     priorityId?: Uuid;
-    includeDescendants?: boolean;
     includeArchived?: boolean;
     limit?: number;
     offset?: number;
@@ -1486,7 +1485,6 @@ export async function getThreads(
 ): Promise<Thread[]> {
   const {
     priorityId,
-    includeDescendants = true,
     includeArchived = false,
     limit = 50,
     offset = 0,
@@ -1503,21 +1501,8 @@ export async function getThreads(
   let query = plot.db
     .selectFrom("user.thread")
     .selectAll("user.thread")
-    .where("user_id", "=", userId);
-
-  if (includeDescendants) {
-    // Use subquery to get threads in this priority and all descendants
-    query = query.where(
-      "priority_id",
-      "in",
-      plot.db
-        .selectFrom("priority_child")
-        .select("child_id")
-        .where("priority_id", "=", effectivePriorityId as string)
-    );
-  } else {
-    query = query.where("priority_id", "=", effectivePriorityId as string);
-  }
+    .where("user_id", "=", userId)
+    .where("priority_id", "=", effectivePriorityId as string);
 
   if (!includeArchived) {
     query = query.where("archived_at", "is", null);

@@ -164,9 +164,9 @@ async function fetchNoteReactionsBySeq(
         : sql``;
 
   const priorityFilter = priorityId
-    ? sql`AND tp.priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
+    ? sql`AND tp.priority_id = ${priorityId}::uuid`
     : priorityPath
-      ? sql`AND upe.path <@ ${priorityPath}::ltree`
+      ? sql`AND upe.path = ${priorityPath}::ltree`
       : sql``;
 
   const rangeStartFilter = rangeStart
@@ -309,11 +309,9 @@ async function fetchNoteReactionsByView(
   }
 
   if (priorityId) {
-    query = query.where(
-      sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`,
-    );
+    query = query.where("priority_id", "=", priorityId);
   } else if (priorityPath) {
-    query = query.where(sql<boolean>`priority_path <@ ${priorityPath}::ltree`);
+    query = query.where(sql<boolean>`priority_path = ${priorityPath}::ltree`);
   }
 
   if (rangeStart) {

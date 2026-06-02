@@ -1440,16 +1440,13 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     final now = Time.now();
     final today = Date.today().toString();
-    final priorityPathLike = '$priorityPath.%';
 
     // Query for stored tags from activity_tags table
     final tagsQuery = Store.get.select(at).join([
       innerJoin(a, a.id.equalsExp(at.id)),
       innerJoin(
         p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
+        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
       ),
     ]);
 
@@ -1461,9 +1458,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     nowQuery.join([
       innerJoin(
         p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
+        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
       ),
       leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.linkId.isNull()),
     ]);
@@ -1487,9 +1482,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     archivedQuery.join([
       innerJoin(
         p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
+        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
       ),
     ]);
     archivedQuery.where(a.archivedAt.isNotNull());
@@ -1500,9 +1493,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // COUNT query for archived priorities
     final archivedPriorityQuery = Store.get.selectOnly(p)..addColumns([p.id]);
     archivedPriorityQuery.where(
-      (p.path.equalsValue(priorityPath) |
-              p.path.likeExp(Constant(priorityPathLike))) &
-          p.archivedAt.isNotNull(),
+      p.path.equalsValue(priorityPath) & p.archivedAt.isNotNull(),
     );
     final archivedPriorityCountStream = archivedPriorityQuery.watch().map(
       (rows) => rows.length,
@@ -1513,9 +1504,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     unreadQuery.join([
       innerJoin(
         p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
+        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
       ),
     ]);
     unreadQuery.where(
@@ -1587,15 +1576,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     final tr = Store.get.threadReactions;
     final a = Store.get.threads;
     final p = Store.get.priorities;
-    final priorityPathLike = '$priorityPath.%';
 
     final query = Store.get.select(tr).join([
       innerJoin(a, a.id.equalsExp(tr.id) & a.archivedAt.isNull()),
       innerJoin(
         p,
-        p.id.equalsExp(a.priorityId) &
-            (p.path.equalsValue(priorityPath) |
-                p.path.likeExp(Constant(priorityPathLike))),
+        p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
       ),
     ]);
 
@@ -1617,22 +1603,19 @@ class Thread extends Equatable implements Comparable<Thread> {
     });
   }
 
-  /// Watches icon value counts for non-archived threads in a priority subtree.
+  /// Watches icon value counts for non-archived threads filed in a priority.
   static Stream<List<(String, int)>> watchIconCountsForPriority(
     Path priorityPath,
   ) {
     final a = Store.get.threads;
     final p = Store.get.priorities;
-    final priorityPathLike = '$priorityPath.%';
 
     final query = Store.get.selectOnly(a)
       ..addColumns([a.icon, a.id.count()])
       ..join([
         innerJoin(
           p,
-          p.id.equalsExp(a.priorityId) &
-              (p.path.equalsValue(priorityPath) |
-                  p.path.likeExp(Constant(priorityPathLike))),
+          p.id.equalsExp(a.priorityId) & p.path.equalsValue(priorityPath),
         ),
       ])
       ..where(a.archivedAt.isNull() & a.draft.equals(false))
@@ -1849,10 +1832,10 @@ class Thread extends Equatable implements Comparable<Thread> {
         linkSched.startAt.isNotNull() | linkSched.startOn.isNotNull(),
       );
     } else if (priorityPath != null) {
-      // Join conditions for priority path matching
-      Expression<bool> pathCondition =
-          p.path.equalsValue(priorityPath) |
-          p.path.likeExp(Constant('$priorityPath%'));
+      // Flat priority model: a priority shows only what's filed directly
+      // in it. The path equality is the join key (combined with the id
+      // match so each thread's filed priority must equal this priority).
+      Expression<bool> pathCondition = p.path.equalsValue(priorityPath);
 
       if (includeAllFutureEvents) {
         // Per-user state has no end-at (no recurrence / end columns), so
@@ -2398,14 +2381,12 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       );
     }
 
-    // Priority scope: priorityPath = self + descendants; priorityId = exact.
+    // Priority scope: exact filing only (flat priority model).
     if (priorityPath != null) {
       sqlBuf.writeln(
-        'INNER JOIN priorities p ON p.id = a.priority_id '
-        'AND (p.path = ? OR p.path LIKE ?)',
+        'INNER JOIN priorities p ON p.id = a.priority_id AND p.path = ?',
       );
       variables.add(Variable.withString(priorityPath.toString()));
-      variables.add(Variable.withString('$priorityPath%'));
     }
 
     // WHERE clauses.
@@ -2655,14 +2636,12 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       );
     }
 
-    // Priority scope: priorityPath = self + descendants; priorityId = exact.
+    // Priority scope: exact filing only (flat priority model).
     if (priorityPath != null) {
       sqlBuf.writeln(
-        'INNER JOIN priorities p ON p.id = a.priority_id '
-        'AND (p.path = ? OR p.path LIKE ?)',
+        'INNER JOIN priorities p ON p.id = a.priority_id AND p.path = ?',
       );
       variables.add(Variable.withString(priorityPath.toString()));
-      variables.add(Variable.withString('$priorityPath%'));
     }
 
     // WHERE clauses.

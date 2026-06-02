@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 350;
+  int get schemaVersion => 351;
 
   @override
   MigrationStrategy get migration {
@@ -3773,6 +3773,14 @@ class Store extends _$Store {
       // column error (same rationale as the `_safeAddColumn` call above for
       // priorities.icon).
       await _safeAddColumn(m, notes, notes.accessGroups);
+    }
+
+    if (from < 351) {
+      // Flat priority model: drop the obsolete `priority_children` view that
+      // expanded a priority to its self+descendants via path LIKE. The view
+      // has no remaining consumers; views are recreated at the end of
+      // onUpgrade, but only those still declared in the Drift schema.
+      await m.database.customStatement('DROP VIEW IF EXISTS priority_children');
     }
   }
 

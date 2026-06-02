@@ -152,14 +152,15 @@ threads.get("/sync/threads", async (c) => {
         }
       }
 
-      // Priority filter: prefer ID-based lookup, fall back to path for backward compatibility
+      // Priority filter: exact match on the per-user filing. The flat
+      // priority model has no descendants — a priority shows only what was
+      // filed directly in it. priority_id is the canonical key; priority_path
+      // is accepted for legacy clients.
       if (priorityId) {
-        query = query.where(
-          sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
-        );
+        query = query.where("priority_id", "=", priorityId);
       } else if (priorityPath) {
         query = query.where(
-          sql<boolean>`priority_path <@ ${priorityPath}::ltree`
+          sql<boolean>`priority_path = ${priorityPath}::ltree`
         );
       }
 
@@ -358,7 +359,7 @@ threads.get("/sync/threads/search", async (c) => {
         : sql<boolean>`true`;
 
   const priorityExpr = priorityId
-    ? sql<boolean>`ut.priority_id IN (SELECT child_id FROM public.priority_child WHERE priority_id = ${priorityId}::uuid)`
+    ? sql<boolean>`ut.priority_id = ${priorityId}::uuid`
     : sql<boolean>`true`;
 
   // Candidate-id subquery: union of trgm-indexed table scans. Each branch

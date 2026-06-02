@@ -1411,12 +1411,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// rebuild the activity feed. Called by PriorityPage when the
   /// NowBloc.currentEvent changes.
   ///
-  /// When an event is selected we also force the feed scope to include
-  /// descendant priorities (even if the user has the toggle off), so the
-  /// associated threads under the event are reachable from the same
-  /// page. We detect a transition between "no event" and "event selected"
-  /// and re-run the priority-scoped streams so the SQL filter switches
-  /// between `priority_id = X` and `path LIKE 'X.%'`.
+  /// In the flat priority model the scope-by-path and scope-by-id branches
+  /// both resolve to the same priority, so this only re-runs the
+  /// subscriptions when the event-selected transition flips the prefix.
   void setCurrentEventForFeed(Thread? event) {
     final prev = _currentEventForFeed;
     if (prev?.id == event?.id && prev?.occurrence == event?.occurrence) {

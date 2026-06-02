@@ -3481,6 +3481,16 @@ export type Database = {
           child_id: string | null
           priority_id: string | null
         }
+        Insert: {
+          archived_at?: string | null
+          child_id?: string | null
+          priority_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          child_id?: string | null
+          priority_id?: string | null
+        }
         Relationships: []
       }
       priority_setting_inherited: {

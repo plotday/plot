@@ -1,25 +1,5 @@
-CREATE OR REPLACE FUNCTION public.search_notes_and_links(
-    query_embedding text,
-    scope_priority_id uuid,
-    requesting_user_id uuid,
-    exclude_created_by uuid DEFAULT NULL,
-    similarity_threshold float DEFAULT 0.3,
-    match_limit int DEFAULT 20
-)
-RETURNS TABLE (
-    result_type text,
-    result_id uuid,
-    thread_id uuid,
-    thread_title text,
-    priority_id uuid,
-    priority_title text,
-    content text,
-    title text,
-    source_url text,
-    similarity float
-)
-LANGUAGE plpgsql
-AS $$
+-- Modify "search_notes_and_links" function
+CREATE OR REPLACE FUNCTION "public"."search_notes_and_links" ("query_embedding" text, "scope_priority_id" uuid, "requesting_user_id" uuid, "exclude_created_by" uuid DEFAULT NULL::uuid, "similarity_threshold" double precision DEFAULT 0.3, "match_limit" integer DEFAULT 20) RETURNS TABLE ("result_type" text, "result_id" uuid, "thread_id" uuid, "thread_title" text, "priority_id" uuid, "priority_title" text, "content" text, "title" text, "source_url" text, "similarity" double precision) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY
     SELECT * FROM (

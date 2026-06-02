@@ -1,19 +1,16 @@
--- Path-based descendant lookup, scoped per user. In the per-user priority
--- model every tree belongs to a single user, so finding children just
--- follows ltree containment within the same user_id. The legacy
--- inherit_members boundary is gone — cross-user boundaries are enforced
--- by the user_id filter.
+-- Self-only "child" lookup. The flat priority model has no descendants:
+-- a priority shows only the threads/notes/links/tags/reactions filed
+-- directly in it. The view is kept (rather than removed) so every call
+-- site that previously joined `priority_child` flips to self-match
+-- semantics without further code changes.
 CREATE OR REPLACE VIEW "public"."priority_child" -- for formatting
 AS
 SELECT
     p.id AS priority_id,
-    c.id AS child_id,
-    c.archived_at AS archived_at
+    p.id AS child_id,
+    p.archived_at AS archived_at
 FROM
-    "public"."priority" p
-    JOIN "public"."priority" c
-        ON c.path <@ p.path
-       AND c.user_id = p.user_id;
+    "public"."priority" p;
 
 CREATE OR REPLACE VIEW "public"."priority_setting_inherited"
 AS

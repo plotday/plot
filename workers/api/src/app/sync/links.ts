@@ -65,14 +65,12 @@ links.get("/sync/links", async (c) => {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
-    // Priority filter (same pattern as threads)
+    // Priority filter: exact match on the per-user filing (flat model).
     if (priorityId) {
-      query = query.where(
-        sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
-      );
+      query = query.where("priority_id", "=", priorityId);
     } else if (priorityPath) {
       query = query.where(
-        sql<boolean>`priority_path <@ ${priorityPath}::ltree`
+        sql<boolean>`priority_path = ${priorityPath}::ltree`
       );
     }
 
