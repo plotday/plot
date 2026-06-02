@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:platform_builder/platform_builder.dart';
@@ -38,7 +39,33 @@ class ReorderableListView<T> extends StatefulWidget {
 }
 
 class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
+  /// The optimistic copy that [build] actually renders. On a drop we reorder
+  /// this immediately, then call [ReorderableListView.onReorder] to persist —
+  /// the parent's rebuilt list catches up only after that async round trip.
   late List<T> list;
+
+  /// The key order we optimistically applied on the most recent in-app drop
+  /// and are still waiting for the parent to echo back (once its async
+  /// persistence — typically a Drift `.save()` → bloc re-emit — lands). Null
+  /// when no local reorder is outstanding.
+  ///
+  /// REGRESSION GUARD — do not remove. Callers rebuild [ReorderableListView.list]
+  /// as a *fresh* instance on every build (e.g. PrioritiesList re-derives
+  /// `focuses` each time), so `widget.list != oldWidget.list` is *always* true
+  /// and [didUpdateWidget] fires on every ancestor rebuild. Between a drop and
+  /// the save propagating, any such rebuild (a sibling bloc emitting, a
+  /// `ScrollEdgeFade` toggling its `ShaderMask`, a selection change, …)
+  /// re-passes the still-stale pre-drop order. Blindly adopting it flashed the
+  /// dropped row back to its original slot for a frame before the save settled
+  /// it again. While [_pendingKeys] is set we ignore those stale echoes and
+  /// keep the optimistic order, yielding only when the parent's order matches
+  /// our optimism or the membership genuinely changes. See
+  /// test/widget/reorderable_list_view_test.dart.
+  List<Key>? _pendingKeys;
+
+  Key _keyOf(T item) => widget.keyExtractor?.call(item) ?? ValueKey(item);
+
+  List<Key> _keysOf(Iterable<T> items) => [for (final i in items) _keyOf(i)];
 
   @override
   void initState() {
@@ -48,12 +75,35 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
 
   @override
   void didUpdateWidget(covariant ReorderableListView<T> oldWidget) {
-    if (widget.list != oldWidget.list) {
-      setState(() {
-        list = [...widget.list];
-      });
-    }
     super.didUpdateWidget(oldWidget);
+    final pending = _pendingKeys;
+    if (pending != null) {
+      final incoming = _keysOf(widget.list);
+      if (listEquals(incoming, pending)) {
+        // The save propagated: the parent now agrees with our optimism. Adopt
+        // the fresh instances (they carry any updated data) and stop guarding.
+        setState(() {
+          list = [...widget.list];
+          _pendingKeys = null;
+        });
+      } else if (!setEquals(incoming.toSet(), _keysOf(list).toSet())) {
+        // Membership changed out from under the pending reorder (item added or
+        // removed) — a real structural update that must win over the optimism.
+        setState(() {
+          list = [...widget.list];
+          _pendingKeys = null;
+        });
+      }
+      // Otherwise this is a stale echo of the pre-drop order; keep the
+      // optimistic list so the dropped row stays put.
+      return;
+    }
+    // No reorder in flight: always track the parent. Adopt fresh instances even
+    // when the order is unchanged so item data (unread/active churn, …) stays
+    // current.
+    setState(() {
+      list = [...widget.list];
+    });
   }
 
   @override
@@ -68,7 +118,7 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
           : null,
       itemBuilder: (context, index) {
         final item = list[index];
-        final key = widget.keyExtractor?.call(item) ?? ValueKey(item);
+        final key = _keyOf(item);
         if (hasPhysicalKeyboard()) {
           // Desktop: full item is drag target, starts immediately on
           // pointer-down.
@@ -92,6 +142,10 @@ class ReorderableListViewState<T> extends State<ReorderableListView<T>> {
         setState(() {
           final item = list.removeAt(oldIndex);
           list.insert(newIndex, item);
+          // Record the order we just applied so didUpdateWidget can recognise
+          // (and ignore) the stale pre-drop echoes that arrive before
+          // widget.onReorder's async persistence propagates back down.
+          _pendingKeys = _keysOf(list);
         });
         widget.onReorder(oldIndex, newIndex);
       },
