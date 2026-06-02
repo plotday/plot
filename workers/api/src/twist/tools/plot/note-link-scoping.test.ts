@@ -121,6 +121,16 @@ function createInsertQuery(result: any) {
  * (which pulls in AI, RPC, env bindings) — createNote only reads fields
  * and calls a handful of methods on `plot`.
  */
+// Minimal Kysely executor so raw `sql`...`.execute(plot.db)` calls in
+// createNote (e.g. the per-note advisory lock) resolve in tests whose mock db
+// only stubs selectFrom/insertInto. Returns no rows — the advisory lock awaits
+// the result and ignores it.
+const noopRawExecutor: any = {
+  transformQuery: (node: unknown) => node,
+  compileQuery: () => ({ sql: "", parameters: [] }),
+  executeQuery: async () => ({ rows: [] }),
+};
+
 function makePlotStub({
   db,
   twistInstanceId = "twist-instance-1",
@@ -128,6 +138,9 @@ function makePlotStub({
   db: any;
   twistInstanceId?: string;
 }) {
+  // Raw `sql`...`.execute(plot.db)` needs a Kysely executor; provide a noop one
+  // for mock dbs that only stub selectFrom/insertInto.
+  if (!db.getExecutor) db.getExecutor = () => noopRawExecutor;
   return {
     db,
     twistInstanceId,

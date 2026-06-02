@@ -144,13 +144,6 @@ dependency_overrides:
   sqlite3:
     path: third_party/sqlite3
 
-  # ⚠️  PATCHED LOCAL FORK — Flutter 3.41 removed `TextInputStyle` and
-  # `TextInputClient.updateStyle`, but super_editor 0.3.0-dev.51 still
-  # overrides them in `DeltaTextInputClientDecorator`. See
-  # third_party/super_editor/PATCH.md.
-  super_editor:
-    path: third_party/super_editor
-
   # flutter_driver is imported from lib/main.dart to register the VM service
   # driver extension when the app is launched with --enable-driver-extension
   # (debug builds only). This lets agents drive the running app via dart-mcp's

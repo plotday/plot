@@ -76,6 +76,16 @@ function createInsertQuery(result: any) {
   return query;
 }
 
+// Minimal Kysely executor so raw `sql`...`.execute(plot.db)` calls in
+// createNote (the per-note advisory lock) resolve against the mock db, which
+// only stubs the query-builder methods. Returns no rows — the lock result is
+// ignored.
+const noopRawExecutor: any = {
+  transformQuery: (node: unknown) => node,
+  compileQuery: () => ({ sql: "", parameters: [] }),
+  executeQuery: async () => ({ rows: [] }),
+};
+
 // Helper to create a chainable mock for Kysely queries
 function createDbMock() {
   return {
@@ -91,6 +101,7 @@ function createDbMock() {
     insertInto: vi.fn(() => createInsertQuery(null)),
     updateTable: vi.fn(),
     deleteFrom: vi.fn(),
+    getExecutor: () => noopRawExecutor,
   } as any;
 }
 
