@@ -10,6 +10,8 @@ import 'package:plot/store/store.dart'
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/store/attention.dart';
+import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 
 /// Simple command for form submission when display command cannot be built
 class _FormSubmitCommand extends Command {
@@ -107,6 +109,23 @@ class ShowForm extends Command {
         constraints: constraints,
         maxWidthPercentage: maxWidthPercentage,
       ).run(context);
+    } on ApiException catch (e, t) {
+      // A failed request (e.g. a 404 fetching a connection's integrations)
+      // must surface to the user rather than dying silently — ApiException is
+      // an Exception, not an Error, so it would otherwise slip past the
+      // `on Error` clause below and rethrow with no UI. Mirror the
+      // ManageConnections._loadData pattern: convert to an error toast.
+      log.warning('Action "$title" failed', e, t);
+      return const CommandMessage(
+        'Something went wrong. Please try again.',
+        isError: true,
+      );
+    } on NetworkException catch (e, t) {
+      log.warning('Action "$title" failed', e, t);
+      return const CommandMessage(
+        'Could not connect to Plot servers.',
+        isError: true,
+      );
     } on Error catch (e, t) {
       log.warning('Action "$title" failed', e, t);
       rethrow;
