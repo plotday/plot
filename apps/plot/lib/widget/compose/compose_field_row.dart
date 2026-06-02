@@ -12,11 +12,26 @@ const double composeIconLeft = 18;
 /// Shared by every compose row so the labels start at the same x.
 const double composeIconGap = 10;
 
+/// Extra width added to the leading-icon column beyond the ambient icon
+/// size, split evenly on both sides by [ComposeLeadingIcon]'s centering.
+/// Glyph icons keep their `iconSizes.base` size and gain breathing room,
+/// while the contacts field's avatar (which fills its full circle) renders
+/// at the full column width — visibly larger than a bare glyph — without
+/// any row's label falling out of alignment.
+const double composeLeadingPadding = 8;
+
+/// Resolved width of the leading-icon column: the ambient `iconSizes.base`
+/// plus [composeLeadingPadding]. Shared by [ComposeLeadingIcon] and the
+/// contacts field's avatar so a single avatar fills the column and its
+/// label lands in the same column as every other compose row.
+double composeLeadingWidth(BuildContext context) =>
+    context.theme.iconSizes.base + composeLeadingPadding;
+
 /// Wraps a leading icon (sparkles, logo, avatars, etc.) in a fixed-width
 /// slot so icons of differing intrinsic widths center within the same
 /// column. Keeps the text label that follows pinned to the same x across
-/// every compose row. Width is the ambient `iconSizes.base` so it tracks
-/// the typography scale (desktop = 15px font / 16px icon).
+/// every compose row. Width is [composeLeadingWidth] so it tracks the
+/// typography scale (desktop = 15px font / 16px icon) plus shared padding.
 class ComposeLeadingIcon extends StatelessWidget {
   const ComposeLeadingIcon({super.key, required this.child});
 
@@ -25,7 +40,7 @@ class ComposeLeadingIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: context.theme.iconSizes.base,
+      width: composeLeadingWidth(context),
       child: Center(child: child),
     );
   }

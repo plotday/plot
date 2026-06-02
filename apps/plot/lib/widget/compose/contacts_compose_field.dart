@@ -92,14 +92,18 @@ class ContactsComposeField extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (actors.isNotEmpty) ...[
-            ComposeLeadingIcon(
-              child: AvatarGroup(
-                actors: actors,
-                totalCount: chips.length,
-                maxVisible: 3,
-                size: theme.iconSizes.base,
-                clickable: true,
-              ),
+            // Not wrapped in a fixed-width ComposeLeadingIcon: an avatar
+            // fills its full circle, so at `composeLeadingWidth` a single
+            // avatar is exactly as wide as the shared leading column and
+            // its label stays aligned with every other compose row, while a
+            // wider multi-avatar group takes its natural width and pushes
+            // the label right instead of overflowing and overlapping it.
+            AvatarGroup(
+              actors: actors,
+              totalCount: chips.length,
+              maxVisible: 3,
+              size: composeLeadingWidth(context),
+              clickable: true,
             ),
             const SizedBox(width: composeIconGap),
           ],
