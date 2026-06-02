@@ -27,7 +27,7 @@ const double _outerInset = 14.0;
 /// (`2 * _halfGap`) equals [_outerInset], keeping the spacing on either side
 /// of the agenda squircle balanced (its left edge sits [_outerInset] from the
 /// window edge) and tightening the sidebar-to-main-panel gap.
-const double _halfGap = 7.0;
+const double _halfGap = 10.0;
 
 /// Corner radius for the squircle panel cards.
 const double _panelRadius = 14.0;
