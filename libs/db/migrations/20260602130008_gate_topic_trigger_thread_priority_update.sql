@@ -1,37 +1,46 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) — two instances of the same twist that
--- upsert the same key converge on the same thread across users. When the
--- matching row is archived because it was merged into another thread, the
--- lookup follows the merged_into_thread_id chain to reach the active target.
--- User-created threads (twist_id IS NULL) do not participate in cross-user
--- dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "set_thread_topic_from_link_channel" function
+CREATE OR REPLACE FUNCTION "public"."set_thread_topic_from_link_channel" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_channel_pk bigint;
+BEGIN
+    IF NEW.channel_id IS NULL OR NEW.thread_id IS NULL OR NEW.created_by IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT ch.id INTO v_channel_pk
+    FROM public.channel ch
+    WHERE ch.twist_instance_id = NEW.created_by
+      AND ch.channel_id = NEW.channel_id
+    LIMIT 1;
+
+    IF v_channel_pk IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    UPDATE public.thread
+    SET topic = 'channel:' || v_channel_pk
+    WHERE id = NEW.thread_id
+      AND topic IS NULL;
+
+    -- Gate on FOUND so this only fires when the topic was JUST set
+    -- (transition NULL → 'channel:...'). See the LOCK ORDER INVARIANT
+    -- block above before removing or weakening this guard.
+    IF FOUND THEN
+        -- Mark every non-sticky settled row pending. Pending rows
+        -- (priority_id IS NULL) are already pending; sticky rows
+        -- (user_moved = TRUE) are never reclassified.
+        UPDATE public.thread_priority
+        SET classify_at = now()
+        WHERE thread_id = NEW.thread_id
+          AND priority_id IS NOT NULL
+          AND user_moved = FALSE;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -673,4 +682,4 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
