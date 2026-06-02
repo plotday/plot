@@ -688,21 +688,17 @@ bool rsvpTargetsOccurrence({
   required bool hasExistingRsvp,
   required String? occurrence,
   required bool inheritedFromSeries,
-}) =>
-    hasExistingRsvp && occurrence != null && !inheritedFromSeries;
+}) => hasExistingRsvp && occurrence != null && !inheritedFromSeries;
 
 /// Shared base for the three RSVP-setting commands. Applies the optimistic
 /// status change and POSTs `/sync/schedule/status`, targeting the occurrence
 /// or series per [rsvpTargetsOccurrence].
 abstract class _RsvpCommand extends _UpdateThreadCommand {
-  _RsvpCommand(
-    super.thread, {
-    required super.title,
-    required super.icon,
-  }) : super(
-          eventObject: EventObject.activity,
-          eventAction: EventAction.updated,
-        );
+  _RsvpCommand(super.thread, {required super.title, required super.icon})
+    : super(
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
 
   Future<CommandReturn> apply(BuildContext context, String? status) async {
     final updated = thread.withRsvpStatus(status);
@@ -730,8 +726,7 @@ abstract class _RsvpCommand extends _UpdateThreadCommand {
 }
 
 class AttendRsvp extends _RsvpCommand {
-  AttendRsvp(super.thread)
-      : super(title: 'Going', icon: PlotIcon.rsvpGoing);
+  AttendRsvp(super.thread) : super(title: 'Going', icon: PlotIcon.rsvpGoing);
 
   @override
   Future<CommandReturn> run(BuildContext context) => apply(context, 'attend');
@@ -739,7 +734,7 @@ class AttendRsvp extends _RsvpCommand {
 
 class SkipRsvp extends _RsvpCommand {
   SkipRsvp(super.thread)
-      : super(title: 'Not going', icon: PlotIcon.rsvpDeclined);
+    : super(title: 'Not going', icon: PlotIcon.rsvpDeclined);
 
   @override
   Future<CommandReturn> run(BuildContext context) => apply(context, 'skip');
@@ -747,7 +742,7 @@ class SkipRsvp extends _RsvpCommand {
 
 class ClearRsvp extends _RsvpCommand {
   ClearRsvp(super.thread)
-      : super(title: 'Clear response', icon: PlotIcon.rsvpUndecided);
+    : super(title: 'Clear response', icon: PlotIcon.rsvpUndecided);
 
   @override
   Future<CommandReturn> run(BuildContext context) => apply(context, null);
@@ -758,26 +753,26 @@ class ClearRsvp extends _RsvpCommand {
 /// the RSVP chip's tap.
 class ShowRsvpOptions extends ShowCommands {
   ShowRsvpOptions(Thread thread)
-      : super(
-          title: 'RSVP',
-          icon: PlotIcon.rsvpGoing,
-          eventObject: EventObject.activity,
-          eventAction: EventAction.opened,
-          commands: _build(thread),
-        );
+    : super(
+        title: 'RSVP',
+        icon: PlotIcon.rsvpGoing,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
+        commands: _build(thread),
+      );
 
   static Commands _build(Thread thread) => Commands(
-        prompt: 'Your RSVP',
-        groups: [
-          StaticCommandGroup(
-            commands: [
-              AttendRsvp(thread),
-              SkipRsvp(thread),
-              if (thread.currentUserRsvp != null) ClearRsvp(thread),
-            ],
-          ),
+    prompt: 'Your RSVP',
+    groups: [
+      StaticCommandGroup(
+        commands: [
+          AttendRsvp(thread),
+          SkipRsvp(thread),
+          if (thread.currentUserRsvp != null) ClearRsvp(thread),
         ],
-      );
+      ),
+    ],
+  );
 }
 
 class EditThread extends ShowForm {
@@ -1818,12 +1813,7 @@ class MoveThreadToPriority extends ShowCommands {
 
     return Commands(
       prompt: 'Move thread to focus',
-      groups: [
-        StaticCommandGroup(
-          title: 'Focuses',
-          commands: commands,
-        ),
-      ],
+      groups: [StaticCommandGroup(title: 'Focuses', commands: commands)],
       secondaryCommand: (prompt) => _CreateAndMoveToNewPriority(thread),
     );
   }
@@ -1861,7 +1851,7 @@ class _CreateAndMoveToNewPriority extends Command {
 class MergeThreadInto extends ShowCommands {
   MergeThreadInto(this.thread)
     : super(
-        title: 'Merge',
+        title: 'Merge into…',
         icon: FontAwesomeIcons.codeMerge,
         commandsBuilder: (context) => _getMergeTargets(thread),
       );
@@ -2551,10 +2541,12 @@ class PickDraftThreadShared extends ShowCommands {
     Uuid? dmTwistInstanceId,
     bool isAddressMode = false,
     List<ContactRoleConfig>? roleConfigs,
+
     /// Historical notes for the thread. Used to compute the Dropped section
     /// in message-mode: contacts who appear in note history but are no longer
     /// in `thread.contacts`. Typically empty for brand-new draft threads.
     List<Note>? notes,
+
     /// The resolved sharing model for this thread's link type. When
     /// [SharingModel.message], a Dropped section is shown if non-empty.
     SharingModel sharingModel = SharingModel.thread,
@@ -2883,9 +2875,9 @@ Future<Commands> _buildSharedCommands(
     final viewerContactIds = Actor.getCurrentUserActorIds()
         .map((a) => a.toUuid())
         .toSet();
-    final droppedIds = thread.droppedContacts
-        .toSet()
-        .difference(viewerContactIds);
+    final droppedIds = thread.droppedContacts.toSet().difference(
+      viewerContactIds,
+    );
     for (final contactId in droppedIds) {
       try {
         final actor = await Actor.getOne(ActorId.fromUuid(contactId));
@@ -2894,9 +2886,7 @@ Future<Commands> _buildSharedCommands(
         // Skip contacts whose actors can't be resolved
       }
     }
-    droppedActors.sort(
-      (a, b) => (a.nameOrEmail).compareTo(b.nameOrEmail),
-    );
+    droppedActors.sort((a, b) => (a.nameOrEmail).compareTo(b.nameOrEmail));
   }
 
   return Commands(
@@ -2930,10 +2920,7 @@ Future<Commands> _buildSharedCommands(
         // dropped actors already appear in their own section, listing them
         // again under "Share with" would double-render them on first paint
         // (before the next CommandRefresh dedupes).
-        excludeActorIds: [
-          ...sharedActorIds,
-          ...droppedActors.map((a) => a.id),
-        ],
+        excludeActorIds: [...sharedActorIds, ...droppedActors.map((a) => a.id)],
         excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
@@ -3006,12 +2993,14 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
           if (isAddressMode && (actor.email == null || actor.email!.isEmpty)) {
             continue;
           }
-          commands.add(ShareThreadActor(
-            thread,
-            actor,
-            onUpdate: onUpdate,
-            sharingModel: sharingModel,
-          ));
+          commands.add(
+            ShareThreadActor(
+              thread,
+              actor,
+              onUpdate: onUpdate,
+              sharingModel: sharingModel,
+            ),
+          );
         case GroupShareCandidate(:final group):
           if (hideGroups) continue;
           if (excludeGroupIds.contains(group.id)) continue;
@@ -3118,7 +3107,7 @@ class ShareThreadActor extends Command {
     bool? isDropped,
   }) : _isDropped = isDropped ?? false,
        _isShared = isDropped == true
-           ? false  // Dropped contacts appear as "off" so user can re-add
+           ? false // Dropped contacts appear as "off" so user can re-add
            : _actorShared(thread, actor),
        super(
          title: actor.nameOrEmail,
@@ -3197,9 +3186,10 @@ class ShareThreadActor extends Command {
         if (_isDropped) {
           // Un-drop: remove from dropped_contacts (contact is already in contacts).
           final toDrop = <String>[];
-          final toUndrop = _linkedContactIdsOnThread(thread, actor)
-              .map((id) => id.toString())
-              .toList();
+          final toUndrop = _linkedContactIdsOnThread(
+            thread,
+            actor,
+          ).map((id) => id.toString()).toList();
           await _callDropEndpoint(thread.id.toString(), toDrop, toUndrop);
           // Optimistically update local state
           final droppedSet = thread.droppedContacts.toSet();
@@ -3211,9 +3201,10 @@ class ShareThreadActor extends Command {
           );
         } else if (_isShared) {
           // Drop: move from active to dropped_contacts.
-          final toDrop = _linkedContactIdsOnThread(thread, actor)
-              .map((id) => id.toString())
-              .toList();
+          final toDrop = _linkedContactIdsOnThread(
+            thread,
+            actor,
+          ).map((id) => id.toString()).toList();
           await _callDropEndpoint(thread.id.toString(), toDrop, []);
           // Optimistically update local state — remove contact_meta entries too
           final toDropSet = _linkedContactIdsOnThread(thread, actor).toSet();
@@ -3232,9 +3223,7 @@ class ShareThreadActor extends Command {
           // Add a new contact (not previously on the thread).
           final contactUuid = actor.id.toUuid();
           final newContacts = [...thread.contacts, contactUuid];
-          await onUpdate(
-            thread.copyWith(contacts: Value(newContacts)),
-          );
+          await onUpdate(thread.copyWith(contacts: Value(newContacts)));
         }
         return const CommandRefresh();
       }
@@ -3642,10 +3631,7 @@ List<Command> threadCommands(
         primary = ToggleThreadActive(thread);
       }
     }
-    return [
-      if (open) ChangeCurrentThread(thread),
-      ?primary,
-    ];
+    return [if (open) ChangeCurrentThread(thread), ?primary];
   }
 
   // Read-only viewers (announce-group-only access): no metadata edits, no
