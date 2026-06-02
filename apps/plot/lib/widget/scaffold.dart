@@ -5,6 +5,7 @@ import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'modal.dart';
+import 'panel_content_clip.dart';
 import 'window.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/style/theme.dart';
@@ -92,7 +93,7 @@ class Scaffold extends StatelessWidget {
       child: wrappedBody,
     );
 
-    return PlatformBuilder(
+    final Widget result = PlatformBuilder(
       androidBuilder: (_) => material.Material(child: scaffold),
       webBuilder: (_) => material.Material(child: scaffold),
       builder: (_) => Directionality(
@@ -104,6 +105,21 @@ class Scaffold extends StatelessWidget {
           child: scaffold,
         ),
       ),
+    );
+
+    // When this page is the content of a corner-clipped panel (the right-hand
+    // thread panel), round its corners *here* — below the panel's nested
+    // navigator — rather than at the panel level. The panel deliberately
+    // leaves the navigator unclipped so thread-page tooltips can escape its
+    // edges; clipping the page content here keeps the header/background rounded
+    // into the corners without trapping those overlays. Null (single-panel and
+    // every other layout) leaves the content unclipped.
+    final clipRadius = PanelContentClip.maybeOf(context);
+    if (clipRadius == null) return result;
+    return ClipRSuperellipse(
+      borderRadius: clipRadius,
+      clipBehavior: Clip.antiAlias,
+      child: result,
     );
   }
 }

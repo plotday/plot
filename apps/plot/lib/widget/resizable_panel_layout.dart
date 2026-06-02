@@ -13,6 +13,7 @@ import 'package:plot/page/loading.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'note_viewer.dart';
 import 'header.dart';
+import 'panel_content_clip.dart';
 import 'unified_header.dart';
 
 /// Outer inset around the squircle panel cards in multi-panel mode (window
@@ -328,10 +329,37 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
       padding: EdgeInsets.fromLTRB(leftPad, 0, rightPad, _outerInset),
       child: _InnerHoverableResizable(
         middle: wrap(middleContent, middleRadiusResolved),
-        right: wrap(widget.child, rightRadius),
+        right: _rightPanelCard(context, widget.child, rightRadius),
         middleRatio: _middlePanelRatio,
         onMiddleRatioChanged: (r) => _middlePanelRatio = r,
       ),
+    );
+  }
+
+  /// Right (thread) panel card.
+  ///
+  /// Unlike the middle panel this must NOT clip its child: the child is a
+  /// nested `AutoRouter` whose Navigator hosts the Overlay that thread-page
+  /// `FTooltip`s render into. Clipping here (as [_squircleCard] does) would
+  /// clip those tooltips at the panel edge — most visibly across the shared
+  /// seam with the middle panel.
+  ///
+  /// Instead we paint the rounded background and let the page content clip
+  /// itself to the same corners *inside* [Scaffold] — below the Navigator —
+  /// via [PanelContentClip]. The background (and the opaque thread header that
+  /// fills the top corners) stay rounded; the tooltips, raised into a sibling
+  /// overlay entry above that clip, escape.
+  Widget _rightPanelCard(
+    BuildContext context,
+    Widget child,
+    BorderRadius borderRadius,
+  ) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
+        color: context.colour.background,
+      ),
+      child: PanelContentClip(borderRadius: borderRadius, child: child),
     );
   }
 
