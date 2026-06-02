@@ -9,15 +9,16 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/widget.dart';
 
-/// The flat-focus sidebar: drag-reorderable focuses, then a fixed Inbox tile
-/// (the root — unfiled threads), then a fixed Everything tile (the unscoped
-/// feed across the Inbox and every focus), then "Add a focus".
+/// The flat-focus sidebar: drag-reorderable focuses inside a scroll region,
+/// then sticky "Add a focus" / Inbox / Everything tiles outside the scroll.
+/// Inbox is the root (unfiled threads); Everything is the unscoped feed
+/// across the Inbox and every focus.
 ///
 /// Focuses are flat in the new model — no nesting, no top-pinning, no
 /// expansion. Reordering writes the existing `order` column via
-/// [Order.between]. A "More" affordance truncates a long list down to the
-/// active/unread focuses.
-class PrioritiesList extends StatefulWidget {
+/// [Order.between]. The full list is always rendered; when it overflows the
+/// available height it scrolls behind a top/bottom fade.
+class PrioritiesList extends StatelessWidget {
   final List<Priority> focuses;
   final Priority root;
   final Priority? selected;
@@ -41,26 +42,14 @@ class PrioritiesList extends StatefulWidget {
   }
 
   @override
-  State<PrioritiesList> createState() => _PrioritiesListState();
-}
-
-class _PrioritiesListState extends State<PrioritiesList> {
-  /// When false, the focus list is truncated to active/unread focuses (plus
-  /// enough to reach [_truncateAt]); tapping "More" reveals the rest.
-  bool _showAll = false;
-
-  /// Show every focus when there are at most this many; truncate beyond it.
-  static const int _truncateAt = 5;
-
-  @override
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         final isLeftPanel =
             PanelPositionProvider.of(context) == HeaderPosition.left;
-        // Every sidebar tile (focuses, More, Inbox, Everything) shares one
-        // default weight — regular. Focus tiles and the Inbox go bold when
-        // they have active threads; see PriorityWidget / _FixedFocusTile.
+        // Every sidebar tile (focuses, Add a focus, Inbox, Everything) shares
+        // one default weight — regular. Focus tiles and the Inbox go bold
+        // when they have active threads; see PriorityWidget / _FixedFocusTile.
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
@@ -76,10 +65,6 @@ class _PrioritiesListState extends State<PrioritiesList> {
             : null;
         final bool monochrome = isLeftPanel;
 
-        final focuses = widget.focuses;
-        final visible = _visibleFocuses(focuses);
-        final truncated = visible.length < focuses.length;
-
         TextStyle focusStyle(Priority p) => itemStyle.copyWith(
           color: p.archivedAt != null
               ? context.theme.colors.mutedForeground
@@ -89,137 +74,136 @@ class _PrioritiesListState extends State<PrioritiesList> {
                 ),
         );
 
-        return SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // lg top padding sets the panel apart from the agenda above it.
-              SizedBox(height: context.theme.spacing.md),
-
-              // Flat, drag-reorderable focuses.
-              ReorderableListView<Priority>(
-                list: visible,
-                shrinkWrap: true,
-                // Key on `id` (not the instance) so a row survives
-                // unread/active churn without remounting.
-                keyExtractor: (p) => ValueKey(p.id),
-                itemBuilder: (context, priority, reorderableIndex) =>
-                    PriorityWidget(
-                      key: ValueKey('focus-${priority.id}'),
-                      priority: priority,
-                      monochrome: monochrome,
-                      selected:
-                          !widget.everything &&
-                          widget.selected?.id == priority.id,
-                      selectedBorder: true,
-                      borderRadius: itemBorderRadius,
-                      textStyle: focusStyle(priority),
-                      unread: priority.unread ? true : null,
-                      reorderableIndex: reorderableIndex,
-                    ),
-                onReorder: (oldIndex, newIndex) =>
-                    _onReorderFocus(visible, oldIndex, newIndex),
-              ),
-
-              if (truncated)
-                _ShowMoreItem(
-                  indentLevel: 0,
-                  textStyle: itemStyle,
-                  onTap: () => setState(() => _showAll = true),
+        // Scrollable focuses, followed by "Add a focus" (the focus-list
+        // tail) and the empty-state hint when there are no focuses yet. The
+        // fade communicates that this region scrolls independently of the
+        // sticky tiles below. Alpha-mask mode so the edges fade into the
+        // tinted frame gradient instead of painting a darker card-shaped
+        // fill over it.
+        final scrollable = ScrollEdgeFade(
+          transparent: true,
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // md top padding sets the panel apart from the agenda above it.
+                SizedBox(height: context.theme.spacing.md),
+                ReorderableListView<Priority>(
+                  list: focuses,
+                  shrinkWrap: true,
+                  // Key on `id` (not the instance) so a row survives
+                  // unread/active churn without remounting.
+                  keyExtractor: (p) => ValueKey(p.id),
+                  itemBuilder: (context, priority, reorderableIndex) =>
+                      PriorityWidget(
+                        key: ValueKey('focus-${priority.id}'),
+                        priority: priority,
+                        monochrome: monochrome,
+                        selected:
+                            !everything && selected?.id == priority.id,
+                        selectedBorder: true,
+                        borderRadius: itemBorderRadius,
+                        textStyle: focusStyle(priority),
+                        unread: priority.unread ? true : null,
+                        reorderableIndex: reorderableIndex,
+                      ),
+                  onReorder: (oldIndex, newIndex) =>
+                      _onReorderFocus(focuses, oldIndex, newIndex),
                 ),
-
-              // "Add a focus" sits directly above the fixed Inbox/Everything
-              // tiles, closing off the reorderable focus list.
-              ListTile(
-                command: CommandWrapper(
-                  NewFocus(),
-                  icon: Value(null),
-                  title: 'Add a focus',
-                ),
-                icon: PlotIcon.add,
-                iconOnly: true,
-                muted: true,
-                // Same hover treatment as the header icon buttons: no rounded
-                // background pill, just the icon/text shift.
-                highlightColor: monochrome ? const Color(0x00000000) : null,
-                borderRadius: monochrome ? null : itemBorderRadius,
-              ),
-
-              // Fixed Inbox tile — the root focus, holding unfiled threads.
-              // Not reorderable, not archivable. Always labelled "Inbox": it
-              // is a fixed, semantic tile (the server projects the root as
-              // "Inbox" at apiVersion >= 4, but older synced roots may still
-              // carry the legacy "Everything" title).
-              _FixedFocusTile(
-                title: 'Inbox',
-                icon: PlotIcon.inbox,
-                isSelected:
-                    !widget.everything && widget.selected?.id == widget.root.id,
-                command: ChangeCurrentPriority(widget.root),
-                menuCommand: ShowPriorityCommands(widget.root),
-                hasUnread: widget.root.unread,
-                // Bold when the Inbox has active threads, like a focus tile.
-                active: widget.root.active,
-                borderRadius: itemBorderRadius,
-                textStyle: itemStyle,
-                monochrome: monochrome,
-              ),
-
-              // Fixed Everything tile — the unscoped feed across the Inbox and
-              // every focus. Rooted on the root with Everything mode on.
-              _FixedFocusTile(
-                title: 'Everything',
-                icon: PlotIcon.inboxes,
-                isSelected: widget.everything,
-                command: ChangeCurrentPriority(widget.root, everything: true),
-                menuCommand: null,
-                // Everything is the unscoped feed — it never carries its own
-                // unread indicator and never goes bold.
-                hasUnread: false,
-                active: false,
-                borderRadius: itemBorderRadius,
-                textStyle: itemStyle,
-                monochrome: monochrome,
-              ),
-
-              if (focuses.isEmpty)
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: context.contentPaddingH,
-                    vertical: context.theme.spacing.xl,
+                // "Add a focus" closes off the focus list — it scrolls with
+                // the focuses, not pinned with Inbox/Everything below.
+                ListTile(
+                  command: CommandWrapper(
+                    NewFocus(),
+                    icon: Value(null),
+                    title: 'Add a focus',
                   ),
-                  child: Text(
-                    'Focuses put your work in context. Add your roles, goals, and projects.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: context.theme.plotColors.veryMuted,
-                      fontSize: context.theme.typography.sm.fontSize,
+                  icon: PlotIcon.add,
+                  iconOnly: true,
+                  muted: true,
+                  // Same hover treatment as the header icon buttons: no
+                  // rounded background pill, just the icon/text shift.
+                  highlightColor: monochrome ? const Color(0x00000000) : null,
+                  borderRadius: monochrome ? null : itemBorderRadius,
+                ),
+                if (focuses.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: context.contentPaddingH,
+                      vertical: context.theme.spacing.xl,
+                    ),
+                    child: Text(
+                      'Focuses put your work in context. Add your roles, goals, and projects.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: context.theme.plotColors.veryMuted,
+                        fontSize: context.theme.typography.sm.fontSize,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: layoutState.multiPanel
+              ? MainAxisSize.min
+              : MainAxisSize.max,
+          children: [
+            // Flexible (not Expanded) so the scroll region shrinks to its
+            // natural height when there's room and only takes the remaining
+            // space — leaving the sticky tiles at the bottom — when focuses
+            // would otherwise overflow.
+            Flexible(child: scrollable),
+
+            // Inbox + Everything stay pinned below the scrollable focuses
+            // so they remain reachable no matter how long the focus list
+            // grows. "Add a focus" lives inside the scroll, as the tail of
+            // the focus list.
+
+            // Fixed Inbox tile — the root focus, holding unfiled threads.
+            // Not reorderable, not archivable. Always labelled "Inbox": it
+            // is a fixed, semantic tile (the server projects the root as
+            // "Inbox" at apiVersion >= 4, but older synced roots may still
+            // carry the legacy "Everything" title).
+            _FixedFocusTile(
+              title: 'Inbox',
+              icon: PlotIcon.inbox,
+              isSelected:
+                  !everything && selected?.id == root.id,
+              command: ChangeCurrentPriority(root),
+              menuCommand: ShowPriorityCommands(root),
+              hasUnread: root.unread,
+              // Bold when the Inbox has active threads, like a focus tile.
+              active: root.active,
+              borderRadius: itemBorderRadius,
+              textStyle: itemStyle,
+              monochrome: monochrome,
+            ),
+
+            // Fixed Everything tile — the unscoped feed across the Inbox and
+            // every focus. Rooted on the root with Everything mode on.
+            _FixedFocusTile(
+              title: 'Everything',
+              icon: PlotIcon.inboxes,
+              isSelected: everything,
+              command: ChangeCurrentPriority(root, everything: true),
+              menuCommand: null,
+              // Everything is the unscoped feed — it never carries its own
+              // unread indicator and never goes bold.
+              hasUnread: false,
+              active: false,
+              borderRadius: itemBorderRadius,
+              textStyle: itemStyle,
+              monochrome: monochrome,
+            ),
+          ],
         );
       },
     );
-  }
-
-  /// The focuses to render: every focus when [_showAll] is set or the list is
-  /// short; otherwise the active/unread focuses always, filling the remaining
-  /// slots by order, with the rest collapsed behind "More" (preserving the
-  /// natural order).
-  List<Priority> _visibleFocuses(List<Priority> focuses) {
-    if (_showAll || focuses.length <= _truncateAt) return focuses;
-    final keep = <Priority>{};
-    for (final p in focuses) {
-      if (p.active || p.unread) keep.add(p);
-    }
-    for (final p in focuses) {
-      if (keep.length >= _truncateAt) break;
-      keep.add(p);
-    }
-    return focuses.where(keep.contains).toList();
   }
 
   Future<void> _onReorderFocus(
@@ -405,66 +389,6 @@ class _FixedFocusTileState extends State<_FixedFocusTile> {
       key: ValueKey('fixed-${widget.title}'),
       endLongCommand: menuCommand,
       child: listTile,
-    );
-  }
-}
-
-class _ShowMoreItem extends StatefulWidget {
-  final int indentLevel;
-  final VoidCallback onTap;
-  final TextStyle? textStyle;
-
-  const _ShowMoreItem({
-    required this.indentLevel,
-    required this.onTap,
-    this.textStyle,
-  });
-
-  @override
-  State<_ShowMoreItem> createState() => _ShowMoreItemState();
-}
-
-class _ShowMoreItemState extends State<_ShowMoreItem> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: widget.indentLevel * (16 + context.theme.spacing.sm),
-          ),
-          child: Row(
-            children: [
-              // Match PriorityWidget leading: 20px inset + 16px icon + 12px gap.
-              const SizedBox(width: 20 + 16 + 12),
-              Expanded(
-                child: Padding(
-                  padding: context.theme.spacing.paddingSm.copyWith(
-                    left: 0,
-                    right: 0,
-                  ),
-                  child: Text(
-                    'More…',
-                    style: (widget.textStyle ?? context.theme.typography.sm)
-                        .copyWith(
-                          color: _isHovered
-                              ? context.theme.colors.foreground
-                              : context.theme.colors.mutedForeground,
-                        ),
-                  ),
-                ),
-              ),
-              SizedBox(width: 20),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

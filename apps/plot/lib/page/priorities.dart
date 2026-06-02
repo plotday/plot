@@ -134,19 +134,17 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                           fit: layoutState.multiPanel
                               ? FlexFit.loose
                               : FlexFit.tight,
-                          child: ScrollEdgeFade(
-                            child: isSearching
-                                ? _SearchMatchesList(
-                                    root: root,
-                                    selected: selected,
-                                  )
-                                : PrioritiesList(
-                                    root: root,
-                                    priorities: state.priorities,
-                                    selected: selected,
-                                    everything: everything,
-                                  ),
-                          ),
+                          child: isSearching
+                              ? _SearchMatchesList(
+                                  root: root,
+                                  selected: selected,
+                                )
+                              : PrioritiesList(
+                                  root: root,
+                                  priorities: state.priorities,
+                                  selected: selected,
+                                  everything: everything,
+                                ),
                         ),
                       ],
                     );
@@ -277,43 +275,48 @@ class _SearchMatchesList extends StatelessWidget {
       monochrome: monochrome,
     );
 
-    return SingleChildScrollView(
-      physics: const ClampingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(height: context.theme.spacing.md),
-          everythingTile,
-          for (final priority in matchPriorities)
-            PriorityWidget(
-              key: ValueKey('search-${priority.id}'),
-              priority: priority,
-              monochrome: monochrome,
-              selected: selected?.id == priority.id,
-              selectedBorder: true,
-              borderRadius: itemBorderRadius,
-              showAncestry: true,
-              boldLeaf: true,
-              textStyle: itemStyle.copyWith(
-                color: context.colour.colours.fromTheme(priority.displayColor),
-              ),
-            ),
-          if (matchPriorities.isEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.contentPaddingH,
-                vertical: context.theme.spacing.xl,
-              ),
-              child: Text(
-                'No focuses with matching threads yet.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.theme.plotColors.veryMuted,
-                  fontSize: context.theme.typography.sm.fontSize,
+    return ScrollEdgeFade(
+      transparent: true,
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: context.theme.spacing.md),
+            everythingTile,
+            for (final priority in matchPriorities)
+              PriorityWidget(
+                key: ValueKey('search-${priority.id}'),
+                priority: priority,
+                monochrome: monochrome,
+                selected: selected?.id == priority.id,
+                selectedBorder: true,
+                borderRadius: itemBorderRadius,
+                showAncestry: true,
+                boldLeaf: true,
+                textStyle: itemStyle.copyWith(
+                  color: context.colour.colours.fromTheme(
+                    priority.displayColor,
+                  ),
                 ),
               ),
-            ),
-        ],
+            if (matchPriorities.isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: context.contentPaddingH,
+                  vertical: context.theme.spacing.xl,
+                ),
+                child: Text(
+                  'No focuses with matching threads yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: context.theme.plotColors.veryMuted,
+                    fontSize: context.theme.typography.sm.fontSize,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

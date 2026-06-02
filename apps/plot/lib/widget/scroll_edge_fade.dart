@@ -10,17 +10,35 @@ import 'package:flutter/widgets.dart';
 /// flashing a fade in for one frame on mount is more jarring than flashing
 /// it in once when truly-scrollable content has overflowed.
 ///
-/// The fade is painted as overlay gradients in a [Stack] on top of the child.
-/// This requires a known [background] color to fade *to* — without one we'd
-/// need a `ShaderMask`/`saveLayer` for true transparency, and that approach
-/// produced ~1px paint-time artifacts when child pixels changed underneath
-/// (e.g. hover backgrounds in fractional-pixel layouts). When [background]
-/// is null, the fade is skipped and the child is returned as-is.
+/// Two paint modes:
+///   * [background] non-null: paint overlay gradients in a [Stack] that fade
+///     to the supplied color. Cheaper and crisper, but assumes the child
+///     sits on a uniform fill. Produced ~1px paint-time artifacts when used
+///     with an alpha-mask shim under hover backgrounds at fractional pixels.
+///   * [transparent] true: fade via a [ShaderMask] alpha gradient so the
+///     child composites against whatever is behind it. Use when the host
+///     surface is non-uniform (e.g. a tinted frame gradient) and a solid
+///     [background] would read as a darker card.
+///   * Neither set: returns the child as-is. The fade is skipped.
 class ScrollEdgeFade extends StatefulWidget {
-  const ScrollEdgeFade({required this.child, this.background, super.key});
+  const ScrollEdgeFade({
+    required this.child,
+    this.background,
+    this.transparent = false,
+    super.key,
+  }) : assert(
+         background == null || !transparent,
+         'ScrollEdgeFade: pass either background (overlay fade) or '
+         'transparent (alpha-mask fade), not both.',
+       );
 
   final Widget child;
   final Color? background;
+
+  /// Fade the child's alpha at the edges (via [ShaderMask]) rather than
+  /// painting an overlay gradient. Use when the child has no opaque
+  /// background of its own and must fade into whatever is behind it.
+  final bool transparent;
 
   @override
   State<ScrollEdgeFade> createState() => _ScrollEdgeFadeState();
@@ -112,65 +130,101 @@ class _ScrollEdgeFadeState extends State<ScrollEdgeFade> {
   @override
   Widget build(BuildContext context) {
     final bg = widget.background;
-    if (bg == null) return widget.child;
+    if (bg == null && !widget.transparent) return widget.child;
 
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: _onMetrics,
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScroll,
-        child: ColoredBox(
-          color: bg,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Skip the fade for short panels — it would consume most of the
-              // visible content.
-              if (constraints.maxHeight <= _fadeExtent * 3) return widget.child;
-              final transparent = bg.withValues(alpha: 0);
-              return Stack(
-                children: [
-                  widget.child,
-                  if (!_atTop)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: _fadeExtent,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [bg, transparent],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (!_atBottom)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: _fadeExtent,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [transparent, bg],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
+        child: bg != null ? _overlay(bg) : _alphaMask(),
       ),
+    );
+  }
+
+  Widget _overlay(Color bg) {
+    return ColoredBox(
+      color: bg,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Skip the fade for short panels — it would consume most of the
+          // visible content.
+          if (constraints.maxHeight <= _fadeExtent * 3) return widget.child;
+          final transparent = bg.withValues(alpha: 0);
+          return Stack(
+            children: [
+              widget.child,
+              if (!_atTop)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: _fadeExtent,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [bg, transparent],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (!_atBottom)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: _fadeExtent,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [transparent, bg],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _alphaMask() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxH = constraints.maxHeight;
+        if (maxH <= _fadeExtent * 3 || (_atTop && _atBottom)) {
+          return widget.child;
+        }
+        // RGB is ignored by [BlendMode.dstIn]; only alpha matters. Opaque
+        // stops keep the child fully visible; transparent stops at the
+        // active edges erase it gradually.
+        const opaque = Color(0xFF000000);
+        const clear = Color(0x00000000);
+        final fade = (_fadeExtent / maxH).clamp(0.0, 0.5);
+        return ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _atTop ? opaque : clear,
+              opaque,
+              opaque,
+              _atBottom ? opaque : clear,
+            ],
+            stops: [0.0, fade, 1.0 - fade, 1.0],
+          ).createShader(rect),
+          child: widget.child,
+        );
+      },
     );
   }
 }
