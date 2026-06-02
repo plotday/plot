@@ -281,7 +281,7 @@ pnpm reset
 #### NEVER Touch the Remote Database
 
 - **NEVER modify remote database** - All work is LOCAL ONLY
-- **ONLY work with local database** - Always use `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — see "Worktree Database Port")
+- **ONLY work with local database** - Always use `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — see "Worktree Database Port"). Note: a session's `$DATABASE_URL` can go stale if `worktree-db` was run after the session started — verify with `psql "$DATABASE_URL" -tAc "show port;"` before any migration.
 
 #### Local Database Rules
 
@@ -291,7 +291,7 @@ pnpm reset
 - **NEVER `DELETE` rows from a synced table** - set `archived_at = now()` instead so the change reaches Flutter clients via sync. Bare DELETEs on synced tables (anything readable from a `user.*` view: thread, note, priority, schedule, link, twist_instance, group, contact, …) are invisible to the seq-cursor protocol and strand local copies forever. See `libs/db/AGENTS.md` "Removing Rows from Synced Tables" for the full rule.
 - **ALWAYS bump parent `seq` on child-table writes** when a `user.*` view computes columns by joining the child to the parent (e.g. `group_admin` → `group.seq` drives `user.group.is_admin/can_post`). Without the bump, membership-shaped changes never reach clients. See `libs/db/AGENTS.md` "Bump Parent `seq` on Child-Table Changes" for the trigger pattern.
 - **ALWAYS generate types** after schema changes: `pnpm types`
-- **ALWAYS use `$DATABASE_URL`** for psql commands — never hardcode a port number
+- **ALWAYS use `$DATABASE_URL`** for psql commands — never hardcode a port number. Exception: if `worktree-db` was run mid-session, `$DATABASE_URL` may be stale (still pointing at the main DB on `54322`) — see "Stale `$DATABASE_URL` after mid-session `worktree-db`" and override it from `.worktree-db` instead.
 
 ## Development Webhooks with Cloudflare Tunnel
 
@@ -374,6 +374,27 @@ psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "SELECT ..."
 ```
 
 If `.worktree-db` does not exist, the worktree database hasn't been set up yet — run `bash scripts/worktree-db` first.
+
+#### Stale `$DATABASE_URL` after mid-session `worktree-db`
+
+**If `worktree-db` was run *after* this session started, do not trust the ambient `$DATABASE_URL`.** The script provisions Postgres on a new port and writes it into `.worktree-db` (`PORT=`) and `.claude/settings.local.json` (`env.DATABASE_URL`), but a running session's environment is **not reloaded** — `$DATABASE_URL` still holds the value from session start (the main repo's `54322`). Verified symptom: `cat .worktree-db` shows `PORT="54336"` while `echo $DATABASE_URL` shows `...:54322/postgres` in the same shell.
+
+This is silent and data-corrupting: `pnpm apply-migrations` / `gen-migration` / `diff-schema-migrations` all read `$DATABASE_URL` from the environment, so they would apply migrations to the **main repo's** database instead of the worktree's.
+
+Either start a fresh session (so the env reloads), or override the URL explicitly on **every** DB command by sourcing the port from `.worktree-db`:
+
+```bash
+source .worktree-db
+DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres" pnpm apply-migrations
+```
+
+And always sanity-check the resolved port before any migration or destructive command:
+
+```bash
+psql "$DATABASE_URL" -tAc "show port;"   # must print the worktree PORT, not 54322
+```
+
+Hardcoding the worktree's actual port (via `.worktree-db`) when the ambient env is stale is correct; hardcoding `54322` is what's wrong.
 
 ### Conditional Setup (run when needed)
 

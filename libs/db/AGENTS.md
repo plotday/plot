@@ -272,10 +272,31 @@ CREATE TRIGGER bump_parent_on_child_insert
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `docker-compose.yml`. Key details:
 
-- **Local database port**: 54322 in main repo (Docker maps 54322:5432). **Worktrees use a different port** — always use `$DATABASE_URL` for psql commands, never hardcode 54322. The worktree port is in `.worktree-db` at the repo root.
+- **Local database port**: 54322 in main repo (Docker maps 54322:5432). **Worktrees use a different port** — prefer `$DATABASE_URL` for psql commands, never hardcode 54322. The worktree port is in `.worktree-db` at the repo root. **Caveat:** `$DATABASE_URL` can be stale mid-session — see "Stale `$DATABASE_URL` after mid-session `worktree-db`" below.
 - **Schema management**: Atlas handles diffing, migration generation, and migration application
 - **Type generation**: Uses `@supabase/postgres-meta` as a library (via `pnpm types`)
 - **Atlas config**: `atlas.hcl` defines the local environment, schema sources, and migration directory
+
+### Stale `$DATABASE_URL` after mid-session `worktree-db`
+
+**If `bash scripts/worktree-db` was run *after* a session started, do not trust the ambient `$DATABASE_URL`.** The script provisions Postgres on a new port and records it in `.worktree-db` (`PORT=`) and `.claude/settings.local.json` (`env.DATABASE_URL`), but a running session's environment is **not reloaded** — `$DATABASE_URL` still holds the session-start value (the main repo's `54322`). Verified symptom: `cat .worktree-db` shows `PORT="54336"` while `echo $DATABASE_URL` shows `...:54322/postgres` in the same shell.
+
+This is silent and data-corrupting: `pnpm apply-migrations`, `gen-migration`, and `diff-schema-migrations` all read `$DATABASE_URL` from the environment, so they would target the **main repo's** database instead of the worktree's.
+
+Either start a fresh session, or override the URL explicitly on every DB command by sourcing the port from `.worktree-db`:
+
+```bash
+source .worktree-db
+DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres" pnpm apply-migrations
+```
+
+Always sanity-check the resolved port before any migration or destructive command:
+
+```bash
+psql "$DATABASE_URL" -tAc "show port;"   # must print the worktree PORT, not 54322
+```
+
+Hardcoding the worktree's actual port (from `.worktree-db`) when the ambient env is stale is correct; hardcoding `54322` is what's wrong.
 
 ## CRITICAL: When Modifying Synced Tables
 
@@ -431,7 +452,7 @@ Migrations run in CI before workers deploy. Between "migrations applied" and "ne
 ### NEVER Touch the Remote Database
 
 - ❌ **NEVER**: Modify the remote/production database directly - ALL WORK IS LOCAL ONLY
-- ✅ **ONLY**: Work with local database via `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — check `.worktree-db`)
+- ✅ **ONLY**: Work with local database via `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — check `.worktree-db`; verify with `psql "$DATABASE_URL" -tAc "show port;"` since the env can be stale after a mid-session `worktree-db`)
 
 ### Local Database Rules
 
@@ -440,7 +461,7 @@ Migrations run in CI before workers deploy. Between "migrations applied" and "ne
 - ✅ **DO**: Create multiple migrations for iterative changes
 - ✅ **DO**: Add data migrations to generated migration files when needed
 - ✅ **DO**: Regenerate types after schema changes
-- ✅ **DO**: Always use `$DATABASE_URL` for psql commands — never hardcode port 54322 (worktrees use different ports)
+- ✅ **DO**: Prefer `$DATABASE_URL` for psql commands — never hardcode port 54322 (worktrees use different ports). If `worktree-db` ran mid-session, `$DATABASE_URL` may be stale — override it from `.worktree-db` (see "Stale `$DATABASE_URL` after mid-session `worktree-db`")
 
 - ❌ **NEVER**: Create migration files manually
 - ❌ **NEVER**: Edit migration files after they've been successfully applied
