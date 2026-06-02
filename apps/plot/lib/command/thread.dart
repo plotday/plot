@@ -778,11 +778,11 @@ class ShowRsvpOptions extends ShowCommands {
 class EditThread extends ShowForm {
   EditThread(Thread thread, {VoidCallback? onSaved, PriorityBloc? priorityBloc})
     : super(
-        title: 'Edit',
+        title: 'Rename',
         icon: FontAwesomeIcons.pen,
         form: (context) async {
           return FormData(
-            title: 'Edit',
+            title: 'Rename',
             groups: [
               StaticFormGroup(
                 items: [
@@ -792,35 +792,14 @@ class EditThread extends ShowForm {
                     initialValue: thread.title,
                     required: !thread.draft,
                   ),
-                  FormSelect<Priority>(
-                    key: 'priority',
-                    label: 'Focus',
-                    initialValue: thread.priority,
-                    required: true,
-                    items: (search) async {
-                      final priorities = await Priority.get(
-                        order: PriorityOrder.nested,
-                      );
-                      if (search == null || search.isEmpty) return priorities;
-                      return priorities
-                          .where((p) => p.matchesSearch(search))
-                          .toList();
-                    },
-                    labelBuilder: (p) => FocusLabel(priority: p),
-                    titleBuilder: (p) => p.ancestorsLabel() != null
-                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-                        : p.title,
-                  ),
                   FormButton(
                     key: 'save',
                     isPrimary: true,
                     buildCommand: (values) {
                       final title = values['title'] as String;
-                      final priority = values['priority'] as Priority;
                       return _SaveThreadEdit(
                         thread,
                         title,
-                        priority,
                         onSaved: onSaved,
                         priorityBloc: priorityBloc,
                       );
@@ -837,8 +816,7 @@ class EditThread extends ShowForm {
 class _SaveThreadEdit extends _UpdateThreadCommand {
   _SaveThreadEdit(
     super.thread,
-    this.newTitle,
-    this.newPriority, {
+    this.newTitle, {
     this.onSaved,
     super.priorityBloc,
   }) : super(
@@ -848,7 +826,6 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
        );
 
   final String newTitle;
-  final Priority newPriority;
   final VoidCallback? onSaved;
 
   @override
@@ -857,7 +834,6 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
       context,
       thread.copyWith(
         title: Value(newTitle.isEmpty ? null : newTitle),
-        priority: newPriority,
       ),
     );
     onSaved?.call();

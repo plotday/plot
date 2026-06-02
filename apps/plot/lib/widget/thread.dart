@@ -470,7 +470,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                 isHighlighted &&
                                     !activity.priority.isViewer &&
                                     !widget.isOutsidePriority
-                                ? _EditHoverIcon(activity: activity)
+                                ? _MoveHoverIcon(activity: activity)
                                 : _ThreadLogo(activity: activity),
                           ),
                           SizedBox(width: buildContext.theme.spacing.md),
@@ -1411,22 +1411,22 @@ class _ThreadLeadingCommand extends CommandWrapper {
 
 /// Replaces the small thread logo when the row is hovered, surfacing the
 /// edit-thread action without crowding the trailing command row.
-class _EditHoverIcon extends StatefulWidget {
-  const _EditHoverIcon({required this.activity});
+class _MoveHoverIcon extends StatefulWidget {
+  const _MoveHoverIcon({required this.activity});
 
   final Thread activity;
 
   @override
-  State<_EditHoverIcon> createState() => _EditHoverIconState();
+  State<_MoveHoverIcon> createState() => _MoveHoverIconState();
 }
 
-class _EditHoverIconState extends State<_EditHoverIcon> {
+class _MoveHoverIconState extends State<_MoveHoverIcon> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final command = EditThread(widget.activity);
-    final iconData = FontAwesomeIcons.pen;
+    final command = MoveThreadToPriority(widget.activity);
+    final iconData = PlotIcon.move;
     final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
         ? formatShortcut(command.shortcut)
         : '';
@@ -1455,7 +1455,7 @@ class _EditHoverIconState extends State<_EditHoverIcon> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.run(command),
-          onLongPress: () => context.run(MoveThreadToPriority(widget.activity)),
+          onLongPress: () => context.run(EditThread(widget.activity)),
           child: Center(
             child: FaIcon(
               iconData,
