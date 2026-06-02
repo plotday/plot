@@ -18,6 +18,7 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
 
 import 'package:plot/state/layout.dart';
+import 'package:plot/util/channel_breadcrumb.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -80,10 +81,41 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   bool _rowHovered = false;
   BlockDragController? _dragController;
 
+  /// Links for this thread, watched per-row so the header can show a channel
+  /// breadcrumb when the primary link is channel-sharing. The breadcrumb
+  /// decision feeds [_buildListTile]'s `hasTopLabel`/`labelOffset` (which keep
+  /// the leading checkbox aligned), so it must be resolved synchronously in
+  /// build — hence a State subscription rather than a descendant stream.
+  StreamSubscription<List<Link>>? _linksSub;
+  List<Link> _links = const [];
+
   /// True while a block-level drag is in progress anywhere in the agenda.
   /// Threads are not drop targets for block drags — suppressing the hover
   /// effect prevents the row from looking like one.
   bool get _isBlockDragging => _dragController?.isDragging ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeLinks();
+  }
+
+  void _subscribeLinks() {
+    _linksSub?.cancel();
+    _linksSub = Link.watchForThread(activity.id).listen((links) {
+      if (!mounted) return;
+      setState(() => _links = links);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ThreadWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activity.id != widget.activity.id) {
+      _links = const [];
+      _subscribeLinks();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -98,8 +130,35 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
   @override
   void dispose() {
+    _linksSub?.cancel();
     _dragController?.removeListener(_onDragChanged);
     super.dispose();
+  }
+
+  /// The channel breadcrumb for this thread, or null when the primary
+  /// (earliest-created) link is not channel-sharing — the same "primary" link
+  /// that [Thread.resolveSharingModel] keys on. Resolved from the in-memory
+  /// [TwistInstance]/[Channel] caches, falling back to whichever part resolves.
+  String? _channelLabel() {
+    if (_links.isEmpty) return null;
+    if (Thread.resolveSharingModel(_links) != SharingModel.channel) return null;
+    final primary = ([
+      ..._links,
+    ]..sort((a, b) => a.createdAt.compareTo(b.createdAt))).first;
+    final ptId = primary.createdBy;
+    if (ptId == null) return null;
+    // Prefer the per-connection account label (e.g. "Acme Co") over the
+    // connector name (e.g. "Slack"); fall back to the name when a connection
+    // has no account label.
+    final instance = TwistInstance.fromCache(ptId);
+    final workspace = (instance?.accountLabel?.isNotEmpty ?? false)
+        ? instance!.accountLabel
+        : instance?.name;
+    final channelId = primary.channelId;
+    final channel = channelId != null
+        ? Channel.findByChannel(ptId, channelId)?.title
+        : null;
+    return formatChannelBreadcrumb(workspace: workspace, channel: channel);
   }
 
   void _onDragChanged() {
@@ -175,7 +234,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
     final isTodoBase = activity.todo && !activity.isLinkScheduleInstance;
 
-    final hasBodyLabel = hasSubPriorityLabel;
+    // Channel breadcrumb (e.g. "Acme Co › #general") shown in all lists when
+    // the thread's primary link is channel-sharing. The focus segment below is
+    // still feed-only (gated by showSubPriority).
+    final channelLabel = _channelLabel();
+    final hasChannelLabel = channelLabel != null;
+
+    final hasBodyLabel = hasChannelLabel || hasSubPriorityLabel;
 
     final scheduleDate = () {
       // User-scheduled todos only show the label when a linked event provides
@@ -410,24 +475,53 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   ),
                   child: Builder(
                     builder: (context) {
+                      // Header segments in order: channel · focus · schedule.
+                      // Each present segment is joined to the previous with a
+                      // dot separator below.
+                      final segments = <Widget>[
+                        if (hasChannelLabel)
+                          Flexible(
+                            child: Text(
+                              channelLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (hasSubPriorityLabel)
+                          Flexible(
+                            child: _PriorityHoverArea(
+                              activity: activity,
+                              priorityContext: priorityContext,
+                              headerFg: headerFg,
+                              fontSize: context.theme.typography.xs.fontSize,
+                            ),
+                          ),
+                        if (scheduleDate != null)
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: formatRelativeSchedule(
+                                    scheduleDate,
+                                    context,
+                                  ),
+                                ),
+                                if (activity.duration != null &&
+                                    activity.duration!.inSeconds > 0)
+                                  TextSpan(
+                                    text: ' · ${activity.duration!.format()}',
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ];
                       return Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (hasBodyLabel)
-                            Flexible(
-                              child: _PriorityHoverArea(
-                                activity: activity,
-                                priorityContext: priorityContext,
-                                headerFg: headerFg,
-                                fontSize: context.theme.typography.xs.fontSize,
-                              ),
-                            ),
-                          if (hasBodyLabel && hasScheduleLabel) Text(' · '),
-                          if (scheduleDate != null) ...[
-                            Text(formatRelativeSchedule(scheduleDate, context)),
-                            if (activity.duration != null &&
-                                activity.duration!.inSeconds > 0)
-                              Text(' · ${activity.duration!.format()}'),
+                          for (var i = 0; i < segments.length; i++) ...[
+                            if (i > 0) const Text(' · '),
+                            segments[i],
                           ],
                         ],
                       );
@@ -898,7 +992,8 @@ class SharedCommandButton extends HookWidget {
     // Synchronous cache fallback to avoid a first-frame "Assign" flicker
     // on warm cache hits, mirroring the shared-AvatarGroup branch's
     // synchronous fallback to command.sharedDisplayActors.
-    final assignee = assigneeSnapshot.data ??
+    final assignee =
+        assigneeSnapshot.data ??
         (assigneeId != null ? Actor.fromCache(assigneeId) : null);
 
     // Channel-mode: derive the human-readable channel title from the primary
@@ -1085,8 +1180,8 @@ class SharedCommandButton extends HookWidget {
       onPress: assignmentLink != null
           ? () => pickLinkAssignee(context, assignmentLink)
           : (sharingModel == SharingModel.channel && channelTitle != null)
-              ? null
-              : () => context.run(command),
+          ? null
+          : () => context.run(command),
       child: child,
     );
 
