@@ -196,8 +196,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// up front — before any query is typed — so the results span every
   /// thread. This method only runs from the single-panel bottom nav;
   /// multi-panel keeps its own deferred switch (priorities.dart's
-  /// `_handleSearchTransition`), which waits for a query and restores the
-  /// prior priority when the search clears.
+  /// `_handleGlobalViewTransition`), which waits for a query or filter and
+  /// restores the prior priority when the search/filter clears.
   void _openSearch(BuildContext context, TabsRouter tabsRouter) {
     final layoutBloc = LayoutBloc.instance;
     final onActivityTab = tabsRouter.activeIndex == _kTabActivity;

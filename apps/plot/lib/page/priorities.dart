@@ -63,15 +63,15 @@ class PrioritiesPanelContent extends StatefulWidget {
 }
 
 class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
-  /// The priority highlighted before the user started searching. Used to
-  /// restore the highlight when search clears, but only if the user did
-  /// not deliberately pick a different priority while searching. Cleared
-  /// when the user picks any non-root priority during search.
-  Priority? _priorityBeforeSearch;
+  /// The view (priority + Everything flag) the user was on before a global
+  /// view — search or filter — took over. Restored when search/filter
+  /// clears, but only if the user did not deliberately pick a different
+  /// priority meanwhile (in which case it is cleared).
+  ({Priority? context, bool everything})? _viewBeforeGlobal;
 
-  /// Tracks the previous search state so we can detect transitions
-  /// (search starting / search clearing) in build.
-  bool _wasSearching = false;
+  /// Tracks the previous global-view state (searching or filtering) so we
+  /// can detect rising/falling edges in build.
+  bool _wasGlobalActive = false;
 
   @override
   Widget build(BuildContext context) {
@@ -83,12 +83,19 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
         // changes trigger rebuilds of the priorities list.
         bool priorityShowArchived = false;
         String? prioritySearch;
+        bool priorityFiltering = false;
         try {
           priorityShowArchived = context.select<PriorityBloc, bool>(
             (bloc) => bloc.state.showArchived,
           );
           prioritySearch = context.select<PriorityBloc, String>(
             (bloc) => bloc.state.search,
+          );
+          priorityFiltering = context.select<PriorityBloc, bool>(
+            (bloc) =>
+                bloc.state.filter.isNotEmpty ||
+                bloc.state.reactionFilter.isNotEmpty ||
+                bloc.state.iconFilter.isNotEmpty,
           );
         } on ProviderNotFoundException {
           // No PriorityBloc in tree — use defaults below.
@@ -108,7 +115,11 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
 
         final search = prioritySearch ?? '';
         final isSearching = search.isNotEmpty;
-        _handleSearchTransition(context, isSearching);
+        _handleGlobalViewTransition(
+          context,
+          isSearching: isSearching,
+          isFiltering: priorityFiltering,
+        );
 
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
@@ -158,59 +169,88 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
     );
   }
 
-  /// Drive NowBloc.context off search transitions:
-  ///   - Search starts: stash the current non-root priority and switch
-  ///     the highlight to Everything (the root).
-  ///   - User picks a non-root priority while searching: clear the stash
-  ///     so a later clear does not undo their pick.
-  ///   - Search clears: if the highlight is still Everything, restore the
-  ///     stashed priority. Otherwise leave the user's pick in place.
+  /// Drive NowBloc.context off search/filter transitions so both behave the
+  /// same way: querying globally and switching the highlight to the synthetic
+  /// root feed, then coming back to where the user was when cleared.
+  ///   - A search or filter starts: stash the current view (priority +
+  ///     Everything flag) and switch the highlight to the root. A filter
+  ///     opens the full Everything feed (`everything: true`); a bare search
+  ///     keeps the view the user came from (Inbox-titled search, or
+  ///     Everything if they were already in it), matching prior behaviour.
+  ///   - The search/filter mix changes which mode the root view should be in
+  ///     (e.g. a filter is added on top of a search): re-align the flag.
+  ///   - The user picks a non-root priority meanwhile: clear the stash so a
+  ///     later clear does not undo their pick.
+  ///   - Everything clears: if the highlight is still the root, restore the
+  ///     stashed view. Otherwise leave the user's pick in place.
   ///
   /// All NowBloc mutations are scheduled in a post-frame callback so they
   /// never run inside build.
-  void _handleSearchTransition(BuildContext context, bool isSearching) {
+  void _handleGlobalViewTransition(
+    BuildContext context, {
+    required bool isSearching,
+    required bool isFiltering,
+  }) {
+    final active = isSearching || isFiltering;
     final nowBloc = context.read<NowBloc>();
     final nowState = nowBloc.state;
     if (nowState is! NowLoaded) {
-      _wasSearching = isSearching;
+      _wasGlobalActive = active;
       return;
     }
     final current = nowState.context;
+    final root = context.read<PrioritiesBloc>().state.root;
 
-    if (isSearching && !_wasSearching) {
-      // Search just started. Save the priority the user was viewing
-      // (only if it is a real priority, not the root) and switch the
-      // highlight to Everything.
-      if (current != null && !current.root) {
-        _priorityBeforeSearch = current;
-      } else {
-        _priorityBeforeSearch = null;
+    void schedule(VoidCallback fn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        fn();
+      });
+    }
+
+    // Update the stash on edges first.
+    if (active && !_wasGlobalActive) {
+      // Entering a global view — remember where we were so we can come back.
+      _viewBeforeGlobal = (context: current, everything: nowState.everything);
+    } else if (active && current != null && !current.root) {
+      // User picked a non-root priority while a global view was active —
+      // drop the stash so clearing search/filter does not undo their pick.
+      _viewBeforeGlobal = null;
+    }
+
+    if (active) {
+      // A filter opens the full Everything feed; a bare search keeps the
+      // view the user came from (Inbox-titled search, or Everything if they
+      // were already in it), matching the pre-filter search behaviour.
+      final priorEverything =
+          _viewBeforeGlobal?.everything ?? nowState.everything;
+      final desiredEverything = isFiltering || priorEverything;
+      final entering = !_wasGlobalActive;
+      final onRoot = current == null || current.root;
+      // Steer the highlight to the root feed while the user is still on it
+      // (or is just entering). If they navigated to a real priority we leave
+      // them there — the stash was already cleared above.
+      if (root != null &&
+          (entering || onRoot) &&
+          (current?.id != root.id || nowState.everything != desiredEverything)) {
+        schedule(() => nowBloc.setContext(root, everything: desiredEverything));
       }
-      final root = context.read<PrioritiesBloc>().state.root;
-      if (root != null && current?.id != root.id) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          nowBloc.setContext(root);
-        });
-      }
-    } else if (isSearching && current != null && !current.root) {
-      // User picked a non-root priority while searching — drop the
-      // stash so clearing the search does not undo their choice.
-      _priorityBeforeSearch = null;
-    } else if (!isSearching && _wasSearching) {
-      // Search cleared. Only restore if the user did not pick a
-      // different priority during search.
-      final stashed = _priorityBeforeSearch;
-      _priorityBeforeSearch = null;
+    } else if (_wasGlobalActive) {
+      // Left every global view. Restore the stashed view, but only if the
+      // user did not pick a different priority during search/filter.
+      final stashed = _viewBeforeGlobal;
+      _viewBeforeGlobal = null;
       if (stashed != null && (current == null || current.root)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          nowBloc.setContext(stashed);
-        });
+        schedule(
+          () => nowBloc.setContext(
+            stashed.context,
+            everything: stashed.everything,
+          ),
+        );
       }
     }
 
-    _wasSearching = isSearching;
+    _wasGlobalActive = active;
   }
 }
 

@@ -226,6 +226,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     if (priorityBloc.state.filter.isNotEmpty) {
       priorityBloc.updateFilter([]);
     }
+    if (priorityBloc.state.reactionFilter.isNotEmpty) {
+      priorityBloc.updateReactionFilter([]);
+    }
     for (final icon in List<String>.from(priorityBloc.state.iconFilter)) {
       priorityBloc.updateIconFilter(icon);
     }

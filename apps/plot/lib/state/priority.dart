@@ -797,8 +797,22 @@ class PriorityBloc extends Cubit<PriorityState> {
   ///   • A focus → unchanged behaviour: roll up by path while searching,
   ///     rolling up sub-priorities, or showing an event agenda; exact
   ///     otherwise. Focuses are leaves, so path == exact in the flat model.
+  /// True when any header filter chip (tag, reaction, or thread type) is
+  /// armed. Filters query globally — like search — so an armed filter both
+  /// unscopes the feed ([_feedScope]) and renders it as one flat list.
+  bool get _hasActiveFilter =>
+      state.filter.isNotEmpty ||
+      state.reactionFilter.isNotEmpty ||
+      state.iconFilter.isNotEmpty;
+
   ({PriorityId? priorityId, Path? priorityPath}) _feedScope() {
-    if (state.everything) return (priorityId: null, priorityPath: null);
+    // Everything and any active filter both show a global, unscoped feed:
+    // a filter searches across every focus, so it must not stay pinned to
+    // the current one. The priority page additionally flips the highlight
+    // to Everything when a filter is armed (see _handleGlobalViewTransition).
+    if (state.everything || _hasActiveFilter) {
+      return (priorityId: null, priorityPath: null);
+    }
     final p = state.context;
     final isSearching = state.search.isNotEmpty;
     if (p.root) {
@@ -833,10 +847,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     // sets always surface regardless of how deep the Done tail is — the bug
     // this fixes was active threads being buried past the LIMIT of a single
     // `activity_at`-ordered page at rolled-up priorities.
-    final flatMode = state.everything ||
-        state.search.isNotEmpty ||
-        state.filter.isNotEmpty ||
-        state.iconFilter.isNotEmpty;
+    final flatMode =
+        state.everything || state.search.isNotEmpty || _hasActiveFilter;
 
     _activeTabSubscriptionTab = ActivityTab.all;
     _activeTabFlatMode = flatMode;
@@ -962,10 +974,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Search / filter mode: flat list, no sections (per spec).
     final flatMode =
-        state.everything ||
-        state.search.isNotEmpty ||
-        state.filter.isNotEmpty ||
-        state.iconFilter.isNotEmpty;
+        state.everything || state.search.isNotEmpty || _hasActiveFilter;
 
     final List<AgendaItem> items;
     if (flatMode) {
