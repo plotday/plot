@@ -341,9 +341,7 @@ class AvatarGroup extends StatelessWidget {
     if (tooltipBuilder == null) return outlined;
     return FTooltip(
       tipAnchor: tooltipBelow ? Alignment.topCenter : Alignment.bottomCenter,
-      childAnchor: tooltipBelow
-          ? Alignment.bottomCenter
-          : Alignment.topCenter,
+      childAnchor: tooltipBelow ? Alignment.bottomCenter : Alignment.topCenter,
       tipBuilder: tooltipBuilder,
       child: outlined,
     );
@@ -423,11 +421,17 @@ class RsvpDetails extends StatelessWidget {
   final List<ScheduleContact> contacts;
 
   /// Pure partition by status (testable without a render).
+  ///
+  /// When [userId] is provided, the current user's contact(s) are floated to
+  /// the front of whichever group they land in (e.g. if they decline, they're
+  /// first under "Not going"). A user may have multiple matching contacts
+  /// (work + personal email), so all of them lead; remaining order is stable.
   static ({
     List<ScheduleContact> going,
     List<ScheduleContact> declined,
     List<ScheduleContact> undecided,
-  }) group(List<ScheduleContact> contacts) {
+  })
+  group(List<ScheduleContact> contacts, {String? userId}) {
     final going = <ScheduleContact>[];
     final declined = <ScheduleContact>[];
     final undecided = <ScheduleContact>[];
@@ -441,25 +445,41 @@ class RsvpDetails extends StatelessWidget {
           undecided.add(c);
       }
     }
+    if (userId != null) {
+      // Stable reorder: the user's contacts first, everyone else after.
+      List<ScheduleContact> userFirst(List<ScheduleContact> people) => [
+        ...people.where((c) => c.contactUserId == userId),
+        ...people.where((c) => c.contactUserId != userId),
+      ];
+      return (
+        going: userFirst(going),
+        declined: userFirst(declined),
+        undecided: userFirst(undecided),
+      );
+    }
     return (going: going, declined: declined, undecided: undecided);
   }
 
   @override
   Widget build(BuildContext context) {
-    final g = group(contacts);
+    final userId = Base.userIdOrNull?.toString();
+    final g = group(contacts, userId: userId);
     final textStyle = context.theme.typography.sm;
     final mutedStyle = textStyle.copyWith(color: context.colour.muted);
     final headerStyle = context.theme.typography.xs.copyWith(
       color: context.colour.veryMuted,
       letterSpacing: 0.3,
     );
-    final userId = Base.userIdOrNull?.toString();
     final youColor = context.colour.accent;
 
-    final goingColor =
-        context.colour.colours.fromTheme(const ThemeColor(0), muted: true);
-    final declinedColor =
-        context.colour.colours.fromTheme(const ThemeColor(5), muted: true);
+    final goingColor = context.colour.colours.fromTheme(
+      const ThemeColor(0),
+      muted: true,
+    );
+    final declinedColor = context.colour.colours.fromTheme(
+      const ThemeColor(5),
+      muted: true,
+    );
     final undecidedColor = context.colour.veryMuted;
 
     Widget section(
@@ -477,9 +497,16 @@ class RsvpDetails extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                FaIcon(icon, size: (headerStyle.fontSize ?? 11) * 0.9, color: color),
+                FaIcon(
+                  icon,
+                  size: (headerStyle.fontSize ?? 11) * 0.9,
+                  color: color,
+                ),
                 const SizedBox(width: 5),
-                Text('${label.toUpperCase()} · ${people.length}', style: headerStyle),
+                Text(
+                  '${label.toUpperCase()} · ${people.length}',
+                  style: headerStyle,
+                ),
               ],
             ),
           ),
@@ -504,7 +531,12 @@ class RsvpDetails extends StatelessWidget {
       if (g.declined.isNotEmpty)
         section('Not going', PlotIcon.rsvpDeclined, declinedColor, g.declined),
       if (g.undecided.isNotEmpty)
-        section('Undecided', PlotIcon.rsvpUndecided, undecidedColor, g.undecided),
+        section(
+          'Undecided',
+          PlotIcon.rsvpUndecided,
+          undecidedColor,
+          g.undecided,
+        ),
     ];
 
     return Column(
@@ -525,21 +557,24 @@ class RsvpDetails extends StatelessWidget {
   }) {
     final hasName = c.contactName != null && c.contactName!.isNotEmpty;
     final hasEmail = c.contactEmail != null && c.contactEmail!.isNotEmpty;
-    final name = hasName ? c.contactName! : (hasEmail ? c.contactEmail! : 'Unknown');
+    // The current user reads as "You <email>"; everyone else as "<name> <email>".
+    final name = isUser
+        ? 'You'
+        : (hasName ? c.contactName! : (hasEmail ? c.contactEmail! : 'Unknown'));
+    // Show the email alongside unless the label already is the email.
+    final showEmail = hasEmail && name != c.contactEmail;
     return Text.rich(
       TextSpan(
         style: textStyle,
         children: [
-          TextSpan(text: name),
-          if (hasName && hasEmail) ...[
+          TextSpan(
+            text: name,
+            style: isUser ? textStyle.copyWith(color: youColor) : null,
+          ),
+          if (showEmail) ...[
             const TextSpan(text: '  '),
             TextSpan(text: c.contactEmail, style: mutedStyle),
           ],
-          if (isUser)
-            TextSpan(
-              text: '  · you',
-              style: mutedStyle.copyWith(color: youColor),
-            ),
         ],
       ),
     );

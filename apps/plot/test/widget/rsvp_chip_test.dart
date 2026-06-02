@@ -58,5 +58,42 @@ void main() {
       expect(g.declined, isEmpty);
       expect(g.undecided.length, 2);
     });
+
+    ScheduleContact cu(String id, String? status, {String? userId}) =>
+        ScheduleContact(contactId: id, status: status, contactUserId: userId);
+
+    test('floats the current user to the front of their group', () {
+      final g = RsvpDetails.group(
+        [
+          cu('a', 'skip'),
+          cu('me', 'skip', userId: 'u1'),
+          cu('b', 'skip'),
+        ],
+        userId: 'u1',
+      );
+      expect(g.declined.map((c) => c.contactId), ['me', 'a', 'b']);
+    });
+
+    test('floats all of the user\'s contacts first, stably', () {
+      final g = RsvpDetails.group(
+        [
+          cu('a', 'attend'),
+          cu('work', 'attend', userId: 'u1'),
+          cu('b', 'attend'),
+          cu('home', 'attend', userId: 'u1'),
+        ],
+        userId: 'u1',
+      );
+      expect(g.going.map((c) => c.contactId), ['work', 'home', 'a', 'b']);
+    });
+
+    test('leaves order unchanged when no userId is given', () {
+      final g = RsvpDetails.group([
+        cu('a', 'skip'),
+        cu('me', 'skip', userId: 'u1'),
+        cu('b', 'skip'),
+      ]);
+      expect(g.declined.map((c) => c.contactId), ['a', 'me', 'b']);
+    });
   });
 }
