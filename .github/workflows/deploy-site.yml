@@ -1,12 +1,10 @@
 name: Deploy Site
 
+# Triggered manually (workflow_dispatch) or as a reusable workflow called by
+# Deploy Production (deploy-production.yml). No longer auto-deploys on push to
+# main — production deploys must be triggered.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/site/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/deploy-site.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:

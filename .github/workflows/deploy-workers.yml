@@ -1,16 +1,29 @@
 name: Deploy Workers
 
+# Triggered manually (workflow_dispatch) or as a reusable workflow called by
+# Deploy Production (deploy-production.yml). No longer auto-deploys on push to
+# main — production deploys must be triggered. Keep the input list in sync
+# between workflow_call and workflow_dispatch below.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "workers/**"
-      - "libs/**"
-      - "public"
-      - "public/twister/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/deploy-workers.yml"
-      - "scripts/deploy-worker*"
+  workflow_call:
+    inputs:
+      api:
+        description: 'Deploy API'
+        type: boolean
+        default: true
+      beat:
+        description: 'Deploy Beat'
+        type: boolean
+        default: true
+      mailer:
+        description: 'Deploy Mailer'
+        type: boolean
+        default: true
+      migrate_only:
+        description: "Only run migrations, skip worker deployment"
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       api:
@@ -271,7 +284,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       needs.check-changes.outputs.workers != '[]' &&
-      github.event.inputs.migrate_only != 'true'
+      inputs.migrate_only != true
     strategy:
       matrix:
         worker: ${{ fromJson(needs.check-changes.outputs.workers) }}

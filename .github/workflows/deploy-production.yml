@@ -1,0 +1,137 @@
+name: Deploy Production
+
+# One-click production deploy.
+#
+# This is the single entry point that replaces the old "auto-deploy on push to
+# main" behavior. It calls the individual deploy workflows (workers, web app,
+# site, twists) as reusable workflows so one run deploys everything, and gates
+# the whole thing behind the `production` GitHub Environment.
+#
+# To require manual approval before anything deploys, add a required reviewer to
+# the `production` environment (repo Settings -> Environments -> production).
+# The approval pauses the `gate` job below; approving it releases all the deploy
+# jobs at once. Without a reviewer configured, `gate` passes through and this is
+# a pure one-click deploy.
+#
+# Note: database migrations ride along inside deploy-workers.yml (its `migrate`
+# job is a dependency of the worker deploy), so gating that workflow here also
+# gates migrations.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: "Deploy workers (api/beat/mailer) + run migrations"
+        type: boolean
+        default: true
+      app:
+        description: "Deploy web app (Flutter -> Cloudflare Pages)"
+        type: boolean
+        default: true
+      site:
+        description: "Deploy marketing site"
+        type: boolean
+        default: true
+      twists:
+        description: "Deploy twists & connectors"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # Approval gate. The `production` environment's protection rule (if any)
+  # pauses this job until a reviewer approves; everything else needs it.
+  gate:
+    name: Approve production deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "Approved production deploy of ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
+
+  workers:
+    name: Deploy workers
+    needs: gate
+    if: ${{ inputs.workers }}
+    uses: ./.github/workflows/deploy-workers.yml
+    secrets: inherit
+    with:
+      api: true
+      beat: true
+      mailer: true
+
+  app:
+    name: Deploy web app
+    needs: gate
+    if: ${{ inputs.app }}
+    uses: ./.github/workflows/deploy-app.yml
+    secrets: inherit
+
+  site:
+    name: Deploy site
+    needs: gate
+    if: ${{ inputs.site }}
+    uses: ./.github/workflows/deploy-site.yml
+    secrets: inherit
+
+  # Twists/connectors run against the api at runtime, so they deploy after the
+  # workers job. `always()` lets this run even when `workers` was skipped
+  # (i.e. the workers checkbox was unticked); it only blocks if workers failed.
+  twists:
+    name: Deploy twists & connectors
+    needs: [gate, workers]
+    if: >-
+      ${{ always()
+        && needs.gate.result == 'success'
+        && inputs.twists
+        && needs.workers.result != 'failure'
+        && needs.workers.result != 'cancelled' }}
+    uses: ./.github/workflows/deploy-twists.yml
+    secrets: inherit
+    with:
+      twists: all
+      connectors: all
+
+  # Record exactly what shipped as an immutable tag. This is the anchor for
+  # cherry-picking/patching a release without shipping all of main:
+  #   git checkout -b hotfix/x deploy/<timestamp>
+  tag:
+    name: Tag deployed commit
+    needs: [gate, workers, app, site, twists]
+    if: >-
+      ${{ always()
+        && needs.gate.result == 'success'
+        && !contains(needs.*.result, 'failure')
+        && !contains(needs.*.result, 'cancelled') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create and push deploy tag
+        run: |
+          TAG="deploy/$(date -u +%Y%m%d.%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Production deploy of ${GITHUB_SHA} (run ${GITHUB_RUN_ID})"
+          git push origin "$TAG"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## ✅ Production deploy complete"
+            echo ""
+            echo "**Commit:** \`${GITHUB_SHA}\`"
+            echo "**Tag:** \`${TAG}\`"
+            echo ""
+            echo "| Target | Result |"
+            echo "| --- | --- |"
+            echo "| Workers | ${{ needs.workers.result }} |"
+            echo "| Web app | ${{ needs.app.result }} |"
+            echo "| Site | ${{ needs.site.result }} |"
+            echo "| Twists | ${{ needs.twists.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

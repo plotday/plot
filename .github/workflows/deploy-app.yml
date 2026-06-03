@@ -1,11 +1,9 @@
 name: Deploy App (Web)
+# Triggered manually (workflow_dispatch) or as a reusable workflow called by
+# Deploy Production (deploy-production.yml). No longer auto-deploys on push to
+# main — production deploys must be triggered.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/plot/**"
-      - ".env"
-      - ".env.production"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +23,6 @@ jobs:
     name: Deploy
     needs: refresh-secrets
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Generate GitHub App Token

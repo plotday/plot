@@ -3,16 +3,23 @@ name: Deploy Twists & Connectors
 env:
   NX_NO_CLOUD: true
 
+# Triggered manually (workflow_dispatch) or as a reusable workflow called by
+# Deploy Production (deploy-production.yml). No longer auto-deploys on push to
+# main — production deploys must be triggered. Keep the input list in sync
+# between workflow_call and workflow_dispatch below.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "twists/**"
-      - "libs/**"
-      - "public"
-      - "public/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/deploy-twists.yml"
+  workflow_call:
+    inputs:
+      twists:
+        description: 'Twists to deploy (comma-separated, or "all" for all twists)'
+        required: false
+        default: "all"
+        type: string
+      connectors:
+        description: 'Connectors to deploy (comma-separated, or "all" for all connectors)'
+        required: false
+        default: "all"
+        type: string
   workflow_dispatch:
     inputs:
       twists:
@@ -187,7 +194,7 @@ jobs:
           # Check if this is a manual dispatch
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Handle twists
-            MANUAL_TWISTS="${{ github.event.inputs.twists }}"
+            MANUAL_TWISTS="${{ inputs.twists }}"
             if [ "$MANUAL_TWISTS" = "all" ]; then
               echo "Manual trigger: deploying all twists"
               TWISTS_TO_DEPLOY=("${TWIST_LIST[@]}")
@@ -207,7 +214,7 @@ jobs:
             fi
 
             # Handle connectors
-            MANUAL_CONNECTORS="${{ github.event.inputs.connectors }}"
+            MANUAL_CONNECTORS="${{ inputs.connectors }}"
             if [ "$MANUAL_CONNECTORS" = "all" ]; then
               echo "Manual trigger: deploying all connectors"
               CONNECTORS_TO_DEPLOY=("${CONNECTOR_LIST[@]}")
