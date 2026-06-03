@@ -1312,10 +1312,14 @@ export async function archiveAndDeleteTwist(
         .executeTakeFirst();
 
       if (pt?.is_source) {
-        // Connector: archive links and threads with no remaining active links
+        // Connector: archive links and threads with no remaining active links.
+        // Uninstall is a whole-instance removal: hard-delete the links and rely
+        // on the synced twist_instance.archived_at signal to purge them on
+        // clients.
         await rpc(trx, "archive_links", {
           p_created_by: twist_instance_id,
           p_filter: {},
+          p_hard: true,
         });
       } else {
         // Twist: archive threads directly (twists create threads, not links)

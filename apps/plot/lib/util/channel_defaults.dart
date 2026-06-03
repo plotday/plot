@@ -69,11 +69,13 @@ class ChannelDefaultSuggester {
 
     final defaultPriority = await Priority.getDefault();
 
-    // Phase 1: Map account email domains → team priorities
+    // Phase 1: Map account email domains → priority. Focuses are team-agnostic,
+    // so work-domain accounts no longer resolve to a per-team priority; they
+    // map to the default priority purely to drive the domain-match scoring
+    // signal below.
     final domainToPriority = _buildDomainPriorityMap(
       accounts,
       teamDomains,
-      priorities,
       defaultPriority,
     );
 
@@ -114,11 +116,14 @@ class ChannelDefaultSuggester {
     return ChannelDefaultSuggestion(enabledChannels: enabledChannels);
   }
 
-  /// Build a map from email domain → best matching priority.
+  /// Build a map from work-email domain → priority. A domain that belongs to
+  /// one of the user's teams maps to [defaultPriority]; personal domains and
+  /// unknown domains are skipped. Focuses are team-agnostic, so there is no
+  /// per-team priority to resolve — the map exists only so [_scoreChannel] can
+  /// boost channels whose account is on a known team domain.
   static Map<String, Priority> _buildDomainPriorityMap(
     List<TwistAccount> accounts,
     Map<int, List<String>>? teamDomains,
-    List<Priority> priorities,
     Priority defaultPriority,
   ) {
     final result = <String, Priority>{};
@@ -132,25 +137,13 @@ class ChannelDefaultSuggester {
       }
     }
 
-    // For each account email, find matching org priority
+    // For each account email on a known team domain, record the default
+    // priority so the domain-match scoring signal fires.
     for (final account in accounts) {
       final domain = _extractDomain(account.email);
       if (domain == null || _personalDomains.contains(domain)) continue;
-
-      final orgId = domainToOrgId[domain];
-      if (orgId == null) continue;
-
-      // Find the root priority for this org
-      final orgPriority = priorities.firstWhere(
-        (p) => p.teamId == BigInt.from(orgId) && p.root,
-        orElse: () =>
-            priorities.firstWhere(
-              (p) => p.teamId == BigInt.from(orgId),
-              orElse: () => defaultPriority,
-            ),
-      );
-
-      result[domain] = orgPriority;
+      if (!domainToOrgId.containsKey(domain)) continue;
+      result[domain] = defaultPriority;
     }
 
     return result;

@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/command/thread_merge.dart';
+import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/link_type_copy.dart';
@@ -254,6 +255,14 @@ class NewThread extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     final priorityBloc = context.read<PriorityBloc>();
     final priorityId = priorityBloc.state.context.id;
+
+    // Always start a fresh new-thread flow. AutoRoute reuses an already-mounted
+    // NewThreadPage when navigating to NewThreadRoute (it does not build a new
+    // State), so without this signal a page sitting on step 2 — or simply still
+    // alive while the user views another thread — would reappear mid-compose.
+    // A live page resets to step 1 with a fresh draft; a fresh mount ignores
+    // this bump (it already starts clean). See [NewThreadPageState].
+    NewThreadPageState.requestReset();
 
     // Prefer middle panel on resize when new thread is open
     final layoutBloc = context.read<LayoutBloc>();
@@ -538,6 +547,7 @@ class AddThreadWithLink extends Command {
       sourceUrl: linkUrl,
       title: linkTitle,
       logo: linkFavicon,
+      revoked: false,
     );
     await Store.get.save(
       Store.get.links,

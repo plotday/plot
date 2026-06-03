@@ -779,6 +779,7 @@ class NoteEditorState extends State<NoteEditor> {
         return 'reply';
       case SharingModel.channel:
       case SharingModel.thread:
+      case SharingModel.none:
         return 'comment';
     }
   }
@@ -897,6 +898,7 @@ class NoteEditorState extends State<NoteEditor> {
         return pills;
       case SharingModel.channel:
       case SharingModel.thread:
+      case SharingModel.none:
         pills.add(
           TopBarPill(
             id: 'comment',

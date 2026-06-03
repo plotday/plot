@@ -462,26 +462,6 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Returns the ID of the user's first (shallowest, oldest) priority that
-   * belongs to the given team, or null if the user has no team priorities.
-   * @param teamId - The team_id as a string (Int8 select type).
-   */
-  async getFirstTeamPriorityId(userId: string, teamId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom("priority")
-      // @ts-ignore - Kysely infers Int8 filter as number, but string is correct at runtime
-      .where("team_id", "=", teamId)
-      .select("id")
-      .where("user_id", "=", userId)
-      .where("archived_at", "is", null)
-      .orderBy(sql`nlevel(path)`, "asc")
-      .orderBy("created_at", "asc")
-      .limit(1)
-      .executeTakeFirst();
-    return row?.id ?? null;
-  }
-
-  /**
    * Gets the root path component of the owner user's default priority.
    * Used for scoping key lookups to the correct priority tree.
    */

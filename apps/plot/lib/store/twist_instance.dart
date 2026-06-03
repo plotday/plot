@@ -80,6 +80,34 @@ class TwistInstancesBase extends BaseTable {
     json.remove('user_id');
     return json;
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // When an instance transitions to archived (uninstall), purge its
+    // connector links locally — the server hard-deletes them, which the seq
+    // cursor can't see, so the instance archival is the delete signal.
+    final toPurge = <Uuid>[];
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final ti = row as TwistInstanceRow;
+      if (ti.archivedAt != null) {
+        final local = await (store.select(store.twistInstances)
+              ..where((t) => t.id.equals(ti.id.toBytes())))
+            .getSingleOrNull();
+        if (local == null || local.archivedAt == null) {
+          toPurge.add(ti.id);
+        }
+      }
+      result.add(row);
+    }
+    for (final id in toPurge) {
+      await Link.hardDeleteForInstance(store, id);
+    }
+    return result;
+  }
 }
 
 class TwistInstance extends TwistInstanceRow {

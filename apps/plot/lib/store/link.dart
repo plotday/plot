@@ -14,11 +14,16 @@ enum SharingModel {
   channel,
   /// Each note carries its own recipient set via access_contacts;
   /// thread roster is the union across messages. Email.
-  message;
+  message,
+  /// No recipient roster and no sharing UI. Threads scoped this way never
+  /// surface contacts/groups for sharing — treated like a [thread] with an
+  /// empty roster. Used by link types that have no audience concept.
+  none;
 
   static SharingModel fromJson(String? value) => switch (value) {
         'channel' => SharingModel.channel,
         'message' => SharingModel.message,
+        'none' => SharingModel.none,
         _ => SharingModel.thread,
       };
 }
@@ -281,6 +286,11 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
   TextColumn get logo => text().nullable()();
   BlobColumn get mergedFromThreadId =>
       blob().nullable().map(const UuidConverter())();
+
+  /// Server access-loss tombstone marker. TRUE when the row arrived from
+  /// user.link_redacted (a per-item connector removal with no bulk signal).
+  /// The sync layer hard-deletes these locally (link + its schedules).
+  BoolColumn get revoked => boolean().withDefault(const Constant(false))();
 }
 
 class LinksBase extends BaseTable {
@@ -352,15 +362,26 @@ class LinksBase extends BaseTable {
     Store store,
     Iterable<Insertable<DataClass>> rows,
   ) async {
-    // See SchedulesBase.processPulledRows — same race protection.
+    // Access-loss tombstones (user.link_redacted): a per-item connector
+    // removal with no bulk signal. Hard-delete the local link + its schedules.
+    final revokedIds = <Uint8List>[];
     final result = <Insertable<DataClass>>[];
     for (final row in rows) {
       final linkRow = row as LinkRow;
+      if (linkRow.revoked) {
+        revokedIds.add(linkRow.id.toBytes());
+        continue;
+      }
+      // Existing race protection (see SchedulesBase.processPulledRows): skip
+      // rows with a pending local write.
       final local = await (store.select(store.links)
             ..where((l) => l.id.equals(linkRow.id.toBytes())))
           .getSingleOrNull();
       if (local != null && local.pending != null) continue;
       result.add(row);
+    }
+    if (revokedIds.isNotEmpty) {
+      await Link._hardDeleteLinks(store, revokedIds);
     }
     return result;
   }
@@ -373,6 +394,50 @@ class Link extends Equatable {
 
   static Future<bool> push() async {
     return await Store.get.push(Store.get.links, LinksBase());
+  }
+
+  /// Hard-delete the given links and their schedules from the local DB.
+  /// Drift doesn't enforce FK cascade locally, so schedules are deleted by
+  /// linkId explicitly (link-schedules; thread-schedules are untouched).
+  static Future<void> _hardDeleteLinks(
+    Store store,
+    List<Uint8List> linkIds,
+  ) async {
+    await store.transaction(() async {
+      await (store.delete(store.schedules)
+            ..where((s) => s.linkId.isIn(linkIds)))
+          .go();
+      await (store.delete(store.links)..where((l) => l.id.isIn(linkIds))).go();
+    });
+  }
+
+  /// Purge all connector links owned by [instanceId] and their schedules.
+  /// Driven by the synced twist_instance.archived_at signal (uninstall).
+  static Future<void> hardDeleteForInstance(
+    Store store,
+    Uuid instanceId,
+  ) async {
+    final rows = await (store.select(store.links)
+          ..where((l) => l.createdBy.equals(instanceId.toBytes())))
+        .get();
+    if (rows.isEmpty) return;
+    await _hardDeleteLinks(store, rows.map((r) => r.id.toBytes()).toList());
+  }
+
+  /// Purge connector links owned by [instanceId] on [channelId] and their
+  /// schedules. Driven by the synced channel.enabled=false signal.
+  static Future<void> hardDeleteForChannel(
+    Store store,
+    Uuid instanceId,
+    String channelId,
+  ) async {
+    final rows = await (store.select(store.links)
+          ..where((l) =>
+              l.createdBy.equals(instanceId.toBytes()) &
+              l.channelId.equals(channelId)))
+        .get();
+    if (rows.isEmpty) return;
+    await _hardDeleteLinks(store, rows.map((r) => r.id.toBytes()).toList());
   }
 
   final LinkRow _link;

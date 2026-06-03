@@ -129,7 +129,6 @@ class ConnectionPickerModal {
 
     final choices = <ConnectionChoice>[
       ConnectionChoice.plotNote,
-      ConnectionChoice.plotTask,
       ConnectionChoice.plotChat,
       ...chatTwists.map(
         (t) => ConnectionChoice.twist(

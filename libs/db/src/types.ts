@@ -451,37 +451,28 @@ export type Database = {
       device: {
         Row: {
           app_version: string | null
-          capabilities: Json
           created_at: string
-          device_id: string | null
           id: string
-          last_seen_at: string
           platform: string
-          push_token: string | null
+          push_token: string
           updated_at: string
           user_id: string
         }
         Insert: {
           app_version?: string | null
-          capabilities?: Json
           created_at?: string
-          device_id?: string | null
           id?: string
-          last_seen_at?: string
           platform: string
-          push_token?: string | null
+          push_token: string
           updated_at?: string
           user_id: string
         }
         Update: {
           app_version?: string | null
-          capabilities?: Json
           created_at?: string
-          device_id?: string | null
           id?: string
-          last_seen_at?: string
           platform?: string
-          push_token?: string | null
+          push_token?: string
           updated_at?: string
           user_id?: string
         }
@@ -766,6 +757,7 @@ export type Database = {
       link: {
         Row: {
           actions: Json | null
+          archived_at: string | null
           assignee_id: string | null
           author_id: string | null
           channel_id: string | null
@@ -795,6 +787,7 @@ export type Database = {
         }
         Insert: {
           actions?: Json | null
+          archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
           channel_id?: string | null
@@ -824,6 +817,7 @@ export type Database = {
         }
         Update: {
           actions?: Json | null
+          archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
           channel_id?: string | null
@@ -892,64 +886,6 @@ export type Database = {
             foreignKeyName: "link_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      local_sync_lease: {
-        Row: {
-          attempt_id: string
-          capability: string
-          created_at: string
-          device_id: string
-          fail_streak: number
-          last_completed_at: string | null
-          last_error: string | null
-          last_heartbeat_at: string
-          last_result: string | null
-          lease_token: string
-          leased_until: string
-          next_eligible_at: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          attempt_id: string
-          capability: string
-          created_at?: string
-          device_id: string
-          fail_streak?: number
-          last_completed_at?: string | null
-          last_error?: string | null
-          last_heartbeat_at: string
-          last_result?: string | null
-          lease_token: string
-          leased_until: string
-          next_eligible_at?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          attempt_id?: string
-          capability?: string
-          created_at?: string
-          device_id?: string
-          fail_streak?: number
-          last_completed_at?: string | null
-          last_error?: string | null
-          last_heartbeat_at?: string
-          last_result?: string | null
-          lease_token?: string
-          leased_until?: string
-          next_eligible_at?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "local_sync_lease_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -1270,9 +1206,6 @@ export type Database = {
           config: Json | null
           created_at: string
           created_by: string
-          default_contacts: string[]
-          default_groups: string[]
-          default_invite_emails: string[]
           default_thread_icon: string | null
           icon: string | null
           id: string
@@ -1281,7 +1214,6 @@ export type Database = {
           path: unknown
           seq: unknown
           sync_depth: number | null
-          team_id: number | null
           title: string
           updated_at: string
           updated_by: number
@@ -1293,9 +1225,6 @@ export type Database = {
           config?: Json | null
           created_at?: string
           created_by: string
-          default_contacts?: string[]
-          default_groups?: string[]
-          default_invite_emails?: string[]
           default_thread_icon?: string | null
           icon?: string | null
           id?: string
@@ -1304,7 +1233,6 @@ export type Database = {
           path: unknown
           seq?: unknown
           sync_depth?: number | null
-          team_id?: number | null
           title: string
           updated_at?: string
           updated_by?: number
@@ -1316,9 +1244,6 @@ export type Database = {
           config?: Json | null
           created_at?: string
           created_by?: string
-          default_contacts?: string[]
-          default_groups?: string[]
-          default_invite_emails?: string[]
           default_thread_icon?: string | null
           icon?: string | null
           id?: string
@@ -1327,7 +1252,6 @@ export type Database = {
           path?: unknown
           seq?: unknown
           sync_depth?: number | null
-          team_id?: number | null
           title?: string
           updated_at?: string
           updated_by?: number
@@ -1338,12 +1262,6 @@ export type Database = {
             foreignKeyName: "priority_created_by_fkey"
             columns: ["created_by"]
             referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_team_id_fkey"
-            columns: ["team_id"]
-            referencedRelation: "team"
             referencedColumns: ["id"]
           },
           {
@@ -2050,6 +1968,7 @@ export type Database = {
           draft: boolean
           dropped_contacts: string[] | null
           embedding: unknown
+          external_contacts: string[]
           groups: string[]
           icon: string | null
           id: string
@@ -2060,9 +1979,9 @@ export type Database = {
           merged_into_thread_id: string | null
           pending_contacts: string[]
           preview: string | null
-          private_to_creator: boolean
           seq: unknown
           sync_depth: number | null
+          team_id: number | null
           title: string | null
           topic: string | null
           twist_id: number | null
@@ -2078,6 +1997,7 @@ export type Database = {
           draft?: boolean
           dropped_contacts?: string[] | null
           embedding?: unknown
+          external_contacts?: string[]
           groups?: string[]
           icon?: string | null
           id?: string
@@ -2088,9 +2008,9 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
-          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title?: string | null
           topic?: string | null
           twist_id?: number | null
@@ -2106,6 +2026,7 @@ export type Database = {
           draft?: boolean
           dropped_contacts?: string[] | null
           embedding?: unknown
+          external_contacts?: string[]
           groups?: string[]
           icon?: string | null
           id?: string
@@ -2116,9 +2037,9 @@ export type Database = {
           merged_into_thread_id?: string | null
           pending_contacts?: string[]
           preview?: string | null
-          private_to_creator?: boolean
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title?: string | null
           topic?: string | null
           twist_id?: number | null
@@ -2136,6 +2057,12 @@ export type Database = {
             foreignKeyName: "thread_merged_into_thread_id_fkey"
             columns: ["merged_into_thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_team_id_fkey"
+            columns: ["team_id"]
+            referencedRelation: "team"
             referencedColumns: ["id"]
           },
         ]
@@ -3571,6 +3498,7 @@ export type Database = {
           draft: boolean | null
           dropped_contacts: string[] | null
           embedding: unknown
+          external_contacts: string[] | null
           groups: string[] | null
           icon: string | null
           id: string | null
@@ -3583,6 +3511,7 @@ export type Database = {
           preview: string | null
           seq: unknown
           sync_depth: number | null
+          team_id: number | null
           title: string | null
           topic: string | null
           twist_id: number | null
@@ -3598,6 +3527,7 @@ export type Database = {
           draft?: boolean | null
           dropped_contacts?: string[] | null
           embedding?: unknown
+          external_contacts?: string[] | null
           groups?: string[] | null
           icon?: string | null
           id?: string | null
@@ -3610,6 +3540,7 @@ export type Database = {
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title?: string | null
           topic?: string | null
           twist_id?: number | null
@@ -3625,6 +3556,7 @@ export type Database = {
           draft?: boolean | null
           dropped_contacts?: string[] | null
           embedding?: unknown
+          external_contacts?: string[] | null
           groups?: string[] | null
           icon?: string | null
           id?: string | null
@@ -3637,6 +3569,7 @@ export type Database = {
           preview?: string | null
           seq?: unknown
           sync_depth?: number | null
+          team_id?: number | null
           title?: string | null
           topic?: string | null
           twist_id?: number | null
@@ -3654,6 +3587,12 @@ export type Database = {
             foreignKeyName: "thread_merged_into_thread_id_fkey"
             columns: ["merged_into_thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_team_id_fkey"
+            columns: ["team_id"]
+            referencedRelation: "team"
             referencedColumns: ["id"]
           },
         ]
@@ -4550,7 +4489,7 @@ export type Database = {
         Returns: undefined
       }
       archive_links: {
-        Args: { p_created_by: string; p_filter?: Json }
+        Args: { p_created_by: string; p_filter?: Json; p_hard?: boolean }
         Returns: string[]
       }
       channel_default_marker: {
@@ -4923,6 +4862,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_path: unknown
+          revoked: boolean | null
           seq: unknown
           source: string | null
           source_created_at: string | null
@@ -4985,6 +4925,69 @@ export type Database = {
             columns: ["thread_id"]
             referencedRelation: "thread_tags"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      link_redacted: {
+        Row: {
+          actions: Json | null
+          assignee_id: string | null
+          author_id: string | null
+          channel_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          logo: string | null
+          merged_from_thread_id: string | null
+          meta: Json | null
+          preview: string | null
+          priority_id: string | null
+          priority_path: unknown
+          revoked: boolean | null
+          seq: unknown
+          source: string | null
+          source_created_at: string | null
+          source_url: string | null
+          status: string | null
+          sync_depth: number | null
+          thread_id: string | null
+          title: string | null
+          twist_id: number | null
+          type: string | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -5241,9 +5244,6 @@ export type Database = {
           config: Json | null
           created_at: string | null
           created_by: string | null
-          default_contacts: string[] | null
-          default_groups: string[] | null
-          default_invite_emails: string[] | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
           flat_title: string | null
@@ -5440,6 +5440,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link_redacted"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "schedule_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
@@ -5518,6 +5524,7 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
+          team_id: number | null
           title: string | null
           topic: string | null
           unread: boolean | null
@@ -5701,6 +5708,7 @@ export type Database = {
           state_at: unknown
           state_on: unknown
           state_order: number | null
+          team_id: number | null
           title: string | null
           topic: string | null
           unread: boolean | null
@@ -5773,13 +5781,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -6019,9 +6027,6 @@ export type Database = {
           config: Json | null
           created_at: string | null
           created_by: string | null
-          default_contacts: string[] | null
-          default_groups: string[] | null
-          default_invite_emails: string[] | null
           early_notifications_enabled: boolean | null
           early_notifications_enabled_set: boolean | null
           flat_title: string | null

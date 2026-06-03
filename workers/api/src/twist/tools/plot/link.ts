@@ -22,6 +22,35 @@ import { reconcileThreadContacts, updateThreadDroppedContacts } from "../../shar
 import { addContacts } from "./contacts";
 
 /**
+ * Remove an orphan thread left behind by saveLink dedup/merge. Archive-first
+ * (syncs to clients via thread.archived_at, frees the (twist_id, key) slot)
+ * UNLESS the thread is a genuinely-never-synced ephemeral race orphan — no
+ * notes and no non-revoked thread_priority — in which case a hard delete
+ * avoids leaving server cruft (nothing was ever synced to strand).
+ */
+async function archiveOrDeleteOrphanThread(plot: Plot, threadId: Uuid): Promise<void> {
+  const hasNote = await plot.db
+    .selectFrom("note").select("note.id")
+    .where("note.thread_id", "=", threadId as string)
+    .limit(1).executeTakeFirst();
+  const hasFiling = await plot.db
+    .selectFrom("thread_priority").select("thread_priority.thread_id")
+    .where("thread_priority.thread_id", "=", threadId as string)
+    .where("thread_priority.revoked_at", "is", null)
+    .limit(1).executeTakeFirst();
+  if (!hasNote && !hasFiling) {
+    await plot.db.deleteFrom("thread").where("id", "=", threadId as string).execute();
+    return;
+  }
+  await plot.db
+    .updateTable("thread")
+    .set({ archived_at: new Date().toISOString() })
+    .where("id", "=", threadId as string)
+    .where("archived_at", "is", null)
+    .execute();
+}
+
+/**
  * Creates a link with its thread container.
  * During expand phase, this creates both a thread (with all legacy fields for backward compat)
  * and a link row (with the new link-specific fields).
@@ -123,6 +152,7 @@ export async function createLink(
         .select("link.thread_id")
         .where(twistIdFilter)
         .where(sql<boolean>`link.sources && ${sql.val(sourcesArray)}::text[]`)
+        .where("link.archived_at", "is", null)
         .limit(1)
         .executeTakeFirst();
 
@@ -303,10 +333,12 @@ export async function createLink(
       // where concurrent saveLink calls for the same source each create a thread),
       // clean up the orphaned thread we just created and use the existing one.
       if (linkResult.thread_id && linkResult.thread_id !== threadId) {
-        await plot.db
-          .deleteFrom("thread")
-          .where("id", "=", threadId)
-          .execute();
+        // Archive (not delete) the orphan thread so the removal syncs to
+        // clients; archived_at frees the (twist_id, key) slot just like
+        // delete (thread_twist_key_unique is WHERE archived_at IS NULL).
+        // The thread has no links (the link moved to linkResult.thread_id),
+        // so there is no link cascade.
+        await archiveOrDeleteOrphanThread(plot, threadId);
         threadId = linkResult.thread_id as Uuid;
       }
 
@@ -321,6 +353,7 @@ export async function createLink(
         .where("link.thread_id", "!=", threadId)
         .where(twistIdFilter)
         .where(sql<boolean>`link.sources && ${sql.val(sourcesArray)}::text[]`)
+        .where("link.archived_at", "is", null)
         .orderBy("link.created_at", "asc")
         .execute();
 
@@ -357,12 +390,10 @@ export async function createLink(
             .selectFrom("link")
             .select("link.id")
             .where("link.thread_id", "=", oldThreadId)
+            .where("link.archived_at", "is", null)
             .executeTakeFirst();
           if (!remaining) {
-            await plot.db
-              .deleteFrom("thread")
-              .where("id", "=", oldThreadId)
-              .execute();
+            await archiveOrDeleteOrphanThread(plot, oldThreadId);
           }
         }
       }

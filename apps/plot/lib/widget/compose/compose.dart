@@ -1,10 +1,12 @@
 export 'compose_dropdown.dart';
 export 'compose_field_row.dart';
 export 'compose_select_field.dart';
+export 'compose_target.dart';
 export 'compose_value_input.dart';
 export 'connection_choice.dart';
 export 'connection_compose_field.dart';
 export 'contacts_compose_field.dart';
 export 'email_parser.dart';
 export 'priority_compose_field.dart';
+export 'target_picker_list.dart';
 export 'title_compose_field.dart';

@@ -10,7 +10,7 @@ import 'package:plot/store/store.dart';
 /// `fromStore` (including the result of `copyWith`) silently dropped its icon to
 /// null. `save()` then persisted `icon: Value(null)`, so the picked icon never
 /// reached the database.
-PriorityRow _row({String? icon, BigInt? teamId}) => PriorityRow(
+PriorityRow _row({String? icon}) => PriorityRow(
       id: Uuid.generate(),
       createdBy: Uuid.generate(),
       createdAt: DateTime(2026, 1, 1),
@@ -22,7 +22,6 @@ PriorityRow _row({String? icon, BigInt? teamId}) => PriorityRow(
       unread: false,
       role: 'member',
       icon: icon,
-      teamId: teamId,
       attentionWindowSet: false,
       seeWithinSet: false,
       earlyNotificationsEnabledSet: false,
@@ -51,13 +50,5 @@ void main() {
     final priority = Priority.fromStore(_row(icon: 'house'), draft: true);
     final companion = priority.toCompanion(false);
     expect(companion.icon, const Value('house'));
-  });
-
-  // teamId was dropped by fromStore in exactly the same way as icon, so
-  // assigning a focus to a team would silently fail to persist too.
-  test('fromStore preserves teamId', () {
-    final priority =
-        Priority.fromStore(_row(teamId: BigInt.from(42)), draft: true);
-    expect(priority.teamId, BigInt.from(42));
   });
 }

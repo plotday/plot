@@ -22,7 +22,7 @@ export type LinkTypeStatus = {
   todo?: boolean;
 };
 
-export type SharingModel = "thread" | "channel" | "message";
+export type SharingModel = "thread" | "channel" | "message" | "none";
 
 export type LinkTypeConfig = {
   type: string;
@@ -213,7 +213,7 @@ export async function getSharingModelForChannel(
   channelId: string | null | undefined,
   linkType: string | null | undefined,
   twistInstanceId: string
-): Promise<"thread" | "channel" | "message" | undefined> {
+): Promise<"thread" | "channel" | "message" | "none" | undefined> {
   if (!linkType) return undefined;
 
   let allLinkTypes: LinkTypeConfig[] = [];

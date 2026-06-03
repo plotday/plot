@@ -29,7 +29,6 @@ import groups from "./groups";
 import topics from "./topics";
 import priorityMoves from "./priority-moves";
 import priorityMatch from "./priority-match";
-import priorityArchiveLeave from "./priority-archive-leave";
 import teamUsers from "./team-users";
 
 const sync = new Hono<{ Bindings: Bindings }>();
@@ -61,7 +60,6 @@ sync.route("/", groups);
 sync.route("/", topics);
 sync.route("/", priorityMoves);
 sync.route("/", priorityMatch);
-sync.route("/", priorityArchiveLeave);
 sync.route("/", teamUsers);
 
 sync.onError((err, c) => {

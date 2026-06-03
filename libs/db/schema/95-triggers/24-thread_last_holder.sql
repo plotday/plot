@@ -36,10 +36,12 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Any remaining links pointing at this thread?
+    -- Any remaining LIVE links pointing at this thread? (Soft-deleted links
+    -- count as absent so a per-item soft-delete can archive an emptied thread.)
     IF EXISTS (
         SELECT 1 FROM public.link l
         WHERE l.thread_id = v_thread_id
+          AND l.archived_at IS NULL
     ) THEN
         RETURN NULL;
     END IF;
@@ -64,4 +66,11 @@ CREATE TRIGGER maybe_archive_thread_after_priority_archive
 CREATE TRIGGER maybe_archive_thread_after_link_delete
     AFTER DELETE ON public.link
     FOR EACH ROW
+    EXECUTE FUNCTION public.maybe_archive_thread_last_holder ();
+
+-- Fires after a link is soft-deleted (per-item removal sets archived_at).
+CREATE TRIGGER maybe_archive_thread_after_link_soft_delete
+    AFTER UPDATE OF archived_at ON public.link
+    FOR EACH ROW
+    WHEN (NEW.archived_at IS NOT NULL AND OLD.archived_at IS NULL)
     EXECUTE FUNCTION public.maybe_archive_thread_last_holder ();

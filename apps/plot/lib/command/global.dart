@@ -22,6 +22,7 @@ class GlobalShortcuts extends StatefulWidget {
 class _GlobalShortcutsState extends State<GlobalShortcuts> {
   SubscriptionInfo? _subscription;
   List<Map<String, dynamic>> _adminOrgs = const [];
+  bool _hasTeams = false;
   bool _fetchedSubscription = false;
   bool _registeredSyncCallback = false;
 
@@ -37,10 +38,10 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
       if (mounted) {
         setState(() {
           _subscription = results[0] as SubscriptionInfo;
-          _adminOrgs = (results[1] as List<dynamic>)
-              .cast<Map<String, dynamic>>()
-              .where((o) => o['role'] == 'admin')
-              .toList();
+          final orgs = (results[1] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+          _hasTeams = orgs.isNotEmpty;
+          _adminOrgs = orgs.where((o) => o['role'] == 'admin').toList();
         });
       }
     } catch (_) {
@@ -63,10 +64,10 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
       if (mounted) {
         setState(() {
           _subscription = results[0] as SubscriptionInfo;
-          _adminOrgs = (results[1] as List<dynamic>)
-              .cast<Map<String, dynamic>>()
-              .where((o) => o['role'] == 'admin')
-              .toList();
+          final orgs = (results[1] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+          _hasTeams = orgs.isNotEmpty;
+          _adminOrgs = orgs.where((o) => o['role'] == 'admin').toList();
         });
       }
     } catch (_) {
@@ -102,6 +103,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
       ),
       ...settingsCommandsFromState(
         prioritiesState,
+        hasTeams: _hasTeams,
         showAllPriorities: showAllPriorities,
         email: email,
         adminOrgs: _adminOrgs,

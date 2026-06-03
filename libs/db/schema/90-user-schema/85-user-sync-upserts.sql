@@ -526,16 +526,12 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by,
-            default_contacts, default_groups, default_invite_emails)
+        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.icon, _input.path, _input.created_by, _input.updated_by,
-                COALESCE(_input.default_contacts, '{}'::uuid[]),
-                COALESCE(_input.default_groups, '{}'::uuid[]),
-                COALESCE(_input.default_invite_emails, '{}'::text[]))
+                END, _input.icon, _input.path, _input.created_by, _input.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -548,10 +544,7 @@ BEGIN
                 -- COALESCE: old (nested) clients don't send icon; preserve the
                 -- existing value rather than wiping it on every edit.
                 icon = COALESCE(_input.icon, priority.icon),
-                updated_by = _input.updated_by,
-                default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
-                default_groups = COALESCE(_input.default_groups, priority.default_groups),
-                default_invite_emails = COALESCE(_input.default_invite_emails, priority.default_invite_emails)
+                updated_by = _input.updated_by
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -567,10 +560,7 @@ BEGIN
                 priority.color
             END,
             icon = COALESCE(_input.icon, priority.icon),
-            updated_by = _input.updated_by,
-            default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
-            default_groups = COALESCE(_input.default_groups, priority.default_groups),
-            default_invite_emails = COALESCE(_input.default_invite_emails, priority.default_invite_emails)
+            updated_by = _input.updated_by
         WHERE
             id = _input.id
         RETURNING

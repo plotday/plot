@@ -37,6 +37,34 @@ class ChannelsBase extends BaseTable {
     }
     return ChannelRow.fromJson(json);
   }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // When a channel transitions to disabled, purge that channel's connector
+    // links locally (the server hard-deleted them; channel.enabled is the
+    // delete signal).
+    final toPurge = <({Uuid instanceId, String channelId})>[];
+    final result = <Insertable<DataClass>>[];
+    for (final row in rows) {
+      final ch = row as ChannelRow;
+      if (!ch.enabled) {
+        final local = await (store.select(store.channels)
+              ..where((c) => c.id.equals(ch.id)))
+            .getSingleOrNull();
+        if (local == null || local.enabled) {
+          toPurge.add((instanceId: ch.twistInstanceId, channelId: ch.channelId));
+        }
+      }
+      result.add(row);
+    }
+    for (final p in toPurge) {
+      await Link.hardDeleteForChannel(store, p.instanceId, p.channelId);
+    }
+    return result;
+  }
 }
 
 class Channel extends Equatable {

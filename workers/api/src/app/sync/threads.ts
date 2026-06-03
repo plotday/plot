@@ -546,6 +546,16 @@ threads.post("/sync/threads", async (c) => {
   }
   delete threadData.topics;
 
+  // Carry the thread's team scope through to upsert_thread, which writes it
+  // into thread.team_id on insert (immutable after — the
+  // set_thread_team_and_external trigger locks it, so re-sends are safe).
+  // Accept a camelCase `teamId` variant for parity with the snake_case
+  // `team_id` the client store sends; if both are present, `team_id` wins.
+  if (threadData.team_id === undefined && threadData.teamId !== undefined) {
+    threadData.team_id = threadData.teamId;
+  }
+  delete threadData.teamId;
+
   const userId = c.var.user.id;
 
   // Set when the user's explicit priority pick transitions this thread's

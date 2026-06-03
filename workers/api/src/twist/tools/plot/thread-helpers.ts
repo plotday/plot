@@ -1205,36 +1205,12 @@ export async function prepareThreadForDb(
       embedding: embeddingJson ?? null,
     });
 
-    // Team-connector validation: classifyThreadForUser doesn't know
-    // about per-twist team scoping. For team-connector twists, ensure
-    // the matched priority is on the same team; otherwise fall back to
-    // the user's first team priority (or skip filing for users not in
-    // the team). Without this, a team thread could land in a non-team
-    // priority via topic_shortcircuit / scoring / keyed_priority /
-    // channel_default / priority_prefix stages.
-    const creatorTeamId = await plot.getTwistInstanceTeamId(plot.twistInstanceId);
-    if (creatorTeamId != null) {
-      const matchedTeam = await plot.db
-        .selectFrom("priority")
-        .select("team_id")
-        .where("id", "=", matched.priorityId)
-        .executeTakeFirst();
-      const matchedTeamId = (matchedTeam?.team_id as string | null) ?? null;
-      if (matchedTeamId === creatorTeamId) {
-        targetPriorityId = matched.priorityId;
-      } else {
-        const teamPriorityId = await plot.getFirstTeamPriorityId(
-          ownerUserId,
-          creatorTeamId
-        );
-        if (teamPriorityId == null) {
-          return null; // User not in this team — don't file.
-        }
-        targetPriorityId = teamPriorityId;
-      }
-    } else {
-      targetPriorityId = matched.priorityId;
-    }
+    // Focuses are team-agnostic: file wherever the classifier landed. Team
+    // scope is enforced by the `set_thread_team_and_external` insert trigger
+    // (which stamps thread.team_id from the creator connection) plus the
+    // user.thread visibility firewall on thread.team_id — not by which
+    // priority the thread is filed under.
+    targetPriorityId = matched.priorityId;
   }
 
   await plot.validatePriorityAccess(targetPriorityId);

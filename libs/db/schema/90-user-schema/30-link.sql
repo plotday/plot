@@ -36,7 +36,8 @@ SELECT
     l.logo,
     COALESCE("user".effective_priority_id(tp.priority_id, tp.user_id), l.priority_id) AS priority_id,
     l.merged_from_thread_id,
-    COALESCE(upe.path, pp.path) AS priority_path
+    COALESCE(upe.path, pp.path) AS priority_path,
+    FALSE AS revoked
 FROM
     link l
     -- Connector-authored links resolve through twist_instance to check ownership.
@@ -66,5 +67,57 @@ FROM
     LEFT JOIN priority pp ON pp.id = l.priority_id AND l.thread_id IS NULL
     LEFT JOIN priority p ON p.id = l.priority_id AND l.thread_id IS NULL
 WHERE
-    tp.user_id IS NOT NULL OR p.user_id IS NOT NULL;
+    l.archived_at IS NULL
+    AND (tp.user_id IS NOT NULL OR p.user_id IS NOT NULL);
+
+-- Per-link access-loss tombstone for SOFT-deleted links (per-item removals on
+-- a still-live instance). Mirrors user.thread_redacted: owner-scoped, frozen
+-- identity timestamps + frozen seq (the link is not mutated after soft-delete,
+-- so l.seq is stable and the row emits exactly once), sensitive fields NULLed,
+-- revoked = TRUE. Bulk removals hard-delete, so uninstall/channel-disable links
+-- never appear here (instance archived → excluded by the ti join; channel
+-- disabled → no soft-deleted rows exist). Column list MUST match user.link.
+CREATE OR REPLACE VIEW "user"."link_redacted" AS
+SELECT
+    ti.owner_id AS user_id,
+    l.id,
+    l.created_at,
+    l.archived_at AS updated_at,        -- frozen
+    l.seq,                              -- frozen (link not mutated post-soft-delete)
+    l.thread_id,
+    NULL::text AS source,
+    l.source_created_at,                -- non-null on the client; preserved
+    NULL::uuid AS author_id,
+    l.twist_id,
+    l.created_by,
+    l.updated_by,
+    l.sync_depth,
+    NULL::text AS title,
+    NULL::text AS preview,
+    NULL::uuid AS assignee_id,
+    NULL::text AS type,
+    NULL::text AS status,
+    NULL::jsonb AS actions,
+    NULL::jsonb AS meta,
+    NULL::text AS source_url,
+    NULL::text AS channel_id,
+    NULL::text AS logo,
+    "user".effective_priority_id(tp.priority_id, ti.owner_id) AS priority_id,
+    NULL::uuid AS merged_from_thread_id,
+    upe.path AS priority_path,
+    TRUE AS revoked
+FROM
+    link l
+    JOIN twist_instance ti
+        ON ti.id = l.created_by
+        AND l.twist_id IS NOT NULL
+        AND ti.archived_at IS NULL
+    LEFT JOIN thread_priority tp
+        ON tp.thread_id = l.thread_id
+        AND tp.user_id = ti.owner_id
+    LEFT JOIN "user".priority_expanded upe
+        ON upe.user_id = ti.owner_id
+        AND upe.priority_id = "user".effective_priority_id(tp.priority_id, ti.owner_id)
+WHERE
+    l.archived_at IS NOT NULL;
 

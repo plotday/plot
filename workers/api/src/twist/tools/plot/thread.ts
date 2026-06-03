@@ -714,15 +714,10 @@ export async function updateThread(
       if (tpRow?.priority_id) {
         priorityId = tpRow.priority_id;
       } else {
-        // Fallback when thread_priority has no row for this user.
-        const creatorTeamId = await plot.getTwistInstanceTeamId(createdBy ?? plot.twistInstanceId);
-        if (creatorTeamId != null) {
-          // Team-connector authored: use the user's first team priority (if any).
-          const teamPriorityId = await plot.getFirstTeamPriorityId(userId, creatorTeamId);
-          priorityId = teamPriorityId ?? await plot.getRootPriorityId(userId);
-        } else {
-          priorityId = await plot.getRootPriorityId(userId);
-        }
+        // Fallback when thread_priority has no row for this user. Focuses are
+        // team-agnostic, so file under the user's root regardless of team —
+        // team scope lives on thread.team_id, not on the priority.
+        priorityId = await plot.getRootPriorityId(userId);
       }
 
       // Check if activity was created by this exact instance (fast path)

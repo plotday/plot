@@ -13,10 +13,6 @@
 --   1. Load the thread's current signals (topic, embedding, contacts, groups,
 --      created_by) from the thread row when p_thread_id is provided. Non-NULL
 --      explicit parameters override what was loaded.
---   1b. Resolve the originating twist_instance's team scope. Non-NULL
---      v_creator_team_id means the thread was authored by a team-owned
---      connector and must file under a priority with the matching team_id.
---      NULL means user-authored or personal-connector — no restriction.
 --   2. Topic short-circuit: if the candidate thread has a topic AND any of
 --      the user's moved threads share that topic, the user has already
 --      answered "threads with this topic belong here." Return the most-used
@@ -50,23 +46,18 @@
 --      'priority:{KEY}[:...]', resolve that priority by (user_id, key). This
 --      gives a caller-specified default (onboarding threads, twist logs)
 --      that the user's own moves always override via the topic short-circuit.
---   5. Final fallback:
---      - team-connector threads (v_creator_team_id IS NOT NULL): return the
---        user's oldest non-archived nlevel=2 priority with matching team_id,
---        or NULL if none exists (no filing — caller suppresses the thread).
---      - personal threads: return the user's root priority (oldest
---        non-archived depth-1).
---
--- Every stage that resolves a priority for the user is filtered through the
--- (v_creator_team_id IS NULL OR p.team_id = v_creator_team_id) predicate so
--- a team-owned connector cannot route a thread into a non-team priority.
+--   5. Final fallback: return the user's root priority (oldest non-archived
+--      depth-1). Focuses are team-agnostic — any focus can hold a thread of
+--      any team — so classification no longer restricts candidates by team.
+--      Team scope lives on thread.team_id and is enforced by the user.thread
+--      visibility firewall, not by filing.
 --
 -- All signals are read live — nothing is frozen. Linking a new email alias
 -- or updating a thread's contacts immediately shifts future classifications.
 --
 -- Stage values returned by classify_thread_for_user_explain:
 --   topic_shortcircuit, keyed_priority, channel_default, scoring,
---   priority_prefix, team_fallback, root_fallback, none.
+--   priority_prefix, root_fallback, none.
 
 CREATE OR REPLACE FUNCTION public.classify_thread_for_user_explain (
     p_user_id uuid,
@@ -89,21 +80,14 @@ DECLARE
     v_scores jsonb;
     v_channel_pk bigint;
     v_priority_key text;
-    v_thread_created_by uuid;
-    v_creator_team_id bigint;
 BEGIN
     -- 1. Load thread signals when an id was supplied.
     IF p_thread_id IS NOT NULL THEN
-        SELECT t.embedding, t.topic, t.contacts, t.groups, t.created_by
-        INTO v_embedding, v_topic, v_contacts, v_groups, v_thread_created_by
+        SELECT t.embedding, t.topic, t.contacts, t.groups
+        INTO v_embedding, v_topic, v_contacts, v_groups
         FROM public.thread t
         WHERE t.id = p_thread_id;
     END IF;
-
-    -- 1b. Resolve the originating twist_instance team scope.
-    SELECT ti.team_id INTO v_creator_team_id
-    FROM public.twist_instance ti
-    WHERE ti.id = v_thread_created_by;
 
     v_embedding := COALESCE(p_embedding, v_embedding);
     v_topic     := COALESCE(p_topic, v_topic);
@@ -115,15 +99,10 @@ BEGIN
         SELECT tp.priority_id INTO v_matched
         FROM public.thread_priority tp
         JOIN public.thread mt ON mt.id = tp.thread_id
-        JOIN public.priority p ON p.id = tp.priority_id
         WHERE tp.user_id = p_user_id
           AND tp.user_moved = TRUE
           AND mt.archived_at IS NULL
           AND mt.topic = v_topic
-          AND (
-              v_creator_team_id IS NULL
-              OR p.team_id = v_creator_team_id
-          )
         GROUP BY tp.priority_id
         ORDER BY COUNT(*) DESC, MAX(tp.updated_at) DESC
         LIMIT 1;
@@ -148,10 +127,6 @@ BEGIN
           AND tp.user_id <> p_user_id
           AND src.key IS NOT NULL
           AND src.archived_at IS NULL
-          AND (
-              v_creator_team_id IS NULL
-              OR p.team_id = v_creator_team_id
-          )
         ORDER BY tp.created_at ASC
         LIMIT 1;
         IF v_matched IS NOT NULL THEN
@@ -177,11 +152,7 @@ BEGIN
                 WHERE c.id = v_channel_pk
                   AND c.default_priority_id IS NOT NULL
                   AND p.user_id = p_user_id
-                  AND p.archived_at IS NULL
-                  AND (
-                      v_creator_team_id IS NULL
-                      OR p.team_id = v_creator_team_id
-                  );
+                  AND p.archived_at IS NULL;
                 IF v_matched IS NOT NULL THEN
                     RETURN QUERY SELECT v_matched,
                                         'channel_default'::text,
@@ -203,14 +174,9 @@ BEGIN
                mt.groups
         FROM public.thread_priority tp
         JOIN public.thread mt ON mt.id = tp.thread_id
-        JOIN public.priority p ON p.id = tp.priority_id
         WHERE tp.user_id = p_user_id
           AND tp.user_moved = TRUE
           AND mt.archived_at IS NULL
-          AND (
-              v_creator_team_id IS NULL
-              OR p.team_id = v_creator_team_id
-          )
     ),
     candidate AS (
         SELECT public.expand_contacts(v_contacts) AS exp_contacts,
@@ -325,10 +291,6 @@ BEGIN
             WHERE p.user_id = p_user_id
               AND p.key = v_priority_key
               AND p.archived_at IS NULL
-              AND (
-                  v_creator_team_id IS NULL
-                  OR p.team_id = v_creator_team_id
-              )
             LIMIT 1;
             IF v_matched IS NOT NULL THEN
                 RETURN QUERY SELECT v_matched,
@@ -339,32 +301,10 @@ BEGIN
         END IF;
     END IF;
 
-    -- 6a. Team fallback. Team-connector threads route to the user's oldest
-    -- non-archived nlevel=2 priority with matching team_id; if none exists,
-    -- return NULL (no filing) so the caller can suppress the thread.
-    IF v_creator_team_id IS NOT NULL THEN
-        SELECT p.id INTO v_matched
-        FROM public.priority p
-        WHERE p.user_id = p_user_id
-          AND p.team_id = v_creator_team_id
-          AND nlevel(p.path) = 2
-          AND p.archived_at IS NULL
-        ORDER BY p.created_at ASC
-        LIMIT 1;
-        IF v_matched IS NOT NULL THEN
-            RETURN QUERY SELECT v_matched,
-                                'team_fallback'::text,
-                                jsonb_build_object('team_id', v_creator_team_id);
-            RETURN;
-        END IF;
-        -- Team thread with no matching team priority: no filing.
-        RETURN QUERY SELECT NULL::uuid,
-                            'none'::text,
-                            jsonb_build_object('team_id', v_creator_team_id);
-        RETURN;
-    END IF;
-
-    -- 6b. Root fallback (personal threads).
+    -- 6. Root fallback. Focuses are team-agnostic, so every unmatched thread
+    -- (personal or team-connector) routes to the user's root priority (oldest
+    -- non-archived depth-1). Team scope is enforced by the user.thread
+    -- visibility firewall on thread.team_id, not by where the thread is filed.
     SELECT p.id INTO v_matched
     FROM public.priority p
     WHERE p.user_id = p_user_id
@@ -387,7 +327,7 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.classify_thread_for_user_explain IS 'Verbose classifier returning (priority_id, stage, scores). Same algorithm as classify_thread_for_user; the stage column attributes the match to one of: topic_shortcircuit, keyed_priority, channel_default, scoring, priority_prefix, team_fallback, root_fallback, none. When the originating twist_instance has team_id set, candidates are restricted to priorities with matching team_id; if no match exists for the user, returns NULL with stage=none (no filing).';
+COMMENT ON FUNCTION public.classify_thread_for_user_explain IS 'Verbose classifier returning (priority_id, stage, scores). Same algorithm as classify_thread_for_user; the stage column attributes the match to one of: topic_shortcircuit, keyed_priority, channel_default, scoring, priority_prefix, root_fallback, none. Focuses are team-agnostic, so classification does not restrict candidates by team — team scope is enforced by the user.thread visibility firewall on thread.team_id.';
 
 -- Thin wrapper used by all existing call sites. Identical signature and
 -- return type to the pre-refactor function.
@@ -414,4 +354,4 @@ CREATE OR REPLACE FUNCTION public.classify_thread_for_user (
     );
 $function$;
 
-COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Thin wrapper around classify_thread_for_user_explain. Order: (1) topic short-circuit on user_moved siblings, (2) cross-user keyed priority match (file under recipient''s same-keyed priority when another user already filed there), (3) channel.default_priority_id when topic is ''channel:<pk>'', (4) semantic/contact/group scoring against user_moved examples, (5) priority:{KEY} prefix, (6a) team fallback for team-connector threads, (6b) root priority fallback for personal threads.';
+COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Thin wrapper around classify_thread_for_user_explain. Order: (1) topic short-circuit on user_moved siblings, (2) cross-user keyed priority match (file under recipient''s same-keyed priority when another user already filed there), (3) channel.default_priority_id when topic is ''channel:<pk>'', (4) semantic/contact/group scoring against user_moved examples, (5) priority:{KEY} prefix, (6) root priority fallback. Focuses are team-agnostic; team scope is enforced by the user.thread visibility firewall on thread.team_id.';

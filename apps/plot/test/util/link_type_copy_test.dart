@@ -4,15 +4,11 @@ import 'package:plot/util/link_type_copy.dart';
 
 void main() {
   group('composerHintForNewThreadPlot', () {
-    test('returns "Add a note" when neither task nor shared', () {
-      expect(composerHintForNewThreadPlot(task: false, shared: false), 'Add a note');
+    test('returns "Add a note" when not shared', () {
+      expect(composerHintForNewThreadPlot(shared: false), 'Add a note');
     });
-    test('returns "Add a task" when task is true', () {
-      expect(composerHintForNewThreadPlot(task: true, shared: false), 'Add a task');
-      expect(composerHintForNewThreadPlot(task: true, shared: true), 'Add a task');
-    });
-    test('returns "Start a chat" when shared and not task', () {
-      expect(composerHintForNewThreadPlot(task: false, shared: true), 'Start a chat');
+    test('returns "Start a chat" when shared', () {
+      expect(composerHintForNewThreadPlot(shared: true), 'Start a chat');
     });
   });
 

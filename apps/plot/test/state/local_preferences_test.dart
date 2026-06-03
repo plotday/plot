@@ -71,6 +71,80 @@ void main() {
     });
   });
 
+  group('rankSignaturesByMru (global)', () {
+    test('orders by most-recent global use, unseen last in input order',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      // A used first (older), then B (more recent) — both globally.
+      await bloc.recordConnectionUsage(channelKey: 'A', priorityId: 'pX');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(channelKey: 'B', priorityId: 'pY');
+
+      final ranked = bloc.rankSignaturesByMru(signatures: ['A', 'B', 'Z', 'Y']);
+      // B (most recent) before A; unseen Z, Y keep input order at the tail.
+      expect(ranked, ['B', 'A', 'Z', 'Y']);
+    });
+
+    test('ignores per-priority bias (pure global recency)', () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      // A used in p1; B used later elsewhere. Global rank must put B first
+      // (unlike the per-priority rankConnectionsByMru, which would bias A).
+      await bloc.recordConnectionUsage(channelKey: 'A', priorityId: 'p1');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(channelKey: 'B', priorityId: 'pX');
+
+      expect(bloc.rankSignaturesByMru(signatures: ['A', 'B']), ['B', 'A']);
+    });
+
+    test('a roster signature records and ranks distinctly from the bare key',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      const bare = 'inst||dm|contacts';
+      const withRoster = 'inst||dm|contacts:c=greg';
+
+      // Record the bare key, then (more recently) the roster variant.
+      await bloc.recordConnectionUsage(channelKey: bare);
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordConnectionUsage(channelKey: withRoster);
+
+      // They are tracked independently.
+      expect(bloc.lastUsedMsForSignature(bare), isNotNull);
+      expect(bloc.lastUsedMsForSignature(withRoster), isNotNull);
+      expect(
+        bloc.lastUsedMsForSignature(withRoster)! >
+            bloc.lastUsedMsForSignature(bare)!,
+        isTrue,
+      );
+      // The roster variant ranks ahead (more recent).
+      expect(
+        bloc.rankSignaturesByMru(signatures: [bare, withRoster]),
+        [withRoster, bare],
+      );
+    });
+
+    test('recordConnectionUsage without priorityId still bumps global rank',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      await bloc.recordConnectionUsage(channelKey: 'note:personal');
+      expect(bloc.lastUsedMsForSignature('note:personal'), isNotNull);
+      // No per-priority entry was recorded.
+      final ranked = bloc.rankConnectionsByMru(
+        keys: ['note:personal'],
+        priorityId: 'p1',
+      );
+      // Still returned (global bucket), but not priority-biased.
+      expect(ranked, ['note:personal']);
+    });
+  });
+
   group('lastUsedConnectionKey', () {
     test('prefers a use in the current priority over a more-recent global use',
         () async {

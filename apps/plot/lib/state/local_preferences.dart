@@ -43,19 +43,31 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     await _persistState();
   }
 
-  /// Record that the user just used [channelKey] (a `CreateTarget.key`) while
-  /// in [priorityId]. Both this priority's timestamp and the global timestamp
-  /// are bumped to now so rankings reflect the latest use.
+  /// Record that the user just used [channelKey]. The global timestamp is
+  /// always bumped to now; when [priorityId] is provided, that priority's
+  /// timestamp is bumped too so the per-priority ranking
+  /// ([rankConnectionsByMru]) reflects the latest use.
+  ///
+  /// [channelKey] is a target **signature** — for bare connector targets this
+  /// equals `CreateTarget.key` (so historical entries still match), and for
+  /// the two-step compose flow it may also carry a team and roster (see
+  /// `composeConnectorSignature` / `composeChatSignature`). Recording a
+  /// signature with a roster ranks it distinctly from the bare connector key.
+  ///
+  /// [priorityId] is optional because the two-step target picker ranks by the
+  /// **global** MRU (no focus is chosen up front); the per-priority focus
+  /// suggestion still passes it.
   Future<void> recordConnectionUsage({
     required String channelKey,
-    required String priorityId,
+    String? priorityId,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final next = Map<String, ConnectionMruEntry>.from(state.connectionMru);
     final existing = next[channelKey];
     final priorityMap = Map<String, int>.from(
       existing?.priorityLastUsedMs ?? const {},
-    )..[priorityId] = now;
+    );
+    if (priorityId != null) priorityMap[priorityId] = now;
     next[channelKey] = ConnectionMruEntry(
       lastUsedMs: now,
       priorityLastUsedMs: priorityMap,
@@ -63,6 +75,34 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     emit(state.copyWith(connectionMru: next));
     await _persistConnectionMru();
   }
+
+  /// Reorder [signatures] by **global** MRU recency (no priority bias):
+  /// signatures with any recorded use sorted by global timestamp descending,
+  /// then signatures with no recorded use preserving their input order.
+  ///
+  /// This is the ranking the two-step target picker uses — the step-1 list is
+  /// globally MRU-ordered, with no focus chosen up front. (The per-priority
+  /// [rankConnectionsByMru] remains for the focus-suggestion path.)
+  List<String> rankSignaturesByMru({required List<String> signatures}) {
+    final mru = state.connectionMru;
+    final seen = <String>[];
+    final unseen = <String>[];
+    for (final sig in signatures) {
+      if (mru.containsKey(sig)) {
+        seen.add(sig);
+      } else {
+        unseen.add(sig);
+      }
+    }
+    seen.sort((a, b) => mru[b]!.lastUsedMs.compareTo(mru[a]!.lastUsedMs));
+    return [...seen, ...unseen];
+  }
+
+  /// The global most-recent-use timestamp recorded for [signature], or null
+  /// when it has never been used. Lets the materialized target list order
+  /// used combinations by recency and interleave templates correctly.
+  int? lastUsedMsForSignature(String signature) =>
+      state.connectionMru[signature]?.lastUsedMs;
 
   /// Reorder [keys] by MRU. Bucket 1: keys with a recorded use in
   /// [priorityId], sorted by that priority's timestamp descending. Bucket 2:

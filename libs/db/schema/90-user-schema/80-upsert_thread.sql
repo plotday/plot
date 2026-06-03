@@ -358,7 +358,7 @@ BEGIN
     -- path preserves thread.twist_id so first-creator wins.
     INSERT INTO thread (
         id, created_by, title, preview, updated_by, sync_depth, contacts, contact_meta, groups, topic,
-        draft, key, icon, twist_id, pending_contacts
+        draft, key, icon, twist_id, pending_contacts, team_id
     )
     VALUES (
         v_id,
@@ -391,7 +391,11 @@ BEGIN
         v_twist_id,
         -- pending_contacts on the INSERT path starts empty; entries are added
         -- below only when the caller cannot attest themselves.
-        ARRAY[]::uuid[]
+        ARRAY[]::uuid[],
+        -- team_id: explicit from the caller (user-composed Note/Chat) or
+        -- NULL for connector threads, which set_thread_team_and_external
+        -- then defaults from the creating twist_instance.team_id.
+        COALESCE((p_thread ->> 'team_id')::bigint, (p_defaults ->> 'team_id')::bigint)
     )
     ON CONFLICT (id)
         DO UPDATE SET

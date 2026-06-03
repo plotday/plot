@@ -199,7 +199,7 @@ OR ( (contacts && user_contact_ids(U) OR groups && user_group_ids(U))   -- a rec
      AND team_id = ANY(user_team_ids(U)) )       -- AND a current member
 ```
 
-Team membership is a **gate**, not a grant: a member who is *not* a recipient still doesn't see it (keeps `Note (Acme)` private and `Chat (Acme) with Greg` narrow). This clause goes in `user.thread` (`90-user-schema/30-thread.sql`) and is mirrored in the filing logic (below) so non-members never get a `thread_priority` row.
+Team membership is a **gate**, not a grant: a member who is *not* a recipient still doesn't see it (keeps `Note (Acme)` private and `Chat (Acme) with Greg` narrow). **`user.thread` already implements a team firewall keyed on the *priority's* `p.team_id`** (`90-user-schema/30-thread.sql:215`); this change **rekeys** it to the thread's own `a.team_id`, adds the `external_contacts` exemption, and drops the now-unused `JOIN priority p`. Filing is unchanged: the existing peer/group filing triggers may over-file non-members, but the view firewall hides those rows (and team-leave revokes them) — today's behavior, just keyed on the thread instead of the priority.
 
 ### Point-in-time external classification
 
@@ -240,8 +240,8 @@ Step 2 always picks a concrete focus. Rank the user's focuses by MRU **condition
 - `libs/db/schema/90-user-schema/30-thread.sql` (+ `thread_redacted`), `06-…user_team_ids.sql` *(new)*, `34-actor.sql` as needed.
 - `libs/db/schema/95-triggers/` — external-classification trigger; team-leave revocation; filing-trigger team checks; remove `26-priority_team.sql` and the team-focus lifecycle in `27-team_user_lifecycle.sql`.
 - `libs/db/schema/80-upsert_thread.sql` — set `team_id` from creating twist_instance.
-- `libs/db/schema/60-functions/70-update.sql` — `notify_internal_api_for_activity` (thread) gains `team_id`, `external_contacts`; `notify_internal_api_for_priority` drops removed columns.
-- `workers/api/src/types.ts` — `ActivityItemSchema` / `PriorityItemSchema` mirror the column changes.
+- `libs/db/schema/90-user-schema/30-thread.sql` — rekey the team firewall to `a.team_id` + `external_contacts` exemption; expose `team_id` in the SELECT; drop `JOIN priority p`. (No notify/Zod mirror — sync is seq-based.)
+- `libs/db/schema/90-user-schema/85-user-sync-upserts.sql` + `80-upsert_thread.sql` — carry/write `thread.team_id` (immutable on update; default from creating `twist_instance.team_id` for connector threads).
 - `apps/plot/lib/store/thread.dart`, `priority.dart` — Drift columns + migration (new schema version), carry `teamId`/`externalContacts`, drop priority defaults.
 
 ---
@@ -259,7 +259,7 @@ Step 2 always picks a concrete focus. Rank the user's focuses by MRU **condition
 
 ## Sync & backwards compatibility
 
-- Adding `thread` columns requires updating `notify_internal_api_for_activity` **and** `ActivityItemSchema` (per `libs/db/AGENTS.md`), or sync validation breaks.
+- Sync is **seq-cursor based** via the `user.thread` view — there is no `notify_internal_api_for_activity` function or `ActivityItemSchema` Zod schema (the `libs/db/AGENTS.md` reference to them is stale; `rg` finds neither). To surface `team_id` on clients, add it to the `user.thread` SELECT; `external_contacts` stays server-only (firewall input, not needed by clients). The thread sync-upsert path (`85-user-sync-upserts.sql` → `user.upsert_thread`) must carry `team_id` through from the client payload.
 - Older clients lacking `team_id`/`external_contacts` awareness still read `contacts`/`groups`; the server-side gate (`user.thread`) enforces correctness regardless, and `thread_priority.revoked_at` drives their cleanup on team-leave. Older clients can't *set* a team → default Personal; acceptable.
 - The `"none"` sharing value is additive; clients that don't recognize it fall back to treating the roster as empty (no contacts UI), which matches intent.
 

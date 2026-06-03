@@ -126,6 +126,81 @@ String createLinkActionKey(CreateLinkUserAction action) => connectionTargetKey(
       dmTargets: action.dmTargets,
     );
 
+/// Renders the optional roster suffix appended to a compose-target signature.
+///
+/// The two-step compose flow lets the same connection/channel be reused with
+/// different rosters ("Chat (Acme) with Greg" vs "Chat (Acme) with Dana"), so
+/// the signature widens the canonical connection key with the contacts and
+/// groups carried into compose. Contact and group ids are sorted so the suffix
+/// is stable regardless of selection order, and an **empty** roster yields an
+/// empty suffix — that keeps a no-roster connector signature byte-identical to
+/// [connectionTargetKey] / [CreateTarget.key] so historical `connectionMru`
+/// entries (recorded before rosters existed) still match.
+String rosterSignatureSuffix({
+  Iterable<Uuid> contacts = const [],
+  Iterable<Uuid> groups = const [],
+}) {
+  final c = contacts.map((u) => u.toString()).toList()..sort();
+  final g = groups.map((u) => u.toString()).toList()..sort();
+  final buf = StringBuffer();
+  if (c.isNotEmpty) buf.write(':c=${c.join(',')}');
+  if (g.isNotEmpty) buf.write(':g=${g.join(',')}');
+  return buf.toString();
+}
+
+/// Renders the optional invite-email suffix appended to a chat signature.
+///
+/// A Plot chat can carry pending email invitations (addresses the user typed
+/// in the step-1 picker that don't yet resolve to a known contact). These
+/// widen the chat signature so "Chat with foo@bar.com" ranks and dedups
+/// distinctly from the bare "Chat" template. Emails are lowercased and sorted
+/// so the suffix is stable regardless of input order/case, and an **empty**
+/// list yields an empty suffix (preserving the bare chat signature).
+String inviteEmailSignatureSuffix(Iterable<String> emails) {
+  final e = emails.map((s) => s.toLowerCase()).toList()..sort();
+  return e.isEmpty ? '' : ':e=${e.join(',')}';
+}
+
+/// Canonical signature for the "Plot note" target. `teamId` null = Personal.
+String composeNoteSignature(BigInt? teamId) =>
+    'note:${teamId?.toString() ?? 'personal'}';
+
+/// Canonical signature for a "Plot chat" target, widened with its roster and
+/// any pending invite emails. `teamId` null = Personal. With an empty roster
+/// and no invite emails this is just `chat:<team|personal>`.
+String composeChatSignature(
+  BigInt? teamId, {
+  Iterable<Uuid> contacts = const [],
+  Iterable<Uuid> groups = const [],
+  Iterable<String> inviteEmails = const [],
+}) =>
+    'chat:${teamId?.toString() ?? 'personal'}'
+    '${rosterSignatureSuffix(contacts: contacts, groups: groups)}'
+    '${inviteEmailSignatureSuffix(inviteEmails)}';
+
+/// Canonical signature for a "chat with a twist" target.
+String composeTwistSignature(TwistInstanceId instanceId) =>
+    'twist:$instanceId';
+
+/// Canonical signature for a connector target ([CreateTarget]-shaped),
+/// optionally widened with the roster carried into compose. The no-roster
+/// form delegates to [connectionTargetKey] so it equals [CreateTarget.key].
+String composeConnectorSignature({
+  required String twistInstanceId,
+  required String? channelId,
+  required String linkType,
+  required String? dmTargets,
+  Iterable<Uuid> contacts = const [],
+  Iterable<Uuid> groups = const [],
+}) =>
+    connectionTargetKey(
+      twistInstanceId: twistInstanceId,
+      channelId: channelId,
+      linkType: linkType,
+      dmTargets: dmTargets,
+    ) +
+    rosterSignatureSuffix(contacts: contacts, groups: groups);
+
 /// Build every create-target available to the current user across all enabled
 /// channels.
 ///
