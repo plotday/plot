@@ -188,6 +188,20 @@ class NoteEditorState extends State<NoteEditor> {
     }
   }
 
+  /// Drops focus from the editor when it currently holds it, returning whether
+  /// it did. The new-thread compose surface calls this from its Escape handler:
+  /// SuperEditor lets Escape bubble unhandled and the page's global Escape
+  /// handler would otherwise re-focus the editor, so the Escape handler blurs
+  /// via this method and consumes the event before it reaches that handler.
+  bool unfocus() {
+    final node = _currentFocusNode;
+    if (node != null && node.hasFocus) {
+      node.unfocus();
+      return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();

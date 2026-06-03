@@ -437,6 +437,13 @@ class _TargetPickerListState extends State<TargetPickerList> {
         ),
         focusNode: _searchFocusNode,
         autofocus: autofocus,
+        // Keep focus on the filter when the user clicks empty space on the
+        // compose page. Flutter's text field unfocuses itself on any tap
+        // outside its tap-region by default; overriding onTapOutside with a
+        // no-op suppresses that so a stray click above/around the field
+        // doesn't drop the user out of the filter. Focus still leaves via
+        // Escape or by tapping another field/control.
+        onTapOutside: (_) {},
         hint: hint,
         style: FTextFieldStyleDelta.delta(
           // No `minHeight` floor: the header `Search…` bar's stable ~36 height

@@ -1468,7 +1468,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                       builder: (context, _) => Focus(
                                         canRequestFocus: false,
                                         skipTraversal: true,
-                                        onKeyEvent: _handleEditorShiftTab,
+                                        onKeyEvent: _handleEditorKeys,
                                         child: NoteEditor(
                                           key: _threadEditorKey,
                                           bodyOnly: true,
@@ -1535,7 +1535,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                             builder: (context, _) => Focus(
                                               canRequestFocus: false,
                                               skipTraversal: true,
-                                              onKeyEvent: _handleEditorShiftTab,
+                                              onKeyEvent: _handleEditorKeys,
                                               child: NoteEditor(
                                                 key: _threadEditorKey,
                                                 bodyOnly: true,
@@ -1587,14 +1587,25 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Intercepts Shift+Tab bubbling up from the focused note editor and
-  /// sends focus back to the title field. SuperEditor doesn't consume Tab
-  /// outside its mention popover, so the unhandled key reaches this Focus
-  /// ancestor; we only act on Shift+Tab so plain Tab inside the editor
-  /// remains available (currently the default focus traversal also leaves
-  /// the editor, which is fine).
-  KeyEventResult _handleEditorShiftTab(FocusNode node, KeyEvent event) {
+  /// Intercepts keys bubbling up from the focused body editor.
+  ///
+  /// **Escape** blurs the editor. SuperEditor lets Escape bubble unhandled, and
+  /// the page's global Escape handler (priority.dart's `ClearItemFocusIntent`)
+  /// would otherwise re-focus the editor — so we consume it here, but only when
+  /// the editor actually held focus (otherwise Escape is left to propagate so
+  /// the global handler can focus the editor as before). When a mention popover
+  /// is open SuperEditor consumes Escape to close it first, so this fires only
+  /// on a subsequent Escape.
+  ///
+  /// **Shift+Tab** sends focus back to the title field. SuperEditor doesn't
+  /// consume Tab outside its mention popover, so the unhandled key reaches this
+  /// Focus ancestor; a bare Tab is left to the default focus traversal.
+  KeyEventResult _handleEditorKeys(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      final blurred = _threadEditorKey.currentState?.unfocus() ?? false;
+      return blurred ? KeyEventResult.handled : KeyEventResult.ignored;
+    }
     if (event.logicalKey != LogicalKeyboardKey.tab) {
       return KeyEventResult.ignored;
     }
