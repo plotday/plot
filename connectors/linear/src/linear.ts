@@ -79,6 +79,7 @@ export class Linear extends Connector<Linear> {
       composeVerb: "Create",
       replyPlaceholder: "Add a comment",
       replyVerb: "Comment",
+      supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/linear-icon.svg",
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
@@ -197,6 +198,11 @@ export class Linear extends Connector<Linear> {
               type: "issue",
               label: "Issue",
               noteLabel: "Comment",
+              // Channel-level configs fully shadow the twist-level linkTypes in
+              // getTypeConfig(), so the sharing model must be repeated here —
+              // without it issues resolve to the default "thread" model and
+              // lose channel-scoped behavior (channel breadcrumb, assignee).
+              sharingModel: "channel" as const,
               logo: "https://api.iconify.design/logos/linear-icon.svg",
               logoDark:
                 "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",

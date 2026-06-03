@@ -126,6 +126,22 @@ export type LinkTypeConfig = {
    */
   supportsContactChanges?: boolean;
   /**
+   * Whether a note/reply on this link type can carry a link (a pasted URL or
+   * connector-created item) that Plot forwards to the source. When false (the
+   * default), the "Add link" button is hidden for threads of this link type.
+   * Only set true if the connector's reply path actually forwards the link
+   * action to the source. Private Plot notes (no link type) always allow links.
+   */
+  supportsLinks?: boolean;
+  /**
+   * Whether a note/reply on this link type can carry an uploaded file that Plot
+   * forwards to the source as an attachment. When false (the default), the
+   * "Attach file" button is hidden for threads of this link type. Only set true
+   * if the connector's reply path actually uploads file actions to the source.
+   * Private Plot notes (no link type) always allow attachments.
+   */
+  supportsFileAttachments?: boolean;
+  /**
    * Declares how sharing on threads of this link type is scoped:
    *
    * - `"thread"` (default): one roster shared across all notes in the

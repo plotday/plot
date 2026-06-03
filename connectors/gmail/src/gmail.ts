@@ -207,6 +207,7 @@ export class Gmail extends Connector<Gmail> {
       composeVerb: "Send",
       replyPlaceholder: "Reply",
       replyVerb: "Send",
+      supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
       statuses: [
