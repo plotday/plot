@@ -369,6 +369,20 @@ class _ListTileState extends State<ListTile> {
                   widget.highlighted;
 
               final showBorder = widget.selected && widget.selectedBorder;
+              // When a trailingBuilder reserves a row taller than the body
+              // (e.g. the sidebar focus tiles reserve iconSizes.base * 2 so the
+              // height doesn't jump when the hover button appears), the
+              // body/leading tap targets would otherwise be center-aligned at
+              // their shorter content height — leaving a hover-highlighted but
+              // un-tappable band at the top and bottom of the row. Stretch the
+              // tap targets to the full row height and re-center their content
+              // so the entire highlighted row is clickable.
+              // See test/widget/list_tile_hit_area_test.dart.
+              final fillRowHeight = widget.trailingBuilder != null;
+              Widget? fill(Widget? child) =>
+                  fillRowHeight && child != null ? Center(child: child) : child;
+              Widget intrinsic(Widget child) =>
+                  fillRowHeight ? IntrinsicHeight(child: child) : child;
               final container = Container(
                 decoration: BoxDecoration(
                   color: widget.noBackground
@@ -415,113 +429,133 @@ class _ListTileState extends State<ListTile> {
                 padding: EdgeInsets.only(
                   left: widget.indentLevel * (16 + context.theme.spacing.sm),
                 ),
-                child: Row(
-                  crossAxisAlignment: widget.crossAxisAlignment,
-                  children: [
-                    SizedBox(
-                      width: widget.leadingBuilder == null
-                          ? widget.padding?.resolve(null).left ?? 20
-                          : 0,
-                    ),
+                child: intrinsic(
+                  Row(
+                    crossAxisAlignment: fillRowHeight
+                        ? CrossAxisAlignment.stretch
+                        : widget.crossAxisAlignment,
+                    children: [
+                      SizedBox(
+                        width: widget.leadingBuilder == null
+                            ? widget.padding?.resolve(null).left ?? 20
+                            : 0,
+                      ),
 
-                    ...[
-                      if (widget.leadingBuilder != null)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: widget.onTap ??
-                              (widget.command != null ? () => run() : null),
-                          // While a command is running, overlay a Spinner
-                          // centered on the leading widget. The original
-                          // widget is kept at 0 opacity so the slot width
-                          // (and therefore the title column position) is
-                          // preserved across the swap.
-                          child: _showSpinner
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Opacity(
-                                      opacity: 0,
-                                      child: widget.leadingBuilder!(
-                                        _isHovered,
-                                        _focusNode.hasFocus,
-                                      ),
+                      ...[
+                        if (widget.leadingBuilder != null)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap:
+                                widget.onTap ??
+                                (widget.command != null ? () => run() : null),
+                            // While a command is running, overlay a Spinner
+                            // centered on the leading widget. The original
+                            // widget is kept at 0 opacity so the slot width
+                            // (and therefore the title column position) is
+                            // preserved across the swap.
+                            child: fill(
+                              _showSpinner
+                                  ? Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Opacity(
+                                          opacity: 0,
+                                          child: widget.leadingBuilder!(
+                                            _isHovered,
+                                            _focusNode.hasFocus,
+                                          ),
+                                        ),
+                                        Spinner(
+                                          size:
+                                              widget.style ==
+                                                  ListTileStyle.header
+                                              ? context.theme.iconSizes.sm
+                                              : context.theme.iconSizes.base,
+                                          color: context.theme.plotColors.muted,
+                                        ),
+                                      ],
+                                    )
+                                  : widget.leadingBuilder!(
+                                      _isHovered,
+                                      _focusNode.hasFocus,
                                     ),
-                                    Spinner(
-                                      size: widget.style ==
-                                              ListTileStyle.header
-                                          ? context.theme.iconSizes.sm
-                                          : context.theme.iconSizes.base,
-                                      color: context.theme.plotColors.muted,
-                                    ),
-                                  ],
-                                )
-                              : widget.leadingBuilder!(
-                                  _isHovered,
-                                  _focusNode.hasFocus,
-                                ),
-                        ),
-                    ].whereType<Widget>(),
-                    Expanded(
-                      child: hasPhysicalKeyboard()
-                          // Desktop: GestureDetector participates in gesture arena,
-                          // properly competes with ReorderableDragStartListener
-                          ? GestureDetector(
-                              onTap: widget.onTap ??
-                                  (widget.command != null
-                                      ? () => run()
-                                      : null),
-                              onLongPress: widget.longPressCommand != null
-                                  ? _runLongPress
-                                  : null,
-                              child: _buildContent(),
-                            )
-                          // Mobile: Listener bypasses gesture arena,
-                          // no conflict with Swipeable or scroll
-                          : Listener(
-                              onPointerDown: (event) {
-                                _tapStartPosition = event.position;
-                                _tapStartTime = Time.now();
-                              },
-                              onPointerUp: (event) {
-                                if (_tapStartPosition != null) {
-                                  final delta =
-                                      event.position - _tapStartPosition!;
-                                  final duration = Time.now().difference(
-                                    _tapStartTime!,
-                                  );
-                                  if (delta.distance < 10 &&
-                                      duration < Duration(milliseconds: 500)) {
-                                    if (widget.onTap != null) {
-                                      widget.onTap!();
-                                    } else if (widget.command != null) {
-                                      run();
-                                    }
-                                  }
-                                }
-                                _tapStartPosition = null;
-                                _tapStartTime = null;
-                              },
-                              child: GestureDetector(
+                            ),
+                          ),
+                      ].whereType<Widget>(),
+                      Expanded(
+                        child: hasPhysicalKeyboard()
+                            // Desktop: GestureDetector participates in gesture arena,
+                            // properly competes with ReorderableDragStartListener
+                            ? GestureDetector(
+                                behavior: fillRowHeight
+                                    ? HitTestBehavior.opaque
+                                    : null,
+                                onTap:
+                                    widget.onTap ??
+                                    (widget.command != null
+                                        ? () => run()
+                                        : null),
                                 onLongPress: widget.longPressCommand != null
                                     ? _runLongPress
                                     : null,
-                                child: _buildContent(),
+                                child: fill(_buildContent()),
+                              )
+                            // Mobile: Listener bypasses gesture arena,
+                            // no conflict with Swipeable or scroll
+                            : Listener(
+                                behavior: fillRowHeight
+                                    ? HitTestBehavior.opaque
+                                    : HitTestBehavior.deferToChild,
+                                onPointerDown: (event) {
+                                  _tapStartPosition = event.position;
+                                  _tapStartTime = Time.now();
+                                },
+                                onPointerUp: (event) {
+                                  if (_tapStartPosition != null) {
+                                    final delta =
+                                        event.position - _tapStartPosition!;
+                                    final duration = Time.now().difference(
+                                      _tapStartTime!,
+                                    );
+                                    if (delta.distance < 10 &&
+                                        duration <
+                                            Duration(milliseconds: 500)) {
+                                      if (widget.onTap != null) {
+                                        widget.onTap!();
+                                      } else if (widget.command != null) {
+                                        run();
+                                      }
+                                    }
+                                  }
+                                  _tapStartPosition = null;
+                                  _tapStartTime = null;
+                                },
+                                child: fill(
+                                  GestureDetector(
+                                    onLongPress: widget.longPressCommand != null
+                                        ? _runLongPress
+                                        : null,
+                                    child: _buildContent(),
+                                  ),
+                                ),
                               ),
+                      ),
+                      ...[
+                        if (widget.trailingBuilder != null)
+                          fill(
+                            widget.trailingBuilder!(
+                              _isHovered,
+                              _focusNode.hasFocus,
                             ),
-                    ),
-                    ...[
-                      if (widget.trailingBuilder != null)
-                        widget.trailingBuilder!(
-                          _isHovered,
-                          _focusNode.hasFocus,
-                        ),
-                    ].whereType<Widget>(),
-                    SizedBox(
-                      width: widget.trailingBuilder == null
-                          ? widget.padding?.resolve(null).right ?? 20
-                          : 0,
-                    ),
-                  ],
+                          ),
+                      ].whereType<Widget>(),
+                      SizedBox(
+                        width: widget.trailingBuilder == null
+                            ? widget.padding?.resolve(null).right ?? 20
+                            : 0,
+                      ),
+                    ],
+                  ),
                 ),
               );
 
@@ -634,8 +668,7 @@ class _ListTileState extends State<ListTile> {
           }
 
           final contentPadding =
-              (widget.padding?.resolve(null) ??
-                      context.theme.spacing.paddingSm)
+              (widget.padding?.resolve(null) ?? context.theme.spacing.paddingSm)
                   .copyWith(
                     left: 0,
                     right: 0,
