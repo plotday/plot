@@ -20,6 +20,8 @@ import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
 import { Smtp, type SmtpOptions } from "./smtp";
 import { LinkedInMessaging } from "./unipile/linkedin";
+import { WhatsAppMessaging } from "./unipile/whatsapp";
+import { InstagramMessaging } from "./unipile/instagram";
 import { Files } from "./files";
 import { Network } from "./network";
 import { Plot } from "./plot";
@@ -72,6 +74,8 @@ function getToolClass(
   | typeof Imap
   | typeof Smtp
   | typeof LinkedInMessaging
+  | typeof WhatsAppMessaging
+  | typeof InstagramMessaging
   | null {
   switch (toolId) {
     case "Files":
@@ -98,6 +102,10 @@ function getToolClass(
       return Smtp;
     case "LinkedInMessaging":
       return LinkedInMessaging;
+    case "WhatsAppMessaging":
+      return WhatsAppMessaging;
+    case "InstagramMessaging":
+      return InstagramMessaging;
     case "Options":
       return null; // Handled specially — not a real tool
     default:
@@ -255,6 +263,20 @@ export function createTool(
       return new Smtp(options as SmtpOptions);
     case "LinkedInMessaging":
       return new LinkedInMessaging({
+        env,
+        db,
+        twistInstanceId,
+        path,
+      });
+    case "WhatsAppMessaging":
+      return new WhatsAppMessaging({
+        env,
+        db,
+        twistInstanceId,
+        path,
+      });
+    case "InstagramMessaging":
+      return new InstagramMessaging({
         env,
         db,
         twistInstanceId,

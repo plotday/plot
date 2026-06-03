@@ -201,7 +201,7 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
 
   const result = JSON.parse(resultJson) as {
     accountId: string;
-    accountType: string;
+    accountType: string | null;
     receivedAt: number;
   };
 

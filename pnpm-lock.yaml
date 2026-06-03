@@ -152,7 +152,39 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0(bufferutil@4.0.8)(utf-8-validate@6.0.4)
 
+  connectors/instagram:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:*
+        version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:*
+        version: link:../../libs/unipile
+    devDependencies:
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   connectors/linkedin:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:*
+        version: link:../../public/twister
+      '@plotday/unipile':
+        specifier: workspace:*
+        version: link:../../libs/unipile
+    devDependencies:
+      '@plotday/tsconfig':
+        specifier: workspace:*
+        version: link:../../libs/tsconfig
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  connectors/whatsapp:
     dependencies:
       '@plotday/twister':
         specifier: workspace:*
@@ -383,6 +415,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)(jsdom@24.1.3(bufferutil@4.0.8)(utf-8-validate@6.0.4))(sugarss@5.0.1(postcss@8.5.9))(terser@5.37.0)
 
   libs/worker-util:
     devDependencies:

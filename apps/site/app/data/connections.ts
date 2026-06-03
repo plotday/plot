@@ -64,6 +64,22 @@ export const CONNECTIONS: Connection[] = [
     available: true,
     premium: true,
   },
+  {
+    name: "WhatsApp",
+    logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
+    category: "Communication",
+    entities: ["Messages", "Groups"],
+    available: true,
+    premium: true,
+  },
+  {
+    name: "Instagram",
+    logo: "https://api.iconify.design/skill-icons/instagram.svg",
+    category: "Communication",
+    entities: ["Messages", "Requests"],
+    available: true,
+    premium: true,
+  },
 
   // ── Written but not yet deployed ──
   {

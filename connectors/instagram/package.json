@@ -1,0 +1,37 @@
+{
+  "name": "@plotday/connector-instagram",
+  "plotTwistId": "e80fe77e-eeba-4ac5-983a-6f769cff42b9",
+  "displayName": "Instagram",
+  "description": "Instagram messages",
+  "logoUrl": "https://api.iconify.design/logos/instagram-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:*",
+    "@plotday/unipile": "workspace:*"
+  },
+  "devDependencies": {
+    "@plotday/tsconfig": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

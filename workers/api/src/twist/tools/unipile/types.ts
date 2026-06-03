@@ -47,6 +47,8 @@ export type UnipileChat = {
   read_only: 0 | 1;
   muted_until: string | null;
   attendee_provider_id: string | null;
+  /** Provider folder/bucket (e.g. Instagram "REQUESTS"). LIVE-CONFIRM (§13): field name */
+  folder?: string;
 };
 
 export type UnipileChatList = {
@@ -121,6 +123,8 @@ export type UnipileAttendee = {
     public_identifier?: string;
     headline?: string;
     email?: string;
+    /** WhatsApp phone number. LIVE-CONFIRM (§13): field name */
+    phone?: string;
   };
 };
 

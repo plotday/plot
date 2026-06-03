@@ -42,11 +42,13 @@ type Env = {
  */
 export class UnipileClient {
   private readonly base: string;
+  private readonly fetchImpl: typeof fetch;
 
-  constructor(private readonly env: Env) {
+  constructor(private readonly env: Env, fetchImpl?: typeof fetch) {
     // Unipile assigns a per-workspace DSN as a full `host:port`
     // (e.g. `api40.unipile.com:17020`). Use it verbatim.
     this.base = `https://${env.UNIPILE_DSN}/api/v1`;
+    this.fetchImpl = fetchImpl ?? globalThis.fetch;
   }
 
   // ---------- Account lifecycle ----------
@@ -149,11 +151,25 @@ export class UnipileClient {
     accountId: string;
     cursor?: string | null;
     limit?: number;
+    folder?: string | null;
   }): Promise<UnipileChatList> {
     return this.get<UnipileChatList>("/chats", {
       account_id: input.accountId,
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.limit ? { limit: String(input.limit) } : {}),
+      ...(input.folder ? { folder: input.folder } : {}),
+    });
+  }
+
+  /**
+   * Resolve a provider identifier (username, public id, or phone) to an
+   * attendee. Used by compose to turn a typed @username / phone into a
+   * provider attendee id. Unipile: GET /users/{identifier}?account_id=...
+   * LIVE-CONFIRM (§13): exact path/param for Instagram username resolution.
+   */
+  getUser(input: { accountId: string; identifier: string }): Promise<UnipileAttendee> {
+    return this.get<UnipileAttendee>(`/users/${encodeURIComponent(input.identifier)}`, {
+      account_id: input.accountId,
     });
   }
 
@@ -223,7 +239,7 @@ export class UnipileClient {
     attachmentId: string;
   }): Promise<Response> {
     const url = `${this.base}/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(input.attachmentId)}`;
-    const response = await fetch(url, {
+    const response = await this.fetchImpl(url, {
       method: "GET",
       headers: {
         "X-API-KEY": this.env.UNIPILE_API_KEY,
@@ -242,31 +258,26 @@ export class UnipileClient {
   }
 
   /**
-   * Start a new LinkedIn DM with one or more recipients and send the first
-   * message. Unipile's `POST /messages` endpoint creates the chat if one
-   * does not already exist; for 1:1 conversations it reuses the existing
-   * thread.
+   * Start a new chat (1:1 or group) and send the first message. Unipile's
+   * `POST /chats` (multipart) creates the chat if needed and returns the first
+   * message. For 1:1 it reuses an existing conversation.
    *
-   * @param accountId - Unipile account id for the sender.
-   * @param attendeeProviderIds - LinkedIn `provider_id` values for each
-   *   recipient (the `provider_id` field on `UnipileAttendee`). Pass one for
-   *   1:1, two or more for group.
-   * @param text - Plain-text message body.
+   * @param attendeeProviderIds Provider attendee ids: LinkedIn URN, WhatsApp JID
+   *   (`<digits>@s.whatsapp.net`), or Instagram user id.
+   * @param title Optional group name (ignored for 1:1).
    */
-  startChat(input: {
+  async startChat(input: {
     accountId: string;
     attendeeProviderIds: string[];
     text: string;
+    title?: string | null;
   }): Promise<UnipileMessage> {
-    // TODO: Endpoint and body shape are unverified against Unipile docs.
-    // If the endpoint differs (e.g. POST /chats with a participants array, or a
-    // LinkedIn-specific path), this will fail at runtime with a 404/422.
-    // Requires a local end-to-end test against a real Unipile account before shipping.
-    return this.post<UnipileMessage>("/messages", {
-      account_id: input.accountId,
-      attendees_ids: input.attendeeProviderIds,
-      text: input.text,
-    });
+    const form = new FormData();
+    form.append("account_id", input.accountId);
+    for (const id of input.attendeeProviderIds) form.append("attendees_ids", id);
+    form.append("text", input.text);
+    if (input.title) form.append("title", input.title);
+    return this.requestFormData<UnipileMessage>("/chats", form);
   }
 
   /**
@@ -288,29 +299,36 @@ export class UnipileClient {
   }
 
   /**
-   * Remove the connected account's reaction from a LinkedIn message.
-   * Unipile only documents the add endpoint; this attempts a `DELETE` on the
-   * mirror path and treats `404`/`405` as "removal unsupported" so the
-   * caller does not blow up. The next inbound sync of the message
-   * reconciles state if Unipile silently rejects the call.
+   * Remove the connected account's reaction from a message.
+   * LIVE-CONFIRM (§13): preferred clear is POST reactions with empty value;
+   * some providers only honor DELETE. Try POST-empty, fall back to DELETE,
+   * swallow 404/405 so an unsupported clear doesn't break note write-back.
    */
   async removeMessageReaction(input: { messageId: string }): Promise<void> {
+    // LIVE-CONFIRM (§13): preferred clear is POST reactions with empty value;
+    // some providers only honor DELETE. Try POST-empty, fall back to DELETE,
+    // swallow 404/405 so an unsupported clear doesn't break note write-back.
     try {
-      await this.request(
-        `/messages/${encodeURIComponent(input.messageId)}/reactions`,
-        { method: "DELETE" }
-      );
-    } catch (error) {
-      if (
-        error instanceof UnipileApiError &&
-        (error.status === 404 || error.status === 405)
-      ) {
-        // Unipile doesn't expose a removal endpoint for this provider.
-        // The next sync of the message will reconcile actual state.
-        return;
-      }
-      throw error;
+      await this.post<unknown>(`/messages/${encodeURIComponent(input.messageId)}/reactions`, { reaction: "" });
+      return;
+    } catch (e) {
+      if (!(e instanceof UnipileApiError) || (e.status !== 400 && e.status !== 404 && e.status !== 405)) throw e;
     }
+    try {
+      await this.request(`/messages/${encodeURIComponent(input.messageId)}/reactions`, { method: "DELETE" });
+    } catch (e) {
+      if (e instanceof UnipileApiError && (e.status === 404 || e.status === 405)) return;
+      throw e;
+    }
+  }
+
+  async setChatRequestStatus(input: { chatId: string; accepted: boolean }): Promise<void> {
+    // LIVE-CONFIRM (§13): IG accept/ignore message-request action on PATCH /chats/{id}.
+    await this.request(`/chats/${encodeURIComponent(input.chatId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: input.accepted ? "acceptRequest" : "declineRequest" }),
+      headers: { "content-type": "application/json" },
+    });
   }
 
   async setChatRead(input: { chatId: string; read: boolean }): Promise<void> {
@@ -408,7 +426,7 @@ export class UnipileClient {
       accept: "application/json",
       // Do NOT set content-type — browser/runtime sets it with the boundary
     };
-    const response = await fetch(url, { method: "POST", body: form, headers });
+    const response = await this.fetchImpl(url, { method: "POST", body: form, headers });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new UnipileApiError(
@@ -443,7 +461,7 @@ export class UnipileClient {
       accept: "application/json",
       ...((init.headers as Record<string, string>) ?? {}),
     };
-    const response = await fetch(url, { ...init, headers });
+    const response = await this.fetchImpl(url, { ...init, headers });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new UnipileApiError(

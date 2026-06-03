@@ -1,0 +1,37 @@
+{
+  "name": "@plotday/connector-whatsapp",
+  "plotTwistId": "3345727d-7979-4153-8769-e800588cd742",
+  "displayName": "WhatsApp",
+  "description": "WhatsApp messages",
+  "logoUrl": "https://api.iconify.design/logos/whatsapp-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:*",
+    "@plotday/unipile": "workspace:*"
+  },
+  "devDependencies": {
+    "@plotday/tsconfig": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

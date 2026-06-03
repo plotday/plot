@@ -180,7 +180,7 @@ async function handleAccountConnected(
     `hosted_auth_result:${state}`,
     JSON.stringify({
       accountId,
-      accountType: (event.provider as string | undefined) ?? "LINKEDIN",
+      accountType: (event.provider as string | undefined) ?? null,
       receivedAt: Date.now(),
     })
   );
@@ -213,9 +213,9 @@ async function handleAccountNeedsReauth(
       .select([
         "channel.twist_instance_id",
         "twist_instance_connection.user_id",
+        "twist_instance_connection.provider",
       ])
       .where("channel.channel_id", "=", accountId)
-      .where("twist_instance_connection.provider", "=", "linkedin")
       .executeTakeFirst();
 
     if (!row) {
@@ -231,7 +231,7 @@ async function handleAccountNeedsReauth(
       .set({ needs_reauth_at: now, recovery_pending: true })
       .where("twist_instance_id", "=", row.twist_instance_id)
       .where("user_id", "=", row.user_id)
-      .where("provider", "=", "linkedin")
+      .where("provider", "=", row.provider)
       .where("needs_reauth_at", "is", null)
       .executeTakeFirst();
 

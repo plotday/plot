@@ -72,8 +72,9 @@ export type HostedAccountProviderData = {
   /** Vendor-issued account id (Unipile account_id). Stored as the user's
    * access_token because every Unipile call needs it. */
   accountId: string;
-  /** Vendor's source type, e.g. "LINKEDIN" — the impl uses this to route. */
-  accountType: string;
+  /** Vendor's source type, e.g. "LINKEDIN" — the impl uses this to route.
+   * Null when the provider field is absent from the Unipile webhook payload. */
+  accountType: string | null;
   /** Provider-side user id (e.g. LinkedIn member URN). */
   userId: string;
   fullName: string | null;
@@ -457,6 +458,11 @@ export function extractUserId(provider: AuthProvider, providerData: ProviderData
     // `"linkedin"` as the provider value.
     case "linkedin" as AuthProvider:
       return (providerData as HostedAccountProviderData).userId ?? null;
+    // WhatsApp and Instagram are Unipile-backed hosted-auth providers that
+    // share the HostedAccountProviderData shape with LinkedIn.
+    case "whatsapp" as AuthProvider:
+    case "instagram" as AuthProvider:
+      return (providerData as HostedAccountProviderData).userId ?? null;
     default:
       return null;
   }
@@ -644,6 +650,25 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     authMode: "hosted",
     // parseTokenResponse is unused for hosted-auth providers; the webhook
     // handler builds HostedAccountProviderData directly from Unipile responses.
+    extractAccountLabel: (d: unknown) => {
+      const hosted = d as HostedAccountProviderData;
+      return hosted.fullName || hosted.email || null;
+    },
+  } as ProviderConfig,
+  // WhatsApp and Instagram are Unipile-backed hosted-auth providers like
+  // LinkedIn. The private connectors store "whatsapp" / "instagram" as the
+  // provider value; these entries keep auth and label extraction working.
+  ["whatsapp" as AuthProvider]: {
+    name: "WhatsApp",
+    authMode: "hosted",
+    extractAccountLabel: (d: unknown) => {
+      const hosted = d as HostedAccountProviderData;
+      return hosted.fullName || hosted.email || null;
+    },
+  } as ProviderConfig,
+  ["instagram" as AuthProvider]: {
+    name: "Instagram",
+    authMode: "hosted",
     extractAccountLabel: (d: unknown) => {
       const hosted = d as HostedAccountProviderData;
       return hosted.fullName || hosted.email || null;

@@ -10,12 +10,9 @@ import {
 import type {
   Action,
   Actor,
-  NewActor,
   NewContact,
   NewNote,
-  NewReactions,
   Note,
-  Reactions,
   Thread,
 } from "@plotday/twister/plot";
 import { ActionType } from "@plotday/twister/plot";
@@ -31,23 +28,25 @@ import {
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import {
-  type LinkedInAttachment,
-  type LinkedInChat,
+  backfillChats,
+  buildLinkForChat,
   type LinkedInInvitation,
-  type LinkedInMessage,
   LinkedInMessaging,
-  type LinkedInProfile,
+  pickDesiredReaction,
+  profileToContact,
 } from "@plotday/unipile";
 
-const TYPE_CONVERSATION = "conversation"; // 1:1 chats + invitations
-const TYPE_GROUP = "group";
-const TYPE_DM = "linkedin-dm"; // Plot-composed outbound DMs
+// LinkedIn has a single composable link type: `conversation` covers 1:1 AND
+// multi-person chats, and an inbound connection request (invitation) is the
+// `pending` status on that same type. There is no named-group entity on
+// LinkedIn messaging — a chat is just its participant set — so multi-person
+// chats are `conversation` links whose `accessContacts` has >1 entry.
+const TYPE_CONVERSATION = "conversation";
 
 const STATUS_PENDING  = "pending";
 const STATUS_INBOX    = "inbox";
 const STATUS_ARCHIVED = "archived";
 const STATUS_IGNORED  = "ignored";
-const STATUS_SENT     = "sent";
 
 const PROVIDER_KEY = "linkedin";
 
@@ -66,12 +65,6 @@ const PROVIDER_KEY = "linkedin";
  */
 const LINKEDIN_REACTIONS = ["👍", "❤️", "👏", "💡", "😂", "😮", "😢"] as const;
 
-type SyncState = {
-  initialSync: boolean;
-  lastMessageHighWaterMs: number | null;
-  lastInvitationHighWaterMs: number | null;
-};
-
 type RelationsSyncState = {
   cursor: string | null;
   completed: boolean;
@@ -84,8 +77,6 @@ const RELATIONS_PAGE_MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const RELATIONS_PAGE_MAX_DELAY_MS = 4 * 60 * 60 * 1000;
 const RELATIONS_PAGE_ERROR_MIN_DELAY_MS = 4 * 60 * 60 * 1000;
 const RELATIONS_PAGE_ERROR_MAX_DELAY_MS = 8 * 60 * 60 * 1000;
-const RELATIONS_REFRESH_MIN_DELAY_MS = 18 * 60 * 60 * 1000;
-const RELATIONS_REFRESH_MAX_DELAY_MS = 30 * 60 * 60 * 1000;
 
 // Private connector — references the `"linkedin"` auth provider value
 // directly via a typecast since the OSS twister removed
@@ -112,35 +103,15 @@ export class LinkedIn extends Connector<LinkedIn> {
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/linkedin-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
+      // LinkedIn DMs are a closed roster — compose targets existing contacts
+      // (1st-degree connections synced via the relations backfill), not
+      // free-form addresses.
+      compose: { targets: "contacts" as const, status: STATUS_INBOX },
       statuses: [
         { status: STATUS_PENDING,  label: "Pending" },
         { status: STATUS_INBOX,    label: "Connected" },
         { status: STATUS_ARCHIVED, label: "Archived", done: true },
         { status: STATUS_IGNORED,  label: "Ignored",  done: true },
-      ],
-    },
-    {
-      type: TYPE_GROUP,
-      label: "LinkedIn group",
-      sharingModel: "thread" as const,
-      logo: "https://api.iconify.design/logos/linkedin-icon.svg",
-      logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
-      statuses: [
-        { status: STATUS_INBOX,    label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-      ],
-    },
-    {
-      // Compose a new LinkedIn DM from Plot. Opts in to Plot-initiated
-      // creation via createDefault: true on the "sent" status.
-      type: TYPE_DM,
-      label: "New message",
-      sharingModel: "thread" as const,
-      logo: "https://api.iconify.design/logos/linkedin-icon.svg",
-      logoMono: "https://api.iconify.design/simple-icons/linkedin.svg",
-      targets: "contacts" as const,
-      statuses: [
-        { status: STATUS_SENT, label: "Sent", createDefault: true },
       ],
     },
   ];
@@ -173,25 +144,24 @@ export class LinkedIn extends Connector<LinkedIn> {
   }
 
   async onChannelEnabled(channel: Channel): Promise<void> {
-    await this.set(`sync_state_${channel.id}`, {
-      initialSync: true,
-      lastMessageHighWaterMs: null,
-      lastInvitationHighWaterMs: null,
-    } satisfies SyncState);
-
+    // Register the webhook callback first so steady-state new-message,
+    // invitation, and relation events flow as soon as the account is live.
     const webhookCallback = await this.tools.callbacks.createFromParent(
       this.onWebhookEvent,
       channel.id
     );
     await this.set(`webhook_callback_${channel.id}`, webhookCallback);
 
-    const batch = await this.callback(this.syncBatch, channel.id, true);
-    await this.runTask(batch);
+    // One-time backfill of existing chats + pending invitations. No recurring
+    // poll — webhooks drive steady state.
+    const backfill = await this.callback(this.backfill, channel.id);
+    await this.runTask(backfill);
 
     // Relations backfill — populates Plot contacts so compose can offer
     // every LinkedIn 1st-degree connection as a recipient. First page runs
-    // immediately; subsequent pages jittered 2–4h apart. See
-    // syncRelationsPage for the rationale.
+    // immediately; subsequent pages jittered 2–4h apart. One-time crawl: once
+    // Unipile returns nextCursor === null we stop (no refresh loop). New
+    // relations arrive via the `relation.new` webhook.
     await this.set(`relations_state_${channel.id}`, {
       cursor: null,
       completed: false,
@@ -206,92 +176,52 @@ export class LinkedIn extends Connector<LinkedIn> {
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.clear(`sync_state_${channel.id}`);
     await this.clear(`webhook_callback_${channel.id}`);
     await this.clear(`relations_state_${channel.id}`);
   }
 
-  async syncBatch(channelId: string, initialSync: boolean): Promise<void> {
-    const state = (await this.get<SyncState>(`sync_state_${channelId}`)) ?? {
-      initialSync,
-      lastMessageHighWaterMs: null,
-      lastInvitationHighWaterMs: null,
-    };
-
-    let newMessageHigh = state.lastMessageHighWaterMs ?? 0;
-    let newInvitationHigh = state.lastInvitationHighWaterMs ?? 0;
-
-    // Invitations first so a follow-up chat sync converges onto the same
-    // person-keyed link (and flips status from Pending → Connected if the
-    // user has already accepted on LinkedIn between syncs).
-    {
-      const result = await this.tools.linkedin.listReceivedInvitations({
-        channelId,
-        limit: 20,
-      });
-      const links = result.invitations.map((inv) =>
-        buildInvitationLink(channelId, inv, state.initialSync)
-      );
-      for (const inv of result.invitations) {
-        const t = inv.sentAt.getTime();
-        if (t > newInvitationHigh) newInvitationHigh = t;
-      }
-      if (links.length > 0) {
-        await this.tools.integrations.saveLinks(links);
-      }
-    }
-
-    {
-      const since = state.lastMessageHighWaterMs
-        ? new Date(state.lastMessageHighWaterMs)
-        : undefined;
-      const result = await this.tools.linkedin.listChats({
-        channelId,
-        limit: 20,
-        since,
-      });
-      const links: NewLinkWithNotes[] = [];
-      for (const chat of result.chats) {
-        const link = chat.isGroup
-          ? await this.buildGroupLink(channelId, chat, state.initialSync, since)
-          : await this.build1to1ConversationLink(
-              channelId,
-              chat,
-              state.initialSync,
-              since
-            );
-        if (link) links.push(link);
-        const t = chat.lastActivityAt.getTime();
-        if (t > newMessageHigh) newMessageHigh = t;
-      }
-      if (links.length > 0) {
-        await this.tools.integrations.saveLinks(links);
-      }
-    }
-
-    await this.set(`sync_state_${channelId}`, {
-      initialSync: false,
-      lastMessageHighWaterMs: newMessageHigh || null,
-      lastInvitationHighWaterMs: newInvitationHigh || null,
-    } satisfies SyncState);
-
-    if (state.initialSync) {
-      await this.tools.integrations.channelSyncCompleted(channelId);
-    }
-
-    const next = await this.callback(this.syncBatch, channelId, false);
-    await this.runTask(next, {
-      runAt: new Date(Date.now() + 30 * 60 * 1000),
+  /**
+   * One-time backfill of existing LinkedIn conversations. Invitations are
+   * processed first so a follow-up chat sync converges onto the same
+   * person-keyed link (and flips status from Pending → Connected if the user
+   * already accepted on LinkedIn). Chats then sync via the shared
+   * `backfillChats` helper. Multi-person chats become `conversation` links
+   * (groupType: "conversation") since LinkedIn has no named-group entity.
+   */
+  async backfill(channelId: string): Promise<void> {
+    const inv = await this.tools.linkedin.listReceivedInvitations({
+      channelId,
+      limit: 20,
     });
+    const invLinks = inv.invitations.map((i) =>
+      buildInvitationLink(channelId, i, true)
+    );
+    if (invLinks.length > 0) {
+      await this.tools.integrations.saveLinks(invLinks);
+    }
+
+    const { links } = await backfillChats({
+      tool: this.tools.linkedin,
+      provider: PROVIDER_KEY,
+      channelId,
+      groupType: TYPE_CONVERSATION,
+      onAttachmentMessage: (id) =>
+        this.set(`linkedin:msg-channel:${id}`, channelId),
+    });
+    if (links.length > 0) {
+      await this.tools.integrations.saveLinks(links);
+    }
+
+    await this.tools.integrations.channelSyncCompleted(channelId);
   }
 
   /**
    * Conservative paginated backfill of the connected LinkedIn account's
    * 1st-degree relations into Plot's contact table. Each call fetches one
    * page (~100 relations), saves them as contacts, and reschedules itself
-   * with a 2–4h jittered delay. Stops rescheduling once Unipile returns
-   * `nextCursor === null`. The refresh task (refreshRelationsList) rearms
-   * this loop ~once per day to pick up new connections.
+   * with a 2–4h jittered delay. Stops once Unipile returns
+   * `nextCursor === null` — a one-time crawl, no refresh loop. New relations
+   * arrive via the `relation.new` webhook.
    *
    * Pacing is deliberate. Unipile's docs explicitly warn against
    * fixed-interval polling of the relations list; the 2–4h randomized
@@ -317,7 +247,7 @@ export class LinkedIn extends Connector<LinkedIn> {
     };
 
     if (state.completed) {
-      // Refresh task is what un-completes us. Don't reschedule.
+      // One-time crawl is done. Don't reschedule.
       return;
     }
 
@@ -329,9 +259,9 @@ export class LinkedIn extends Connector<LinkedIn> {
         limit: RELATIONS_PAGE_LIMIT,
       });
 
-      const contacts: NewContact[] = page.relations
-        .map(profileToContact)
-        .filter((c): c is NewContact => c != null);
+      const contacts: NewContact[] = page.relations.map((p) =>
+        profileToContact(p, PROVIDER_KEY)
+      );
 
       if (contacts.length > 0) {
         await this.tools.integrations.saveContacts(contacts);
@@ -348,17 +278,7 @@ export class LinkedIn extends Connector<LinkedIn> {
       } satisfies RelationsSyncState);
 
       if (completed) {
-        const refreshDelay =
-          RELATIONS_REFRESH_MIN_DELAY_MS +
-          Math.random() *
-            (RELATIONS_REFRESH_MAX_DELAY_MS - RELATIONS_REFRESH_MIN_DELAY_MS);
-        const refresh = await this.callback(
-          this.refreshRelationsList,
-          channelId
-        );
-        await this.runTask(refresh, {
-          runAt: new Date(Date.now() + refreshDelay),
-        });
+        // One-time crawl complete — stop. No refresh reschedule.
         return;
       }
     } catch (error) {
@@ -399,33 +319,6 @@ export class LinkedIn extends Connector<LinkedIn> {
     await this.runTask(next, { runAt: new Date(Date.now() + delayMs) });
   }
 
-  /**
-   * Rearm the relations backfill loop after a completed pass. Resets the
-   * cursor to null and immediately schedules `syncRelationsPage`. Catches
-   * relations added/removed since the last full pass without needing a
-   * fixed-cadence polling loop.
-   */
-  async refreshRelationsList(channelId: string): Promise<void> {
-    // Channel was disabled mid-loop: bail without rescheduling.
-    const webhookCallback = await this.get<string>(
-      `webhook_callback_${channelId}`
-    );
-    if (!webhookCallback) return;
-
-    const state = await this.get<RelationsSyncState>(
-      `relations_state_${channelId}`
-    );
-    await this.set(`relations_state_${channelId}`, {
-      cursor: null,
-      completed: false,
-      lastCompletedAt: state?.lastCompletedAt ?? null,
-      lastPageAt: state?.lastPageAt ?? 0,
-    } satisfies RelationsSyncState);
-
-    const next = await this.callback(this.syncRelationsPage, channelId);
-    await this.runTask(next, { runAt: new Date() });
-  }
-
   async onWebhookEvent(
     event:
       | { kind: "message.received"; chatId: string; messageId: string }
@@ -438,9 +331,16 @@ export class LinkedIn extends Connector<LinkedIn> {
         channelId,
         chatId: event.chatId,
       });
-      const link = chat.isGroup
-        ? await this.buildGroupLink(channelId, chat, false, undefined)
-        : await this.build1to1ConversationLink(channelId, chat, false, undefined);
+      const link = await buildLinkForChat({
+        tool: this.tools.linkedin,
+        provider: PROVIDER_KEY,
+        channelId,
+        chat,
+        initialSync: false,
+        groupType: TYPE_CONVERSATION,
+        onAttachmentMessage: (id) =>
+          this.set(`linkedin:msg-channel:${id}`, channelId),
+      });
       if (link) await this.tools.integrations.saveLinks([link]);
     } else if (event.kind === "invitation.received") {
       const result = await this.tools.linkedin.listReceivedInvitations({
@@ -463,7 +363,7 @@ export class LinkedIn extends Connector<LinkedIn> {
           channelId,
           profileId: event.profileId,
         });
-        const contact = profileToContact(profile);
+        const contact = profileToContact(profile, PROVIDER_KEY);
         await this.tools.integrations.saveContacts([contact]);
       } catch (error) {
         console.warn(
@@ -477,14 +377,15 @@ export class LinkedIn extends Connector<LinkedIn> {
   override async onCreateLink(
     draft: CreateLinkDraft
   ): Promise<NewLinkWithNotes | null> {
-    if (draft.type !== TYPE_DM) return null;
+    if (draft.type !== TYPE_CONVERSATION) return null;
 
     // Resolve recipient ids (LinkedIn provider_id / URN) from the
-    // pre-resolved recipients list. For `targets: "contacts"` link types
-    // the runtime populates `draft.recipients` with `externalAccountId`
-    // values from `contact_external_account` rows keyed on AuthProvider.LinkedIn.
-    const recipients = draft.recipients;
-    if (!recipients || recipients.length === 0) {
+    // pre-resolved recipients list. For `compose.targets: "contacts"` link
+    // types the runtime populates `draft.recipients` with `externalAccountId`
+    // values from `contact_external_account` rows keyed on the LinkedIn
+    // provider.
+    const recipients = draft.recipients ?? [];
+    if (recipients.length === 0) {
       console.error(
         "[linkedin] onCreateLink: no recipients resolved. LinkedIn DMs require " +
           "a recipient provider id; cannot fall back to email. Ensure contacts " +
@@ -511,13 +412,18 @@ export class LinkedIn extends Connector<LinkedIn> {
       text: body,
     });
 
-    // The returned link must have meta.chatId so that subsequent replies
-    // via onNoteCreated can find the conversation without a lookup.
+    // 1:1 compose returns a person-keyed link so it converges with the synced
+    // conversation thread (fixes the old chat-keyed `dm` duplicate-thread bug).
+    // Multi-person compose stays chat-keyed.
+    const isGroup = recipientIds.length > 1;
+    const firstId = recipientIds[0]!;
     return {
-      source: `linkedin:chat:${chatId}`,
-      sources: [`linkedin:chat:${chatId}`],
-      type: TYPE_DM,
-      status: STATUS_SENT,
+      source: isGroup ? `linkedin:chat:${chatId}` : `linkedin:person:${firstId}`,
+      sources: isGroup
+        ? [`linkedin:chat:${chatId}`]
+        : [`linkedin:person:${firstId}`, `linkedin:chat:${chatId}`],
+      type: TYPE_CONVERSATION,
+      status: STATUS_INBOX,
       title: draft.title,
       created: message.sentAt,
       channelId,
@@ -525,7 +431,7 @@ export class LinkedIn extends Connector<LinkedIn> {
         syncProvider: PROVIDER_KEY,
         channelId,
         chatId,
-        isGroup: recipientIds.length > 1,
+        ...(isGroup ? {} : { profileId: firstId }),
       },
     } satisfies NewLinkWithNotes;
   }
@@ -605,7 +511,7 @@ export class LinkedIn extends Connector<LinkedIn> {
     const messageId = note.key.slice("message-".length);
     if (!messageId) return;
 
-    const desired = pickDesiredLinkedInReaction(note.reactions ?? {});
+    const desired = pickDesiredReaction(note.reactions ?? {}, LINKEDIN_REACTIONS);
     const stateKey = `reaction_sent:${messageId}`;
     const lastSent = (await this.get<string>(stateKey)) ?? null;
     if (desired === lastSent) return;
@@ -734,247 +640,25 @@ export class LinkedIn extends Connector<LinkedIn> {
       fileName: result.fileName,
     };
   }
-
-  private async build1to1ConversationLink(
-    channelId: string,
-    chat: LinkedInChat,
-    initialSync: boolean,
-    since: Date | undefined
-  ): Promise<NewLinkWithNotes | null> {
-    const other = chat.participants.find((p) => !p.isSelf);
-    if (!other) return null; // no counterparty — skip
-
-    const messages = await this.tools.linkedin.listMessages({
-      channelId,
-      chatId: chat.id,
-      limit: 20,
-      since: initialSync ? undefined : since,
-    });
-    // Drop synthetic events (reaction notifications, group renames, missed
-    // calls). The state they represent is already reflected on the parent
-    // message's reactions array or on the chat itself; turning them into
-    // notes would create empty/noise rows.
-    const messageItems = messages.messages.filter((m) => m.eventType === null);
-    // Cache message → channel so downloadAttachment can find the right token.
-    for (const msg of messageItems) {
-      if (msg.attachments.length > 0) {
-        await this.set(`linkedin:msg-channel:${msg.id}`, channelId);
-      }
-    }
-    const notes: NewNote[] = messageItems
-      .slice()
-      .reverse()
-      .map((msg) => buildNoteFromMessage(msg, chat, other.id));
-
-    const contact = profileToContact(other);
-
-    return {
-      source: `linkedin:person:${other.id}`,
-      sources: [
-        `linkedin:person:${other.id}`,
-        `linkedin:chat:${chat.id}`,
-      ],
-      type: TYPE_CONVERSATION,
-      // status is only written on initial sync — incremental syncs must not
-      // re-promote a user-set Archived/Ignored back to Inbox on every poll.
-      ...(initialSync ? { status: STATUS_INBOX } : {}),
-      title: other.fullName,
-      preview: chat.lastMessagePreview ?? null,
-      sourceUrl: chat.url,
-      created: chat.lastActivityAt,
-      accessContacts: [contact],
-      notes,
-      meta: {
-        syncProvider: PROVIDER_KEY,
-        channelId,
-        profileId: other.id,
-        chatId: chat.id,
-      },
-      ...(initialSync ? { unread: false, archived: false } : {}),
-    } satisfies NewLinkWithNotes;
-  }
-
-  private async buildGroupLink(
-    channelId: string,
-    chat: LinkedInChat,
-    initialSync: boolean,
-    since: Date | undefined
-  ): Promise<NewLinkWithNotes> {
-    const messages = await this.tools.linkedin.listMessages({
-      channelId,
-      chatId: chat.id,
-      limit: 20,
-      since: initialSync ? undefined : since,
-    });
-    // Drop synthetic events (reaction notifications, group renames, missed
-    // calls). The state they represent is already reflected on the parent
-    // message's reactions array or on the chat itself; turning them into
-    // notes would create empty/noise rows.
-    const messageItems = messages.messages.filter((m) => m.eventType === null);
-    // Cache message → channel so downloadAttachment can find the right token.
-    for (const msg of messageItems) {
-      if (msg.attachments.length > 0) {
-        await this.set(`linkedin:msg-channel:${msg.id}`, channelId);
-      }
-    }
-
-    const others = chat.participants.filter((p) => !p.isSelf);
-    const notes: NewNote[] = messageItems
-      .slice()
-      .reverse()
-      .map((msg) => buildNoteFromMessage(msg, chat));
-
-    const contacts = others.map(profileToContact);
-
-    const title = chat.title ?? joinParticipantNames(others);
-
-    return {
-      source: `linkedin:chat:${chat.id}`,
-      sources: [`linkedin:chat:${chat.id}`],
-      type: TYPE_GROUP,
-      // status is only written on initial sync — incremental syncs must not
-      // re-promote a user-set Archived/Ignored back to Inbox on every poll.
-      ...(initialSync ? { status: STATUS_INBOX } : {}),
-      title,
-      preview: chat.lastMessagePreview ?? null,
-      sourceUrl: chat.url,
-      created: chat.lastActivityAt,
-      accessContacts: contacts,
-      notes,
-      meta: {
-        syncProvider: PROVIDER_KEY,
-        channelId,
-        chatId: chat.id,
-      },
-      ...(initialSync ? { unread: false, archived: false } : {}),
-    } satisfies NewLinkWithNotes;
-  }
 }
 
 export default LinkedIn;
 
 /**
- * Pick the emoji to push as the connected account's reaction on a
- * LinkedIn message, given Plot's current `note.reactions` map. Returns
- * `null` when no allowed emoji has any reactor in Plot — that's the
- * signal to clear the reaction on LinkedIn.
- *
- * Iterates `LINKEDIN_REACTIONS` (declared order) so the result is
- * deterministic even when multiple allowed emoji are present.
+ * Build a person-keyed `conversation` link for an inbound LinkedIn connection
+ * request (invitation). The `pending` status is only set on initial sync —
+ * incremental polls may see a still-pending invitation for a propagation
+ * window after the user accepts in Plot; overwriting status would undo their
+ * accept. LinkedIn-specific (invitations have no analogue on WhatsApp/
+ * Instagram), so this helper stays local; profile→contact uses the shared
+ * `profileToContact`.
  */
-function pickDesiredLinkedInReaction(reactions: Reactions): string | null {
-  for (const emoji of LINKEDIN_REACTIONS) {
-    const reactors = reactions[emoji];
-    if (reactors && reactors.length > 0) return emoji;
-  }
-  return null;
-}
-
-function buildNoteFromMessage(
-  msg: LinkedInMessage,
-  chat: LinkedInChat,
-  threadPersonId?: string,
-): NewNote {
-  const sender = chat.participants.find((p) => p.id === msg.senderId) ?? null;
-  const author = sender
-    ? profileToContact(sender)
-    : senderFallbackContact(msg);
-
-  const actions: Action[] = msg.attachments.map((a: LinkedInAttachment) => ({
-    type: ActionType.fileRef as typeof ActionType.fileRef,
-    ref: `${msg.id}:${a.id}`,
-    fileName: a.name ?? "attachment",
-    fileSize: a.byteSize ?? null,
-    mimeType: a.contentType ?? "application/octet-stream",
-  }));
-
-  const threadSource = threadPersonId
-    ? `linkedin:person:${threadPersonId}`
-    : `linkedin:chat:${chat.id}`;
-
-  const reactions = buildReactionsFromMessage(msg, chat);
-
-  return {
-    thread: { source: threadSource },
-    key: `message-${msg.id}`,
-    created: msg.sentAt,
-    content: msg.text,
-    contentType: "text",
-    author,
-    ...(reactions ? { reactions } : {}),
-    ...(actions.length > 0 ? { actions } : {}),
-  };
-}
-
-/**
- * Aggregate a message's reactions into Plot's `emoji → NewActor[]` shape.
- * Reactors are resolved against `chat.participants` so the runtime can
- * attribute them via `contact_external_account`; reactors that aren't a
- * known chat participant fall back to a stub contact keyed on their
- * LinkedIn provider id.
- */
-function buildReactionsFromMessage(
-  msg: LinkedInMessage,
-  chat: LinkedInChat,
-): NewReactions | undefined {
-  if (!msg.reactions || msg.reactions.length === 0) return undefined;
-
-  const byEmoji = new Map<string, NewActor[]>();
-  for (const r of msg.reactions) {
-    const participant = chat.participants.find((p) => p.id === r.senderId);
-    const actor: NewActor = participant
-      ? profileToContact(participant)
-      : { name: "LinkedIn user", source: { accountId: r.senderId } };
-    const existing = byEmoji.get(r.value);
-    if (existing) existing.push(actor);
-    else byEmoji.set(r.value, [actor]);
-  }
-
-  const out: NewReactions = {};
-  for (const [emoji, actors] of byEmoji) out[emoji] = actors;
-  return out;
-}
-
-function profileToContact(profile: LinkedInProfile): NewContact {
-  const source = { accountId: profile.id };
-  const avatar = profile.pictureUrl ?? undefined;
-  if (profile.email) {
-    return { email: profile.email, name: profile.fullName, avatar, source };
-  }
-  if (profile.publicIdentifier) {
-    return {
-      email: `${profile.publicIdentifier}@linkedin.invalid`,
-      name: profile.fullName,
-      avatar,
-      source,
-    };
-  }
-  return { name: profile.fullName, avatar, source };
-}
-
-function senderFallbackContact(msg: LinkedInMessage): NewContact {
-  return {
-    name: msg.sentByMe ? "You" : "LinkedIn user",
-    source: { accountId: msg.senderId },
-  };
-}
-
-function joinParticipantNames(profiles: LinkedInProfile[]): string {
-  if (profiles.length === 0) return "LinkedIn group";
-  if (profiles.length === 1) return profiles[0]!.fullName;
-  if (profiles.length === 2)
-    return `${profiles[0]!.fullName}, ${profiles[1]!.fullName}`;
-  return `${profiles[0]!.fullName}, ${profiles[1]!.fullName} +${
-    profiles.length - 2
-  }`;
-}
-
 function buildInvitationLink(
   channelId: string,
   inv: LinkedInInvitation,
   initialSync: boolean
 ): NewLinkWithNotes {
-  const contact = profileToContact(inv.inviter);
+  const contact = profileToContact(inv.inviter, PROVIDER_KEY);
 
   const notes: NewNote[] = [];
   if (inv.message) {
@@ -995,13 +679,10 @@ function buildInvitationLink(
       `linkedin:invitation:${inv.id}`,
     ],
     type: TYPE_CONVERSATION,
-    // status only on initial sync — incremental polls may see a still-pending
-    // invitation for a propagation window after the user accepts in Plot;
-    // overwriting status would undo their accept.
     ...(initialSync ? { status: STATUS_PENDING } : {}),
-    title: inv.inviter.fullName,
-    preview: inv.message ?? inv.inviter.headline ?? null,
-    sourceUrl: inv.inviter.url,
+    title: inv.inviter.name,
+    preview: inv.message ?? inv.inviter.subtitle ?? null,
+    sourceUrl: inv.inviter.profileUrl,
     created: inv.sentAt,
     accessContacts: [contact],
     notes,

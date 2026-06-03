@@ -1,82 +1,29 @@
-import { ITool } from "@plotday/twister";
+import { UnipileMessaging, type ChatProfile } from "./messaging";
 
-import type {
-  LinkedInChat,
-  LinkedInChatPage,
-  LinkedInInvitationPage,
-  LinkedInMessage,
-  LinkedInMessagePage,
-  LinkedInProfile,
-  LinkedInRelationPage,
-} from "./types";
+/** LinkedIn connection request (invitation). */
+export type LinkedInInvitation = {
+  id: string;
+  sharedSecret: string;
+  inviter: ChatProfile;
+  message: string | null;
+  sentAt: Date;
+};
+export type LinkedInInvitationPage = {
+  invitations: LinkedInInvitation[];
+  nextCursor: string | null;
+};
+export type LinkedInRelationPage = {
+  relations: ChatProfile[];
+  nextCursor: string | null;
+};
 
 /**
- * Built-in tool for calling a connected LinkedIn account's messaging and
- * invitation APIs.
- *
- * Implementation lives in `workers/api/src/twist/tools/unipile/linkedin.ts`
- * and routes through Unipile's hosted API. The connector never sees that
- * detail — methods take provider-flavoured arguments (chatId, invitationId)
- * and return provider-flavoured shapes.
+ * LinkedIn messaging tool: the common surface plus LinkedIn-only
+ * invitations and 1st-degree relations. Implementation:
+ * `workers/api/src/twist/tools/unipile/linkedin.ts`.
  */
-export abstract class LinkedInMessaging extends ITool {
+export abstract class LinkedInMessaging extends UnipileMessaging {
   static readonly toolId = "LinkedInMessaging";
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract listChats(params: {
-    channelId: string;
-    cursor?: string | null;
-    limit?: number;
-    since?: Date;
-  }): Promise<LinkedInChatPage>;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getChat(params: {
-    channelId: string;
-    chatId: string;
-  }): Promise<LinkedInChat>;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract listMessages(params: {
-    channelId: string;
-    chatId: string;
-    cursor?: string | null;
-    limit?: number;
-    since?: Date;
-  }): Promise<LinkedInMessagePage>;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract sendMessage(params: {
-    channelId: string;
-    chatId: string;
-    text: string;
-    attachments?: Array<{
-      buffer: Uint8Array;
-      filename: string;
-      mimeType: string;
-    }>;
-  }): Promise<LinkedInMessage>;
-
-  /**
-   * Download an attachment from a LinkedIn message by its Unipile attachment id.
-   *
-   * @param params.channelId - The Unipile account id (channel) that owns the message.
-   * @param params.messageId - The Unipile message id the attachment belongs to.
-   * @param params.attachmentId - The Unipile attachment id.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract downloadAttachment(params: {
-    channelId: string;
-    messageId: string;
-    attachmentId: string;
-  }): Promise<{ body: ReadableStream; mimeType: string; fileName?: string }>;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract setChatRead(params: {
-    channelId: string;
-    chatId: string;
-    read: boolean;
-  }): Promise<void>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract listReceivedInvitations(params: {
@@ -93,12 +40,6 @@ export abstract class LinkedInMessaging extends ITool {
   }): Promise<LinkedInRelationPage>;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getProfile(params: {
-    channelId: string;
-    profileId: string;
-  }): Promise<LinkedInProfile>;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract acceptInvitation(params: {
     channelId: string;
     invitationId: string;
@@ -110,58 +51,5 @@ export abstract class LinkedInMessaging extends ITool {
     channelId: string;
     invitationId: string;
     sharedSecret: string;
-  }): Promise<void>;
-
-  /**
-   * Start a new LinkedIn DM conversation (1:1 or group) and send the first
-   * message atomically.
-   *
-   * - **1:1**: pass exactly one LinkedIn provider id in `recipientIds`.
-   * - **Group**: pass two or more LinkedIn provider ids in `recipientIds`.
-   *
-   * If a 1:1 conversation with the recipient already exists, Unipile
-   * reuses it. The returned `chatId` is stable and can be stored in
-   * `thread.meta.chatId` for the existing `onNoteCreated` reply path.
-   *
-   * @param params.recipientIds - Provider-side LinkedIn member ids (Unipile
-   *   `provider_id` values, which are LinkedIn URNs or numeric member ids
-   *   depending on the Unipile version).
-   * @param params.text - Message body (plain text).
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract startChat(params: {
-    channelId: string;
-    recipientIds: string[];
-    text: string;
-  }): Promise<{ chatId: string; message: LinkedInMessage }>;
-
-  /**
-   * Set the connected account's reaction on a LinkedIn message. LinkedIn
-   * allows each member at most one reaction per message, so calling this
-   * with a new emoji replaces any prior reaction the connected account had
-   * on the same message.
-   *
-   * @param params.reaction - One of LinkedIn's seven supported emoji:
-   *   `'👍' | '❤️' | '👏' | '💡' | '😂' | '😮' | '😢'`. Unipile rejects
-   *   anything outside this set; the connector filters before calling.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract setMessageReaction(params: {
-    channelId: string;
-    messageId: string;
-    reaction: string;
-  }): Promise<void>;
-
-  /**
-   * Clear the connected account's reaction on a LinkedIn message. Best
-   * effort — Unipile's documented endpoint covers add only; removal
-   * support varies. Implementations should swallow `404`/`405` so an
-   * unsupported removal does not break note write-back. The next sync
-   * naturally reconciles state from LinkedIn.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract clearMessageReaction(params: {
-    channelId: string;
-    messageId: string;
   }): Promise<void>;
 }

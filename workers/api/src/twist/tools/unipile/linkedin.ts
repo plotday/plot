@@ -1,297 +1,34 @@
-import type { Kysely } from "kysely";
-
 import type {
-  LinkedInMessaging as ILinkedInMessaging,
-  LinkedInChat,
-  LinkedInChatPage,
   LinkedInInvitationPage,
-  LinkedInMessage,
-  LinkedInMessagePage,
-  LinkedInProfile,
   LinkedInRelationPage,
+  LinkedInMessaging as ILinkedInMessaging,
 } from "@plotday/unipile";
+import { UnipileMessagingTool } from "./messaging";
+import { normalizeInvitation, normalizeProfile, normalizeRelation } from "./normalize";
 
-import type { DB } from "../../../db-types";
-import type { Bindings } from "../../../env";
-import type { StoredTokenData } from "../../../provider";
-import { Store } from "../store";
-import { Tool } from "../tool";
-import { UnipileClient } from "./client";
-import {
-  normalizeChat,
-  normalizeInvitation,
-  normalizeMessage,
-  normalizeProfile,
-  normalizeRelation,
-} from "./normalize";
+export class LinkedInMessaging extends UnipileMessagingTool implements ILinkedInMessaging {
+  protected readonly provider = "linkedin";
 
-/**
- * Concrete impl of the LinkedInMessaging built-in tool. Routes all calls
- * through Unipile via UnipileClient. The connector never sees Unipile
- * identifiers — it works with Plot-shaped {chatId, messageId, …} values
- * that happen to be Unipile ids.
- */
-export class LinkedInMessaging extends Tool implements ILinkedInMessaging {
-  private store: Store;
-  private client: UnipileClient;
-
-  constructor(
-    private options: {
-      env: Bindings;
-      db: Kysely<DB>;
-      twistInstanceId: string;
-      path: string[];
-    }
-  ) {
-    super();
-    this.store = new Store({
-      path: options.path,
-      storage: options.env.STORAGE,
-      twistInstanceId: options.twistInstanceId,
-    });
-    this.client = new UnipileClient(options.env);
-  }
-
-  async listChats(params: {
-    channelId: string;
-    cursor?: string | null;
-    limit?: number;
-    since?: Date;
-  }): Promise<LinkedInChatPage> {
+  async listReceivedInvitations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInInvitationPage> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listChats({
-      accountId: params.channelId,
-      cursor: params.cursor ?? null,
-      limit: params.limit,
-    });
-    const chats: LinkedInChat[] = [];
-    for (const raw of result.items) {
-      const attendees = await this.client.listChatAttendees({ chatId: raw.id });
-      const chat = normalizeChat(raw, attendees.items);
-      if (params.since && chat.lastActivityAt < params.since) continue;
-      chats.push(chat);
-    }
-    return { chats, nextCursor: result.cursor };
+    const result = await this.client.listReceivedInvitations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
+    return { invitations: result.items.map(normalizeInvitation), nextCursor: result.cursor };
   }
 
-  async getChat(params: {
-    channelId: string;
-    chatId: string;
-  }): Promise<LinkedInChat> {
+  async listRelations(params: { channelId: string; cursor?: string | null; limit?: number }): Promise<LinkedInRelationPage> {
     await this.assertAccount(params.channelId);
-    const [raw, attendees] = await Promise.all([
-      this.client.getChat({ chatId: params.chatId }),
-      this.client.listChatAttendees({ chatId: params.chatId }),
-    ]);
-    return normalizeChat(raw, attendees.items);
+    const result = await this.client.listRelations({ accountId: params.channelId, cursor: params.cursor ?? null, limit: params.limit });
+    return { relations: result.items.map(normalizeRelation), nextCursor: result.cursor };
   }
 
-  async listMessages(params: {
-    channelId: string;
-    chatId: string;
-    cursor?: string | null;
-    limit?: number;
-    since?: Date;
-  }): Promise<LinkedInMessagePage> {
+  async acceptInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    const result = await this.client.listMessages({
-      chatId: params.chatId,
-      cursor: params.cursor ?? null,
-      limit: params.limit,
-    });
-    const messages = result.items
-      .map(normalizeMessage)
-      .filter((m) => !params.since || m.sentAt >= params.since);
-    return { messages, nextCursor: result.cursor };
+    await this.client.acceptInvitation({ invitationId: params.invitationId, sharedSecret: params.sharedSecret });
   }
 
-  async sendMessage(params: {
-    channelId: string;
-    chatId: string;
-    text: string;
-    attachments?: Array<{
-      buffer: Uint8Array;
-      filename: string;
-      mimeType: string;
-    }>;
-  }): Promise<LinkedInMessage> {
+  async ignoreInvitation(params: { channelId: string; invitationId: string; sharedSecret: string }): Promise<void> {
     await this.assertAccount(params.channelId);
-    let raw;
-    if (params.attachments && params.attachments.length > 0) {
-      raw = await this.client.sendMessageMultipart({
-        chatId: params.chatId,
-        text: params.text,
-        attachments: params.attachments,
-      });
-    } else {
-      raw = await this.client.sendMessage({
-        chatId: params.chatId,
-        text: params.text,
-      });
-    }
-    return normalizeMessage(raw);
-  }
-
-  async downloadAttachment(params: {
-    channelId: string;
-    messageId: string;
-    attachmentId: string;
-  }): Promise<{ body: ReadableStream; mimeType: string; fileName?: string }> {
-    await this.assertAccount(params.channelId);
-    const response = await this.client.downloadAttachmentRaw({
-      messageId: params.messageId,
-      attachmentId: params.attachmentId,
-    });
-    const contentType =
-      response.headers.get("content-type") ?? "application/octet-stream";
-    const mimeType = contentType.split(";")[0]?.trim() ?? "application/octet-stream";
-    const disposition = response.headers.get("content-disposition") ?? "";
-    const fileNameMatch = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
-    const fileName = fileNameMatch?.[1]
-      ? decodeURIComponent(fileNameMatch[1].trim())
-      : undefined;
-    return {
-      body: response.body as ReadableStream,
-      mimeType,
-      fileName,
-    };
-  }
-
-  async setChatRead(params: {
-    channelId: string;
-    chatId: string;
-    read: boolean;
-  }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.setChatRead({ chatId: params.chatId, read: params.read });
-  }
-
-  async setMessageReaction(params: {
-    channelId: string;
-    messageId: string;
-    reaction: string;
-  }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.addMessageReaction({
-      messageId: params.messageId,
-      reaction: params.reaction,
-    });
-  }
-
-  async clearMessageReaction(params: {
-    channelId: string;
-    messageId: string;
-  }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.removeMessageReaction({ messageId: params.messageId });
-  }
-
-  async listReceivedInvitations(params: {
-    channelId: string;
-    cursor?: string | null;
-    limit?: number;
-  }): Promise<LinkedInInvitationPage> {
-    await this.assertAccount(params.channelId);
-    const result = await this.client.listReceivedInvitations({
-      accountId: params.channelId,
-      cursor: params.cursor ?? null,
-      limit: params.limit,
-    });
-    return {
-      invitations: result.items.map(normalizeInvitation),
-      nextCursor: result.cursor,
-    };
-  }
-
-  async listRelations(params: {
-    channelId: string;
-    cursor?: string | null;
-    limit?: number;
-  }): Promise<LinkedInRelationPage> {
-    await this.assertAccount(params.channelId);
-    const result = await this.client.listRelations({
-      accountId: params.channelId,
-      cursor: params.cursor ?? null,
-      limit: params.limit,
-    });
-    return {
-      relations: result.items.map(normalizeRelation),
-      nextCursor: result.cursor,
-    };
-  }
-
-  async getProfile(params: {
-    channelId: string;
-    profileId: string;
-  }): Promise<LinkedInProfile> {
-    await this.assertAccount(params.channelId);
-    const raw = await this.client.getAttendee({ providerId: params.profileId });
-    return normalizeProfile(raw);
-  }
-
-  async acceptInvitation(params: {
-    channelId: string;
-    invitationId: string;
-    sharedSecret: string;
-  }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.acceptInvitation({
-      invitationId: params.invitationId,
-      sharedSecret: params.sharedSecret,
-    });
-  }
-
-  async ignoreInvitation(params: {
-    channelId: string;
-    invitationId: string;
-    sharedSecret: string;
-  }): Promise<void> {
-    await this.assertAccount(params.channelId);
-    await this.client.ignoreInvitation({
-      invitationId: params.invitationId,
-      sharedSecret: params.sharedSecret,
-    });
-  }
-
-  async startChat(params: {
-    channelId: string;
-    recipientIds: string[];
-    text: string;
-  }): Promise<{ chatId: string; message: LinkedInMessage }> {
-    await this.assertAccount(params.channelId);
-    const raw = await this.client.startChat({
-      accountId: params.channelId,
-      attendeeProviderIds: params.recipientIds,
-      text: params.text,
-    });
-    const message = normalizeMessage(raw);
-    return { chatId: message.chatId, message };
-  }
-
-  /**
-   * Look up the stored token for the channel's account so call sites have
-   * a single rejection point when the connection is missing or revoked.
-   * The channelId IS the Unipile account_id (see Connector.getChannels).
-   */
-  private async assertAccount(channelId: string): Promise<void> {
-    const channelConfigKey = `channel_config:linkedin:${channelId}`;
-    const channelConfig = await this.store.get<{
-      enabled?: boolean;
-      enabledBy?: string;
-    }>(channelConfigKey);
-    if (!channelConfig?.enabledBy) {
-      throw new Error(
-        `LinkedIn channel ${channelId} is not enabled by any actor`
-      );
-    }
-    const token = await this.store.get<StoredTokenData>(
-      `auth_token:linkedin:${channelConfig.enabledBy}`
-    );
-    if (!token?.access_token) {
-      throw new Error(
-        `LinkedIn channel ${channelId} has no stored credentials — reconnect`
-      );
-    }
+    await this.client.ignoreInvitation({ invitationId: params.invitationId, sharedSecret: params.sharedSecret });
   }
 }
 

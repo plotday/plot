@@ -8,7 +8,7 @@ import {
 } from "./normalize";
 
 describe("normalize", () => {
-  it("normalizes a 1:1 chat and includes self in participants with isSelf flag", () => {
+  it("normalizes a 1:1 linkedin chat and includes self in participants with isSelf flag", () => {
     const chat = normalizeChat(
       {
         object: "Chat",
@@ -44,14 +44,15 @@ describe("normalize", () => {
           is_self: 1,
           specifics: {},
         },
-      ]
+      ],
+      "linkedin"
     );
     expect(chat.id).toBe("c1");
     expect(chat.isGroup).toBe(false);
     expect(chat.participants).toHaveLength(2);
     const jane = chat.participants.find((p) => p.id === "ACoAA12345")!;
-    expect(jane.fullName).toBe("Jane Doe");
-    expect(jane.publicIdentifier).toBe("jdoe");
+    expect(jane.name).toBe("Jane Doe");
+    expect(jane.handle).toBe("jdoe");
     expect(jane.isSelf).toBe(false);
     const me = chat.participants.find((p) => p.id === "ACoAAme00")!;
     expect(me.isSelf).toBe(true);
@@ -59,6 +60,43 @@ describe("normalize", () => {
     expect(chat.url).toBe(
       "https://www.linkedin.com/messaging/thread/linkedin-thread-xyz/"
     );
+    expect(chat.folder).toBeNull();
+  });
+
+  it("normalizeChat with whatsapp provider yields null url and no linkedin.com profileUrl", () => {
+    const chat = normalizeChat(
+      {
+        object: "Chat",
+        id: "c2",
+        account_id: "acct-2",
+        account_type: "WHATSAPP",
+        provider_id: "wa-thread-abc",
+        name: "WhatsApp Group",
+        type: 1,
+        timestamp: "2026-05-22T11:00:00.000Z",
+        unread_count: 0,
+        archived: 0,
+        read_only: 0,
+        muted_until: null,
+        attendee_provider_id: "+15551234567",
+      },
+      [
+        {
+          object: "Attendee",
+          provider_id: "+15551234567",
+          name: "Alice",
+          profile_url: null,
+          picture_url: null,
+          is_self: 0,
+          specifics: { public_identifier: "alice_wa" },
+        },
+      ],
+      "whatsapp"
+    );
+    expect(chat.url).toBeNull();
+    const alice = chat.participants.find((p) => p.id === "+15551234567")!;
+    // profileUrl is null (no linkedin.com fallback for non-linkedin providers)
+    expect(alice.profileUrl).toBeNull();
   });
 
   it("normalizes a message and flags sent-by-me when is_sender=1", () => {
@@ -151,10 +189,10 @@ describe("normalize", () => {
     expect(inv.sharedSecret).toBe("ss-token");
     expect(inv.message).toBe("Let's connect");
     expect(inv.inviter.id).toBe("ACoAA999");
-    expect(inv.inviter.fullName).toBe("Carla Ng");
-    expect(inv.inviter.publicIdentifier).toBe("carlang");
-    expect(inv.inviter.headline).toBe("PM");
-    expect(inv.inviter.url).toBe("https://www.linkedin.com/in/carlang");
+    expect(inv.inviter.name).toBe("Carla Ng");
+    expect(inv.inviter.handle).toBe("carlang");
+    expect(inv.inviter.subtitle).toBe("PM");
+    expect(inv.inviter.profileUrl).toBe("https://www.linkedin.com/in/carlang");
     expect(inv.sentAt.toISOString()).toBe("2026-05-22T09:00:00.000Z");
   });
 
@@ -174,8 +212,8 @@ describe("normalize", () => {
       specifics: { provider: "LINKEDIN", shared_secret: "ss-token" },
     });
     expect(inv.inviter.id).toBe("ACoAA000");
-    expect(inv.inviter.fullName).toBe("Unknown");
-    expect(inv.inviter.url).toBeNull();
+    expect(inv.inviter.name).toBe("Unknown");
+    expect(inv.inviter.profileUrl).toBeNull();
   });
 
   it("falls back to publicIdentifier when name missing", () => {
@@ -187,11 +225,11 @@ describe("normalize", () => {
       picture_url: null,
       is_self: 0,
       specifics: { public_identifier: "ghost" },
-    });
-    expect(profile.fullName).toBe("ghost");
+    }, "linkedin");
+    expect(profile.name).toBe("ghost");
   });
 
-  it("normalizeRelation maps the flat relation shape to LinkedInProfile", () => {
+  it("normalizeRelation maps the flat relation shape to ChatProfile", () => {
     const profile = normalizeRelation({
       object: "UserRelation",
       member_id: "ACoAA111",
@@ -206,11 +244,11 @@ describe("normalize", () => {
       created_at: 1700000000,
     });
     expect(profile.id).toBe("ACoAA111");
-    expect(profile.fullName).toBe("Grace Hopper");
-    expect(profile.publicIdentifier).toBe("ghopper");
-    expect(profile.headline).toBe("Rear Admiral, COBOL pioneer");
+    expect(profile.name).toBe("Grace Hopper");
+    expect(profile.handle).toBe("ghopper");
+    expect(profile.subtitle).toBe("Rear Admiral, COBOL pioneer");
     expect(profile.pictureUrl).toBe("https://media.licdn.com/g.jpg");
-    expect(profile.url).toBe("https://www.linkedin.com/in/ghopper");
+    expect(profile.profileUrl).toBe("https://www.linkedin.com/in/ghopper");
     expect(profile.email).toBeNull();
     expect(profile.isSelf).toBe(false);
   });
@@ -228,8 +266,8 @@ describe("normalize", () => {
       public_profile_url: "https://www.linkedin.com/in/anon",
       created_at: 1700000000,
     });
-    expect(profile.fullName).toBe("anon");
-    expect(profile.headline).toBeNull();
+    expect(profile.name).toBe("anon");
+    expect(profile.subtitle).toBeNull();
     expect(profile.pictureUrl).toBeNull();
   });
 
@@ -247,9 +285,9 @@ describe("normalize", () => {
       created_at: 1700000000,
     });
     expect(profile.id).toBe("ACoAA333");
-    expect(profile.fullName).toBe("Unknown");
-    expect(profile.publicIdentifier).toBeNull();
-    expect(profile.headline).toBeNull();
-    expect(profile.url).toBeNull();
+    expect(profile.name).toBe("Unknown");
+    expect(profile.handle).toBeNull();
+    expect(profile.subtitle).toBeNull();
+    expect(profile.profileUrl).toBeNull();
   });
 });

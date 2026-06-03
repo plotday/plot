@@ -1,2 +1,5 @@
-export * from "./types";
+export * from "./messaging";
+export * from "./connector-helpers";
 export * from "./linkedin";
+export * from "./whatsapp";
+export * from "./instagram";
