@@ -71,7 +71,16 @@ class PriorityComposeField extends StatelessWidget {
               const Text('Auto-organize'),
             ],
           )
-        : FocusLabel(priority: currentPriority, fontSize: fontSize);
+        : FocusLabel(
+            priority: currentPriority,
+            fontSize: fontSize,
+            // Match the leading-icon geometry of every other compose row so
+            // the focus icon centers in the same column and the label starts
+            // at the same x (see ComposeLeadingIcon / composeIconGap).
+            iconSize: theme.iconSizes.base,
+            iconColumnWidth: composeLeadingWidth(context),
+            iconGap: composeIconGap,
+          );
 
     return ComposeSelectField(
       tooltip: 'Focus',

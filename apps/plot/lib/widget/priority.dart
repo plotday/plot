@@ -412,6 +412,9 @@ class FocusLabel extends StatelessWidget {
     this.priority,
     this.fontSize,
     this.height,
+    this.iconSize,
+    this.iconGap,
+    this.iconColumnWidth,
     this.muted = false,
     this.color,
     this.showIcon = true,
@@ -426,6 +429,19 @@ class FocusLabel extends StatelessWidget {
   final Priority? priority;
   final double? fontSize;
   final double? height;
+
+  /// Icon glyph size. Defaults to [fontSize] so the icon matches the text.
+  /// Override (e.g. to the ambient `iconSizes.base`) when this label sits in a
+  /// shared leading-icon column alongside non-focus rows.
+  final double? iconSize;
+
+  /// Gap between the icon and the title. Defaults to 6.
+  final double? iconGap;
+
+  /// When set, the icon is centered within a fixed-width box of this width (a
+  /// leading-icon gutter) so labels line up across rows with differing icons.
+  final double? iconColumnWidth;
+
   final bool muted;
   final Color? color;
 
@@ -485,15 +501,20 @@ class FocusLabel extends StatelessWidget {
       ),
     );
 
+    final iconWidget = Icon(
+      iconOverride ?? (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon)),
+      size: iconSize ?? resolvedFontSize,
+      color: accent,
+    );
     final children = <Widget>[
       if (showIcon) ...[
-        Icon(
-          iconOverride ??
-              (isInbox ? PlotIcon.inbox : PlotIcon.focusIcon(p.icon)),
-          size: resolvedFontSize,
-          color: accent,
-        ),
-        const SizedBox(width: 6),
+        iconColumnWidth != null
+            ? SizedBox(
+                width: iconColumnWidth,
+                child: Center(child: iconWidget),
+              )
+            : iconWidget,
+        SizedBox(width: iconGap ?? 6),
       ],
       Flexible(child: title),
     ];
