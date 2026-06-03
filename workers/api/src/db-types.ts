@@ -369,6 +369,7 @@ export interface GroupMember {
 
 export interface Link {
   actions: Json | null;
+  archived_at: Timestamp | null;
   assignee_id: string | null;
   /**
    * The actor to credit with creating this link. For links created by twists on behalf of contacts or users, this is the contact/user.

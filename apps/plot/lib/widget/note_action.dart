@@ -712,6 +712,7 @@ class _NoteLinkMenuState extends State<_NoteLinkMenu> {
       sourceUrl: widget.link.url,
       title: widget.link.title,
       logo: widget.link.favicon,
+      revoked: false,
     );
     await Store.get.save(
       Store.get.links,

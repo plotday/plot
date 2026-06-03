@@ -60,7 +60,7 @@ SELECT
 FROM
     schedule s
     -- Join via link -> thread when link_id is set
-    LEFT JOIN link l ON l.id = s.link_id
+    LEFT JOIN link l ON l.id = s.link_id AND l.archived_at IS NULL
     -- Resolve the link's owning twist_instance for per-user visibility.
     -- When l.twist_id IS NOT NULL, link.created_by is a twist_instance_id.
     LEFT JOIN twist_instance ti

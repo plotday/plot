@@ -757,6 +757,7 @@ export type Database = {
       link: {
         Row: {
           actions: Json | null
+          archived_at: string | null
           assignee_id: string | null
           author_id: string | null
           channel_id: string | null
@@ -786,6 +787,7 @@ export type Database = {
         }
         Insert: {
           actions?: Json | null
+          archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
           channel_id?: string | null
@@ -815,6 +817,7 @@ export type Database = {
         }
         Update: {
           actions?: Json | null
+          archived_at?: string | null
           assignee_id?: string | null
           author_id?: string | null
           channel_id?: string | null
@@ -4480,7 +4483,7 @@ export type Database = {
         Returns: undefined
       }
       archive_links: {
-        Args: { p_created_by: string; p_filter?: Json }
+        Args: { p_created_by: string; p_filter?: Json; p_hard?: boolean }
         Returns: string[]
       }
       channel_default_marker: {
@@ -4856,6 +4859,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_path: unknown
+          revoked: boolean | null
           seq: unknown
           source: string | null
           source_created_at: string | null
@@ -4918,6 +4922,69 @@ export type Database = {
             columns: ["thread_id"]
             referencedRelation: "thread_tags"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      link_redacted: {
+        Row: {
+          actions: Json | null
+          assignee_id: string | null
+          author_id: string | null
+          channel_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          logo: string | null
+          merged_from_thread_id: string | null
+          meta: Json | null
+          preview: string | null
+          priority_id: string | null
+          priority_path: unknown
+          revoked: boolean | null
+          seq: unknown
+          source: string | null
+          source_created_at: string | null
+          source_url: string | null
+          status: string | null
+          sync_depth: number | null
+          thread_id: string | null
+          title: string | null
+          twist_id: number | null
+          type: string | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_reactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -5373,6 +5440,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "schedule_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link_redacted"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "schedule_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
@@ -5706,13 +5779,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

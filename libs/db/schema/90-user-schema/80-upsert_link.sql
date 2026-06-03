@@ -176,7 +176,7 @@ BEGIN
             COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid),
             COALESCE(p_link ->> 'related_source', p_defaults ->> 'related_source'),
             COALESCE(p_link ->> 'channel_id', p_defaults ->> 'channel_id'))
-    ON CONFLICT (source, source_priority_root)
+    ON CONFLICT (source, source_priority_root) WHERE archived_at IS NULL
         DO UPDATE SET
             title = CASE WHEN p_link ? 'title' THEN
                 p_link ->> 'title'

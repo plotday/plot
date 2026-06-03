@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 351;
+  int get schemaVersion => 352;
 
   @override
   MigrationStrategy get migration {
@@ -3781,6 +3781,29 @@ class Store extends _$Store {
       // has no remaining consumers; views are recreated at the end of
       // onUpgrade, but only those still declared in the Drift schema.
       await m.database.customStatement('DROP VIEW IF EXISTS priority_children');
+    }
+
+    if (from < 352) {
+      // Link access-loss tombstone column (user.link_redacted).
+      await _safeAddColumn(m, links, links.revoked);
+      // One-time cleanup: enforce "a connector link whose owning
+      // twist_instance is archived must not exist locally" — clears orphan
+      // links (and their schedules) stranded by the old server hard-delete
+      // that didn't sync. Exact and safe: user-authored links have a user-id
+      // created_by (no matching twist_instance); reconnect-revived links point
+      // at a live instance.
+      await _safeCustomStatement(m, '''
+        DELETE FROM schedules WHERE link_id IN (
+          SELECT l.id FROM links l
+          JOIN twist_instances ti ON ti.id = l.created_by
+          WHERE ti.archived_at IS NOT NULL
+        )
+      ''');
+      await _safeCustomStatement(m, '''
+        DELETE FROM links WHERE created_by IN (
+          SELECT id FROM twist_instances WHERE archived_at IS NOT NULL
+        )
+      ''');
     }
   }
 

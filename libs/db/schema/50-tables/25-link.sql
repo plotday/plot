@@ -48,7 +48,12 @@ CREATE TABLE "public"."link" (
     -- Provider-specific channel ID, matches channel.channel_id
     "channel_id" text,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
-    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    -- Soft-delete marker for per-item removals that have no bulk client
+    -- signal (archiveLinks with a meta/type/status filter on a live instance
+    -- + enabled channel). Delivered to the owner via user.link_redacted.
+    -- Bulk removals (uninstall / channel disable) still hard-delete.
+    "archived_at" timestamptz
 );
 
 COMMENT ON COLUMN "public"."link"."source" IS 'External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.';
@@ -70,9 +75,18 @@ COMMENT ON COLUMN "public"."link"."type" IS 'Source-defined type string (e.g., i
 
 COMMENT ON COLUMN "public"."link"."status" IS 'Source-defined status string (e.g., open, done, closed). Free text.';
 
--- Ensure one link per source per priority root
--- No WHERE clause needed: NULL != NULL allows multiple rows when source is null
-CREATE UNIQUE INDEX link_source_priority_unique ON "public"."link" ("source", "source_priority_root");
+-- Ensure one LIVE link per source per priority root. Partial on
+-- archived_at IS NULL so a soft-deleted tombstone no longer occupies the
+-- slot: re-sync inserts a fresh row (no revival) and the constraint still
+-- guarantees a single live link per source (the breadcrumb invariant).
+CREATE UNIQUE INDEX link_source_priority_unique ON "public"."link" ("source", "source_priority_root")
+WHERE
+    archived_at IS NULL;
+
+-- Soft-deleted tombstones (drives user.link_redacted + future GC).
+CREATE INDEX idx_link_archived_at ON "public"."link" ("archived_at")
+WHERE
+    archived_at IS NOT NULL;
 
 -- Index for efficient source lookups
 CREATE INDEX idx_link_source ON "public"."link" ("source")
