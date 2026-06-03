@@ -1,3 +1,4 @@
+- Filtering when you start a thread is now instant. Typing a person's name or an email in the first step of the new-thread picker updates the list as fast as you type, instead of lagging a beat or two behind on accounts with lots of contacts and connections.
 - Pressing Enter inside a quote now continues the quote on a new line, just like lists do — press Enter on an empty quote line to step back out.
 - Connect WhatsApp and Instagram (premium): see and reply to your DMs and group chats right in Plot, and start new conversations.
 - Your onboarding threads — including the "Welcome to Plot!" message — now arrive in your Inbox, and the fixed "Using Plot" and "Twist Development" focuses are gone, so you can organize everything however you like. The onboarding threads stay put in your Inbox even as you add focuses; move one into a focus and the rest follow. "Help and feedback" still works the same way — it opens a new thread in your Inbox that's shared with the Plot team.

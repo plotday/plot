@@ -107,6 +107,16 @@ class _TargetPickerListState extends State<TargetPickerList> {
   Future<void>? _lastSearch;
   bool _enterHandled = false;
 
+  /// Debounce timer for the filter field. Each [ComposeTargetsBloc.search] runs
+  /// DB work, so we collapse a burst of keystrokes into a single search once the
+  /// user pauses (see [_onSearchChanged]).
+  Timer? _debounce;
+
+  /// How long to wait after the last keystroke before searching. Short enough
+  /// to feel instantaneous on a pause, long enough to skip the intermediate
+  /// queries while the user is actively typing.
+  static const Duration _searchDebounce = Duration(milliseconds: 180);
+
   @override
   void initState() {
     super.initState();
@@ -138,35 +148,60 @@ class _TargetPickerListState extends State<TargetPickerList> {
   @override
   void dispose() {
     _isDisposed = true;
+    _debounce?.cancel();
     if (_ownsFocusNode) _listFocusNode.dispose();
     if (_ownsController) _controller.dispose();
     if (_ownsSearchFocusNode) _searchFocusNode.dispose();
     super.dispose();
   }
 
+  /// Field-change handler: debounce non-empty queries so we issue one search
+  /// per typing pause rather than one per keystroke. Emptying the field (or
+  /// clearing it) searches immediately — that path just returns the cached base
+  /// list, so there's nothing to debounce and the list should snap back at once.
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    if (_controller.text.trim().isEmpty) {
+      _runSearch();
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (_isDisposed) return;
+      _runSearch();
+    });
+  }
+
   Future<void> _runSearch() {
     final query = _controller.text;
     final requestId = ++_requestId;
-    final future = context.read<ComposeTargetsBloc>().search(query).then((
-      results,
-    ) {
-      if (_isDisposed || requestId != _requestId) return;
-      setState(() {
-        _results = results;
-        _appliedSearch = query.trim();
-        // Clamp against [_rowCount] so the add-connection row stays reachable
-        // (and becomes the sole, highlightable row when nothing matches).
-        _highlightedIndex = _highlightedIndex.clamp(0, _rowCount - 1);
-      });
-    }).catchError((Object e, StackTrace s) {
-      Tracker.captureException(e, s);
-    });
+    final future = context
+        .read<ComposeTargetsBloc>()
+        .search(query)
+        .then((results) {
+          if (_isDisposed || requestId != _requestId) return;
+          setState(() {
+            _results = results;
+            _appliedSearch = query.trim();
+            // Clamp against [_rowCount] so the add-connection row stays reachable
+            // (and becomes the sole, highlightable row when nothing matches).
+            _highlightedIndex = _highlightedIndex.clamp(0, _rowCount - 1);
+          });
+        })
+        .catchError((Object e, StackTrace s) {
+          Tracker.captureException(e, s);
+        });
     return _lastSearch = future;
   }
 
   /// Awaits the in-flight search (and any successor) so Enter acts on results
   /// matching the fully-typed text.
   Future<void> _flushPendingSearch() async {
+    // Collapse a pending debounce: Enter must search the fully-typed text now
+    // rather than wait out the remaining debounce window.
+    if (_debounce?.isActive ?? false) {
+      _debounce!.cancel();
+      _runSearch();
+    }
     while (_lastSearch != null) {
       final fut = _lastSearch;
       await fut;
@@ -188,10 +223,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
 
   void _moveHighlight(int offset) {
     setState(() {
-      _highlightedIndex = (_highlightedIndex + offset).clamp(
-        0,
-        _rowCount - 1,
-      );
+      _highlightedIndex = (_highlightedIndex + offset).clamp(0, _rowCount - 1);
     });
     _scrollToIndex(_highlightedIndex);
   }
@@ -238,7 +270,9 @@ class _TargetPickerListState extends State<TargetPickerList> {
     _enterHandled = true;
     Future.microtask(() => _enterHandled = false);
 
-    if (_controller.text.trim() != _appliedSearch || _lastSearch != null) {
+    if (_controller.text.trim() != _appliedSearch ||
+        _lastSearch != null ||
+        (_debounce?.isActive ?? false)) {
       await _flushPendingSearch();
     }
     if (!mounted) return;
@@ -270,6 +304,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
   /// the search so the full base list returns, keeping focus on the field so
   /// the user can keep typing.
   void _clearSearch() {
+    _debounce?.cancel();
     _controller.clear();
     _runSearch();
     if (widget.inline) _searchFocusNode.requestFocus();
@@ -347,8 +382,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
                 // Inline only: breathing room between the header-style search
                 // field and the first row. The modal reproduces the old
                 // connection picker exactly, which had no gap here.
-                if (widget.inline)
-                  SizedBox(height: context.theme.spacing.lg),
+                if (widget.inline) SizedBox(height: context.theme.spacing.lg),
                 Flexible(
                   // Always render the list — even with no matching targets the
                   // synthetic "+ Add a connection…" row (the final item) is
@@ -381,7 +415,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
 
   Widget _buildSearchField() {
     final autofocus = widget.autofocusSearch && hasPhysicalKeyboard();
-    const hint = 'Pick a connection or type a name...';
+    const hint = 'Start with a person, group, or connection...';
 
     // Inline (step 1 on the compose page): match the app header's search field
     // (see [unified_header.dart] `_buildSearchField`) exactly — same compact
@@ -399,7 +433,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
         // onChange (which delivers a TextEditingValue) just needs to fire it.
         control: .managed(
           controller: _controller,
-          onChange: (_) => _runSearch(),
+          onChange: (_) => _onSearchChanged(),
         ),
         focusNode: _searchFocusNode,
         autofocus: autofocus,
@@ -442,20 +476,14 @@ class _TargetPickerListState extends State<TargetPickerList> {
           border: FVariantsValueDelta.delta([
             FVariantValueDeltaOperation.all(
               OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: colors.border,
-                  width: 1.0,
-                ),
+                borderSide: BorderSide(color: colors.border, width: 1.0),
                 borderRadius: editorBorderRadius,
               ),
             ),
             FVariantValueDeltaOperation.exact(
               {FTextFieldVariantConstraint.focused},
               OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: colors.border,
-                  width: 1.0,
-                ),
+                borderSide: BorderSide(color: colors.border, width: 1.0),
                 borderRadius: editorBorderRadius,
               ),
             ),
@@ -517,7 +545,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
         controller: _controller,
         autofocus: autofocus,
         label: hint,
-        onChanged: (_) => _runSearch(),
+        onChanged: (_) => _onSearchChanged(),
         onSubmitted: (_) => _handleEnter(),
       ),
     );
@@ -576,9 +604,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
     final colors = context.theme.colors;
     if (!widget.inline) {
       return Container(
-        decoration: BoxDecoration(
-          color: highlighted ? colors.secondary : null,
-        ),
+        decoration: BoxDecoration(color: highlighted ? colors.secondary : null),
         child: child,
       );
     }
@@ -727,15 +753,15 @@ class _TargetPickerListState extends State<TargetPickerList> {
           padding: padding,
           leadingBuilder: logo != null
               ? (_, _) => Builder(
-                    builder: (context) => Padding(
-                      padding: leadingPadding,
-                      child: LogoImage(
-                        url: logo,
-                        size: 16,
-                        fallback: const Icon(PlotIcon.link, size: 16),
-                      ),
+                  builder: (context) => Padding(
+                    padding: leadingPadding,
+                    child: LogoImage(
+                      url: logo,
+                      size: 16,
+                      fallback: const Icon(PlotIcon.link, size: 16),
                     ),
-                  )
+                  ),
+                )
               : null,
           icon: logo == null ? PlotIcon.link : null,
           title: target.label,
@@ -749,15 +775,15 @@ class _TargetPickerListState extends State<TargetPickerList> {
           padding: padding,
           leadingBuilder: logo != null
               ? (_, _) => Builder(
-                    builder: (context) => Padding(
-                      padding: leadingPadding,
-                      child: LogoImage(
-                        url: logo,
-                        size: 16,
-                        fallback: const Icon(PlotIcon.twist, size: 16),
-                      ),
+                  builder: (context) => Padding(
+                    padding: leadingPadding,
+                    child: LogoImage(
+                      url: logo,
+                      size: 16,
+                      fallback: const Icon(PlotIcon.twist, size: 16),
                     ),
-                  )
+                  ),
+                )
               : null,
           icon: logo == null ? PlotIcon.twist : null,
           title: target.label,

@@ -42,6 +42,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// changing, and after recording a created thread (see [recordTarget],
   /// which also fast-paths a prepend so the next open reflects it instantly).
   Future<void> refresh() async {
+    // The cached search context is derived from the same stores this rebuilds,
+    // so drop it first and let [_materializeBaseList] repopulate it from fresh
+    // data; subsequent per-keystroke searches then reuse that fresh context.
+    _invalidateSearchContext();
     final targets = await _materializeBaseList();
     emit(state.copyWith(targets: targets));
   }
@@ -149,6 +153,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// with the same signature is already present). Exposed for the submit path
   /// and unit tests.
   void prependToCache(ComposeTarget target) {
+    // Recording a created thread changes the authored-thread history the
+    // search context is built from, so drop the cache; the next search (or
+    // refresh) rebuilds it.
+    _invalidateSearchContext();
     final next = <ComposeTarget>[
       target,
       ...state.targets.where((t) => t.signature != target.signature),
@@ -156,14 +164,63 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     emit(state.copyWith(targets: next));
   }
 
-  // --- Base-list materialization -------------------------------------------
+  // --- Query-independent search context ------------------------------------
 
-  Future<List<ComposeTarget>> _materializeBaseList() async {
+  /// Cached, query-independent inputs shared by [_materializeBaseList] and the
+  /// per-keystroke search synthesis. Built once and reused until invalidated.
+  _ComposeSearchContext? _searchContext;
+
+  /// In-flight context build, so concurrent callers (e.g. a [refresh] and the
+  /// first keystroke after open) share one build instead of each issuing the
+  /// underlying team/connection/authored-thread queries.
+  Future<_ComposeSearchContext>? _contextBuild;
+
+  /// Monotonic token used to discard a stale in-flight build whose result a
+  /// later [_invalidateSearchContext] has superseded.
+  int _contextToken = 0;
+
+  /// Returns the cached search context, building (and caching) it on first use.
+  Future<_ComposeSearchContext> _searchContextFor() {
+    final cached = _searchContext;
+    if (cached != null) return Future.value(cached);
+    final existing = _contextBuild;
+    if (existing != null) return existing;
+    final token = ++_contextToken;
+    final build = _buildSearchContext().then(
+      (ctx) {
+        // Only publish if a concurrent invalidate hasn't superseded this build.
+        if (token == _contextToken) {
+          _searchContext = ctx;
+          _contextBuild = null;
+        }
+        return ctx;
+      },
+      onError: (Object e, StackTrace s) {
+        if (token == _contextToken) _contextBuild = null;
+        Error.throwWithStackTrace(e, s);
+      },
+    );
+    _contextBuild = build;
+    return build;
+  }
+
+  /// Drop the cached context (and supersede any in-flight build) so the next
+  /// [_searchContextFor] rebuilds from fresh stores.
+  void _invalidateSearchContext() {
+    _searchContext = null;
+    _contextBuild = null;
+    _contextToken++;
+  }
+
+  /// Loads the query-independent pieces every base-list/search pass needs:
+  /// active teams, the connector create-targets (with per-connector counts and
+  /// a signature index), and the recent authored-thread roster scan.
+  Future<_ComposeSearchContext> _buildSearchContext() async {
     final teams = await TeamUser.getActive();
-    final hasTeams = teams.isNotEmpty;
-    final teamNames = {for (final t in teams) t.teamId: t.teamName};
-
     final createTargets = await loadCreateTargets();
+    final scan = await _scanAuthoredThreads();
+
+    final teamNames = {for (final t in teams) t.teamId: t.teamName};
     // Connection count per connector package (same twistId = same connector),
     // so the account-label parenthetical shows only when >1 connection.
     final connectionCountByTwistId = <BigInt, int>{};
@@ -174,18 +231,30 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
             (connectionCountByTwistId[t.twist.twistId] ?? 0) + 1;
       }
     }
-    int connectionCount(CreateTarget t) =>
-        connectionCountByTwistId[t.twist.twistId] ?? 1;
-
     // Index templates by signature so used combos can reuse the resolved
     // CreateTarget (and so we can dedupe templates already covered by a combo).
-    final templateBySignature = <String, CreateTarget>{};
-    for (final t in createTargets) {
-      templateBySignature[t.key] = t;
-    }
+    final templateBySignature = <String, CreateTarget>{
+      for (final t in createTargets) t.key: t,
+    };
+
+    return _ComposeSearchContext(
+      teams: teams,
+      hasTeams: teams.isNotEmpty,
+      teamNames: teamNames,
+      createTargets: createTargets,
+      connectionCountByTwistId: connectionCountByTwistId,
+      templateBySignature: templateBySignature,
+      scan: scan,
+    );
+  }
+
+  // --- Base-list materialization -------------------------------------------
+
+  Future<List<ComposeTarget>> _materializeBaseList() async {
+    final ctx = await _searchContextFor();
+    final scan = ctx.scan;
 
     // 1. Used combinations from recent authored threads, most-recent first.
-    final scan = await _scanAuthoredThreads();
     final usedSignatures = buildUsedTargetSignatures(scan.threads);
     // Re-rank by recorded MRU recency (a combo used in many old threads should
     // still sort by when it was last *chosen*); thread order breaks ties for
@@ -198,10 +267,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       if (st == null) continue;
       final target = _composeTargetForScanThread(
         st,
-        templateBySignature: templateBySignature,
-        connectionCount: connectionCount,
-        hasTeams: hasTeams,
-        teamNames: teamNames,
+        templateBySignature: ctx.templateBySignature,
+        connectionCount: ctx.connectionCount,
+        hasTeams: ctx.hasTeams,
+        teamNames: ctx.teamNames,
       );
       if (target != null) used.add(target);
     }
@@ -209,26 +278,26 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     // 2. Always-available templates not already represented by a used combo.
     final templates = <ComposeTarget>[];
     // Note + Chat for Personal and each team.
-    final teamScopes = <BigInt?>[null, ...teams.map((t) => t.teamId)];
+    final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
     for (final teamId in teamScopes) {
       templates.add(ComposeTarget.note(
         teamId: teamId,
-        hasTeams: hasTeams,
-        teamName: teamId == null ? null : teamNames[teamId],
+        hasTeams: ctx.hasTeams,
+        teamName: teamId == null ? null : ctx.teamNames[teamId],
       ));
       templates.add(ComposeTarget.chat(
         teamId: teamId,
-        hasTeams: hasTeams,
-        teamName: teamId == null ? null : teamNames[teamId],
+        hasTeams: ctx.hasTeams,
+        teamName: teamId == null ? null : ctx.teamNames[teamId],
       ));
     }
     // One fresh template per connection link type. For channel connectors
     // loadCreateTargets already enumerates per enabled channel; recently-used
     // channels float up via the used-combos pass above.
-    for (final t in createTargets) {
+    for (final t in ctx.createTargets) {
       templates.add(ComposeTarget.connector(
         t,
-        connectionCount: connectionCount(t),
+        connectionCount: ctx.connectionCount(t),
         channelDetail: t.channel?.title,
       ));
     }
@@ -319,37 +388,34 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
   /// Name-match synthesis: for correspondents the user has authored/replied
   /// with whose name matches [query], the most-recent contact/DM/address
-  /// combinations used with them. Send-only addresses are excluded via the
-  /// `getSortedForSharing` banding.
+  /// combinations used with them.
+  ///
+  /// Send-only addresses are excluded structurally: the authored-thread scan
+  /// only surfaces correspondents on threads the user wrote a note in, so an
+  /// inbound-only contact never produces a combo here regardless of whether it
+  /// matched the name query.
   Future<List<ComposeTarget>> _searchByName(String query) async {
-    final matches = await Actor.getSortedForSharing(search: query);
+    // Only the *set* of name-matching correspondent ids is needed — the
+    // authored-thread scan below supplies recency and roster. A lean [Actor.get]
+    // LIKE query yields the same id set as the full share ranking
+    // ([Actor.getSortedForSharing] only orders candidates, it never filters
+    // them) at a fraction of the cost, so it stays cheap on every keystroke.
+    final matches = await Actor.get(
+      types: [ActorType.user, ActorType.contact],
+      search: query,
+      inviteable: true,
+      primary: true,
+    );
     if (matches.isEmpty) return const [];
     final matchIds = matches.map((a) => a.id.toUuid()).toSet();
 
-    final teams = await TeamUser.getActive();
-    final hasTeams = teams.isNotEmpty;
-    final teamNames = {for (final t in teams) t.teamId: t.teamName};
-    final createTargets = await loadCreateTargets();
-    final templateBySignature = <String, CreateTarget>{
-      for (final t in createTargets) t.key: t,
-    };
-    final connectionCountByTwistId = <BigInt, int>{};
-    final seenInstances = <TwistInstanceId>{};
-    for (final t in createTargets) {
-      if (seenInstances.add(t.twist.id)) {
-        connectionCountByTwistId[t.twist.twistId] =
-            (connectionCountByTwistId[t.twist.twistId] ?? 0) + 1;
-      }
-    }
-    int connectionCount(CreateTarget t) =>
-        connectionCountByTwistId[t.twist.twistId] ?? 1;
+    final ctx = await _searchContextFor();
 
     // Scan authored threads for combos whose roster touches a matching
     // correspondent, on contact/DM/address-capable targets (Plot chat or a
     // connector DM/address target — channel targets aren't roster-keyed).
-    final scan = await _scanAuthoredThreads();
     final out = <ComposeTarget>[];
-    for (final st in scan.threads) {
+    for (final st in ctx.scan.threads) {
       final touches = st.contacts.any(matchIds.contains);
       if (!touches) continue;
       final link = st.primaryLink;
@@ -358,8 +424,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         if (st.contacts.isEmpty && st.groups.isEmpty) continue;
         out.add(ComposeTarget.chat(
           teamId: st.teamId,
-          hasTeams: hasTeams,
-          teamName: st.teamId == null ? null : teamNames[st.teamId],
+          hasTeams: ctx.hasTeams,
+          teamName: st.teamId == null ? null : ctx.teamNames[st.teamId],
           contactDetail: _contactDetailFor(st.contacts),
           contacts: st.contacts,
           groups: st.groups,
@@ -372,11 +438,11 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         linkType: link.linkType,
         dmTargets: link.dmTargets,
       );
-      final template = templateBySignature[baseKey];
+      final template = ctx.templateBySignature[baseKey];
       if (template == null || !template.isDmType) continue;
       out.add(ComposeTarget.connector(
         template,
-        connectionCount: connectionCount(template),
+        connectionCount: ctx.connectionCount(template),
         contactDetail: _contactDetailFor(st.contacts),
         contacts: st.contacts,
       ));
@@ -396,21 +462,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   ///    `compose.targets` is `addresses` or `contacts`), with any previously
   ///    used for *that exact address* ordered first (by recorded MRU).
   Future<List<ComposeTarget>> _searchByEmail(String email) async {
-    final teams = await TeamUser.getActive();
-    final hasTeams = teams.isNotEmpty;
-    final teamNames = {for (final t in teams) t.teamId: t.teamName};
-
-    final createTargets = await loadCreateTargets();
-    final connectionCountByTwistId = <BigInt, int>{};
-    final seenInstances = <TwistInstanceId>{};
-    for (final t in createTargets) {
-      if (seenInstances.add(t.twist.id)) {
-        connectionCountByTwistId[t.twist.twistId] =
-            (connectionCountByTwistId[t.twist.twistId] ?? 0) + 1;
-      }
-    }
-    int connectionCount(CreateTarget t) =>
-        connectionCountByTwistId[t.twist.twistId] ?? 1;
+    final ctx = await _searchContextFor();
 
     // Resolve the typed address to a known contact (if any) so we can both
     // pre-fill the roster and detect prior use for that address.
@@ -432,13 +484,13 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final chatDetail = matched.isEmpty ? email : matched.first.nameOrEmail;
 
     // 1. Plot Chat options (Personal + each active team), pinned to the top.
-    final teamScopes = <BigInt?>[null, ...teams.map((t) => t.teamId)];
+    final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
     final chats = <ComposeTarget>[
       for (final teamId in teamScopes)
         ComposeTarget.chat(
           teamId: teamId,
-          hasTeams: hasTeams,
-          teamName: teamId == null ? null : teamNames[teamId],
+          hasTeams: ctx.hasTeams,
+          teamName: teamId == null ? null : ctx.teamNames[teamId],
           contactDetail: chatDetail,
           contacts: chatContacts,
           groups: const [],
@@ -447,11 +499,11 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     ];
 
     // 2. Address-capable connections, previously-used-for-this-address first.
-    final addressCapable = createTargets
+    final addressCapable = ctx.createTargets
         .where((t) => t.isDmType)
         .map((t) => ComposeTarget.connector(
               t,
-              connectionCount: connectionCount(t),
+              connectionCount: ctx.connectionCount(t),
               contactDetail: matched.isEmpty ? email : matched.first.nameOrEmail,
               contacts: contactId == null ? const [] : [contactId],
             ))
@@ -649,6 +701,42 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     }
     return out;
   }
+}
+
+/// Query-independent inputs shared across base-list materialization and
+/// per-keystroke search synthesis (teams, connector create-targets, and the
+/// recent authored-thread roster scan). Cached by [ComposeTargetsBloc] and
+/// rebuilt only when [ComposeTargetsBloc.refresh] / a cache prepend invalidates
+/// it, so typing a name doesn't re-run these queries on every keystroke.
+class _ComposeSearchContext {
+  const _ComposeSearchContext({
+    required this.teams,
+    required this.hasTeams,
+    required this.teamNames,
+    required this.createTargets,
+    required this.connectionCountByTwistId,
+    required this.templateBySignature,
+    required this.scan,
+  });
+
+  final List<TeamUserRow> teams;
+  final bool hasTeams;
+  final Map<BigInt, String> teamNames;
+  final List<CreateTarget> createTargets;
+
+  /// Connection count per connector package (same twistId = same connector),
+  /// so the account-label parenthetical shows only when >1 connection.
+  final Map<BigInt, int> connectionCountByTwistId;
+
+  /// Connector templates indexed by their bare connection signature
+  /// ([CreateTarget.key]).
+  final Map<String, CreateTarget> templateBySignature;
+
+  /// Recent authored-thread roster scan (with a by-signature index).
+  final _ComposeScan scan;
+
+  int connectionCount(CreateTarget t) =>
+      connectionCountByTwistId[t.twist.twistId] ?? 1;
 }
 
 /// Result of the authored-thread scan, with a signature index for combo

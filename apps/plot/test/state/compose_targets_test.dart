@@ -509,6 +509,68 @@ void main() {
       expect(sigs, isNot(contains(noreplyCombo)));
     });
 
+    test(
+        'per-keystroke search reuses a cached context; refresh() invalidates it',
+        () async {
+      // Guards the search-performance optimization: a name search must NOT
+      // re-run the team / connector / authored-thread queries on every
+      // keystroke. Instead it reads a context cached at refresh() time, so a
+      // store mutation isn't reflected until the cache is invalidated. Before
+      // the optimization every search re-scanned the store, so the new combo
+      // appeared immediately and the "stale" expectation below would fail.
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final priorityId = Uuid.generate();
+
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      // Build the initial context — no connectors, no authored history yet.
+      await bloc.refresh();
+
+      // Now add an authored Gmail DM to Greg *after* the context was cached.
+      final gmail = await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final thread = Uuid.generate();
+      await _insertThread(store, thread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, thread, author: self);
+      await _insertLink(store, thread,
+          createdBy: gmail, type: 'email', channelId: null);
+
+      final gregCombo = composeConnectorSignature(
+        twistInstanceId: gmail.toString(),
+        channelId: null,
+        linkType: 'email',
+        dmTargets: 'addresses',
+        contacts: [greg],
+      );
+
+      // Cached context (from the first refresh) has neither the connector
+      // template nor the authored thread, so the combo isn't synthesized yet.
+      final stale = await bloc.search('greg');
+      expect(stale.map((t) => t.signature), isNot(contains(gregCombo)),
+          reason: 'search must not re-scan the store on every keystroke');
+
+      // refresh() invalidates the cache; the next search rebuilds from fresh
+      // data and now surfaces the combo.
+      await bloc.refresh();
+      final fresh = await bloc.search('greg');
+      expect(fresh.map((t) => t.signature), contains(gregCombo),
+          reason: 'refresh() must invalidate the cached search context');
+    });
+
     test('rankFocusesGlobal orders focuses by most-recent authored thread',
         () async {
       final self = Uuid.generate();
