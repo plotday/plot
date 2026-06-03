@@ -394,8 +394,6 @@ class _TargetPickerListState extends State<TargetPickerList> {
     if (widget.inline) {
       final typography = context.theme.typography;
       final colors = context.theme.colors;
-      final borderRadius = context.theme.style.borderRadius;
-      final borderWidth = context.theme.style.borderWidth;
       return FTextField(
         // `_runSearch` reads `_controller.text` itself, so the control's
         // onChange (which delivers a TextEditingValue) just needs to fire it.
@@ -434,19 +432,31 @@ class _TargetPickerListState extends State<TargetPickerList> {
               TextStyleDelta.delta(fontSize: typography.md.fontSize),
             ),
           ]),
-          // Neutral focused border (tweak 3): forui/the app theme paint the
-          // focused border with the accent colour by default; override the
-          // focused variant back to the resting border colour so focusing the
-          // filter doesn't tint it.
+          // Match the NoteEditor border (see EditableArea in text_field.dart):
+          // a 1px neutral [colors.border] outline with [editorBorderRadius],
+          // identical in the resting and focused states. The `all` override
+          // replaces the global delta's thinner (0.5) resting border, and the
+          // focused override keeps the border neutral — forui/the app theme
+          // paint the focused border with the accent colour by default — so
+          // focusing the filter doesn't tint or thicken it.
           border: FVariantsValueDelta.delta([
+            FVariantValueDeltaOperation.all(
+              OutlineInputBorder(
+                borderSide: BorderSide(
+                  color: colors.border,
+                  width: 1.0,
+                ),
+                borderRadius: editorBorderRadius,
+              ),
+            ),
             FVariantValueDeltaOperation.exact(
               {FTextFieldVariantConstraint.focused},
               OutlineInputBorder(
                 borderSide: BorderSide(
                   color: colors.border,
-                  width: borderWidth,
+                  width: 1.0,
                 ),
-                borderRadius: borderRadius.md,
+                borderRadius: editorBorderRadius,
               ),
             ),
           ]),
