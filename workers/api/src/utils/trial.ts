@@ -208,9 +208,9 @@ export async function completeTrialTodos(
 }
 
 /**
- * Find the trial thread for a user: their private welcome-user thread in
- * Using Plot (seeded by activate_invited_user). Reminder/upgrade/expiry
- * notes land on the same thread alongside the welcome message.
+ * Find the trial thread for a user: their private welcome-user thread in the
+ * Inbox (seeded by activate_invited_user). Reminder/upgrade/expiry notes land
+ * on the same thread alongside the welcome message.
  */
 async function findTrialThread(
   db: Kysely<DB>,
@@ -263,7 +263,7 @@ export async function handleTrialUpgrade(
   // Complete outstanding todo tags
   await completeTrialTodos(db, trial.threadId);
 
-  // Notify sync for the @plot.app priority
+  // Notify sync for the welcome thread's priority (the user's Inbox)
   try {
     const syncNotifyId = env.SYNC_NOTIFY.idFromName(trial.priorityId);
     const syncNotifyDO = env.SYNC_NOTIFY.get(syncNotifyId);
@@ -411,7 +411,7 @@ export async function expireTrial(
     // Complete any remaining todos
     await completeTrialTodos(db, trial.threadId);
 
-    // Notify sync for @plot.app priority
+    // Notify sync for the welcome thread's priority (the user's Inbox)
     try {
       const syncNotifyId = env.SYNC_NOTIFY.idFromName(trial.priorityId);
       const syncNotifyDO = env.SYNC_NOTIFY.get(syncNotifyId);

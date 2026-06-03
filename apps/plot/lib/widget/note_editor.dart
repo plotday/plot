@@ -616,8 +616,9 @@ class NoteEditorState extends State<NoteEditor> {
                               if (_isEmpty)
                                 SpeechDictationButton(
                                   onResult: (text) {
-                                    _editorKey.currentState
-                                        ?.insertTextAtCursor(text);
+                                    _editorKey.currentState?.insertTextAtCursor(
+                                      text,
+                                    );
                                   },
                                   onError: (error) {
                                     Alert.show(context, error);
@@ -706,10 +707,7 @@ class NoteEditorState extends State<NoteEditor> {
     if (editingNote != null) {
       return EditingState(quotePreview: _previewOf(editingNote.content));
     }
-    return PillRowState(
-      pills: _buildPills(s),
-      activeId: _activePillId(s),
-    );
+    return PillRowState(pills: _buildPills(s), activeId: _activePillId(s));
   }
 
   /// Whether any of the user's linked actors matches the candidate. Threads
@@ -800,64 +798,68 @@ class NoteEditorState extends State<NoteEditor> {
         s.thread.groups.isNotEmpty;
 
     if (_hasMentionableTwist(s)) {
-      pills.add(TopBarPill(
-        id: 'reply',
-        label: 'Reply',
-        avatarSlot: _replyAllAvatars(s.thread),
-        onTap: _activatePlotReply,
-        onAvatarsTap: hasSharing ? _openRecipientPicker : null,
-      ));
-      pills.add(TopBarPill(
-        id: 'private',
-        label: 'Private note',
-        onTap: _activatePrivate,
-      ));
+      pills.add(
+        TopBarPill(
+          id: 'reply',
+          label: 'Reply',
+          avatarSlot: _replyAllAvatars(s.thread),
+          onTap: _activatePlotReply,
+          onAvatarsTap: hasSharing ? _openRecipientPicker : null,
+        ),
+      );
+      pills.add(
+        TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ),
+      );
       return pills;
     }
 
     if (isPlotThread) {
       if (!hasSharing) {
         // Unshared Plot thread: just Note / Task.
-        pills.add(TopBarPill(
-          id: 'note',
-          label: 'Note',
-          onTap: _activatePlotNote,
-        ));
-        pills.add(TopBarPill(
-          id: 'task',
-          label: 'Task',
-          onTap: _activatePlotTask,
-        ));
+        pills.add(
+          TopBarPill(id: 'note', label: 'Note', onTap: _activatePlotNote),
+        );
+        pills.add(
+          TopBarPill(id: 'task', label: 'Task', onTap: _activatePlotTask),
+        );
         return pills;
       }
 
       // Shared Plot thread.
-      pills.add(TopBarPill(
-        id: 'reply',
-        label: 'Reply',
-        avatarSlot: _replyAllAvatars(s.thread),
-        onTap: _activatePlotReply,
-        onAvatarsTap: _openRecipientPicker,
-      ));
+      pills.add(
+        TopBarPill(
+          id: 'reply',
+          label: 'Reply',
+          avatarSlot: _replyAllAvatars(s.thread),
+          onTap: _activatePlotReply,
+          onAvatarsTap: _openRecipientPicker,
+        ),
+      );
       final orig = _originalAuthorIfDistinct(s);
       if (orig != null) {
-        pills.add(TopBarPill(
-          id: 'replyOriginal',
-          label: 'Reply to ${_displayName(orig)}',
-          avatarSlot: [orig.toString()],
-          onTap: () => _activateReplyToOriginal(orig),
-        ));
+        pills.add(
+          TopBarPill(
+            id: 'replyOriginal',
+            label: 'Reply to ${_displayName(orig)}',
+            avatarSlot: [orig.toString()],
+            onTap: () => _activateReplyToOriginal(orig),
+          ),
+        );
       }
-      pills.add(TopBarPill(
-        id: 'task',
-        label: 'Task',
-        onTap: _activatePlotTask,
-      ));
-      pills.add(TopBarPill(
-        id: 'private',
-        label: 'Private note',
-        onTap: _activatePrivate,
-      ));
+      pills.add(
+        TopBarPill(id: 'task', label: 'Task', onTap: _activatePlotTask),
+      );
+      pills.add(
+        TopBarPill(
+          id: 'private',
+          label: 'Private note',
+          onTap: _activatePrivate,
+        ),
+      );
       return pills;
     }
 
@@ -865,40 +867,50 @@ class NoteEditorState extends State<NoteEditor> {
     final noteLabel = cfg.noteLabel ?? 'Note';
     switch (cfg.sharingModel) {
       case SharingModel.message:
-        pills.add(TopBarPill(
-          id: 'reply',
-          label: cfg.noteLabel ?? 'Reply',
-          avatarSlot: _replyAllAvatars(s.thread),
-          onTap: _activateConnectorReply,
-          onAvatarsTap: _openRecipientPicker,
-        ));
+        pills.add(
+          TopBarPill(
+            id: 'reply',
+            label: cfg.noteLabel ?? 'Reply',
+            avatarSlot: _replyAllAvatars(s.thread),
+            onTap: _activateConnectorReply,
+            onAvatarsTap: _openRecipientPicker,
+          ),
+        );
         final orig = _originalAuthorIfDistinct(s);
         if (orig != null) {
-          pills.add(TopBarPill(
-            id: 'replyOriginal',
-            label: 'Reply to ${_displayName(orig)}',
-            avatarSlot: [orig.toString()],
-            onTap: () => _activateReplyToOriginal(orig),
-          ));
+          pills.add(
+            TopBarPill(
+              id: 'replyOriginal',
+              label: 'Reply to ${_displayName(orig)}',
+              avatarSlot: [orig.toString()],
+              onTap: () => _activateReplyToOriginal(orig),
+            ),
+          );
         }
-        pills.add(TopBarPill(
-          id: 'private',
-          label: 'Private note',
-          onTap: _activatePrivate,
-        ));
+        pills.add(
+          TopBarPill(
+            id: 'private',
+            label: 'Private note',
+            onTap: _activatePrivate,
+          ),
+        );
         return pills;
       case SharingModel.channel:
       case SharingModel.thread:
-        pills.add(TopBarPill(
-          id: 'comment',
-          label: noteLabel,
-          onTap: _activateConnectorReply,
-        ));
-        pills.add(TopBarPill(
-          id: 'private',
-          label: 'Private note',
-          onTap: _activatePrivate,
-        ));
+        pills.add(
+          TopBarPill(
+            id: 'comment',
+            label: noteLabel,
+            onTap: _activateConnectorReply,
+          ),
+        );
+        pills.add(
+          TopBarPill(
+            id: 'private',
+            label: 'Private note',
+            onTap: _activatePrivate,
+          ),
+        );
         return pills;
     }
   }
@@ -970,16 +982,14 @@ class NoteEditorState extends State<NoteEditor> {
     final orig = _originalAuthorIfDistinct(s);
 
     final picker = RecipientPickerModal(
-      threadContacts: s.thread.activeContacts
-          .map((c) => c.toString())
-          .toList(),
+      threadContacts: s.thread.activeContacts.map((c) => c.toString()).toList(),
       threadGroups: s.thread.groups.map((g) => g.toString()).toList(),
       initialContactSelection:
           (draft.accessContacts?.map((a) => a.toUuid().toString()).toList()) ??
-              s.thread.activeContacts.map((c) => c.toString()).toList(),
+          s.thread.activeContacts.map((c) => c.toString()).toList(),
       initialGroupSelection:
           (draft.accessGroups?.map((a) => a.toUuid().toString()).toList()) ??
-              s.thread.groups.map((g) => g.toString()).toList(),
+          s.thread.groups.map((g) => g.toString()).toList(),
       self: self.toString(),
       originalAuthor: orig?.toString(),
     );
@@ -988,16 +998,14 @@ class NoteEditorState extends State<NoteEditor> {
     if (result == null) return;
     if (!mounted) return;
     await bloc.editNoteRecipients(
-      accessContacts: result.accessContacts
-          ?.map(ActorId.fromString)
+      accessContacts: result.accessContacts?.map(ActorId.fromString).toList(),
+      accessGroups: result.accessGroups?.map(ActorId.fromString).toList(),
+      threadContactsAdded: result.threadContactsAdded
+          .map(ActorId.fromString)
           .toList(),
-      accessGroups: result.accessGroups
-          ?.map(ActorId.fromString)
+      threadGroupsAdded: result.threadGroupsAdded
+          .map(ActorId.fromString)
           .toList(),
-      threadContactsAdded:
-          result.threadContactsAdded.map(ActorId.fromString).toList(),
-      threadGroupsAdded:
-          result.threadGroupsAdded.map(ActorId.fromString).toList(),
     );
   }
 
@@ -1073,8 +1081,7 @@ class NoteEditorState extends State<NoteEditor> {
           (a) =>
               a.type == UserActionType.file ||
               a.type == UserActionType.external ||
-              (a.type == UserActionType.createLink &&
-                  !widget.isNewThreadMode),
+              (a.type == UserActionType.createLink && !widget.isNewThreadMode),
         )
         .toList();
     if (attachments.isEmpty) return const SizedBox.shrink();
@@ -1191,7 +1198,8 @@ class NoteEditorState extends State<NoteEditor> {
     final statuses = (channelType?.statuses?.isNotEmpty ?? false)
         ? channelType!.statuses!
         : (twistType?.statuses ?? const <LinkStatus>[]);
-    final currentStatusLabel = (channelType?.statuses ?? const <LinkStatus>[])
+    final currentStatusLabel =
+        (channelType?.statuses ?? const <LinkStatus>[])
             .where((s) => s.status == action.status)
             .firstOrNull
             ?.label ??
@@ -1233,9 +1241,7 @@ class NoteEditorState extends State<NoteEditor> {
                   TextSpan(text: action.title),
                   TextSpan(
                     text: '  ${action.subtitle}',
-                    style: TextStyle(
-                      color: context.theme.plotColors.veryMuted,
-                    ),
+                    style: TextStyle(color: context.theme.plotColors.veryMuted),
                   ),
                 ],
               ),
@@ -1288,10 +1294,8 @@ class NoteEditorState extends State<NoteEditor> {
     final result = await SelectModal.open<LinkStatus>(
       context,
       items: (_) async => [SelectGroup(title: null, items: statuses)],
-      itemBuilder: (s, _) => ListTile(
-        body: Text(s.label),
-        selected: s.status == action.status,
-      ),
+      itemBuilder: (s, _) =>
+          ListTile(body: Text(s.label), selected: s.status == action.status),
       selectedValue: statuses
           .where((s) => s.status == action.status)
           .firstOrNull,
@@ -1416,9 +1420,7 @@ class NoteEditorState extends State<NoteEditor> {
                     ),
               style: ButtonStyle.primary,
               loading: _saving,
-              enabled:
-                  !_saving &&
-                  (!_isEmpty || _currentActions.isNotEmpty),
+              enabled: !_saving && (!_isEmpty || _currentActions.isNotEmpty),
             ),
           ],
         );
@@ -1531,12 +1533,15 @@ class NoteEditorState extends State<NoteEditor> {
     final bindings = <ShortcutActivator, VoidCallback>{};
 
     // ⌘T — toggle self task
-    bindings[platformSingleActivator(LogicalKeyboardKey.keyT)] =
-        () => _shortcutToggleSelfTask(context);
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyT)] = () =>
+        _shortcutToggleSelfTask(context);
 
     // ⌘⇧L — add link
-    bindings[platformSingleActivator(LogicalKeyboardKey.keyL, shift: true)] =
-        () => _shortcutAddLink(context);
+    bindings[platformSingleActivator(
+      LogicalKeyboardKey.keyL,
+      shift: true,
+    )] = () =>
+        _shortcutAddLink(context);
 
     return bindings;
   }
@@ -1544,7 +1549,7 @@ class NoteEditorState extends State<NoteEditor> {
   void _shortcutToggleSelfTask(BuildContext context) {
     if (_saving) return;
     if (widget.isNewThreadMode) {
-      if (widget.viewerMode || widget.thread!.priority.isViewer) return;
+      if (widget.viewerMode) return;
       final updatedNote = widget.draft.toggleTag(Tag.todo, Base.actorId);
       widget.onDraftChanged?.call(widget.thread!, note: updatedNote);
     } else {
@@ -1711,18 +1716,21 @@ class NoteEditorState extends State<NoteEditor> {
   List<ActorId> _getActiveTwistMentions({required bool includeConnectors}) {
     if (widget.isNewThreadMode) return const [];
     final s = context.read<ThreadBloc>().state;
-    return s.threadTwists.where((t) {
-      if (t.isSource) {
-        return includeConnectors &&
-            t.userConnected &&
-            t.defaultMentionCreated;
-      }
-      final isAuthor =
-          s.notes.any((n) => n.authorId.toUuid() == t.id) ||
-          s.links.any((l) => l.createdBy == t.id);
-      return (isAuthor && t.defaultMentionCreated) ||
-          t.defaultMentionMentioned;
-    }).map((t) => ActorId.fromUuid(t.id)).toList();
+    return s.threadTwists
+        .where((t) {
+          if (t.isSource) {
+            return includeConnectors &&
+                t.userConnected &&
+                t.defaultMentionCreated;
+          }
+          final isAuthor =
+              s.notes.any((n) => n.authorId.toUuid() == t.id) ||
+              s.links.any((l) => l.createdBy == t.id);
+          return (isAuthor && t.defaultMentionCreated) ||
+              t.defaultMentionMentioned;
+        })
+        .map((t) => ActorId.fromUuid(t.id))
+        .toList();
   }
 
   Future<Note> _finalizeNoteDraft(String body, {bool alt = false}) async {
@@ -1766,11 +1774,10 @@ class NoteEditorState extends State<NoteEditor> {
 
     final Value<List<ActorId>?> accessContactsValue =
         (widget.viewerMode || replyRestricted)
-            ? Value(<ActorId>{
-                ...replyAccessContacts,
-                ...readOnlyThreadShare,
-              }.toList())
-            : const Value.absent();
+        ? Value(
+            <ActorId>{...replyAccessContacts, ...readOnlyThreadShare}.toList(),
+          )
+        : const Value.absent();
 
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
@@ -1848,8 +1855,8 @@ class NoteEditorState extends State<NoteEditor> {
     final selfPrimary = Base.actorIdOrNull?.toUuid();
     final List<Uuid>? mergedContacts =
         (selfPrimary != null && !currentContacts.any(selfActorIds.contains))
-            ? [...currentContacts, selfPrimary]
-            : null;
+        ? [...currentContacts, selfPrimary]
+        : null;
 
     // Create Thread — title null signals server to generate AI title
     final thread = widget.thread!.copyWith(

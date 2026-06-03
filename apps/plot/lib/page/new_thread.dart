@@ -16,7 +16,6 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/platform.dart';
@@ -44,6 +43,7 @@ class NewThreadPage extends StatefulWidget {
     @QueryParam('duration') this.duration,
     @QueryParam('priorityId') this.priorityId,
     @QueryParam('sharedUrl') this.sharedUrl,
+    @QueryParam('feedback') this.feedback = false,
   });
 
   final String? startTime;
@@ -51,6 +51,10 @@ class NewThreadPage extends StatefulWidget {
   final int? duration; // Duration in minutes
   final String? priorityId;
   final String? sharedUrl;
+
+  /// When true (set by the Help & Feedback command), the draft is pre-shared
+  /// with the Plot Team group so the new Inbox thread reaches the Plot team.
+  final bool feedback;
 
   @override
   State<NewThreadPage> createState() => NewThreadPageState();
@@ -210,14 +214,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
 
     if (key.startsWith('twist:')) {
-      final twist =
-          chatTwists.where((t) => 'twist:${t.id}' == key).firstOrNull;
+      final twist = chatTwists.where((t) => 'twist:${t.id}' == key).firstOrNull;
       if (twist != null) _selectTwist(twist, recordUsage: false);
       return;
     }
 
-    final target =
-        _allConnectionTargets.where((t) => t.key == key).firstOrNull;
+    final target = _allConnectionTargets.where((t) => t.key == key).firstOrNull;
     if (target != null) {
       await _applyConnectionChoice(ConnectionChoice.target(target));
       if (!mounted) return;
@@ -304,6 +306,21 @@ class NewThreadPageState extends State<NewThreadPage> {
           draft: true,
         );
         await bloc.updateDraft(updatedDraft);
+      }
+    }
+
+    // Help & Feedback: pre-share the draft with the Plot Team group so the
+    // new Inbox thread reaches the Plot team. Resolved locally (offline);
+    // syncs when online.
+    if (widget.feedback && mounted) {
+      final groupId = await Group.feedbackTargetId();
+      if (groupId != null && mounted) {
+        final draft = bloc.state.draft;
+        if (!draft.groups.contains(groupId)) {
+          await bloc.updateDraft(
+            draft.copyWith(groups: Value([...draft.groups, groupId])),
+          );
+        }
       }
     }
 
@@ -592,10 +609,7 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   Future<void> _openConnectionPicker() async {
     final twists = context.read<PriorityBloc>().state.twists;
-    final picked = await ConnectionPickerModal.open(
-      context,
-      twists: twists,
-    );
+    final picked = await ConnectionPickerModal.open(context, twists: twists);
     if (picked == null || !mounted) return;
     // The initial _loadConnections() from didChangeDependencies can race
     // ahead of the TwistInstance cache (populated lazily via a Drift watch
@@ -641,7 +655,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (state.draftNote.isAssignedTo(Base.actorId)) {
       return ConnectionChoice.plotTask;
     }
-    final hasContacts = state.draft.contacts.isNotEmpty ||
+    final hasContacts =
+        state.draft.contacts.isNotEmpty ||
         state.draft.groups.isNotEmpty ||
         state.draft.inviteEmails.isNotEmpty;
     if (hasContacts || _hadContactsThisSession) {
@@ -832,7 +847,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Plot target: mode-aware placeholder.
     final isTask = state.draftNote.isAssignedTo(Base.actorId);
     final draft = state.draft;
-    final hasContacts = draft.contacts.isNotEmpty ||
+    final hasContacts =
+        draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
         draft.inviteEmails.isNotEmpty;
     final shared = hasContacts || _hadContactsThisSession;
@@ -852,7 +868,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     final isTask = state.draftNote.isAssignedTo(Base.actorId);
     if (isTask) return 'Save task';
     final draft = state.draft;
-    final hasContacts = draft.contacts.isNotEmpty ||
+    final hasContacts =
+        draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
         draft.inviteEmails.isNotEmpty;
     final shared = hasContacts || _hadContactsThisSession;
@@ -1042,24 +1059,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                 prev.draftNote != curr.draftNote ||
                 prev.context != curr.context,
             builder: (context, state) {
-              final isViewerMode = state.draft.priority.isViewer;
-
-              if (state.draft.priority.isTwistDev) {
-                return Scaffold(
-                  translucent: true,
-                  scrollable: false,
-                  childPad: false,
-                  body: Center(
-                    child: Text(
-                      'Select a thread',
-                      style: context.theme.typography.sm.copyWith(
-                        color: context.theme.plotColors.muted,
-                      ),
-                    ),
-                  ),
-                );
-              }
-
               return PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, result) {
@@ -1094,10 +1093,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (!isViewerMode)
-                                    _buildComposeSurface(context, state),
-                                  if (!isViewerMode)
-                                    SizedBox(height: context.theme.spacing.md),
+                                  _buildComposeSurface(context, state),
+                                  SizedBox(height: context.theme.spacing.md),
                                   Flexible(
                                     child: EditableArea(
                                       padding: false,
@@ -1115,16 +1112,11 @@ class NewThreadPageState extends State<NewThreadPage> {
                                           onDraftChanged: _handleDraftChanged,
                                           flushToBottom: true,
                                           showScheduleActions: false,
-                                          hint: state.draft.priority.isPlotApp
-                                              ? 'Ask for help or share feedback'
-                                              : _computeEditorHint(state),
-                                          sendLabel: state.draft.priority.isPlotApp
-                                              ? null
-                                              : _computeSendLabel(state),
+                                          hint: _computeEditorHint(state),
+                                          sendLabel: _computeSendLabel(state),
                                           additionalMentions: _twistMentions,
                                           onSubmitted: _onChatSubmitted,
                                           submitValidator: _validateDmSubmit,
-                                          viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,
                                           onTwistMentioned: _onTwistMentioned,
@@ -1165,12 +1157,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        if (!isViewerMode)
-                                          _buildComposeSurface(context, state),
-                                        if (!isViewerMode)
-                                          SizedBox(
-                                            height: context.theme.spacing.md,
-                                          ),
+                                        _buildComposeSurface(context, state),
+                                        SizedBox(
+                                          height: context.theme.spacing.md,
+                                        ),
                                         Flexible(
                                           child: EditableArea(
                                             padding: false,
@@ -1190,26 +1180,15 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                     _handleDraftChanged,
                                                 flushToBottom: false,
                                                 showScheduleActions: false,
-                                                hint:
-                                                    state
-                                                        .draft
-                                                        .priority
-                                                        .isPlotApp
-                                                    ? 'Ask for help or share feedback'
-                                                    : _computeEditorHint(state),
-                                                sendLabel:
-                                                    state
-                                                        .draft
-                                                        .priority
-                                                        .isPlotApp
-                                                    ? null
-                                                    : _computeSendLabel(state),
+                                                hint: _computeEditorHint(state),
+                                                sendLabel: _computeSendLabel(
+                                                  state,
+                                                ),
                                                 additionalMentions:
                                                     _twistMentions,
                                                 onSubmitted: _onChatSubmitted,
                                                 submitValidator:
                                                     _validateDmSubmit,
-                                                viewerMode: isViewerMode,
                                                 selectedTwist: _selectedTwist,
                                                 onTwistSelected: _selectTwist,
                                                 onTwistMentioned:
@@ -1270,9 +1249,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context,
     PriorityState state,
   ) {
-    final isViewerMode = state.draft.priority.isViewer;
-    if (isViewerMode) return const {};
-
     return {
       // ⌘⇧S — share (contacts)
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {

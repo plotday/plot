@@ -117,8 +117,7 @@ class ThreadBloc extends Cubit<ThreadState> {
             ...groupsToAdd.where((id) => !state.thread.groups.contains(id)),
           ];
 
-    final threadChanged =
-        contactsToAdd.isNotEmpty || groupsToAdd.isNotEmpty;
+    final threadChanged = contactsToAdd.isNotEmpty || groupsToAdd.isNotEmpty;
     final newThread = threadChanged
         ? state.thread.copyWith(
             contacts: Value(newThreadContacts),
@@ -174,26 +173,32 @@ class ThreadBloc extends Cubit<ThreadState> {
         accessContacts: Value(replyAccessContacts),
         addMentions: replyAccessContacts,
       );
-    } else if (note == null && state.replyTo != null && state.replyTo!.isPrivate) {
+    } else if (note == null &&
+        state.replyTo != null &&
+        state.replyTo!.isPrivate) {
       // Clearing reply to a private note — reset draft private and mentions
       draft = draft.copyWith(accessContacts: const Value(null), mentions: []);
     }
-    emit(state.copyWith(
-      replyTo: note,
-      clearReplyTo: note == null,
-      clearEditingNote: note != null,
-      draft: draft,
-    ));
+    emit(
+      state.copyWith(
+        replyTo: note,
+        clearReplyTo: note == null,
+        clearEditingNote: note != null,
+        draft: draft,
+      ),
+    );
   }
 
   /// Sets the note being edited. Pass null to clear.
   /// Clears reply state when editing (mutual exclusion).
   void setEditingNote(Note? note) {
-    emit(state.copyWith(
-      editingNote: note,
-      clearEditingNote: note == null,
-      clearReplyTo: note != null,
-    ));
+    emit(
+      state.copyWith(
+        editingNote: note,
+        clearEditingNote: note == null,
+        clearReplyTo: note != null,
+      ),
+    );
   }
 
   /// Saves an edited note and clears editing state.
@@ -245,14 +250,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     }
 
     // Convert the draft to a non-draft.
-    // Viewer members' notes are always private (enforced by DB), so set it
-    // locally for immediate UI feedback instead of waiting for sync.
-    note = note.copyWith(
-      draft: false,
-      accessContacts: currentThread.priority.isViewer
-          ? const Value([])
-          : const Value.absent(),
-    );
+    note = note.copyWith(draft: false);
 
     // Create fresh draft for the thread (in-memory only, will be saved when content is added)
     // Don't save empty draft - it will be saved when content is added via updateDraft()
@@ -286,7 +284,10 @@ class ThreadBloc extends Cubit<ThreadState> {
     unawaited(_doDropHiddenRoleContacts(thread, links));
   }
 
-  Future<void> _doDropHiddenRoleContacts(Thread thread, List<Link> links) async {
+  Future<void> _doDropHiddenRoleContacts(
+    Thread thread,
+    List<Link> links,
+  ) async {
     final sharingModel = Thread.resolveSharingModel(links);
     if (sharingModel != SharingModel.message) return;
 
@@ -300,7 +301,9 @@ class ThreadBloc extends Cubit<ThreadState> {
     final meta = thread.contactMeta;
     final toDrop = thread.contacts.where((contactId) {
       final entry = meta[contactId.toString()];
-      final role = entry is Map<String, dynamic> ? entry['role'] as String? : null;
+      final role = entry is Map<String, dynamic>
+          ? entry['role'] as String?
+          : null;
       return role != null && hiddenRoleIds.contains(role);
     }).toList();
 
@@ -324,7 +327,11 @@ class ThreadBloc extends Cubit<ThreadState> {
       await updatedThread.save();
       emit(state.copyWith(thread: updatedThread));
     } catch (e, stackTrace) {
-      log.severe('Error dropping hidden-role contacts after send: $e', e, stackTrace);
+      log.severe(
+        'Error dropping hidden-role contacts after send: $e',
+        e,
+        stackTrace,
+      );
       Tracker.captureException(e, stackTrace);
     }
   }
@@ -356,9 +363,7 @@ class ThreadBloc extends Cubit<ThreadState> {
       tags,
     ) {
       // Calculate tag suggestions: common tags first, then all other tags
-      const actionTags = [
-        Tag.todo,
-      ];
+      const actionTags = [Tag.todo];
 
       // Common tags (excluding action tags)
       final commonTagsFiltered = tags
@@ -384,11 +389,10 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     // Watch reactions for the thread (thread-level + note-level union).
     _reactionsSubscription?.cancel();
-    _reactionsSubscription = Note.watchReactionsForActivity(
-      state.thread.id,
-    ).listen((reactions) {
-      emit(state.copyWith(reactions: reactions));
-    });
+    _reactionsSubscription = Note.watchReactionsForActivity(state.thread.id)
+        .listen((reactions) {
+          emit(state.copyWith(reactions: reactions));
+        });
 
     _loadNotes();
   }
@@ -414,17 +418,19 @@ class ThreadBloc extends Cubit<ThreadState> {
     // with stale filter args briefly overwrites the latest notes list
     // during sync — producing a "full → 1 note → full" flash.
     _notesSubscription?.cancel();
-    _notesSubscription = Note.watch(
-      state.thread.id,
-      archived: state.showArchived,
-      draft: false,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      reactionFilter:
-          state.reactionFilter.isNotEmpty ? state.reactionFilter : null,
-      threadNoteId: state.threadNoteId,
-    ).listen((notes) {
-      emit(state.copyWith(notes: notes));
-    });
+    _notesSubscription =
+        Note.watch(
+          state.thread.id,
+          archived: state.showArchived,
+          draft: false,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          reactionFilter: state.reactionFilter.isNotEmpty
+              ? state.reactionFilter
+              : null,
+          threadNoteId: state.threadNoteId,
+        ).listen((notes) {
+          emit(state.copyWith(notes: notes));
+        });
   }
 
   final List<StreamSubscription<void>> _subscriptions;

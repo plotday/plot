@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 351;
+  int get schemaVersion => 352;
 
   @override
   MigrationStrategy get migration {
@@ -3781,6 +3781,13 @@ class Store extends _$Store {
       // has no remaining consumers; views are recreated at the end of
       // onUpgrade, but only those still declared in the Drift schema.
       await m.database.customStatement('DROP VIEW IF EXISTS priority_children');
+    }
+
+    if (from < 352) {
+      // Sync the group `key` (e.g. `@plot.team`) so Help & Feedback can resolve
+      // the Plot Team group offline. _safeAddColumn keeps it idempotent for
+      // test harnesses opened at the current schema.
+      await _safeAddColumn(m, groups, groups.key);
     }
   }
 

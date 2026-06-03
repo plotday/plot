@@ -12,6 +12,7 @@ typedef ThreadId = Uuid;
 typedef ThreadWatchResult = ({
   List<Thread> threads,
   int rawRowCount,
+
   /// Tail cursor for the last thread in this emission, populated only by
   /// the activity-feed fast path. The bloc uses this for cursor-paginated
   /// fetch-more so the cursor matches the SQL's ordering exactly (Dart-
@@ -38,6 +39,7 @@ class Threads extends Table
   // (joined from thread_priority) so the client keeps this as a denormalized
   // "my current filing" pointer. Peer filings live in `thread_priorities`.
   BlobColumn get priorityId => blob().map(const UuidConverter())();
+
   /// Everyone the thread is shared with, as contact ids. Includes the
   /// author's primary contact for human-authored threads. Populated from
   /// `thread.contacts` on the server.
@@ -91,8 +93,7 @@ class Threads extends Table
   /// Drag-to-reorder position within the Doing section of the unified feed
   /// (and within a single day of the Scheduled section). Previously stored
   /// on the per-user schedule row.
-  RealColumn get stateOrder =>
-      real().nullable().map(const OrderConverter())();
+  RealColumn get stateOrder => real().nullable().map(const OrderConverter())();
 
   /// Per-user "do on this date" intent (daterange lower bound). Previously
   /// stored on the per-user schedule row.
@@ -111,8 +112,7 @@ class Threads extends Table
 
   /// Whether the thread has a content embedding on the server.
   /// Used to decide whether "move similar" rule options are available.
-  BoolColumn get hasEmbedding =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get hasEmbedding => boolean().withDefault(const Constant(false))();
 
   /// "Skip active for threads like this" mute anchor (per-user, mirrored
   /// from `thread_priority.mute_by_thread_id`). NULL when not muted. Equal
@@ -136,8 +136,7 @@ class Threads extends Table
   /// dependent notes/links/schedules) so they never reach the UI. Persisted
   /// only as a transient state during the sync pass — a row that's still
   /// `revoked = true` in the local DB means hard-delete didn't run.
-  BoolColumn get revoked =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get revoked => boolean().withDefault(const Constant(false))();
 }
 
 @DataClassName('ScheduleRow')
@@ -162,10 +161,7 @@ class Schedules extends Table with SyncableTable, UuidTable {
   /// generated instances are keyed in local-naive `YYYY-MM-DDTHH:MM` form,
   /// so without this both keys end up in the dedup map and the user sees
   /// the original instance alongside the rescheduled one.
-  static String canonicalOccurrence(
-    String stored, {
-    required bool dateOnly,
-  }) {
+  static String canonicalOccurrence(String stored, {required bool dateOnly}) {
     final parsed = DateTime.tryParse(stored);
     if (parsed == null) return stored;
     // Date-only events are TZ-agnostic (Google sends `originalStartTime.date`
@@ -386,7 +382,9 @@ class ThreadsBase extends BaseTable {
     if (rawStateAt is String) {
       json['state_at'] = rawStateAt == 'empty'
           ? null
-          : DateTimeRange.fromString(rawStateAt).start?.toUtc().toIso8601String();
+          : DateTimeRange.fromString(
+              rawStateAt,
+            ).start?.toUtc().toIso8601String();
     }
 
     // contact_meta must be an object keyed by contact_id. A malformed
@@ -437,8 +435,7 @@ class ThreadsBase extends BaseTable {
       }
       final local = await (store.select(
         store.threads,
-      )..where((t) => t.id.equals(activityRow.id.toBytes())))
-          .getSingleOrNull();
+      )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
       var merged = activityRow;
 
       // Conflict resolution: local has a pending read (readAt != null).
@@ -505,18 +502,18 @@ class ThreadsBase extends BaseTable {
     List<Uint8List> threadIds,
   ) async {
     await store.transaction(() async {
-      await (store.delete(store.notes)
-            ..where((n) => n.threadId.isIn(threadIds)))
-          .go();
-      await (store.delete(store.links)
-            ..where((l) => l.threadId.isIn(threadIds)))
-          .go();
-      await (store.delete(store.schedules)
-            ..where((s) => s.threadId.isIn(threadIds)))
-          .go();
-      await (store.delete(store.threads)
-            ..where((t) => t.id.isIn(threadIds)))
-          .go();
+      await (store.delete(
+        store.notes,
+      )..where((n) => n.threadId.isIn(threadIds))).go();
+      await (store.delete(
+        store.links,
+      )..where((l) => l.threadId.isIn(threadIds))).go();
+      await (store.delete(
+        store.schedules,
+      )..where((s) => s.threadId.isIn(threadIds))).go();
+      await (store.delete(
+        store.threads,
+      )..where((t) => t.id.isIn(threadIds))).go();
     });
   }
 
@@ -726,9 +723,9 @@ class SchedulesBase extends BaseTable {
     final result = <Insertable<DataClass>>[];
     for (final row in rows) {
       final scheduleRow = row as ScheduleRow;
-      final local = await (store.select(store.schedules)
-            ..where((s) => s.id.equals(scheduleRow.id.toBytes())))
-          .getSingleOrNull();
+      final local = await (store.select(
+        store.schedules,
+      )..where((s) => s.id.equals(scheduleRow.id.toBytes()))).getSingleOrNull();
       if (local != null && local.pending != null) continue;
       result.add(row);
     }
@@ -762,9 +759,9 @@ class ThreadAssociationsBase extends BaseTable {
     final result = <Insertable<DataClass>>[];
     for (final row in rows) {
       final assocRow = row as ThreadAssociationRow;
-      final local = await (store.select(store.threadAssociations)
-            ..where((a) => a.id.equals(assocRow.id.toBytes())))
-          .getSingleOrNull();
+      final local = await (store.select(
+        store.threadAssociations,
+      )..where((a) => a.id.equals(assocRow.id.toBytes()))).getSingleOrNull();
       if (local != null && local.pending != null) continue;
       result.add(row);
     }
@@ -810,10 +807,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     await Store.get.pull(Store.get.threads, ThreadsBase());
     await Store.get.pull(Store.get.schedules, SchedulesBase());
     await Store.get.pull(Store.get.threadTags, ThreadTagsBase());
-    await Store.get.pull(
-      Store.get.threadReactions,
-      ThreadReactionsBase(),
-    );
+    await Store.get.pull(Store.get.threadReactions, ThreadReactionsBase());
     await Store.get.pull(
       Store.get.threadAssociations,
       ThreadAssociationsBase(),
@@ -849,8 +843,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
     }).toList();
     if (parsed.isEmpty) return const {};
-    final processed =
-        await base.processPulledRows(Store.get, parsed);
+    final processed = await base.processPulledRows(Store.get, parsed);
     await Store.get.batch((batch) {
       batch.insertAll(
         Store.get.threads,
@@ -989,10 +982,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       Store.get.push(Store.get.threads, ThreadsBase()),
       Store.get.push(Store.get.links, LinksBase()),
       Store.get.push(Store.get.schedules, SchedulesBase()),
-      Store.get.push(
-        Store.get.threadAssociations,
-        ThreadAssociationsBase(),
-      ),
+      Store.get.push(Store.get.threadAssociations, ThreadAssociationsBase()),
       Store.get.push(Store.get.threadTags, ThreadTagsBase()),
       Store.get.push(Store.get.threadReactions, ThreadReactionsBase()),
     ]);
@@ -1006,10 +996,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // local read_at after push and un-finish them.
     final readActivities = await (Store.get.select(
       Store.get.threads,
-    )..where((t) =>
-        t.readAt.isNotNull() &
-        t.active.equals(false)))
-        .get();
+    )..where((t) => t.readAt.isNotNull() & t.active.equals(false))).get();
 
     if (readActivities.isEmpty) {
       return success;
@@ -1191,7 +1178,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     // feed with a LIMIT (and no range / non-feed flags), use the two-step
     // ID-first query so LIMIT applies to distinct threads instead of the
     // 14×-multiplied join product. See [_watchActivityFeedIds].
-    final useFeedFastPath = order == ThreadOrder.reverse &&
+    final useFeedFastPath =
+        order == ThreadOrder.reverse &&
         limit != null &&
         range == null &&
         id == null &&
@@ -1220,18 +1208,10 @@ class Thread extends Equatable implements Comparable<Thread> {
           offset: offset ?? 0,
         ).asyncMap((idRows) async {
           if (!Store.isAvailable) {
-            return (
-              threads: <Thread>[],
-              rawRowCount: 0,
-              feedTailCursor: null,
-            );
+            return (threads: <Thread>[], rawRowCount: 0, feedTailCursor: null);
           }
           if (idRows.isEmpty) {
-            return (
-              threads: <Thread>[],
-              rawRowCount: 0,
-              feedTailCursor: null,
-            );
+            return (threads: <Thread>[], rawRowCount: 0, feedTailCursor: null);
           }
           final ids = idRows.map((r) => r.id).toList();
           final detailRows = await _hydrateActivityFeedRows(ids);
@@ -1243,12 +1223,11 @@ class Thread extends Equatable implements Comparable<Thread> {
           // Restore the Phase-1 ordering: _mapResultsToThreads groups by id
           // and doesn't preserve the input order, and the Phase-2 hydration
           // query has no ORDER BY (intentional — the order came from Phase 1).
-          final orderByIndex = {
-            for (var i = 0; i < ids.length; i++) ids[i]: i,
-          };
+          final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
           threads.sort(
-            (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-                .compareTo(orderByIndex[y.id] ?? 1 << 30),
+            (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+              orderByIndex[y.id] ?? 1 << 30,
+            ),
           );
           // Expose the SQL-computed cursor of the tail row. The bloc's
           // [fetchMoreActivityFeedItems] uses this to keyset-paginate
@@ -1292,33 +1271,29 @@ class Thread extends Equatable implements Comparable<Thread> {
         limit: limit,
         offset: offset,
       ).watch().asyncMap((results) async {
-      if (!Store.isAvailable) {
+        if (!Store.isAvailable) {
+          return (threads: <Thread>[], rawRowCount: 0, feedTailCursor: null);
+        }
+        final threads = await _mapResultsToThreads(
+          results,
+          archived: archived,
+          range: occurrenceRange ?? range,
+        );
+        // Re-sort activity feed for precise recurring event ordering
+        if (order == ThreadOrder.reverse) {
+          threads.sort((a, b) {
+            if (a.unread != b.unread) {
+              return a.unread ? -1 : 1;
+            }
+            return b.activityAt.compareTo(a.activityAt);
+          });
+        }
         return (
-          threads: <Thread>[],
-          rawRowCount: 0,
+          threads: threads,
+          rawRowCount: results.length,
           feedTailCursor: null,
         );
-      }
-      final threads = await _mapResultsToThreads(
-        results,
-        archived: archived,
-        range: occurrenceRange ?? range,
-      );
-      // Re-sort activity feed for precise recurring event ordering
-      if (order == ThreadOrder.reverse) {
-        threads.sort((a, b) {
-          if (a.unread != b.unread) {
-            return a.unread ? -1 : 1;
-          }
-          return b.activityAt.compareTo(a.activityAt);
-        });
-      }
-      return (
-        threads: threads,
-        rawRowCount: results.length,
-        feedTailCursor: null,
-      );
-    });
+      });
     });
   }
 
@@ -1335,10 +1310,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     final query = Store.get.select(a).join([
       // INNER JOIN thread_associations to select only associated children
-      innerJoin(
-        ta,
-        ta.childThreadId.equalsExp(a.id) & ta.archivedAt.isNull(),
-      ),
+      innerJoin(ta, ta.childThreadId.equalsExp(a.id) & ta.archivedAt.isNull()),
       // Same joins as _getQuery so _mapResultsToThreads works. Per-user
       // state (active / task / to_read / urgent / state_order / state_on
       // / state_at / read_at) lives on the thread row itself, so no
@@ -1415,12 +1387,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (drafts.isEmpty) return null;
     final pathStr = priority.path.value;
     final chainDrafts = drafts.where((d) {
-      // System priorities (@plot, @plot.app, @plot.twist-dev) are
-      // infrastructure, not user branches — their drafts must not follow
-      // the user out of that context (otherwise a stray twist-dev draft
-      // gets loaded at root and NewThreadPage shows its "Select a thread"
-      // twist-dev placeholder instead of the editor).
-      if (d.priority.isPlot) return false;
       final dp = d.priority.path.value;
       return dp == pathStr ||
           pathStr.startsWith('$dp.') || // ancestor
@@ -1535,13 +1501,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       archivedCountStream,
       unreadCountStream,
       archivedPriorityCountStream,
-      (
-        rows,
-        nowCount,
-        archivedCount,
-        unreadCount,
-        archivedPriorityCount,
-      ) {
+      (rows, nowCount, archivedCount, unreadCount, archivedPriorityCount) {
         final Map<Tag, int> tagCounts = {};
 
         // Count stored tags
@@ -1610,9 +1570,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           counts.putIfAbsent(emoji, () => <ThreadId>{}).add(threadId);
         }
       }
-      final result = counts.entries
-          .map((e) => (e.key, e.value.length))
-          .toList()
+      final result = counts.entries.map((e) => (e.key, e.value.length)).toList()
         ..sort((a, b) => b.$2.compareTo(a.$2));
       return result;
     });
@@ -1658,8 +1616,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         // apart, so each uninstalled twist would add a duplicate row.
         if (icon.startsWith('twist:')) {
           final twistId = BigInt.tryParse(icon.substring(6));
-          if (twistId == null ||
-              TwistInstance.findByTwistId(twistId) == null) {
+          if (twistId == null || TwistInstance.findByTwistId(twistId) == null) {
             continue;
           }
         }
@@ -1737,6 +1694,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     DateRange? range,
     // Only include activities that start within the range
     bool strictRange = false,
+
     /// When set, overrides the lower bound used for the datetime-based
     /// **event** range branches (shared schedule, link schedule) so the
     /// query returns events still in progress at this moment plus
@@ -1759,6 +1717,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
     bool linkScheduledOnly = false,
+
     /// SQL form of [Thread.todo]: an active per-user schedule with at least
     /// one date set. Lets the activity feed's todo stream skip the
     /// `includeUnscheduled: false` over-fetch (which admits any thread
@@ -1766,6 +1725,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     /// by a Dart-side `.where((t) => t.todo)` discard. Mirrors the
     /// `activeTodo` sub-expression below at lines ~1582-1586.
     bool todoOnly = false,
+
     /// Drops every WHERE branch that admits a thread on the strength of
     /// its **per-user schedule** alone — `activeTodo`, the date-range
     /// user-schedule branches, and the `unscheduled` branch. The query
@@ -1776,6 +1736,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     /// with overdue / sentinel-dated todos for the same row budget.
     bool eventsOnly = false,
     String? search,
+
     /// Per-search-word lists of actor UUID strings whose name has a word
     /// starting with that search word (resolved via [Actor.idsMatchingWordPrefix]).
     /// When non-null and aligned with the sanitized search words, the search
@@ -1893,10 +1854,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
     if (filterUnread) {
-      query.where(
-        a.unread.equals(true) &
-            a.readAt.isNull(),
-      );
+      query.where(a.unread.equals(true) & a.readAt.isNull());
     }
     if (todoOnly) {
       // SQL translation of [Thread.isActive]: just `active == true`.
@@ -1928,8 +1886,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         // Each word must appear in either link title or source_url
         final linkConditions = sanitizedWords
             .map(
-              (word) =>
-                  "(title LIKE '%$word%' OR source_url LIKE '%$word%')",
+              (word) => "(title LIKE '%$word%' OR source_url LIKE '%$word%')",
             )
             .join(' AND ');
 
@@ -2076,9 +2033,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           if (range.start != null && strictRange) {
             userDateScheduled =
                 userDateScheduled &
-                a.stateOn.isBiggerOrEqualValue(
-                  range.start!.toString(),
-                );
+                a.stateOn.isBiggerOrEqualValue(range.start!.toString());
           }
           if (range.end != null) {
             userDateScheduled =
@@ -2124,8 +2079,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
         if (rangeEnd != null) {
           userDateTimeScheduled =
-              userDateTimeScheduled &
-              a.stateAt.isSmallerThanValue(rangeEnd);
+              userDateTimeScheduled & a.stateAt.isSmallerThanValue(rangeEnd);
         }
         condition = condition | userDateTimeScheduled;
       }
@@ -2245,9 +2199,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           schedEnd,
         ]);
 
-        final unreadSort =
-            a.unread.equals(true) &
-            a.readAt.isNull();
+        final unreadSort = a.unread.equals(true) & a.readAt.isNull();
 
         query.orderBy([
           OrderingTerm.desc(unreadSort),
@@ -2295,8 +2247,10 @@ class Thread extends Equatable implements Comparable<Thread> {
     // via Drift's separate .where call.
     if (hasReactionFilter) {
       final orClause = reactionFilter
-          .map((e) =>
-              "JSON_EXTRACT(reactions.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .map(
+            (e) =>
+                "JSON_EXTRACT(reactions.reactions, ${emojiJsonPath(e)}) IS NOT NULL",
+          )
           .join(' OR ');
       query.where(CustomExpression<bool>('($orClause)'));
     }
@@ -2314,8 +2268,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     required int unreadSort,
     required String activityAt,
     required ThreadId id,
-  }) =>
-      (unreadSort: unreadSort, activityAt: activityAt, id: id);
+  }) => (unreadSort: unreadSort, activityAt: activityAt, id: id);
 
   /// Shared filter/join machinery for activity-feed-style ID queries.
   /// Builds the FROM/JOIN/WHERE portion only — callers prepend their own
@@ -2352,9 +2305,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool requireTodoPredicate = false,
     bool requireUnread = false,
     bool requireLinkSched = false,
+
     /// When set, restrict to threads with the named state flag = TRUE.
     /// Accepted values: 'active'. Anything else is ignored.
     String? stateFlag,
+
     /// Unified-feed section partition. The feed is split into three
     /// mutually-exclusive, independently-paginated streams keyed on the
     /// stored `unread` / `active` booleans (matching the `Thread.unread`
@@ -2520,8 +2475,10 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     // OR-within-section across emojis; AND across sections (via wheres).
     if (reactionFilter != null && reactionFilter.isNotEmpty) {
       final orClause = reactionFilter
-          .map((e) =>
-              "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .map(
+            (e) =>
+                "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL",
+          )
           .join(' OR ');
       wheres.add(
         "EXISTS (SELECT 1 FROM thread_reactions tr "
@@ -2536,12 +2493,14 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     if (doTodo) {
       final today = Date.today().toString();
       final now = Time.now();
-      wheres.add('''
+      wheres.add(
+        '''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
  (a.active = 1 AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
- (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
+ (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''',
+      );
       variables.add(Variable.withString(today));
       variables.add(Variable.withDateTime(now));
       variables.add(Variable.withDateTime(now));
@@ -2594,7 +2553,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// Pair with [_hydrateActivityFeedRows] to fetch detail rows for the
   /// matched IDs and run them through [_mapResultsToThreads].
   static Stream<List<({ThreadId id, int unreadSort, String activityAt})>>
-      _watchActivityFeedIds({
+  _watchActivityFeedIds({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -2762,8 +2721,10 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     // OR-within-section across emojis; AND across sections (via wheres).
     if (reactionFilter != null && reactionFilter.isNotEmpty) {
       final orClause = reactionFilter
-          .map((e) =>
-              "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL")
+          .map(
+            (e) =>
+                "JSON_EXTRACT(tr.reactions, ${emojiJsonPath(e)}) IS NOT NULL",
+          )
           .join(' OR ');
       wheres.add(
         "EXISTS (SELECT 1 FROM thread_reactions tr "
@@ -2777,12 +2738,14 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     // currently in range.
     if (doTodo) {
       final today = Date.today().toString();
-      wheres.add('''
+      wheres.add(
+        '''
 ((sched.start_on <= ? AND sched.start_at IS NULL) OR
  (sched.start_at <= ? AND (sched.end_at IS NULL OR sched.end_at >= ?)) OR
  (a.active = 1 AND a.read_at IS NULL) OR
  (link_sched.start_on <= ? AND link_sched.start_at IS NULL) OR
- (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''');
+ (link_sched.start_at <= ? AND (link_sched.end_at IS NULL OR link_sched.end_at >= ?)))''',
+      );
       variables.add(Variable.withString(today));
       variables.add(Variable.withDateTime(now));
       variables.add(Variable.withDateTime(now));
@@ -2800,17 +2763,13 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     // Cursor predicate runs after GROUP BY because it compares against the
     // aggregated `unread_sort` / `activity_at` values.
     if (after != null) {
-      sqlBuf.writeln(
-        'HAVING (unread_sort, activity_at, a.id) < (?, ?, ?)',
-      );
+      sqlBuf.writeln('HAVING (unread_sort, activity_at, a.id) < (?, ?, ?)');
       variables.add(Variable.withInt(after.unreadSort));
       variables.add(Variable.withString(after.activityAt));
       variables.add(Variable.withBlob(after.id.toBytes()));
     }
 
-    sqlBuf.writeln(
-      'ORDER BY unread_sort DESC, activity_at DESC, a.id DESC',
-    );
+    sqlBuf.writeln('ORDER BY unread_sort DESC, activity_at DESC, a.id DESC');
     sqlBuf.writeln('LIMIT ? OFFSET ?');
     variables.add(Variable.withInt(limit));
     variables.add(Variable.withInt(offset));
@@ -2899,12 +2858,11 @@ LEFT JOIN links l ON l.thread_id = a.id''');
     final detailRows = await _hydrateActivityFeedRows(ids);
     final threads = await _mapResultsToThreads(detailRows);
 
-    final orderByIndex = {
-      for (var i = 0; i < ids.length; i++) ids[i]: i,
-    };
+    final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
     threads.sort(
-      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+        orderByIndex[y.id] ?? 1 << 30,
+      ),
     );
 
     final last = idRows.last;
@@ -2978,11 +2936,15 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   /// The bloc subscribes to this when Catch up is the active tab; on
   /// every emission it pairs the head with previously-fetched appended
   /// pages (via [fetchCatchUpPage]) to render the visible list.
-  static Stream<({
-    List<Thread> threads,
-    ({int urgent, int importance, String activityAt, ThreadId id})? tailCursor,
-    bool saturated,
-  })> watchCatchUpHead({
+  static Stream<
+    ({
+      List<Thread> threads,
+      ({int urgent, int importance, String activityAt, ThreadId id})?
+      tailCursor,
+      bool saturated,
+    })
+  >
+  watchCatchUpHead({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3007,19 +2969,16 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       limit: limit,
     ).asyncMap((idRows) async {
       if (idRows.isEmpty) {
-        return (
-          threads: <Thread>[],
-          tailCursor: null,
-          saturated: false,
-        );
+        return (threads: <Thread>[], tailCursor: null, saturated: false);
       }
       final ids = idRows.map((r) => r.id).toList();
       final detailRows = await _hydrateActivityFeedRows(ids);
       final threads = await _mapResultsToThreads(detailRows);
       final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
       threads.sort(
-        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+          orderByIndex[y.id] ?? 1 << 30,
+        ),
       );
       final last = idRows.last;
       return (
@@ -3037,11 +2996,15 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
   /// Page result for the Catch up tab's cursor pagination. Mirrors
   /// [ActivityFeedPage] but with the urgency-keyed cursor shape.
-  static Future<({
-    List<Thread> threads,
-    ({int urgent, int importance, String activityAt, ThreadId id})? nextCursor,
-    bool saturated,
-  })> fetchCatchUpPage({
+  static Future<
+    ({
+      List<Thread> threads,
+      ({int urgent, int importance, String activityAt, ThreadId id})?
+      nextCursor,
+      bool saturated,
+    })
+  >
+  fetchCatchUpPage({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3078,8 +3041,9 @@ LEFT JOIN links l ON l.thread_id = a.id''');
 
     final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
     threads.sort(
-      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+        orderByIndex[y.id] ?? 1 << 30,
+      ),
     );
 
     final last = idRows.last;
@@ -3102,12 +3066,7 @@ LEFT JOIN links l ON l.thread_id = a.id''');
   ///
   /// Pair with [_hydrateActivityFeedRows] for detail hydration.
   static Stream<
-    List<({
-      ThreadId id,
-      int urgent,
-      int importance,
-      String activityAt,
-    })>
+    List<({ThreadId id, int urgent, int importance, String activityAt})>
   >
   _watchCatchUpIds({
     PriorityId? priorityId,
@@ -3206,11 +3165,14 @@ SELECT
 
   /// Live stream of the All tab's head page. Mirrors [watchCatchUpHead]
   /// but with the unified-feed cursor shape — see [_watchAllTabIds].
-  static Stream<({
-    List<Thread> threads,
-    ({String activityAt, ThreadId id})? tailCursor,
-    bool saturated,
-  })> watchAllTabHead({
+  static Stream<
+    ({
+      List<Thread> threads,
+      ({String activityAt, ThreadId id})? tailCursor,
+      bool saturated,
+    })
+  >
+  watchAllTabHead({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3235,19 +3197,16 @@ SELECT
       limit: limit,
     ).asyncMap((idRows) async {
       if (idRows.isEmpty) {
-        return (
-          threads: <Thread>[],
-          tailCursor: null,
-          saturated: false,
-        );
+        return (threads: <Thread>[], tailCursor: null, saturated: false);
       }
       final ids = idRows.map((r) => r.id).toList();
       final detailRows = await _hydrateActivityFeedRows(ids);
       final threads = await _mapResultsToThreads(detailRows);
       final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
       threads.sort(
-        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+          orderByIndex[y.id] ?? 1 << 30,
+        ),
       );
       final last = idRows.last;
       return (
@@ -3259,11 +3218,14 @@ SELECT
   }
 
   /// Page result for the All tab's cursor pagination.
-  static Future<({
-    List<Thread> threads,
-    ({String activityAt, ThreadId id})? nextCursor,
-    bool saturated,
-  })> fetchAllTabPage({
+  static Future<
+    ({
+      List<Thread> threads,
+      ({String activityAt, ThreadId id})? nextCursor,
+      bool saturated,
+    })
+  >
+  fetchAllTabPage({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3300,8 +3262,9 @@ SELECT
 
     final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
     threads.sort(
-      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+        orderByIndex[y.id] ?? 1 << 30,
+      ),
     );
 
     final last = idRows.last;
@@ -3320,10 +3283,7 @@ SELECT
   /// state and importance do not lift a thread above a more recently-active
   /// one. (The unread cluster's importance/urgent ordering lives in the
   /// sectioned feeds' [watchUnreadHead], which this query never feeds.)
-  static Stream<List<({
-    ThreadId id,
-    String activityAt,
-  })>> _watchAllTabIds({
+  static Stream<List<({ThreadId id, String activityAt})>> _watchAllTabIds({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3404,12 +3364,15 @@ SELECT
   /// Live stream of the action tab's head page (Respond / Do / Read).
   /// Mirrors [watchCatchUpHead] but parameterised by `action` and carrying
   /// the bucket cursor shape — see [_watchActionTabIds].
-  static Stream<({
-    List<Thread> threads,
-    ({int isActiveInv, String bucketKey, double order, ThreadId id})?
-        tailCursor,
-    bool saturated,
-  })> watchActionTabHead({
+  static Stream<
+    ({
+      List<Thread> threads,
+      ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      tailCursor,
+      bool saturated,
+    })
+  >
+  watchActionTabHead({
     required String action,
     PriorityId? priorityId,
     Path? priorityPath,
@@ -3438,19 +3401,16 @@ SELECT
       sectionScope: sectionScope,
     ).asyncMap((idRows) async {
       if (idRows.isEmpty) {
-        return (
-          threads: <Thread>[],
-          tailCursor: null,
-          saturated: false,
-        );
+        return (threads: <Thread>[], tailCursor: null, saturated: false);
       }
       final ids = idRows.map((r) => r.id).toList();
       final detailRows = await _hydrateActivityFeedRows(ids);
       final threads = await _mapResultsToThreads(detailRows);
       final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
       threads.sort(
-        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+          orderByIndex[y.id] ?? 1 << 30,
+        ),
       );
       final last = idRows.last;
       return (
@@ -3471,12 +3431,17 @@ SELECT
   /// transitions without re-bucketing in Dart. `isActive=true` rows render
   /// in the Today bucket; `isActive=false` rows render under the scheduled
   /// day named by `bucketDate`.
-  static Future<({
-    List<Thread> threads,
-    List<({ThreadId id, bool isActive, String? bucketDate, double order})> rows,
-    ({int isActiveInv, String bucketKey, double order, ThreadId id})? nextCursor,
-    bool saturated,
-  })> fetchActionTabPage({
+  static Future<
+    ({
+      List<Thread> threads,
+      List<({ThreadId id, bool isActive, String? bucketDate, double order})>
+      rows,
+      ({int isActiveInv, String bucketKey, double order, ThreadId id})?
+      nextCursor,
+      bool saturated,
+    })
+  >
+  fetchActionTabPage({
     required String action,
     PriorityId? priorityId,
     Path? priorityPath,
@@ -3510,7 +3475,10 @@ SELECT
     if (idRows.isEmpty) {
       return (
         threads: <Thread>[],
-        rows: <({ThreadId id, bool isActive, String? bucketDate, double order})>[],
+        rows:
+            <
+              ({ThreadId id, bool isActive, String? bucketDate, double order})
+            >[],
         nextCursor: null,
         saturated: false,
       );
@@ -3522,8 +3490,9 @@ SELECT
 
     final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
     threads.sort(
-      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+        orderByIndex[y.id] ?? 1 << 30,
+      ),
     );
 
     final last = idRows.last;
@@ -3553,12 +3522,7 @@ SELECT
   ///
   /// Pair with [_hydrateActivityFeedRows] for detail hydration.
   static Stream<
-    List<({
-      ThreadId id,
-      bool isActive,
-      String? bucketDate,
-      double order,
-    })>
+    List<({ThreadId id, bool isActive, String? bucketDate, double order})>
   >
   _watchActionTabIds({
     required String action,
@@ -3574,6 +3538,7 @@ SELECT
     required int limit,
     int offset = 0,
     ({int isActiveInv, String bucketKey, double order, ThreadId id})? after,
+
     /// Unified-feed partition (see [_buildFeedFilter.sectionScope]). When
     /// set (e.g. 'active'), the section predicate replaces the legacy
     /// `stateFlag` + `read_at IS NULL` shim so the active+scheduled stream
@@ -3724,11 +3689,14 @@ ORDER BY
   /// Live head of the unified feed's **Unread** stream. Returns hydrated
   /// unread threads in `unreadDoing` display order (urgent DESC,
   /// importance DESC, state_order ASC, id ASC) plus the keyset tail cursor.
-  static Stream<({
-    List<Thread> threads,
-    ({int urgent, int importance, double order, ThreadId id})? tailCursor,
-    bool saturated,
-  })> watchUnreadHead({
+  static Stream<
+    ({
+      List<Thread> threads,
+      ({int urgent, int importance, double order, ThreadId id})? tailCursor,
+      bool saturated,
+    })
+  >
+  watchUnreadHead({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3760,8 +3728,9 @@ ORDER BY
       final threads = await _mapResultsToThreads(detailRows);
       final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
       threads.sort(
-        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+          orderByIndex[y.id] ?? 1 << 30,
+        ),
       );
       final last = idRows.last;
       return (
@@ -3782,8 +3751,7 @@ ORDER BY
   /// (urgent DESC, importance DESC, state_order ASC, id ASC); it is expressed
   /// all-ascending over `(1 - urgent, -importance, state_order, id)` so the
   /// keyset cursor stays monotonic. Pair with [_hydrateActivityFeedRows].
-  static Stream<
-      List<({ThreadId id, int urgent, int importance, double order})>>
+  static Stream<List<({ThreadId id, int urgent, int importance, double order})>>
   _watchUnreadIds({
     PriorityId? priorityId,
     Path? priorityPath,
@@ -3868,11 +3836,14 @@ SELECT
   /// and `(activity_at, id)` cursor as the legacy activity-feed query, but
   /// restricted to `active = 0 AND unread = 0`. This is the only section
   /// that paginates on scroll (see [fetchDonePage]).
-  static Stream<({
-    List<Thread> threads,
-    ({String activityAt, ThreadId id})? tailCursor,
-    bool saturated,
-  })> watchDoneHead({
+  static Stream<
+    ({
+      List<Thread> threads,
+      ({String activityAt, ThreadId id})? tailCursor,
+      bool saturated,
+    })
+  >
+  watchDoneHead({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3904,8 +3875,9 @@ SELECT
       final threads = await _mapResultsToThreads(detailRows);
       final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
       threads.sort(
-        (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-            .compareTo(orderByIndex[y.id] ?? 1 << 30),
+        (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+          orderByIndex[y.id] ?? 1 << 30,
+        ),
       );
       final last = idRows.last;
       return (
@@ -3919,11 +3891,14 @@ SELECT
   /// One-shot Done page for cursor-paginated scroll-down. Mirrors
   /// [fetchActivityFeedPage] but uses the Done partition and `(activity_at,
   /// id)` cursor.
-  static Future<({
-    List<Thread> threads,
-    ({String activityAt, ThreadId id})? nextCursor,
-    bool saturated,
-  })> fetchDonePage({
+  static Future<
+    ({
+      List<Thread> threads,
+      ({String activityAt, ThreadId id})? nextCursor,
+      bool saturated,
+    })
+  >
+  fetchDonePage({
     PriorityId? priorityId,
     Path? priorityPath,
     bool? archived = false,
@@ -3959,8 +3934,9 @@ SELECT
     final threads = await _mapResultsToThreads(detailRows);
     final orderByIndex = {for (var i = 0; i < ids.length; i++) ids[i]: i};
     threads.sort(
-      (x, y) => (orderByIndex[x.id] ?? 1 << 30)
-          .compareTo(orderByIndex[y.id] ?? 1 << 30),
+      (x, y) => (orderByIndex[x.id] ?? 1 << 30).compareTo(
+        orderByIndex[y.id] ?? 1 << 30,
+      ),
     );
     final last = idRows.last;
     return (
@@ -4116,11 +4092,7 @@ SELECT
     // Convert ThreadId (Uuid) to Uint8List for isIn query
     final idBytes = ids.map((id) => id.toBytes()).toList();
 
-    query.where(
-      a.id.isIn(idBytes) &
-          a.unread.equals(true) &
-          a.readAt.isNull(),
-    );
+    query.where(a.id.isIn(idBytes) & a.unread.equals(true) & a.readAt.isNull());
 
     final results = await query.get();
     return results.map((row) => Uuid.fromBytes(row.read(a.id)!)).toSet();
@@ -4409,7 +4381,8 @@ SELECT
               }
             }
             threadList.addAll(
-                occurrences.values.where((occ) => !occ.isDeclinedByUser));
+              occurrences.values.where((occ) => !occ.isDeclinedByUser),
+            );
           } else {
             // Non-recurring link schedules: range-check and add individually.
             for (final linkScheduleRow in linkGroup) {
@@ -4536,6 +4509,7 @@ SELECT
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
+
     /// Optional per-user thread-state fields. Production paths populate
     /// these via the Drift query in [Thread.watch] (the columns live
     /// directly on `threads`); exposed here so tests can construct a
@@ -4573,7 +4547,8 @@ SELECT
       // config.topic is set, fall back to the priority id itself for
       // non-root priorities, so sibling threads filed in the same
       // sub-priority share a topic filter for classify_thread_for_user.
-      topic: priority.priorityConfig.topic ??
+      topic:
+          priority.priorityConfig.topic ??
           (priority.path.isRoot ? null : priority.id.toString()),
       contacts: priority.inheritedDefaultSharedContacts.isEmpty
           ? null
@@ -4660,9 +4635,11 @@ SELECT
   final bool? _unreadComputed;
   final DateTime? _linkSourceCreatedAt;
   final bool _activityDirty;
+
   /// Whether the activity row needs a remote push (vs local-only read-state update).
   final bool _activityRemoteDirty;
   final bool _scheduleDirty;
+
   /// Whether the per-user thread-state fields changed and need to be
   /// pushed via POST /sync/thread-state.
   final bool _stateDirty;
@@ -4684,6 +4661,7 @@ SELECT
   Uuid get id => _thread.id;
   bool get recurring =>
       _schedule?.recurrenceRule != null && _schedule?.occurrence == null;
+
   /// Per-user reorder position within the Doing section and within a
   /// single Scheduled day. Falls back to [Order.lowerBound] when no
   /// per-user state row has assigned one, so null-state threads sort
@@ -4698,6 +4676,7 @@ SELECT
   /// the null-state thread re-sorted ahead of the dragged thread,
   /// snapping it back to 2nd position.
   Order get order => _thread.stateOrder ?? const Order(Order.lowerBound);
+
   /// Raw underlying per-user state order. Null when no per-user state row
   /// has assigned an order — exposed for callers that need to distinguish
   /// "no order set" from the [order] getter's deterministic fallback.
@@ -4721,7 +4700,6 @@ SELECT
     final droppedSet = droppedContacts.toSet();
     return contacts.where((c) => !droppedSet.contains(c)).toList();
   }
-
 
   /// Resolved sharing model for this thread, derived from the primary
   /// (earliest-created) link's [LinkTypeConfig.sharingModel]. Threads
@@ -4748,14 +4726,11 @@ SELECT
   /// qualifying links remain visible inside the thread page via the
   /// per-link assignee badge.
   static Link? resolvePrimaryAssignmentLink(List<Link> links) {
-    final qualifying = links
-        .where((l) {
-          final cfg = l.getTypeConfig();
-          return cfg?.sharingModel == SharingModel.channel &&
-              cfg?.supportsAssignee == true;
-        })
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final qualifying = links.where((l) {
+      final cfg = l.getTypeConfig();
+      return cfg?.sharingModel == SharingModel.channel &&
+          cfg?.supportsAssignee == true;
+    }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return qualifying.isEmpty ? null : qualifying.first;
   }
 
@@ -4807,8 +4782,9 @@ SELECT
     final isPrivate = others.isEmpty;
     // Subset = the audience is missing at least one thread contact (excluding
     // viewer's own contacts, which the viewer is always counted as).
-    final isSubset =
-        !threadContacts.difference(viewerContactIds).every(noteAudience.contains);
+    final isSubset = !threadContacts
+        .difference(viewerContactIds)
+        .every(noteAudience.contains);
     final isPlus = plusOthers.isNotEmpty;
 
     if (isPrivate && !isPlus) return 'Private';
@@ -4868,12 +4844,14 @@ SELECT
       (_thread.contactMeta ?? const {}).cast<String, dynamic>();
   List<Uuid> get groups => _thread.groups ?? const [];
   String? get topic => _thread.topic;
+
   /// Pending email invitations that haven't been synced yet.
   List<String> get inviteEmails {
     final raw = _thread.inviteEmails;
     if (raw == null || raw.isEmpty) return const [];
     return (jsonDecode(raw) as List<dynamic>).cast<String>();
   }
+
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule => _schedule?.recurrenceRule;
@@ -4910,8 +4888,8 @@ SELECT
 
   /// The content timestamp — GREATEST(lastNoteSourceCreatedAt, createdAt).
   /// Used as the read_at value when the user reads this thread.
-  DateTime get contentTimestamp =>
-      lastNoteSourceCreatedAt ?? createdAt;
+  DateTime get contentTimestamp => lastNoteSourceCreatedAt ?? createdAt;
+
   /// Derived "action type" string for backwards-compatible call sites that
   /// still want a single-valued summary. Returns 'active' when the thread is
   /// on the user's Doing list, or null when it has no per-user state. Prefer
@@ -4965,11 +4943,7 @@ SELECT
   static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon})
   resolveIcon(String? icon) {
     if (icon == null) {
-      return (
-        logoUrl: null,
-        logoDarkUrl: null,
-        fallbackIcon: PlotIcon.notes,
-      );
+      return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.notes);
     }
     if (icon.startsWith('http')) {
       return (logoUrl: icon, logoDarkUrl: null, fallbackIcon: PlotIcon.link);
@@ -5012,10 +4986,9 @@ SELECT
             }
             // Fall back to channel linkTypes (for no-provider connectors
             // like Attio where linkTypes are only stored per-channel)
-            final channelConfig = Channel.findBySource(pt.id)
-                ?.parsedLinkTypes
-                ?.where((c) => c.type == type)
-                .firstOrNull;
+            final channelConfig = Channel.findBySource(
+              pt.id,
+            )?.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
             if (channelConfig?.logo != null) {
               return (
                 logoUrl: channelConfig!.logo,
@@ -5039,11 +5012,7 @@ SELECT
     if (subType != null) {
       return (logoUrl: null, logoDarkUrl: null, fallbackIcon: subType.icon);
     }
-    return (
-      logoUrl: null,
-      logoDarkUrl: null,
-      fallbackIcon: PlotIcon.notes,
-    );
+    return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.notes);
   }
 
   List<Note>? get notes => _notes;
@@ -5589,10 +5558,7 @@ SELECT
   /// `disassociate(order, date)` will persist so the optimistic UI shows
   /// the thread back the instant the user clicks "Remove from event"
   /// instead of letting it vanish while the DB write resolves.
-  Thread withScheduleRestored({
-    required Order order,
-    Date? date,
-  }) {
+  Thread withScheduleRestored({required Order order, Date? date}) {
     final now = DateTime.now();
     return _withThreadState(
       _thread.copyWith(
@@ -5614,10 +5580,7 @@ SELECT
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     final restored = withScheduleRestored(order: effectiveOrder);
     if (!unread) return restored;
-    return restored.copyWith(
-      unread: false,
-      readAt: Value(contentTimestamp),
-    );
+    return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
   }
 
   /// Returns a copy in the "scheduled" state for [date]. Sets the
@@ -5628,10 +5591,7 @@ SELECT
     final effectiveOrder = order ?? _thread.stateOrder ?? Order.first();
     final restored = withScheduleRestored(order: effectiveOrder, date: date);
     if (!unread) return restored;
-    return restored.copyWith(
-      unread: false,
-      readAt: Value(contentTimestamp),
-    );
+    return restored.copyWith(unread: false, readAt: Value(contentTimestamp));
   }
 
   /// Returns a copy in the "new (unread-only)" state — flips `unread` to
@@ -5691,9 +5651,7 @@ SELECT
   /// Reorder this thread. Updates the per-user state_order on the thread row.
   Thread reorder(Order order) {
     if (!_thread.active) {
-      log.warning(
-        '[reorder] "$title" has no per-user state — cannot reorder',
-      );
+      log.warning('[reorder] "$title" has no per-user state — cannot reorder');
       return this;
     }
     final previous = _thread.stateOrder?.value;
@@ -5775,17 +5733,19 @@ SELECT
 
     // Archive any existing active association for this child thread
     // (a child can only be associated with one parent at a time).
-    final existing = await (Store.get.select(Store.get.threadAssociations)
-          ..where((t) => t.childThreadId.equals(id.toBytes()))
-          ..where((t) => t.archivedAt.isNull()))
-        .get();
+    final existing =
+        await (Store.get.select(Store.get.threadAssociations)
+              ..where((t) => t.childThreadId.equals(id.toBytes()))
+              ..where((t) => t.archivedAt.isNull()))
+            .get();
 
     for (final assoc in existing) {
       if (assoc.parentThreadId == parentThreadId) {
         // Same parent — just update the order
         await Store.get.save(
           Store.get.threadAssociations,
-          assoc.copyWith(order: order, updatedAt: DateTime.now())
+          assoc
+              .copyWith(order: order, updatedAt: DateTime.now())
               .toCompanion(false),
           ThreadAssociationsBase(),
         );
@@ -5831,16 +5791,15 @@ SELECT
   /// from an event, or the X-icon "Remove from event" affordance)
   /// should also call [withScheduleRestored(order, date).save()]
   /// explicitly.
-  Future<void> disassociate({
-    required Order order,
-  }) async {
+  Future<void> disassociate({required Order order}) async {
     log.info('[disassociate] "$title" order=${order.value}');
 
     // Archive the active association for this child thread
-    final associations = await (Store.get.select(Store.get.threadAssociations)
-          ..where((t) => t.childThreadId.equals(id.toBytes()))
-          ..where((t) => t.archivedAt.isNull()))
-        .get();
+    final associations =
+        await (Store.get.select(Store.get.threadAssociations)
+              ..where((t) => t.childThreadId.equals(id.toBytes()))
+              ..where((t) => t.archivedAt.isNull()))
+            .get();
 
     for (final assoc in associations) {
       await Store.get.save(
@@ -5862,10 +5821,11 @@ SELECT
   Future<void> reorderAssociation(Order order) async {
     log.info('[reorderAssociation] "$title" order=${order.value}');
 
-    final associations = await (Store.get.select(Store.get.threadAssociations)
-          ..where((t) => t.childThreadId.equals(id.toBytes()))
-          ..where((t) => t.archivedAt.isNull()))
-        .get();
+    final associations =
+        await (Store.get.select(Store.get.threadAssociations)
+              ..where((t) => t.childThreadId.equals(id.toBytes()))
+              ..where((t) => t.archivedAt.isNull()))
+            .get();
 
     if (associations.isNotEmpty) {
       final assoc = associations.first;
@@ -5878,15 +5838,13 @@ SELECT
       );
       Thread.push();
     } else {
-      log.warning(
-        '[reorderAssociation] "$title" has no active association',
-      );
+      log.warning('[reorderAssociation] "$title" has no active association');
     }
   }
 
   /// Watch all active associations, keyed by parent thread ID.
   static Stream<Map<Uuid, List<ThreadAssociationRow>>>
-      watchAssociationsByParent() {
+  watchAssociationsByParent() {
     return (Store.get.select(Store.get.threadAssociations)
           ..where((t) => t.archivedAt.isNull())
           ..orderBy([(t) => OrderingTerm.asc(t.order)]))
@@ -5977,7 +5935,8 @@ SELECT
       // Read-state fields (unread, readAt, bumpedAt) sync via
       // /sync/thread-unread, not the regular thread push. Only mark remote
       // dirty when non-read-state fields change.
-      activityRemoteDirty = priority != null ||
+      activityRemoteDirty =
+          priority != null ||
           draft != null ||
           contacts.present ||
           droppedContacts.present ||
@@ -5998,9 +5957,11 @@ SELECT
         contactMeta: contactMeta,
         groups: groups,
         inviteEmails: inviteEmails.present
-            ? Value(inviteEmails.value != null && inviteEmails.value!.isNotEmpty
-                ? jsonEncode(inviteEmails.value)
-                : null)
+            ? Value(
+                inviteEmails.value != null && inviteEmails.value!.isNotEmpty
+                    ? jsonEncode(inviteEmails.value)
+                    : null,
+              )
             : const Value.absent(),
         preview: preview,
         icon: icon,
@@ -6138,9 +6099,7 @@ SELECT
     }
 
     // Clear per-user date intent when shared schedule is intentionally removed.
-    if (schedule == null &&
-        _schedule != null &&
-        (_thread.active)) {
+    if (schedule == null && _schedule != null && (_thread.active)) {
       tsStateOn = const Value(null);
       tsStateAt = const Value(null);
       stateDirty = true;
@@ -6177,8 +6136,7 @@ SELECT
     // Synced via /sync/thread-unread (read-state fields), so this path
     // does not need activityRemoteDirty.
     final willBeActive = todo == false ? false : _thread.active;
-    final isReadTransition =
-        unread == false && _thread.unread && !willBeActive;
+    final isReadTransition = unread == false && _thread.unread && !willBeActive;
     final isDoneTransition = bump && todo == false;
     if (isReadTransition || isDoneTransition) {
       activityDirty = true;
@@ -6391,7 +6349,8 @@ SELECT
           ?.where((s) => s.status == link.status)
           .firstOrNull;
       if (currentStatusDef == null || !currentStatusDef.done) continue;
-      final target = config.statuses?.where((s) => s.todo).firstOrNull ??
+      final target =
+          config.statuses?.where((s) => s.todo).firstOrNull ??
           config.statuses?.where((s) => !s.done).firstOrNull;
       if (target == null) continue;
       newStatusByLinkId[link.id] = target;
@@ -6409,10 +6368,8 @@ SELECT
     //    Mirrors `propagateLinkStatusTagsFromDb` in workers/api/src/app/sync/
     //    link-tags.ts — a tag stays iff any sibling link from the same
     //    connector still contributes it.
-    final currentTags =
-        Map<Tag, List<ActorId>>.from(_tags?.tags ?? const {});
-    final currentTagUpdates =
-        Map<String, bool>.from(_tags?.tagsUpdated ?? {});
+    final currentTags = Map<Tag, List<ActorId>>.from(_tags?.tags ?? const {});
+    final currentTagUpdates = Map<String, bool>.from(_tags?.tagsUpdated ?? {});
     var tagsChanged = false;
 
     final linksByConnector = <Uuid, List<Link>>{};
@@ -6501,18 +6458,19 @@ SELECT
     // 6. Build the new tags row (only if anything actually changed).
     final newTagsRow = tagsChanged
         ? (_tags?.copyWith(
-              updatedAt: now,
-              tags: Value(currentTags),
-              tagsUpdated: Value(currentTagUpdates),
-            ) ??
-            ThreadTagsRow(
-              id: id,
-              occurrence: _schedule?.occurrence ?? '',
-              updatedAt: now,
-              tags: currentTags,
-              tagsUpdated:
-                  currentTagUpdates.isEmpty ? null : currentTagUpdates,
-            ))
+                updatedAt: now,
+                tags: Value(currentTags),
+                tagsUpdated: Value(currentTagUpdates),
+              ) ??
+              ThreadTagsRow(
+                id: id,
+                occurrence: _schedule?.occurrence ?? '',
+                updatedAt: now,
+                tags: currentTags,
+                tagsUpdated: currentTagUpdates.isEmpty
+                    ? null
+                    : currentTagUpdates,
+              ))
         : _tags;
 
     return Thread._fromStore(
@@ -6535,18 +6493,22 @@ SELECT
   /// new state to the server.
   Future<void> saveOrder() async {
     if (!_thread.active) {
-      log.warning('[saveOrder] "$title" has no per-user state — nothing to save');
+      log.warning(
+        '[saveOrder] "$title" has no per-user state — nothing to save',
+      );
       return;
     }
     log.info(
       '[saveOrder] "$title" saving state_order=${_thread.stateOrder?.value}',
     );
-    await (Store.get.update(Store.get.threads)
-          ..where((a) => a.id.equalsValue(id)))
-        .write(ThreadsCompanion(
-          stateOrder: Value(_thread.stateOrder),
-          updatedAt: Value(_thread.updatedAt),
-        ));
+    await (Store.get.update(
+      Store.get.threads,
+    )..where((a) => a.id.equalsValue(id))).write(
+      ThreadsCompanion(
+        stateOrder: Value(_thread.stateOrder),
+        updatedAt: Value(_thread.updatedAt),
+      ),
+    );
     _pushThreadState();
   }
 
@@ -6557,10 +6519,9 @@ SELECT
   /// never lands locally and chain/priority draft lookups can't find it.
   Future<void> ensurePersisted() async {
     if (!Store.isAvailable) return;
-    await Store.get.into(Store.get.threads).insert(
-      _thread.toCompanion(false),
-      mode: InsertMode.insertOrIgnore,
-    );
+    await Store.get
+        .into(Store.get.threads)
+        .insert(_thread.toCompanion(false), mode: InsertMode.insertOrIgnore);
   }
 
   /// POST the per-user state fields to /sync/thread-state. Fire-and-forget;
@@ -6575,8 +6536,7 @@ SELECT
       if (_thread.stateOn != null) 'on': '[${_thread.stateOn},)',
       if (_thread.stateAt != null)
         'at': '["${_thread.stateAt!.toIso8601String()}",)',
-      if (_thread.readAt != null)
-        'read_at': _thread.readAt!.toIso8601String(),
+      if (_thread.readAt != null) 'read_at': _thread.readAt!.toIso8601String(),
       if (_thread.bumpedAt != null)
         'bumped_at': _thread.bumpedAt!.toIso8601String(),
     };
@@ -6606,22 +6566,24 @@ SELECT
         // /sync/thread-state, not the regular thread push. Use
         // update().write() to avoid setting pending (which would trigger
         // a full thread sync that fails for viewer members).
-        await (Store.get.update(Store.get.threads)
-              ..where((a) => a.id.equalsValue(id)))
-            .write(ThreadsCompanion(
-              unread: Value(_thread.unread),
-              importance: Value(_thread.importance),
-              active: Value(_thread.active),
-              urgent: Value(_thread.urgent),
-              stateOrder: Value(_thread.stateOrder),
-              stateOn: Value(_thread.stateOn),
-              stateAt: Value(_thread.stateAt),
-              readAt: Value(_thread.readAt),
-              bumpedAt: Value(_thread.bumpedAt),
-              updatedAt: Value(_thread.updatedAt),
-            ));
-            // ThreadsCompanion uses Value<> for all columns so the above
-            // works for both nullable and non-nullable fields.
+        await (Store.get.update(
+          Store.get.threads,
+        )..where((a) => a.id.equalsValue(id))).write(
+          ThreadsCompanion(
+            unread: Value(_thread.unread),
+            importance: Value(_thread.importance),
+            active: Value(_thread.active),
+            urgent: Value(_thread.urgent),
+            stateOrder: Value(_thread.stateOrder),
+            stateOn: Value(_thread.stateOn),
+            stateAt: Value(_thread.stateAt),
+            readAt: Value(_thread.readAt),
+            bumpedAt: Value(_thread.bumpedAt),
+            updatedAt: Value(_thread.updatedAt),
+          ),
+        );
+        // ThreadsCompanion uses Value<> for all columns so the above
+        // works for both nullable and non-nullable fields.
       }
     } else {
       // Thread row wasn't written — ensure it exists in the local DB so
@@ -6632,10 +6594,12 @@ SELECT
           _tags != null ||
           (_scheduleDirty && _schedule != null && _schedule.linkId == null);
       if (hasChildRows) {
-        await Store.get.into(Store.get.threads).insert(
-          _thread.toCompanion(false),
-          mode: InsertMode.insertOrIgnore,
-        );
+        await Store.get
+            .into(Store.get.threads)
+            .insert(
+              _thread.toCompanion(false),
+              mode: InsertMode.insertOrIgnore,
+            );
       }
     }
     if (_scheduleDirty && _schedule != null) {
@@ -6650,13 +6614,15 @@ SELECT
         // Persist only the RSVP-derived fields locally so the optimistic
         // update survives refreshAgenda(); the server-side status is
         // reconciled via POST /sync/schedule/status from the caller.
-        await (Store.get.update(Store.get.schedules)
-              ..where((a) => a.id.equalsValue(_schedule.id)))
-            .write(SchedulesCompanion(
-              contacts: Value(_schedule.contacts),
-              currentUserStatus: Value(_schedule.currentUserStatus),
-              updatedAt: Value(DateTime.now()),
-            ));
+        await (Store.get.update(
+          Store.get.schedules,
+        )..where((a) => a.id.equalsValue(_schedule.id))).write(
+          SchedulesCompanion(
+            contacts: Value(_schedule.contacts),
+            currentUserStatus: Value(_schedule.currentUserStatus),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
       }
     }
     if (_tags != null) {
@@ -6686,29 +6652,26 @@ SELECT
       final content = preview;
       if (content != null && content.trim().isNotEmpty) {
         final threadId = id;
-        _deferIdle(
-          () async {
-            try {
-              final response = await api.post<Map<String, dynamic>>(
-                '/summary',
-                body: {'body': content},
+        _deferIdle(() async {
+          try {
+            final response = await api.post<Map<String, dynamic>>(
+              '/summary',
+              body: {'body': content},
+            );
+            final generatedTitle = response['title'] as String?;
+            if (generatedTitle != null && generatedTitle.isNotEmpty) {
+              log.info(
+                "Generated AI title for thread $threadId: $generatedTitle",
               );
-              final generatedTitle = response['title'] as String?;
-              if (generatedTitle != null && generatedTitle.isNotEmpty) {
-                log.info(
-                  "Generated AI title for thread $threadId: $generatedTitle",
-                );
-                await copyWith(title: Value(generatedTitle)).save();
-              }
-            } catch (e, t) {
-              log.warning(
-                "AI title generation failed for thread $threadId "
-                "(will retry on sync): $e\n$t",
-              );
+              await copyWith(title: Value(generatedTitle)).save();
             }
-          },
-          debugLabel: 'thread AI title',
-        );
+          } catch (e, t) {
+            log.warning(
+              "AI title generation failed for thread $threadId "
+              "(will retry on sync): $e\n$t",
+            );
+          }
+        }, debugLabel: 'thread AI title');
       }
     }
   }
@@ -6786,7 +6749,8 @@ SELECT
     }
 
     // Format the output
-    final totalExtra = (displayNames.length > 3 ? displayNames.length - 3 : 0) + hiddenCount;
+    final totalExtra =
+        (displayNames.length > 3 ? displayNames.length - 3 : 0) + hiddenCount;
     if (totalExtra == 0) {
       return displayNames.join(', ');
     } else {
@@ -6834,7 +6798,10 @@ SELECT
     if (merged.isEmpty) return null;
 
     DateTime? rowEnd(ScheduleRow r) =>
-        r.endAt ?? r.endOn?.toDateTime() ?? r.startAt ?? r.startOn?.toDateTime();
+        r.endAt ??
+        r.endOn?.toDateTime() ??
+        r.startAt ??
+        r.startOn?.toDateTime();
 
     ({ScheduleRow row, bool isOverride})? earliestUpcoming;
     ({ScheduleRow row, bool isOverride})? latestPast;
@@ -6938,21 +6905,22 @@ SELECT
       Tracker.captureException(e, t);
       generated = const [];
     }
-    final generatedRows =
-        generated.map((t) => t._schedule!).toList(growable: false);
+    final generatedRows = generated
+        .map((t) => t._schedule!)
+        .toList(growable: false);
 
     // Load all schedule rows for the same link (overrides + base), filter
     // to override rows (occurrence != null), partition by archived.
     final linkId = schedule.linkId;
     List<ScheduleRow> allRows;
     if (linkId != null) {
-      allRows = await (Store.get.select(Store.get.schedules)
-            ..where((s) => s.linkId.equals(linkId.toBytes())))
-          .get();
+      allRows = await (Store.get.select(
+        Store.get.schedules,
+      )..where((s) => s.linkId.equals(linkId.toBytes()))).get();
     } else {
-      allRows = await (Store.get.select(Store.get.schedules)
-            ..where((s) => s.threadId.equals(base.id.toBytes())))
-          .get();
+      allRows = await (Store.get.select(
+        Store.get.schedules,
+      )..where((s) => s.threadId.equals(base.id.toBytes()))).get();
     }
 
     final overrideRows = <ScheduleRow>[];
@@ -6989,8 +6957,7 @@ SELECT
       }
     }
 
-    final inherited =
-        !picked.isOverride || !overrideHasUserContact(picked.row);
+    final inherited = !picked.isOverride || !overrideHasUserContact(picked.row);
 
     return Thread._fromStore(
       activity: base._thread,

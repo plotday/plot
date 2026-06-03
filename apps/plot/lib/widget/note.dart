@@ -168,8 +168,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                 .map((a) => a.toUuid())
                 .toSet(),
             nameLookup: (id) =>
-                Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ??
-                'Someone',
+                Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ?? 'Someone',
           )
         : null;
 
@@ -208,10 +207,7 @@ class _NoteWidgetState extends State<NoteWidget> {
                 top: 8,
                 bottom: 4,
               ),
-              child: _NoteActionsLayout(
-                actions: noteLinks,
-                note: widget.note,
-              ),
+              child: _NoteActionsLayout(actions: noteLinks, note: widget.note),
             ),
           SizedBox(
             height: 30,
@@ -910,12 +906,6 @@ class NoteCommands extends StatelessWidget {
         : Future.value('');
 
     // Build generic tag widgets (excluding todo/done which are handled above)
-    final isViewerPriority = context
-        .read<ThreadBloc>()
-        .state
-        .thread
-        .priority
-        .isViewer;
     final threadContacts = context.read<ThreadBloc>().state.thread.contacts;
     final tagFutures = Tag.getAll()
         .where((tag) {
@@ -933,12 +923,7 @@ class NoteCommands extends StatelessWidget {
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
-          final command = ToggleNoteTag(
-            note,
-            tag,
-            actorId,
-            isViewer: isViewerPriority,
-          );
+          final command = ToggleNoteTag(note, tag, actorId);
 
           // Get actor names for tooltip
           final actorNames = await note.getTagActorNames(tag);
@@ -969,17 +954,17 @@ class NoteCommands extends StatelessWidget {
 
     // Get activity state for common tags
     final activityBloc = context.watch<ThreadBloc>();
-    final activityState = activityBloc.state;
 
     // Watch the local note_reactions row so active emojis render inline
     // with the other always-visible task buttons (no separate row).
 
     // Build the final row with tags and commands
     final commandsRow = StreamBuilder<NoteReactionsRow?>(
-      stream: (Store.get.select(Store.get.noteReactions)
-            ..where((t) => t.id.equalsValue(note.id))
-            ..limit(1))
-          .watchSingleOrNull(),
+      stream:
+          (Store.get.select(Store.get.noteReactions)
+                ..where((t) => t.id.equalsValue(note.id))
+                ..limit(1))
+              .watchSingleOrNull(),
       builder: (context, reactionSnap) {
         final reactions =
             reactionSnap.data?.reactions ?? const <Reaction, List<ActorId>>{};
@@ -996,231 +981,236 @@ class NoteCommands extends StatelessWidget {
         ]);
 
         return FutureBuilder<(List<Widget>, String, List<String>, String)>(
-      future: Future.wait([
-        Future.wait(tagFutures),
-        assigneeNamesFuture,
-        reactionNamesFuture,
-        doneNamesFuture,
-      ]).then(
-        (results) => (
-          results[0] as List<Widget>,
-          results[1] as String,
-          results[2] as List<String>,
-          results[3] as String,
-        ),
-      ),
-      builder: (context, snapshot) {
-        final assigneeNames = snapshot.data?.$2 ?? '';
-        final reactionNames = snapshot.data?.$3 ?? const <String>[];
-        final doneNames = snapshot.data?.$4 ?? '';
-
-        // Active reactions render with the same accent-color "selected"
-        // treatment as count-tags — no border, no background. The actors
-        // who reacted are shown as a subtitle under the emoji name (empty
-        // until the names resolve).
-        final activeReactionButtons = <Widget>[
-          for (var i = 0; i < activeEntries.length; i++)
-            () {
-              final entry = activeEntries[i];
-              final names = i < reactionNames.length ? reactionNames[i] : '';
-              Command cmd = ActiveNoteReaction(note, entry.key);
-              if (names.isNotEmpty) {
-                cmd = CommandWrapper(cmd, subtitle: Value(names));
-              }
-              final btn = Button.icon(
-                cmd,
-                key: ValueKey(Object.hash(note.id, entry.key)),
-                selected: true,
-              );
-              return entry.value.length > 1
-                  ? CountBadge(count: entry.value.length, child: btn)
-                  : btn;
-            }(),
-        ];
-
-        // Build task tag widgets — show as many as apply
-        final taskTagWidgets = <Widget>[
-          // Self todo: circle icon (circleCheck on hover via SelfTaskAction)
-          if (selfTodo)
-            Button.icon(
-              SelfTaskAction(note),
-              key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
-              selected: true,
-            ),
-          // Others todo: userCircle chip (circlePlus on hover). Behaves like a
-          // reaction — tapping toggles the viewer's own task on/off, surfacing
-          // their own self-todo circle before this chip.
-          if (othersTodo.isNotEmpty)
-            CountBadge(
-              count: othersTodo.length,
-              child: Button.icon(
-                assigneeNames.isNotEmpty
-                    ? CommandWrapper(
-                        JoinNoteTask(note),
-                        subtitle: Value(assigneeNames),
-                      )
-                    : JoinNoteTask(note),
-                key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
-                selected: true,
+          future:
+              Future.wait([
+                Future.wait(tagFutures),
+                assigneeNamesFuture,
+                reactionNamesFuture,
+                doneNamesFuture,
+              ]).then(
+                (results) => (
+                  results[0] as List<Widget>,
+                  results[1] as String,
+                  results[2] as List<String>,
+                  results[3] as String,
+                ),
               ),
-            ),
-          // Any done: single check icon labelled "Done", count badge if > 1.
-          // Clicking toggles the viewer's own Tag.done (and clears their todo).
-          if (totalDone >= 1)
-            (() {
-              Command cmd = ToggleSelfDone(note);
-              if (doneNames.isNotEmpty) {
-                cmd = CommandWrapper(cmd, subtitle: Value(doneNames));
-              }
-              final btn = Button.icon(
-                cmd,
-                key: ValueKey(Object.hash(note.id, Tag.done.id)),
-                selected: true,
-              );
-              return totalDone > 1
-                  ? CountBadge(count: totalDone, child: btn)
-                  : btn;
-            })(),
-        ];
+          builder: (context, snapshot) {
+            final assigneeNames = snapshot.data?.$2 ?? '';
+            final reactionNames = snapshot.data?.$3 ?? const <String>[];
+            final doneNames = snapshot.data?.$4 ?? '';
 
-        // Build command buttons (only if showCommands is true)
-        final isViewer = activityState.thread.priority.isViewer;
-        final commandButtons = showCommands
-            ? [
-                // "Make a task" (circlePlus). Hidden when others are already
-                // assigned — the always-visible userCircle chip is the
-                // self-assign affordance in that case.
-                if (!selfTodo && !selfDone && !isViewer && othersTodo.isEmpty)
-                  Button.icon(SelfTaskAction(note)),
+            // Active reactions render with the same accent-color "selected"
+            // treatment as count-tags — no border, no background. The actors
+            // who reacted are shown as a subtitle under the emoji name (empty
+            // until the names resolve).
+            final activeReactionButtons = <Widget>[
+              for (var i = 0; i < activeEntries.length; i++)
+                () {
+                  final entry = activeEntries[i];
+                  final names = i < reactionNames.length
+                      ? reactionNames[i]
+                      : '';
+                  Command cmd = ActiveNoteReaction(note, entry.key);
+                  if (names.isNotEmpty) {
+                    cmd = CommandWrapper(cmd, subtitle: Value(names));
+                  }
+                  final btn = Button.icon(
+                    cmd,
+                    key: ValueKey(Object.hash(note.id, entry.key)),
+                    selected: true,
+                  );
+                  return entry.value.length > 1
+                      ? CountBadge(count: entry.value.length, child: btn)
+                      : btn;
+                }(),
+            ];
 
-                // Add reaction — opens the emoji picker modal.
-                if (!note.draft && !isViewer)
-                  Button.icon(
-                    AddNoteReaction(note, activityBloc: activityBloc),
-                  ),
-
-                if (!note.draft && !isViewer)
-                  Button.icon(ReplyToNote(note, activityBloc: activityBloc)),
-
+            // Build task tag widgets — show as many as apply
+            final taskTagWidgets = <Widget>[
+              // Self todo: circle icon (circleCheck on hover via SelfTaskAction)
+              if (selfTodo)
                 Button.icon(
-                  CommandWrapper(
-                    ShowNoteCommands(note, activityBloc: activityBloc),
-                    icon: Value(PlotIcon.more),
+                  SelfTaskAction(note),
+                  key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
+                  selected: true,
+                ),
+              // Others todo: userCircle chip (circlePlus on hover). Behaves like a
+              // reaction — tapping toggles the viewer's own task on/off, surfacing
+              // their own self-todo circle before this chip.
+              if (othersTodo.isNotEmpty)
+                CountBadge(
+                  count: othersTodo.length,
+                  child: Button.icon(
+                    assigneeNames.isNotEmpty
+                        ? CommandWrapper(
+                            JoinNoteTask(note),
+                            subtitle: Value(assigneeNames),
+                          )
+                        : JoinNoteTask(note),
+                    key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
+                    selected: true,
                   ),
                 ),
-              ]
-            : <Widget>[];
+              // Any done: single check icon labelled "Done", count badge if > 1.
+              // Clicking toggles the viewer's own Tag.done (and clears their todo).
+              if (totalDone >= 1)
+                (() {
+                  Command cmd = ToggleSelfDone(note);
+                  if (doneNames.isNotEmpty) {
+                    cmd = CommandWrapper(cmd, subtitle: Value(doneNames));
+                  }
+                  final btn = Button.icon(
+                    cmd,
+                    key: ValueKey(Object.hash(note.id, Tag.done.id)),
+                    selected: true,
+                  );
+                  return totalDone > 1
+                      ? CountBadge(count: totalDone, child: btn)
+                      : btn;
+                })(),
+            ];
 
-        // While loading or on error, show buttons without subtitles
-        final genericTagButtons =
-            snapshot.hasData && snapshot.connectionState == ConnectionState.done
-            ? snapshot.data!.$1
-            : Tag.getAll()
-                  .where((tag) {
-                    if (tag == Tag.todo || tag == Tag.done) return false;
-                    final actors = note.tags[tag];
-                    if (actors == null || actors.isEmpty) return false;
-                    if (tag == Tag.reply) return actors.contains(actorId);
-                    if (tag == Tag.private) {
-                      return !note.matchesThreadContacts(threadContacts);
-                    }
-                    return true;
-                  })
-                  .map((tag) {
-                    final key = ValueKey(Object.hash(note.id, tag.id));
-                    final command = ToggleNoteTag(
-                      note,
-                      tag,
-                      actorId,
-                      isViewer: isViewerPriority,
-                    );
-                    final count = tag == Tag.reply
-                        ? 1
-                        : TagActors.countOf(note.tags[tag]);
-                    // Twist tags are display-only (not interactive)
-                    if (tag == Tag.twist) {
-                      return CountBadge(
-                        count: count,
-                        child: PulsingColorButton(
-                          key: key,
-                          primaryColor: context.colour.accent,
-                        ),
-                      );
-                    }
-                    return CountBadge(
-                      count: count,
-                      child: Button.icon(command, key: key, selected: true),
-                    );
-                  })
-                  .toList();
+            // Build command buttons (only if showCommands is true)
+            final commandButtons = showCommands
+                ? [
+                    // "Make a task" (circlePlus). Hidden when others are already
+                    // assigned — the always-visible userCircle chip is the
+                    // self-assign affordance in that case.
+                    if (!selfTodo && !selfDone && othersTodo.isEmpty)
+                      Button.icon(SelfTaskAction(note)),
 
-        // Combine task tags, active emoji reactions (always visible),
-        // generic tags, and commands (hover-only). Active emojis sit
-        // between task tags and the rest so they don't displace the
-        // todo/done buttons but always read before hover-only chrome.
-        final allButtons = [
-          ...taskTagWidgets,
-          ...activeReactionButtons,
-          ...genericTagButtons,
-          ...commandButtons,
-        ];
+                    // Add reaction — opens the emoji picker modal.
+                    if (!note.draft)
+                      Button.icon(
+                        AddNoteReaction(note, activityBloc: activityBloc),
+                      ),
 
-        // Use LayoutBuilder to dynamically truncate buttons based on available width
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            // If width is unbounded (infinite), show all buttons
-            if (!constraints.maxWidth.isFinite) {
-              return Row(mainAxisSize: MainAxisSize.min, children: allButtons);
-            }
+                    if (!note.draft)
+                      Button.icon(
+                        ReplyToNote(note, activityBloc: activityBloc),
+                      ),
 
-            // Estimate button width (icon buttons are approximately 40px with spacing)
-            const estimatedButtonWidth = 40.0;
-            final maxButtons = (constraints.maxWidth / estimatedButtonWidth)
-                .floor();
-
-            // Determine which buttons to show
-            List<Widget> visibleButtons;
-            if (allButtons.length <= maxButtons) {
-              // All buttons fit
-              visibleButtons = allButtons;
-            } else if (maxButtons <= 1) {
-              // Only show the last button (ShowNoteCommands) if space is very limited
-              visibleButtons = allButtons.isNotEmpty ? [allButtons.last] : [];
-            } else {
-              // Truncate from the end, but always keep the last button
-              visibleButtons = [
-                ...allButtons.sublist(0, maxButtons - 1),
-                allButtons.last,
-              ];
-            }
-
-            if (visibleButtons.isEmpty) {
-              return const SizedBox.shrink();
-            }
-            final buttonRow = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: visibleButtons,
-            );
-            final bg = tileBg;
-            if (bg == null) return buttonRow;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ColoredBox(color: bg, child: buttonRow),
-                Container(
-                  width: 24,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [bg, bg.withValues(alpha: 0)],
+                    Button.icon(
+                      CommandWrapper(
+                        ShowNoteCommands(note, activityBloc: activityBloc),
+                        icon: Value(PlotIcon.more),
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ]
+                : <Widget>[];
+
+            // While loading or on error, show buttons without subtitles
+            final genericTagButtons =
+                snapshot.hasData &&
+                    snapshot.connectionState == ConnectionState.done
+                ? snapshot.data!.$1
+                : Tag.getAll()
+                      .where((tag) {
+                        if (tag == Tag.todo || tag == Tag.done) return false;
+                        final actors = note.tags[tag];
+                        if (actors == null || actors.isEmpty) return false;
+                        if (tag == Tag.reply) return actors.contains(actorId);
+                        if (tag == Tag.private) {
+                          return !note.matchesThreadContacts(threadContacts);
+                        }
+                        return true;
+                      })
+                      .map((tag) {
+                        final key = ValueKey(Object.hash(note.id, tag.id));
+                        final command = ToggleNoteTag(note, tag, actorId);
+                        final count = tag == Tag.reply
+                            ? 1
+                            : TagActors.countOf(note.tags[tag]);
+                        // Twist tags are display-only (not interactive)
+                        if (tag == Tag.twist) {
+                          return CountBadge(
+                            count: count,
+                            child: PulsingColorButton(
+                              key: key,
+                              primaryColor: context.colour.accent,
+                            ),
+                          );
+                        }
+                        return CountBadge(
+                          count: count,
+                          child: Button.icon(command, key: key, selected: true),
+                        );
+                      })
+                      .toList();
+
+            // Combine task tags, active emoji reactions (always visible),
+            // generic tags, and commands (hover-only). Active emojis sit
+            // between task tags and the rest so they don't displace the
+            // todo/done buttons but always read before hover-only chrome.
+            final allButtons = [
+              ...taskTagWidgets,
+              ...activeReactionButtons,
+              ...genericTagButtons,
+              ...commandButtons,
+            ];
+
+            // Use LayoutBuilder to dynamically truncate buttons based on available width
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                // If width is unbounded (infinite), show all buttons
+                if (!constraints.maxWidth.isFinite) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: allButtons,
+                  );
+                }
+
+                // Estimate button width (icon buttons are approximately 40px with spacing)
+                const estimatedButtonWidth = 40.0;
+                final maxButtons = (constraints.maxWidth / estimatedButtonWidth)
+                    .floor();
+
+                // Determine which buttons to show
+                List<Widget> visibleButtons;
+                if (allButtons.length <= maxButtons) {
+                  // All buttons fit
+                  visibleButtons = allButtons;
+                } else if (maxButtons <= 1) {
+                  // Only show the last button (ShowNoteCommands) if space is very limited
+                  visibleButtons = allButtons.isNotEmpty
+                      ? [allButtons.last]
+                      : [];
+                } else {
+                  // Truncate from the end, but always keep the last button
+                  visibleButtons = [
+                    ...allButtons.sublist(0, maxButtons - 1),
+                    allButtons.last,
+                  ];
+                }
+
+                if (visibleButtons.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                final buttonRow = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: visibleButtons,
+                );
+                final bg = tileBg;
+                if (bg == null) return buttonRow;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ColoredBox(color: bg, child: buttonRow),
+                    Container(
+                      width: 24,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [bg, bg.withValues(alpha: 0)],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
-      },
-    );
       },
     );
 
@@ -1277,10 +1267,7 @@ class _NoteActionsLayout extends StatelessWidget {
                   style: FButtonStyleDelta.delta(
                     contentStyle: FButtonContentStyleDelta.delta(
                       padding: EdgeInsetsGeometryDelta.value(
-                        const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       ),
                     ),
                   ),
@@ -1299,4 +1286,3 @@ class _NoteActionsLayout extends StatelessWidget {
     );
   }
 }
-

@@ -73,14 +73,10 @@ List<StaticCommandGroup> settingsCommandsFromState(
       prioritiesState.priorities.any((p) => p.teamId != null);
 
   final rootPriority = prioritiesState?.root;
-  final plotAppPriority = prioritiesState?.priorities.firstWhereOrNull(
-    (p) => p.isPlotApp && p.archivedAt == null,
-  );
 
   return settingsCommands(
     hasTeams: hasTeams,
     rootPriority: rootPriority,
-    plotAppPriority: plotAppPriority,
     email: email,
     adminOrgs: adminOrgs,
     subscription: subscription,
@@ -91,7 +87,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
 List<StaticCommandGroup> settingsCommands({
   bool hasTeams = false,
   Priority? rootPriority,
-  Priority? plotAppPriority,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
@@ -147,7 +142,7 @@ List<StaticCommandGroup> settingsCommands({
               subscription.isAppStoreOrigin))
         ShowUpgradeOptions(),
       if (UpgradeUi.isAppStoreBuild) RestorePurchasesCommand(),
-      if (plotAppPriority != null) HelpAndFeedback(plotAppPriority),
+      if (rootPriority != null) HelpAndFeedback(rootPriority),
       CopyPageLink(),
       OpenCopiedPageLink(),
       FullResync(),
@@ -1322,23 +1317,25 @@ class _SaveAiPreference extends Command {
 }
 
 class HelpAndFeedback extends Command {
-  HelpAndFeedback(this.plotAppPriority)
+  HelpAndFeedback(this.rootPriority)
     : super(
         title: 'Help and feedback',
-        subtitle: 'Ask for help or share feedback in Using Plot',
+        subtitle: 'Ask for help or share feedback with the Plot team',
         icon: PlotIcon.help,
         eventObject: EventObject.commandBar,
         eventAction: EventAction.opened,
       );
 
-  final Priority plotAppPriority;
+  /// The user's Inbox (root). Help & Feedback opens a new thread here,
+  /// pre-shared with the Plot Team group (see [NewThreadPage.feedback]).
+  final Priority rootPriority;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(
       PriorityRoute(
-        priorityIdString: plotAppPriority.id.toShortString(),
-        children: [NewThreadRoute()],
+        priorityIdString: rootPriority.id.toShortString(),
+        children: [NewThreadRoute(feedback: true)],
       ),
     );
   }

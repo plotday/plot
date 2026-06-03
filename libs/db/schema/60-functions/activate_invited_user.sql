@@ -11,7 +11,6 @@ DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
     v_root_priority_id uuid;
-    v_using_plot_id uuid;
     v_new_path ltree;
     v_plot_team_group_id uuid;
     v_plot_twist_id bigint;
@@ -39,11 +38,11 @@ BEGIN
         VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0)
     RETURNING
         id INTO v_root_priority_id;
-    -- Resolve the Plot Team group once — used for the Using Plot priority
-    -- config and for the welcome thread's groups array. Prefer the full
-    -- "Plot" team's auto-maintained group (everyone on the team, what we
-    -- want in prod); fall back to the Plot publisher admin group for
-    -- environments where the Plot team doesn't exist yet.
+    -- Resolve the Plot Team group once — used for the welcome thread's
+    -- groups array (so the user's first message reaches the Plot team).
+    -- Prefer the full "Plot" team's auto-maintained group (everyone on the
+    -- team, what we want in prod); fall back to the Plot publisher admin
+    -- group for environments where the Plot team doesn't exist yet.
     SELECT
         COALESCE((
             SELECT
@@ -66,26 +65,11 @@ BEGIN
             WHERE
                 name = 'Plot' LIMIT 1)
 LIMIT 1)) INTO v_plot_team_group_id;
-    -- Create Using Plot (@plot.app). Config pins new threads to the
-    -- feedback topic, auto-shares them with the Plot team, and hides the
-    -- agenda tab so the priority acts like a feedback channel. The
-    -- `groupLabel` is what the UI renders on the locked chip, decoupled
-    -- from whatever the underlying group happens to be named locally.
-    INSERT INTO public.priority (created_by, user_id, title, path, color, key, default_thread_icon, config)
-        VALUES (p_user_id, p_user_id, 'Using Plot', v_new_path || generate_path (NULL), 7, '@plot.app', 'https://plot.day/assets/plot-icon.svg', jsonb_build_object('topic', 'feedback', 'group', v_plot_team_group_id::text, 'groupLabel', 'Plot Team', 'view', 'activity'))
-    RETURNING
-        id INTO v_using_plot_id;
-    -- Pin Using Plot to the bottom of the priorities list. The user.priority
-    -- view falls back to `extract(epoch FROM created_at) * 1000` when no
-    -- explicit order setting exists, which would put this priority above
-    -- anything the user creates later (the activation row is the oldest).
-    -- 1e15 sits well past any plausible epoch_ms value so every
-    -- naturally-defaulted order sorts ahead of it.
-    INSERT INTO public.priority_setting (user_id, priority_id, key, value)
-        VALUES (p_user_id, v_using_plot_id, 'order', to_jsonb(1e15::double precision));
-    -- Twist Development (@plot.twist-dev) is created lazily on first deploy
-    -- via ensure_twist_dev_priority, so users who never develop twists don't
-    -- carry an unused priority.
+    -- No special hardcoded focuses are seeded. Onboarding threads (the
+    -- per-user welcome below and the shared global onboarding set) land in
+    -- the user's Inbox/root via classify_thread_for_user's root_fallback and
+    -- a shared topic = 'onboarding'. The user organizes them however they
+    -- like; moving one into a focus carries the rest along (topic match).
     -- Seed a per-user welcome thread authored by the shared system Plot
     -- twist_instance (same pattern as the global onboarding threads). The
     -- thread is visible only to the new user (via contacts) and the Plot
@@ -146,7 +130,7 @@ LIMIT 1)) INTO v_plot_team_group_id;
         INSERT INTO public.thread (created_by, icon, title, preview, key, topic, contacts, groups)
             VALUES (c_system_instance_id, CASE WHEN v_plot_twist_id IS NOT NULL THEN
                     'twist:' || v_plot_twist_id::text
-                END, 'Welcome to Plot!', 'Glad something brought you here.', 'welcome-user', 'priority:@plot.app:welcome-user', CASE WHEN v_user_contact_id IS NOT NULL THEN
+                END, 'Welcome to Plot!', 'Glad something brought you here.', 'welcome-user', 'onboarding', CASE WHEN v_user_contact_id IS NOT NULL THEN
                     ARRAY[v_user_contact_id]
                 ELSE
                     ARRAY[]::uuid[]
@@ -154,9 +138,9 @@ LIMIT 1)) INTO v_plot_team_group_id;
         RETURNING
             id INTO v_welcome_thread_id;
         -- file_thread_priority_peers short-circuits for twist-authored
-        -- threads, so file the new user into their own Using Plot manually.
+        -- threads, so file the new user into their own Inbox (root) manually.
         INSERT INTO public.thread_priority (thread_id, user_id, priority_id)
-            VALUES (v_welcome_thread_id, p_user_id, v_using_plot_id)
+            VALUES (v_welcome_thread_id, p_user_id, v_root_priority_id)
         ON CONFLICT ON CONSTRAINT thread_priority_pkey
             DO NOTHING;
         -- importance = 100 puts this thread at the top of Updates, above
@@ -187,10 +171,11 @@ Plot is built for collaborating without getting buried — every conversation ha
             WHERE key IS NOT NULL
             DO NOTHING;
     END IF;
-    -- Onboarding routing is now learned from user moves (thread_priority.user_moved).
+    -- Priority routing is learned from user moves (thread_priority.user_moved).
     -- New users start with no training examples; incoming threads land in the
-    -- root priority until the user moves one into "Using Plot". classify_thread_for_user
-    -- then picks that priority up automatically for similar future threads.
+    -- root priority (Inbox) until the user moves one into a focus they create.
+    -- classify_thread_for_user then picks that focus up automatically for
+    -- similar future threads.
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
 $function$;

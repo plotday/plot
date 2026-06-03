@@ -410,7 +410,7 @@ Widget _emojiButtonIcon(BuildContext _, Reaction emoji) =>
     EmojiCommandIcon(emoji);
 
 class ToggleNoteTag extends NoteCommand {
-  ToggleNoteTag(super.note, this.tag, this.actorId, {this.isViewer = false})
+  ToggleNoteTag(super.note, this.tag, this.actorId)
     : super(
         title: tag.name,
         eventObject: EventObject.note,
@@ -422,10 +422,6 @@ class ToggleNoteTag extends NoteCommand {
 
   final Tag tag;
   final ActorId actorId;
-  final bool isViewer;
-
-  @override
-  bool enabled(BuildContext context) => !(tag == Tag.private && isViewer);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -760,22 +756,19 @@ List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
 }) {
-  final isViewer =
-      (activityBloc?.state.thread.priority.isViewer ?? false) ||
-      (activityBloc?.state.thread.isReadOnly ?? false);
+  final isReadOnly = activityBloc?.state.thread.isReadOnly ?? false;
   final commands = noteCommands(note, activityBloc: activityBloc);
-  if (!note.draft && !isViewer) commands.add(ArchiveNote(note));
+  if (!note.draft && !isReadOnly) commands.add(ArchiveNote(note));
   if (commands.isEmpty) return const [];
   return [StaticCommandGroup(title: 'Note', commands: commands)];
 }
 
 List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
-  final isViewer =
-      (activityBloc?.state.thread.priority.isViewer ?? false) ||
-      (activityBloc?.state.thread.isReadOnly ?? false);
+  final isReadOnly = activityBloc?.state.thread.isReadOnly ?? false;
 
-  // Viewers can only reply (forced private by DB), edit own notes, and copy
-  if (isViewer) {
+  // Read-only threads: can only reply (forced private by DB), edit own
+  // notes, and copy.
+  if (isReadOnly) {
     return [
       if (!note.draft && activityBloc != null)
         ReplyToNote(note, activityBloc: activityBloc),

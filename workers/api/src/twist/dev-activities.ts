@@ -17,15 +17,13 @@ type LogThreadContext = {
  * the context needed to append a note.
  *
  * Routing (who the thread files under, for whom):
- *   - Personal env: thread.topic = `priority:@plot.twist-dev:personal:<owner_user_id>`.
- *     The `priority:@plot.twist-dev:` prefix tells classify_thread_for_user to
- *     default the thread into each consumer's @plot.twist-dev priority when
- *     they have no explicit override. Only the owner sees the thread.
- *   - Non-personal env: thread.topic = `priority:@plot.twist-dev:publisher:<group_id>`.
- *     thread.groups is populated with the publisher group id so the peer-filing
- *     trigger runs classify_thread_for_user for every group member; the topic
- *     prefix then defaults each member's filing into their @plot.twist-dev
- *     priority.
+ *   - thread.topic = `twist-dev` for every logs thread. There is no special
+ *     focus anymore — classify_thread_for_user files each consumer's copy into
+ *     their Inbox (root_fallback). The shared `twist-dev` topic lets a developer
+ *     move one logs thread into a focus and have the rest follow (topic match).
+ *   - Personal env: only the owner sees the thread (contacts = owner's primary).
+ *   - Non-personal env: thread.groups is populated with the publisher group id so
+ *     the peer-filing trigger runs classify_thread_for_user for every group member.
  *
  * Returns null when the thread cannot be materialized (e.g. no Plot twist
  * installed for the thread owner, or no auto-maintained publisher group).
@@ -54,7 +52,7 @@ async function ensureLogsThread(
   if (environment === "personal") {
     if (!twistRow.user_id) return null;
     threadOwnerUserId = twistRow.user_id;
-    topic = `priority:@plot.twist-dev:personal:${threadOwnerUserId}`;
+    topic = "twist-dev";
   } else {
     if (twistRow.publisher_id === null || twistRow.publisher_id === undefined) {
       return null;
@@ -75,7 +73,7 @@ async function ensureLogsThread(
       .executeTakeFirst();
     if (!group?.id) return null;
     groupId = group.id;
-    topic = `priority:@plot.twist-dev:publisher:${group.id}`;
+    topic = "twist-dev";
   }
 
   const contactIds: string[] = [];
@@ -145,9 +143,9 @@ async function ensureLogsThread(
     .executeTakeFirstOrThrow();
 
   // Dev seeders: file pending rows for every consumer. The consumer
-  // Worker resolves each user's priority asynchronously (priority:@plot.twist-dev:
-  // topic prefix → each user's Twist Development priority). Dev-only
-  // path; production threads use classifyThreadForUser directly.
+  // Worker resolves each user's priority asynchronously (classify_thread_for_user
+  // → each user's Inbox via root_fallback). Dev-only path; production threads
+  // use classifyThreadForUser directly.
   if (groupId) {
     await sql`
       INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)

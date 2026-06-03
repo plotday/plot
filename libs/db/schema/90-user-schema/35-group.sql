@@ -9,6 +9,7 @@ SELECT
     g.archived_at,
     g.name,
     g.type,
+    g.key,
     g.join_policy,
     g.team_id,
     g.auto_maintained,
