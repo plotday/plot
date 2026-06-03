@@ -1380,7 +1380,6 @@ class _ThreadActionsRow extends StatelessWidget {
     final startGroup = <Widget>[
       todoButton,
       scheduleButton,
-      if (!readOnly) Button.icon(EditThread(thread), tooltipBelow: true),
     ];
 
     final endGroup = <Widget>[

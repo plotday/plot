@@ -813,13 +813,24 @@ class ThreadCommands extends HookWidget {
       skipInfrequent: true,
       showEventTiming: showEventTiming,
     ).toList();
-    // PickScheduleThread is surfaced via the thread-icon hover swap, so
-    // exclude it from the trailing command row to avoid duplication.
-    // PickThreadShared is rendered separately (see [trailingShareButton])
-    // when the thread isn't shared.
-    final hoverCommands = rawHoverCommands.where(
-      (cmd) => cmd is! PickScheduleThread && cmd is! PickThreadShared,
-    );
+    // Lead the hover-command row with Schedule, then the remaining frequent
+    // commands. Schedule is otherwise only reachable via the leading-icon
+    // long-press, so surface it explicitly here. Rename (EditThread) is
+    // appended after the Skip/Cleanup button below, not here. Schedule is a
+    // per-user agenda action — allowed even on read-only (announce-group /
+    // onboarding) threads, same as the leading-icon long-press — so it is
+    // not gated on isReadOnly. PickThreadShared stays filtered out — it's
+    // rendered separately (see [trailingShareButton]) when the thread isn't
+    // shared.
+    final hoverCommands = [
+      PickScheduleThread(activity),
+      ...rawHoverCommands.where(
+        (cmd) =>
+            cmd is! PickScheduleThread &&
+            cmd is! PickThreadShared &&
+            cmd is! EditThread,
+      ),
+    ];
     Widget buildCommandButton(Command cmd) => Button.icon(cmd);
 
     final threadCommandButtons = showCommands
@@ -868,6 +879,8 @@ class ThreadCommands extends HookWidget {
         // semantics flip based on whether the thread already carries the
         // mute flag.
         Button.icon(MuteSimilarThreads(activity)),
+        // Rename follows Skip/Cleanup (it leads no longer — see hoverCommands).
+        if (!activity.isReadOnly) Button.icon(EditThread(activity)),
         // Always add ShowThreadCommands as the 6th button
         Button.icon(
           CommandWrapper(

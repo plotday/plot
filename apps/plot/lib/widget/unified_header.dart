@@ -454,7 +454,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // Single-panel: thread actions live in the header (no squircle).
     final trailing = <Widget>[
       if (thread != null) _buildTodoToggle(context, thread),
-      if (thread != null && !thread.isReadOnly) Button.icon(EditThread(thread)),
       if (thread != null && !thread.isReadOnly)
         SharedCommandButton(thread: thread),
       // Single-panel: search lives in the bottom nav, not the header.
