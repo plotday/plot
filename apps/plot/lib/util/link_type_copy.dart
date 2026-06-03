@@ -10,13 +10,11 @@ import 'package:plot/store/store.dart'
 /// the linked system.
 
 /// Placeholder for the NewThreadPage body editor when the target is a Plot
-/// thread (no connector). Driven by the (task, shared) flags.
+/// thread (no connector). Driven by the [shared] flag.
 ///
-/// - !task && !shared → "Add a note"
-/// - task             → "Add a task"
-/// - !task && shared  → "Start a chat"
-String composerHintForNewThreadPlot({required bool task, required bool shared}) {
-  if (task) return 'Add a task';
+/// - !shared → "Add a note"
+/// - shared  → "Start a chat"
+String composerHintForNewThreadPlot({required bool shared}) {
   if (shared) return 'Start a chat';
   return 'Add a note';
 }

@@ -187,13 +187,10 @@ export interface CustomEmoji {
 
 export interface Device {
   app_version: string | null;
-  capabilities: Generated<Json>;
   created_at: Generated<Timestamp>;
-  device_id: string | null;
   id: Generated<string>;
-  last_seen_at: Generated<Timestamp>;
   platform: string;
-  push_token: string | null;
+  push_token: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -453,23 +450,6 @@ export interface LinkX {
   updated_by: number | null;
 }
 
-export interface LocalSyncLease {
-  attempt_id: string;
-  capability: string;
-  created_at: Generated<Timestamp>;
-  device_id: string;
-  fail_streak: Generated<number>;
-  last_completed_at: Timestamp | null;
-  last_error: string | null;
-  last_heartbeat_at: Timestamp;
-  last_result: string | null;
-  lease_token: string;
-  leased_until: Timestamp;
-  next_eligible_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
-}
-
 export interface Note {
   /**
    * Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.
@@ -580,9 +560,6 @@ export interface Priority {
   config: Json | null;
   created_at: Generated<Timestamp>;
   created_by: string;
-  default_contacts: Generated<string[]>;
-  default_groups: Generated<string[]>;
-  default_invite_emails: Generated<string[]>;
   default_thread_icon: string | null;
   icon: string | null;
   id: Generated<string>;
@@ -591,7 +568,6 @@ export interface Priority {
   path: string;
   seq: Generated<string>;
   sync_depth: number | null;
-  team_id: Int8 | null;
   title: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
@@ -779,6 +755,7 @@ export interface Thread {
    * Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.
    */
   embedding: string | null;
+  external_contacts: Generated<string[]>;
   /**
    * Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.
    */
@@ -804,9 +781,9 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
-  private_to_creator: Generated<boolean>;
   seq: Generated<string>;
   sync_depth: number | null;
+  team_id: Int8 | null;
   title: string | null;
   /**
    * Routing key used by classify_thread_for_user. Two conventions: (1) priority:{KEY}[:{SUB_TOPIC}] defaults the thread into the user's priority with that key when no user_moved example wins; (2) any other string acts as the topic filter over user_moved training examples. On INSERT defaults to, in order: explicit input, or groups[1]::text when unset.
@@ -943,6 +920,7 @@ export interface ThreadX {
   draft: boolean | null;
   dropped_contacts: string[] | null;
   embedding: string | null;
+  external_contacts: string[] | null;
   groups: string[] | null;
   icon: string | null;
   id: string | null;
@@ -955,6 +933,7 @@ export interface ThreadX {
   preview: string | null;
   seq: string | null;
   sync_depth: number | null;
+  team_id: Int8 | null;
   title: string | null;
   topic: string | null;
   twist_id: Int8 | null;
@@ -1522,9 +1501,6 @@ export interface UserPriority {
   config: Json | null;
   created_at: Timestamp | null;
   created_by: string | null;
-  default_contacts: string[] | null;
-  default_groups: string[] | null;
-  default_invite_emails: string[] | null;
   early_notifications_enabled: boolean | null;
   early_notifications_enabled_set: boolean | null;
   flat_title: string | null;
@@ -1687,6 +1663,7 @@ export interface UserThread {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
+  team_id: Int8 | null;
   title: string | null;
   topic: string | null;
   unread: boolean | null;
@@ -1747,6 +1724,7 @@ export interface UserThreadRedacted {
   state_at: string | null;
   state_on: string | null;
   state_order: number | null;
+  team_id: Int8 | null;
   title: string | null;
   topic: string | null;
   unread: boolean | null;
@@ -1836,7 +1814,6 @@ export interface DB {
   group_member: GroupMember;
   link: Link;
   link_x: LinkX;
-  local_sync_lease: LocalSyncLease;
   note: Note;
   note_reaction: NoteReaction;
   note_reactions: NoteReactions;

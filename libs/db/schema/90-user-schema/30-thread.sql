@@ -56,6 +56,7 @@ SELECT
     a.contacts,
     a.contact_meta,
     a.groups,
+    a.team_id,
     a.topic,
     a.title,
     a.preview,
@@ -187,12 +188,6 @@ FROM
     LEFT JOIN "user".priority_expanded upe
         ON upe.user_id = tp.user_id
         AND upe.priority_id = "user".effective_priority_id(tp.priority_id, tp.user_id)
-    -- Effective priority join: case-A pending rows (priority_id NULL)
-    -- fall back to the user's root priority for the team-firewall check
-    -- below. Root priorities are user-owned, so team_id IS NULL and the
-    -- check trivially passes — which matches the COALESCE-to-root
-    -- behavior of the priority_id column the view exposes.
-    JOIN priority p ON p.id = "user".effective_priority_id(tp.priority_id, tp.user_id)
     LEFT JOIN thread_state ts ON ts.user_id = tp.user_id
         AND ts.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
@@ -212,13 +207,17 @@ WHERE
         tp.priority_id IS NOT NULL
         OR tp.classify_at < now() - public.classify_visibility_window()
     )
-    -- Team firewall: a thread filed under a team-scoped priority is only
-    -- visible to current members of that team.
+    -- Team firewall (thread-scoped): a team thread is visible only to current
+    -- members of thread.team_id, EXCEPT contacts explicitly marked external
+    -- (non-team customers), who are exempt. Personal threads (team_id NULL)
+    -- are ungated. Keyed on the thread's own team_id (was: the filed
+    -- priority's team_id) so it survives the removal of priority.team_id.
     AND (
-        p.team_id IS NULL
+        a.team_id IS NULL
+        OR a.external_contacts && "user".user_contact_ids(tp.user_id)
         OR EXISTS (
             SELECT 1 FROM public.team_user tu2
-            WHERE tu2.team_id = p.team_id
+            WHERE tu2.team_id = a.team_id
               AND tu2.user_id = tp.user_id
               AND tu2.archived_at IS NULL
         )
@@ -228,7 +227,7 @@ WHERE
 -- user.thread_redacted — stub rows for threads the user has lost access to.
 --
 -- The trigger that revokes access (e.g. file_thread_priority_on_group_member_change
--- on group_member DELETE, team_user_archive_priorities on team-leave) sets
+-- on group_member DELETE, team_user_revoke_team_threads on team-leave) sets
 -- thread_priority.revoked_at = now(). user.thread filters those rows out;
 -- this view emits a redacted stub instead so the client receives the
 -- cleanup signal via the normal seq cursor and can hard-delete its local
@@ -269,6 +268,7 @@ SELECT
     CAST(ARRAY[]::uuid[] AS uuid[]) AS contacts,
     '{}'::jsonb AS contact_meta,
     CAST(ARRAY[]::uuid[] AS uuid[]) AS groups,
+    NULL::bigint AS team_id,
     NULL::text AS topic,
     NULL::text AS title,
     NULL::text AS preview,

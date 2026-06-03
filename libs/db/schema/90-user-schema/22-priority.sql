@@ -97,9 +97,6 @@ SELECT
     COALESCE(direct.see_within_set, FALSE) AS see_within_set,
     p.inherit_members,
     p.config,
-    p.default_contacts,
-    p.default_groups,
-    p.default_invite_emails,
     -- New columns appended at the END so CREATE OR REPLACE VIEW works without
     -- dropping dependents. Order is irrelevant: clients map by column name.
     p.icon,

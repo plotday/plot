@@ -61,7 +61,20 @@ CREATE TABLE "public"."thread" (
     -- to merged_into_thread_id. The row is archived but its identity columns
     -- (contacts, groups, twist_id, key) are preserved
     -- so SplitThread can restore them. Many sources may point at one target.
-    "merged_into_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL
+    "merged_into_thread_id" uuid REFERENCES public.thread (id) ON DELETE SET NULL,
+    -- Team scope. NULL = personal (ungated). Set at creation and locked
+    -- thereafter (one-time NULL→value allowed for backfill / promotion).
+    -- For connector threads, defaulted from the creating
+    -- twist_instance.team_id by set_thread_team_and_external. The team
+    -- firewall in user.thread gates visibility on this column.
+    "team_id" bigint REFERENCES public.team (id) ON DELETE RESTRICT,
+    -- Subset of `contacts` that are NOT subject to the team-membership gate
+    -- (non-team "customer" participants). Captured point-in-time when a
+    -- contact is added to a team thread: a contact whose linked user is not
+    -- a current member of team_id at add-time is recorded here and stays
+    -- exempt. Maintained exclusively by set_thread_team_and_external; never
+    -- written directly. Always a subset of contacts.
+    "external_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]
 );
 
 ALTER TABLE "public"."thread"
@@ -115,6 +128,10 @@ WHERE
 CREATE INDEX idx_thread_contacts ON "public"."thread" USING gin ("contacts");
 
 CREATE INDEX idx_thread_groups ON "public"."thread" USING gin ("groups");
+
+CREATE INDEX idx_thread_team_id ON "public"."thread" ("team_id") WHERE team_id IS NOT NULL;
+
+CREATE INDEX idx_thread_external_contacts ON "public"."thread" USING gin ("external_contacts");
 
 CREATE INDEX idx_thread_topic ON "public"."thread" ("topic")
 WHERE

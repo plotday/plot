@@ -1,8 +1,9 @@
 -- user.priority_unread — "does this priority have any notify-worthy unread
 -- threads visible to this user?". Mirrors user.thread's visibility: a thread
 -- counts only if thread_priority has a row for the user, the thread is
--- visible through the user's contacts or groups, and (if the priority is
--- team-scoped) the user is still a current member of that team.
+-- visible through the user's contacts or groups, and (if the thread is
+-- team-scoped) the user is still a current member of that team or an exempt
+-- external (customer) contact.
 --
 -- A row counts toward the unread dot only when its thread_state row has
 -- importance >= 50 OR urgent = TRUE. Low-importance items (promotional /
@@ -33,15 +34,16 @@ FROM
             tp.priority_id IS NOT NULL
             OR tp.classify_at < now() - public.classify_visibility_window()
         )
-    -- Effective priority for the team-firewall check. Case-A pending
-    -- rows surface at root via COALESCE, and root priorities are
-    -- user-owned (team_id IS NULL) so the team check passes trivially.
-    JOIN priority p ON p.id = "user".effective_priority_id(tp.priority_id, tp.user_id)
+        -- Team firewall (thread-scoped, mirrors user.thread): a team thread
+        -- counts only for current members of thread.team_id, EXCEPT contacts
+        -- explicitly marked external (non-team customers), who are exempt.
+        -- Personal threads (team_id NULL) are ungated.
         AND (
-            p.team_id IS NULL
+            a.team_id IS NULL
+            OR a.external_contacts && "user".user_contact_ids(tp.user_id)
             OR EXISTS (
                 SELECT 1 FROM public.team_user tu2
-                WHERE tu2.team_id = p.team_id
+                WHERE tu2.team_id = a.team_id
                   AND tu2.user_id = tp.user_id
                   AND tu2.archived_at IS NULL
             )

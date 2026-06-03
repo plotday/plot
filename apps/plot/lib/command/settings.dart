@@ -59,19 +59,19 @@ final appearanceCommands = StaticCommandGroup(
 
 /// Build the App settings command group from [PrioritiesState].
 ///
-/// Accepts optional [adminOrgs] list (fetched from the API) to include
-/// per-org AI preference commands for teams the user administers.
+/// [hasTeams] should be true when the user belongs to at least one team
+/// (focuses are team-agnostic, so team membership is sourced from the API's
+/// `/team` list by callers, not from priorities). Accepts optional [adminOrgs]
+/// list (fetched from the API) to include per-org AI preference commands for
+/// teams the user administers.
 List<StaticCommandGroup> settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
+  bool hasTeams = false,
   bool showAllPriorities = false,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
 }) {
-  final hasTeams =
-      prioritiesState != null &&
-      prioritiesState.priorities.any((p) => p.teamId != null);
-
   final rootPriority = prioritiesState?.root;
   final plotAppPriority = prioritiesState?.priorities.firstWhereOrNull(
     (p) => p.isPlotApp && p.archivedAt == null,
@@ -181,6 +181,7 @@ class ShowSettings extends ShowCommands {
 
           // Fetch orgs and subscription in parallel
           List<Map<String, dynamic>> adminOrgs = [];
+          bool hasTeams = false;
           SubscriptionInfo? subscription;
           try {
             final results = await Future.wait([
@@ -192,6 +193,7 @@ class ShowSettings extends ShowCommands {
             log.info(
               'ShowSettings: /team returned ${allOrgs.length} orgs: $allOrgs',
             );
+            hasTeams = allOrgs.isNotEmpty;
             adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
             log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
             subscription = results[1] as SubscriptionInfo;
@@ -203,6 +205,7 @@ class ShowSettings extends ShowCommands {
           final groups = [
             ...settingsCommandsFromState(
               prioritiesState,
+              hasTeams: hasTeams,
               email: email,
               adminOrgs: adminOrgs,
               subscription: subscription,

@@ -1,5 +1,3 @@
-import 'dart:convert' show jsonEncode;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -22,7 +20,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
-import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/router.dart';
 
@@ -413,45 +410,9 @@ Future<FormData> _buildNewPriorityForm(
       ? (prioritiesBloc.state.root ?? await Priority.getDefault())
       : fallbackParent;
 
-  // Fetch team list for the team selector (only relevant for top-level
-  // priorities whose parent is the root). Ignore errors — teams list is
-  // optional and falls back to an empty list if unavailable.
-  final isTopLevel = defaultParent.root;
-  List<TeamUsage> teams = const [];
-  if (isTopLevel) {
-    try {
-      final usage = await UpgradeApi.getUsage();
-      teams = usage.teams;
-    } catch (_) {
-      // Non-critical — proceed without team options
-    }
-  }
-
   // Focuses are flat — no parent selector. A focus is created under the root
   // (the Inbox); the server defaults the parent to root for flat clients.
   final iconSelect = _focusIconSelect();
-
-  // Team selector: only shown when creating a top-level priority and the user
-  // belongs to at least one team. "Personal" maps to null (no team).
-  final teamSelect = isTopLevel && teams.isNotEmpty
-      ? FormSelect<TeamUsage?>(
-          key: 'team',
-          label: 'Team',
-          initialValue: null,
-          hasInitialValue: true,
-          items: (search) async {
-            final all = [null, ...teams];
-            if (search == null || search.isEmpty) return all;
-            final lower = search.toLowerCase();
-            return all
-                .where(
-                  (t) => t == null || t.name.toLowerCase().startsWith(lower),
-                )
-                .toList();
-          },
-          titleBuilder: (t) => t?.name ?? 'Personal',
-        )
-      : null;
 
   return FormData(
     title: 'Add a focus',
@@ -460,7 +421,6 @@ Future<FormData> _buildNewPriorityForm(
         items: [
           FormTextInput(key: 'title', label: 'Focus name', required: true),
           iconSelect,
-          ?teamSelect,
           FormSelect<ThemeColor>(
             key: 'color',
             label: 'Color',
@@ -475,12 +435,6 @@ Future<FormData> _buildNewPriorityForm(
                 .toList(),
             titleBuilder: (c) => c.label,
             leadingBuilder: (c) => ColorDot(color: c),
-          ),
-          FormShareSelect(
-            key: 'shared',
-            label: 'Share new threads',
-            placeholder: 'No one',
-            priority: defaultParent,
           ),
           FormButton(
             key: 'create',
@@ -554,19 +508,16 @@ Future<Priority?> createPriorityInline(
 
 /// Builds an unsaved flat focus from the create-form [values], filed under
 /// [root]. `icon` isn't a constructor field, so it's applied via copyWith.
+///
+/// Focuses are team-agnostic: the two-step target picker drives a new thread's
+/// roster and team scope (via thread.team_id), so no team or per-focus default
+/// sharing is collected here.
 Priority _priorityFromValues(Map<String, dynamic> values, Priority root) {
-  final shared =
-      (values['shared'] as SharedSelection?) ?? const SharedSelection();
-  final team = values['team'] as TeamUsage?;
   return Priority(
     title: values['title'] as String,
     parent: root,
     color: values['color'] as ThemeColor?,
     draft: true,
-    defaultContacts: shared.contacts,
-    defaultGroups: shared.groups,
-    defaultInviteEmails: shared.inviteEmails,
-    teamId: team != null ? BigInt.parse(team.id) : null,
   ).copyWith(icon: Value(values['icon'] as String?));
 }
 
@@ -689,34 +640,6 @@ Future<FormData> _buildFocusDetailsForm(
   FocusPrefill? prefill,
   required void Function(Map<String, dynamic> values) onSubmit,
 }) async {
-  // Team selector (only when the user belongs to a team). "Personal" → null.
-  List<TeamUsage> teams = const [];
-  try {
-    final usage = await UpgradeApi.getUsage();
-    teams = usage.teams;
-  } catch (_) {
-    // Non-critical — proceed without team options.
-  }
-  final teamSelect = teams.isNotEmpty
-      ? FormSelect<TeamUsage?>(
-          key: 'team',
-          label: 'Team',
-          initialValue: null,
-          hasInitialValue: true,
-          items: (search) async {
-            final all = [null, ...teams];
-            if (search == null || search.isEmpty) return all;
-            final lower = search.toLowerCase();
-            return all
-                .where(
-                  (t) => t == null || t.name.toLowerCase().startsWith(lower),
-                )
-                .toList();
-          },
-          titleBuilder: (t) => t?.name ?? 'Personal',
-        )
-      : null;
-
   return FormData(
     title: 'Add a focus',
     groups: [
@@ -737,7 +660,6 @@ Future<FormData> _buildFocusDetailsForm(
             initialValue: prefill?.description,
           ),
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
-          ?teamSelect,
           FormSelect<ThemeColor>(
             key: 'color',
             label: 'Color',
@@ -752,12 +674,6 @@ Future<FormData> _buildFocusDetailsForm(
                 .toList(),
             titleBuilder: (c) => c.label,
             leadingBuilder: (c) => ColorDot(color: c),
-          ),
-          FormShareSelect(
-            key: 'shared',
-            label: 'Share new threads',
-            placeholder: 'No one',
-            priority: root,
           ),
           FormButton(
             key: 'next',
@@ -969,97 +885,6 @@ class EditPriorityCommand extends ShowForm {
         form: (context) async {
           // Re-fetch priority to get latest data (e.g. after a previous save)
           final p = await Priority.getOne(priority.id);
-          final isRoot = p.root;
-          // Load parent if not already loaded (parent might be null even when priority has ancestors)
-          Priority? parent = p.parent;
-          if (parent == null && p.parentId != null) {
-            parent = await Priority.getOne(p.parentId!);
-          }
-
-          // A top-level priority is one whose parent is the root priority and
-          // is not the root itself.
-          final isTopLevel = !isRoot && (parent?.root ?? false);
-
-          // Fetch team list for the team selector when editing a top-level
-          // priority with no team set yet (lock-once-set: once a team is
-          // chosen the selector becomes read-only).
-          List<TeamUsage> teams = const [];
-          if (isTopLevel && p.teamId == null) {
-            try {
-              final usage = await UpgradeApi.getUsage();
-              teams = usage.teams;
-            } catch (_) {
-              // Non-critical — proceed without team options
-            }
-          }
-
-          // Resolve current team name for the read-only badge when team is set.
-          String? currentTeamName;
-          if (isTopLevel && p.teamId != null) {
-            try {
-              final usage = await UpgradeApi.getUsage();
-              final teamIdStr = p.teamId!.toString();
-              currentTeamName = usage.teams
-                  .firstWhere(
-                    (t) => t.id == teamIdStr,
-                    orElse: () => TeamUsage(
-                      id: teamIdStr,
-                      name: 'Team',
-                      connections: const ResourceUsage(count: 0),
-                      isAdmin: false,
-                    ),
-                  )
-                  .name;
-            } catch (_) {
-              currentTeamName = 'Team';
-            }
-          }
-
-          // Team selector for top-level priorities:
-          // - If team_id is already set: read-only (show team name, no editing)
-          // - If team_id is null and user is in teams: editable selector
-          // - Otherwise: not shown
-          FormSelect<TeamUsage?>? teamSelect;
-          if (isTopLevel && p.teamId != null) {
-            // Read-only: lock-once-set — display current team, disallow change
-            teamSelect = FormSelect<TeamUsage?>(
-              key: 'team',
-              label: 'Team',
-              initialValue: currentTeamName != null
-                  ? TeamUsage(
-                      id: p.teamId!.toString(),
-                      name: currentTeamName,
-                      connections: const ResourceUsage(count: 0),
-                      isAdmin: false,
-                    )
-                  : null,
-              hasInitialValue: true,
-              enabled: false,
-              readonlyMessage: 'Team cannot be changed after it is set.',
-              items: (search) async => [],
-              titleBuilder: (t) => t?.name ?? 'Personal',
-            );
-          } else if (isTopLevel && teams.isNotEmpty) {
-            // Editable: allow null→team promotion
-            teamSelect = FormSelect<TeamUsage?>(
-              key: 'team',
-              label: 'Team',
-              initialValue: null,
-              hasInitialValue: true,
-              items: (search) async {
-                final all = [null, ...teams];
-                if (search == null || search.isEmpty) return all;
-                final lower = search.toLowerCase();
-                return all
-                    .where(
-                      (t) =>
-                          t == null || t.name.toLowerCase().startsWith(lower),
-                    )
-                    .toList();
-              },
-              titleBuilder: (t) => t?.name ?? 'Personal',
-            );
-          }
 
           return FormData(
             title: 'Edit focus',
@@ -1073,7 +898,6 @@ class EditPriorityCommand extends ShowForm {
                     required: true,
                   ),
                   _focusIconSelect(initial: p.icon ?? 'bullseyePointer'),
-                  ?teamSelect,
                   FormSelect<ThemeColor>(
                     key: 'color',
                     label: 'Color',
@@ -1091,20 +915,6 @@ class EditPriorityCommand extends ShowForm {
                     titleBuilder: (c) => c.label,
                     leadingBuilder: (c) => ColorDot(color: c),
                   ),
-                  if (!p.isPlot)
-                    FormShareSelect(
-                      key: 'shared',
-                      label: 'Share new threads',
-                      placeholder: 'No one',
-                      priority: p,
-                      initialValue: SharedSelection(
-                        contacts: List<Uuid>.from(p.defaultSharedContacts),
-                        groups: List<Uuid>.from(p.defaultSharedGroups),
-                        inviteEmails: List<String>.from(
-                          p.defaultSharedInviteEmails,
-                        ),
-                      ),
-                    ),
                   FormButton(
                     key: 'save',
                     isPrimary: true,
@@ -1112,47 +922,16 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final color = values['color'] as ThemeColor?;
                       final icon = values['icon'] as String?;
-                      final shared = values['shared'] as SharedSelection?;
-                      // Team: only update when editable (team was null before).
-                      // Otherwise leave the existing team_id alone — locked
-                      // once set, and only the top-level row carries it.
-                      final Value<BigInt?> newTeamId;
-                      if (isTopLevel && p.teamId == null) {
-                        final selectedTeam = values['team'] as TeamUsage?;
-                        newTeamId = Value(
-                          selectedTeam != null
-                              ? BigInt.parse(selectedTeam.id)
-                              : null,
-                        );
-                      } else {
-                        newTeamId = const Value.absent();
-                      }
-                      // When the shared form field isn't rendered (e.g.
-                      // on the Plot system priority), leave the existing
-                      // contacts/groups/invites alone instead of clearing
-                      // them.
+                      // Focuses are team-agnostic: no team field. Per-focus
+                      // default sharing is gone — the two-step target picker
+                      // drives a thread's roster and team scope instead.
                       return EditPriority(
                         Future.value(
-                          shared == null
-                              ? p.copyWith(
-                                  title: title,
-                                  color: Value(color),
-                                  icon: Value(icon),
-                                  teamId: newTeamId,
-                                )
-                              : p.copyWith(
-                                  title: title,
-                                  color: Value(color),
-                                  icon: Value(icon),
-                                  teamId: newTeamId,
-                                  defaultContacts: Value(shared.contacts),
-                                  defaultGroups: Value(shared.groups),
-                                  defaultInviteEmails: Value(
-                                    shared.inviteEmails.isEmpty
-                                        ? null
-                                        : jsonEncode(shared.inviteEmails),
-                                  ),
-                                ),
+                          p.copyWith(
+                            title: title,
+                            color: Value(color),
+                            icon: Value(icon),
+                          ),
                         ),
                       );
                     },

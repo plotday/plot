@@ -31,7 +31,6 @@ class Priorities extends Table
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
-  Int64Column get teamId => int64().nullable()();
   TextColumn get attentionWindow => text().nullable()();
   TextColumn get seeWithin => text().nullable()();
   BoolColumn get attentionWindowSet =>
@@ -57,20 +56,6 @@ class Priorities extends Table
   /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
   /// string. See `PriorityConfig` for recognized keys.
   TextColumn get config => text().nullable()();
-
-  /// Contacts auto-added to any new thread filed under this priority. Stored
-  /// as a JSON-encoded list of contact UUIDs. Empty list means no defaults.
-  TextColumn get defaultContacts =>
-      text().nullable().map(const UuidListConverter())();
-
-  /// Groups auto-added to any new thread filed under this priority. Stored
-  /// as a JSON-encoded list of group UUIDs. Empty list means no defaults.
-  TextColumn get defaultGroups =>
-      text().nullable().map(const UuidListConverter())();
-
-  /// Invite emails auto-added to any new thread filed under this priority.
-  /// Stored as a JSON-encoded list of email strings.
-  TextColumn get defaultInviteEmails => text().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -130,18 +115,13 @@ class PrioritiesBase extends BaseTable {
           ? json['config']
           : jsonEncode(json['config']);
     }
-    // default_contacts/default_groups/default_invite_emails arrive from the
-    // API as either native JSON arrays or, when the pg driver on the worker
-    // falls back to text for array types, as strings (`"[]"`, `"{}"`, or
-    // `"{uuid1,uuid2}"`). Normalize to a List<dynamic> for the uuid-backed
-    // columns (UuidListConverter expects List<dynamic> at the JSON boundary)
-    // and to a JSON string for default_invite_emails (plain TextColumn).
-    json['default_contacts'] = _normalizeArrayField(json['default_contacts']);
-    json['default_groups'] = _normalizeArrayField(json['default_groups']);
-    final normalizedEmails = _normalizeArrayField(json['default_invite_emails']);
-    json['default_invite_emails'] = normalizedEmails.isEmpty
-        ? null
-        : jsonEncode(normalizedEmails);
+    // Focuses are team-agnostic and no longer carry per-focus default sharing.
+    // Drop these keys in case a server still in mid-deploy emits them; leaving
+    // them in `json` would trip `PriorityRow.fromJson`.
+    json.remove('team_id');
+    json.remove('default_contacts');
+    json.remove('default_groups');
+    json.remove('default_invite_emails');
 
     return PriorityRow.fromJson(json);
   }
@@ -170,73 +150,8 @@ class PrioritiesBase extends BaseTable {
     json.remove('notify_window_set');
     // config is read-only from the client's perspective.
     json.remove('config');
-    // default_contacts / default_groups / default_invite_emails are stored
-    // locally as JSON strings; the server expects native Postgres arrays.
-    final defaultContacts = json['default_contacts'];
-    if (defaultContacts is String) {
-      json['default_contacts'] = defaultContacts.isEmpty
-          ? <String>[]
-          : jsonDecode(defaultContacts) as List<dynamic>;
-    } else {
-      json['default_contacts'] ??= <String>[];
-    }
-    final defaultGroups = json['default_groups'];
-    if (defaultGroups is String) {
-      json['default_groups'] = defaultGroups.isEmpty
-          ? <String>[]
-          : jsonDecode(defaultGroups) as List<dynamic>;
-    } else {
-      json['default_groups'] ??= <String>[];
-    }
-    final defaultInviteEmails = json['default_invite_emails'];
-    if (defaultInviteEmails is String) {
-      json['default_invite_emails'] = defaultInviteEmails.isEmpty
-          ? <String>[]
-          : jsonDecode(defaultInviteEmails) as List<dynamic>;
-    } else {
-      json['default_invite_emails'] ??= <String>[];
-    }
     return json;
   }
-}
-
-/// Normalize an array-typed field coming from the API to a `List<dynamic>`.
-/// Handles native JSON arrays, JSON array strings (`"[]"`, `"[\"uuid\"]"`),
-/// and PostgreSQL text array literals (`"{}"`, `"{uuid1,uuid2}"`). Returns
-/// an empty list for null or unparseable input.
-List<dynamic> _normalizeArrayField(dynamic raw) {
-  if (raw == null) return const [];
-  if (raw is List) return raw;
-  if (raw is String) {
-    if (raw.isEmpty || raw == '{}' || raw == '[]') return const [];
-    if (raw.startsWith('[')) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is List) return decoded;
-      } catch (_) {}
-    }
-    if (raw.startsWith('{') && raw.endsWith('}')) {
-      final inner = raw.substring(1, raw.length - 1);
-      if (inner.isEmpty) return const [];
-      return inner
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .map<dynamic>((s) {
-            // PG text arrays wrap quoted strings (e.g. {"a,b","c"}). Strip
-            // surrounding double quotes and unescape basic sequences.
-            if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
-              return s
-                  .substring(1, s.length - 1)
-                  .replaceAll(r'\"', '"')
-                  .replaceAll(r'\\', r'\');
-            }
-            return s;
-          })
-          .toList();
-    }
-  }
-  return const [];
 }
 
 /// Typed view onto the sparse [Priorities.config] JSON blob.
@@ -524,29 +439,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       )
       ..limit(1);
     return (await query.getSingleOrNull()) != null;
-  }
-
-  /// Returns the count of other non-archived top-level priorities that share
-  /// the same [teamId] as the given priority (excluding [excludeId]). A
-  /// top-level priority is one whose path has exactly one dot (depth == 2),
-  /// meaning its parent is the root priority. Used to decide whether archiving
-  /// a priority should trigger a "leave team" flow.
-  static Future<int> countOtherTopLevelTeamPriorities({
-    required BigInt teamId,
-    required Uuid excludeId,
-  }) async {
-    final query = Store.get.select(table)
-      ..where(
-        (t) =>
-            t.archivedAt.isNull() &
-            t.root.equals(false) &
-            t.teamId.equals(teamId) &
-            t.id.equalsValue(excludeId).not() &
-            // depth == 2: path has exactly one dot (e.g. "abc1.xyz2")
-            t.path.like('%.%') &
-            t.path.like('%.%.%').not(),
-      );
-    return (await query.get()).length;
   }
 
   static Future<Priority> getDefault() async {
@@ -1040,11 +932,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.topOrder,
     super.pomodoro = const Duration(minutes: 25),
     super.color,
-    super.teamId,
     this.draft = false,
-    List<Uuid>? defaultContacts,
-    List<Uuid>? defaultGroups,
-    List<String>? defaultInviteEmails,
   }) : children = [],
        _ancestors =
            parent!._ancestors +
@@ -1075,18 +963,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          seeWithinSet: false,
          earlyNotificationsEnabledSet: false,
          notifyWindowSet: false,
-         defaultContacts:
-             defaultContacts == null || defaultContacts.isEmpty
-                 ? null
-                 : defaultContacts,
-         defaultGroups:
-             defaultGroups == null || defaultGroups.isEmpty
-                 ? null
-                 : defaultGroups,
-         defaultInviteEmails:
-             defaultInviteEmails == null || defaultInviteEmails.isEmpty
-                 ? null
-                 : jsonEncode(defaultInviteEmails),
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -1154,7 +1030,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: row.createdBy,
          unread: row.unread,
          role: row.role,
-         teamId: row.teamId,
          attentionWindow: row.attentionWindow,
          seeWithin: row.seeWithin,
          attentionWindowSet: row.attentionWindowSet,
@@ -1164,9 +1039,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          earlyNotificationsEnabledSet: row.earlyNotificationsEnabledSet,
          notifyWindowSet: row.notifyWindowSet,
          config: row.config,
-         defaultContacts: row.defaultContacts,
-         defaultGroups: row.defaultGroups,
-         defaultInviteEmails: row.defaultInviteEmails,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1326,64 +1198,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// user-editable; populated from the server.
   PriorityConfig get priorityConfig => PriorityConfig.parse(config);
 
-  /// Contacts to seed onto any new thread filed under this priority.
-  /// Empty when no defaults are configured.
-  List<Uuid> get defaultSharedContacts => defaultContacts ?? const [];
-
-  /// Groups to seed onto any new thread filed under this priority.
-  /// Empty when no defaults are configured.
-  List<Uuid> get defaultSharedGroups => defaultGroups ?? const [];
-
-  /// Invite emails to seed onto any new thread filed under this priority.
-  /// Empty when no defaults are configured.
-  List<String> get defaultSharedInviteEmails {
-    final raw = defaultInviteEmails;
-    if (raw == null || raw.isEmpty) return const [];
-    try {
-      return (jsonDecode(raw) as List<dynamic>).cast<String>();
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  /// Union of `defaultSharedContacts` from this priority and every ancestor
-  /// reachable via the `.parent` chain. Preserves insertion order starting
-  /// from the current priority, then walking up toward the root.
-  List<Uuid> get inheritedDefaultSharedContacts {
-    final seen = <Uuid>{};
-    final ordered = <Uuid>[];
-    for (Priority? p = this; p != null; p = p.parent) {
-      for (final id in p.defaultSharedContacts) {
-        if (seen.add(id)) ordered.add(id);
-      }
-    }
-    return ordered;
-  }
-
-  /// Union of `defaultSharedGroups` from this priority and every ancestor.
-  List<Uuid> get inheritedDefaultSharedGroups {
-    final seen = <Uuid>{};
-    final ordered = <Uuid>[];
-    for (Priority? p = this; p != null; p = p.parent) {
-      for (final id in p.defaultSharedGroups) {
-        if (seen.add(id)) ordered.add(id);
-      }
-    }
-    return ordered;
-  }
-
-  /// Union of `defaultSharedInviteEmails` from this priority and every ancestor.
-  List<String> get inheritedDefaultSharedInviteEmails {
-    final seen = <String>{};
-    final ordered = <String>[];
-    for (Priority? p = this; p != null; p = p.parent) {
-      for (final email in p.defaultSharedInviteEmails) {
-        if (seen.add(email)) ordered.add(email);
-      }
-    }
-    return ordered;
-  }
-
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
@@ -1458,7 +1272,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     String? role,
     Value<String?> attentionWindow = const Value.absent(),
     Value<String?> seeWithin = const Value.absent(),
-    Value<BigInt?> teamId = const Value.absent(),
     bool? attentionWindowSet,
     bool? seeWithinSet,
     Value<bool?> earlyNotificationsEnabled = const Value.absent(),
@@ -1466,9 +1279,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? earlyNotificationsEnabledSet,
     bool? notifyWindowSet,
     Value<String?> config = const Value.absent(),
-    Value<List<Uuid>?> defaultContacts = const Value.absent(),
-    Value<List<Uuid>?> defaultGroups = const Value.absent(),
-    Value<String?> defaultInviteEmails = const Value.absent(),
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1500,7 +1310,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         icon: icon,
         key: key,
         root: root,
-        teamId: teamId,
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,
@@ -1512,9 +1321,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         earlyNotificationsEnabledSet: earlyNotificationsEnabledSet,
         notifyWindowSet: notifyWindowSet,
         config: config,
-        defaultContacts: defaultContacts,
-        defaultGroups: defaultGroups,
-        defaultInviteEmails: defaultInviteEmails,
       ),
       parent: currentParent,
       children: children,

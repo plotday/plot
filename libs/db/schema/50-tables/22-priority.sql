@@ -30,19 +30,8 @@ CREATE TABLE "public"."priority" (
     -- Sparse per-priority configuration. Not user-editable; set directly in
     -- the DB. Recognized keys: topic (string, default thread.topic),
     -- view ('activity' to hide the agenda tab on the priority page).
-    -- NOTE: the historical 'group' key has been migrated to default_groups.
     "config" jsonb,
-    -- User-editable defaults applied to every new thread filed under this
-    -- priority. Seeded onto the draft thread in the client; the user can
-    -- still remove entries before sending.
-    "default_contacts" uuid[] NOT NULL DEFAULT '{}',
-    "default_groups" uuid[] NOT NULL DEFAULT '{}',
-    "default_invite_emails" text[] NOT NULL DEFAULT '{}',
-    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
-    -- Top-level team scope. Inherited by descendants via the
-    -- priority_team_* triggers. NULL = personal priority. Once set
-    -- non-null, locked (cannot change or revert to NULL).
-    "team_id" bigint REFERENCES public.team (id) ON DELETE RESTRICT
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 -- Per-user owner lookups
@@ -56,8 +45,6 @@ CREATE UNIQUE INDEX idx_priority_user_path_unique ON "public"."priority" ("user_
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
 
 CREATE INDEX idx_priority_seq ON "public"."priority" ("seq");
-
-CREATE INDEX idx_priority_team_id ON "public"."priority" ("team_id") WHERE team_id IS NOT NULL;
 
 -- Ensure keys are unique within each priority root tree
 CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")

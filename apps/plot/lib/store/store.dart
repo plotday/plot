@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 352;
+  int get schemaVersion => 354;
 
   @override
   MigrationStrategy get migration {
@@ -3118,15 +3118,13 @@ class Store extends _$Store {
     }
     if (from < 293) {
       // Rename priorities.organization_id → priorities.team_id to match the
-      // server schema. Use a column transformer so existing values survive.
-      // ignore: experimental_member_use
-      await m.alterTable(
-        TableMigration(
-          priorities,
-          columnTransformer: {
-            priorities.teamId: const CustomExpression<int>('organization_id'),
-          },
-        ),
+      // server schema. priorities.team_id was dropped again at v353 (focuses
+      // are team-agnostic) so the Drift table no longer declares it — do the
+      // rename via raw SQL (the column accessor no longer exists) so users on
+      // this path keep their data until the v353 drop removes the column.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities RENAME COLUMN organization_id TO team_id',
       );
     }
     if (from < 294) {
@@ -3301,11 +3299,23 @@ class Store extends _$Store {
     }
     if (from < 314) {
       // Priority-level defaults that seed every new thread filed under the
-      // priority with contacts/groups/invite emails. Nullable so a fresh sync
-      // repopulates from the server.
-      await _safeAddColumn(m, priorities, priorities.defaultContacts);
-      await _safeAddColumn(m, priorities, priorities.defaultGroups);
-      await _safeAddColumn(m, priorities, priorities.defaultInviteEmails);
+      // priority with contacts/groups/invite emails. These columns were
+      // dropped again at v353 (focuses are now team-agnostic), so the Drift
+      // table no longer declares them — add them here via raw SQL (the
+      // column accessors no longer exist) so a user migrating through this
+      // version still rebuilds cleanly before the v353 drop removes them.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN default_contacts TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN default_groups TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN default_invite_emails TEXT',
+      );
       // Earlier builds of this change shipped a fromBase that couldn't parse
       // pg text-array strings and dropped default_groups on the floor. Clear
       // the priorities sync cursor so the next sync re-pulls every priority
@@ -3804,6 +3814,23 @@ class Store extends _$Store {
           SELECT id FROM twist_instances WHERE archived_at IS NOT NULL
         )
       ''');
+    }
+
+    if (from < 353) {
+      // Two-step thread creation: threads carry a nullable team scope
+      // (`thread.team_id` on the server). Null = Personal. Round-trips
+      // through sync; set at draft creation time only.
+      await m.addColumn(threads, threads.teamId);
+    }
+
+    if (from < 354) {
+      // Focuses are team-agnostic: drop priorities.team_id and the per-focus
+      // default sharing columns (default_contacts/default_groups/
+      // default_invite_emails). Team scope now lives on thread.team_id and the
+      // two-step target picker drives a thread's roster. TableMigration
+      // rebuilds the table keeping only the columns Drift still declares, so
+      // the dropped columns disappear.
+      await m.alterTable(TableMigration(priorities));
     }
   }
 

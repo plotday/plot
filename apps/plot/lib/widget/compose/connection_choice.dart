@@ -2,8 +2,8 @@ import 'package:plot/store/store.dart' show CreateLinkUserAction, TwistInstance;
 import 'package:plot/widget/connection_targets.dart' show CreateTarget;
 
 /// A selectable connection on the compose surface. Either a real
-/// [CreateTarget] (Slack channel, Linear team, …), one of the three Plot
-/// thread variants (note / task / chat), or a [TwistInstance] (chat with a
+/// [CreateTarget] (Slack channel, Linear team, …), one of the two Plot
+/// thread variants (note / chat), or a [TwistInstance] (chat with a
 /// twist — Plot AI, etc.).
 sealed class ConnectionChoice {
   String get key;
@@ -22,15 +22,12 @@ sealed class ConnectionChoice {
   /// regular Plot thread — but each variant signals a different default
   /// state to the compose page:
   ///
-  /// - [plotNote]: no task tag, no contacts. Placeholder "Add a note".
-  /// - [plotTask]: first note carries [Tag.todo]. Placeholder "Add a task".
+  /// - [plotNote]: private note, no contacts. Placeholder "Add a note".
   /// - [plotChat]: signals shared intent — placeholder "Start a chat" even
   ///   before the user has added a contact. Sticky once a contact has been
   ///   added (the chat label survives temporary contact removal mid-compose).
   static const PlotThreadChoice plotNote =
       PlotThreadChoice._(PlotThreadKind.note);
-  static const PlotThreadChoice plotTask =
-      PlotThreadChoice._(PlotThreadKind.task);
   static const PlotThreadChoice plotChat =
       PlotThreadChoice._(PlotThreadKind.chat);
 
@@ -40,7 +37,6 @@ sealed class ConnectionChoice {
   /// Returns the Plot variant for the given [kind].
   static PlotThreadChoice plotForKind(PlotThreadKind kind) => switch (kind) {
         PlotThreadKind.note => plotNote,
-        PlotThreadKind.task => plotTask,
         PlotThreadKind.chat => plotChat,
       };
 
@@ -59,12 +55,12 @@ sealed class ConnectionChoice {
 }
 
 /// Which Plot thread variant the user picked from the connection list.
-enum PlotThreadKind { note, task, chat }
+enum PlotThreadKind { note, chat }
 
-/// One of the three Plot thread variants. Selecting it clears any
+/// One of the two Plot thread variants. Selecting it clears any
 /// [CreateLinkUserAction] on the draft and clears any selected twist;
 /// the compose page applies the variant-specific defaults
-/// (task tag, sticky-chat flag) after the choice is set.
+/// (sticky-chat flag) after the choice is set.
 class PlotThreadChoice implements ConnectionChoice {
   const PlotThreadChoice._(this.kind);
 
@@ -73,15 +69,13 @@ class PlotThreadChoice implements ConnectionChoice {
   @override
   String get key => switch (kind) {
         PlotThreadKind.note => 'plot:note',
-        PlotThreadKind.task => 'plot:task',
         PlotThreadKind.chat => 'plot:chat',
       };
 
   @override
   String get label => switch (kind) {
-        PlotThreadKind.note => 'Plot note',
-        PlotThreadKind.task => 'Plot task',
-        PlotThreadKind.chat => 'Plot chat',
+        PlotThreadKind.note => 'Note',
+        PlotThreadKind.chat => 'Chat',
       };
 
   @override

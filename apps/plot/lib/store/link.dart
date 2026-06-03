@@ -14,11 +14,16 @@ enum SharingModel {
   channel,
   /// Each note carries its own recipient set via access_contacts;
   /// thread roster is the union across messages. Email.
-  message;
+  message,
+  /// No recipient roster and no sharing UI. Threads scoped this way never
+  /// surface contacts/groups for sharing — treated like a [thread] with an
+  /// empty roster. Used by link types that have no audience concept.
+  none;
 
   static SharingModel fromJson(String? value) => switch (value) {
         'channel' => SharingModel.channel,
         'message' => SharingModel.message,
+        'none' => SharingModel.none,
         _ => SharingModel.thread,
       };
 }

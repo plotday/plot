@@ -8,6 +8,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
 
+import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
@@ -56,11 +57,88 @@ class NewThreadPage extends StatefulWidget {
   State<NewThreadPage> createState() => NewThreadPageState();
 }
 
+/// The two phases of the new-thread compose flow.
+///
+/// [target] is step 1: the inline target picker (Note/Chat per team, connector
+/// combos, MRU-ordered). [compose] is step 2: today's compose surface with the
+/// editor focused and fields ordered Connection → Focus → Contacts → Title →
+/// Body. A fresh mount always starts in [target] (see [NewThread] command).
+enum _ComposeStep { target, compose }
+
 class NewThreadPageState extends State<NewThreadPage> {
+  /// Monotonic "start a fresh new-thread" signal. The [NewThread] command
+  /// bumps this every time it's invoked. AutoRoute reuses an already-mounted
+  /// [NewThreadPage]/[State] when navigating to [NewThreadRoute] (it doesn't
+  /// build a new one), so a live page would otherwise keep its in-progress
+  /// `_step`/draft. Listening to this counter lets the live page reset itself
+  /// to step 1 with a fresh draft. On a true fresh mount there's no listener
+  /// yet, so the page just starts clean as usual.
+  static final ValueNotifier<int> resetRequest = ValueNotifier<int>(0);
+
+  /// Requests every live [NewThreadPage] reset to step 1 with a fresh draft.
+  static void requestReset() => resetRequest.value++;
+
+  /// The currently-mounted [NewThreadPage] state, or null when no new-thread
+  /// page is live. Set in [didChangeDependencies] / cleared in [dispose] so
+  /// other widgets (e.g. the unified header's search-close focus-restore) can
+  /// ask whether the new-thread page is on step 1 and, if so, hand focus to its
+  /// inline filter instead of the (unmounted) note editor. Mirrors the
+  /// [requestReset]/[resetRequest] static-signal pattern.
+  static NewThreadPageState? _live;
+
+  /// True when a [NewThreadPage] is live and showing step 1 (the inline target
+  /// picker). Lets the search-close focus-restore path branch to the filter
+  /// input rather than the note editor (which isn't mounted on step 1).
+  static bool get isOnStep1 =>
+      _live != null && _live!.mounted && _live!._step == _ComposeStep.target;
+
+  /// Focuses the live step-1 inline filter input on the next frame. No-op when
+  /// no page is live, the page isn't on step 1, or there's no physical keyboard
+  /// (consistent with the picker's own autofocus gating — never pops the mobile
+  /// soft keyboard). Used by the search-close focus-restore path in place of
+  /// focusing the note editor when [isOnStep1].
+  static void focusFilter() {
+    final live = _live;
+    if (live == null || !live.mounted) return;
+    if (live._step != _ComposeStep.target) return;
+    if (!hasPhysicalKeyboard()) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (live.mounted && live._step == _ComposeStep.target) {
+        live._pickerSearchFocusNode.requestFocus();
+      }
+    });
+  }
+
   final GlobalKey<NoteEditorState> _threadEditorKey =
       GlobalKey<NoteEditorState>();
   final GlobalKey<TitleComposeFieldState> _titleFieldKey =
       GlobalKey<TitleComposeFieldState>();
+
+  /// Current step. Always starts on the target picker (step 1).
+  _ComposeStep _step = _ComposeStep.target;
+
+  /// The target chosen in step 1, retained so submit can record it.
+  ComposeTarget? _selectedTarget;
+
+  /// Focuses ordered for the focus picker by recency of threads filed with the
+  /// chosen target's roster (MRU-top is the auto-suggested focus). Empty until
+  /// a target is applied. See [_suggestFocusForTarget].
+  List<Priority> _focusSuggestionOrder = const [];
+
+  // Controllers for the inline step-1 picker. Recreated for the step-2 modal
+  // re-open so the two mounts don't share scroll/highlight state.
+  final ScrollController _pickerScrollController = ScrollController();
+  final FocusNode _pickerListFocusNode = FocusNode(
+    debugLabel: 'NewThread-target-picker',
+  );
+
+  /// Focus node for the inline step-1 search field. Owned here (not by the
+  /// picker) so [_resetToFreshStart] can re-focus the filter when the
+  /// already-mounted page is reset to step 1 — AutoRoute reuses the same
+  /// [TargetPickerList] instance, so its `autofocus` won't fire again.
+  final FocusNode _pickerSearchFocusNode = FocusNode(
+    debugLabel: 'NewThread-target-picker-search',
+  );
 
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
@@ -89,9 +167,102 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
+  /// The [resetRequest] value seen on the last reset. Bumps past this trigger
+  /// a fresh-start reset; the initial assignment in [initState] ignores the
+  /// bump that the [NewThread] command fired to navigate here (a fresh mount
+  /// is already clean).
+  late int _lastResetSeen = NewThreadPageState.resetRequest.value;
+
+  @override
+  void initState() {
+    super.initState();
+    NewThreadPageState.resetRequest.addListener(_onResetRequested);
+  }
+
+  /// Reacts to a [NewThread] re-invocation against this already-mounted page:
+  /// resets to step 1 with a fresh draft (see [_resetToFreshStart]).
+  void _onResetRequested() {
+    if (!mounted) return;
+    if (NewThreadPageState.resetRequest.value == _lastResetSeen) return;
+    _lastResetSeen = NewThreadPageState.resetRequest.value;
+    _resetToFreshStart();
+  }
+
+  /// Returns the page to step 1 (target picker) with a brand-new draft,
+  /// discarding any connection / roster / focus / title chosen in an
+  /// in-progress step-2 session. Used when the user invokes "New thread"
+  /// while a [NewThreadPage] is already live (AutoRoute reuses it rather than
+  /// mounting a fresh State).
+  void _resetToFreshStart() {
+    final bloc = _priorityBloc ?? context.read<PriorityBloc>();
+
+    // Clear the draft fully: schedule/title (resetDraft's scope) plus the
+    // connection action, roster, team scope, and twist icon that step 2 may
+    // have applied. Reuse the existing draft id to avoid stranding archived
+    // drafts.
+    final draft = bloc.state.draft;
+    final note = bloc.state.draftNote;
+    final clearedActions = (note.actions ?? const <UserAction>[])
+        .where((a) => a is! CreateLinkUserAction)
+        .toList();
+    final clearedDraft = draft.copyWith(
+      title: const Value(null),
+      at: const Value(null),
+      on: const Value(null),
+      duration: const Value(null),
+      preview: const Value(null),
+      contacts: const Value(null),
+      groups: const Value(null),
+      inviteEmails: const Value(null),
+      teamId: const Value(null),
+      icon: const Value(null),
+    );
+    unawaited(
+      bloc.updateDraft(
+        clearedDraft,
+        note: note.copyWith(actions: clearedActions),
+      ),
+    );
+
+    setState(() {
+      _step = _ComposeStep.target;
+      _selectedTarget = null;
+      _selectedTwist = null;
+      _hadContactsThisSession = false;
+      _focusSuggestionOrder = const [];
+    });
+
+    // Re-focus the inline filter after the rebuild. AutoRoute reuses the same
+    // TargetPickerList instance, so its `autofocus` won't re-fire on this
+    // reset — request focus explicitly (physical-keyboard platforms only, to
+    // match the picker's own autofocus gating and avoid popping the soft
+    // keyboard on mobile).
+    if (hasPhysicalKeyboard()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pickerSearchFocusNode.requestFocus();
+      });
+    }
+
+    // Re-seed the target picker's base list so step 1 shows Note/Chat/connectors
+    // immediately (mirrors the fresh-mount path in _initializeDraft).
+    unawaited(
+      context.read<ComposeTargetsBloc>().refresh().catchError((
+        Object e,
+        StackTrace s,
+      ) {
+        Tracker.captureException(e, s);
+      }),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    // Mark this as the live new-thread page so the search-close focus-restore
+    // path can find it and (on step 1) focus the inline filter. AutoRoute keeps
+    // a single NewThreadPage mounted, so the last one through here wins.
+    NewThreadPageState._live = this;
 
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
@@ -110,13 +281,32 @@ class NewThreadPageState extends State<NewThreadPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _headerNotifier?.register(
         onSearchChanged: (_) {},
-        onSearchClosed: () {},
+        // Closing the header search bar restores focus to the note editor on
+        // step 2 (via the editorFocusCallback / ClearItemFocusIntent path). On
+        // step 1 the editor isn't mounted — the inline target picker is — so
+        // hand focus to its filter input instead. focusFilter() no-ops off step
+        // 1 and on touch-only platforms, so the regular note-editor behavior is
+        // unchanged everywhere else.
+        onSearchClosed: NewThreadPageState.focusFilter,
         tags: const [],
         filter: const [],
         isNewThread: true,
       );
       _provider?.registerActivityPanel(
-        editorFocusCallback: () => _threadEditorKey.currentState?.focus(),
+        // This callback is the new-thread page's "restore editor focus" hook,
+        // invoked by the search-close / Escape focus-restore path
+        // (priority.dart's ClearItemFocusIntent). On step 1 the note editor
+        // isn't mounted — the inline target picker is — so focus its filter
+        // input instead of the (absent) editor. focusFilter() itself no-ops
+        // off step 1 and on touch-only platforms, so step 2 keeps focusing the
+        // editor as before.
+        editorFocusCallback: () {
+          if (NewThreadPageState.isOnStep1) {
+            NewThreadPageState.focusFilter();
+            return;
+          }
+          _threadEditorKey.currentState?.focus();
+        },
       );
     });
 
@@ -127,101 +317,27 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// Adds the current draft to [ThreadsBase.autoFileIds] when the user is in
-  /// the root context and hasn't explicitly picked or remembered a priority.
-  /// Wraps the static-set mutation in setState so the priority chip rebuilds.
-  void _applyDefaultAutoFile() {
-    final bloc = context.read<PriorityBloc>();
-    final hasExplicitPriority =
-        widget.priorityId != null || bloc.newThreadDefaultPriority != null;
-    if (bloc.state.context.root && !hasExplicitPriority) {
-      final draftId = bloc.state.draft.id.toString();
-      if (ThreadsBase.autoFileIds.add(draftId)) {
-        setState(() {});
-      }
-    }
-  }
-
   /// Sequences query parameter application and post-load setup.
   /// Async because _applyQueryParametersToDraft awaits DB lookups.
   Future<void> _initializeDraft() async {
     await _applyQueryParametersToDraft();
     if (!mounted) return;
 
-    // Auto-organize is ON by default only in the root ("Everything") priority
-    // context and when the user has not explicitly picked or carried over a
-    // priority. In a non-root context, the default is the most recent picker
-    // priority (session-remembered) or the current context priority — never
-    // auto — so the thread goes where the user is working.
-    _applyDefaultAutoFile();
-
-    // Load available connection create-targets for the connection chip row.
-    await _loadConnections();
-    if (!mounted) return;
-
-    // Default the connection chip to the user's last-used connection for this
-    // priority (falls back to global; no-op with no history).
-    await _applyLastUsedConnectionDefault();
-  }
-
-  /// Pre-selects the user's last-used connection on a fresh draft so the
-  /// compose chip defaults to it instead of "Plot thread". No-op when there's
-  /// no recorded history (keeps the Plot-thread default), when a connection is
-  /// already set, or for share-intent captures (a stray Enter must not post
-  /// the shared link to an external connector).
-  Future<void> _applyLastUsedConnectionDefault() async {
-    if (widget.sharedUrl != null) return;
-    final bloc = _priorityBloc;
-    if (bloc == null) return;
-    if (_selectedTwist != null || _activeCreateAction != null) return;
-
-    final prefs = context.read<LocalPreferencesBloc>();
-    final draft = bloc.state.draft;
-
-    // Chat-eligible twists — same filter the connection picker uses.
-    final chatTwists = bloc.state.twists
-        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
-        .toList();
-
-    final candidateKeys = <String>[
-      ConnectionChoice.plotNote.key,
-      ConnectionChoice.plotTask.key,
-      ConnectionChoice.plotChat.key,
-      ...chatTwists.map((t) => 'twist:${t.id}'),
-      ..._allConnectionTargets.map((t) => t.key),
-    ];
-
-    final key = prefs.lastUsedConnectionKey(
-      candidateKeys: candidateKeys,
-      priorityId: draft.priority.id.toString(),
+    // Populate the step-1 target picker (MRU-ordered base list). Fire-and-
+    // forget — the picker reads the bloc's state reactively, and a stale
+    // empty list just shows briefly until refresh resolves.
+    unawaited(
+      context.read<ComposeTargetsBloc>().refresh().catchError((
+        Object e,
+        StackTrace s,
+      ) {
+        Tracker.captureException(e, s);
+      }),
     );
-    if (key == null) return;
-    if (key.startsWith('plot:')) {
-      // Last-used was a Plot variant — apply its defaults (e.g. set the
-      // task tag for Plot task). Plot note is the existing default, so
-      // applying it is effectively a no-op.
-      final kind = switch (key) {
-        'plot:task' => PlotThreadKind.task,
-        'plot:chat' => PlotThreadKind.chat,
-        _ => PlotThreadKind.note,
-      };
-      await _applyConnectionChoice(ConnectionChoice.plotForKind(kind));
-      return;
-    }
 
-    if (key.startsWith('twist:')) {
-      final twist =
-          chatTwists.where((t) => 'twist:${t.id}' == key).firstOrNull;
-      if (twist != null) _selectTwist(twist, recordUsage: false);
-      return;
-    }
-
-    final target =
-        _allConnectionTargets.where((t) => t.key == key).firstOrNull;
-    if (target != null) {
-      await _applyConnectionChoice(ConnectionChoice.target(target));
-      if (!mounted) return;
-    }
+    // Load available connection create-targets so the step-2 Connection field
+    // can resolve the active CreateLinkUserAction back to a label.
+    await _loadConnections();
   }
 
   Future<void> _loadConnections() async {
@@ -371,12 +487,21 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   @override
   void dispose() {
+    // Clear the live-page pointer if it still points at us (a newer page may
+    // have already claimed it in didChangeDependencies).
+    if (identical(NewThreadPageState._live, this)) {
+      NewThreadPageState._live = null;
+    }
+    NewThreadPageState.resetRequest.removeListener(_onResetRequested);
     // Unregister from the focus coordination provider using saved reference
     _provider?.unregisterActivityPanel();
     // Unregister from thread header notifier
     _headerNotifier?.unregister();
     // Clear middle panel preference when leaving NewThreadPage
     LayoutBloc.instance?.preferMiddle = false;
+    _pickerScrollController.dispose();
+    _pickerListFocusNode.dispose();
+    _pickerSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -384,31 +509,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context,
     PriorityState state,
   ) async {
-    final isAuto = ThreadsBase.autoFileIds.contains(state.draft.id.toString());
     final result = await SelectModal.open<PriorityChoice>(
       context,
       items: (search) async {
         final priorities = await Priority.get(order: PriorityOrder.nested);
         final query = search?.trim().toLowerCase() ?? '';
-        final includeAuto = query.isEmpty || 'auto'.contains(query);
         // Partition out the root (Inbox), which `get` returns alongside the
         // focuses, so it's pinned to the bottom as a branded "Inbox" row
         // instead of appearing inline as a plain focus.
         Priority? root;
-        final focuses = <PriorityChoice>[];
+        final focuses = <Priority>[];
         for (final p in priorities) {
           if (p.root) {
             root = p;
           } else if (query.isEmpty || p.matchesSearch(search ?? '')) {
-            focuses.add(PickedPriorityChoice(p));
+            focuses.add(p);
           }
         }
+        // Order focuses by the target's MRU suggestion (most-recent focus
+        // filed-with-this-roster first), then the remaining focuses in their
+        // nested order. Auto-organize is gone — the flow always picks a
+        // concrete focus (see _suggestFocusForTarget).
+        final ranked = _rankFocusesBySuggestion(focuses);
         return [
           SelectGroup<PriorityChoice>(
             title: null,
             items: [
-              if (includeAuto) const AutoOrganizeChoice(),
-              ...focuses,
+              ...ranked.map(PickedPriorityChoice.new),
               if (root != null &&
                   (query.isEmpty || root.matchesSearch(search ?? '')))
                 PickedPriorityChoice(root),
@@ -417,21 +544,16 @@ class NewThreadPageState extends State<NewThreadPage> {
         ];
       },
       itemBuilder: (choice, _) => switch (choice) {
-        // Use IconLabel (not the tile's leading icon/title slots) so the icon
-        // size, 6px gap, and text line-height match the focus rows and the
-        // Inbox row exactly — otherwise Auto-organize sits indented/offset.
-        AutoOrganizeChoice() => ListTile(
-          body: IconLabel(icon: PlotIcon.sparkles, label: 'Auto-organize'),
-        ),
         // FocusLabel brands the root focus as "Inbox" on its own, so the
         // picked-priority arm covers the Inbox row too.
         PickedPriorityChoice(:final priority) => ListTile(
           body: FocusLabel(priority: priority),
         ),
+        // Auto-organize is no longer offered; the arm is unreachable but the
+        // switch must stay exhaustive over the sealed PriorityChoice.
+        AutoOrganizeChoice() => ListTile(body: const SizedBox.shrink()),
       },
-      selectedValue: isAuto
-          ? const AutoOrganizeChoice()
-          : PickedPriorityChoice(state.draft.priority),
+      selectedValue: PickedPriorityChoice(state.draft.priority),
       prompt: 'Select focus',
       onAdd: (ctx) => createPriorityInline(
         ctx,
@@ -441,26 +563,27 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!result.present) return;
     final picked = result.value;
     if (!mounted) return;
-    if (picked is AutoOrganizeChoice) {
-      await _switchToAuto();
-    } else if (picked is PickedPriorityChoice) {
+    if (picked is PickedPriorityChoice) {
       await _switchToPriority(picked.priority);
     }
   }
 
-  Future<void> _switchToAuto() async {
-    final bloc = context.read<PriorityBloc>();
-    final draft = bloc.state.draft;
-    setState(() {
-      ThreadsBase.autoFileIds.add(draft.id.toString());
-    });
-    // Auto-filed threads live in the root priority until the server re-files.
-    final root = await Priority.getDefault();
-    if (!mounted) return;
-    if (draft.priority.id != root.id) {
-      final updated = _applyChainDefaults(draft, root);
-      await bloc.updateDraft(updated);
+  /// Orders [focuses] by the target's focus suggestion: any focus present in
+  /// [_focusSuggestionOrder] first (in that order), then the rest preserving
+  /// their input (nested) order.
+  List<Priority> _rankFocusesBySuggestion(List<Priority> focuses) {
+    if (_focusSuggestionOrder.isEmpty) return focuses;
+    final order = <PriorityId, int>{};
+    for (var i = 0; i < _focusSuggestionOrder.length; i++) {
+      order[_focusSuggestionOrder[i].id] = i;
     }
+    final ranked = focuses.toList()
+      ..sort((a, b) {
+        final ai = order[a.id] ?? 1 << 30;
+        final bi = order[b.id] ?? 1 << 30;
+        return ai.compareTo(bi);
+      });
+    return ranked;
   }
 
   Future<void> _switchToPriority(Priority priority) async {
@@ -470,61 +593,13 @@ class NewThreadPageState extends State<NewThreadPage> {
       ThreadsBase.autoFileIds.remove(draft.id.toString());
     });
     if (priority.id != draft.priority.id) {
-      final updated = _applyChainDefaults(draft, priority);
-      await bloc.updateDraft(updated);
+      // Swap the draft's focus only. The target picker (step 1) drives the
+      // roster now, so switching focus must NOT union per-focus default
+      // contacts/groups onto the draft (the old _applyChainDefaults merge,
+      // removed in the two-step redesign).
+      await bloc.updateDraft(draft.copyWith(priority: priority));
     }
     bloc.setNewThreadDefaultPriority(priority);
-  }
-
-  /// Swap the draft's priority and merge in the new chain's default
-  /// contacts/groups/invite-emails. Treats members of the OLD priority
-  /// chain's defaults that are still on the draft as seeded (drops them),
-  /// keeps everything else as user-added, then unions in the NEW chain's
-  /// defaults. See C2 merge semantics in the design.
-  Thread _applyChainDefaults(Thread draft, Priority newPriority) {
-    final oldPriority = draft.priority;
-    final oldContactDefaults = oldPriority.inheritedDefaultSharedContacts
-        .toSet();
-    final oldGroupDefaults = oldPriority.inheritedDefaultSharedGroups.toSet();
-    final oldEmailDefaults = oldPriority.inheritedDefaultSharedInviteEmails
-        .toSet();
-
-    final newContactDefaults = newPriority.inheritedDefaultSharedContacts;
-    final newGroupDefaults = newPriority.inheritedDefaultSharedGroups;
-    final newEmailDefaults = newPriority.inheritedDefaultSharedInviteEmails;
-
-    List<T> merge<T>(List<T> current, Set<T> oldDefaults, List<T> newDefaults) {
-      final userAdded = current.where((e) => !oldDefaults.contains(e)).toList();
-      final seen = <T>{...userAdded};
-      final result = [...userAdded];
-      for (final e in newDefaults) {
-        if (seen.add(e)) result.add(e);
-      }
-      return result;
-    }
-
-    final mergedContacts = merge(
-      draft.contacts,
-      oldContactDefaults,
-      newContactDefaults,
-    );
-    final mergedGroups = merge(
-      draft.groups,
-      oldGroupDefaults,
-      newGroupDefaults,
-    );
-    final mergedEmails = merge(
-      draft.inviteEmails,
-      oldEmailDefaults,
-      newEmailDefaults,
-    );
-
-    return draft.copyWith(
-      priority: newPriority,
-      contacts: Value(mergedContacts.isEmpty ? null : mergedContacts),
-      groups: Value(mergedGroups.isEmpty ? null : mergedGroups),
-      inviteEmails: Value(mergedEmails.isEmpty ? null : mergedEmails),
-    );
   }
 
   /// Routes a ConnectionChoice from the modal/dropdown into the draft.
@@ -563,21 +638,14 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     final action = choice.toUserAction();
     if (action != null) actions.add(action);
-    // Apply Plot-variant defaults: Plot task adds Tag.todo to the first note;
-    // Plot note clears it (so switching back from task works); Plot chat
-    // marks the sticky-chat intent so the label/placeholder stay "Chat" even
-    // before the user has added a contact.
+    // Apply Plot-variant defaults: Plot chat marks the sticky-chat intent so
+    // the label/placeholder stay "Chat" even before the user has added a
+    // contact.
     Note nextNote = note.copyWith(actions: actions);
     if (choice is PlotThreadChoice) {
       switch (choice.kind) {
-        case PlotThreadKind.task:
-          if (!nextNote.isAssignedTo(Base.actorId)) {
-            nextNote = nextNote.toggleTag(Tag.todo, Base.actorId);
-          }
         case PlotThreadKind.note:
-          if (nextNote.isAssignedTo(Base.actorId)) {
-            nextNote = nextNote.toggleTag(Tag.todo, Base.actorId);
-          }
+          break;
         case PlotThreadKind.chat:
           if (!_hadContactsThisSession) {
             setState(() => _hadContactsThisSession = true);
@@ -590,23 +658,153 @@ class NewThreadPageState extends State<NewThreadPage> {
     await bloc.updateDraft(bloc.state.draft, note: nextNote);
   }
 
-  Future<void> _openConnectionPicker() async {
-    final twists = context.read<PriorityBloc>().state.twists;
-    final picked = await ConnectionPickerModal.open(
-      context,
-      twists: twists,
-    );
-    if (picked == null || !mounted) return;
-    // The initial _loadConnections() from didChangeDependencies can race
-    // ahead of the TwistInstance cache (populated lazily via a Drift watch
-    // stream), leaving _allConnectionTargets empty. The picker itself just
-    // ran loadCreateTargets() and saw the cache populated, so refresh
-    // now — otherwise _resolveActiveConnectionChoice can't match the
-    // CreateLinkUserAction we're about to attach and the chip stays on
-    // "Plot thread".
+  /// Applies a [ComposeTarget] chosen in the picker to the draft and advances
+  /// to step 2 (compose). Sets the draft team, the connection (via the
+  /// existing [_applyConnectionChoice] / [_selectTwist] paths), and the
+  /// target's pre-filled roster (contacts/groups). Then suggests an MRU focus
+  /// and focuses the editor.
+  Future<void> _applyTarget(ComposeTarget target) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+
+    setState(() => _selectedTarget = target);
+
+    // 1. Connection: reuse the established apply path so a connector target's
+    //    CreateLinkUserAction (or a twist selection) is attached identically to
+    //    the legacy picker. _loadConnections refresh first so the step-2
+    //    Connection field can resolve the action back to a label.
     await _loadConnections();
     if (!mounted) return;
-    await _applyConnectionChoice(picked);
+    await _applyConnectionChoice(target.toConnectionChoice());
+    if (!mounted) return;
+
+    // 2. Team + roster: set the draft's team scope and pre-fill the target's
+    //    contacts/groups (e.g. "Chat with Greg") and any pending invite emails
+    //    (e.g. "Chat with foo@bar.com" for a brand-new address). Read the latest
+    //    draft after the connection apply's await so we don't clobber its
+    //    note/action edit.
+    final draft = bloc.state.draft;
+    // Pending invite emails count as a roster: a Chat-with-email is a shared
+    // thread even before the invitee resolves to a contact.
+    final hasRoster = target.contacts.isNotEmpty ||
+        target.groups.isNotEmpty ||
+        target.inviteEmails.isNotEmpty;
+    // A no-roster target (a Note, or a connector with SharingModel.none such as
+    // Google Tasks) must explicitly CLEAR the draft's roster rather than leave
+    // it untouched: switching from "Chat with Greg" to a Note would otherwise
+    // keep Greg attached-but-hidden and submit the Note as shared. Same
+    // no-roster predicate as [_shouldShowContacts]. For roster-bearing targets,
+    // pre-fill the roster (or leave it absent when the template carries none,
+    // e.g. a fresh channel target the user will address later).
+    final noRoster = _targetHasNoRoster(target);
+    final updated = draft.copyWith(
+      teamId: Value(target.teamId),
+      contacts: noRoster
+          ? const Value(null)
+          : target.contacts.isEmpty
+              ? const Value.absent()
+              : Value(target.contacts),
+      groups: noRoster
+          ? const Value(null)
+          : target.groups.isEmpty
+              ? const Value.absent()
+              : Value(target.groups),
+      // Clear invite emails when switching to a no-roster target; otherwise
+      // carry the target's (or leave absent when it has none, so a prior
+      // address typed this session survives a roster-bearing reselect).
+      inviteEmails: noRoster
+          ? const Value(null)
+          : target.inviteEmails.isEmpty
+              ? const Value.absent()
+              : Value(target.inviteEmails),
+    );
+    await bloc.updateDraft(updated);
+    if (!mounted) return;
+    if (hasRoster) _markContactsAdded();
+
+    // 3. Advance to step 2 immediately and focus the editor. The focus
+    //    suggestion below runs asynchronously and updates the focus field /
+    //    picker order reactively when it resolves — no need to block the
+    //    transition on a DB scan.
+    setState(() => _step = _ComposeStep.compose);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _threadEditorKey.currentState?.focus();
+    });
+
+    // 4. Suggest a concrete focus for this target's roster (MRU-top first).
+    await _suggestFocusForTarget(target);
+  }
+
+  /// Re-opens the target picker in a modal (step-2 Connection field tap). On
+  /// choose, re-applies the target and stays in step 2.
+  Future<void> _openConnectionPicker() async {
+    final scrollController = ScrollController();
+    try {
+      final result = await Modal(
+        constraints: const BoxConstraints(maxHeight: 640, maxWidth: 750),
+        padding: const EdgeInsets.all(0),
+        builder: (modalContext) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: TargetPickerList(
+            scrollController: scrollController,
+            onSelect: (target) =>
+                Modal.pop<ComposeTarget>(modalContext, Value(target)),
+          ),
+        ),
+      ).show<ComposeTarget>(context);
+      if (!result.present || !mounted) return;
+      // Re-apply the chosen target but stay in step 2 (don't reset to step 1).
+      await _applyTarget(result.value);
+    } finally {
+      scrollController.dispose();
+    }
+  }
+
+  /// Suggests a concrete focus for [target] and switches the draft to it.
+  ///
+  /// Ranks the user's focuses by recency of authored threads filed with the
+  /// same roster (see [ComposeTargetsBloc.rankFocusesForRoster]); the MRU-top
+  /// focus becomes the pre-selected focus and the rest seed the focus picker's
+  /// order. For a no-roster target (a Note, or a no-contact connector target)
+  /// the roster ranking is empty, so it falls back to the **global** focus MRU
+  /// ([ComposeTargetsBloc.rankFocusesGlobal]) — the focuses the user most
+  /// recently filed any thread into — so step 2 still pre-selects a concrete
+  /// MRU focus. No-op only when the user has no filed history at all.
+  Future<void> _suggestFocusForTarget(ComposeTarget target) async {
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
+    final targetsBloc = context.read<ComposeTargetsBloc>();
+    var rankedIds = await targetsBloc.rankFocusesForRoster(
+      contacts: target.contacts,
+      groups: target.groups,
+    );
+    if (!mounted) return;
+    if (rankedIds.isEmpty) {
+      // No roster (or no roster-specific history) → fall back to the global
+      // most-recently-used focus so step 2 always pre-selects a concrete focus.
+      rankedIds = await targetsBloc.rankFocusesGlobal();
+      if (!mounted) return;
+    }
+    if (rankedIds.isEmpty) return;
+
+    // Resolve the ranked ids to Priority objects via the nested focus list.
+    final priorities = await Priority.get(order: PriorityOrder.nested);
+    if (!mounted) return;
+    // PriorityId is a typedef for Uuid, so the thread's priorityId keys the
+    // map directly.
+    final byId = {for (final p in priorities) p.id: p};
+    final ranked = <Priority>[];
+    for (final id in rankedIds) {
+      final p = byId[id];
+      // Skip the root: "auto-organize"-style filing is gone, but a suggestion
+      // should still land in a real focus, not the Inbox.
+      if (p != null && !p.root) ranked.add(p);
+    }
+    if (ranked.isEmpty) return;
+
+    setState(() => _focusSuggestionOrder = ranked);
+    // Pre-select the MRU-top focus.
+    await _switchToPriority(ranked.first);
   }
 
   ConnectionChoice _resolveActiveConnectionChoice(PriorityState state) {
@@ -634,13 +832,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     return _plotChoiceForDraft(state);
   }
 
-  /// Maps the draft's current state to one of the three Plot variants so the
-  /// connection chip stays in sync with whether the first note is a task and
-  /// whether the thread is (or has been) shared this compose session.
+  /// Maps the draft's current state to one of the two Plot variants so the
+  /// connection chip stays in sync with whether the thread is (or has been)
+  /// shared this compose session.
   PlotThreadChoice _plotChoiceForDraft(PriorityState state) {
-    if (state.draftNote.isAssignedTo(Base.actorId)) {
-      return ConnectionChoice.plotTask;
-    }
     final hasContacts = state.draft.contacts.isNotEmpty ||
         state.draft.groups.isNotEmpty ||
         state.draft.inviteEmails.isNotEmpty;
@@ -820,8 +1015,8 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Computes the body-editor placeholder for the current compose mode.
   ///
-  /// Plot targets: driven by (task, shared) flags, where [shared] is true
-  /// when the draft has contacts/groups/emails OR the sticky
+  /// Plot targets: "Start a chat" when shared, otherwise "Add a note".
+  /// [shared] is true when the draft has contacts/groups/emails OR the sticky
   /// [_hadContactsThisSession] flag is set.
   ///
   /// Connector targets: uses [composerHintForNewThread] (SDK copy or fallback).
@@ -830,18 +1025,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     final cfg = _activeLinkTypeConfig;
     if (cfg != null) return composerHintForNewThread(cfg);
     // Plot target: mode-aware placeholder.
-    final isTask = state.draftNote.isAssignedTo(Base.actorId);
     final draft = state.draft;
     final hasContacts = draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
         draft.inviteEmails.isNotEmpty;
     final shared = hasContacts || _hadContactsThisSession;
-    return composerHintForNewThreadPlot(task: isTask, shared: shared);
+    return composerHintForNewThreadPlot(shared: shared);
   }
 
   /// Computes the label for the primary Save/Send button in new-thread mode.
   ///
-  /// Plot targets: "Save task" / "Send" (shared) / "Save" (private).
+  /// Plot targets: "Send" (shared) / "Save" (private).
   /// Connector targets: connector's composeVerb or "Create".
   String _computeSendLabel(PriorityState state) {
     final cfg = _activeLinkTypeConfig;
@@ -849,8 +1043,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       return composerVerbForNewThread(cfg);
     }
     // Plot target.
-    final isTask = state.draftNote.isAssignedTo(Base.actorId);
-    if (isTask) return 'Save task';
     final draft = state.draft;
     final hasContacts = draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
@@ -931,66 +1123,144 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// The canonical connection key for whatever the compose surface currently
-  /// has selected: the selected twist, an attached create-link action, or the
-  /// active Plot variant (note / task / chat). Recorded on submit so the next
-  /// new thread in this priority defaults back to it (see
-  /// _applyLastUsedConnectionDefault).
-  String _currentConnectionKey() {
-    if (_selectedTwist != null) return 'twist:${_selectedTwist!.id}';
-    final action = _activeCreateAction;
-    if (action != null) return createLinkActionKey(action);
-    final priorityState = _priorityBloc?.state;
-    if (priorityState == null) return ConnectionChoice.plotNote.key;
-    return _plotChoiceForDraft(priorityState).key;
-  }
-
   void _onChatSubmitted() {
     final prefs = context.read<LocalPreferencesBloc>();
     if (_selectedTwist != null) {
       prefs.recordMentionUsage(_selectedTwist!.id.toString());
     }
-    // Remember this connection so the next new thread in this priority
-    // defaults to it (see _applyLastUsedConnectionDefault). Fire-and-forget:
-    // the route flip to ThreadRoute follows immediately.
-    final bloc = _priorityBloc;
-    if (bloc != null) {
+    // Record the chosen target globally so it floats to the top of the step-1
+    // picker next time (records its signature in the connection MRU and
+    // prepends it to the cached list). The two-step picker ranks by the global
+    // MRU — no priority bias — so priorityId is omitted. Fire-and-forget: the
+    // route flip to ThreadRoute follows immediately.
+    final target = _selectedTarget;
+    if (target != null) {
       unawaited(
-        prefs
-            .recordConnectionUsage(
-              channelKey: _currentConnectionKey(),
-              priorityId: bloc.state.draft.priority.id.toString(),
-            )
-            .catchError((Object e, StackTrace s) {
-              Tracker.captureException(e, s);
-            }),
+        context.read<ComposeTargetsBloc>().recordTarget(target).catchError((
+          Object e,
+          StackTrace s,
+        ) {
+          Tracker.captureException(e, s);
+        }),
       );
     }
     // Clear global search so the new thread is visible in the list
     _provider?.tryCloseSearch();
   }
 
+  /// Whether to show the contacts row for the current [activeChoice].
+  ///
+  /// Hidden when:
+  /// - The active choice is a Plot Note (private, no sharing UI).
+  /// - The active choice is a connector target whose [SharingModel] is
+  ///   [SharingModel.none] (e.g. Google Tasks — no audience concept).
+  ///
+  /// Shown for Plot Chat, and for connector targets with any other sharing
+  /// model (thread / channel / message) — those all support a recipient roster.
+  bool _shouldShowContacts(ConnectionChoice activeChoice) {
+    if (activeChoice is PlotThreadChoice) {
+      return activeChoice.kind == PlotThreadKind.chat;
+    }
+    if (activeChoice is TargetConnectionChoice) {
+      return activeChoice.target.linkType.sharingModel != SharingModel.none;
+    }
+    // TwistConnectionChoice: always show contacts (chat with a twist)
+    return true;
+  }
+
+  /// Whether [target] has no audience concept — a Plot **Note**, or a connector
+  /// target whose [SharingModel] is [SharingModel.none] (e.g. Google Tasks).
+  /// The negation of the [_shouldShowContacts] rule, expressed directly over a
+  /// [ComposeTarget] so [_applyTarget] can clear the draft's roster when one is
+  /// picked. Chat and any other connector sharing model (thread / channel /
+  /// message) support a roster, so they are not no-roster.
+  bool _targetHasNoRoster(ComposeTarget target) {
+    switch (target.kind) {
+      case ComposeTargetKind.note:
+        return true;
+      case ComposeTargetKind.chat:
+      case ComposeTargetKind.twist:
+        return false;
+      case ComposeTargetKind.connector:
+        return target.linkType?.sharingModel == SharingModel.none;
+    }
+  }
+
+  /// Step 1: the inline target picker. Reuses the same [TargetPickerList]
+  /// widget the step-2 Connection field re-opens in a modal, but styled to sit
+  /// on the page. Selecting a target applies it and advances to step 2 (see
+  /// [_applyTarget]). Centered in multi-panel mode to match the compose
+  /// surface; top-anchored and edge-to-edge in single-panel mode.
+  Widget _buildTargetPickerStep(
+    BuildContext context,
+    BoxConstraints constraints, {
+    required bool multiPanel,
+  }) {
+    final picker = TargetPickerList(
+      key: const ValueKey('new-thread-target-picker'),
+      inline: true,
+      scrollController: _pickerScrollController,
+      listFocusNode: _pickerListFocusNode,
+      searchFocusNode: _pickerSearchFocusNode,
+      onSelect: (target) => unawaited(_applyTarget(target)),
+    );
+
+    if (!multiPanel) {
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+        child: picker,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Flexible(
+            child: SizedBox(height: constraints.maxHeight * 0.25),
+          ),
+          Flexible(
+            flex: 2,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * 0.6,
+              ),
+              child: picker,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Step-2 compose surface. Field order is **Connection → Focus → Contacts →
+  /// Title** (the two-step redesign): the chosen connection sits at the top
+  /// (tapping it re-opens the target picker), then the auto-suggested focus,
+  /// then the recipient roster (hidden for no-roster targets per
+  /// [_shouldShowContacts]), then the title. The body editor follows below.
   Widget _buildComposeSurface(BuildContext context, PriorityState state) {
-    final isAuto = ThreadsBase.autoFileIds.contains(state.draft.id.toString());
     final activeChoice = _resolveActiveConnectionChoice(state);
+    final showContacts = _shouldShowContacts(activeChoice);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PriorityComposeField(
-          currentPriority: state.draft.priority,
-          isAuto: isAuto,
-          openModal: () => _selectPriority(context, state),
-        ),
         ConnectionComposeField(
           activeChoice: activeChoice,
           openModal: _openConnectionPicker,
         ),
-        ContactsComposeField(
-          chips: _resolveContactChips(state),
-          openModal: () => _openSharedPicker(context),
+        PriorityComposeField(
+          currentPriority: state.draft.priority,
+          isAuto: false,
+          openModal: () => _selectPriority(context, state),
         ),
+        if (showContacts)
+          ContactsComposeField(
+            chips: _resolveContactChips(state),
+            openModal: () => _openSharedPicker(context),
+          ),
         TitleComposeField(
           key: _titleFieldKey,
           title: state.draft.title,
@@ -1009,21 +1279,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // tree as the LayoutBloc emits during load.
       buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
       builder: (context, layoutState) {
-        return BlocListener<PriorityBloc, PriorityState>(
-          // Re-apply the default auto-file flag when the draft id changes
-          // (chain drafts load async after mount or after submit) or when the
-          // context changes (a PrioritiesPage click can mount NewThreadPage
-          // with a stale PriorityBloc context before setPriority emits the
-          // new root context — without listening for context we'd never
-          // re-mark the draft as Auto on the way back to root).
-          listenWhen: (prev, curr) =>
-              prev.draft.id != curr.draft.id ||
-              prev.context.id != curr.context.id,
-          listener: (context, _) {
-            if (!_hasAppliedQueryParams) return;
-            _applyDefaultAutoFile();
-          },
-          child: BlocBuilder<PriorityBloc, PriorityState>(
+        return BlocBuilder<PriorityBloc, PriorityState>(
             // During initial load PriorityBloc emits 6-10 times (agenda,
             // activity feed, tags, icon counts, twists, actors). Only the
             // fields below actually affect this page's chrome — rebuilding
@@ -1082,6 +1338,17 @@ class NewThreadPageState extends State<NewThreadPage> {
                     childPad: false,
                     body: LayoutBuilder(
                       builder: (context, constraints) {
+                        // Step 1: the inline target picker. Shown on a fresh
+                        // mount (and after the New-thread command remounts) in
+                        // place of the compose surface + editor.
+                        if (!isViewerMode && _step == _ComposeStep.target) {
+                          return _buildTargetPickerStep(
+                            context,
+                            constraints,
+                            multiPanel: layoutState.multiPanel,
+                          );
+                        }
+
                         // Single panel mode: editor at bottom, edge-to-edge
                         if (!layoutState.multiPanel) {
                           return Padding(
@@ -1238,7 +1505,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                 ),
               );
             },
-          ),
         );
       },
     );

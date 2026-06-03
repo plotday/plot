@@ -1,5 +1,6 @@
 import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
+import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
@@ -52,6 +53,13 @@ class AppState extends State<App> {
         BlocProvider(create: (_) => LocalPreferencesBloc()),
         BlocProvider(create: (_) => SettingsBloc()),
         BlocProvider(create: (_) => OnboardingBloc()),
+        // Materializes the step-1 target-picker list (NewThreadPage). Depends
+        // on LocalPreferencesBloc for connection MRU recency; MultiBlocProvider
+        // builds providers in order so the read above is available here.
+        BlocProvider(
+          create: (context) =>
+              ComposeTargetsBloc(context.read<LocalPreferencesBloc>()),
+        ),
       ],
       child: Directionality(
         textDirection: TextDirection.ltr,

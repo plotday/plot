@@ -64,6 +64,12 @@ class Threads extends Table
   /// group id stringified, or to `channel:<id>` for connection-sourced threads.
   TextColumn get topic => text().nullable()();
 
+  /// Team scope for this thread, mirroring `thread.team_id` on the server
+  /// (a `bigint` reference). NULL means the thread is Personal (not scoped to
+  /// a team). Server-immutable after create; round-trips through sync so the
+  /// scope is preserved across devices. Set at draft creation time only.
+  Int64Column get teamId => int64().nullable()();
+
   /// Pending email invitations stored locally until the next sync push.
   /// The server resolves these to contacts and clears them.
   TextColumn get inviteEmails => text().nullable()();
@@ -399,6 +405,15 @@ class ThreadsBase extends BaseTable {
     final rawContactMeta = json['contact_meta'];
     if (rawContactMeta != null && rawContactMeta is! Map) {
       json['contact_meta'] = null;
+    }
+
+    // Drift's default serializer can't cast int/String to BigInt; convert explicitly.
+    // pg driver may return bigint as int (with type parser) or String (without).
+    final rawTeamId = json['team_id'];
+    if (rawTeamId is int) {
+      json['team_id'] = BigInt.from(rawTeamId);
+    } else if (rawTeamId is String) {
+      json['team_id'] = BigInt.parse(rawTeamId);
     }
 
     return ThreadRow.fromJson(json);
@@ -4546,6 +4561,10 @@ SELECT
     Date? stateOn,
     DateTime? stateAt,
     DateTime? readAt,
+    /// Team scope for the draft. Null = Personal. Carried through to the
+    /// thread row and synced via `team_id`. Defaults null until the compose
+    /// flow (Phase 5) sets it from the target picker.
+    BigInt? teamId,
   }) {
     final now = Time.now();
     final threadId = Uuid.generate();
@@ -4567,23 +4586,22 @@ SELECT
       readAt: readAt,
       hasEmbedding: false,
       revoked: false,
-      // Seed topic + per-priority sharing defaults onto the draft thread so
-      // it inherits the routing key, any auto-attached contacts/groups, and
-      // pending email invites before the user types. When no explicit
-      // config.topic is set, fall back to the priority id itself for
-      // non-root priorities, so sibling threads filed in the same
-      // sub-priority share a topic filter for classify_thread_for_user.
+      // Seed the topic routing key onto the draft thread so it inherits the
+      // filter before the user types. When no explicit config.topic is set,
+      // fall back to the priority id itself for non-root priorities, so
+      // sibling threads filed in the same sub-priority share a topic filter
+      // for classify_thread_for_user.
+      //
+      // Per-priority default contacts/groups/invite-emails are intentionally
+      // NOT seeded here: the two-step target picker (Phase 5) now drives the
+      // thread's roster, superseding per-focus default sharing. The
+      // `default_*` columns + `Priority` getters remain for back-compat until
+      // Phase 6 drops them.
       topic: priority.priorityConfig.topic ??
           (priority.path.isRoot ? null : priority.id.toString()),
-      contacts: priority.inheritedDefaultSharedContacts.isEmpty
-          ? null
-          : List<Uuid>.from(priority.inheritedDefaultSharedContacts),
-      groups: priority.inheritedDefaultSharedGroups.isEmpty
-          ? null
-          : List<Uuid>.from(priority.inheritedDefaultSharedGroups),
-      inviteEmails: priority.inheritedDefaultSharedInviteEmails.isEmpty
-          ? null
-          : jsonEncode(priority.inheritedDefaultSharedInviteEmails),
+      // Team scope for the draft (null = Personal until Phase 5 sets it from
+      // the target picker). Round-trips through sync via `team_id`.
+      teamId: teamId,
     );
     // Honor `at:` / `on:` by materializing the canonical schedule row.
     // DB constraint `schedule_at_xor_on` requires exactly one of the two,
@@ -4868,6 +4886,10 @@ SELECT
       (_thread.contactMeta ?? const {}).cast<String, dynamic>();
   List<Uuid> get groups => _thread.groups ?? const [];
   String? get topic => _thread.topic;
+
+  /// Team scope for this thread (`thread.team_id` on the server). Null when
+  /// the thread is Personal. Server-immutable after create.
+  BigInt? get teamId => _thread.teamId;
   /// Pending email invitations that haven't been synced yet.
   List<String> get inviteEmails {
     final raw = _thread.inviteEmails;
@@ -5910,6 +5932,7 @@ SELECT
     Value<Map<String, dynamic>?> contactMeta = const Value.absent(),
     Value<List<Uuid>?> groups = const Value.absent(),
     Value<List<String>?> inviteEmails = const Value.absent(),
+    Value<BigInt?> teamId = const Value.absent(),
     bool? unread,
     Value<String?> preview = const Value.absent(),
     Value<String?> icon = const Value.absent(),
@@ -5964,6 +5987,7 @@ SELECT
         contactMeta.present ||
         groups.present ||
         inviteEmails.present ||
+        teamId.present ||
         unread != null ||
         preview.present ||
         icon.present ||
@@ -5984,6 +6008,7 @@ SELECT
           contactMeta.present ||
           groups.present ||
           inviteEmails.present ||
+          teamId.present ||
           preview.present ||
           icon.present ||
           mergedIntoThreadId.present ||
@@ -6002,6 +6027,7 @@ SELECT
                 ? jsonEncode(inviteEmails.value)
                 : null)
             : const Value.absent(),
+        teamId: teamId,
         preview: preview,
         icon: icon,
         mergedIntoThreadId: mergedIntoThreadId,

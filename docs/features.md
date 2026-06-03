@@ -37,6 +37,7 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Globally shareable thread URLs (/t/{id}) — no priority context needed
 - Each user's copy of a shared thread is filed into their own priority tree automatically
 - Connector-created threads are filed via priority matching per user
+- Every thread carries a team scope (or stays Personal); team membership gates access, so a thread shared within a team disappears for anyone who leaves it — except people explicitly added from outside the team (e.g. a customer), who keep their access
 
 ### Notes & Content
 - Full Markdown support with live preview
@@ -50,9 +51,17 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 
 ### Composing notes
 
-Plot threads can be created as a **Note** (private to you), a **Task** (first
-note tagged for follow-up), or a **Chat** (shared with one or more contacts).
-The body editor's placeholder reflects which one you're creating.
+New threads start from a single searchable **target picker**: choose a Plot
+**Note** (just for you) or **Chat** (shared), or post straight into a connected
+app (a Slack channel, a Gmail thread, a Linear issue, a LinkedIn DM, a Google
+Task, …). The list is ordered by most-recent use; typing a name surfaces the
+recent ways you've reached that correspondent, and typing an email address
+offers a Plot chat plus every connection that can message that address.
+Choosing a target opens the composer with the editor focused, a suggested focus
+pre-selected, and any recipients filled in; the body editor's placeholder
+reflects what you're creating. The dedicated **Task** creation type is gone —
+create a Note or Chat and mark it as a to-do afterward. On a team, you also
+choose whether each Note or Chat belongs to that team or stays Personal.
 
 Inside a thread, the editor's top bar shows the active **mode** as a pill:
 

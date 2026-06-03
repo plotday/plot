@@ -7,6 +7,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/store/store.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
@@ -250,6 +251,12 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   }
 
   void _openNewThread(BuildContext context, TabsRouter tabsRouter) {
+    // Always start a fresh new-thread flow. AutoRoute reuses an already-mounted
+    // NewThreadPage (it does not build a new State), so a page sitting on
+    // step 2 would otherwise reappear mid-compose. A live page resets to
+    // step 1 with a fresh draft; a fresh mount ignores this bump.
+    NewThreadPageState.requestReset();
+
     // Always lands on the Activity tab — NewThreadRoute lives there.
     //
     // The inner stack must end up as [PriorityOnlyRoute, NewThreadRoute]
