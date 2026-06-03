@@ -38,6 +38,7 @@ import {
 } from "../../provider";
 import { hashExternalContent } from "./hash-external-content";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
+import { deleteUnipileAccount } from "./unipile/account-cleanup";
 import { UnipileClient } from "./unipile/client";
 import type { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
@@ -2864,6 +2865,15 @@ export class Integrations extends Tool implements IAuth {
   async removeAuth(provider: AuthProvider, actorId: ActorId): Promise<void> {
     const tokenKey = `auth_token:${provider}:${actorId}`;
 
+    // For hosted-auth providers (LinkedIn, etc.) the token's access_token is
+    // the Unipile account id. Capture it now so we can delete the upstream
+    // account after the local token is cleared.
+    let hostedAccountId: string | null = null;
+    if (PROVIDER_CONFIGS[provider]?.authMode === "hosted") {
+      const existing = await this.store.get<StoredTokenData>(tokenKey);
+      hostedAccountId = existing?.access_token ?? null;
+    }
+
     // Handle channels this actor enabled (flatten tree to check all levels)
     const actorChannelsTree = await this.getChannelAccess(provider, actorId);
     const actorChannels = this.flattenChannels(actorChannelsTree);
@@ -2945,10 +2955,41 @@ export class Integrations extends Tool implements IAuth {
     // Clean up old key if it exists
     await this.store.clear(`syncable_access:${provider}:${actorId}`);
 
+    // Delete the upstream Unipile account, unless another live hosted token
+    // still references it (channel reassignment). For personal hosted accounts
+    // there is never another owner, so this deletes. Best-effort.
+    if (hostedAccountId) {
+      const stillReferenced = await this.hostedAccountStillReferenced(
+        provider,
+        hostedAccountId
+      );
+      if (!stillReferenced) {
+        await deleteUnipileAccount(this.env, hostedAccountId);
+      }
+    }
+
     // Return dispatch info for the entrypoint to invoke locally
     if (dispatches.length > 0) {
       return { __dispatch: dispatches } as any;
     }
+  }
+
+  /**
+   * True iff some OTHER stored auth token for this provider still points at the
+   * given Unipile account id. removeAuth has already cleared the removed
+   * actor's token, so a match here means a different actor still owns the
+   * account (the channel-reassignment case) and we must not delete it upstream.
+   */
+  private async hostedAccountStillReferenced(
+    provider: AuthProvider,
+    accountId: string
+  ): Promise<boolean> {
+    const keys = await this.store.list(`auth_token:${provider}:`);
+    for (const key of keys) {
+      const token = await this.store.get<StoredTokenData>(key);
+      if (token?.access_token === accountId) return true;
+    }
+    return false;
   }
 
   /**

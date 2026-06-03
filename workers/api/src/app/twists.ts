@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Kysely } from "kysely";
 import { z } from "zod";
 
@@ -7,6 +8,8 @@ import { createLogger } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
+import { createDb } from "../db";
+import { deleteHostedAccountsForInstance } from "../twist/tools/unipile/account-cleanup";
 import { twistFactory } from "../twist";
 import {
   activateDraft,
@@ -26,6 +29,29 @@ import { extractRequestContext } from "../utils/log-context";
 import { saveSecureOptions } from "../utils/secure-options";
 import { handleValidationError } from "../utils/validation";
 import { notifyUserSync } from "./sync/notify";
+
+/**
+ * Fire-and-forget deletion of a removed connector's hosted (Unipile) accounts.
+ * Runs after the instance is soft-archived; the channel rows and KV config
+ * still exist. Uses a fresh DB connection because c.var.db is destroyed once
+ * the response is sent.
+ */
+function cleanupHostedAccounts(
+  c: Context<{ Bindings: Bindings }>,
+  twistInstanceId: string
+): void {
+  const env = c.env;
+  c.executionCtx.waitUntil(
+    (async () => {
+      const db = createDb(env);
+      try {
+        await deleteHostedAccountsForInstance(env, db, twistInstanceId);
+      } finally {
+        await db.destroy();
+      }
+    })()
+  );
+}
 
 const twists = new Hono<{ Bindings: Bindings }>();
 
@@ -620,6 +646,7 @@ twists.delete("/twist/:id", async (c) => {
   await c.var.db.transaction().execute(async (trx) => {
     await deleteTwist(trx, twistId);
   });
+  cleanupHostedAccounts(c, twistId);
   return c.json({ success: true });
 });
 
@@ -831,6 +858,7 @@ twists.delete("/twist/:id/archive-activities", async (c) => {
     notifyUserSync(c, result.owner_id);
   }
 
+  cleanupHostedAccounts(c, twistId);
   return c.json({ success: true });
 });
 

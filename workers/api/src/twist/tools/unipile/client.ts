@@ -1,5 +1,6 @@
 import type {
   UnipileAccount,
+  UnipileAccountList,
   UnipileAttendee,
   UnipileAttendeeList,
   UnipileChat,
@@ -80,6 +81,25 @@ export class UnipileClient {
     await this.request(`/accounts/${encodeURIComponent(accountId)}`, {
       method: "DELETE",
     });
+  }
+
+  /**
+   * List every account in the Unipile workspace. The workspace holds at most a
+   * handful of accounts, but the endpoint is cursor-paginated so we walk all
+   * pages. Used by account-cleanup to find orphaned accounts to delete.
+   */
+  async listAccounts(): Promise<UnipileAccount[]> {
+    const out: UnipileAccount[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: UnipileAccountList = await this.get<UnipileAccountList>(
+        "/accounts",
+        cursor ? { cursor } : undefined
+      );
+      out.push(...page.items);
+      cursor = page.cursor ?? null;
+    } while (cursor);
+    return out;
   }
 
   // ---------- Webhooks ----------

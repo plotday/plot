@@ -57,6 +57,41 @@ describe("UnipileClient", () => {
     expect((err as UnipileApiError).status).toBe(401);
   });
 
+  it("listAccounts walks pages and concatenates items", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          object: "AccountList",
+          items: [{ object: "Account", id: "acct-1", type: "LINKEDIN", created_at: "2026-01-01T00:00:00Z", sources: [] }],
+          cursor: "page-2",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          object: "AccountList",
+          items: [{ object: "Account", id: "acct-2", type: "LINKEDIN", created_at: "2026-01-02T00:00:00Z", sources: [] }],
+          cursor: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const client = new UnipileClient(env);
+    const accounts = await client.listAccounts();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[0]![0])).toBe(
+      "https://api7.unipile.com:13441/api/v1/accounts"
+    );
+    expect(String(fetchSpy.mock.calls[1]![0])).toBe(
+      "https://api7.unipile.com:13441/api/v1/accounts?cursor=page-2"
+    );
+    expect(accounts.map((a) => a.id)).toEqual(["acct-1", "acct-2"]);
+  });
+
   it("listRelations sends account_id and parses the relations list", async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(

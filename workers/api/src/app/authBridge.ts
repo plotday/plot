@@ -10,6 +10,9 @@ import { disposeRpc } from "../utils/rpc";
 import { createLogger } from "@plotday/worker-util";
 import { UnipileClient } from "../twist/tools/unipile/client";
 import type { HostedAccountProviderData } from "../provider";
+import { createDb } from "../db";
+import { PROVIDER_CONFIGS } from "../provider";
+import { sweepOrphanAccountsForIdentity } from "../twist/tools/unipile/account-cleanup";
 
 const authBridgeRoutes = new Hono<{ Bindings: Bindings }>();
 
@@ -298,6 +301,37 @@ authBridgeRoutes.get("/auth/hosted/success", async (c) => {
     storageObj.clear(`hosted_auth:${state}`),
     storageObj.clear(`hosted_auth_result:${state}`),
   ]);
+
+  // Best-effort: a fresh connect for a LinkedIn identity means any OTHER
+  // Unipile account for that same identity is a stale orphan (older connects,
+  // or accounts stranded by a dev DB reset). Sweep them in the background so
+  // the redirect isn't delayed. `userId` is the LinkedIn member id
+  // (profile.provider_id) resolved above.
+  if (
+    provider &&
+    PROVIDER_CONFIGS[provider as keyof typeof PROVIDER_CONFIGS]?.authMode ===
+      "hosted"
+  ) {
+    const newAccountId = result.accountId;
+    const identityId = userId;
+    const env = c.env;
+    const tracker = c.var.tracker;
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(env);
+        try {
+          await sweepOrphanAccountsForIdentity(
+            env,
+            db,
+            { newAccountId, identityId },
+            { tracker }
+          );
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
+  }
 
   return htmlBridgeResponse({ bridgeUri, state });
 });

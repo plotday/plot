@@ -27,6 +27,12 @@ export type UnipileAccount = {
   name?: string;
 };
 
+export type UnipileAccountList = {
+  object: "AccountList";
+  items: UnipileAccount[];
+  cursor: string | null;
+};
+
 export type UnipileChat = {
   object: "Chat";
   id: string;
