@@ -20,6 +20,7 @@
     "diff-db-schema": "pnpm --filter @plotday/db run diff-db-schema",
     "diff-schema-migrations": "pnpm --filter @plotday/db run diff-schema-migrations",
     "gen-migration": "pnpm --filter @plotday/db run gen-migration",
+    "gen-contract-migration": "pnpm --filter @plotday/db run gen-contract-migration",
     "apply-migrations": "pnpm --filter @plotday/db run apply-migrations",
     "gen-seed": "pnpm --filter @plotday/db run gen-seed",
     "pre-commit": "nx run-many -t pre-commit --exclude plot",

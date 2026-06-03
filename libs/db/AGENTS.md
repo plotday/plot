@@ -360,10 +360,14 @@ pnpm stop
 # Check if schema changes need a new migration (Atlas)
 pnpm diff-schema-migrations
 
-# Generate new migration from schema changes (Atlas)
+# Generate new EXPAND migration from schema changes (Atlas) -> migrations/
 pnpm gen-migration -- <name>
 
-# Apply pending migrations to LOCAL database (Atlas)
+# Generate a CONTRACT (destructive cleanup) migration -> migrations-contract/
+# Only after the workers that stopped using the column have shipped.
+pnpm gen-contract-migration -- <name>
+
+# Apply pending migrations to LOCAL database (expand + contract dirs)
 pnpm apply-migrations
 
 # Regenerate TypeScript types from local database
@@ -416,34 +420,48 @@ pnpm apply-migrations
 
 ## Production Migration Safety
 
-Migrations run in CI before workers deploy. Between "migrations applied" and "new workers deployed," the OLD worker code runs against the NEW schema. Migrations must be backward-compatible with the currently-deployed code.
+Migrations run in CI before workers deploy. Between "migrations applied" and "new workers deployed," the OLD worker code runs against the NEW schema. Expand migrations must therefore be backward-compatible with the currently-deployed code. Destructive cleanup is deferred to a separate **contract** directory that drains only after the relevant workers have shipped (below).
 
-### Safe Operations (single migration)
+### Two migration directories
+
+| Directory | Purpose | When applied in prod |
+| --- | --- | --- |
+| `migrations/` | **Expand** — additive, backward-compatible DDL. The original directory. | Before workers deploy, every deploy. |
+| `migrations-contract/` | **Contract** — destructive cleanup (DROP COLUMN/TABLE, etc.). Tracked in a separate Atlas revisions schema (`atlas_contract`), so its history is independent and a pending contract never blocks a future expand. | Drained at the START of a *later* deploy, once it has soaked (see "Contract drain" below). |
+
+When `migrations-contract/` is empty, all tooling behaves exactly as the original single-directory setup.
+
+### Enforcement (CI gate)
+
+The `migration-safety` job in `.github/workflows/lint.yml` runs `atlas migrate lint` on every PR against the expand migrations added since `main`. Atlas's destructive-change analyzers (the `DS*` series) **fail the build** on destructive or backward-incompatible DDL in `migrations/` — dropping a column/table, renaming, narrowing a type, adding a `NOT NULL` column without a default — because those break the OLD workers running against the NEW schema during the deploy window. An `atlas:nolint` directive (which would suppress the check) is also rejected in `migrations/`: destructive changes belong in `migrations-contract/`, not `migrations/`.
+
+### Making a destructive change (expand/contract)
+
+1. **Expand** (one PR): add the new column / stop reading the old one, etc. `pnpm gen-migration -- <name>` → `migrations/`. Ship it. Workers go live not using the old column.
+2. **Contract** (a *later* PR, after the expand has deployed): remove the column from `schema/`, then `pnpm gen-contract-migration -- drop_old_thing` → `migrations-contract/`. `pnpm apply-migrations` applies it locally so your dev DB matches.
+
+The contract is committed normally; you do **not** run it against prod yourself.
+
+### Contract drain (automatic, soak-gated)
+
+At the start of each production deploy, `libs/db/scripts/drain-contracts.sh` applies contract migrations that have **soaked** — committed before the *previous* `deploy/<timestamp>` tag, so the workers that stopped using the column have been live since that deploy. Contracts added in the current deploy's batch wait for the next deploy. This preserves a rollback window and never drops a column the currently-live workers still use. It is idempotent and a no-op when nothing has soaked.
+
+### Safe Operations (single expand migration)
 
 - Adding nullable columns or columns with defaults
 - Adding tables, indexes, functions, triggers, views
 - Adding or modifying RLS policies
 - Widening column types (e.g., `int` → `bigint`)
 
-### Requires Two-Phase Expand-Contract
+### Requires Expand-Contract (two PRs / two deploys)
 
-**Renaming columns:**
-1. Migration 1: Add new column + dual-write trigger
-2. Deploy workers that read from new column
-3. Migration 2: Drop old column and trigger
-
-**Changing column types (narrowing or incompatible):**
-1. Migration 1: Add new column with new type + backfill trigger
-2. Deploy workers that use new column
-3. Migration 2: Drop old column and trigger
-
-**Dropping columns:**
-1. Deploy workers that stop using the column
-2. Migration: Drop the column
+- **Renaming columns:** expand (add new column + dual-write trigger; workers read new) → contract (drop old column + trigger).
+- **Changing column types (narrowing/incompatible):** expand (add new column + backfill; workers use new) → contract (drop old column).
+- **Dropping columns:** expand (workers stop using the column) → contract (drop the column).
 
 ### Never in a Single Migration
 
-- ❌ Dropping columns still referenced by running code
+- ❌ Dropping columns still referenced by running code (use `migrations-contract/`)
 - ❌ Renaming columns in-place
 - ❌ Changing column types in a way that breaks running queries
 

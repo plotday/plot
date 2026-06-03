@@ -62,10 +62,21 @@ jobs:
       beat: true
       mailer: true
 
+  # The web app talks to the API, so it must not go live before the workers
+  # (which include migrations) finish — we design the API to be backward
+  # compatible with old clients, but not the app to tolerate an older API.
+  # `always()` lets it still deploy when the workers checkbox was unticked
+  # (workers skipped); it only blocks if workers failed/cancelled. Mirrors the
+  # `twists` job below.
   app:
     name: Deploy web app
-    needs: gate
-    if: ${{ inputs.app }}
+    needs: [gate, workers]
+    if: >-
+      ${{ always()
+        && needs.gate.result == 'success'
+        && inputs.app
+        && needs.workers.result != 'failure'
+        && needs.workers.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-app.yml
     secrets: inherit
 

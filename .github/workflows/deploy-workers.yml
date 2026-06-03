@@ -253,6 +253,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Full history incl. deploy/* tags — the contract drain uses the
+          # previous deploy tag as its soak boundary.
+          fetch-depth: 0
 
       - name: Install Atlas
         uses: ariga/setup-atlas@v0
@@ -269,6 +273,20 @@ jobs:
           ./cloud-sql-proxy plot-core:northamerica-northeast2:plot-prod \
             --port=5432 &
           sleep 3
+
+      # Apply destructive "contract" migrations that have SOAKED — committed
+      # before the previous deploy tag, so the workers that stopped using the
+      # dropped column have been live since that deploy. Runs BEFORE the expand
+      # migrations and before workers deploy; contracts from this deploy's batch
+      # wait for the next deploy. No-op when nothing has soaked.
+      # See libs/db/scripts/drain-contracts.sh.
+      - name: Drain soaked contract migrations
+        working-directory: libs/db
+        env:
+          MIGRATOR_PASSWORD: ${{ secrets.MIGRATOR_PASSWORD }}
+        run: |
+          MIGRATE_URL="postgres://migrator:${MIGRATOR_PASSWORD}@localhost:5432/plot?sslmode=disable" \
+            ./scripts/drain-contracts.sh
 
       - name: Apply pending migrations
         working-directory: libs/db

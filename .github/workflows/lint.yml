@@ -88,3 +88,67 @@ jobs:
 
       - name: Lint
         run: pnpm run lint
+
+  # Enforce expand/contract migration safety (see
+  # docs/superpowers/specs/2026-06-02-zero-downtime-deploy-design.md and
+  # libs/db/AGENTS.md "Production Migration Safety"). Migrations in migrations/
+  # apply BEFORE workers deploy, so a destructive change there would break the
+  # still-running OLD workers during the deploy window. Atlas's `migrate lint`
+  # fails the build on destructive / backward-incompatible DDL in migrations/.
+  # Destructive cleanup belongs in migrations-contract/ instead (generated with
+  # `pnpm gen-contract-migration`), where it drains only after a soak — so an
+  # `atlas:nolint` directive that would suppress the check in migrations/ is
+  # itself rejected.
+  migration-safety:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect migration changes
+        id: changed
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Only migrations/ (expand) files — migrations-contract/ is the
+          # sanctioned home for destructive DDL and is excluded by the pattern.
+          git diff --name-only "origin/${BASE_REF}...HEAD" \
+            | grep -E '^libs/db/migrations/.*\.sql$' > /tmp/changed_migrations.txt || true
+          if [ -s /tmp/changed_migrations.txt ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new/changed expand migrations vs origin/${BASE_REF}; skipping destructive-change lint."
+          fi
+
+      - name: Reject destructive escape hatches in migrations/
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          # An `atlas:nolint` directive would suppress the Atlas destructive
+          # check below. Destructive changes belong in migrations-contract/, so
+          # reject the escape hatch here and point to the contract generator.
+          if grep -lE 'atlas:nolint' $(cat /tmp/changed_migrations.txt) 2>/dev/null; then
+            echo "::error::A migrations/ file uses 'atlas:nolint'. Destructive changes belong in migrations-contract/ — generate them with 'pnpm gen-contract-migration -- <name>'."
+            exit 1
+          fi
+
+      - name: Install Atlas
+        if: steps.changed.outputs.changed == 'true'
+        uses: ariga/setup-atlas@v0
+
+      - name: Lint new migrations for unsafe (non-backward-compatible) changes
+        if: steps.changed.outputs.changed == 'true'
+        working-directory: libs/db
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        # Run from libs/db (working-directory above) so Atlas's default
+        # git-dir is the repo working tree and the migrations/ path resolves —
+        # passing --git-dir ../.. makes git run from the repo root while paths
+        # stay relative to libs/db, which fails with "git diff: exit status 128".
+        run: |
+          atlas migrate lint \
+            --env local \
+            --git-base "origin/${BASE_REF}"

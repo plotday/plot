@@ -251,10 +251,17 @@ pnpm --filter @plotday/db start
 # Stop the local database
 pnpm --filter @plotday/db stop
 
-# Generate a new migration from schema changes (Atlas)
+# Generate a new EXPAND migration from schema changes (Atlas) -> migrations/
 pnpm gen-migration -- <name>
 
-# Apply all pending migrations to LOCAL database (Atlas)
+# Generate a CONTRACT (destructive cleanup) migration -> migrations-contract/.
+# Destructive DDL (DROP COLUMN/TABLE, rename, type narrowing) must go here, not
+# migrations/, and only after the workers that stopped using it have shipped.
+# It drains automatically at the start of a later deploy, after a soak. See
+# libs/db/AGENTS.md "Production Migration Safety".
+pnpm gen-contract-migration -- <name>
+
+# Apply all pending migrations to LOCAL database (expand + contract dirs)
 pnpm apply-migrations
 
 # Check that schema files match existing migrations (Atlas)
