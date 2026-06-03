@@ -36,8 +36,7 @@ class Priorities extends Table
   TextColumn get seeWithin => text().nullable()();
   BoolColumn get attentionWindowSet =>
       boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinSet =>
-      boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinSet => boolean().withDefault(const Constant(false))();
 
   /// Master toggle for the "Early notifications" mechanism. When false,
   /// notifications fire only at the placed block-start.
@@ -138,7 +137,9 @@ class PrioritiesBase extends BaseTable {
     // and to a JSON string for default_invite_emails (plain TextColumn).
     json['default_contacts'] = _normalizeArrayField(json['default_contacts']);
     json['default_groups'] = _normalizeArrayField(json['default_groups']);
-    final normalizedEmails = _normalizeArrayField(json['default_invite_emails']);
+    final normalizedEmails = _normalizeArrayField(
+      json['default_invite_emails'],
+    );
     json['default_invite_emails'] = normalizedEmails.isEmpty
         ? null
         : jsonEncode(normalizedEmails);
@@ -494,12 +495,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool ancestors = true,
   }) {
     return _get(
-      id: id,
-      depth: depth,
-      archived: null,
-      ancestors: ancestors,
-      order: PriorityOrder.nested,
-    )
+          id: id,
+          depth: depth,
+          archived: null,
+          ancestors: ancestors,
+          order: PriorityOrder.nested,
+        )
         .watch()
         .map((priorities) => asNested(priorities, id: id))
         .where((nested) => nested.isNotEmpty)
@@ -510,18 +511,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return (await _default().getSingleOrNull()) != null;
   }
 
-  /// True when the user has any non-archived priority beyond what
-  /// `activate_invited_user` auto-seeds at signup (the root and the
-  /// `@plot.app` "Using Plot" priority). Used as a second-device signal
-  /// that the user has already used Plot, so onboarding can be skipped.
+  /// True when the user has any non-archived focus beyond the root that
+  /// `activate_invited_user` auto-seeds at signup. Used as a second-device
+  /// signal that the user has already used Plot, so onboarding can be skipped.
   static Future<bool> hasNonRoot() async {
     final query = Store.get.select(table)
-      ..where(
-        (t) =>
-            t.archivedAt.isNull() &
-            t.root.equals(false) &
-            (t.key.isNull() | t.key.equals('@plot.app').not()),
-      )
+      ..where((t) => t.archivedAt.isNull() & t.root.equals(false))
       ..limit(1);
     return (await query.getSingleOrNull()) != null;
   }
@@ -818,9 +813,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     final userQuery = Store.get.selectOnly(a)
       ..addColumns([a.priorityId, a.stateAt, a.stateOn]);
     userQuery.where(
-      a.archivedAt.isNull() &
-          a.draft.equals(false) &
-          a.active.equals(true),
+      a.archivedAt.isNull() & a.draft.equals(false) & a.active.equals(true),
     );
 
     final userStream = userQuery.watch().map((results) {
@@ -1075,18 +1068,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          seeWithinSet: false,
          earlyNotificationsEnabledSet: false,
          notifyWindowSet: false,
-         defaultContacts:
-             defaultContacts == null || defaultContacts.isEmpty
-                 ? null
-                 : defaultContacts,
-         defaultGroups:
-             defaultGroups == null || defaultGroups.isEmpty
-                 ? null
-                 : defaultGroups,
+         defaultContacts: defaultContacts == null || defaultContacts.isEmpty
+             ? null
+             : defaultContacts,
+         defaultGroups: defaultGroups == null || defaultGroups.isEmpty
+             ? null
+             : defaultGroups,
          defaultInviteEmails:
              defaultInviteEmails == null || defaultInviteEmails.isEmpty
-                 ? null
-                 : jsonEncode(defaultInviteEmails),
+             ? null
+             : jsonEncode(defaultInviteEmails),
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -1243,13 +1234,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     final query = search.trim().toLowerCase();
     if (query.isEmpty) return true;
     final tokens = query.split(RegExp(r'\s+'));
-    final words = <String>[
-      title,
-      for (final ancestor in ancestors()) ancestor.title,
-    ]
-        .expand((t) => t.toLowerCase().split(RegExp(r'[\s/]+')))
-        .where((w) => w.isNotEmpty)
-        .toList();
+    final words =
+        <String>[title, for (final ancestor in ancestors()) ancestor.title]
+            .expand((t) => t.toLowerCase().split(RegExp(r'[\s/]+')))
+            .where((w) => w.isNotEmpty)
+            .toList();
     return tokens.every((t) => words.any((w) => w.startsWith(t)));
   }
 
@@ -1281,25 +1270,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// back to false when not computed (e.g. loaded without `_enrichWithStatus`).
   final bool? _hasThreadsComputed;
 
-  /// Returns true if this priority has a viewer role (read-only).
-  bool get isViewer => role == 'viewer';
-
-  /// Whether the priority should only display its activity feed (no agenda
-  /// tab). True for viewer priorities, or when `config.view == 'activity'`.
-  bool get isActivityOnly => isViewer || priorityConfig.viewIsActivity;
-
-  /// Whether this is a system priority. Users can rename / recolor / re-parent
-  /// these, but cannot archive them, add sub-priorities under them, configure
-  /// default sharing on them, or pick them as a parent for another priority.
-  bool get isPlot =>
-      key == '@plot.app' || key == '@plot.twist-dev' || key == '@plot';
-
-  /// Whether this is the Using Plot priority.
-  bool get isPlotApp => key == '@plot.app';
-
-  /// Whether this is the Twist Development priority.
-  bool get isTwistDev => key == '@plot.twist-dev';
-
   /// The user-facing name for this priority. The per-user root focus is
   /// stored as "Everything" in the database (the server projects it as
   /// "Inbox" at apiVersion >= 4, but older synced roots still carry the raw
@@ -1315,8 +1285,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Parsed "see within" time (inherited from this priority or
   /// ancestors). Single window — server collapsed the previous
   /// requests/updates pair into one knob.
-  SeeWithinTime? get seeWithinTime =>
-      SeeWithinTime.fromJsonString(seeWithin);
+  SeeWithinTime? get seeWithinTime => SeeWithinTime.fromJsonString(seeWithin);
 
   /// Parsed "notify during" windows (inherited).
   List<AttentionWindow>? get notifyWindows =>
@@ -1533,17 +1502,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// current focus where the owning bloc loads it without `_enrichWithStatus`
   /// (header and command-scope menus).
   Priority withHasThreads(bool value) => Priority.fromStore(
-        this,
-        parent: parent,
-        children: children,
-        draft: draft,
-        ancestors: _ancestors,
-        minAncestorTopOrder: minAncestorTopOrder,
-        originalPath: _originalPath,
-        active: _activeComputed,
-        unreadComputed: _unreadComputed,
-        hasThreads: value,
-      );
+    this,
+    parent: parent,
+    children: children,
+    draft: draft,
+    ancestors: _ancestors,
+    minAncestorTopOrder: minAncestorTopOrder,
+    originalPath: _originalPath,
+    active: _activeComputed,
+    unreadComputed: _unreadComputed,
+    hasThreads: value,
+  );
 
   void _removeFromParent(Priority parent) {
     parent.children = parent.children.where((child) => child.id != id).toList();

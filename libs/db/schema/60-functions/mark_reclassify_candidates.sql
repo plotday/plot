@@ -5,7 +5,10 @@
 --
 -- Algorithm:
 --   1. Same indexed candidate prefilter as the old function (topic, HNSW,
---      contact/group overlap).
+--      contact/group overlap). Onboarding threads (topic = 'onboarding') are
+--      excluded from the HNSW/contact/group branches so they never leave the
+--      Inbox on an unrelated move — they only move via the topic branch, i.e.
+--      when the user explicitly moves one onboarding thread (then all follow).
 --   2. UPDATE thread_priority SET classify_at = now() for each candidate
 --      that's currently settled and non-sticky.
 --   3. Return the (user_id, thread_id) pairs so the API can enqueue
@@ -78,6 +81,11 @@ BEGIN
               AND (1 - (t.embedding <=> v_embedding)) >= 0.5
               AND t.archived_at IS NULL
               AND t.draft = FALSE
+              -- Onboarding threads stay pinned to the Inbox: they're only
+              -- ever dragged along the topic branch above (when the moved
+              -- anchor is itself an 'onboarding' thread), never pulled out
+              -- by similarity to some unrelated thread the user moved.
+              AND t.topic IS DISTINCT FROM 'onboarding'
             ORDER BY t.embedding <=> v_embedding ASC
             LIMIT p_max_candidates
         ) semantic
@@ -93,6 +101,8 @@ BEGIN
          AND tp.priority_id IS NOT NULL
         WHERE t.archived_at IS NULL
           AND t.draft = FALSE
+          -- Onboarding threads only move via the topic branch (see above).
+          AND t.topic IS DISTINCT FROM 'onboarding'
           AND (
               (cardinality(v_contacts) > 0 AND t.contacts && v_contacts)
               OR (cardinality(v_groups) > 0 AND t.groups && v_groups)

@@ -6,7 +6,6 @@ import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
 import { addUpgradeNote } from "./dev-activities";
-import { notifyUserSyncByEnv } from "../app/sync/notify";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
 import { getPersonalPlan } from "../utils/limits";
@@ -519,40 +518,9 @@ export async function deployTwist({
     }
   }
 
-  // Ensure every consumer of this twist's deploy/runtime logs has a Twist
-  // Development priority before the deploy log thread is created, so the
-  // priority:@plot.twist-dev: topic prefix routes there instead of falling
-  // back to root. Broadcast to UserSync DOs so live clients pull the new
-  // priority without having to restart.
-  const ensuredUserIds: string[] = [];
-  try {
-    if (environment === "personal") {
-      if (userId) {
-        await sql`SELECT public.ensure_twist_dev_priority(${userId}::uuid)`.execute(db);
-        ensuredUserIds.push(userId);
-      }
-    } else if (publisherId !== null) {
-      const rows = await sql<{ user_id: string }>`
-        SELECT public.ensure_twist_dev_priority(uc.user_id) AS priority_id, uc.user_id
-        FROM "group" g
-        JOIN group_member gm ON gm.group_id = g.id
-        JOIN user_contact uc ON uc.contact_id = gm.contact_id
-        WHERE g.auto_publisher_id = ${publisherId}
-          AND g.auto_maintained = TRUE
-          AND uc.linked = TRUE
-          AND uc.archived_at IS NULL
-      `.execute(db);
-      for (const r of rows.rows) ensuredUserIds.push(r.user_id);
-    }
-  } catch (ensureError) {
-    logger.error("Failed to ensure Twist Development priority (continuing)", ensureError as Error);
-  }
-
-  await Promise.allSettled(
-    ensuredUserIds.map((id) => notifyUserSyncByEnv(env, id))
-  );
-
-  // Add upgrade note to the Logs thread
+  // Add upgrade note to the Logs thread. The logs thread files into each
+  // consumer's Inbox (root) via classify_thread_for_user — no special focus
+  // is created — and addUpgradeNote broadcasts to consumers' UserSync DOs.
   try {
     await addUpgradeNote(env, twistPackageId, environment, version);
   } catch (upgradeNoteError) {

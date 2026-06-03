@@ -1,7 +1,7 @@
 -- AFTER INSERT (or UN-archive) on team_user: ensure the user has a
 -- top-level priority for this team. Path uses generate_path() to produce
 -- a random unique segment, matching the convention used in
--- activate_invited_user and ensure_twist_dev_priority.
+-- activate_invited_user.
 CREATE OR REPLACE FUNCTION public.team_user_ensure_team_priority ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -42,8 +42,7 @@ BEGIN
     END IF;
 
     -- generate_path(NULL) produces a random 12-char alphanumeric label,
-    -- matching the convention used in activate_invited_user and
-    -- ensure_twist_dev_priority.
+    -- matching the convention used in activate_invited_user.
     INSERT INTO public.priority (created_by, user_id, title, path, team_id)
     VALUES (
         NEW.user_id,

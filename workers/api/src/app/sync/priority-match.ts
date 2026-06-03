@@ -102,6 +102,10 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
         AND t.embedding IS NOT NULL
         AND t.title IS NOT NULL
         AND length(trim(t.title)) > 0
+        -- Onboarding threads stay pinned to the Inbox: never suggest them as
+        -- matches for a newly created focus (they only leave when the user
+        -- explicitly moves one).
+        AND t.topic IS DISTINCT FROM 'onboarding'
         AND (t.draft = FALSE OR t.created_by = ${userId}::uuid)
         AND (
           t.contacts && "user".user_contact_ids(${userId}::uuid)

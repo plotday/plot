@@ -120,18 +120,14 @@ class ThreadTarget extends HighlightTarget {
   final ThreadId threadId;
 }
 
-/// Highlight a thread looked up by title within a priority. Used for the
-/// onboarding flow's seeded "Using Plot" content where the per-user thread
-/// id isn't known at compile time. The overlay resolves the thread at step
-/// activation, navigates the right panel to it, and highlights the same
-/// area that [ThreadTarget] would.
+/// Highlight an onboarding thread looked up by title within the user's Inbox
+/// (root). Used for the seeded onboarding content where the per-user thread id
+/// isn't known at compile time. The overlay resolves the thread at step
+/// activation, navigates the right panel to it, and highlights the same area
+/// that [ThreadTarget] would.
 class NamedThreadTarget extends HighlightTarget {
-  const NamedThreadTarget({
-    required this.priorityTitle,
-    required this.threadTitle,
-  });
+  const NamedThreadTarget({required this.threadTitle});
 
-  final String priorityTitle;
   final String threadTitle;
 }
 
@@ -213,10 +209,7 @@ class OnboardingSteps {
           'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
           'Threads are shared automatically with everyone on the underlying item, '
           'and many connectors sync notes both ways (a note on a Linear thread posts a comment back to Linear).',
-      target: NamedThreadTarget(
-        priorityTitle: 'Using Plot',
-        threadTitle: 'Everything in its place',
-      ),
+      target: NamedThreadTarget(threadTitle: 'Everything in its place'),
       overlay: ThemeColor(2), // Rising Action — back into the arc
       // The cutout is the right panel; pull the text block toward it so the
       // copy reads as belonging to the thread that's highlighted.
@@ -227,7 +220,7 @@ class OnboardingSteps {
       body:
           "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"
-          "Questions or stuck on something? Reply on the welcome thread in Using Plot — we read every one.",
+          "Questions or stuck on something? Reply on the welcome thread in your Inbox — we read every one.",
       background: const ThemeColor(0), // Catalyst — bookend the opener
       contentBuilder: _buildClosingQuote,
     ),

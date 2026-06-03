@@ -247,7 +247,6 @@ class NewThread extends Command {
     // called from a context without a PriorityBloc (e.g. Agenda tab).
     final priority = context.read<PriorityBloc?>()?.state.context;
     if (priority == null) return false;
-    if (priority.isViewer) return false;
     return true;
   }
 
@@ -832,9 +831,7 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
   Future<CommandReturn> run(BuildContext context) async {
     await saveOptimistically(
       context,
-      thread.copyWith(
-        title: Value(newTitle.isEmpty ? null : newTitle),
-      ),
+      thread.copyWith(title: Value(newTitle.isEmpty ? null : newTitle)),
     );
     onSaved?.call();
     return const CommandDone();
@@ -1630,10 +1627,6 @@ class ToggleThreadTag extends _UpdateThreadCommand {
       );
 
   final Tag tag;
-
-  @override
-  bool enabled(BuildContext context) =>
-      !(tag == Tag.private && thread.priority.isViewer);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -3591,25 +3584,6 @@ List<Command> threadCommands(
   bool showEventTiming = false,
   PriorityBloc? priorityBloc,
 }) {
-  // Viewers can't edit shared thread metadata (title, sharing, merge/split,
-  // priority move, archive) but per-user filing (Finish / To respond /
-  // To do / To read / pick schedule) only mutates the user's own
-  // thread_state row — the same affordance the leading icon already
-  // exposes regardless of role.
-  if (thread.priority.isViewer) {
-    Command? primary;
-    if (!skipPrimary) {
-      if (thread.todo) {
-        primary = FinishThread(thread, stateIcon: false);
-      } else if (thread.on != null) {
-        primary = PickScheduleThread(thread);
-      } else {
-        primary = ToggleThreadActive(thread);
-      }
-    }
-    return [if (open) ChangeCurrentThread(thread), ?primary];
-  }
-
   // Read-only viewers (announce-group-only access): no metadata edits, no
   // sharing changes, no merges/splits, no thread tags. Archive routes
   // per-user server-side. Marking read/unread and per-user filing remain.

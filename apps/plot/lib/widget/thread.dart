@@ -184,14 +184,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   // icon tap on desktop).
   Command? _getSwipeRightShortCommand() {
     if (widget.isOutsidePriority) return null;
-    if (activity.priority.isViewer) return null;
     return ToggleThreadActive(activity);
   }
 
   // Long right: Schedule for another day.
   Command? _getSwipeRightLongCommand() {
     if (widget.isOutsidePriority) return null;
-    if (activity.priority.isViewer) return null;
     return PickScheduleThread(activity);
   }
 
@@ -199,7 +197,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   // unscheduled threads, the user must reach the long zone for the menu).
   Command? _getSwipeLeftShortCommand() {
     if (widget.isOutsidePriority) return null;
-    if (activity.priority.isViewer) return null;
     if (!activity.todo) return null;
     return FinishThread(
       activity,
@@ -333,9 +330,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         //   - active hovered:  `circleCheck` with "Mark done" tooltip; tap
         //                      clears active and marks read (lands in
         //                      Activity).
-        final longPress = activity.priority.isViewer
-            ? null
-            : () => buildContext.run(PickScheduleThread(activity));
+        void longPress() => buildContext.run(PickScheduleThread(activity));
 
         final Command leadingCommand;
         if (!isTodo) {
@@ -560,10 +555,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                           SizedBox(
                             width: 16,
                             height: 16,
-                            child:
-                                isHighlighted &&
-                                    !activity.priority.isViewer &&
-                                    !widget.isOutsidePriority
+                            child: isHighlighted && !widget.isOutsidePriority
                                 ? _MoveHoverIcon(activity: activity)
                                 : _ThreadLogo(activity: activity),
                           ),

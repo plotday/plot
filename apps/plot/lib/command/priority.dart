@@ -68,7 +68,9 @@ abstract class PriorityCommand extends Command {
         priority: priority!,
         titleOverride: _label,
         iconOverride: _glyph,
-        color: context.colour.colours.fromTheme(const ThemeColor.defaultColor()),
+        color: context.colour.colours.fromTheme(
+          const ThemeColor.defaultColor(),
+        ),
       );
     }
     return FocusLabel(priority: priority!);
@@ -404,14 +406,11 @@ Future<FormData> _buildNewPriorityForm(
   final currentPriority = nowBloc.state is NowLoaded
       ? (nowBloc.state as NowLoaded).priority
       : null;
-  final fallbackParent =
+  final defaultParent =
       parent ??
       currentPriority ??
       prioritiesBloc.state.root ??
       await Priority.getDefault();
-  final defaultParent = fallbackParent.isPlot
-      ? (prioritiesBloc.state.root ?? await Priority.getDefault())
-      : fallbackParent;
 
   // Fetch team list for the team selector (only relevant for top-level
   // priorities whose parent is the root). Ignore errors — teams list is
@@ -1091,20 +1090,19 @@ class EditPriorityCommand extends ShowForm {
                     titleBuilder: (c) => c.label,
                     leadingBuilder: (c) => ColorDot(color: c),
                   ),
-                  if (!p.isPlot)
-                    FormShareSelect(
-                      key: 'shared',
-                      label: 'Share new threads',
-                      placeholder: 'No one',
-                      priority: p,
-                      initialValue: SharedSelection(
-                        contacts: List<Uuid>.from(p.defaultSharedContacts),
-                        groups: List<Uuid>.from(p.defaultSharedGroups),
-                        inviteEmails: List<String>.from(
-                          p.defaultSharedInviteEmails,
-                        ),
+                  FormShareSelect(
+                    key: 'shared',
+                    label: 'Share new threads',
+                    placeholder: 'No one',
+                    priority: p,
+                    initialValue: SharedSelection(
+                      contacts: List<Uuid>.from(p.defaultSharedContacts),
+                      groups: List<Uuid>.from(p.defaultSharedGroups),
+                      inviteEmails: List<String>.from(
+                        p.defaultSharedInviteEmails,
                       ),
                     ),
+                  ),
                   FormButton(
                     key: 'save',
                     isPrimary: true,
@@ -1224,7 +1222,8 @@ class MergeFocus extends PriorityCommand {
     // Capture whether we're viewing the source focus before any await, so we
     // can follow the threads to the target after archiving the source.
     final nowBloc = context.read<NowBloc?>();
-    final viewingSource = nowBloc?.state is NowLoaded &&
+    final viewingSource =
+        nowBloc?.state is NowLoaded &&
         (nowBloc!.state as NowLoaded).context?.id == _source.id;
 
     try {
@@ -1281,17 +1280,16 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   // The Inbox (root) is a fixed tile — no name/icon/colour to edit.
-  if (!priority.isViewer && !priority.root) EditPriorityCommand(priority),
-  if (!priority.isViewer) ShowEarlyNotificationsSettings(priority),
+  if (!priority.root) EditPriorityCommand(priority),
+  ShowEarlyNotificationsSettings(priority),
   ShowTimeLog(priority),
-  if (!priority.root && !priority.isViewer && !priority.isPlot)
-    archiveOrMergeCommand(priority),
+  if (!priority.root) archiveOrMergeCommand(priority),
 ];
 
 /// The destructive slot on a focus menu. An archived focus offers Un-archive;
 /// an active focus with threads offers "Merge into…" (move its threads
 /// elsewhere, then archive); an active empty focus offers a one-click Archive.
-/// Inbox / viewer / Plot focuses never reach here (gated by the caller).
+/// The Inbox (root) never reaches here (gated by the caller).
 Command archiveOrMergeCommand(Priority priority) {
   if (priority.archivedAt != null) return TogglePriorityArchived(priority);
   if (priority.hasThreads) return MergeFocusInto(priority);

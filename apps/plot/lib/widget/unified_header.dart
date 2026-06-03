@@ -502,8 +502,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         // button) lives at the start of the sidebar header while the
         // sidebar is open. It collapses to nothing when nothing is
         // trackable for the context priority.
-        if (!state.context.isTwistDev)
-          _PriorityHeaderTrackingControl(priority: state.context),
+        _PriorityHeaderTrackingControl(priority: state.context),
         const Expanded(child: SizedBox.shrink()),
         Button.icon(ToggleLeftSidebarCommand(isVisible: true)),
       ],
@@ -555,7 +554,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           );
 
     final List<Widget> trailing = <Widget>[
-      if (!state.context.isTwistDev) Button.icon(NewThread()),
+      Button.icon(NewThread()),
       Button.icon(_buildPriorityMenuCommand(state)),
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
@@ -605,7 +604,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final alignment = alignLeft ? Alignment.centerLeft : Alignment.center;
 
     Widget withTrackingPill(Widget title) {
-      if (state.context.isTwistDev) return title;
       return Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -686,10 +684,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             }
             if (!layoutState.multiPanel) {
               return withTrackingPill(
-                FocusLabel(
-                  priority: state.context,
-                  boldLeaf: true,
-                ),
+                FocusLabel(priority: state.context, boldLeaf: true),
               );
             }
             return withTrackingPill(
