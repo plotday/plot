@@ -26,6 +26,7 @@ import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/env.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/page/new_thread.dart' show NewThreadPageState;
 import 'package:plot/widget/confirm_modal.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
@@ -1335,6 +1336,11 @@ class HelpAndFeedback extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // AutoRoute reuses an already-mounted NewThreadPage (it does not build a
+    // fresh State), so a live page sitting on step 1 — or mid-compose on step
+    // 2 — would otherwise ignore the `feedback` route param. Signal it to
+    // reconfigure for feedback; a fresh mount reacts to the param instead.
+    NewThreadPageState.requestFeedback();
     return CommandRoute(
       PriorityRoute(
         priorityIdString: rootPriority.id.toShortString(),

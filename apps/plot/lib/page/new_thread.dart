@@ -7,6 +7,7 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/priorities.dart';
 
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
@@ -82,6 +83,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Requests every live [NewThreadPage] reset to step 1 with a fresh draft.
   static void requestReset() => resetRequest.value++;
 
+  /// Monotonic "enter Help & Feedback mode" signal, mirroring [resetRequest].
+  /// The [HelpAndFeedback] command bumps this so a live (AutoRoute-reused)
+  /// page reconfigures itself for feedback (see [_applyFeedbackMode]); a fresh
+  /// mount instead reacts to the `feedback` route param in [_initializeDraft].
+  static final ValueNotifier<int> feedbackRequest = ValueNotifier<int>(0);
+
+  /// Requests every live [NewThreadPage] enter Help & Feedback mode.
+  static void requestFeedback() => feedbackRequest.value++;
+
   /// The currently-mounted [NewThreadPage] state, or null when no new-thread
   /// page is live. Set in [didChangeDependencies] / cleared in [dispose] so
   /// other widgets (e.g. the unified header's search-close focus-restore) can
@@ -120,6 +130,12 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Current step. Always starts on the target picker (step 1).
   _ComposeStep _step = _ComposeStep.target;
+
+  /// True when this compose was opened by the Help & Feedback command. Drives
+  /// the feedback-specific editor placeholder. Set by [_applyFeedbackMode] /
+  /// [_applyTarget]'s `feedback` flag and cleared by [_resetToFreshStart] or
+  /// when the user picks a different target.
+  bool _feedbackMode = false;
 
   /// The target chosen in step 1, retained so submit can record it.
   ComposeTarget? _selectedTarget;
@@ -177,10 +193,26 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// is already clean).
   late int _lastResetSeen = NewThreadPageState.resetRequest.value;
 
+  /// The [feedbackRequest] value seen on the last feedback entry, mirroring
+  /// [_lastResetSeen]. A fresh mount ignores the bump the [HelpAndFeedback]
+  /// command fired to navigate here (it reacts to the `feedback` route param
+  /// instead); only a later bump against this live page re-enters feedback.
+  late int _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
+
   @override
   void initState() {
     super.initState();
     NewThreadPageState.resetRequest.addListener(_onResetRequested);
+    NewThreadPageState.feedbackRequest.addListener(_onFeedbackRequested);
+  }
+
+  /// Reacts to a [HelpAndFeedback] re-invocation against this already-mounted
+  /// page: reconfigures it for feedback (see [_applyFeedbackMode]).
+  void _onFeedbackRequested() {
+    if (!mounted) return;
+    if (NewThreadPageState.feedbackRequest.value == _lastFeedbackSeen) return;
+    _lastFeedbackSeen = NewThreadPageState.feedbackRequest.value;
+    unawaited(_applyFeedbackMode());
   }
 
   /// Reacts to a [NewThread] re-invocation against this already-mounted page:
@@ -234,6 +266,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _selectedTwist = null;
       _hadContactsThisSession = false;
       _focusSuggestionOrder = const [];
+      _feedbackMode = false;
     });
 
     // Re-focus the inline filter after the rebuild. AutoRoute reuses the same
@@ -342,6 +375,68 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Load available connection create-targets so the step-2 Connection field
     // can resolve the active CreateLinkUserAction back to a label.
     await _loadConnections();
+    if (!mounted) return;
+
+    // Help & Feedback (fresh mount): configure the page for a Plot-Team chat
+    // filed under Inbox. A reused live page is handled via [feedbackRequest]
+    // instead (this path won't re-run — see [_hasAppliedQueryParams]).
+    if (widget.feedback) {
+      await _applyFeedbackMode();
+    }
+  }
+
+  /// Configures the page for the Help & Feedback command: a Plot **Chat**
+  /// addressed to the Plot Team group, filed under the user's **Inbox**, with
+  /// the note editor focused and a feedback-specific placeholder. Replaces the
+  /// connection / roster / focus / title of any in-progress compose, since the
+  /// command can land on a live AutoRoute-reused page mid-edit.
+  Future<void> _applyFeedbackMode() async {
+    final bloc = _priorityBloc ?? context.read<PriorityBloc>();
+
+    // Resolve the Plot Team group (offline-capable) and warm the group cache so
+    // it renders as a recipient chip in step 2.
+    final groupId = await Group.feedbackTargetId();
+    if (!mounted) return;
+    if (groupId != null) {
+      await Group.getOne(groupId);
+      if (!mounted) return;
+    }
+
+    final teams = await TeamUser.getActive();
+    if (!mounted) return;
+
+    // Clear any in-progress roster/title so a reused page starts clean — the
+    // chat target below leaves contacts untouched when it carries none.
+    final draft = bloc.state.draft;
+    await bloc.updateDraft(
+      draft.copyWith(
+        contacts: const Value(null),
+        inviteEmails: const Value(null),
+        title: const Value(null),
+      ),
+    );
+    if (!mounted) return;
+
+    // Build a Personal Plot Chat target carrying the Plot Team group roster and
+    // apply it through the normal target path (chat mode, roster, step-2
+    // transition, editor focus). Feedback mode skips the MRU focus suggestion so
+    // the Inbox focus set below survives.
+    final target = ComposeTarget.chat(
+      teamId: null,
+      hasTeams: teams.isNotEmpty,
+      contactDetail: 'Plot Team',
+      groups: groupId != null ? [groupId] : const [],
+    );
+    await _applyTarget(target, feedback: true);
+    if (!mounted) return;
+
+    // Force the Inbox (root) focus, overriding any remembered default priority.
+    // Done directly (not via [_switchToPriority]) so the remembered new-thread
+    // default isn't repointed at Inbox for the user's next compose.
+    final root = context.read<PrioritiesBloc>().state.root;
+    if (root != null && root.id != bloc.state.draft.priority.id) {
+      await bloc.updateDraft(bloc.state.draft.copyWith(priority: root));
+    }
   }
 
   Future<void> _loadConnections() async {
@@ -427,20 +522,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       }
     }
 
-    // Help & Feedback: pre-share the draft with the Plot Team group so the
-    // new Inbox thread reaches the Plot team. Resolved locally (offline);
-    // syncs when online.
-    if (widget.feedback && mounted) {
-      final groupId = await Group.feedbackTargetId();
-      if (groupId != null && mounted) {
-        final draft = bloc.state.draft;
-        if (!draft.groups.contains(groupId)) {
-          await bloc.updateDraft(
-            draft.copyWith(groups: Value([...draft.groups, groupId])),
-          );
-        }
-      }
-    }
+    // Help & Feedback is configured after the query-param pass completes (see
+    // [_applyFeedbackMode], dispatched from [_initializeDraft]); it needs the
+    // chat target + step-2 transition, not just a group pre-share.
 
     // Share intent: add the shared URL as a link action on the draft note.
     if (widget.sharedUrl != null && mounted) {
@@ -512,6 +596,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       NewThreadPageState._live = null;
     }
     NewThreadPageState.resetRequest.removeListener(_onResetRequested);
+    NewThreadPageState.feedbackRequest.removeListener(_onFeedbackRequested);
     // Unregister from the focus coordination provider using saved reference
     _provider?.unregisterActivityPanel();
     // Unregister from thread header notifier
@@ -682,11 +767,16 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// existing [_applyConnectionChoice] / [_selectTwist] paths), and the
   /// target's pre-filled roster (contacts/groups). Then suggests an MRU focus
   /// and focuses the editor.
-  Future<void> _applyTarget(ComposeTarget target) async {
+  Future<void> _applyTarget(ComposeTarget target, {bool feedback = false}) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
 
-    setState(() => _selectedTarget = target);
+    setState(() {
+      _selectedTarget = target;
+      // Picking any target through the normal flow leaves feedback mode; the
+      // Help & Feedback path passes feedback: true to keep its placeholder.
+      _feedbackMode = feedback;
+    });
 
     // 1. Connection: reuse the established apply path so a connector target's
     //    CreateLinkUserAction (or a twist selection) is attached identically to
@@ -751,7 +841,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     });
 
     // 4. Suggest a concrete focus for this target's roster (MRU-top first).
-    await _suggestFocusForTarget(target);
+    //    Skipped in feedback mode: Help & Feedback forces the Inbox focus
+    //    (applied by [_applyFeedbackMode] after this returns), so an MRU
+    //    suggestion would only be overwritten.
+    if (!feedback) await _suggestFocusForTarget(target);
   }
 
   /// Re-opens the target picker in a modal (step-2 Connection field tap). On
@@ -1040,6 +1133,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   ///
   /// Connector targets: uses [composerHintForNewThread] (SDK copy or fallback).
   String _computeEditorHint(PriorityState state) {
+    if (_feedbackMode) return 'Share feedback or ask for help';
     if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
     final cfg = _activeLinkTypeConfig;
     if (cfg != null) return composerHintForNewThread(cfg);
