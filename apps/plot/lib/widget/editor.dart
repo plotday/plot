@@ -316,6 +316,69 @@ class MentionItem {
   final bool isInThread;
 }
 
+/// Inserts a newline inside a blockquote so that pressing Enter continues the
+/// quote on a new line — matching list-item behavior — instead of dropping back
+/// to a normal paragraph. Pressing Enter on an empty quote line exits the
+/// blockquote (also mirroring how an empty list item converts to a paragraph).
+///
+/// SuperEditor's default newline handler only replicates a paragraph's
+/// `blockType` metadata when the caret is *not* at the end of the line, so
+/// continuing a quote (caret at end) would otherwise produce a plain paragraph.
+class _InsertNewlineInBlockquoteAtCaretCommand
+    extends BaseInsertNewlineAtCaretCommand {
+  const _InsertNewlineInBlockquoteAtCaretCommand(this.newNodeId);
+
+  final String newNodeId;
+
+  @override
+  void doInsertNewline(
+    EditContext context,
+    CommandExecutor executor,
+    DocumentPosition caretPosition,
+    NodePosition caretNodePosition,
+  ) {
+    final node = context.document.getNodeById(caretPosition.nodeId);
+    if (caretNodePosition is! TextNodePosition || node is! ParagraphNode) {
+      return;
+    }
+
+    if (node.text.isEmpty) {
+      // Empty quote line: exit the blockquote by converting it to a paragraph.
+      executor.executeCommand(
+        ChangeParagraphBlockTypeCommand(
+          nodeId: node.id,
+          blockType: paragraphAttribution,
+        ),
+      );
+      return;
+    }
+
+    // Split the quote, keeping the blockquote metadata on the new line so the
+    // quote continues.
+    executor
+      ..executeCommand(
+        SplitParagraphCommand(
+          nodeId: node.id,
+          splitPosition: caretNodePosition,
+          newNodeId: newNodeId,
+          replicateExistingMetadata: true,
+        ),
+      )
+      ..executeCommand(
+        ChangeSelectionCommand(
+          DocumentSelection.collapsed(
+            position: DocumentPosition(
+              nodeId: newNodeId,
+              nodePosition: const TextNodePosition(offset: 0),
+            ),
+          ),
+          SelectionChangeType.insertContent,
+          SelectionReason.userInteraction,
+        ),
+      );
+  }
+}
+
 class Editor extends StatefulWidget {
   const Editor({
     this.hint,
@@ -665,6 +728,21 @@ class EditorState extends State<Editor> {
       document: _document,
       composer: _composer,
     );
+    // Make Enter continue a blockquote (like list items) rather than dropping
+    // back to a plain paragraph. Inserted before the default newline handler so
+    // it wins for blockquote nodes; returns null (falls through) for everything
+    // else.
+    _editor.requestHandlers.insert(0, (editor, request) {
+      if (request is! InsertNewlineAtCaretRequest) return null;
+      final selection = editor.composer.selection;
+      if (selection == null) return null;
+      final node = editor.document.getNodeById(selection.base.nodeId);
+      if (node is! ParagraphNode ||
+          node.metadata[NodeMetadata.blockType] != blockquoteAttribution) {
+        return null;
+      }
+      return _InsertNewlineInBlockquoteAtCaretCommand(request.newNodeId);
+    });
     _editor.addListener(_documentChangeListener);
     _lastSnapshot = _serializeWithMentions(_document);
     _scrollController = ScrollController();
