@@ -600,44 +600,38 @@ class NewFocus extends Command {
         await Priority.getDefault();
     if (!context.mounted) return const CommandSkipped();
 
-    // Step 1: collect the focus details.
-    Map<String, dynamic>? input;
-    await ShowForm(
+    // The step-1 form drives the rest of the flow from its own buttons:
+    // "Find matching threads" fetches matches and pushes the review step as a
+    // nested modal (so its Back button / Esc returns here with the description
+    // intact), while "Create focus" skips matching and creates the focus
+    // straight away.
+    return ShowForm(
       title: 'Add a focus',
       icon: PlotIcon.add,
       form: (ctx) => _buildFocusDetailsForm(
         ctx,
         root: root,
-        primaryTitle: skipMatching ? 'Create focus' : 'Find matching threads',
+        skipMatching: skipMatching,
         prefill: prefill,
-        onSubmit: (values) => input = values,
       ),
     ).run(context);
-
-    final values = input;
-    if (values == null) return const CommandDone(); // cancelled
-
-    if (skipMatching) {
-      if (!context.mounted) return const CommandSkipped();
-      return AddPriority(
-        Future.value(_priorityFromValues(values, root)),
-      ).run(context);
-    }
-
-    // Step 2: review matching threads, then create.
-    if (!context.mounted) return const CommandSkipped();
-    return _ShowFocusMatches(values: values, root: root).run(context);
   }
 }
 
 /// Step 1 form for [NewFocus]. The description feeds the matching step; it is
-/// not stored on the focus.
+/// not stored on the focus, and it sits just above the action buttons so the
+/// matching-relevant text is the last thing the user fills in before searching.
+///
+/// When [skipMatching] is false the form offers two actions: a primary "Find
+/// matching threads" (which fetches matches and opens the review step) and a
+/// secondary "Create focus" (which skips matching entirely). Onboarding passes
+/// [skipMatching] true — no threads are synced yet — so only "Create focus" is
+/// shown.
 Future<FormData> _buildFocusDetailsForm(
   BuildContext context, {
   required Priority root,
-  required String primaryTitle,
+  required bool skipMatching,
   FocusPrefill? prefill,
-  required void Function(Map<String, dynamic> values) onSubmit,
 }) async {
   return FormData(
     title: 'Add a focus',
@@ -649,14 +643,6 @@ Future<FormData> _buildFocusDetailsForm(
             label: 'Focus name',
             required: true,
             initialValue: prefill?.title,
-          ),
-          FormTextInput(
-            key: 'description',
-            label: 'Description',
-            required: true,
-            maxLines: 3,
-            placeholder: 'What kind of threads belong in this focus?',
-            initialValue: prefill?.description,
           ),
           _focusIconSelect(initial: prefill?.iconKey ?? 'bullseyePointer'),
           FormSelect<ThemeColor>(
@@ -674,41 +660,98 @@ Future<FormData> _buildFocusDetailsForm(
             titleBuilder: (c) => c.label,
             leadingBuilder: (c) => ColorDot(color: c),
           ),
-          FormButton(
-            key: 'next',
-            isPrimary: true,
-            buildCommand: (values) => _CaptureFocusInput(
-              values: values,
-              title: primaryTitle,
-              onCapture: onSubmit,
-            ),
+          // Description last (just above the buttons): it feeds thread matching,
+          // so it reads as the lead-in to "Find matching threads".
+          FormTextInput(
+            key: 'description',
+            label: 'Description',
+            required: true,
+            maxLines: 3,
+            placeholder: 'What kind of threads belong in this focus?',
+            initialValue: prefill?.description,
           ),
+          if (skipMatching)
+            FormButton(
+              key: 'create',
+              isPrimary: true,
+              buildCommand: (values) =>
+                  AddPriority(Future.value(_priorityFromValues(values, root))),
+            )
+          else ...[
+            FormButton(
+              key: 'find',
+              isPrimary: true,
+              buildCommand: (values) =>
+                  _FindMatchingThreads(values: values, root: root),
+            ),
+            FormButton(
+              key: 'create',
+              isPrimary: false,
+              buildCommand: (values) => _CreateFocusWithThreads(
+                values: values,
+                root: root,
+                matches: const [],
+                selections: const {},
+              ),
+            ),
+          ],
         ],
       ),
     ],
   );
 }
 
-/// Captures the step-1 form values and closes the modal so [NewFocus] can
-/// proceed to the matching step. Its [title] is the step-1 button label.
-class _CaptureFocusInput extends Command {
-  _CaptureFocusInput({
-    required this.values,
-    required super.title,
-    required this.onCapture,
-  }) : super(
-         icon: PlotIcon.add,
-         eventObject: EventObject.modal,
-         eventAction: EventAction.opened,
-       );
+/// Step-1 "Find matching threads" action: fetches the threads that match the
+/// description, then opens the review step ([_ShowFocusMatches]) as a nested
+/// modal. Running as a [FormButton] command, the form button shows its spinner
+/// while the fetch is in flight, then transitions to the review modal. Because
+/// the review step is nested, its Back button / Esc returns to this step-1 form
+/// with the description intact so the user can edit and try again.
+class _FindMatchingThreads extends Command {
+  _FindMatchingThreads({required this.values, required this.root})
+    : super(
+        title: 'Find matching threads',
+        icon: PlotIcon.search,
+        eventObject: EventObject.modal,
+        eventAction: EventAction.opened,
+      );
 
   final Map<String, dynamic> values;
-  final void Function(Map<String, dynamic>) onCapture;
+  final Priority root;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    onCapture(values);
-    return const CommandDone();
+    final description = (values['description'] as String? ?? '').trim();
+    final title = (values['title'] as String? ?? '').trim();
+
+    var matches = <_FocusMatch>[];
+    try {
+      final resp = await api.post<Map<String, dynamic>>(
+        '/sync/priorities/find-matching-threads',
+        body: {'description': description, 'title': title},
+      );
+      final raw = (resp['matches'] as List?) ?? const [];
+      matches = [
+        for (final m in raw)
+          if (m is Map && m['thread_id'] is String)
+            _FocusMatch(
+              threadId: m['thread_id'] as String,
+              title: (m['title'] as String?)?.trim().isNotEmpty == true
+                  ? m['title'] as String
+                  : 'Untitled thread',
+            ),
+      ];
+    } catch (e, stackTrace) {
+      Tracker.captureException(e, stackTrace);
+      // Fall through with no matches — the user can still create the focus.
+    }
+
+    if (!context.mounted) return const CommandSkipped();
+    return _ShowFocusMatches(
+      values: values,
+      root: root,
+      matches: matches,
+    ).run(context);
   }
 }
 
@@ -719,15 +762,23 @@ class _FocusMatch {
   final String title;
 }
 
-/// Step 2 of [NewFocus]: review the threads that match the description.
+/// Step 2 of [NewFocus]: review the threads that match the description. Pushed
+/// as a nested modal by [_FindMatchingThreads], so the form header shows a Back
+/// button and Esc returns to step 1 to edit the description and search again.
 class _ShowFocusMatches extends ShowForm {
   _ShowFocusMatches({
     required Map<String, dynamic> values,
     required Priority root,
+    required List<_FocusMatch> matches,
   }) : super(
          title: 'Add a focus',
          icon: PlotIcon.add,
-         form: (ctx) => _buildFocusMatchesForm(ctx, values: values, root: root),
+         form: (ctx) => _buildFocusMatchesForm(
+           ctx,
+           values: values,
+           root: root,
+           matches: matches,
+         ),
        );
 }
 
@@ -735,32 +786,8 @@ Future<FormData> _buildFocusMatchesForm(
   BuildContext context, {
   required Map<String, dynamic> values,
   required Priority root,
+  required List<_FocusMatch> matches,
 }) async {
-  final description = (values['description'] as String? ?? '').trim();
-  final title = (values['title'] as String? ?? '').trim();
-
-  var matches = <_FocusMatch>[];
-  try {
-    final resp = await api.post<Map<String, dynamic>>(
-      '/sync/priorities/find-matching-threads',
-      body: {'description': description, 'title': title},
-    );
-    final raw = (resp['matches'] as List?) ?? const [];
-    matches = [
-      for (final m in raw)
-        if (m is Map && m['thread_id'] is String)
-          _FocusMatch(
-            threadId: m['thread_id'] as String,
-            title: (m['title'] as String?)?.trim().isNotEmpty == true
-                ? m['title'] as String
-                : 'Untitled thread',
-          ),
-    ];
-  } catch (e, stackTrace) {
-    Tracker.captureException(e, stackTrace);
-    // Fall through with no matches — the user can still create the focus.
-  }
-
   return FormData(
     title: 'Add a focus',
     groups: [
