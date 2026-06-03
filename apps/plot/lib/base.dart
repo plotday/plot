@@ -393,37 +393,39 @@ class Base {
       );
 
       // Reconcile the cached Clerk JWT against the server's resolved userId.
+      // Two cases land here, and NEITHER warrants signing the user out:
+      //   * jwtUser == null — first sign-in: the JWT predates /activate, so it
+      //     carries no external_id / contact_id yet.
+      //   * jwtUser.id != userId — the in-hand JWT carries a stale external_id
+      //     left over from a previous backend (a dev DB reset, or switching
+      //     between APIs backed by different databases). /activate has ALREADY
+      //     re-pointed the Clerk user's external_id at `userId` above, so the
+      //     mismatch lives only in the locally-cached token, not the server's
+      //     record of who we are.
+      // A genuinely wedged identity — local data keyed to a userId the server
+      // no longer agrees is ours — is caught earlier by the
+      // localUserIdBeforeActivate check, which signs out. Reaching this point
+      // means local data is consistent (first sign-in with no local data, or
+      // local == server), so we keep the user signed in and only refresh the
+      // Clerk client. The REST API already tolerates the stale external_id
+      // (getUser falls back to clerk_id), and the realtime /updates channel
+      // self-heals once Clerk's session-token cache (~60s) refreshes to the
+      // corrected external_id — refreshClient() alone does not bust that
+      // cache, so we don't block on it. The prior behavior signed out here,
+      // which bounced users off a fresh DB on their very first sign-in.
       final jwtUser = await identityFromJwt();
-      if (jwtUser != null && jwtUser.id != userId) {
-        // The cached JWT's external_id disagrees with the server's view of
-        // who we are. Most common cause: the JWT was set by a different
-        // backend (dev switching between APIs backed by different
-        // databases, or a server-side DB reset). The WebSocket /updates
-        // handler authenticates by external_id and returns 403 on every
-        // reconnect when it disagrees with the userId in the URL path,
-        // wedging sync. refreshClient() reconciles session state but the
-        // Clerk SDK's token cache often outlives that reconciliation, so
-        // subsequent sessionToken() calls keep handing back the stale JWT.
-        // Sign out instead so the next sign-in writes a fresh, consistent
-        // JWT. Won't fire on a stable production backend (the JWT and the
-        // server agree); only triggers when they explicitly disagree.
-        log.warning(
-          'JWT external_id (${jwtUser.id}) disagrees with server userId '
-          '($userId) — signing out to avoid wedged sync',
-        );
-        await signOut();
-        return;
-      }
-      if (jwtUser == null) {
-        // First sign-in: JWT may not include external_id / contact_id yet.
-        // Refresh the Clerk client so the next JWT picks up the values
-        // /activate just set on the Clerk user.
+      if (jwtUser == null || jwtUser.id != userId) {
+        if (jwtUser != null) {
+          log.warning(
+            'JWT external_id (${jwtUser.id}) disagrees with server userId '
+            '($userId) — refreshing Clerk client and staying signed in; '
+            'sync heals once the session token refreshes',
+          );
+        }
         try {
           await auth.refreshClient();
         } catch (e) {
-          log.warning(
-            'Failed to refresh Clerk client after first sign-in: $e',
-          );
+          log.warning('Failed to refresh Clerk client: $e');
         }
       }
       return;
