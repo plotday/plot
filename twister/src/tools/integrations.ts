@@ -152,12 +152,16 @@ export type LinkTypeConfig = {
    * - `"message"`: each note carries its own recipient set via
    *   `note.access_contacts`; the thread roster is the union across
    *   all messages. Email.
+   * - `"none"`: the link type has no recipient roster at all. No
+   *   contacts/sharing UI is shown for these threads. Use for purely
+   *   personal destinations with no sharing concept (e.g. Google
+   *   Tasks). The per-thread `contacts` array is ignored for sharing UI.
    *
    * Omit to default to `"thread"`. When set to `"message"`, every
    * note this connector ingests must populate `access_contacts`
    * explicitly (never NULL).
    */
-  sharingModel?: "thread" | "channel" | "message";
+  sharingModel?: "thread" | "channel" | "message" | "none";
 };
 
 /**
