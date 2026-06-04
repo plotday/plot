@@ -10,6 +10,7 @@ import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/widget/compose/compose_target.dart';
+import 'package:plot/widget/compose/compose_target_view.dart';
 import 'package:plot/widget/connection_targets.dart';
 
 void main() {
@@ -100,6 +101,52 @@ void main() {
       final instance = Uuid.generate();
       expect(composeTwistSignature(instance), 'twist:$instance');
     });
+
+    test('focusNote signature is keyed per focus and per scope', () {
+      final a = Uuid.generate();
+      final b = Uuid.generate();
+      final team = BigInt.from(7);
+      // Same focus + scope → identical signature.
+      expect(
+        ComposeTarget.focusNote(priorityId: a, teamId: null).signature,
+        ComposeTarget.focusNote(priorityId: a, teamId: null).signature,
+      );
+      // Different focus → distinct.
+      expect(
+        ComposeTarget.focusNote(priorityId: a, teamId: null).signature,
+        isNot(ComposeTarget.focusNote(priorityId: b, teamId: null).signature),
+      );
+      // Same focus, different scope → distinct.
+      expect(
+        ComposeTarget.focusNote(priorityId: a, teamId: null).signature,
+        isNot(ComposeTarget.focusNote(priorityId: a, teamId: team).signature),
+      );
+      expect(
+        ComposeTarget.focusNote(priorityId: a, teamId: null).signature,
+        'note:personal:p=$a',
+      );
+    });
+  });
+
+  group('connectionColorKey', () {
+    test('Plot chat/note key is per scope (Personal vs each team)', () {
+      expect(
+        connectionColorKey(ComposeTarget.chat(teamId: null, hasTeams: true)),
+        'plot:personal',
+      );
+      expect(
+        connectionColorKey(
+            ComposeTarget.chat(teamId: BigInt.from(7), hasTeams: true)),
+        'plot:7',
+      );
+      // A focus-note (note kind) keys by its scope too — a work team's colour
+      // stays distinct from personal.
+      expect(
+        connectionColorKey(
+            ComposeTarget.focusNote(priorityId: Uuid.generate(), teamId: null)),
+        'plot:personal',
+      );
+    });
   });
 
   group('composeSignatureForScanThread (recent-thread derivation)', () {
@@ -108,12 +155,12 @@ void main() {
       final c = Uuid.generate();
 
       final note = ComposeTargetsBloc.composeSignatureForScanThread(
-        ComposeScanThread(teamId: team),
+        ComposeScanThread(teamId: team, priorityId: Uuid.generate()),
       );
       expect(note, composeNoteSignature(team));
 
       final chat = ComposeTargetsBloc.composeSignatureForScanThread(
-        ComposeScanThread(teamId: team, contacts: [c]),
+        ComposeScanThread(teamId: team, contacts: [c], priorityId: Uuid.generate()),
       );
       expect(chat, composeChatSignature(team, contacts: [c]));
     });
@@ -130,6 +177,7 @@ void main() {
             linkType: 'thread',
             dmTargets: 'channels',
           ),
+          priorityId: Uuid.generate(),
         ),
       );
       // Must equal the bare channel key — channel combos aren't roster-keyed.
@@ -148,6 +196,7 @@ void main() {
             linkType: 'dm',
             dmTargets: 'contacts',
           ),
+          priorityId: Uuid.generate(),
         ),
       );
       expect(sig, '$instance||dm|contacts:c=$c');
@@ -165,6 +214,7 @@ void main() {
             linkType: 'thread',
             dmTargets: 'channels',
           ),
+          priorityId: Uuid.generate(),
         ),
       );
       final fromTarget = composeConnectorSignature(
@@ -182,9 +232,9 @@ void main() {
       final team = BigInt.from(1);
       final c = Uuid.generate();
       final threads = [
-        ComposeScanThread(teamId: team, contacts: [c]), // chat:1:c=...
-        ComposeScanThread(teamId: team), // note:1
-        ComposeScanThread(teamId: team, contacts: [c]), // dup of first
+        ComposeScanThread(teamId: team, contacts: [c], priorityId: Uuid.generate()), // chat:1:c=...
+        ComposeScanThread(teamId: team, priorityId: Uuid.generate()), // note:1
+        ComposeScanThread(teamId: team, contacts: [c], priorityId: Uuid.generate()), // dup of first
       ];
       final sigs = ComposeTargetsBloc.buildUsedTargetSignatures(threads);
       expect(sigs, [
@@ -264,12 +314,12 @@ void main() {
       final chat = ComposeTarget.chat(hasTeams: false);
       bloc.prependToCache(note);
       bloc.prependToCache(chat);
-      expect(bloc.state.targets.map((t) => t.signature),
+      expect(bloc.state.targets.map((v) => v.target.signature),
           [chat.signature, note.signature]);
 
       // Re-recording note moves it to the front without duplicating.
       bloc.prependToCache(note);
-      expect(bloc.state.targets.map((t) => t.signature),
+      expect(bloc.state.targets.map((v) => v.target.signature),
           [note.signature, chat.signature]);
       expect(bloc.state.targets.length, 2);
     });
@@ -283,7 +333,7 @@ void main() {
       await bloc.recordTarget(chat);
 
       expect(prefs.lastUsedMsForSignature(chat.signature), isNotNull);
-      expect(bloc.state.targets.first.signature, chat.signature);
+      expect(bloc.state.targets.first.target.signature, chat.signature);
     });
   });
 
@@ -312,8 +362,8 @@ void main() {
     });
 
     test(
-        'base list contains Note/Chat (Personal + each team) and per-connection '
-        'templates; used combos rank ahead by recency', () async {
+        'base list surfaces per-connection templates; used combos (rostered '
+        'chat + connector DM) rank ahead by recency', () async {
       final self = Uuid.generate();
       final greg = Uuid.generate();
       final priorityId = Uuid.generate();
@@ -328,7 +378,7 @@ void main() {
       await Actor.get(self: true);
       await Actor.get();
 
-      // One team membership → Note/Chat for Personal + the team.
+      // One team membership (scopes the rostered chat combo to Personal).
       await _insertTeamUser(store, teamId: BigInt.from(42), name: 'Acme');
 
       // A Gmail-style address connector with one enabled channel that has a
@@ -363,17 +413,15 @@ void main() {
       final bloc = ComposeTargetsBloc(prefs);
       await bloc.refresh();
 
-      final labels = bloc.state.targets.map((t) => t.label).toList();
-      final sigs = bloc.state.targets.map((t) => t.signature).toList();
+      final labels = bloc.state.targets.map((v) => v.target.label).toList();
+      final sigs = bloc.state.targets.map((v) => v.target.signature).toList();
 
-      // Note/Chat for Personal + the team are present (with team parenthetical
-      // because the user has ≥1 team).
-      expect(labels, containsAll(<String>[
-        'Note (Personal)',
-        'Chat (Personal)',
-        'Note (Acme)',
-        'Chat (Acme)',
-      ]));
+      // The generic Note/Chat templates are gone (replaced by focus-note +
+      // twist targets); a no-roster Plot thread no longer yields its own row.
+      expect(labels, isNot(contains('Note (Personal)')));
+      expect(labels, isNot(contains('Chat (Personal)')));
+      expect(labels, isNot(contains('Note (Acme)')));
+      expect(labels, isNot(contains('Chat (Acme)')));
 
       // The Gmail connector template is present.
       expect(sigs, contains(
@@ -386,7 +434,7 @@ void main() {
       ));
 
       // The used combos (Gmail-with-Greg DM, then native chat-with-Greg) rank
-      // ahead of the bare templates, most-recent first.
+      // ahead of the templates, most-recent first.
       final gmailGregSig = composeConnectorSignature(
         twistInstanceId: gmail.toString(),
         channelId: null,
@@ -401,46 +449,57 @@ void main() {
       expect(sigs.indexOf(chatGregSig), 1);
 
       // Because Greg resolves to a name in the Actor cache, both rostered
-      // combos render *distinctly* (the roster is surfaced in the label) so
-      // they don't read as duplicates of the bare templates — and the bare
-      // "Chat (Personal)" template still coexists as its own entry.
-      final byLabel = {for (final t in bloc.state.targets) t.signature: t.label};
+      // combos render *distinctly* (the roster is surfaced in the label).
+      final byLabel = {
+        for (final v in bloc.state.targets) v.target.signature: v.target.label
+      };
       expect(byLabel[gmailGregSig], 'Gmail · Greg Smith');
       expect(byLabel[chatGregSig], 'Chat (Personal) · Greg Smith');
-      expect(labels, contains('Chat (Personal)')); // bare template kept
       // No two rows render identically.
       expect(labels.toSet().length, labels.length);
     });
 
-    test('search("") and search("   ") return the cached base list '
-        '(Note + Chat Personal)', () async {
+    test('search("") and search("   ") return the cached base list', () async {
       final self = Uuid.generate();
       await _insertActor(store, self, name: 'Me', self: true);
       await Actor.get(self: true);
+
+      // A connector so the base list is non-empty (the generic Note/Chat
+      // fallback is gone — the base list is now focus-notes + twists +
+      // connector templates).
+      final gmail = await _insertConnector(
+        store,
+        name: 'Gmail (kris@plot.day)',
+        linkType: 'email',
+        targets: 'addresses',
+      );
+      final gmailSig = composeConnectorSignature(
+        twistInstanceId: gmail.toString(),
+        channelId: null,
+        linkType: 'email',
+        dmTargets: 'addresses',
+      );
 
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
       await bloc.refresh();
 
-      // With no teams the base list always offers a Personal Note and Chat,
-      // independent of connections/teams loading. This is the contract the
-      // step-1 TargetPickerList relies on to render on a fresh open with an
-      // empty query (the picker re-seeds from this list when refresh() emits).
-      final baseSigs = bloc.state.targets.map((t) => t.signature).toList();
-      expect(baseSigs, contains(composeNoteSignature(null)));
-      expect(baseSigs, contains(composeChatSignature(null)));
+      // The base list the step-1 TargetPickerList re-seeds from when refresh()
+      // emits with an empty query.
+      final baseSigs =
+          bloc.state.targets.map((v) => v.target.signature).toList();
+      expect(baseSigs, contains(gmailSig));
 
       // An empty (and a blank/whitespace-only) query falls back to that cached
       // base list rather than returning [].
       final emptySigs =
-          (await bloc.search('')).map((t) => t.signature).toList();
+          (await bloc.search('')).map((v) => v.target.signature).toList();
       final blankSigs =
-          (await bloc.search('   ')).map((t) => t.signature).toList();
+          (await bloc.search('   ')).map((v) => v.target.signature).toList();
       expect(emptySigs, baseSigs);
       expect(blankSigs, baseSigs);
-      expect(emptySigs, contains(composeNoteSignature(null)));
-      expect(emptySigs, contains(composeChatSignature(null)));
+      expect(emptySigs, contains(gmailSig));
     });
 
     test('search("greg") returns combos for an authored correspondent and '
@@ -487,7 +546,7 @@ void main() {
       await bloc.refresh();
 
       final results = await bloc.search('greg');
-      final sigs = results.map((t) => t.signature).toList();
+      final sigs = results.map((v) => v.target.signature).toList();
 
       final gregCombo = composeConnectorSignature(
         twistInstanceId: gmail.toString(),
@@ -560,14 +619,14 @@ void main() {
       // Cached context (from the first refresh) has neither the connector
       // template nor the authored thread, so the combo isn't synthesized yet.
       final stale = await bloc.search('greg');
-      expect(stale.map((t) => t.signature), isNot(contains(gregCombo)),
+      expect(stale.map((v) => v.target.signature), isNot(contains(gregCombo)),
           reason: 'search must not re-scan the store on every keystroke');
 
       // refresh() invalidates the cache; the next search rebuilds from fresh
       // data and now surfaces the combo.
       await bloc.refresh();
       final fresh = await bloc.search('greg');
-      expect(fresh.map((t) => t.signature), contains(gregCombo),
+      expect(fresh.map((v) => v.target.signature), contains(gregCombo),
           reason: 'refresh() must invalidate the cached search context');
     });
 
@@ -655,11 +714,12 @@ void main() {
       // pinned at the top (start a chat inviting the typed address).
       expect(results, isNotEmpty);
       // The connector entries are all the address-capable Gmail connection.
-      final connectors =
-          results.where((t) => t.kind == ComposeTargetKind.connector).toList();
+      final connectors = results
+          .where((v) => v.target.kind == ComposeTargetKind.connector)
+          .toList();
       expect(connectors, isNotEmpty);
       expect(
-        connectors.every((t) => t.connection?.id == gmail),
+        connectors.every((v) => v.target.connection?.id == gmail),
         isTrue,
         reason: 'only address-capable connections should be returned',
       );
@@ -686,21 +746,21 @@ void main() {
       final results = await bloc.search('new@unseen.com');
       // The very first result is a Plot Chat carrying the unseen address as a
       // pending invite email (Personal scope, since the user has no teams).
-      expect(results.first.kind, ComposeTargetKind.chat);
-      expect(results.first.teamId, isNull);
-      expect(results.first.inviteEmails, ['new@unseen.com']);
-      expect(results.first.contacts, isEmpty);
+      expect(results.first.target.kind, ComposeTargetKind.chat);
+      expect(results.first.target.teamId, isNull);
+      expect(results.first.target.inviteEmails, ['new@unseen.com']);
+      expect(results.first.target.contacts, isEmpty);
       // Its signature folds in the invite email so it dedups distinctly from
       // the bare "Chat" template.
       expect(
-        results.first.signature,
+        results.first.target.signature,
         composeChatSignature(null, inviteEmails: const ['new@unseen.com']),
       );
       // The chat is pinned above the address-capable connector(s).
       final chatIndex =
-          results.indexWhere((t) => t.kind == ComposeTargetKind.chat);
+          results.indexWhere((v) => v.target.kind == ComposeTargetKind.chat);
       final connectorIndex =
-          results.indexWhere((t) => t.connection?.id == gmail);
+          results.indexWhere((v) => v.target.connection?.id == gmail);
       expect(chatIndex, 0);
       expect(connectorIndex, greaterThan(chatIndex));
     });
@@ -722,14 +782,17 @@ void main() {
 
       // _insertActor derives the email from the name.
       final results = await bloc.search('greg.smith@x.test');
-      final chat =
-          results.firstWhere((t) => t.kind == ComposeTargetKind.chat);
+      final chat = results
+          .firstWhere((v) => v.target.kind == ComposeTargetKind.chat)
+          .target;
       // The chat carries the matched contact as a roster contact, with no
       // pending invite email.
       expect(chat.contacts, [greg]);
       expect(chat.inviteEmails, isEmpty);
-      // It renders the contact's display name as its detail.
-      expect(chat.label, 'Chat · Greg Smith');
+      // The label is the bare "Chat" template (no teams here, and the roster is
+      // no longer folded into the label — recipient presentation comes from the
+      // view layer); the matched contact is surfaced via [contacts] above.
+      expect(chat.label, 'Chat');
     });
 
     test(
@@ -770,8 +833,8 @@ void main() {
       await bloc.refresh();
 
       final targets = bloc.state.targets;
-      final sigs = targets.map((t) => t.signature).toList();
-      final labels = targets.map((t) => t.label).toList();
+      final sigs = targets.map((v) => v.target.signature).toList();
+      final labels = targets.map((v) => v.target.label).toList();
 
       // No two entries share a signature...
       expect(sigs.toSet().length, sigs.length,
@@ -781,13 +844,18 @@ void main() {
       expect(labels.toSet().length, labels.length,
           reason: 'base list must not contain visually identical rows');
 
-      // Exactly one entry for the Gmail connection (the bare template), not
-      // one per recent bare-roster DM thread.
-      final gmailEntries =
-          targets.where((t) => t.connection?.id == gmail).toList();
-      expect(gmailEntries, hasLength(1),
+      // Exactly one connector entry for the Gmail connection (the bare
+      // template), not one per recent bare-roster DM thread. (The connection's
+      // twist_instance is a source/connector, so the chatTwists filter excludes
+      // it from the twist rows — Gmail appears only as this connector entry.)
+      final gmailConnectorEntries = targets
+          .where((v) =>
+              v.target.kind == ComposeTargetKind.connector &&
+              v.target.connection?.id == gmail)
+          .toList();
+      expect(gmailConnectorEntries, hasLength(1),
           reason: 'bare-roster DM combos collapse onto the single template');
-      expect(gmailEntries.single.label, 'Gmail');
+      expect(gmailConnectorEntries.single.target.label, 'Gmail');
     });
   });
 }

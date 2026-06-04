@@ -13,6 +13,8 @@ import 'package:plot/command/command.dart'
     show BuildContextCommandExtension, ManageConnections;
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/theme.dart' show ThemeBloc;
+import 'package:plot/store/store.dart' show Actor;
+import 'package:plot/widget/compose/compose_target_view.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 // ListViewSelector + its controller; the MoveListSelectionIntent /
@@ -93,9 +95,14 @@ class _TargetPickerListState extends State<TargetPickerList> {
       FocusNode(debugLabel: 'TargetPickerList-search');
   late final bool _ownsSearchFocusNode = widget.searchFocusNode == null;
 
+  /// Estimated height of a two-line row (focus-tinted header + content line +
+  /// padding), used only by the keyboard-nav scroll-into-view math; a slight
+  /// over-estimate is safe (it scrolls a touch more than needed, never less).
+  static const double _estimatedItemHeight = 62.0;
+
   /// Results currently displayed. Seeded from the bloc's base list and
   /// replaced by [ComposeTargetsBloc.search] as the user types.
-  List<ComposeTarget> _results = const [];
+  List<ComposeTargetView> _results = const [];
   int _highlightedIndex = 0;
   bool _mouseHasMoved = false;
   bool _isDisposed = false;
@@ -131,7 +138,8 @@ class _TargetPickerListState extends State<TargetPickerList> {
   /// clobber the active filter/synthesis. On a fresh open the base list is
   /// usually still empty when this widget mounts (the page fires
   /// [ComposeTargetsBloc.refresh] fire-and-forget), so this listener is what
-  /// surfaces Note/Chat (and the rest) once `refresh()` resolves.
+  /// surfaces the rows (focuses, people, twists, connectors) once `refresh()`
+  /// resolves.
   void _onBaseListChanged(ComposeTargetsState state) {
     if (_isDisposed) return;
     if (_controller.text.trim().isNotEmpty) return;
@@ -232,7 +240,6 @@ class _TargetPickerListState extends State<TargetPickerList> {
     if (!widget.scrollController.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!widget.scrollController.hasClients) return;
-      const estimatedItemHeight = 50.0;
       if (index == 0) {
         widget.scrollController.animateTo(
           0.0,
@@ -241,7 +248,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
         );
         return;
       }
-      final estimatedOffset = index * estimatedItemHeight;
+      final estimatedOffset = index * _estimatedItemHeight;
       final viewportHeight = widget.scrollController.position.viewportDimension;
       final currentScroll = widget.scrollController.offset;
       final maxScroll = widget.scrollController.position.maxScrollExtent;
@@ -251,10 +258,10 @@ class _TargetPickerListState extends State<TargetPickerList> {
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
-      } else if (estimatedOffset + (estimatedItemHeight * 2) >
+      } else if (estimatedOffset + (_estimatedItemHeight * 2) >
           currentScroll + viewportHeight) {
         widget.scrollController.animateTo(
-          (estimatedOffset + (estimatedItemHeight * 2) - viewportHeight).clamp(
+          (estimatedOffset + (_estimatedItemHeight * 2) - viewportHeight).clamp(
             0.0,
             maxScroll,
           ),
@@ -283,7 +290,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
       return;
     }
     if (_highlightedIndex < 0 || _highlightedIndex >= _results.length) return;
-    widget.onSelect(_results[_highlightedIndex]);
+    widget.onSelect(_results[_highlightedIndex].target);
   }
 
   /// Opens the connections manager ([ManageConnections]) from the synthetic
@@ -335,12 +342,12 @@ class _TargetPickerListState extends State<TargetPickerList> {
   Widget _buildList(BuildContext context) {
     return ListViewSelector(
       scrollController: widget.scrollController,
-      estimatedItemHeight: 50.0,
+      estimatedItemHeight: _estimatedItemHeight,
       onActivate: (index) {
         if (index == _addConnectionIndex) {
           _runManageConnections();
         } else if (index >= 0 && index < _results.length) {
-          widget.onSelect(_results[index]);
+          widget.onSelect(_results[index].target);
         }
       },
       builder: (context, listController) {
@@ -560,11 +567,11 @@ class _TargetPickerListState extends State<TargetPickerList> {
 
   Widget _buildRow(
     BuildContext context,
-    ComposeTarget target,
+    ComposeTargetView view,
     int index,
     ListViewSelectorController listController,
   ) {
-    final tile = _targetTile(context, target);
+    final tile = _rowContent(context, view);
     return MouseRegion(
       onEnter: (_) {
         if (!_mouseHasMoved) return;
@@ -585,7 +592,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onSelect(target),
+        onTap: () => widget.onSelect(view.target),
         child: _rowDecoration(
           context,
           highlighted: index == _highlightedIndex,
@@ -634,21 +641,14 @@ class _TargetPickerListState extends State<TargetPickerList> {
     final colors = context.theme.colors;
     final spacing = context.theme.spacing;
     // Match the target rows' leading slot exactly so the "+" lines up under the
-    // rows' logos and the label starts at the same x as "Chat"/"Note".
+    // rows' line-2 glyphs and the label starts at the same x as the rows above.
     //
-    // In [_targetTile] the logo is the ListTile's leading widget, wrapped in
-    // `leadingPadding` (left: lg, right: 8) around a 16×16 image. The ListTile
-    // adds no further horizontal inset to a leading widget (its outer
-    // content-padding only drives the empty leading/trailing gutters, which are
-    // zero-width whenever a leading widget is present) and forces the title's
-    // own left padding to 0, so the title's left edge sits at exactly
-    // `lg + 16 + 8`. We reproduce that here: the same `leadingPadding` around a
-    // 16px plus glyph, then the label immediately after — no extra outer
-    // horizontal padding that would push the label right of the rows above.
-    //
-    // Vertical inset mirrors the target tiles per context: inline tiles inherit
-    // the default ListTile content padding (`paddingSm` → vertical `sm`); modal
-    // tiles use the compact `vertical: xs`.
+    // The target rows' [_leadingGlyph] is wrapped in `leadingPadding`
+    // (left: lg, right: 8) around a 16×16 image, with the label immediately
+    // after — so the label's left edge sits at exactly `lg + 16 + 8`. We
+    // reproduce that here: the same `leadingPadding` around a 16px plus glyph,
+    // then the label immediately after — no extra outer horizontal padding that
+    // would push the label right of the rows above.
     final leadingPadding = EdgeInsets.only(left: spacing.lg, right: 8);
     final double verticalPadding = widget.inline ? spacing.sm : spacing.xs;
     final tile = Padding(
@@ -711,90 +711,206 @@ class _TargetPickerListState extends State<TargetPickerList> {
     );
   }
 
-  /// Renders a [ComposeTarget] as a [ListTile] mirroring the connection
-  /// picker's row chrome (logo + label).
+  /// Two-line row: line 1 = focus-tinted connection header; line 2 = leading
+  /// glyph + people / channel / focus / twist content.
   ///
   /// Row density differs by context. **Modal** (`inline: false`, the step-2
   /// re-open) uses a compact vertical padding so the list reads as densely as
   /// the old connection [SelectModal]'s rows. **Inline** (`inline: true`, step
-  /// 1 on the compose page) keeps the default [ListTile] padding. Horizontal
-  /// inset stays at `lg`; the leading logo provides the left gutter when
-  /// present.
-  ListTile _targetTile(BuildContext context, ComposeTarget target) {
+  /// 1 on the compose page) inherits the host's horizontal page padding, so it
+  /// adds none of its own. The leading glyph provides the left gutter.
+  Widget _rowContent(BuildContext context, ComposeTargetView view) {
     final isDark = context.read<ThemeBloc>().isDarkMode(context);
-    // Modal only: compact rows. Inline passes null to inherit the default
-    // ListTile content padding.
-    final EdgeInsets? padding = widget.inline
-        ? null
-        : EdgeInsets.symmetric(
-            horizontal: context.theme.spacing.lg,
-            vertical: context.theme.spacing.xs,
-          );
-    final leadingPadding = EdgeInsets.only(
-      left: context.theme.spacing.lg,
-      right: 8,
+    final spacing = context.theme.spacing;
+    final headerColor = context.colour.colours.fromTheme(
+      view.headerColor,
+      muted: true,
     );
-    switch (target.kind) {
-      case ComposeTargetKind.note:
-      case ComposeTargetKind.chat:
-        return ListTile(
-          padding: padding,
-          leadingBuilder: (_, _) => Builder(
-            builder: (context) => Padding(
-              padding: leadingPadding,
-              child: SvgPicture.asset(
-                'assets/plot-icon.svg',
-                width: 16,
-                height: 16,
+    final leadingPadding = EdgeInsets.only(left: spacing.lg, right: 8);
+
+    // Density mirrors the old tile: inline inherits a default-ish vertical pad
+    // (the host supplies the horizontal inset); modal is compact on both axes.
+    final padding = widget.inline
+        ? EdgeInsets.symmetric(vertical: spacing.xs)
+        : EdgeInsets.symmetric(horizontal: spacing.lg, vertical: spacing.xs);
+
+    return Padding(
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(left: spacing.lg, bottom: 2),
+            child: Text(
+              view.header,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.xs.copyWith(
+                color: headerColor,
+                height: 1,
               ),
             ),
           ),
-          title: target.label,
-        );
+          _rowContentLine(context, view, isDark, leadingPadding),
+        ],
+      ),
+    );
+  }
+
+  Widget _rowContentLine(
+    BuildContext context,
+    ComposeTargetView view,
+    bool isDark,
+    EdgeInsets leadingPadding,
+  ) {
+    final t = view.target;
+
+    // Focus-note: focus icon + name in the focus colour (via FocusLabel),
+    // replacing the leading logo.
+    if (t.kind == ComposeTargetKind.note && view.focusPriority != null) {
+      return Padding(
+        padding: leadingPadding,
+        child: FocusLabel(priority: view.focusPriority, muted: true),
+      );
+    }
+
+    final leading = Padding(
+      padding: leadingPadding,
+      child: _leadingGlyph(context, view, isDark),
+    );
+
+    // People (Plot chat / connector DM): logo + avatars + names, hover tooltip.
+    if (view.recipients.isNotEmpty) {
+      final actors = <Actor>[
+        for (final r in view.recipients)
+          if (r.actorId != null && Actor.fromCache(r.actorId!) != null)
+            Actor.fromCache(r.actorId!)!,
+      ];
+      final names = view.recipients
+          .map(
+            (r) => (r.showEmail && r.email != null)
+                ? '${r.name} <${r.email}>'
+                : r.name,
+          )
+          .join(', ');
+      final content = Row(
+        children: [
+          leading,
+          if (actors.isNotEmpty) ...[
+            AvatarGroup(
+              actors: actors,
+              totalCount: view.recipients.length,
+              size: 18,
+            ),
+            SizedBox(width: context.theme.spacing.xs),
+          ],
+          Expanded(
+            child: Text(
+              names,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.md,
+            ),
+          ),
+        ],
+      );
+      return _withRecipientTooltip(context, view, content);
+    }
+
+    // Twist: logo + twist name.
+    if (t.kind == ComposeTargetKind.twist) {
+      return Row(
+        children: [
+          leading,
+          Expanded(
+            child: Text(
+              t.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.md,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Channel connector: logo + channel name.
+    final channelName = t.channel?.title ?? t.label;
+    return Row(
+      children: [
+        leading,
+        Expanded(
+          child: Text(
+            channelName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.theme.typography.md,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The 16×16 leading glyph for line 2, mirroring the old `_targetTile` logo
+  /// resolution per kind (chat → Plot mark; connector → link-type logo;
+  /// twist → connection logo). Focus-notes never reach here (handled inline).
+  Widget _leadingGlyph(
+    BuildContext context,
+    ComposeTargetView view,
+    bool isDark,
+  ) {
+    final t = view.target;
+    switch (t.kind) {
+      case ComposeTargetKind.note:
+      case ComposeTargetKind.chat:
+        return SvgPicture.asset('assets/plot-icon.svg', width: 16, height: 16);
       case ComposeTargetKind.connector:
-        final lt = target.linkType;
+        final lt = t.linkType;
         final logo = lt == null
             ? null
             : (isDark ? (lt.logoDark ?? lt.logo) : lt.logo);
-        return ListTile(
-          padding: padding,
-          leadingBuilder: logo != null
-              ? (_, _) => Builder(
-                  builder: (context) => Padding(
-                    padding: leadingPadding,
-                    child: LogoImage(
-                      url: logo,
-                      size: 16,
-                      fallback: const Icon(PlotIcon.link, size: 16),
-                    ),
-                  ),
-                )
-              : null,
-          icon: logo == null ? PlotIcon.link : null,
-          title: target.label,
-        );
+        return logo == null
+            ? const Icon(PlotIcon.link, size: 16)
+            : LogoImage(
+                url: logo,
+                size: 16,
+                fallback: const Icon(PlotIcon.link, size: 16),
+              );
       case ComposeTargetKind.twist:
-        final twist = target.connection;
+        final twist = t.connection;
         final logo = twist == null
             ? null
             : (isDark ? (twist.logoUrlDark ?? twist.logoUrl) : twist.logoUrl);
-        return ListTile(
-          padding: padding,
-          leadingBuilder: logo != null
-              ? (_, _) => Builder(
-                  builder: (context) => Padding(
-                    padding: leadingPadding,
-                    child: LogoImage(
-                      url: logo,
-                      size: 16,
-                      fallback: const Icon(PlotIcon.twist, size: 16),
-                    ),
-                  ),
-                )
-              : null,
-          icon: logo == null ? PlotIcon.twist : null,
-          title: target.label,
-        );
+        return logo == null
+            ? const Icon(PlotIcon.twist, size: 16)
+            : LogoImage(
+                url: logo,
+                size: 16,
+                fallback: const Icon(PlotIcon.twist, size: 16),
+              );
     }
+  }
+
+  /// Wrap the people content in a tooltip listing every recipient as
+  /// "Name — email" (full names + addresses on hover).
+  Widget _withRecipientTooltip(
+    BuildContext context,
+    ComposeTargetView view,
+    Widget child,
+  ) {
+    final lines = view.recipients
+        .map((r) {
+          final email = r.email;
+          return (email != null && email.isNotEmpty && email != r.name)
+              ? '${r.name} — $email'
+              : r.name;
+        })
+        .join('\n');
+    if (lines.isEmpty) return child;
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(lines),
+      child: child,
+    );
   }
 }

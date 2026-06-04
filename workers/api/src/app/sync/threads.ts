@@ -22,6 +22,7 @@ import {
 } from "./helpers";
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
+import { parseInviteAddress } from "./invite-address";
 import { notifySync, notifyUserSyncByEnv } from "./notify";
 import {
   stripAnnounceContactsFromThreads,
@@ -792,7 +793,7 @@ threads.post("/sync/threads", async (c) => {
     try {
       // Resolve emails to contact UUIDs
       const contacts = await rpc(c.var.db, "upsert_contacts", {
-        contacts: JSON.stringify(inviteEmails.map((email: string) => ({ email: email.toLowerCase() }))),
+        contacts: JSON.stringify(inviteEmails.map((raw: string) => parseInviteAddress(raw))),
       });
       const contactRows = Array.isArray(contacts) ? contacts : [contacts];
       const contactIds = contactRows.map((row: { id: string }) => row.id);

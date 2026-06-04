@@ -51,17 +51,29 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 
 ### Composing notes
 
-New threads start from a single searchable **target picker**: choose a Plot
-**Note** (just for you) or **Chat** (shared), or post straight into a connected
-app (a Slack channel, a Gmail thread, a Linear issue, a LinkedIn DM, a Google
-Task, …). The list is ordered by most-recent use; typing a name surfaces the
-recent ways you've reached that correspondent, and typing an email address
-offers a Plot chat plus every connection that can message that address.
-Choosing a target opens the composer with the editor focused, a suggested focus
-pre-selected, and any recipients filled in; the body editor's placeholder
-reflects what you're creating. The dedicated **Task** creation type is gone —
-create a Note or Chat and mark it as a to-do afterward. On a team, you also
-choose whether each Note or Chat belongs to that team or stays Personal.
+New threads start from a single searchable **target picker**. Each option is a
+two-line row: the **connection** on top — tinted by the focus you most often use
+it for (a neutral tone when there's no history) — with its **people** (an avatar
+group followed by names) or **channel** shown below. Plot's own items are your
+**focuses** (start a plain note in any focus, including your Inbox), the
+**people** you message (a shared thread), or a **twist**; the old generic
+"Note"/"Chat" rows are gone. Connected apps appear as their connection (a Slack
+channel, a Gmail thread, a Linear issue, a LinkedIn DM, a Google Task, …). The
+list is ordered by most-recent use.
+
+Typing a name surfaces the recent ways you've reached that correspondent. Typing
+one or more email addresses — separated by spaces, commas, or semicolons, and
+accepting the `Name <email>` form — offers a Plot chat carrying all of them plus
+every connection that can message them; an unknown address becomes a pending
+invite, and a `Name <email>` invite creates a **named** contact when the thread
+is sent. When two correspondents share a display name, the row shows the email
+that tells them apart (only on the less-used address), and hovering any row
+reveals everyone's full name and address.
+
+Choosing a target opens the composer with the editor focused, the focus
+pre-selected (a focus-note pre-selects its own focus), and any recipients filled
+in; the body editor's placeholder reflects what you're creating. On a team, you
+also choose whether each thread belongs to that team or stays Personal.
 
 Inside a thread, the editor's top bar shows the active **mode** as a pill:
 

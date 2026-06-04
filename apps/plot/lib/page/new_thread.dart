@@ -64,8 +64,9 @@ class NewThreadPage extends StatefulWidget {
 
 /// The two phases of the new-thread compose flow.
 ///
-/// [target] is step 1: the inline target picker (Note/Chat per team, connector
-/// combos, MRU-ordered). [compose] is step 2: today's compose surface with the
+/// [target] is step 1: the inline target picker (focus-notes, people, twists,
+/// and connector combos, MRU-ordered). [compose] is step 2: today's compose
+/// surface with the
 /// editor focused and fields ordered Connection → Focus → Contacts → Title →
 /// Body. A fresh mount always starts in [target] (see [NewThread] command).
 enum _ComposeStep { target, compose }
@@ -280,8 +281,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       });
     }
 
-    // Re-seed the target picker's base list so step 1 shows Note/Chat/connectors
-    // immediately (mirrors the fresh-mount path in _initializeDraft).
+    // Re-seed the target picker's base list so step 1 shows its rows (focuses,
+    // people, twists, connectors) immediately (mirrors the fresh-mount path in
+    // _initializeDraft).
     unawaited(
       context.read<ComposeTargetsBloc>().refresh().catchError((
         Object e,
@@ -885,6 +887,19 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _suggestFocusForTarget(ComposeTarget target) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
+    // Focus-note targets carry their focus explicitly — pre-select it directly
+    // instead of running the roster/global MRU suggestion.
+    if (target.priorityId != null) {
+      final priorities = await Priority.get(order: PriorityOrder.nested);
+      if (!mounted) return;
+      final p =
+          priorities.where((x) => x.id == target.priorityId).firstOrNull;
+      if (p != null) {
+        setState(() => _focusSuggestionOrder = [p]);
+        await _switchToPriority(p);
+        return;
+      }
+    }
     final targetsBloc = context.read<ComposeTargetsBloc>();
     var rankedIds = await targetsBloc.rankFocusesForRoster(
       contacts: target.contacts,

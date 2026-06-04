@@ -4,17 +4,20 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/util/theme_color.dart' show ThemeColor;
 import 'package:plot/widget/compose/compose_target.dart';
+import 'package:plot/widget/compose/compose_target_view.dart';
 import 'package:plot/widget/compose/email_parser.dart';
 import 'package:plot/widget/connection_targets.dart';
 
 part 'compose_targets_state.dart';
 
 /// Materializes and caches the step-1 **target picker** list: a globally
-/// MRU-ranked list of "ways to create a thread" (Plot Note/Chat per team,
-/// every connector connection/channel/DM template, and the specific
-/// connection+roster combinations the user has actually used), plus a
-/// [search] that synthesizes name- and email-specific targets on demand.
+/// MRU-ranked list of "ways to create a thread" (a focus-note per
+/// recently-used focus, chat-capable twists, every connector
+/// connection/channel/DM template, and the specific connection+roster
+/// combinations the user has actually used), plus a [search] that synthesizes
+/// name- and email-specific targets on demand.
 ///
 /// This is the data substrate behind the picker — no UI. It composes several
 /// stores (connections, channels, teams, authored threads) with the
@@ -47,7 +50,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     // data; subsequent per-keystroke searches then reuse that fresh context.
     _invalidateSearchContext();
     final targets = await _materializeBaseList();
-    emit(state.copyWith(targets: targets));
+    // _materializeBaseList already awaited _searchContextFor(), so this returns
+    // the freshly-cached context (no extra queries).
+    final ctx = await _searchContextFor();
+    emit(state.copyWith(targets: _toViews(targets, ctx)));
   }
 
   /// Filter + synthesize targets for [query].
@@ -64,20 +70,25 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   ///
   /// Synthesis is intentionally not cached — it runs against the live stores
   /// per query, on top of the cached base list.
-  Future<List<ComposeTarget>> search(String query) async {
+  Future<List<ComposeTargetView>> search(String query) async {
     final trimmed = query.trim();
-    if (trimmed.isEmpty) return state.targets;
+    if (trimmed.isEmpty) return state.targets; // already views
 
-    if (EmailParser.isEmail(trimmed)) {
-      return _searchByEmail(EmailParser.normalize(trimmed));
+    final ctx = await _searchContextFor();
+    final recipients = EmailParser.parseRecipients(trimmed);
+    if (recipients.isNotEmpty) {
+      return _searchByRecipients(recipients);
     }
 
     final lower = trimmed.toLowerCase();
     final filtered = state.targets
-        .where((t) => t.label.toLowerCase().contains(lower))
+        .where((v) =>
+            v.target.label.toLowerCase().contains(lower) ||
+            v.header.toLowerCase().contains(lower))
+        .map((v) => v.target)
         .toList();
     final byName = await _searchByName(trimmed);
-    return _dedupeBySignature([...filtered, ...byName]);
+    return _toViews(_dedupeBySignature([...filtered, ...byName]), ctx);
   }
 
   /// Record that the user just created a thread for [target]: bump its
@@ -153,15 +164,100 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// with the same signature is already present). Exposed for the submit path
   /// and unit tests.
   void prependToCache(ComposeTarget target) {
+    // Resolve the view against the still-warm context before invalidating, so
+    // a fast-path prepend before the next refresh still gets a header/tint.
+    final ctx = _searchContext;
     // Recording a created thread changes the authored-thread history the
     // search context is built from, so drop the cache; the next search (or
     // refresh) rebuilds it.
     _invalidateSearchContext();
-    final next = <ComposeTarget>[
-      target,
-      ...state.targets.where((t) => t.signature != target.signature),
+    final view = _toView(target, ctx);
+    final next = <ComposeTargetView>[
+      view,
+      ...state.targets.where((v) => v.target.signature != target.signature),
     ];
     emit(state.copyWith(targets: next));
+  }
+
+  // --- View resolution -----------------------------------------------------
+
+  /// Resolve a [ComposeTarget] into its presentation view using the cached
+  /// [ctx] (header text, focus tint, disambiguated recipients, focus object).
+  /// Falls back to neutral defaults when [ctx] is null (e.g. a prepend before
+  /// the next refresh).
+  ComposeTargetView _toView(ComposeTarget t, _ComposeSearchContext? ctx) {
+    final header = _headerFor(t, ctx);
+    final ThemeColor color;
+    Priority? focus;
+    if (t.kind == ComposeTargetKind.note && t.priorityId != null) {
+      focus = ctx?.priorityById[t.priorityId!];
+      color = focus?.displayColor ?? const ThemeColor.defaultColor();
+    } else {
+      color = ctx?.colorByConnection[connectionColorKey(t)] ??
+          const ThemeColor.defaultColor();
+    }
+    return ComposeTargetView(
+      target: t,
+      header: header,
+      headerColor: color,
+      recipients: _recipientsFor(t, ctx),
+      focusPriority: focus,
+    );
+  }
+
+  List<ComposeTargetView> _toViews(
+    List<ComposeTarget> targets,
+    _ComposeSearchContext? ctx,
+  ) =>
+      [for (final t in targets) _toView(t, ctx)];
+
+  /// Line-1 connection header text.
+  String _headerFor(ComposeTarget t, _ComposeSearchContext? ctx) {
+    switch (t.kind) {
+      case ComposeTargetKind.connector:
+        final target = t.target!;
+        final showAccount = (ctx?.connectionCount(target) ?? 1) > 1;
+        final account = target.accountName;
+        return (showAccount && account != null && account.isNotEmpty)
+            ? '${target.connectorName} · $account'
+            : target.connectorName;
+      case ComposeTargetKind.twist:
+        return t.label;
+      case ComposeTargetKind.chat:
+      case ComposeTargetKind.note:
+        final hasTeams = ctx?.hasTeams ?? false;
+        if (!hasTeams) return 'Plot';
+        final scope = t.teamId == null
+            ? 'Personal'
+            : (ctx?.teamNames[t.teamId] ?? 'Team');
+        return 'Plot · $scope';
+    }
+  }
+
+  /// People rows (Plot chat + connector DM): disambiguated recipients.
+  List<RecipientDisplay> _recipientsFor(
+      ComposeTarget t, _ComposeSearchContext? ctx) {
+    final isPeople = t.kind == ComposeTargetKind.chat ||
+        (t.kind == ComposeTargetKind.connector && (t.target?.isDmType ?? false));
+    if (!isPeople) return const [];
+    final byName =
+        ctx?.nameToEmailsByConnection[connectionColorKey(t)] ?? const {};
+    final inputs = <RecipientInput>[];
+    for (final cId in t.contacts) {
+      final actor = Actor.fromCache(ActorId.fromUuid(cId));
+      inputs.add((
+        name: actor?.nameOrEmail ?? '',
+        email: actor?.email,
+        actorId: ActorId.fromUuid(cId),
+      ));
+    }
+    for (final encoded in t.inviteEmails) {
+      final inv = InviteAddress.parse(encoded);
+      inputs
+          .add((name: inv.name ?? inv.email, email: inv.email, actorId: null));
+    }
+    return resolveRecipientDisplays(
+        recipients: inputs, nameToEmailsForConnection: byName);
   }
 
   // --- Query-independent search context ------------------------------------
@@ -237,6 +333,70 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       for (final t in createTargets) t.key: t,
     };
 
+    // Per connectionColorKey -> priorityId counts (colour tally). Plot threads
+    // (no primary link) are keyed per scope so a work team's dominant colour
+    // stays distinct from personal; connector threads key by the connection.
+    final connKeyPriorityCounts = <String, Map<Uuid, int>>{};
+    // Focus-note ordering: focuses seen on Plot (no-link) threads, MRU-first,
+    // each with its most-common Plot scope.
+    final focusScopeCounts = <Uuid, Map<BigInt?, int>>{};
+    final focusOrder = <Uuid>[];
+    // Disambiguation: per connectionColorKey, lowercased name -> ordered addrs.
+    final connKeyNameAddrs = <String, Map<String, List<String>>>{};
+
+    for (final st in scan.threads) {
+      final isPlot = st.primaryLink == null;
+      final connKey = isPlot
+          ? 'plot:${st.teamId?.toString() ?? 'personal'}'
+          : 'conn:${st.primaryLink!.instanceId}';
+      (connKeyPriorityCounts[connKey] ??= {})
+          .update(st.priorityId, (n) => n + 1, ifAbsent: () => 1);
+
+      if (isPlot) {
+        if (!focusOrder.contains(st.priorityId)) focusOrder.add(st.priorityId);
+        (focusScopeCounts[st.priorityId] ??= {})
+            .update(st.teamId, (n) => n + 1, ifAbsent: () => 1);
+      }
+
+      // Disambiguation uses the already-warm Actor cache (fromCache); uncached
+      // contacts are skipped (their rows just show a bare name — safe). Do NOT
+      // add an all-contacts fetch here; that would slow context builds.
+      for (final cId in st.contacts) {
+        final actor = Actor.fromCache(ActorId.fromUuid(cId));
+        final name = actor?.name;
+        final email = actor?.email;
+        if (name == null || name.isEmpty || email == null) continue;
+        final byName = connKeyNameAddrs[connKey] ??= {};
+        final list = byName[name.toLowerCase()] ??= [];
+        if (!list.contains(email.toLowerCase())) list.add(email.toLowerCase());
+      }
+    }
+
+    // Load all the user's focuses (one bounded query; getRaw skips the
+    // active/unread enrichment we don't need — we only read
+    // displayColor/root/id). Every focus is offered as a focus-note target,
+    // and the per-connection colour tally resolves from the same list.
+    final priorities = await Priority.getRaw(order: PriorityOrder.nested);
+    final priorityById = {for (final p in priorities) p.id: p};
+    final colorByConnection = <String, ThemeColor>{
+      for (final e in connKeyPriorityCounts.entries)
+        e.key: priorityById[_topByCount(e.value)]?.displayColor ??
+            const ThemeColor.defaultColor(),
+    };
+    // Focus-note targets: every focus. The ones the user has actually filed
+    // Plot threads into come first (MRU, scoped to their most-common Plot
+    // team/personal); the remaining focuses (no Plot history yet) follow in the
+    // natural focus order, defaulting to Personal scope. Inbox/root is included
+    // so there's always a plain-note path.
+    final scanFocusIds = focusOrder.toSet();
+    final focusNoteOrder = <({Uuid priorityId, BigInt? teamId})>[
+      for (final pid in focusOrder)
+        if (priorityById[pid] != null)
+          (priorityId: pid, teamId: _topScope(focusScopeCounts[pid]!)),
+      for (final p in priorities)
+        if (!scanFocusIds.contains(p.id)) (priorityId: p.id, teamId: null),
+    ];
+
     return _ComposeSearchContext(
       teams: teams,
       hasTeams: teams.isNotEmpty,
@@ -245,6 +405,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       connectionCountByTwistId: connectionCountByTwistId,
       templateBySignature: templateBySignature,
       scan: scan,
+      colorByConnection: colorByConnection,
+      priorityById: priorityById,
+      nameToEmailsByConnection: connKeyNameAddrs,
+      focusNoteOrder: focusNoteOrder,
     );
   }
 
@@ -277,18 +441,31 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
     // 2. Always-available templates not already represented by a used combo.
     final templates = <ComposeTarget>[];
-    // Note + Chat for Personal and each team.
-    final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
-    for (final teamId in teamScopes) {
-      templates.add(ComposeTarget.note(
-        teamId: teamId,
-        hasTeams: ctx.hasTeams,
-        teamName: teamId == null ? null : ctx.teamNames[teamId],
+    // Focus-note targets: one per focus (the ones the user files Plot threads
+    // into first, MRU; then the rest), each with its most-common Plot scope.
+    // The focus title becomes the label so the rows stay distinct (the display
+    // dedup collapses same-label rows) and are searchable by focus name.
+    for (final f in ctx.focusNoteOrder) {
+      templates.add(ComposeTarget.focusNote(
+        priorityId: f.priorityId,
+        teamId: f.teamId,
+        title: ctx.priorityById[f.priorityId]?.displayTitle ?? 'Note',
       ));
-      templates.add(ComposeTarget.chat(
-        teamId: teamId,
-        hasTeams: ctx.hasTeams,
-        teamName: teamId == null ? null : ctx.teamNames[teamId],
+    }
+    // Twist targets (chat with a twist). Only twists that opt in via a
+    // non-empty `threadType` and aren't source/connector instances are chat
+    // targets — connectors are also twist_instances, so without this filter a
+    // connection (e.g. Gmail) would wrongly appear as a "chat with a twist"
+    // row. Matches the `chatTwists` filter in connection_chip.dart.
+    final twists = await TwistInstance.get();
+    final chatTwists = twists
+        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
+        .toList();
+    for (final twist in chatTwists) {
+      templates.add(ComposeTarget.twist(
+        twist,
+        allInstances: twists,
+        teamName: twist.teamId == null ? null : ctx.teamNames[twist.teamId],
       ));
     }
     // One fresh template per connection link type. For channel connectors
@@ -321,11 +498,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       final hasRoster = st.contacts.isNotEmpty || st.groups.isNotEmpty;
       final teamName = st.teamId == null ? null : teamNames[st.teamId];
       if (!hasRoster) {
-        return ComposeTarget.note(
-          teamId: st.teamId,
-          hasTeams: hasTeams,
-          teamName: teamName,
-        );
+        // No-roster Plot threads are surfaced as focus-note rows from
+        // focusNoteOrder (templates section), not here.
+        return null;
       }
       // A rostered chat only earns its own base-list row when it renders
       // distinctly — i.e. its roster resolves to a visible detail (" · Greg
@@ -450,38 +625,34 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     return _dedupeBySignature(out);
   }
 
-  /// Email-input synthesis. Two groups, in this fixed order:
-  ///
-  /// 1. **Plot Chat** options that start a chat with the typed address — one
-  ///    for Personal and one per active team. When the address resolves to a
-  ///    known contact the chat carries it as a roster contact; otherwise it
-  ///    carries the raw address as a pending **invite email** so a brand-new
-  ///    address can still be invited. Always offered so Chat is visible for any
-  ///    email — these are pinned to the top.
-  /// 2. Every **address-capable connection** (link types whose
-  ///    `compose.targets` is `addresses` or `contacts`), with any previously
-  ///    used for *that exact address* ordered first (by recorded MRU).
-  Future<List<ComposeTarget>> _searchByEmail(String email) async {
+  /// Email-mode synthesis for one or more parsed recipients. Resolves each
+  /// address to a known contact (added to the roster) or a pending named
+  /// invite, then emits Plot Chat options (Personal + each team, pinned)
+  /// carrying ALL recipients, followed by address-capable connections carrying
+  /// the same roster. Named invites are encoded as `"Name <email>"`.
+  Future<List<ComposeTargetView>> _searchByRecipients(
+    List<ParsedRecipient> recipients,
+  ) async {
     final ctx = await _searchContextFor();
 
-    // Resolve the typed address to a known contact (if any) so we can both
-    // pre-fill the roster and detect prior use for that address.
-    final actors = await Actor.get(
-      search: email,
-      types: [ActorType.user, ActorType.contact],
-      primary: true,
-      inviteable: true,
-    );
-    final matched = actors
-        .where((a) => (a.email ?? '').toLowerCase() == email.toLowerCase())
-        .toList();
-    final contactId = matched.isEmpty ? null : matched.first.id.toUuid();
-    // A matched contact carries the address as a roster contact (and renders
-    // its display name); an unseen address carries the raw email as a pending
-    // invite so the chat can still be started.
-    final chatContacts = contactId == null ? const <Uuid>[] : [contactId];
-    final chatInvites = contactId == null ? [email] : const <String>[];
-    final chatDetail = matched.isEmpty ? email : matched.first.nameOrEmail;
+    final contactIds = <Uuid>[];
+    final invites = <String>[];
+    for (final r in recipients) {
+      final actors = await Actor.get(
+        search: r.email,
+        types: const [ActorType.user, ActorType.contact],
+        primary: true,
+        inviteable: true,
+      );
+      final matched = actors
+          .where((a) => (a.email ?? '').toLowerCase() == r.email)
+          .toList();
+      if (matched.isNotEmpty) {
+        contactIds.add(matched.first.id.toUuid());
+      } else {
+        invites.add(InviteAddress.format(email: r.email, name: r.name));
+      }
+    }
 
     // 1. Plot Chat options (Personal + each active team), pinned to the top.
     final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
@@ -491,21 +662,20 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           teamId: teamId,
           hasTeams: ctx.hasTeams,
           teamName: teamId == null ? null : ctx.teamNames[teamId],
-          contactDetail: chatDetail,
-          contacts: chatContacts,
+          contactDetail: null, // presentation comes from the view's recipients
+          contacts: contactIds,
           groups: const [],
-          inviteEmails: chatInvites,
+          inviteEmails: invites,
         ),
     ];
 
-    // 2. Address-capable connections, previously-used-for-this-address first.
+    // 2. Address-capable connections carrying the same roster.
     final addressCapable = ctx.createTargets
         .where((t) => t.isDmType)
         .map((t) => ComposeTarget.connector(
               t,
               connectionCount: ctx.connectionCount(t),
-              contactDetail: matched.isEmpty ? email : matched.first.nameOrEmail,
-              contacts: contactId == null ? const [] : [contactId],
+              contacts: contactIds,
             ))
         .toList();
     final ranked = _prefs.rankSignaturesByMru(
@@ -514,9 +684,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final bySig = {for (final t in addressCapable) t.signature: t};
     final rankedConnectors = [for (final sig in ranked) bySig[sig]!];
 
-    // Dedup by signature across both groups (chats first), as the other paths
-    // do, so the Plot Chat option is always visible for an email.
-    return _dedupeBySignature([...chats, ...rankedConnectors]);
+    return _toViews(
+        _dedupeBySignature([...chats, ...rankedConnectors]), ctx);
   }
 
   // --- Authored-thread scan ------------------------------------------------
@@ -551,6 +720,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         contacts: contacts,
         groups: row.groups ?? const [],
         primaryLink: _primaryScanLink(links),
+        priorityId: row.priorityId,
       ));
     }
     return _ComposeScan(scanThreads);
@@ -673,6 +843,34 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     return out;
   }
 
+  /// The id with the highest count in [counts] (first key wins ties). Used to
+  /// pick the most-common focus per connection for the header tint.
+  static Uuid _topByCount(Map<Uuid, int> counts) {
+    var best = counts.keys.first;
+    var bestN = -1;
+    counts.forEach((k, n) {
+      if (n > bestN) {
+        best = k;
+        bestN = n;
+      }
+    });
+    return best;
+  }
+
+  /// The most-common Plot scope (team id, null = Personal) in [counts]. Used to
+  /// pick the scope a focus-note row carries.
+  static BigInt? _topScope(Map<BigInt?, int> counts) {
+    BigInt? best;
+    var bestN = -1;
+    counts.forEach((k, n) {
+      if (n > bestN) {
+        best = k;
+        bestN = n;
+      }
+    });
+    return best;
+  }
+
   static List<ComposeTarget> _dedupeBySignature(List<ComposeTarget> targets) {
     final seen = <String>{};
     final out = <ComposeTarget>[];
@@ -717,6 +915,10 @@ class _ComposeSearchContext {
     required this.connectionCountByTwistId,
     required this.templateBySignature,
     required this.scan,
+    required this.colorByConnection,
+    required this.priorityById,
+    required this.nameToEmailsByConnection,
+    required this.focusNoteOrder,
   });
 
   final List<TeamUserRow> teams;
@@ -734,6 +936,19 @@ class _ComposeSearchContext {
 
   /// Recent authored-thread roster scan (with a by-signature index).
   final _ComposeScan scan;
+
+  /// Most-common focus colour per connectionColorKey.
+  final Map<String, ThemeColor> colorByConnection;
+
+  /// Focuses resolved for focus-note rows + colour lookups, by id.
+  final Map<Uuid, Priority> priorityById;
+
+  /// Per connectionColorKey: lowercased contact name -> addresses (primary-first).
+  final Map<String, Map<String, List<String>>> nameToEmailsByConnection;
+
+  /// Focuses to surface as focus-note rows, MRU-first, each with its most-common
+  /// Plot scope. (priorityId, teamId-of-most-common-scope)
+  final List<({Uuid priorityId, BigInt? teamId})> focusNoteOrder;
 
   int connectionCount(CreateTarget t) =>
       connectionCountByTwistId[t.twist.twistId] ?? 1;
@@ -768,15 +983,17 @@ class ComposeScanThread extends Equatable {
     this.contacts = const [],
     this.groups = const [],
     this.primaryLink,
+    required this.priorityId,
   });
 
   final BigInt? teamId;
   final List<Uuid> contacts;
   final List<Uuid> groups;
   final ComposeScanLink? primaryLink;
+  final Uuid priorityId; // the thread's filed focus (non-null on ThreadRow)
 
   @override
-  List<Object?> get props => [teamId, contacts, groups, primaryLink];
+  List<Object?> get props => [teamId, contacts, groups, primaryLink, priorityId];
 }
 
 /// The primary-link facet of a [ComposeScanThread] needed to derive a

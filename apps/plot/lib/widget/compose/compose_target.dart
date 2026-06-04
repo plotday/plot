@@ -41,6 +41,7 @@ class ComposeTarget extends Equatable {
     this.contacts = const [],
     this.groups = const [],
     this.inviteEmails = const [],
+    this.priorityId,
   });
 
   /// A Plot **Note** target (no roster). [teamId] null = Personal.
@@ -100,6 +101,27 @@ class ComposeTarget extends Equatable {
       contacts: contacts,
       groups: groups,
       inviteEmails: inviteEmails,
+    );
+  }
+
+  /// A Plot focus-note target: a private note pre-filed into [priorityId].
+  /// Uses the [ComposeTargetKind.note] kind; the signature is widened with the
+  /// focus id so distinct focuses rank as distinct rows. [teamId] is the
+  /// focus's most-common Plot scope (null = Personal). [title] is the focus's
+  /// display name — it becomes the [label], which makes the row searchable by
+  /// focus name and keeps the per-focus rows visually distinct (the display
+  /// dedup collapses rows that share a label).
+  factory ComposeTarget.focusNote({
+    required Uuid priorityId,
+    required BigInt? teamId,
+    String title = 'Note',
+  }) {
+    return ComposeTarget._(
+      kind: ComposeTargetKind.note,
+      signature: 'note:${teamId?.toString() ?? 'personal'}:p=$priorityId',
+      label: title,
+      teamId: teamId,
+      priorityId: priorityId,
     );
   }
 
@@ -202,6 +224,10 @@ class ComposeTarget extends Equatable {
   /// email); empty for every other kind.
   final List<String> inviteEmails;
 
+  /// For a focus-note target, the focus this note is filed into; null for all
+  /// other kinds. Carried into step-2 compose so the focus is pre-selected.
+  final Uuid? priorityId;
+
   /// Bridge to the existing compose-surface selection model. Returns a
   /// [ConnectionChoice] that step-2 applies via its established apply path.
   /// Note: the roster ([contacts]/[groups]) is carried on the [ComposeTarget]
@@ -268,5 +294,6 @@ class ComposeTarget extends Equatable {
         contacts,
         groups,
         inviteEmails,
+        priorityId,
       ];
 }

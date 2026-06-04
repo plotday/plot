@@ -37,14 +37,18 @@ class ContactChipGroup implements ContactChipValue {
   String get label => group.name;
 }
 
-/// A chip backed by a raw email address (invite, not yet a known contact).
+/// A chip backed by a raw email invitation (not yet a known contact). The
+/// stored string may be `"Name <email>"` (named invite) or a bare email.
 class ContactChipEmail implements ContactChipValue {
-  ContactChipEmail(this.email);
-  final String email;
+  ContactChipEmail(this.encoded) : _parsed = InviteAddress.parse(encoded);
+  final String encoded;
+  final InviteAddress _parsed;
+  String get email => _parsed.email;
+  String? get name => _parsed.name;
   @override
-  String get key => 'email:$email';
+  String get key => 'email:${_parsed.email}';
   @override
-  String get label => email;
+  String get label => _parsed.name ?? _parsed.email;
 }
 
 // --- Widget ---

@@ -4,12 +4,12 @@ part of 'compose_targets.dart';
 class ComposeTargetsState extends Equatable {
   const ComposeTargetsState({required this.targets});
 
-  /// The cached, globally-MRU-ordered base list of compose targets. Built by
-  /// [ComposeTargetsBloc.refresh]; updated in place by
+  /// The cached, globally-MRU-ordered base list of compose target VIEWS. Built
+  /// by [ComposeTargetsBloc.refresh]; updated in place by
   /// [ComposeTargetsBloc.prependToCache] on thread creation.
-  final List<ComposeTarget> targets;
+  final List<ComposeTargetView> targets;
 
-  ComposeTargetsState copyWith({List<ComposeTarget>? targets}) =>
+  ComposeTargetsState copyWith({List<ComposeTargetView>? targets}) =>
       ComposeTargetsState(targets: targets ?? this.targets);
 
   @override
