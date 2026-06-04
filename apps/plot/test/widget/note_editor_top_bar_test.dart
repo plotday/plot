@@ -4,13 +4,11 @@ import 'package:forui/forui.dart';
 import 'package:plot/widget/note_editor_top_bar.dart';
 
 void main() {
-  TopBarPill pill(String id, String label, {bool isActive = false, List<String>? avatars}) {
+  TopBarPill pill(String id, String label) {
     return TopBarPill(
       id: id,
       label: label,
-      avatarSlot: avatars,
       onTap: () {},
-      onAvatarsTap: avatars == null ? null : () {},
     );
   }
 

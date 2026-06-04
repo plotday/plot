@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -734,21 +736,70 @@ class NoteEditorState extends State<NoteEditor> {
     return selfIds.contains(contactId);
   }
 
-  /// Returns the avatar UUIDs for the "Reply" pill: every other thread
-  /// contact (excluding self / aliases of self) followed by every group.
-  /// Returns an empty list when there's only one recipient — the "Reply"
-  /// label alone already conveys who's being replied to.
-  List<String> _replyAllAvatars(Thread thread) {
-    final result = <String>[];
-    for (final c in thread.activeContacts) {
-      if (_isSelfContact(c)) continue;
-      result.add(c.toString());
+  /// Contact ids we've already kicked off an [Actor] cache warm for, so a
+  /// rebuild doesn't re-request the same contacts every frame.
+  final Set<Uuid> _avatarWarmRequested = {};
+
+  /// Resolves the avatar cluster for the "Reply" pill: drawable [Actor]s for
+  /// every other thread contact (excluding self / aliases of self), plus the
+  /// total audience size (those contacts + every group) for the "+N" overflow.
+  ///
+  /// Returns an empty audience when there's only one recipient — the "Reply"
+  /// label alone already conveys who's being replied to. Contacts not yet in
+  /// the [Actor] cache aren't drawn individually but still count toward the
+  /// total; [_warmAvatarCache] fetches them and rebuilds so they appear.
+  ({List<Actor> actors, int total}) _replyAudience(Thread thread) {
+    final nonSelf = thread.activeContacts
+        .where((c) => !_isSelfContact(c))
+        .toList();
+    final total = nonSelf.length + thread.groups.length;
+    if (total < 2) return (actors: const [], total: 0);
+    _warmAvatarCache(nonSelf);
+    final actors = <Actor>[];
+    for (final c in nonSelf) {
+      final a = Actor.fromCache(ActorId.fromUuid(c));
+      if (a != null) actors.add(a);
     }
-    for (final g in thread.groups) {
-      result.add(g.toString());
+    return (actors: actors, total: total);
+  }
+
+  /// Drawable single-avatar list for a contact (e.g. the "Reply to original"
+  /// pill). Empty until the actor is cached; warms the cache otherwise.
+  List<Actor> _singleAvatar(Uuid contactId) {
+    final a = Actor.fromCache(ActorId.fromUuid(contactId));
+    if (a != null) return [a];
+    _warmAvatarCache([contactId]);
+    return const [];
+  }
+
+  /// Fetches any uncached [Actor]s for [contactIds] in the background and
+  /// rebuilds once they land, so avatar clusters resolve on first paint even
+  /// when the thread's contacts weren't eagerly loaded into the cache.
+  void _warmAvatarCache(Iterable<Uuid> contactIds) {
+    final missing = <Uuid>[];
+    for (final id in contactIds) {
+      if (Actor.fromCache(ActorId.fromUuid(id)) != null) continue;
+      if (!_avatarWarmRequested.add(id)) continue; // already requested
+      missing.add(id);
     }
-    if (result.length < 2) return const [];
-    return result;
+    if (missing.isEmpty) return;
+    unawaited(() async {
+      var anyResolved = false;
+      for (final id in missing) {
+        try {
+          await Actor.getOne(ActorId.fromUuid(id));
+          anyResolved = true;
+        } catch (_) {
+          // Unresolvable contact — leave it folded into the "+N" overflow.
+          // We deliberately keep it in [_avatarWarmRequested] (no retry): a
+          // retry that re-fires setState on every failure would loop forever
+          // for a contact the cache can never resolve.
+        }
+      }
+      // Only rebuild when an avatar actually became available — a warm where
+      // everything failed wouldn't change the rendered cluster.
+      if (anyResolved && mounted) setState(() {});
+    }());
   }
 
   /// Returns the original-thread author when the "Reply to original" pill
@@ -813,11 +864,13 @@ class NoteEditorState extends State<NoteEditor> {
         s.thread.groups.isNotEmpty;
 
     if (_hasMentionableTwist(s)) {
+      final replyAudience = _replyAudience(s.thread);
       pills.add(
         TopBarPill(
           id: 'reply',
           label: 'Reply',
-          avatarSlot: _replyAllAvatars(s.thread),
+          avatarActors: replyAudience.actors,
+          avatarTotalCount: replyAudience.total,
           onTap: _activatePlotReply,
           onAvatarsTap: hasSharing ? _openRecipientPicker : null,
         ),
@@ -845,11 +898,13 @@ class NoteEditorState extends State<NoteEditor> {
       }
 
       // Shared Plot thread.
+      final replyAudience = _replyAudience(s.thread);
       pills.add(
         TopBarPill(
           id: 'reply',
           label: 'Reply',
-          avatarSlot: _replyAllAvatars(s.thread),
+          avatarActors: replyAudience.actors,
+          avatarTotalCount: replyAudience.total,
           onTap: _activatePlotReply,
           onAvatarsTap: _openRecipientPicker,
         ),
@@ -860,8 +915,10 @@ class NoteEditorState extends State<NoteEditor> {
           TopBarPill(
             id: 'replyOriginal',
             label: 'Reply to ${_displayName(orig)}',
-            avatarSlot: [orig.toString()],
+            avatarActors: _singleAvatar(orig),
+            avatarTotalCount: 1,
             onTap: () => _activateReplyToOriginal(orig),
+            onAvatarsTap: _openRecipientPicker,
           ),
         );
       }
@@ -882,11 +939,13 @@ class NoteEditorState extends State<NoteEditor> {
     final noteLabel = cfg.noteLabel ?? 'Note';
     switch (cfg.sharingModel) {
       case SharingModel.message:
+        final replyAudience = _replyAudience(s.thread);
         pills.add(
           TopBarPill(
             id: 'reply',
             label: cfg.noteLabel ?? 'Reply',
-            avatarSlot: _replyAllAvatars(s.thread),
+            avatarActors: replyAudience.actors,
+            avatarTotalCount: replyAudience.total,
             onTap: _activateConnectorReply,
             onAvatarsTap: _openRecipientPicker,
           ),
@@ -897,8 +956,10 @@ class NoteEditorState extends State<NoteEditor> {
             TopBarPill(
               id: 'replyOriginal',
               label: 'Reply to ${_displayName(orig)}',
-              avatarSlot: [orig.toString()],
+              avatarActors: _singleAvatar(orig),
+              avatarTotalCount: 1,
               onTap: () => _activateReplyToOriginal(orig),
+              onAvatarsTap: _openRecipientPicker,
             ),
           );
         }

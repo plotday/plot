@@ -1,5 +1,8 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:plot/command/share.dart';
+import 'package:plot/store/store.dart';
+
 /// Result of the [RecipientPickerModal]: the new per-note recipient subsets
 /// plus any audience members the picker added to the thread.
 ///
@@ -60,6 +63,37 @@ class RecipientPickerResult {
     );
   }
 
+  /// Translates the final [SharedSelection] from the generic share picker back
+  /// into a per-note result. [finalContacts] / [finalGroups] are the picker's
+  /// resulting ids; anything in them that wasn't on the thread is treated as a
+  /// newly-added audience member (written through to `thread.contacts` /
+  /// `thread.groups` by the bloc handler).
+  factory RecipientPickerResult.fromPickerSelection({
+    required List<String> threadContacts,
+    required List<String> threadGroups,
+    required List<String> finalContacts,
+    required List<String> finalGroups,
+    required String self,
+  }) {
+    final threadContactSet = threadContacts.toSet();
+    final threadGroupSet = threadGroups.toSet();
+    final addedContacts = finalContacts
+        .where((c) => !threadContactSet.contains(c))
+        .toList();
+    final addedGroups = finalGroups
+        .where((g) => !threadGroupSet.contains(g))
+        .toList();
+    return RecipientPickerResult.fromSelection(
+      threadContacts: threadContacts,
+      threadGroups: threadGroups,
+      selectedContacts: finalContacts.toSet(),
+      selectedGroups: finalGroups.toSet(),
+      addedContacts: addedContacts,
+      addedGroups: addedGroups,
+      self: self,
+    );
+  }
+
   factory RecipientPickerResult.justMe({required String self}) =>
       RecipientPickerResult(
         accessContacts: [self],
@@ -76,13 +110,18 @@ class RecipientPickerResult {
       );
 }
 
-/// Modal for picking the per-note recipient subset. Lists thread contacts
-/// and thread groups (pre-checked), with an "Add" search to extend the
-/// thread audience. Quick actions for "Just me" and "Reply to original".
+/// Modal for picking the per-note recipient subset. Reuses the app's canonical
+/// contact/group share picker ([PickShared]) — the same one the thread header's
+/// Share button and the new-thread compose field use — seeded with the note's
+/// current recipients. On close the resulting selection is translated into a
+/// per-note subset: unchecking restricts the audience, while picking someone not
+/// yet on the thread extends `thread.contacts` / `thread.groups` (via the bloc
+/// handler) so the new recipient has thread access.
 ///
-/// The rendering layer is stubbed pending implementation of the required
-/// `FormItem` subclasses (checkbox-list, search-add, quick-actions).
-/// Until then, [run] returns null and callers gracefully no-op.
+/// Note: email invites typed into the picker aren't representable in a per-note
+/// subset (which keys on contact/group ids), so they're ignored here — inviting
+/// a brand-new email belongs to the thread-level Share. Self is always kept in
+/// the result regardless of the picker's toggle state.
 class RecipientPickerModal {
   final List<String> threadContacts;
   final List<String> threadGroups;
@@ -100,33 +139,37 @@ class RecipientPickerModal {
     this.originalAuthor,
   });
 
-  // ignore: avoid_unused_parameters
   Future<RecipientPickerResult?> run(BuildContext context) async {
-    // TODO(task-11): render via FormModal using the project's tuned variant.
-    //
-    // The rendering layer requires new FormItem subclasses:
-    //   - RecipientCheckboxListItem: per-contact/group toggle rows (one focus
-    //     slot each, canActivate → toggle), built with FormToggle-style
-    //     highlight + FocusNode from the slot list.
-    //   - RecipientSearchAddItem: text input that resolves contacts/groups
-    //     not yet on the thread and appends them to both the selection set and
-    //     addedContacts / addedGroups. Mirrors FormTextInput's onSubmitted
-    //     wiring.
-    //   - RecipientQuickActionItem: two non-focusable FormButton-style tiles
-    //     ("Just me" / "Reply to original") that call Modal.pop<RecipientPickerResult>
-    //     directly, bypassing the normal FormButton → CommandReturn path.
-    //
-    // The challenge: FormModal.run() returns Future<CommandReturn>, not
-    // Future<RecipientPickerResult?>. To return a RecipientPickerResult the
-    // implementation should either:
-    //   a) Use Modal.show<RecipientPickerResult> directly (bypasses FormModal
-    //      infrastructure but handles the type correctly), or
-    //   b) Encode the result as a CommandDone subclass and decode on return.
-    //
-    // Option (a) is cleanest but requires replicating keyboard nav from
-    // FormModalState. Task 12 (note_editor.dart integration) will wire this
-    // up; if the rendering layer is still a stub at that point, avatar taps
-    // on the NoteEditorTopBar pill simply no-op.
-    return null;
+    // Seed the generic share picker with the note's current recipients. The
+    // picker live-edits this selection via [onUpdate]; we capture the final
+    // state after the modal is dismissed and translate it below.
+    var selection = SharedSelection(
+      contacts: initialContactSelection.map(Uuid.fromString).toList(),
+      groups: initialGroupSelection.map(Uuid.fromString).toList(),
+    );
+    var changed = false;
+
+    await PickShared(
+      selection: selection,
+      title: 'Recipients',
+      // Keep the author pinned and visible; the result always includes self
+      // regardless, but injecting it avoids a confusing "self missing" row.
+      injectSelf: true,
+      onUpdate: (next) async {
+        selection = next;
+        changed = true;
+      },
+    ).run(context);
+
+    // Dismissed without touching anything → no-op (don't re-save the draft).
+    if (!changed) return null;
+
+    return RecipientPickerResult.fromPickerSelection(
+      threadContacts: threadContacts,
+      threadGroups: threadGroups,
+      finalContacts: selection.contacts.map((u) => u.toString()).toList(),
+      finalGroups: selection.groups.map((u) => u.toString()).toList(),
+      self: self,
+    );
   }
 }

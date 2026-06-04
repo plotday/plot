@@ -76,4 +76,57 @@ void main() {
       expect(r.accessGroups, equals([groupX]));
     });
   });
+
+  group('RecipientPickerResult.fromPickerSelection', () {
+    test('unchanged full selection → thread default (nulls)', () {
+      final r = RecipientPickerResult.fromPickerSelection(
+        threadContacts: const [self, alice, bob],
+        threadGroups: const [groupX],
+        finalContacts: const [self, alice, bob],
+        finalGroups: const [groupX],
+        self: self,
+      );
+      expect(r.accessContacts, isNull);
+      expect(r.accessGroups, isNull);
+      expect(r.threadContactsAdded, isEmpty);
+      expect(r.threadGroupsAdded, isEmpty);
+    });
+
+    test('unchecking a contact → explicit subset including self', () {
+      final r = RecipientPickerResult.fromPickerSelection(
+        threadContacts: const [self, alice, bob],
+        threadGroups: const [],
+        finalContacts: const [self, alice], // bob unchecked
+        finalGroups: const [],
+        self: self,
+      );
+      expect(r.accessContacts, containsAll([self, alice]));
+      expect(r.accessContacts!.length, 2);
+      expect(r.threadContactsAdded, isEmpty);
+    });
+
+    test('picking someone not on the thread → added to thread + subset', () {
+      final r = RecipientPickerResult.fromPickerSelection(
+        threadContacts: const [self, alice],
+        threadGroups: const [],
+        finalContacts: const [self, alice, bob], // bob is new
+        finalGroups: const [],
+        self: self,
+      );
+      expect(r.threadContactsAdded, equals([bob]));
+      expect(r.accessContacts, contains(bob));
+    });
+
+    test('new group is reported in threadGroupsAdded', () {
+      final r = RecipientPickerResult.fromPickerSelection(
+        threadContacts: const [self],
+        threadGroups: const [],
+        finalContacts: const [self],
+        finalGroups: const [groupX], // new group
+        self: self,
+      );
+      expect(r.threadGroupsAdded, equals([groupX]));
+      expect(r.accessGroups, equals([groupX]));
+    });
+  });
 }

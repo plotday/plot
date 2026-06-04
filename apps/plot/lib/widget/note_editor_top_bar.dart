@@ -2,6 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/store/store.dart';
+import 'package:plot/widget/avatar.dart';
+
 // ---------------------------------------------------------------------------
 // State hierarchy
 // ---------------------------------------------------------------------------
@@ -42,20 +45,28 @@ class TopBarPill {
   final String id;
   final String label;
 
-  /// Optional list of contact/user UUID strings displayed as avatar circles.
-  final List<String>? avatarSlot;
+  /// Resolved actors to draw in the pill's avatar cluster, in display order.
+  /// Null/empty = no cluster. Groups and any not-yet-cached contacts aren't
+  /// drawn individually — they're folded into the "+N" overflow via
+  /// [avatarTotalCount].
+  final List<Actor>? avatarActors;
+
+  /// Total audience size (non-self contacts + groups) the cluster represents,
+  /// driving the "+N" overflow badge. Defaults to [avatarActors] length.
+  final int? avatarTotalCount;
 
   /// Called when the pill body is tapped.
   final VoidCallback onTap;
 
-  /// Called when the avatar slot is tapped. Must be non-null when [avatarSlot]
-  /// is non-null.
+  /// Called when the avatar cluster is tapped (opens the recipient picker).
+  /// When non-null the cluster brightens on hover to signal the affordance.
   final VoidCallback? onAvatarsTap;
 
   const TopBarPill({
     required this.id,
     required this.label,
-    this.avatarSlot,
+    this.avatarActors,
+    this.avatarTotalCount,
     required this.onTap,
     this.onAvatarsTap,
   });
@@ -184,12 +195,18 @@ class _PillState extends State<_Pill> {
                         : FontWeight.normal,
                   ),
                 ),
-                if (widget.pill.avatarSlot != null &&
-                    widget.pill.avatarSlot!.isNotEmpty) ...[
+                if (widget.pill.avatarActors != null &&
+                    widget.pill.avatarActors!.isNotEmpty) ...[
                   const SizedBox(width: 6),
                   GestureDetector(
                     onTap: widget.pill.onAvatarsTap,
-                    child: _AvatarPlaceholderRow(ids: widget.pill.avatarSlot!),
+                    child: AvatarGroup(
+                      actors: widget.pill.avatarActors!,
+                      totalCount: widget.pill.avatarTotalCount,
+                      maxVisible: 3,
+                      size: 16,
+                      clickable: widget.pill.onAvatarsTap != null,
+                    ),
                   ),
                 ],
               ],
@@ -197,35 +214,6 @@ class _PillState extends State<_Pill> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Placeholder avatar row: a small circle per UUID.
-/// Task 12 will wire in the real avatar widget.
-class _AvatarPlaceholderRow extends StatelessWidget {
-  final List<String> ids;
-
-  const _AvatarPlaceholderRow({required this.ids});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final _ in ids)
-          Container(
-            width: 16,
-            height: 16,
-            margin: const EdgeInsets.only(right: 2),
-            decoration: BoxDecoration(
-              color: context.theme.colors.mutedForeground.withValues(
-                alpha: 0.3,
-              ),
-              shape: BoxShape.circle,
-            ),
-          ),
-      ],
     );
   }
 }
