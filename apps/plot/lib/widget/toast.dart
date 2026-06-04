@@ -23,7 +23,12 @@ extension ToastExtension on BuildContext {
     bool isError = false,
     Duration? duration,
   }) {
-    final destructiveFg = destructiveToastForeground(colour);
+    // Read the colour scheme without listening: showToast is invoked from
+    // imperative event handlers (keyboard shortcuts, taps), where a listening
+    // `Provider.of` (context.colour) throws "Tried to listen to a value
+    // exposed with provider, from outside of the widget tree" and aborts the
+    // toast before it can be shown.
+    final destructiveFg = destructiveToastForeground(colourOnce);
 
     try {
       if (isError) {
@@ -69,7 +74,8 @@ extension ToastExtension on BuildContext {
     bool isError = false,
     Duration? duration,
   }) {
-    final destructiveFg = destructiveToastForeground(colour);
+    // listen: false — see showToast above; this runs from event handlers too.
+    final destructiveFg = destructiveToastForeground(colourOnce);
 
     try {
       // Get the root overlay
