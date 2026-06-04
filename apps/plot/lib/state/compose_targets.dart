@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' hide Column;
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:injector/injector.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/theme_color.dart' show ThemeColor;
@@ -30,9 +34,51 @@ part 'compose_targets_state.dart';
 /// `Actor.buildShareScan`.
 class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   ComposeTargetsBloc(this._prefs)
-      : super(const ComposeTargetsState(targets: []));
+      : super(const ComposeTargetsState(targets: [])) {
+    _watchConnections();
+  }
 
   final LocalPreferencesBloc _prefs;
+
+  /// Reactive refresh: the base list is materialized from the connection /
+  /// channel stores, so it must rebuild when those change. Without this, a
+  /// connection added mid-session only appeared after an app restart (the
+  /// page-init [refresh] was the sole trigger). We watch both enabled channels
+  /// (channel connectors, DMs) and twist instances (chat-with-a-twist targets,
+  /// connection rename/uninstall) and refresh — debounced so a sync batch that
+  /// writes many rows coalesces into one rebuild.
+  StreamSubscription<List<Channel>>? _channelSub;
+  StreamSubscription<List<TwistInstance>>? _twistSub;
+  Timer? _refreshDebounce;
+
+  void _watchConnections() {
+    _channelSub = Channel.watchAllEnabled().listen(
+      (_) => _scheduleRefresh(),
+      onError: (Object e, StackTrace s) => Tracker.captureException(e, s),
+    );
+    _twistSub = TwistInstance.watch().listen(
+      (_) => _scheduleRefresh(),
+      onError: (Object e, StackTrace s) => Tracker.captureException(e, s),
+    );
+  }
+
+  void _scheduleRefresh() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (isClosed || !Injector.appInstance.exists<Store>()) return;
+      unawaited(refresh().catchError(
+        (Object e, StackTrace s) => Tracker.captureException(e, s),
+      ));
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _refreshDebounce?.cancel();
+    _channelSub?.cancel();
+    _twistSub?.cancel();
+    return super.close();
+  }
 
   /// How many recent authored threads to scan for used combinations. The
   /// base list stays conservative (recently-used combos + one fresh template
@@ -53,6 +99,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     // _materializeBaseList already awaited _searchContextFor(), so this returns
     // the freshly-cached context (no extra queries).
     final ctx = await _searchContextFor();
+    // A reactive refresh can resolve after the bloc is closed (sign-out, the
+    // page disposing): emitting then throws.
+    if (isClosed) return;
     emit(state.copyWith(targets: _toViews(targets, ctx)));
   }
 

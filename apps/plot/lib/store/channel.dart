@@ -163,6 +163,27 @@ class Channel extends Equatable {
     return channels;
   }
 
+  /// Watch every enabled channel across all connections, emitting whenever the
+  /// channels table changes — a connection added/removed, a channel
+  /// enabled/disabled. Reactive consumers (the compose-target picker) subscribe
+  /// to rebuild when connections sync in mid-session, so newly-added
+  /// connections appear without an app restart. Returns an empty stream when
+  /// the Store isn't available (e.g. during sign-out).
+  static Stream<List<Channel>> watchAllEnabled() {
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value(const []);
+    }
+    return (Store.get.select(Store.get.channels)
+          ..where((sc) => sc.enabled.equals(true))
+          ..orderBy([(sc) => OrderingTerm.asc(sc.title)]))
+        .watch()
+        .map((rows) {
+          final channels = rows.map((row) => Channel(row)).toList();
+          populateCache(channels);
+          return channels;
+        });
+  }
+
   /// Get every enabled channel across all connections for the current user.
   /// Ordered by connection title then channel title for stable picker display.
   static Future<List<Channel>> getAllEnabled() async {

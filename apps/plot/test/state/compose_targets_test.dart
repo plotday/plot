@@ -309,6 +309,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
 
       final note = ComposeTarget.note(hasTeams: false);
       final chat = ComposeTarget.chat(hasTeams: false);
@@ -328,6 +329,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
 
       final chat = ComposeTarget.chat(hasTeams: false);
       await bloc.recordTarget(chat);
@@ -411,6 +413,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       final labels = bloc.state.targets.map((v) => v.target.label).toList();
@@ -498,6 +501,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       // The base list the step-1 TargetPickerList re-seeds from when refresh()
@@ -557,6 +561,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       final results = await bloc.search('greg');
@@ -611,6 +616,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       // The group chat surfaces with the group's name as a recipient (rather
@@ -642,6 +648,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       // Build the initial context — no connectors, no authored history yet.
       await bloc.refresh();
 
@@ -717,6 +724,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
 
       final ranked = await bloc.rankFocusesGlobal();
       // Most-recent first (focus B at 2026-03), then focus A (2026-02), deduped.
@@ -732,6 +740,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
 
       expect(await bloc.rankFocusesGlobal(), isEmpty);
     });
@@ -760,6 +769,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       final results = await bloc.search('someone@example.com');
@@ -794,6 +804,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       final results = await bloc.search('new@unseen.com');
@@ -831,6 +842,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       // _insertActor derives the email from the name.
@@ -883,6 +895,7 @@ void main() {
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
       final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
       await bloc.refresh();
 
       final targets = bloc.state.targets;
@@ -909,6 +922,49 @@ void main() {
       expect(gmailConnectorEntries, hasLength(1),
           reason: 'bare-roster DM combos collapse onto the single template');
       expect(gmailConnectorEntries.single.target.label, 'Gmail');
+    });
+
+    test(
+        'auto-refreshes when a connection is added mid-session (no explicit '
+        'refresh) so new options appear without an app restart', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      // Bloc starts against an empty connection store; it subscribes to channel
+      // / twist-instance changes in its constructor. Let the initial reactive
+      // refresh settle (past the debounce window).
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(
+        bloc.state.targets
+            .where((v) => v.target.kind == ComposeTargetKind.connector),
+        isEmpty,
+        reason: 'no connections yet → no connector rows',
+      );
+
+      // Add a channel connector AFTER the bloc was built — the regression case
+      // (previously only an app restart surfaced it).
+      final slack = await _insertConnector(
+        store,
+        name: 'Slack',
+        linkType: 'thread',
+        targets: 'channels',
+      );
+
+      // Without calling bloc.refresh(): the channel write drives the watch
+      // stream, and the debounced reactive refresh rebuilds the base list.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      final slackConnector = bloc.state.targets.where((v) =>
+          v.target.kind == ComposeTargetKind.connector &&
+          v.target.connection?.id == slack);
+      expect(slackConnector, isNotEmpty,
+          reason: 'a connection added mid-session must appear automatically');
     });
   });
 }
