@@ -141,20 +141,9 @@ class Avatar extends StatelessWidget {
       ),
     );
 
-    // Horizontal padding keeps wide glyph pairs (e.g. "MW") from kissing the
-    // circle's curved edge: without it FittedBox.scaleDown only fires when
-    // text exceeds the full diameter, so letters flush to the bounding box
-    // visually clip against the circle on smaller sizes.
-    final initials = Padding(
-      padding: EdgeInsets.symmetric(horizontal: s * 0.1),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          _initialsFrom(name: displayName, email: email),
-          softWrap: false,
-          maxLines: 1,
-        ),
-      ),
+    final initials = _CenteredInitials(
+      text: _initialsFrom(name: displayName, email: email),
+      diameter: s,
     );
 
     final hasAvatarUrl = avatarUrl != null && avatarUrl.isNotEmpty;
@@ -187,6 +176,98 @@ class Avatar extends StatelessWidget {
     ),
     child: const SizedBox.shrink(),
   );
+}
+
+/// Paints avatar initials (or an `+N` overflow count) on a fixed, cap-centered
+/// baseline so every avatar — crucially the ones sharing an [AvatarGroup] —
+/// aligns on the same baseline.
+///
+/// The baseline is anchored so that capital letters are vertically centered in
+/// the circle. Because that anchor depends only on the font size (never on
+/// which glyphs are drawn or how wide they are), all avatars share it; lowercase
+/// letters simply sit on the same baseline and so descend lower, by design.
+///
+/// Wide glyph pairs (e.g. "MW") are squeezed *horizontally only* to fit — never
+/// uniformly scaled — so fitting can't shift the baseline. (A uniform
+/// `FittedBox.scaleDown` would shrink the box vertically and re-center it,
+/// nudging the baseline up for wide pairs and leaving narrow ones in place —
+/// the exact inconsistency this widget removes.)
+class _CenteredInitials extends StatelessWidget {
+  const _CenteredInitials({required this.text, required this.diameter});
+
+  final String text;
+  final double diameter;
+
+  /// Figtree's cap height as a fraction of the em (capHeight 700 / unitsPerEm
+  /// 1000). The app renders avatars in Figtree only, so a constant is exact.
+  static const double _capHeightEm = 0.7;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(diameter),
+      painter: _InitialsPainter(
+        text: text,
+        style: DefaultTextStyle.of(context).style,
+        capHeightEm: _capHeightEm,
+      ),
+    );
+  }
+}
+
+class _InitialsPainter extends CustomPainter {
+  _InitialsPainter({
+    required this.text,
+    required this.style,
+    required this.capHeightEm,
+  });
+
+  final String text;
+  final TextStyle style;
+  final double capHeightEm;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fontSize = style.fontSize ?? 14.0;
+    final painter = TextPainter(
+      // `height: 1` gives a tight, predictable line box; the baseline is then
+      // anchored explicitly below, so the leading distribution is irrelevant.
+      text: TextSpan(text: text, style: style.copyWith(height: 1)),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+
+    // Anchor the alphabetic baseline so capitals are centered: a capital rises
+    // `capHeight` above the baseline, so placing the baseline capHeight/2 below
+    // the circle's center centers the capital. This y depends only on fontSize,
+    // so it is identical for every avatar — which is what keeps a group's
+    // avatars on a common baseline.
+    final baselineY = size.height / 2 + (fontSize * capHeightEm) / 2;
+
+    final metrics = painter.computeLineMetrics();
+    final baselineFromTop =
+        metrics.isNotEmpty ? metrics.first.baseline : painter.height;
+
+    // Squeeze horizontally (never vertically) when a wide pair would otherwise
+    // touch the ring, so the baseline stays put. The small margin keeps glyphs
+    // off the circle's curved edge.
+    final maxWidth = size.width * 0.84;
+    final scaleX = painter.width > maxWidth ? maxWidth / painter.width : 1.0;
+    final dx = (size.width - painter.width * scaleX) / 2;
+    final dy = baselineY - baselineFromTop;
+
+    canvas.save();
+    canvas.translate(dx, dy);
+    if (scaleX != 1.0) canvas.scale(scaleX, 1);
+    painter.paint(canvas, Offset.zero);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_InitialsPainter old) =>
+      old.text != text ||
+      old.style != style ||
+      old.capHeightEm != capHeightEm;
 }
 
 /// Avatar diameter derived from the ambient `IconTheme` so the avatar matches
@@ -732,16 +813,10 @@ class _OverflowBadge extends StatelessWidget {
         fontSize: context.theme.typography.xs.fontSize,
       ),
     ),
-    // Scale down so multi-digit counts (e.g. "+20", "+150") never spill past
-    // the circle. A bit of horizontal padding keeps even the scaled-down
-    // glyphs from kissing the ring border on either side.
-    child: Padding(
-      padding: EdgeInsets.symmetric(horizontal: size * 0.1),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text('+$count', softWrap: false, maxLines: 1),
-      ),
-    ),
+    // Shares the initials' baseline anchoring so the counter sits on the same
+    // baseline as the sibling avatars' initials (multi-digit counts like "+150"
+    // are squeezed horizontally, never vertically).
+    child: _CenteredInitials(text: '+$count', diameter: size),
   );
 }
 
