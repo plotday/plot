@@ -17,9 +17,6 @@ import { createNotes } from "./note";
 import { normalizeConferencingLink } from "./conferencing";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
-import { getSharingModelForChannel } from "../../../app/sync/link-tags";
-import { reconcileThreadContacts, updateThreadDroppedContacts } from "../../sharing";
-import { addContacts } from "./contacts";
 
 /**
  * Remove an orphan thread left behind by saveLink dedup/merge. Archive-first
@@ -158,72 +155,6 @@ export async function createLink(
 
       if (existingLink) {
         threadData.id = existingLink.thread_id;
-      }
-    }
-
-    // Message-mode contact reconciliation. When the connector declares
-    // sharingModel="message" and we're updating an existing thread, apply the
-    // 50% removal heuristic against the ACTIVE set (contacts - dropped_contacts).
-    // Contacts that fall out of the reconciled active set are moved to
-    // dropped_contacts (they retain thread visibility but are excluded from
-    // future defaults). Contacts that reappear in the active set are
-    // un-dropped.
-    //
-    // KNOWN RACE: update_thread_dropped_contacts and the downstream
-    // upsert_thread run as separate statements. If the process dies between
-    // them, the thread is left partially updated. The window is small and the
-    // next message-mode saveLink will re-reconcile to the correct state.
-    //
-    // FAST PATH: skip when accessContacts is empty — incoming = [] means
-    // nothing changes (heuristic preserves everything) so nothing fires,
-    // and we avoid an unnecessary sharing-model lookup + addContacts call
-    // on every non-message saveLink that omits accessContacts.
-    //
-    // See workers/api/src/twist/sharing.ts and
-    // libs/db/schema/60-functions/update_thread_dropped_contacts.sql.
-    if (
-      threadData.id &&
-      link.accessContacts !== undefined &&
-      link.accessContacts.length > 0
-    ) {
-      const sharingModel = await getSharingModelForChannel(
-        plot.db,
-        link.channelId ?? null,
-        link.type ?? null,
-        plot.twistInstanceId,
-      );
-      if (sharingModel === "message") {
-        const existing = await plot.db
-          .selectFrom("thread")
-          .select(["contacts", "dropped_contacts"])
-          .where("id", "=", threadData.id)
-          .executeTakeFirst();
-        const allContacts: string[] = (existing?.contacts as string[] | null) ?? [];
-        const droppedSet = new Set<string>(
-          (existing?.dropped_contacts as string[] | null) ?? [],
-        );
-        const previousActive = allContacts.filter((c) => !droppedSet.has(c));
-
-        const incomingActors = await addContacts(plot, link.accessContacts);
-        const incoming: string[] = incomingActors.map((a) => String(a.id));
-
-        const reconciled = reconcileThreadContacts({
-          previous: previousActive,
-          incoming,
-        });
-        const reconciledSet = new Set(reconciled);
-
-        const toDrop = previousActive.filter((c) => !reconciledSet.has(c));
-        const toUndrop = [...droppedSet].filter((c) => reconciledSet.has(c));
-
-        if (toDrop.length > 0 || toUndrop.length > 0) {
-          await updateThreadDroppedContacts(
-            plot.db,
-            threadData.id,
-            toDrop,
-            toUndrop,
-          );
-        }
       }
     }
 

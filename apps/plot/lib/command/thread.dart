@@ -2479,17 +2479,67 @@ class PickThreadShared extends ShowCommands {
   Future<List<Actor>> loadSharedDisplayActors() =>
       _loadSharedDisplayActors(thread);
 
-  /// Like [loadSharedDisplayActors], but resolves actors for an explicit set
-  /// of contact IDs instead of reading from [thread.contacts]. Used for
-  /// message-mode threads where the visible contacts are derived per-viewer
-  /// via [Thread.deriveVisibleContacts].
-  Future<List<Actor>> loadSharedDisplayActorsForContacts(
-    Iterable<Uuid> contactIds,
-  ) => _loadDisplayActorsForContacts(contactIds);
-
   /// Total number of shared targets on the thread (self + other contacts +
   /// groups + pending email invites), used for the overflow counter.
   int get sharedTotalCount => _sharedCount(thread);
+}
+
+/// Read-only "People on this thread" overview for message-mode threads. The
+/// header avatar group opens this instead of the editable [PickThreadShared]:
+/// in message-mode the roster is an auto-maintained union, so there's nothing
+/// to edit here — recipients are chosen per-reply in the composer.
+class PickThreadParticipants extends ShowCommands {
+  PickThreadParticipants(Thread thread)
+      : super(
+          title: 'People on this thread',
+          icon: PlotIcon.users,
+          commandsBuilder: (context) async {
+            final meta = thread.contactMeta;
+            final rows = <Command>[];
+            final seen = <ActorId>{};
+            for (final contactId in thread.contacts) {
+              try {
+                final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+                if (!seen.add(actor.id)) continue;
+                final role = (meta[contactId.toString()]
+                    as Map<String, dynamic>?)?['role'] as String?;
+                rows.add(_ThreadParticipantRow(actor, roleLabel: role));
+              } catch (_) {
+                // Skip unresolvable contacts.
+              }
+            }
+            return Commands(
+              prompt: 'People on this thread',
+              emptyMessage: 'No participants',
+              groups: [
+                StaticCommandGroup(
+                    title: 'People on this thread', commands: rows),
+              ],
+            );
+          },
+        );
+}
+
+/// Non-actionable participant row: shows an avatar + name (+ role for the
+/// privileged viewer). Tapping is a no-op — this list is read-only.
+class _ThreadParticipantRow extends Command {
+  _ThreadParticipantRow(this.actor, {this.roleLabel})
+      : super(
+          title: actor.nameOrEmail,
+          subtitle: roleLabel,
+          eventObject: EventObject.activity,
+          eventAction: EventAction.opened,
+        );
+
+  final Actor actor;
+  final String? roleLabel;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(actor: actor);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async => const CommandDone();
 }
 
 Future<void> _persistSharedChange(Thread thread) async {
@@ -2698,29 +2748,6 @@ Future<List<Actor>> _loadSharedDisplayActors(Thread thread) async {
       .toSet();
   final actors = <Actor>[];
   for (final contactId in thread.contacts) {
-    if (selfUuids.contains(contactId)) continue;
-    try {
-      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
-      if (actor.type == ActorType.twistInstance) continue;
-      actors.add(actor);
-    } catch (_) {
-      // Skip contacts whose actors can't be resolved.
-    }
-  }
-  return _dedupePerPerson(actors);
-}
-
-/// Like [_loadSharedDisplayActors] but operates on an explicit contact-id
-/// set instead of [Thread.contacts]. Used for message-mode threads where the
-/// visible participants are derived per-viewer.
-Future<List<Actor>> _loadDisplayActorsForContacts(
-  Iterable<Uuid> contactIds,
-) async {
-  final selfUuids = Actor.getCurrentUserActorIds()
-      .map((a) => a.toUuid())
-      .toSet();
-  final actors = <Actor>[];
-  for (final contactId in contactIds) {
     if (selfUuids.contains(contactId)) continue;
     try {
       final actor = await Actor.getOne(ActorId.fromUuid(contactId));

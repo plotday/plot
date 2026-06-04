@@ -590,6 +590,37 @@ void main() {
       expect(sigs, isNot(contains(noreplyCombo)));
     });
 
+    test('a Plot chat shared with a group renders the group name', () async {
+      final self = Uuid.generate();
+      final groupId = Uuid.generate();
+      final priorityId = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+      await _insertGroup(store, groupId, name: 'Acme Team');
+
+      // A self-authored Plot chat shared with the group (no individual
+      // contacts beyond the author).
+      final chatThread = Uuid.generate();
+      await _insertThread(store, chatThread,
+          priorityId: priorityId,
+          contacts: [self],
+          groups: [groupId],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, chatThread, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      await bloc.refresh();
+
+      // The group chat surfaces with the group's name as a recipient (rather
+      // than collapsing to a bare "Chat" label).
+      final chatSig = composeChatSignature(null, groups: [groupId]);
+      final view = bloc.state.targets
+          .firstWhere((v) => v.target.signature == chatSig);
+      expect(view.recipients.map((r) => r.name), contains('Acme Team'));
+    });
+
     test(
         'per-keystroke search reuses a cached context; refresh() invalidates it',
         () async {
@@ -952,6 +983,7 @@ Future<void> _insertThread(
   Uuid id, {
   required Uuid priorityId,
   required List<Uuid> contacts,
+  List<Uuid> groups = const [],
   DateTime? createdAt,
 }) async {
   await store.into(store.threads).insert(
@@ -959,11 +991,27 @@ Future<void> _insertThread(
           id: Value(id),
           priorityId: Value(priorityId),
           contacts: Value(contacts),
+          groups: Value(groups),
           draft: const Value(false),
           createdAt:
               createdAt == null ? const Value.absent() : Value(createdAt),
         ),
       );
+}
+
+Future<void> _insertGroup(Store store, Uuid id, {required String name}) async {
+  await store.into(store.groups).insert(
+        GroupsCompanion(
+          id: Value(id),
+          name: Value(name),
+          type: const Value('team'),
+          joinPolicy: const Value('closed'),
+          isMember: const Value(true),
+        ),
+      );
+  // Populate the synchronous Group cache (Group.fromCache) the way the picker
+  // reads it.
+  await Group.getOne(id);
 }
 
 Future<void> _insertNote(

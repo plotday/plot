@@ -162,6 +162,8 @@ class RecipientPickerModal {
       // regardless, but injecting it avoids a confusing "self missing" row.
       injectSelf: true,
       includeGroupIds: includeGroupIds,
+      threadMemberIds: threadContacts.map(Uuid.fromString).toList(),
+      sharedSectionTitle: 'Recipients',
       onUpdate: (next) async {
         selection = next;
         changed = true;

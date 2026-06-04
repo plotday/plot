@@ -186,6 +186,9 @@ Future<Commands> buildSharedSelectionCommands({
   required ShareCandidatesCache candidates,
   Priority? priority,
   bool injectSelf = false,
+  List<Uuid> threadMemberIds = const [],
+  String sharedSectionTitle = 'Shared',
+  String threadSectionTitle = 'In this thread',
 }) async {
   // Resolve groups.
   final sharedGroups = <GroupRow>[];
@@ -225,6 +228,25 @@ Future<Commands> buildSharedSelectionCommands({
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
+  // "In this thread" section source: thread members (the union) who aren't
+  // already selected and aren't self. One tap re-adds them to this reply.
+  final inThreadActors = <Actor>[];
+  if (threadMemberIds.isNotEmpty) {
+    final selectedSet = sharedActorIds.toSet();
+    final seenInThread = <ActorId>{};
+    for (final contactId in threadMemberIds) {
+      try {
+        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        if (actor.self) continue; // self lives in the selected section
+        if (selectedSet.contains(actor.id)) continue; // already selected
+        if (seenInThread.add(actor.id)) inThreadActors.add(actor);
+      } catch (_) {
+        // Skip unresolvable contacts.
+      }
+    }
+  }
+  final inThreadActorIds = inThreadActors.map((a) => a.id).toList();
+
   Command toggleActor(Actor actor) =>
       ShareSelectionActor(selection, actor, onUpdate: onUpdate);
 
@@ -242,16 +264,21 @@ Future<Commands> buildSharedSelectionCommands({
           sharedGroups.isNotEmpty ||
           selection.inviteEmails.isNotEmpty)
         StaticCommandGroup(
-          title: 'Shared',
+          title: sharedSectionTitle,
           commands: [
             ...sharedGroups.map(toggleGroup),
             ...sharedActors.map(toggleActor),
             ...selection.inviteEmails.map(toggleInvite),
           ],
         ),
+      if (inThreadActors.isNotEmpty)
+        StaticCommandGroup(
+          title: threadSectionTitle,
+          commands: inThreadActors.map(toggleActor).toList(),
+        ),
       _SelectionShareSuggestionsGroup(
         selection: selection,
-        excludeActorIds: sharedActorIds,
+        excludeActorIds: [...sharedActorIds, ...inThreadActorIds],
         excludeGroupIds: selection.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
@@ -477,6 +504,9 @@ class PickShared extends ShowCommands {
     bool injectSelf = false,
     String? title,
     List<String> includeGroupIds = const [],
+    List<Uuid> threadMemberIds = const [],
+    String sharedSectionTitle = 'Shared',
+    String threadSectionTitle = 'In this thread',
   }) {
     final ref = [selection];
     final cache = ShareCandidatesCache(includeGroupIds: includeGroupIds);
@@ -495,6 +525,9 @@ class PickShared extends ShowCommands {
         candidates: cache,
         priority: priority,
         injectSelf: injectSelf,
+        threadMemberIds: threadMemberIds,
+        sharedSectionTitle: sharedSectionTitle,
+        threadSectionTitle: threadSectionTitle,
       ),
     );
   }
