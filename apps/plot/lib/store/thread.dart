@@ -4749,86 +4749,42 @@ SELECT
     return qualifying.isEmpty ? null : qualifying.first;
   }
 
-  /// Per-viewer visible-contacts derivation for message-mode threads.
-  /// Returns the union of [Note.accessContacts] across notes the viewer
-  /// can see, plus each visible note's author. For non-message-mode
-  /// threads, callers should use [Thread.contacts] directly.
-  ///
-  /// [viewerContactIds] should be every contact linked to the viewer
-  /// (matches `user.user_contact_ids()` server-side).
-  static Set<Uuid> deriveVisibleContacts({
-    required List<Note> visibleNotes,
-    required Iterable<Uuid> viewerContactIds,
-  }) {
-    final out = <Uuid>{};
-    for (final note in visibleNotes) {
-      out.add(note.authorId.value);
-      final access = note.accessContacts;
-      if (access != null) out.addAll(access.map((a) => a.value));
-    }
-    out.addAll(viewerContactIds);
-    return out;
-  }
-
-  /// Compute the badge label for a note in a message-mode thread.
-  /// Returns null when the note matches the thread superset (no badge).
-  ///
-  /// - `noteAudience` = `note.accessContacts ?? {note.authorId}` plus
-  ///   the author. The caller is responsible for resolving NULL into
-  ///   the effective audience before calling.
-  /// - `threadContacts` = current `thread.contacts`.
-  /// - `viewerContactIds` = every contact linked to the viewer.
-  /// - `nameLookup(contactId)` = display-name resolver.
-  static String? noteBadgeLabel({
-    required Set<Uuid> noteAudience,
-    required Set<Uuid> threadContacts,
+  /// Label for the per-message recipient-change feed line in a message-mode
+  /// thread. Compares this note's audience to the previous note's audience and
+  /// describes the membership delta from the reader's perspective. Returns
+  /// null when nothing changed (no line). Self (the viewer's contacts) is
+  /// excluded from named lists. v1 covers membership changes only — role
+  /// transitions ("Sam to BCC") are a tracked follow-up.
+  static String? recipientChangeLabel({
+    required Set<Uuid> previous,
+    required Set<Uuid> current,
     required Set<Uuid> viewerContactIds,
     required String Function(Uuid) nameLookup,
   }) {
-    final viewerInAudience = noteAudience.any(viewerContactIds.contains);
-    if (!viewerInAudience) return null;
+    final added = current.difference(previous).difference(viewerContactIds);
+    final removed = previous.difference(current).difference(viewerContactIds);
+    if (added.isEmpty && removed.isEmpty) return null;
 
-    final others = noteAudience
-        .where((c) => !viewerContactIds.contains(c))
-        .toSet();
-    final subsetOthers = others.intersection(threadContacts);
-    final plusOthers = others.difference(threadContacts);
+    final currentOthers = current.difference(viewerContactIds);
 
-    final isPrivate = others.isEmpty;
-    // Subset = the audience is missing at least one thread contact (excluding
-    // viewer's own contacts, which the viewer is always counted as).
-    final isSubset = !threadContacts
-        .difference(viewerContactIds)
-        .every(noteAudience.contains);
-    final isPlus = plusOthers.isNotEmpty;
-
-    if (isPrivate && !isPlus) return 'Private';
-
-    // Format: "A" | "A, B" | "A, B +N"
-    String formatNames(Iterable<Uuid> ids) {
-      final names = ids.map(nameLookup).toList();
-      if (names.length == 1) return names[0];
-      if (names.length == 2) return '${names[0]}, ${names[1]}';
-      return '${names[0]}, ${names[1]} +${names.length - 2}';
+    String names(Iterable<Uuid> ids) {
+      final list = ids.map(nameLookup).toList();
+      if (list.length == 1) return list[0];
+      if (list.length == 2) return '${list[0]} and ${list[1]}';
+      if (list.length == 3) return '${list[0]}, ${list[1]} and ${list[2]}';
+      return '${list[0]}, ${list[1]} +${list.length - 2}';
     }
 
-    // "and you" gets a comma when the list has 2+ names (Oxford comma).
-    String subsetClause(Set<Uuid> ids) {
-      final names = formatNames(ids);
-      final needsComma = ids.length >= 2;
-      return needsComma ? '$names, and you' : '$names and you';
+    if (removed.isNotEmpty && added.isEmpty) {
+      if (currentOthers.length == 1 && removed.length >= 2) {
+        return 'Dropped everyone except ${names(currentOthers)}';
+      }
+      return 'Dropped ${names(removed)}';
     }
-
-    if (isSubset && isPlus) {
-      return 'Just ${subsetClause(subsetOthers)}, plus ${formatNames(plusOthers)}';
+    if (added.isNotEmpty && removed.isEmpty) {
+      return 'Added ${names(added)}';
     }
-    if (isSubset) {
-      return 'Just ${subsetClause(subsetOthers)}';
-    }
-    if (isPlus) {
-      return 'Plus ${formatNames(plusOthers)}';
-    }
-    return null;
+    return 'Added ${names(added)}, dropped ${names(removed)}';
   }
 
   /// Union of `access_contacts` across all of a thread's notes, plus
@@ -4849,6 +4805,22 @@ SELECT
       }
     }
     return out;
+  }
+
+  /// Participants of the most recent note (its author + access_contacts).
+  /// Used as the default reply audience for message-mode threads — "a
+  /// reasonable assumption of the recipients at that point in the thread."
+  /// Returns an empty set when there are no notes (callers fall back to
+  /// thread.contacts). Order is not significant; callers dedupe.
+  static Set<ActorId> latestNoteAudience(List<Note> notes) {
+    if (notes.isEmpty) return const {};
+    final latest = notes.reduce(
+      (a, b) => b.sourceCreatedAt.isAfter(a.sourceCreatedAt) ? b : a,
+    );
+    return {
+      latest.authorId,
+      ...?latest.accessContacts,
+    };
   }
 
   /// Per-contact metadata (role assignments, etc) keyed by contact uuid

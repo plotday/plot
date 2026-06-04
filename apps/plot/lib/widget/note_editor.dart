@@ -765,11 +765,17 @@ class NoteEditorState extends State<NoteEditor> {
   /// label alone already conveys who's being replied to. Contacts not yet in
   /// the [Actor] cache aren't drawn individually but still count toward the
   /// total; [_warmAvatarCache] fetches them and rebuilds so they appear.
-  ({List<Actor> actors, int total}) _replyAudience(Thread thread) {
-    final nonSelf = thread.activeContacts
-        .where((c) => !_isSelfContact(c))
-        .toList();
-    final total = nonSelf.length + thread.groups.length;
+  ({List<Actor> actors, int total}) _replyAudience(ThreadState s) {
+    final base = s.primaryLinkTypeConfig?.sharingModel == SharingModel.message
+        ? () {
+            final audience = Thread.latestNoteAudience(s.notes)
+                .map((a) => a.toUuid())
+                .toList();
+            return audience.isEmpty ? s.thread.activeContacts : audience;
+          }()
+        : s.thread.activeContacts;
+    final nonSelf = base.where((c) => !_isSelfContact(c)).toList();
+    final total = nonSelf.length + s.thread.groups.length;
     if (total < 2) return (actors: const [], total: 0);
     _warmAvatarCache(nonSelf);
     final actors = <Actor>[];
@@ -881,7 +887,7 @@ class NoteEditorState extends State<NoteEditor> {
         s.thread.groups.isNotEmpty;
 
     if (_hasMentionableTwist(s)) {
-      final replyAudience = _replyAudience(s.thread);
+      final replyAudience = _replyAudience(s);
       pills.add(
         TopBarPill(
           id: 'reply',
@@ -915,7 +921,7 @@ class NoteEditorState extends State<NoteEditor> {
       }
 
       // Shared Plot thread.
-      final replyAudience = _replyAudience(s.thread);
+      final replyAudience = _replyAudience(s);
       pills.add(
         TopBarPill(
           id: 'reply',
@@ -956,7 +962,7 @@ class NoteEditorState extends State<NoteEditor> {
     final noteLabel = cfg.noteLabel ?? 'Note';
     switch (cfg.sharingModel) {
       case SharingModel.message:
-        final replyAudience = _replyAudience(s.thread);
+        final replyAudience = _replyAudience(s);
         pills.add(
           TopBarPill(
             id: 'reply',
@@ -1051,7 +1057,19 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _activateConnectorReply() {
-    context.read<ThreadBloc>().updateDraft(_draftAsThreadDefault());
+    final bloc = context.read<ThreadBloc>();
+    final s = bloc.state;
+    if (s.primaryLinkTypeConfig?.sharingModel == SharingModel.message) {
+      final audience = Thread.latestNoteAudience(s.notes);
+      if (audience.isNotEmpty) {
+        bloc.setDraftRecipients(
+          accessContacts: {Base.actorId, ...audience}.toList(),
+          accessGroups: const [],
+        );
+        return;
+      }
+    }
+    bloc.updateDraft(_draftAsThreadDefault());
   }
 
   void _activateReplyToOriginal(Uuid originalAuthor) {
@@ -1091,11 +1109,11 @@ class NoteEditorState extends State<NoteEditor> {
         : const <String>[];
 
     final picker = RecipientPickerModal(
-      threadContacts: s.thread.activeContacts.map((c) => c.toString()).toList(),
+      threadContacts: s.thread.contacts.map((c) => c.toString()).toList(),
       threadGroups: s.thread.groups.map((g) => g.toString()).toList(),
       initialContactSelection:
           (draft.accessContacts?.map((a) => a.toUuid().toString()).toList()) ??
-          s.thread.activeContacts.map((c) => c.toString()).toList(),
+          s.thread.contacts.map((c) => c.toString()).toList(),
       initialGroupSelection:
           (draft.accessGroups?.map((a) => a.toUuid().toString()).toList()) ??
           s.thread.groups.map((g) => g.toString()).toList(),

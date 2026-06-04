@@ -1018,55 +1018,16 @@ class SharedCommandButton extends HookWidget {
       }
     }
 
-    // Message-mode: derive visible contacts per-viewer rather than reading
-    // thread.contacts directly. Uses [Thread.deriveVisibleContacts] so the
-    // AvatarGroup reflects only the participants visible to the current user.
-    // When thread.notes is null (not yet loaded), falls back to thread.contacts.
-    final viewerContactIds = Actor.getCurrentUserActorIds()
-        .map((a) => a.toUuid())
-        .toList();
-    final visibleContactIds = sharingModel == SharingModel.message
-        ? Thread.deriveVisibleContacts(
-            visibleNotes: thread.notes ?? const [],
-            viewerContactIds: viewerContactIds,
-          )
-        : null;
-
-    // The synchronous `sharedDisplayActors` getter only returns actors
-    // already in the in-memory cache. On first render in the agenda the
-    // contacts haven't been fetched yet, so it returns an empty list and
-    // the avatar group renders nothing. Kick off an async resolve so the
-    // cache fills; once it does, this widget rebuilds with the resolved
-    // actors AND any other ThreadWidget sharing the same contacts gets a
-    // cache hit on its next build.
-    //
-    // For message-mode, load actors for the per-viewer visible contact set.
-    // For thread-mode (and channel-mode fallback), load from thread.contacts.
-    final contactsKey = visibleContactIds != null
-        ? ([...visibleContactIds]
-                ..sort((a, b) => a.toString().compareTo(b.toString())))
-              .map((u) => u.toString())
-              .join('|')
-        : thread.contacts.map((u) => u.toString()).join('|');
+    // Avatar overview reads thread.contacts directly — the synced union of
+    // everyone ever on the thread — for every sharing model. thread.contacts
+    // is always present on the thread row, so list rows and the first-paint
+    // header populate even before notes load. Hidden-role (BCC) contacts are
+    // stripped per-viewer server-side, so this never leaks.
+    final contactsKey = thread.contacts.map((u) => u.toString()).join('|');
     final loadedActors = useFuture(
-      useMemoized(
-        () => visibleContactIds != null
-            ? command.loadSharedDisplayActorsForContacts(visibleContactIds)
-            : command.loadSharedDisplayActors(),
-        [contactsKey],
-      ),
+      useMemoized(() => command.loadSharedDisplayActors(), [contactsKey]),
     ).data;
-    // In message-mode the actor list is per-viewer. While the async load is
-    // pending, falling back to `command.sharedDisplayActors` (which reads
-    // `thread.contacts` — the full superset) would briefly surface
-    // dropped/post-drop participants to a viewer who shouldn't see them.
-    // Render zero avatars momentarily instead; thread-mode and channel-mode
-    // keep the existing cached fallback.
-    final actors =
-        loadedActors ??
-        (visibleContactIds != null
-            ? const <Actor>[]
-            : command.sharedDisplayActors);
+    final actors = loadedActors ?? command.sharedDisplayActors;
 
     // Surface RSVP info in the unified avatar tooltip when the thread is a
     // calendar event with other invitees. Otherwise the tooltip falls back
@@ -1186,6 +1147,8 @@ class SharedCommandButton extends HookWidget {
           ? () => pickLinkAssignee(context, assignmentLink)
           : (sharingModel == SharingModel.channel && channelTitle != null)
           ? null
+          : sharingModel == SharingModel.message
+          ? () => context.run(PickThreadParticipants(thread))
           : () => context.run(command),
       child: child,
     );

@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'package:plot/widget/note_badge.dart';
+import 'package:plot/widget/recipient_change_line.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/thread.dart';
@@ -151,26 +151,37 @@ class _NoteWidgetState extends State<NoteWidget> {
 
     final hasFocus = widget.focusNode?.hasFocus ?? false;
 
-    // Compute divergence badge for message-mode threads. Reads links and
-    // thread contacts from the already-watching ThreadBloc state — no extra
-    // stream needed. Uses the synchronous Actor cache for name resolution so
-    // build stays synchronous; falls back to "Someone" for cache misses.
     final threadState = activityBloc.state;
+    // Per-message recipient-change line for message-mode threads. Compare this
+    // note's audience to the chronologically-previous note's. Order-independent
+    // (sorts by sourceCreatedAt) so it doesn't depend on the list's order.
     final sharingModel = Thread.resolveSharingModel(threadState.links);
-    final badgeLabel = sharingModel == SharingModel.message
-        ? Thread.noteBadgeLabel(
-            noteAudience: <Uuid>{
-              widget.note.authorId.value,
-              ...?widget.note.accessContacts?.map((a) => a.value),
-            },
-            threadContacts: threadState.thread.activeContacts.toSet(),
-            viewerContactIds: Actor.getCurrentUserActorIds()
-                .map((a) => a.toUuid())
-                .toSet(),
-            nameLookup: (id) =>
-                Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ?? 'Someone',
-          )
-        : null;
+    String? changeLabel;
+    if (sharingModel == SharingModel.message) {
+      final ordered = [...threadState.notes]
+        ..sort((a, b) => a.sourceCreatedAt.compareTo(b.sourceCreatedAt));
+      final idx = ordered.indexWhere((n) => n.id == widget.note.id);
+      final prev = idx > 0 ? ordered[idx - 1] : null;
+      if (prev != null) {
+        Set<Uuid> audience(Note n) {
+          final access = n.accessContacts;
+          if (access != null) {
+            return {n.authorId.value, ...access.map((a) => a.value)};
+          }
+          // Legacy note with no explicit recipients: treat the whole thread
+          // roster as the audience so a null note doesn't fabricate a change.
+          return {n.authorId.value, ...threadState.thread.contacts};
+        }
+        changeLabel = Thread.recipientChangeLabel(
+          previous: audience(prev),
+          current: audience(widget.note),
+          viewerContactIds:
+              Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet(),
+          nameLookup: (id) =>
+              Actor.fromCache(ActorId.fromUuid(id))?.nameOrEmail ?? 'Someone',
+        );
+      }
+    }
 
     final listTile = ListTile(
       padding: const EdgeInsets.only(left: 10, right: 16, top: 8),
@@ -178,12 +189,7 @@ class _NoteWidgetState extends State<NoteWidget> {
       bodyBuilder: (context, highlighted) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (badgeLabel != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 6, right: 6, bottom: 4),
-              child: NoteBadge(label: badgeLabel),
-            ),
-          ],
+          if (changeLabel != null) RecipientChangeLine(label: changeLabel),
           if (widget.note.reNoteId != null)
             Padding(
               padding: const EdgeInsets.only(left: 6, right: 6, bottom: 4),

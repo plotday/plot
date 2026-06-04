@@ -405,9 +405,27 @@ class ThreadBloc extends Cubit<ThreadState> {
     final existingDraft = await Note.getDraftByActivity(state.thread.id);
     if (existingDraft != null) {
       emit(state.copyWith(draft: existingDraft));
-    } else {
-      await _defaultDraftToPrivateIfViewers();
+      return;
     }
+    // Message-mode: a fresh reply defaults to the latest note's participants
+    // ("reasonable assumption at that point in the thread") so an un-edited
+    // reply sends to the right audience. Falls through to the private-default
+    // logic when there are no notes yet.
+    if (Thread.resolveSharingModel(state.links) == SharingModel.message) {
+      final notes = state.notes.isNotEmpty
+          ? state.notes
+          : await Note.getForThread(state.thread.id);
+      final audience = Thread.latestNoteAudience(notes);
+      if (audience.isNotEmpty) {
+        emit(state.copyWith(
+          draft: state.draft.copyWith(
+            accessContacts: Value({Base.actorId, ...audience}.toList()),
+          ),
+        ));
+        return;
+      }
+    }
+    await _defaultDraftToPrivateIfViewers();
   }
 
   /// No-op: viewers and public/private toggle removed in per-user priorities.
