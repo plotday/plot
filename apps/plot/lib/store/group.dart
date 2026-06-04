@@ -125,17 +125,31 @@ class Group {
   /// Groups the user is allowed to send threads to (admin of the group, or
   /// member of any non-`announce` group), filtered by [search] against name.
   ///
+  /// `includeIds` forces specific groups to be included even when the user
+  /// isn't a member (e.g. a read-only viewer replying to a thread addressed
+  /// to a group they don't belong to), still excluding announce groups.
+  ///
   /// Computed from the locally-cached `is_admin` / `is_member` / `type`
   /// columns rather than the synced `can_post` column, so the picker
   /// works immediately after the schema migration without waiting for a
   /// fresh group sync to repopulate `can_post`.
-  static Future<List<GroupRow>> getPostable({String? search}) async {
+  static Future<List<GroupRow>> getPostable({
+    String? search,
+    List<String> includeIds = const [],
+  }) async {
+    // The `id` column is a UUID blob, so compare against byte values.
+    final includeBytes = includeIds
+        .map((id) => Uuid.fromString(id).toBytes())
+        .toList();
     final query = Store.get.select(table)
       ..where(
         (t) =>
             t.archivedAt.isNull() &
             (t.isAdmin.equals(true) |
-                (t.isMember.equals(true) & t.type.isNotIn(const ['announce']))),
+                (t.isMember.equals(true) &
+                    t.type.isNotIn(const ['announce'])) |
+                (t.id.isIn(includeBytes) &
+                    t.type.isNotIn(const ['announce']))),
       );
     if (search != null && search.isNotEmpty) {
       final lower = search.toLowerCase();

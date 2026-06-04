@@ -152,36 +152,60 @@ CREATE OR REPLACE FUNCTION public.update_thread_on_note_change ()
     SET search_path TO 'public'
     AS $function$
 BEGIN
-    -- On addition of a non-draft, non-archived note:
-    -- Keep the thread read for the note creator if no one else has added notes
-    -- since they last marked it read
+    -- Only act on visible, non-draft notes.
     IF NEW.draft = FALSE AND NEW.archived_at IS NULL THEN
-        -- Acquire advisory lock on this thread to serialize concurrent updates
-        -- This prevents deadlocks when multiple notes are created simultaneously
-        -- Lock is automatically released at transaction end
         PERFORM pg_advisory_xact_lock(hashtext(NEW.thread_id::text));
 
-        -- Update thread's last_note_created_at and last_note_source_created_at when notes are inserted/deleted
-        -- Note: note.updated_at changes do NOT trigger this
-        -- Uses GREATEST() instead of MAX subquery since we only need to update if the new value exceeds the current
-        -- Also update updated_by to the note's updated_by so webhook-originated notes appear in sync views
-        -- last_note_seq is the sync-cursor counterpart of last_note_created_at:
-        -- the user.thread view exposes GREATEST(thread.seq, last_note_seq, ...)
-        -- so a new note advances /sync/threads' cursor for the parent thread.
-        UPDATE
-            thread
-        SET
-            last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
-            last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
-            last_note_seq = GREATEST (last_note_seq, NEW.seq),
-            updated_by = NEW.updated_by
-        WHERE
-            id = NEW.thread_id
-            AND (last_note_created_at IS NULL
-                OR last_note_created_at < NEW.created_at
-                OR last_note_source_created_at IS NULL
-                OR last_note_source_created_at < NEW.source_created_at
-                OR last_note_seq < NEW.seq);
+        IF NEW.access_contacts IS NULL AND NEW.access_groups IS NULL THEN
+            -- UNSCOPED note: everyone who can see the thread can see it.
+            -- Bump the shared last_note_* columns exactly as before so the
+            -- thread re-emits / re-sorts for all recipients.
+            UPDATE thread
+            SET last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
+                last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
+                last_note_seq = GREATEST (last_note_seq, NEW.seq),
+                updated_by = NEW.updated_by
+            WHERE id = NEW.thread_id
+              AND (last_note_created_at IS NULL
+                  OR last_note_created_at < NEW.created_at
+                  OR last_note_source_created_at IS NULL
+                  OR last_note_source_created_at < NEW.source_created_at
+                  OR last_note_seq < NEW.seq);
+        ELSE
+            -- SCOPED note: do NOT touch the shared last_note_* columns (that
+            -- would re-emit the thread for the whole audience, leaking the
+            -- existence of a private reply). Instead bump thread_state for
+            -- exactly the users who can see this note, so the thread
+            -- re-emits / re-sorts / unreads only for them. The author's row
+            -- is bumped but kept read; other visible users get read_at = NULL.
+            INSERT INTO thread_state (user_id, thread_id, read_at, bumped_at)
+            SELECT v.user_id,
+                   NEW.thread_id,
+                   CASE WHEN v.user_id = NEW.created_by THEN now() ELSE NULL END,
+                   now()
+            FROM (
+                SELECT tp.user_id
+                FROM thread_priority tp
+                WHERE tp.thread_id = NEW.thread_id
+                  AND tp.revoked_at IS NULL
+                  AND (
+                      tp.user_id = NEW.created_by
+                      OR (NEW.access_contacts IS NOT NULL
+                          AND NEW.access_contacts && "user".user_contact_ids(tp.user_id))
+                      OR (NEW.access_groups IS NOT NULL
+                          AND NEW.access_groups && "user".user_group_ids(tp.user_id))
+                  )
+            ) v
+            ON CONFLICT (user_id, thread_id) DO UPDATE
+            SET bumped_at = now(),
+                -- A non-author visible user must see the thread as unread
+                -- again; never clobber the author's own read state.
+                read_at = CASE
+                    WHEN thread_state.user_id = NEW.created_by THEN thread_state.read_at
+                    ELSE NULL
+                END,
+                updated_at = now();
+        END IF;
     END IF;
     RETURN COALESCE(NEW, OLD);
 END;

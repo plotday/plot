@@ -209,6 +209,15 @@ notes.post("/sync/notes", async (c) => {
         .executeTakeFirst())
     : false;
 
+  // Snapshot the RESOLVED note access (what's actually passed to upsert_note)
+  // out of the withUserDb callback so the background waitUntil closure can read
+  // it. Scoped-ness MUST be derived from these resolved values (not raw
+  // body.access_*) so the API and the DB trigger agree on "scoped" — e.g. a
+  // message-mode note that resolves to thread.contacts is scoped even when the
+  // client sent no access_contacts.
+  let resolvedAccessContactsSnapshot: string[] | null = null;
+  let resolvedAccessGroupsSnapshot: string[] | null = null;
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     await assertThreadAccess(trx, c.var.user.id, body.thread_id);
 
@@ -251,6 +260,10 @@ notes.post("/sync/notes", async (c) => {
     const resolvedAccessGroups = resolveAccessGroupsForSend({
       bodyAccessGroups: body.access_groups ?? null,
     });
+
+    // Hoist the resolved values for the background scope branch below.
+    resolvedAccessContactsSnapshot = resolvedAccessContacts;
+    resolvedAccessGroupsSnapshot = resolvedAccessGroups;
 
     return rpcUser(trx, "upsert_note", {
       user_id: c.var.user.id,
@@ -392,9 +405,20 @@ notes.post("/sync/notes", async (c) => {
             }
           }
 
+          const scoped = isScopedNote(
+            resolvedAccessContactsSnapshot,
+            resolvedAccessGroupsSnapshot
+          );
+
           // 2. Try AI analysis first — creates targeted thread_state rows (skipped for AI=none output)
+          //
+          // Scoped notes skip AI unread analysis entirely: the DB trigger
+          // update_thread_on_note_change owns per-user unread for exactly the
+          // note-visible set, and AI targeting could mark unread for users
+          // OUTSIDE the note's access scope — leaking a private reply to the
+          // broadcast audience.
           let analysisHandledUnread = false;
-          if (aiAllowed) {
+          if (!scoped && aiAllowed) {
             const isRecent =
               !body.source_created_at ||
               Date.now() - new Date(body.source_created_at).getTime() <
@@ -423,9 +447,41 @@ notes.post("/sync/notes", async (c) => {
             }
           }
 
-          // 3. Fallback: write default thread_state if analysis didn't handle it
+          // 3. Resolve who to push to / mark unread.
+          //
+          // SCOPED notes (resolved access_contacts/groups non-null): the DB
+          // trigger update_thread_on_note_change already owns the per-user
+          // re-emit + unread for exactly the note-visible set. The API must
+          // therefore NOT mark unread itself (that would double-write and could
+          // unread users outside the scope) — it only PUSHES, and only to the
+          // users who can see the note. We derive scoped-ness from the RESOLVED
+          // access values passed to upsert_note (snapshotted above), not raw
+          // body.access_*, so the API and the trigger agree on the visible set.
+          //
+          // UNSCOPED notes: keep today's analyze / markThreadUnreadForOthers
+          // fan-out to the whole thread-visible audience unchanged.
           let affectedUserIds: string[] = [];
-          if (!analysisHandledUnread) {
+          if (scoped) {
+            try {
+              affectedUserIds = await noteVisibleUserIds(
+                db,
+                body.thread_id,
+                c.var.user.id,
+                resolvedAccessContactsSnapshot,
+                resolvedAccessGroupsSnapshot,
+                c.var.user.id
+              );
+            } catch (error) {
+              const logger = createLogger({
+                operation: "sync:notes:noteVisibleUserIds",
+              });
+              logger.error(
+                "Failed to resolve note-visible users for scoped note",
+                error as Error
+              );
+              c.var.tracker.captureException(error as Error);
+            }
+          } else if (!analysisHandledUnread) {
             try {
               affectedUserIds = await markThreadUnreadForOthers(
                 c.env,
@@ -506,6 +562,59 @@ notes.post("/sync/notes", async (c) => {
 
   return c.json(result as any);
 });
+
+/**
+ * A note is SCOPED when it carries a non-null access scope (contacts and/or
+ * groups). For scoped notes the DB trigger `update_thread_on_note_change`
+ * owns the per-user re-emit + unread, so the API must NOT mark unread itself
+ * (no double-write) and must only push to the note-visible set. An explicit
+ * empty array still counts as a scope (author-only), so test for non-null —
+ * never truthiness/length.
+ */
+export function isScopedNote(
+  resolvedAccessContacts: string[] | null,
+  resolvedAccessGroups: string[] | null,
+): boolean {
+  return resolvedAccessContacts != null || resolvedAccessGroups != null;
+}
+
+/**
+ * Users (other than `excludeUserId`) who can SEE a scoped note: filed on the
+ * thread (thread_priority, not revoked) AND matching the note's access scope
+ * (author, or access_contacts overlaps their contacts, or access_groups
+ * overlaps their groups). Mirrors the user.note view's visibility predicate
+ * and the SELECT inside update_thread_on_note_change's scoped branch, so the
+ * API push set matches exactly the set the DB trigger re-emits/unreads.
+ */
+export async function noteVisibleUserIds(
+  db: Kysely<DB>,
+  threadId: string,
+  createdBy: string,
+  accessContacts: string[] | null,
+  accessGroups: string[] | null,
+  excludeUserId: string,
+): Promise<string[]> {
+  const rows = await sql<{ user_id: string }>`
+    SELECT DISTINCT tp.user_id
+    FROM thread_priority tp
+    WHERE tp.thread_id = ${threadId}::uuid
+      AND tp.revoked_at IS NULL
+      AND (
+        tp.user_id = ${createdBy}::uuid
+        OR ${
+          accessContacts
+            ? sql`${accessContacts}::uuid[] && "user".user_contact_ids(tp.user_id)`
+            : sql`FALSE`
+        }
+        OR ${
+          accessGroups
+            ? sql`${accessGroups}::uuid[] && "user".user_group_ids(tp.user_id)`
+            : sql`FALSE`
+        }
+      )
+  `.execute(db);
+  return rows.rows.map((r) => r.user_id).filter((id) => id !== excludeUserId);
+}
 
 /**
  * Mark a thread as unread for all priority members except the excluded user.

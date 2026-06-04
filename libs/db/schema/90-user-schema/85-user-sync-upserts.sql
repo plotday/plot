@@ -259,16 +259,54 @@ BEGIN
         v_author_id := COALESCE(p_author_id, v_created_by);
     END IF;
 
-    -- Read-only viewer gate. When the writer is a user (not a twist) and
-    -- lacks write access to the thread (i.e. only sees it via an announce
-    -- group), they may only post private notes that they author and may not
-    -- edit other authors' notes.
+    -- Read-only viewer gate. A user who reaches the thread only via an
+    -- announce group (no write access) may post only scoped notes they
+    -- author, and the scope is bounded to the thread's contacts plus its
+    -- non-announce groups (announce groups where they are not an admin are
+    -- excluded). This is the server-side enforcement of the reply rule and
+    -- prevents a viewer from broadcasting back to the announce audience.
     IF v_created_by = upsert_note.user_id
        AND NOT "user".user_has_thread_write_access(upsert_note.user_id, p_thread_id)
     THEN
+        -- Must be scoped (no public notes).
         IF p_access_contacts IS NULL AND p_access_groups IS NULL THEN
             RAISE EXCEPTION 'Read-only viewers must scope notes via access_contacts or access_groups';
         END IF;
+
+        -- access_contacts ⊆ thread.contacts ∪ caller's own linked contacts.
+        IF p_access_contacts IS NOT NULL AND EXISTS (
+            SELECT 1
+            FROM unnest(p_access_contacts) AS c(id)
+            WHERE c.id <> ALL (
+                COALESCE((SELECT contacts FROM thread WHERE id = p_thread_id), ARRAY[]::uuid[])
+                || "user".user_contact_ids(upsert_note.user_id)
+            )
+        ) THEN
+            RAISE EXCEPTION 'Read-only viewers may only scope notes to thread contacts';
+        END IF;
+
+        -- access_groups ⊆ thread.groups, excluding announce groups where the
+        -- caller is not an admin; reject non-existent or archived groups.
+        IF p_access_groups IS NOT NULL AND EXISTS (
+            SELECT 1
+            FROM unnest(p_access_groups) AS g(id)
+            LEFT JOIN "group" gr ON gr.id = g.id
+            WHERE
+                gr.id IS NULL                       -- non-existent group
+                OR gr.archived_at IS NOT NULL       -- archived group
+                OR g.id <> ALL (COALESCE((SELECT groups FROM thread WHERE id = p_thread_id), ARRAY[]::uuid[]))
+                OR (
+                    gr.type = 'announce'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM group_admin ga
+                        WHERE ga.group_id = g.id AND ga.user_id = upsert_note.user_id
+                    )
+                )
+        ) THEN
+            RAISE EXCEPTION 'Read-only viewers may only scope notes to non-announce thread groups';
+        END IF;
+
+        -- May not edit another author's note.
         IF p_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM note
             WHERE id = p_id

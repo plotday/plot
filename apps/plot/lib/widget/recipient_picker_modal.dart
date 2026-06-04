@@ -130,6 +130,11 @@ class RecipientPickerModal {
   final String self;
   final String? originalAuthor;
 
+  /// Groups to force-offer in the picker even when the user isn't a member —
+  /// the thread's non-announce groups, so a read-only viewer can narrow their
+  /// reply within them. Announce groups are filtered out upstream.
+  final List<String> includeGroupIds;
+
   const RecipientPickerModal({
     required this.threadContacts,
     required this.threadGroups,
@@ -137,6 +142,7 @@ class RecipientPickerModal {
     required this.initialGroupSelection,
     required this.self,
     this.originalAuthor,
+    this.includeGroupIds = const [],
   });
 
   Future<RecipientPickerResult?> run(BuildContext context) async {
@@ -155,6 +161,7 @@ class RecipientPickerModal {
       // Keep the author pinned and visible; the result always includes self
       // regardless, but injecting it avoids a confusing "self missing" row.
       injectSelf: true,
+      includeGroupIds: includeGroupIds,
       onUpdate: (next) async {
         selection = next;
         changed = true;

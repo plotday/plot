@@ -468,6 +468,7 @@ class Actor extends ActorRow {
     int mruSize = 5,
     int threadWindow = 200,
     int searchLimit = 50,
+    List<String> includeGroupIds = const [],
   }) async {
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
 
@@ -509,7 +510,7 @@ class Actor extends ActorRow {
       actors = await _getInviteablePrimaryByIds(
         actorIds.map(ActorId.fromUuid),
       );
-      groups = await Group.getPostable();
+      groups = await Group.getPostable(includeIds: includeGroupIds);
     } else {
       actors = await get(
         types: [ActorType.user, ActorType.contact],
@@ -518,7 +519,10 @@ class Actor extends ActorRow {
         primary: true,
         limit: searchLimit,
       );
-      groups = await Group.getPostable(search: search);
+      groups = await Group.getPostable(
+        search: search,
+        includeIds: includeGroupIds,
+      );
     }
     actors.removeWhere(
       (a) => a.self || selfIds.contains(a.id.toUuid()),

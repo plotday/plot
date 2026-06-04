@@ -1075,6 +1075,21 @@ class NoteEditorState extends State<NoteEditor> {
     final self = Base.actorId;
     final orig = _originalAuthorIfDistinct(s);
 
+    // For a read-only viewer (reaches the thread only via an announce group),
+    // surface the thread's non-announce groups in the picker even though the
+    // viewer isn't a member, so they can narrow the reply within them.
+    final includeGroupIds = (widget.viewerMode && s.thread.isReadOnly)
+        ? [
+            for (final g in s.thread.groups)
+              // Mirror _readOnlyDefaultShareGroups: only surface a group when
+              // it's cached AND non-announce. An uncached group (null) must be
+              // excluded — a cold-cache announce group would otherwise leak in.
+              if (Group.fromCache(g) != null &&
+                  Group.fromCache(g)!.type != 'announce')
+                g.toString(),
+          ]
+        : const <String>[];
+
     final picker = RecipientPickerModal(
       threadContacts: s.thread.activeContacts.map((c) => c.toString()).toList(),
       threadGroups: s.thread.groups.map((g) => g.toString()).toList(),
@@ -1086,6 +1101,7 @@ class NoteEditorState extends State<NoteEditor> {
           s.thread.groups.map((g) => g.toString()).toList(),
       self: self.toString(),
       originalAuthor: orig?.toString(),
+      includeGroupIds: includeGroupIds,
     );
 
     final result = await picker.run(context);
@@ -1872,19 +1888,41 @@ class NoteEditorState extends State<NoteEditor> {
     final allAddMentions = [...activeTwistMentions, ...replyAccessContacts];
 
     // Default share targets for read-only-thread viewers: every contact on
-    // the thread plus members of non-announce groups. The viewer's own
-    // contacts are added implicitly server-side; announce-group members
-    // (other read-only viewers) are intentionally excluded so notes don't
-    // broadcast back through the announce channel.
-    final readOnlyThreadShare = widget.viewerMode && thread.isReadOnly
-        ? _readOnlyDefaultShareTargets(thread)
-        : <ActorId>[];
+    // the thread (access_contacts) plus every non-announce group on the
+    // thread (access_groups). The viewer's own contacts are added implicitly
+    // server-side; announce groups (the broadcast audience) are intentionally
+    // excluded so a reply never goes back to other read-only viewers.
+    // Referencing the groups (rather than a member snapshot) means members
+    // added to those groups later still see the reply.
+    final bool readOnlyViewer = widget.viewerMode && thread.isReadOnly;
+
+    final readOnlyShareContacts =
+        readOnlyViewer ? _readOnlyDefaultShareContacts(thread) : <ActorId>[];
+    final readOnlyShareGroups =
+        readOnlyViewer ? _readOnlyDefaultShareGroups(thread) : <ActorId>[];
+
+    // The recipient picker narrows the read-only default by writing its
+    // selection into the draft's access fields (see editNoteRecipients). When
+    // the user narrowed, honor that selection; otherwise fall back to the
+    // computed read-only defaults. A fresh reply draft starts with null access
+    // fields, so the fallback applies whenever the picker wasn't opened.
+    final draftContacts = widget.draft.accessContacts;
+    final draftGroups = widget.draft.accessGroups;
 
     final Value<List<ActorId>?> accessContactsValue =
         (widget.viewerMode || replyRestricted)
         ? Value(
-            <ActorId>{...replyAccessContacts, ...readOnlyThreadShare}.toList(),
+            draftContacts != null
+                ? <ActorId>{...replyAccessContacts, ...draftContacts}.toList()
+                : <ActorId>{
+                    ...replyAccessContacts,
+                    ...readOnlyShareContacts,
+                  }.toList(),
           )
+        : const Value.absent();
+
+    final Value<List<ActorId>?> accessGroupsValue = readOnlyViewer
+        ? Value(draftGroups ?? readOnlyShareGroups)
         : const Value.absent();
 
     Note note = widget.draft.copyWith(
@@ -1893,6 +1931,7 @@ class NoteEditorState extends State<NoteEditor> {
       reNoteId: replyTo?.id,
       addMentions: allAddMentions.isNotEmpty ? allAddMentions : null,
       accessContacts: accessContactsValue,
+      accessGroups: accessGroupsValue,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user
@@ -1903,26 +1942,31 @@ class NoteEditorState extends State<NoteEditor> {
     return note;
   }
 
-  /// Default share-target list for a read-only viewer's note: every contact
-  /// listed on the thread plus members of any non-announce group on the
-  /// thread. Announce-group members are excluded so a private note from a
-  /// read-only viewer is visible to the people who can write to the thread,
-  /// but not to other read-only viewers.
-  List<ActorId> _readOnlyDefaultShareTargets(Thread thread) {
+  /// Contacts a read-only viewer's note defaults to: every active contact on
+  /// the thread. (Group recipients are handled via access_groups, see
+  /// [_readOnlyDefaultShareGroups], so new group members see past replies.)
+  List<ActorId> _readOnlyDefaultShareContacts(Thread thread) {
     final result = <ActorId>{};
     // Exclude dropped contacts — they retain visibility into past notes but
     // shouldn't be added to the access_contacts of a new note.
     for (final contactId in thread.activeContacts) {
       result.add(ActorId.fromUuid(contactId));
     }
+    return result.toList();
+  }
+
+  /// Groups a read-only viewer's note defaults to: every non-announce group on
+  /// the thread. Announce groups (the broadcast audience) are excluded so a
+  /// reply never goes back to other read-only viewers. Referencing the group
+  /// (not a member snapshot) means members added later still see the reply.
+  List<ActorId> _readOnlyDefaultShareGroups(Thread thread) {
+    final result = <ActorId>[];
     for (final groupId in thread.groups) {
       final group = Group.fromCache(groupId);
       if (group == null || group.type == 'announce') continue;
-      for (final memberId in group.memberContactIds ?? const <Uuid>[]) {
-        result.add(ActorId.fromUuid(memberId));
-      }
+      result.add(ActorId.fromUuid(groupId));
     }
-    return result.toList();
+    return result;
   }
 
   /// Kept public for note mode compatibility (ThreadPage calls this).

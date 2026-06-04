@@ -142,6 +142,14 @@ class SharedSelection {
 /// avoid re-running the thread scan in [Actor.getSortedShareCandidates]
 /// on every toggle.
 class ShareCandidatesCache {
+  ShareCandidatesCache({this.includeGroupIds = const []});
+
+  /// Group ids to force-include in the candidate list even when the user isn't
+  /// a member (e.g. a read-only viewer replying to a thread addressed to a
+  /// group they don't belong to). Constant for the cache's lifetime, so it
+  /// doesn't participate in the per-search cache key.
+  final List<String> includeGroupIds;
+
   final Map<String, List<ShareCandidate>> _byQuery = {};
 
   Future<List<ShareCandidate>> get({
@@ -154,6 +162,7 @@ class ShareCandidatesCache {
     final fresh = await Actor.getSortedShareCandidates(
       search: search,
       priority: priority,
+      includeGroupIds: includeGroupIds,
     );
     _byQuery[key] = fresh;
     return fresh;
@@ -467,9 +476,10 @@ class PickShared extends ShowCommands {
     Priority? priority,
     bool injectSelf = false,
     String? title,
+    List<String> includeGroupIds = const [],
   }) {
     final ref = [selection];
-    final cache = ShareCandidatesCache();
+    final cache = ShareCandidatesCache(includeGroupIds: includeGroupIds);
 
     Future<void> onChange(SharedSelection next) async {
       ref[0] = next;
