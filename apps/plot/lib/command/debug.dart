@@ -26,7 +26,7 @@ import 'command.dart';
 /// TEMPORARY: when true, suppresses the Debug command group entirely so a
 /// local debug build behaves like an App Store release build for App Store
 /// review screenshots. Flip back to `false` before committing.
-const bool _hideForAppStoreReviewScreenshots = true;
+const bool _hideForAppStoreReviewScreenshots = false;
 
 /// Build the debug command group if available in the current mode.
 /// Returns null if neither kDebugMode nor DeveloperMode is enabled.
