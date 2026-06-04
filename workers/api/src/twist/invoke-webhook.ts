@@ -10,6 +10,14 @@ import { handleTwistOperation } from "./error-handling";
 import { twistFactory } from "./factory";
 
 /**
+ * An Error annotated with the owning user of the twist that raised it.
+ * `invokeWebhookCallback` tags errors from the callback execution with the
+ * twist_instance's `owner_id` so queue consumers can attribute the PostHog
+ * capture to a real user (distinctId) rather than a random per-event UUID.
+ */
+export type ErrorWithTwistOwner = Error & { twistOwnerId?: string };
+
+/**
  * Dispatch a webhook-style callback without holding the CallbacksState DO.
  *
  * The DO performs only a SQLite token lookup via
@@ -73,6 +81,7 @@ export async function invokeWebhookCallback(
         "twist_instance.archived_at",
         "twist_instance.suspended_at",
         "twist_instance.suspended_version",
+        "twist_instance.owner_id",
         "twist.execution_limit",
         "twist.environment",
         "twist.twist_package_id",
@@ -205,6 +214,14 @@ export async function invokeWebhookCallback(
       return callResult;
     } catch (error) {
       const durationMs = Date.now() - rpcStartedAt;
+
+      // Tag the error with the owning user so the queue consumer can
+      // attribute the PostHog capture to a real person instead of a random
+      // per-event distinct_id. owner_id is the user UUID — the distinctId
+      // convention used across the worker (see state/*.ts captureException).
+      if (error instanceof Error) {
+        (error as ErrorWithTwistOwner).twistOwnerId = twistInstance.owner_id;
+      }
 
       // If the tool path no longer exists, the callback is orphaned —
       // delete so it doesn't keep failing on retry.
