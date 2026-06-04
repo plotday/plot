@@ -17,6 +17,26 @@ export type Channel = {
   id: string;
   /** Display name shown in the UI */
   title: string;
+  /**
+   * Whether this channel should be selected by default when the user first
+   * adds the connection. Tri-state:
+   * - `true`  — pre-select it (e.g. the user's own/primary calendar).
+   * - `false` — exclude it from the default selection (low-value or
+   *   irrelevant resources that would crowd the user's view, or containers
+   *   whose contents are too broad to sync wholesale — e.g. a holiday or
+   *   someone-else's shared calendar, a GitHub org that cascades to every
+   *   repo, a Microsoft Teams team container). The user can still enable it
+   *   manually.
+   * - `undefined` — no opinion; the client decides. The client defaults to
+   *   enabling the channel unless its title looks low-value (holidays,
+   *   birthdays, spam/sent/draft, …).
+   *
+   * The guiding principle is "sync everything the user would reasonably want
+   * by default" — for most connectors that's all channels, so only set this
+   * where the connector can distinguish the user's own/relevant channels from
+   * low-value ones (e.g. Google Calendar via `accessRole === "owner"`).
+   */
+  enabledByDefault?: boolean;
   /** Optional nested channel resources (e.g., subfolders) */
   children?: Channel[];
   /** Per-channel link type configs. Overrides twist-level linkTypes when present. */
