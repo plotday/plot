@@ -693,7 +693,8 @@ class NoteEditorState extends State<NoteEditor> {
           prev.editingNote != curr.editingNote ||
           prev.draft != curr.draft ||
           prev.thread != curr.thread ||
-          prev.links != curr.links,
+          prev.links != curr.links ||
+          prev.linksLoaded != curr.linksLoaded,
       builder: (context, state) {
         final threadBloc = context.read<ThreadBloc>();
         return NoteEditorTopBar(
@@ -722,6 +723,22 @@ class NoteEditorState extends State<NoteEditor> {
     final editingNote = s.editingNote;
     if (editingNote != null) {
       return EditingState(quotePreview: _previewOf(editingNote.content));
+    }
+    // Render an empty (height-reserved) pill row until this thread's links
+    // load. The pill set derives from the primary link's type config; building
+    // it before links arrive would show the plain-Plot pills for a frame and
+    // then swap to the connector pills (e.g. on a Google Calendar thread) — a
+    // visible flash. _PillRow reserves its height even with no pills, so the
+    // placeholder doesn't shift layout. (Reply / editing takeover above is
+    // link-agnostic and still renders immediately.)
+    //
+    // Note: every thread open/switch mounts a fresh page (ThreadRoute uses
+    // usesPathAsKey), so there is no persisted previous-thread chrome to hold
+    // here — a thread whose links are still loading shows the empty row until
+    // they arrive. That blank is the data-loading floor: the only alternative
+    // is the provisional-then-corrected pills (the flash) this avoids.
+    if (!s.linksLoaded) {
+      return const PillRowState(pills: [], activeId: null);
     }
     return PillRowState(pills: _buildPills(s), activeId: _activePillId(s));
   }
@@ -1122,6 +1139,10 @@ class NoteEditorState extends State<NoteEditor> {
   /// path already uses [NoteEditor.sendLabel] in [_buildNewThreadBottomBar].
   String _sendLabelForState(ThreadState s) {
     if (widget.sendLabel != null) return widget.sendLabel!;
+    // Until links load the connector verb (e.g. "Comment") is unknown — show a
+    // neutral label rather than the plain-Plot default that would swap once the
+    // link config arrives. Matches the held-back pills and Link/Attach buttons.
+    if (!s.linksLoaded) return 'Save';
     final cfg = s.primaryLinkTypeConfig;
     final pillId = _activePillId(s);
     switch (pillId) {
@@ -1420,7 +1441,10 @@ class NoteEditorState extends State<NoteEditor> {
   Widget _buildNoteBottomBar(BuildContext context) {
     return BlocBuilder<ThreadBloc, ThreadState>(
       buildWhen: (prev, curr) =>
-          prev.editingNote != curr.editingNote || prev.draft != curr.draft,
+          prev.editingNote != curr.editingNote ||
+          prev.draft != curr.draft ||
+          prev.links != curr.links ||
+          prev.linksLoaded != curr.linksLoaded,
       builder: (context, activityState) {
         final isCurrentlyEditing = activityState.editingNote != null;
         final threadState = context.read<ThreadBloc>().state;
@@ -1437,8 +1461,14 @@ class NoteEditorState extends State<NoteEditor> {
                 opacity: _saving ? 0.6 : 1.0,
                 child: Row(
                   children: [
+                    // Link / Attach availability comes from the primary link's
+                    // type config. Withhold both until links load so they don't
+                    // render as plain-Plot affordances and then vanish on a
+                    // connector thread that doesn't support them (e.g. a Google
+                    // Calendar event) — the bottom-bar half of the flash.
                     // Link button — only when the source can carry a link.
-                    if (_canAddLink(threadState.primaryLinkTypeConfig))
+                    if (threadState.linksLoaded &&
+                        _canAddLink(threadState.primaryLinkTypeConfig))
                       Button.icon(
                         AddLink(
                           currentActions: _currentActions,
@@ -1446,7 +1476,8 @@ class NoteEditorState extends State<NoteEditor> {
                           onNavigateToThread: widget.onNavigateToThread,
                         ),
                       ),
-                    if (_canAttachFile(threadState.primaryLinkTypeConfig))
+                    if (threadState.linksLoaded &&
+                        _canAttachFile(threadState.primaryLinkTypeConfig))
                       Button.icon(
                         AttachFile(
                           priorityId: priorityId,

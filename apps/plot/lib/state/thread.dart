@@ -350,10 +350,13 @@ class ThreadBloc extends Cubit<ThreadState> {
       }),
     );
 
-    // Watch links for the thread
+    // Watch links for the thread. The first emission flips [linksLoaded] so
+    // link-config-dependent composer chrome can stop holding its neutral
+    // state. Drift's `.watch()` always emits at least once (an empty list for
+    // link-less threads), so this reliably lands a frame after construction.
     _subscriptions.add(
       Link.watchForThread(state.thread.id).listen((links) {
-        emit(state.copyWith(links: links));
+        emit(state.copyWith(links: links, linksLoaded: true));
       }),
     );
 

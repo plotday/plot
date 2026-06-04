@@ -7,6 +7,7 @@ class ThreadState extends Equatable {
     Note? draft,
     List<Note> notes = const [],
     List<Link> links = const [],
+    this.linksLoaded = false,
     this.showArchived = false,
     List<Tag> filter = const [],
     List<Reaction> reactionFilter = const [],
@@ -39,6 +40,17 @@ class ThreadState extends Equatable {
   final Note draft;
   final List<Note> notes;
   final List<Link> links;
+
+  /// Whether the thread's links have completed their first load from the
+  /// store (the initial [Link.watchForThread] emission has landed). False
+  /// for the synchronously-built initial state, before links arrive a frame
+  /// later. Link-config-dependent composer chrome — the pill row, the
+  /// bottom-bar Link/Attach buttons, and the send label — holds a neutral
+  /// state until this is true so connector threads (e.g. Google Calendar
+  /// events) don't briefly render as a plain Plot thread and then swap,
+  /// which read as a visible flash.
+  final bool linksLoaded;
+
   final bool showArchived;
   final List<Tag> filter;
   final List<Reaction> reactionFilter;
@@ -93,6 +105,7 @@ class ThreadState extends Equatable {
     Note? draft,
     List<Note>? notes,
     List<Link>? links,
+    bool? linksLoaded,
     bool? showArchived,
     List<Tag>? filter,
     List<Reaction>? reactionFilter,
@@ -116,6 +129,7 @@ class ThreadState extends Equatable {
       links: links != null
           ? (links.isNotEmpty ? List.unmodifiable(links) : links)
           : this.links,
+      linksLoaded: linksLoaded ?? this.linksLoaded,
       showArchived: showArchived ?? this.showArchived,
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
@@ -153,6 +167,7 @@ class ThreadState extends Equatable {
     draft,
     notes,
     links,
+    linksLoaded,
     showArchived,
     filter,
     reactionFilter,
