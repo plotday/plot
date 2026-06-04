@@ -423,15 +423,17 @@ void main() {
       expect(labels, isNot(contains('Note (Acme)')));
       expect(labels, isNot(contains('Chat (Acme)')));
 
-      // The Gmail connector template is present.
-      expect(sigs, contains(
+      // Bare DM-type connector templates (a contactless "Gmail") are no longer
+      // offered — a Gmail row only appears carrying a contact, so the bare
+      // Gmail signature is absent; only the Gmail-with-Greg combo (below) shows.
+      expect(sigs, isNot(contains(
         composeConnectorSignature(
           twistInstanceId: gmail.toString(),
           channelId: null,
           linkType: 'email',
           dmTargets: 'addresses',
         ),
-      ));
+      )));
 
       // The used combos (Gmail-with-Greg DM, then native chat-with-Greg) rank
       // ahead of the templates, most-recent first.
@@ -461,23 +463,36 @@ void main() {
 
     test('search("") and search("   ") return the cached base list', () async {
       final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final priorityId = Uuid.generate();
       await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
       await Actor.get(self: true);
+      await Actor.get();
 
-      // A connector so the base list is non-empty (the generic Note/Chat
-      // fallback is gone — the base list is now focus-notes + twists +
-      // connector templates).
+      // A used Gmail+Greg combo makes the base list non-empty. (Bare DM-type
+      // connector templates are no longer offered, so a connection only shows
+      // once it carries a contact.)
       final gmail = await _insertConnector(
         store,
         name: 'Gmail (kris@plot.day)',
         linkType: 'email',
         targets: 'addresses',
       );
-      final gmailSig = composeConnectorSignature(
+      final dmThread = Uuid.generate();
+      await _insertThread(store, dmThread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, dmThread, author: self);
+      await _insertLink(store, dmThread,
+          createdBy: gmail, type: 'email', channelId: null);
+      final comboSig = composeConnectorSignature(
         twistInstanceId: gmail.toString(),
         channelId: null,
         linkType: 'email',
         dmTargets: 'addresses',
+        contacts: [greg],
       );
 
       final prefs = LocalPreferencesBloc();
@@ -489,7 +504,7 @@ void main() {
       // emits with an empty query.
       final baseSigs =
           bloc.state.targets.map((v) => v.target.signature).toList();
-      expect(baseSigs, contains(gmailSig));
+      expect(baseSigs, contains(comboSig));
 
       // An empty (and a blank/whitespace-only) query falls back to that cached
       // base list rather than returning [].
@@ -499,19 +514,20 @@ void main() {
           (await bloc.search('   ')).map((v) => v.target.signature).toList();
       expect(emptySigs, baseSigs);
       expect(blankSigs, baseSigs);
-      expect(emptySigs, contains(gmailSig));
+      expect(emptySigs, contains(comboSig));
     });
 
-    test('search("greg") returns combos for an authored correspondent and '
-        'excludes a send-only contact', () async {
+    test('search("greg") ranks the used connection first, then offers every '
+        'other way to reach the contact; excludes non-inviteable addresses',
+        () async {
       final self = Uuid.generate();
-      final greg = Uuid.generate(); // authored correspondent
-      final noreply = Uuid.generate(); // send-only (received, never authored)
+      final greg = Uuid.generate(); // a normal, inviteable contact
+      final noreply = Uuid.generate(); // a non-inviteable no-reply address
       final priorityId = Uuid.generate();
 
       await _insertActor(store, self, name: 'Me', self: true);
       await _insertActor(store, greg, name: 'Greg Smith');
-      await _insertActor(store, noreply, name: 'Greg Noreply');
+      await _insertActor(store, noreply, name: 'Greg Noreply', inviteable: false);
       await Actor.get(self: true);
 
       final gmail = await _insertConnector(
@@ -531,14 +547,12 @@ void main() {
       await _insertLink(store, gregThread,
           createdBy: gmail, type: 'email', channelId: null);
 
-      // Inbound-only thread from "Greg Noreply" — the user never authored a
-      // note here, so the authored/replied banding must exclude it.
+      // An inbound thread from the non-inviteable "Greg Noreply" address.
       final noreplyThread = Uuid.generate();
       await _insertThread(store, noreplyThread,
           priorityId: priorityId,
           contacts: [self, noreply],
           createdAt: DateTime(2026, 5, 2));
-      // No self-authored note on this thread.
 
       final prefs = LocalPreferencesBloc();
       await Future<void>.delayed(Duration.zero);
@@ -548,6 +562,8 @@ void main() {
       final results = await bloc.search('greg');
       final sigs = results.map((v) => v.target.signature).toList();
 
+      // The connection actually used with Greg (Gmail) is offered and ranks
+      // first (used connections win over freshly-synthesized ones).
       final gregCombo = composeConnectorSignature(
         twistInstanceId: gmail.toString(),
         channelId: null,
@@ -556,8 +572,14 @@ void main() {
         contacts: [greg],
       );
       expect(sigs, contains(gregCombo));
+      expect(sigs.first, gregCombo);
 
-      // No combo references the send-only "Greg Noreply" contact.
+      // Plus every OTHER way to reach Greg — e.g. a Plot chat — even though it
+      // was never used with them, so you can message them via a new connection.
+      expect(sigs, contains(composeChatSignature(null, contacts: [greg])));
+
+      // The non-inviteable "Greg Noreply" address is filtered out — no combo
+      // (used or synthesized) references it.
       final noreplyCombo = composeConnectorSignature(
         twistInstanceId: gmail.toString(),
         channelId: null,
@@ -910,6 +932,7 @@ Future<void> _insertActor(
   Uuid id, {
   required String name,
   bool self = false,
+  bool inviteable = true,
 }) async {
   await store.into(store.actors).insert(
         ActorsCompanion(
@@ -918,7 +941,7 @@ Future<void> _insertActor(
           name: Value(name),
           email: Value('${name.replaceAll(' ', '.').toLowerCase()}@x.test'),
           self: Value(self),
-          inviteable: const Value(true),
+          inviteable: Value(inviteable),
           primary: const Value(true),
         ),
       );

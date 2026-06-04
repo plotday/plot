@@ -42,6 +42,7 @@ class ComposeTarget extends Equatable {
     this.groups = const [],
     this.inviteEmails = const [],
     this.priorityId,
+    this.twistHeader,
   });
 
   /// A Plot **Note** target (no roster). [teamId] null = Personal.
@@ -139,7 +140,13 @@ class ComposeTarget extends Equatable {
     return ComposeTarget._(
       kind: ComposeTargetKind.twist,
       signature: composeTwistSignature(twist.id),
-      label: choice.label,
+      // The row splits the twist's identity across two lines: the name (+ a
+      // disambiguating scope suffix when there are sibling instances) is the
+      // header, and the thread-type label is the content. [label] holds the
+      // thread type so the content line + search use it; [twistHeader] holds
+      // the header.
+      label: choice.threadTypeLabel,
+      twistHeader: '${twist.name}${choice.scopeSuffix}',
       connection: twist,
       teamId: twist.teamId,
     );
@@ -227,6 +234,11 @@ class ComposeTarget extends Equatable {
   /// For a focus-note target, the focus this note is filed into; null for all
   /// other kinds. Carried into step-2 compose so the focus is pre-selected.
   final Uuid? priorityId;
+
+  /// For a twist target, the header line (twist name + disambiguating scope
+  /// suffix, e.g. "Plot AI (Personal)"); null for every other kind. Pure
+  /// presentation, so it's excluded from [props].
+  final String? twistHeader;
 
   /// Bridge to the existing compose-surface selection model. Returns a
   /// [ConnectionChoice] that step-2 applies via its established apply path.

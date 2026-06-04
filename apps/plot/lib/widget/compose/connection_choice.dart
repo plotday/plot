@@ -147,6 +147,15 @@ class TwistConnectionChoice implements ConnectionChoice {
     return ' ($scopeLabel)';
   }
 
+  /// The thread-type label without the scope suffix (e.g. "Plot AI chat").
+  /// Used as the second-line content of a step-1 twist row.
+  String get threadTypeLabel => _displayThreadType;
+
+  /// The disambiguating scope suffix (e.g. " (Personal)") shown only when the
+  /// twist has sibling instances across scopes. Appended to the twist name in
+  /// the step-1 twist row header.
+  String get scopeSuffix => _scopeSuffix;
+
   @override
   String get key => 'twist:${twist.id}';
 

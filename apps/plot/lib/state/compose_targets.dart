@@ -222,7 +222,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
             ? '${target.connectorName} · $account'
             : target.connectorName;
       case ComposeTargetKind.twist:
-        return t.label;
+        // Header = twist name (+ scope suffix); the content line shows the
+        // thread type (t.label).
+        return t.twistHeader ?? t.label;
       case ComposeTargetKind.chat:
       case ComposeTargetKind.note:
         final hasTeams = ctx?.hasTeams ?? false;
@@ -315,6 +317,16 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final teams = await TeamUser.getActive();
     final createTargets = await loadCreateTargets();
     final scan = await _scanAuthoredThreads();
+
+    // Warm the Actor cache so the synchronous Actor.fromCache lookups below
+    // (the disambiguation tally) and in the used-combo rendering resolve on a
+    // cold open. Without this, a fresh/just-synced account leaves roster
+    // contacts uncached, so the used Gmail/Chat combos collapsed to bare
+    // connector/chat labels instead of showing the people. One query on the
+    // refresh path (not per-keystroke) — the same fetch the share picker uses.
+    if (scan.threads.any((st) => st.contacts.isNotEmpty)) {
+      await Actor.get(types: [ActorType.user, ActorType.contact]);
+    }
 
     final teamNames = {for (final t in teams) t.teamId: t.teamName};
     // Connection count per connector package (same twistId = same connector),
@@ -468,10 +480,13 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         teamName: twist.teamId == null ? null : ctx.teamNames[twist.teamId],
       ));
     }
-    // One fresh template per connection link type. For channel connectors
-    // loadCreateTargets already enumerates per enabled channel; recently-used
-    // channels float up via the used-combos pass above.
+    // One fresh template per CHANNEL connection link type. DM/address
+    // connectors (Gmail, Slack DMs, …) only make sense with a recipient, so a
+    // bare "Gmail" template is noise — those connectors surface via used-combos
+    // (carrying contacts) or by typing a name/email in search. Channel
+    // connectors keep their per-channel template (the channel is the content).
     for (final t in ctx.createTargets) {
+      if (t.isDmType) continue;
       templates.add(ComposeTarget.connector(
         t,
         connectionCount: ctx.connectionCount(t),
@@ -502,19 +517,19 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         // focusNoteOrder (templates section), not here.
         return null;
       }
-      // A rostered chat only earns its own base-list row when it renders
-      // distinctly — i.e. its roster resolves to a visible detail (" · Greg
-      // Smith"). Without one, it's indistinguishable from the bare "Chat"
-      // template, so drop the roster and let it collapse onto that template
-      // (same signature) instead of stacking identical "Chat" rows.
+      // Keep the roster: a rostered chat is a "message these people" row and
+      // must show its contacts (the row's whole point). The roster is folded
+      // into the signature, so distinct rosters rank as distinct rows and
+      // repeat rosters dedupe — there's no bare "Chat" template to collapse
+      // onto anymore. Names resolve from the warmed Actor cache.
       final chatDetail = _contactDetailFor(st.contacts);
       return ComposeTarget.chat(
         teamId: st.teamId,
         hasTeams: hasTeams,
         teamName: teamName,
         contactDetail: chatDetail,
-        contacts: chatDetail == null ? const [] : st.contacts,
-        groups: chatDetail == null ? const [] : st.groups,
+        contacts: st.contacts,
+        groups: st.groups,
       );
     }
 
@@ -528,24 +543,20 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final template = templateBySignature[baseKey];
     if (template == null) return null;
     // DM/address combos carry the roster; channel combos do not (per the
-    // signature scheme), so only forward contacts for DM-type targets.
+    // signature scheme), so only forward contacts for DM-type targets. Keep
+    // the roster for every DM combo: a Gmail/Slack-DM row is a "message this
+    // person" row and must show its contact(s). The roster is in the signature
+    // (distinct people → distinct rows, repeats dedupe), and bare DM-type
+    // templates no longer exist to collapse onto, so there's nothing to gain
+    // from dropping it. Names resolve from the warmed Actor cache.
     final isDm = template.isDmType;
     final contactDetail = _contactDetailFor(isDm ? st.contacts : const []);
-    // A DM/address combo only earns its own base-list row when it renders
-    // *distinctly* from the bare connector template — i.e. it resolves to a
-    // visible contact detail (" · Greg Smith"). Without one (the correspondent
-    // isn't in the synchronous Actor cache yet, common mid-sync), every recent
-    // DM thread would otherwise yield a separate ComposeTarget with a distinct
-    // roster signature but an identical bare "Gmail (account)" label — N visual
-    // duplicates. Drop the roster in that case so the combo collapses onto the
-    // single always-present template (same signature) via [_dedupeBySignature].
-    final keepRoster = isDm && contactDetail != null;
     return ComposeTarget.connector(
       template,
       connectionCount: connectionCount(template),
       channelDetail: template.channel?.title,
       contactDetail: contactDetail,
-      contacts: keepRoster ? st.contacts : const [],
+      contacts: isDm ? st.contacts : const [],
     );
   }
 
@@ -561,14 +572,13 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
   // --- Search synthesis ----------------------------------------------------
 
-  /// Name-match synthesis: for correspondents the user has authored/replied
-  /// with whose name matches [query], the most-recent contact/DM/address
-  /// combinations used with them.
-  ///
-  /// Send-only addresses are excluded structurally: the authored-thread scan
-  /// only surfaces correspondents on threads the user wrote a note in, so an
-  /// inbound-only contact never produces a combo here regardless of whether it
-  /// matched the name query.
+  /// Name-match synthesis for [query]. For every matching contact, returns the
+  /// connections previously **used** to reach them first (from the authored-
+  /// thread scan), then **every** other way to reach them — a Plot chat per
+  /// scope plus each address/contacts-capable connection — so the user can
+  /// message someone for the first time via a connection they haven't used with
+  /// that person yet. Deduped by signature, so a used connection appears once
+  /// (in its higher-ranked position).
   Future<List<ComposeTarget>> _searchByName(String query) async {
     // Only the *set* of name-matching correspondent ids is needed — the
     // authored-thread scan below supplies recency and roster. A lean [Actor.get]
@@ -621,6 +631,35 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         contactDetail: _contactDetailFor(st.contacts),
         contacts: st.contacts,
       ));
+    }
+
+    // Beyond the connections already used with the matched contacts (added
+    // above, so they rank first and win the dedup), offer EVERY other way to
+    // reach them — a Plot chat per scope and every address/contacts-capable
+    // connection — so you can message someone for the first time via a new
+    // connection. Cap the matched contacts so a common name doesn't explode the
+    // list; the address-capable connection set is already small.
+    final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
+    for (final actor in matches.take(8)) {
+      final cid = actor.id.toUuid();
+      final detail = actor.nameOrEmail;
+      for (final teamId in teamScopes) {
+        out.add(ComposeTarget.chat(
+          teamId: teamId,
+          hasTeams: ctx.hasTeams,
+          teamName: teamId == null ? null : ctx.teamNames[teamId],
+          contactDetail: detail,
+          contacts: [cid],
+        ));
+      }
+      for (final template in ctx.createTargets.where((t) => t.isDmType)) {
+        out.add(ComposeTarget.connector(
+          template,
+          connectionCount: ctx.connectionCount(template),
+          contactDetail: detail,
+          contacts: [cid],
+        ));
+      }
     }
     return _dedupeBySignature(out);
   }
