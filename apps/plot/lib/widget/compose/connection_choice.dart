@@ -2,9 +2,8 @@ import 'package:plot/store/store.dart' show CreateLinkUserAction, TwistInstance;
 import 'package:plot/widget/connection_targets.dart' show CreateTarget;
 
 /// A selectable connection on the compose surface. Either a real
-/// [CreateTarget] (Slack channel, Linear team, …), one of the two Plot
-/// thread variants (note / chat), or a [TwistInstance] (chat with a
-/// twist — Plot AI, etc.).
+/// [CreateTarget] (Slack channel, Linear team, …), the single Plot thread
+/// choice, or a [TwistInstance] (chat with a twist — Plot AI, etc.).
 sealed class ConnectionChoice {
   String get key;
   String get label;
@@ -18,27 +17,14 @@ sealed class ConnectionChoice {
   /// `_selectTwist`).
   CreateLinkUserAction? toUserAction();
 
-  /// Plot thread variants. The underlying data model is the same — a
-  /// regular Plot thread — but each variant signals a different default
-  /// state to the compose page:
-  ///
-  /// - [plotNote]: private note, no contacts. Placeholder "Add a note".
-  /// - [plotChat]: signals shared intent — placeholder "Start a chat" even
-  ///   before the user has added a contact. Sticky once a contact has been
-  ///   added (the chat label survives temporary contact removal mid-compose).
-  static const PlotThreadChoice plotNote =
-      PlotThreadChoice._(PlotThreadKind.note);
-  static const PlotThreadChoice plotChat =
-      PlotThreadChoice._(PlotThreadKind.chat);
-
-  /// Default Plot variant when nothing else is known. Maps to [plotNote].
-  static const PlotThreadChoice plotDefault = plotNote;
-
-  /// Returns the Plot variant for the given [kind].
-  static PlotThreadChoice plotForKind(PlotThreadKind kind) => switch (kind) {
-        PlotThreadKind.note => plotNote,
-        PlotThreadKind.chat => plotChat,
-      };
+  /// The single Plot thread choice (no note/chat distinction). The underlying
+  /// data model is a regular Plot thread; the compose page derives
+  /// shared-vs-private behaviour (placeholder, send/save) from whether
+  /// recipients are present, not from a stored mode. This scope-less default
+  /// is for callers that only need "a Plot thread"; the compose page builds a
+  /// scoped [PlotThreadChoice] (carrying the team) so the connection field can
+  /// show "Plot" with the team — see `_plotChoiceForDraft`.
+  static const PlotThreadChoice plotDefault = PlotThreadChoice();
 
   /// Wrap a real [CreateTarget] as a choice.
   factory ConnectionChoice.target(CreateTarget target) =
@@ -54,29 +40,35 @@ sealed class ConnectionChoice {
   }) = TwistConnectionChoice;
 }
 
-/// Which Plot thread variant the user picked from the connection list.
-enum PlotThreadKind { note, chat }
-
-/// One of the two Plot thread variants. Selecting it clears any
-/// [CreateLinkUserAction] on the draft and clears any selected twist;
-/// the compose page applies the variant-specific defaults
-/// (sticky-chat flag) after the choice is set.
+/// The single Plot thread choice. Selecting it clears any
+/// [CreateLinkUserAction] on the draft and any selected twist. Carries the
+/// optional team scope ([teamId]/[teamName]) so the connection field can show
+/// "Plot" with the team when the user belongs to ≥1 team ([hasTeams]).
 class PlotThreadChoice implements ConnectionChoice {
-  const PlotThreadChoice._(this.kind);
+  const PlotThreadChoice({this.teamId, this.teamName, this.hasTeams = false});
 
-  final PlotThreadKind kind;
+  /// Team scope: null = Personal.
+  final BigInt? teamId;
+
+  /// Display name for [teamId]; ignored when [teamId] is null.
+  final String? teamName;
+
+  /// Whether the user belongs to ≥1 team. The scope ([scopeLabel]) is surfaced
+  /// only when true — a user with no teams just sees "Plot".
+  final bool hasTeams;
+
+  /// Scope shown beside "Plot" on the connection field: "Personal" or the team
+  /// name when the user has teams; empty otherwise.
+  String get scopeLabel {
+    if (!hasTeams) return '';
+    return teamId == null ? 'Personal' : (teamName ?? 'Team');
+  }
 
   @override
-  String get key => switch (kind) {
-        PlotThreadKind.note => 'plot:note',
-        PlotThreadKind.chat => 'plot:chat',
-      };
+  String get key => 'plot';
 
   @override
-  String get label => switch (kind) {
-        PlotThreadKind.note => 'Note',
-        PlotThreadKind.chat => 'Chat',
-      };
+  String get label => 'Plot';
 
   @override
   String? get logo => null;
@@ -85,7 +77,7 @@ class PlotThreadChoice implements ConnectionChoice {
   String? get logoDark => null;
 
   @override
-  String get searchText => label.toLowerCase();
+  String get searchText => 'plot note chat';
 
   @override
   CreateLinkUserAction? toUserAction() => null;

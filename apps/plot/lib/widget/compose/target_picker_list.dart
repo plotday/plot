@@ -1,8 +1,9 @@
 import 'dart:async';
 
-// OutlineInputBorder is needed to override the inline filter's focused-state
-// border colour (tweak 3). Imported with `show` per the established pattern in
-// widget/text_field.dart and widget/date_input.dart.
+// OutlineInputBorder is used to make the filter field borderless in every
+// state (BorderSide.none), letting the fading underline be the only chrome.
+// Imported with `show` per the established pattern in widget/text_field.dart
+// and widget/date_input.dart.
 import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -25,18 +26,22 @@ import 'package:plot/widget/list_view_selector.dart'
 import 'package:plot/widget/widget.dart';
 
 /// The step-1 **target picker** body: a search box over the
-/// [ComposeTargetsBloc] ranked list with keyboard navigation identical to the
-/// connection [SelectModal] (↑/↓ highlight, Enter select, type-to-filter).
+/// [ComposeTargetsBloc] ranked list with keyboard navigation (↑/↓ highlight,
+/// Enter select, type-to-filter).
 ///
-/// Built on the same low-level primitives the modal uses ([ListViewSelector] +
-/// [Shortcuts]/[Actions]) rather than the [Modal]-coupled `_SelectModal`, so it
-/// can be mounted **both** inline on the compose page (step 1) and inside a
-/// [Modal] (step-2 re-open) without depending on `Modal.pop`/`ModalProvider`.
+/// Built on low-level primitives ([ListViewSelector] + [Shortcuts]/[Actions])
+/// rather than the [Modal]-coupled `_SelectModal`, so it mounts inline on the
+/// compose page (step 1) without depending on `Modal.pop`/`ModalProvider`.
+/// Tapping the step-2 Connection field navigates back to this same surface (a
+/// plain "go back"), so there is a single styled picker rather than a separate
+/// modal variant.
 ///
-/// Selection is reported via [onSelect]; the host decides what to do (apply the
-/// target and advance to step 2, or re-apply and pop the modal). Search routes
-/// through [ComposeTargetsBloc.search]; the base list comes from the bloc's
-/// state (populate it via [ComposeTargetsBloc.refresh] before opening).
+/// Selection is reported via [onSelect]; the host applies the target and
+/// advances to step 2. Search routes through [ComposeTargetsBloc.search]; the
+/// base list comes from the bloc's state (populate it via
+/// [ComposeTargetsBloc.refresh] before opening). When [searchController] is
+/// supplied with pre-filled text, the picker filters on mount so a restored
+/// filter shows its filtered results immediately.
 class TargetPickerList extends StatefulWidget {
   const TargetPickerList({
     super.key,
@@ -45,7 +50,6 @@ class TargetPickerList extends StatefulWidget {
     this.listFocusNode,
     this.searchController,
     this.searchFocusNode,
-    this.inline = false,
     this.autofocusSearch = true,
   });
 
@@ -63,17 +67,11 @@ class TargetPickerList extends StatefulWidget {
   /// Search text controller. Optional — a local one is created when null.
   final TextEditingController? searchController;
 
-  /// Focus node for the inline search field. Optional — a local one is created
-  /// when null. The host can supply (and retain) one so it can re-focus the
-  /// field when it resets an already-open page back to step 1 (see
-  /// [NewThreadPageState._resetToFreshStart]). Only used on the inline path;
-  /// the modal's ghost field manages its own focus.
+  /// Focus node for the search field. Optional — a local one is created when
+  /// null. The host can supply (and retain) one so it can re-focus the field
+  /// when it resets an already-open page back to step 1 (see
+  /// [NewThreadPageState._resetToFreshStart]).
   final FocusNode? searchFocusNode;
-
-  /// When true the search field is styled to sit on the compose page (no
-  /// modal back-button row / close-button reservation). When false the field
-  /// renders as a modal header.
-  final bool inline;
 
   /// Whether to autofocus the search field on mount (so type-to-filter works
   /// immediately). Only honored on physical-keyboard platforms.
@@ -96,9 +94,10 @@ class _TargetPickerListState extends State<TargetPickerList> {
   late final bool _ownsSearchFocusNode = widget.searchFocusNode == null;
 
   /// Estimated height of a two-line row (focus-tinted header + content line +
-  /// padding), used only by the keyboard-nav scroll-into-view math; a slight
-  /// over-estimate is safe (it scrolls a touch more than needed, never less).
-  static const double _estimatedItemHeight = 62.0;
+  /// the comfortable vertical padding + inter-row gap), used only by the
+  /// keyboard-nav scroll-into-view math; a slight over-estimate is safe (it
+  /// scrolls a touch more than needed, never less).
+  static const double _estimatedItemHeight = 68.0;
 
   /// Results currently displayed. Seeded from the bloc's base list and
   /// replaced by [ComposeTargetsBloc.search] as the user types.
@@ -128,6 +127,17 @@ class _TargetPickerListState extends State<TargetPickerList> {
   void initState() {
     super.initState();
     _results = context.read<ComposeTargetsBloc>().state.targets;
+    // When mounted with a pre-filled (restored) filter — e.g. the user tapped
+    // the step-2 Connection field to come back and change the connection — run
+    // the search once so the restored text shows its filtered results
+    // immediately instead of the unfiltered base list. Deferred a frame so the
+    // setState inside [_runSearch] lands after mount.
+    if (_controller.text.trim().isNotEmpty) {
+      _appliedSearch = _controller.text.trim();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) _runSearch();
+      });
+    }
   }
 
   /// Re-seed the displayed results from the bloc's freshly-emitted base list.
@@ -307,14 +317,14 @@ class _TargetPickerListState extends State<TargetPickerList> {
     }());
   }
 
-  /// Clears the inline filter (tweak 2): empties the controller and re-runs
-  /// the search so the full base list returns, keeping focus on the field so
-  /// the user can keep typing.
+  /// Clears the filter (the trailing ✕): empties the controller and re-runs the
+  /// search so the full base list returns, keeping focus on the field so the
+  /// user can keep typing.
   void _clearSearch() {
     _debounce?.cancel();
     _controller.clear();
     _runSearch();
-    if (widget.inline) _searchFocusNode.requestFocus();
+    _searchFocusNode.requestFocus();
   }
 
   /// Escape clears the filter (keeping focus on the bar) when it has text.
@@ -386,29 +396,36 @@ class _TargetPickerListState extends State<TargetPickerList> {
                   onKeyEvent: _onSearchFieldKey,
                   child: _buildSearchField(),
                 ),
-                // Inline only: breathing room between the header-style search
-                // field and the first row. The modal reproduces the old
-                // connection picker exactly, which had no gap here.
-                if (widget.inline) SizedBox(height: context.theme.spacing.lg),
+                // Breathing room between the fading-underline filter and the
+                // first row.
+                SizedBox(height: context.theme.spacing.lg),
                 Flexible(
                   // Always render the list — even with no matching targets the
                   // synthetic "+ Add a connection…" row (the final item) is
-                  // present, so there is no separate empty state.
-                  child: ListView.builder(
-                    controller: widget.scrollController,
-                    shrinkWrap: true,
-                    itemCount: _rowCount,
-                    itemBuilder: (context, index) {
-                      if (index == _addConnectionIndex) {
-                        return _buildAddConnectionRow(context, index);
-                      }
-                      return _buildRow(
-                        context,
-                        _results[index],
-                        index,
-                        listController,
-                      );
-                    },
+                  // present, so there is no separate empty state. The list runs
+                  // to the bottom edge of the page; [ScrollEdgeFade] fades the
+                  // top once scrolled and the bottom while rows remain below.
+                  // Transparent (alpha-mask) mode because the page sits on the
+                  // translucent/tinted scaffold frame — a solid-background fade
+                  // would read as a card.
+                  child: ScrollEdgeFade(
+                    transparent: true,
+                    child: ListView.builder(
+                      controller: widget.scrollController,
+                      shrinkWrap: true,
+                      itemCount: _rowCount,
+                      itemBuilder: (context, index) {
+                        if (index == _addConnectionIndex) {
+                          return _buildAddConnectionRow(context, index);
+                        }
+                        return _buildRow(
+                          context,
+                          _results[index],
+                          index,
+                          listController,
+                        );
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -420,148 +437,137 @@ class _TargetPickerListState extends State<TargetPickerList> {
     );
   }
 
+  /// The step-1 filter input: a borderless field with a fading underline that
+  /// glows in the centre and dissolves into the page background at both ends.
+  /// It is sized a calm step above the rows ([Typography.lg]) so it reads as
+  /// the entry point rather than a constrained form field. The host supplies
+  /// the horizontal page padding.
   Widget _buildSearchField() {
     final autofocus = widget.autofocusSearch && hasPhysicalKeyboard();
     const hint = 'Start with a person, group, or connection...';
+    final typography = context.theme.typography;
+    final colors = context.theme.colors;
 
-    // Inline (step 1 on the compose page): match the app header's search field
-    // (see [unified_header.dart] `_buildSearchField`) exactly — same compact
-    // contentPadding (h8/v2) and the same theme-driven text style (the global
-    // text-field delta in style/text_field.dart sizes content/hint at
-    // typography.md), so the two fields render identically in size. The host
-    // supplies the horizontal page padding, so this field needs none of its
-    // own. Differences from the header: a focused border that stays neutral
-    // (tweak 3) and a trailing clear button (tweak 2).
-    if (widget.inline) {
-      final typography = context.theme.typography;
-      final colors = context.theme.colors;
-      return FTextField(
-        // `_runSearch` reads `_controller.text` itself, so the control's
-        // onChange (which delivers a TextEditingValue) just needs to fire it.
-        control: .managed(
-          controller: _controller,
-          onChange: (_) => _onSearchChanged(),
-        ),
-        focusNode: _searchFocusNode,
-        autofocus: autofocus,
-        // Keep focus on the filter when the user clicks empty space on the
-        // compose page. Flutter's text field unfocuses itself on any tap
-        // outside its tap-region by default; overriding onTapOutside with a
-        // no-op suppresses that so a stray click above/around the field
-        // doesn't drop the user out of the filter. Focus still leaves via
-        // Escape or by tapping another field/control.
-        onTapOutside: (_) {},
-        hint: hint,
-        style: FTextFieldStyleDelta.delta(
-          // No `minHeight` floor: the header `Search…` bar's stable ~36 height
-          // (and its vertically-centred text) come from its always-present
-          // trailing ghost `Button.icon`, not a height constraint. forui's
-          // InputDecorator only centres the content vertically when a suffix of
-          // that height is present; a `minHeight` floor instead grows the box
-          // but leaves the placeholder/text top-aligned. We reproduce the
-          // header by giving this field a permanent button-sized suffix (see
-          // `suffixBuilder` below — the clear `✕` is always laid out, merely
-          // faded/disabled when empty), so the field's resting height and text
-          // centring match the header and never jump as the clear button
-          // shows/hides.
-          contentPadding: EdgeInsetsGeometryDelta.value(
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FTextField(
+          // `_runSearch` reads `_controller.text` itself, so the control's
+          // onChange (which delivers a TextEditingValue) just needs to fire it.
+          control: .managed(
+            controller: _controller,
+            onChange: (_) => _onSearchChanged(),
           ),
-          // Match the header's text size explicitly (typography.md), so the
-          // inline filter never drifts from the header even if the field's
-          // local style is changed later.
-          contentTextStyle: FVariantsDelta.delta([
-            FVariantOperation.all(
-              TextStyleDelta.delta(fontSize: typography.md.fontSize),
+          focusNode: _searchFocusNode,
+          autofocus: autofocus,
+          // Keep focus on the filter when the user clicks empty space on the
+          // compose page. Flutter's text field unfocuses itself on any tap
+          // outside its tap-region by default; overriding onTapOutside with a
+          // no-op suppresses that so a stray click around the field doesn't
+          // drop the user out of the filter. Focus still leaves via Escape or
+          // by tapping another field/control.
+          onTapOutside: (_) {},
+          hint: hint,
+          style: FTextFieldStyleDelta.delta(
+            // Roomy vertical padding so the field reads as an open prompt
+            // rather than a boxed input. No `minHeight` floor: the always-laid-
+            // out clear-button suffix (below) sets a stable height and centres
+            // the text, exactly as the app header search bar does.
+            contentPadding: EdgeInsetsGeometryDelta.value(
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
             ),
-          ]),
-          hintTextStyle: FVariantsDelta.delta([
-            FVariantOperation.all(
-              TextStyleDelta.delta(fontSize: typography.md.fontSize),
-            ),
-          ]),
-          // Match the NoteEditor border (see EditableArea in text_field.dart):
-          // a 1px neutral [colors.border] outline with [editorBorderRadius],
-          // identical in the resting and focused states. The `all` override
-          // replaces the global delta's thinner (0.5) resting border, and the
-          // focused override keeps the border neutral — forui/the app theme
-          // paint the focused border with the accent colour by default — so
-          // focusing the filter doesn't tint or thicken it.
-          border: FVariantsValueDelta.delta([
-            FVariantValueDeltaOperation.all(
-              OutlineInputBorder(
-                borderSide: BorderSide(color: colors.border, width: 1.0),
-                borderRadius: editorBorderRadius,
+            // Transparent fill in EVERY state — the global text-field delta
+            // (style/text_field.dart) fills the field with `editableBackground`
+            // on focus; without this override the borderless prompt would grow
+            // a focus background. The fading underline is the only focus cue.
+            color: FVariantsValueDelta.delta([
+              FVariantValueDeltaOperation.all(const Color(0x00000000)),
+              FVariantValueDeltaOperation.exact(
+                {FTextFieldVariantConstraint.focused},
+                const Color(0x00000000),
               ),
-            ),
-            FVariantValueDeltaOperation.exact(
-              {FTextFieldVariantConstraint.focused},
-              OutlineInputBorder(
-                borderSide: BorderSide(color: colors.border, width: 1.0),
-                borderRadius: editorBorderRadius,
+            ]),
+            // A calm step above the rows ([Typography.md], 15px) and the app
+            // header search, so the prompt reads as the focal entry point.
+            contentTextStyle: FVariantsDelta.delta([
+              FVariantOperation.all(
+                TextStyleDelta.delta(fontSize: typography.lg.fontSize),
               ),
-            ),
-          ]),
-        ),
-        // Trailing clear "✕" inside the input (tweak 2). Rendered through the
-        // text field's own clear-button chrome (`clearButtonStyle` +
-        // `clearButtonPadding` + `icons.x`) so it matches the search-bar look.
-        // Tapping it clears the controller and re-runs the search so the full
-        // list returns (see [_clearSearch]).
-        //
-        // The clear button is **always** laid out (exactly like the header
-        // search bar's unconditional close-search `Button.icon`) so the field
-        // takes its stable ~36 height and vertically-centred text from it
-        // instead of a `minHeight` floor. When the field is empty the same
-        // button is still present and sized — it is just made invisible
-        // (`Opacity 0`) and non-interactive (`IgnorePointer`), so the suffix's
-        // footprint, and therefore the field height and text centring, never
-        // change as text comes and goes. The [ValueListenableBuilder] rebuilds
-        // only this suffix subtree (not the field's EditableText), so toggling
-        // `opacity`/`ignoring` as the user types never tears down the editor
-        // and focus is preserved.
-        suffixBuilder: (context, style, states) {
-          return ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _controller,
-            builder: (context, value, _) {
-              final hasText = value.text.isNotEmpty;
-              return Padding(
-                padding: style.clearButtonPadding,
-                child: IgnorePointer(
-                  ignoring: !hasText,
-                  child: Opacity(
-                    opacity: hasText ? 1.0 : 0.0,
-                    child: FButton.icon(
-                      style: style.clearButtonStyle,
-                      onPress: _clearSearch,
-                      child: context.theme.icons.x(context),
+            ]),
+            hintTextStyle: FVariantsDelta.delta([
+              FVariantOperation.all(
+                TextStyleDelta.delta(fontSize: typography.lg.fontSize),
+              ),
+            ]),
+            // Borderless: drop the box outline in every state — the fading
+            // underline below is the only chrome. The focused override is
+            // explicit because the app theme otherwise paints a focused accent
+            // border that the `all` override does not replace.
+            border: FVariantsValueDelta.delta([
+              FVariantValueDeltaOperation.all(
+                const OutlineInputBorder(
+                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.zero,
+                ),
+              ),
+              FVariantValueDeltaOperation.exact(
+                {FTextFieldVariantConstraint.focused},
+                const OutlineInputBorder(
+                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.zero,
+                ),
+              ),
+            ]),
+          ),
+          // Trailing clear "✕" inside the input. Rendered through the text
+          // field's own clear-button chrome (`clearButtonStyle` +
+          // `clearButtonPadding` + `icons.x`). Tapping it clears the controller
+          // and re-runs the search so the full list returns (see
+          // [_clearSearch]).
+          //
+          // The clear button is **always** laid out so the field takes its
+          // stable height and vertically-centred text from it instead of a
+          // `minHeight` floor. When the field is empty the same button is still
+          // present and sized — it is just made invisible (`Opacity 0`) and
+          // non-interactive (`IgnorePointer`), so the field height and text
+          // centring never change as text comes and goes. The
+          // [ValueListenableBuilder] rebuilds only this suffix subtree (not the
+          // field's EditableText), so toggling it never tears down the editor
+          // or drops focus.
+          suffixBuilder: (context, style, states) {
+            return ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _controller,
+              builder: (context, value, _) {
+                final hasText = value.text.isNotEmpty;
+                return Padding(
+                  padding: style.clearButtonPadding,
+                  child: IgnorePointer(
+                    ignoring: !hasText,
+                    child: Opacity(
+                      opacity: hasText ? 1.0 : 0.0,
+                      child: FButton.icon(
+                        style: style.clearButtonStyle,
+                        onPress: _clearSearch,
+                        child: context.theme.icons.x(context),
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          );
-        },
-        onSubmit: (_) => _handleEnter(),
-      );
-    }
-
-    // Modal (step-2 re-open): reproduce the old connection [SelectModal]'s
-    // search field exactly — a clean, borderless ghost TextField with no
-    // leading magnifier (the modal only shows the magnifier when it has no
-    // prompt; here the placeholder *is* the prompt). The modal wraps its field
-    // in the standard widget padding.
-    return Padding(
-      padding: context.theme.spacing.padding,
-      child: TextField(
-        maxLines: 1,
-        style: TextFieldStyle.ghost,
-        controller: _controller,
-        autofocus: autofocus,
-        label: hint,
-        onChanged: (_) => _onSearchChanged(),
-        onSubmitted: (_) => _handleEnter(),
-      ),
+                );
+              },
+            );
+          },
+          onSubmit: (_) => _handleEnter(),
+        ),
+        // Fading underline: glows in the centre, dissolves into the page
+        // background at both edges; neutral, brightening slightly on focus
+        // (no accent tint).
+        _FadingUnderline(
+          focusNode: _searchFocusNode,
+          color: colors.border,
+          focusedColor: colors.foreground.withValues(alpha: 0.3),
+        ),
+      ],
     );
   }
 
@@ -604,39 +610,31 @@ class _TargetPickerListState extends State<TargetPickerList> {
 
   /// Row chrome shared by target rows and the add-connection row.
   ///
-  /// Inline (tweak 5): each row matches the left-sidebar focus rows — a
-  /// rounded hover/selection fill at the sidebar's tile radius
-  /// ([tileBorderRadius], 6px; see `PrioritiesList` `itemBorderRadius` and
-  /// `PriorityWidget.borderRadius`) and no border. Modal: flat rows (a bare
-  /// highlight fill, no border/radius) exactly as the old connection picker
-  /// rendered them.
+  /// A rounded hover/selection fill at the sidebar's tile radius
+  /// ([tileBorderRadius], 6px) and no border. The highlight matches the
+  /// activity feed's row hover level ([ColourScheme.editableBackground], the
+  /// same `highlightColor` thread rows use) rather than the heavier `secondary`
+  /// tint. The `sm` bottom margin gives a comfortable gap between rows so they
+  /// read as distinct.
   Widget _rowDecoration(
     BuildContext context, {
     required bool highlighted,
     required Widget child,
   }) {
-    final colors = context.theme.colors;
-    if (!widget.inline) {
-      return Container(
-        decoration: BoxDecoration(color: highlighted ? colors.secondary : null),
-        child: child,
-      );
-    }
     return Container(
-      margin: EdgeInsets.only(bottom: context.theme.spacing.xs),
+      margin: EdgeInsets.only(bottom: context.theme.spacing.sm),
       decoration: BoxDecoration(
-        color: highlighted ? colors.secondary : null,
+        color: highlighted ? context.colour.editableBackground : null,
         borderRadius: tileBorderRadius,
       ),
       child: child,
     );
   }
 
-  /// The synthetic, always-last "+ Add a connection…" row (tweak 7). Present
-  /// in both inline and modal contexts; it is not a [ComposeTarget] (never
-  /// selectable as a compose target, untouched by the dedup) and tapping it
-  /// opens [ManageConnections]. Rendered with a muted "+" affordance so it
-  /// reads as an action rather than a target.
+  /// The synthetic, always-last "+ Add a connection…" row (tweak 7). It is not
+  /// a [ComposeTarget] (never selectable as a compose target, untouched by the
+  /// dedup) and tapping it opens [ManageConnections]. Rendered with a muted "+"
+  /// affordance so it reads as an action rather than a target.
   Widget _buildAddConnectionRow(BuildContext context, int index) {
     final colors = context.theme.colors;
     final spacing = context.theme.spacing;
@@ -650,7 +648,8 @@ class _TargetPickerListState extends State<TargetPickerList> {
     // then the label immediately after — no extra outer horizontal padding that
     // would push the label right of the rows above.
     final leadingPadding = EdgeInsets.only(left: spacing.lg, right: 8);
-    final double verticalPadding = widget.inline ? spacing.sm : spacing.xs;
+    // Match the comfortable target-row density (see [_rowContent]).
+    final double verticalPadding = spacing.md;
     final tile = Padding(
       padding: EdgeInsets.symmetric(vertical: verticalPadding),
       child: Row(
@@ -714,11 +713,9 @@ class _TargetPickerListState extends State<TargetPickerList> {
   /// Two-line row: line 1 = focus-tinted connection header; line 2 = leading
   /// glyph + people / channel / focus / twist content.
   ///
-  /// Row density differs by context. **Modal** (`inline: false`, the step-2
-  /// re-open) uses a compact vertical padding so the list reads as densely as
-  /// the old connection [SelectModal]'s rows. **Inline** (`inline: true`, step
-  /// 1 on the compose page) inherits the host's horizontal page padding, so it
-  /// adds none of its own. The leading glyph provides the left gutter.
+  /// Comfortable vertical padding (`spacing.md`) gives each row room to breathe
+  /// so the two lines read as one distinct entry. The host supplies the
+  /// horizontal page padding; the leading glyph provides the left gutter.
   Widget _rowContent(BuildContext context, ComposeTargetView view) {
     final isDark = context.read<ThemeBloc>().isDarkMode(context);
     final spacing = context.theme.spacing;
@@ -728,14 +725,8 @@ class _TargetPickerListState extends State<TargetPickerList> {
     );
     final leadingPadding = EdgeInsets.only(left: spacing.lg, right: 8);
 
-    // Density mirrors the old tile: inline inherits a default-ish vertical pad
-    // (the host supplies the horizontal inset); modal is compact on both axes.
-    final padding = widget.inline
-        ? EdgeInsets.symmetric(vertical: spacing.xs)
-        : EdgeInsets.symmetric(horizontal: spacing.lg, vertical: spacing.xs);
-
     return Padding(
-      padding: padding,
+      padding: EdgeInsets.symmetric(vertical: spacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -801,9 +792,12 @@ class _TargetPickerListState extends State<TargetPickerList> {
             AvatarGroup(
               actors: actors,
               totalCount: view.recipients.length,
-              size: 18,
+              // 20 (not the logo's 16): AvatarGroup draws a 1.2px ring, so the
+              // visible circle is ~17.6 — a touch taller than the leading logo,
+              // which reads as balanced rather than undersized.
+              size: 20,
             ),
-            SizedBox(width: context.theme.spacing.xs),
+            SizedBox(width: context.theme.spacing.sm),
           ],
           Expanded(
             child: Text(
@@ -911,6 +905,52 @@ class _TargetPickerListState extends State<TargetPickerList> {
     return FTooltip(
       tipBuilder: (context, controller) => Text(lines),
       child: child,
+    );
+  }
+}
+
+/// A ~1.5px horizontal hairline that glows in the centre and dissolves into the
+/// page background at both ends (a gradient from transparent → [color] →
+/// transparent). The sole chrome under the step-1 filter input. It brightens
+/// from [color] to [focusedColor] when [focusNode] gains focus, animated so the
+/// transition reads as calm. The colour stays neutral — no accent tint —
+/// consistent with the picker's deliberately un-tinted focus state.
+class _FadingUnderline extends StatelessWidget {
+  const _FadingUnderline({
+    required this.focusNode,
+    required this.color,
+    required this.focusedColor,
+  });
+
+  final FocusNode focusNode;
+  final Color color;
+  final Color focusedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: focusNode,
+      builder: (context, _) {
+        final line = focusNode.hasFocus ? focusedColor : color;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          height: 1.5,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                line.withValues(alpha: 0),
+                line,
+                line,
+                line.withValues(alpha: 0),
+              ],
+              stops: const [0.0, 0.18, 0.82, 1.0],
+            ),
+          ),
+        );
+      },
     );
   }
 }

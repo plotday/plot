@@ -2,39 +2,60 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plot/widget/compose/connection_choice.dart';
 
 void main() {
-  group('PlotThreadChoice variants', () {
-    test('plotNote has key, label, and null user-action', () {
-      expect(ConnectionChoice.plotNote.kind, PlotThreadKind.note);
-      expect(ConnectionChoice.plotNote.key, 'plot:note');
-      expect(ConnectionChoice.plotNote.label, 'Note');
-      expect(ConnectionChoice.plotNote.toUserAction(), isNull);
+  group('PlotThreadChoice', () {
+    test('plotDefault is the scope-less Plot choice', () {
+      const choice = ConnectionChoice.plotDefault;
+      expect(choice.key, 'plot');
+      expect(choice.label, 'Plot');
+      expect(choice.toUserAction(), isNull);
+      // No team scope by default → no scope label.
+      expect(choice.hasTeams, isFalse);
+      expect(choice.scopeLabel, '');
     });
 
-    test('plotChat has key, label, and null user-action', () {
-      expect(ConnectionChoice.plotChat.kind, PlotThreadKind.chat);
-      expect(ConnectionChoice.plotChat.key, 'plot:chat');
-      expect(ConnectionChoice.plotChat.label, 'Chat');
-      expect(ConnectionChoice.plotChat.toUserAction(), isNull);
+    test('searchText keeps the thread findable by note/chat terms', () {
+      expect(ConnectionChoice.plotDefault.searchText, contains('plot'));
+      expect(ConnectionChoice.plotDefault.searchText, contains('note'));
+      expect(ConnectionChoice.plotDefault.searchText, contains('chat'));
     });
 
-    test('plotDefault maps to plotNote', () {
-      expect(ConnectionChoice.plotDefault, same(ConnectionChoice.plotNote));
-    });
+    group('scopeLabel', () {
+      test('is empty when the user has no teams', () {
+        expect(
+          const PlotThreadChoice(hasTeams: false).scopeLabel,
+          '',
+        );
+        // Even with a team id, no scope is surfaced when the user has no teams.
+        expect(
+          PlotThreadChoice(hasTeams: false, teamId: BigInt.from(7)).scopeLabel,
+          '',
+        );
+      });
 
-    test('plotForKind returns the correct variant', () {
-      expect(
-        ConnectionChoice.plotForKind(PlotThreadKind.note),
-        same(ConnectionChoice.plotNote),
-      );
-      expect(
-        ConnectionChoice.plotForKind(PlotThreadKind.chat),
-        same(ConnectionChoice.plotChat),
-      );
-    });
+      test('is "Personal" when the user has teams but no team scope', () {
+        expect(
+          const PlotThreadChoice(hasTeams: true).scopeLabel,
+          'Personal',
+        );
+      });
 
-    test('searchText is lowercase of label', () {
-      expect(ConnectionChoice.plotNote.searchText, 'note');
-      expect(ConnectionChoice.plotChat.searchText, 'chat');
+      test('is the team name when scoped to a team', () {
+        expect(
+          PlotThreadChoice(
+            hasTeams: true,
+            teamId: BigInt.from(7),
+            teamName: 'Acme',
+          ).scopeLabel,
+          'Acme',
+        );
+      });
+
+      test('falls back to "Team" when the name is unknown', () {
+        expect(
+          PlotThreadChoice(hasTeams: true, teamId: BigInt.from(7)).scopeLabel,
+          'Team',
+        );
+      });
     });
   });
 }

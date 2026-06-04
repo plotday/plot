@@ -245,8 +245,12 @@ class ComposeTarget extends Equatable {
   /// Note: the roster ([contacts]/[groups]) is carried on the [ComposeTarget]
   /// itself; the returned choice only selects the connection/variant.
   ConnectionChoice toConnectionChoice() => switch (kind) {
-        ComposeTargetKind.note => ConnectionChoice.plotNote,
-        ComposeTargetKind.chat => ConnectionChoice.plotChat,
+        // Note/chat are both just a Plot thread now (no stored distinction).
+        // The compose page resolves the scoped Plot choice for display from
+        // the draft; this only needs to select "a Plot thread".
+        ComposeTargetKind.note ||
+        ComposeTargetKind.chat =>
+          ConnectionChoice.plotDefault,
         ComposeTargetKind.connector => ConnectionChoice.target(target!),
         // The roster of allInstances is only needed for the twist label, which
         // is already baked into [label]; an empty list is fine for selection.

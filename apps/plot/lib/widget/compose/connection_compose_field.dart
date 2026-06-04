@@ -34,14 +34,16 @@ class ConnectionComposeField extends StatelessWidget {
     final String title;
     final String subtitle;
     switch (activeChoice) {
-      case PlotThreadChoice():
+      case final PlotThreadChoice plot:
         logo = SvgPicture.asset(
           'assets/plot-icon.svg',
           width: theme.iconSizes.base,
           height: theme.iconSizes.base,
         );
-        title = activeChoice.label;
-        subtitle = '';
+        // Always "Plot"; the team scope ("Personal" / team name) follows only
+        // when the user belongs to ≥1 team.
+        title = plot.label;
+        subtitle = plot.scopeLabel;
       case TargetConnectionChoice(:final target):
         final url = isDark
             ? (target.linkType.logoDark ?? target.linkType.logo)

@@ -128,8 +128,7 @@ class ConnectionPickerModal {
         .toList();
 
     final choices = <ConnectionChoice>[
-      ConnectionChoice.plotNote,
-      ConnectionChoice.plotChat,
+      ConnectionChoice.plotDefault,
       ...chatTwists.map(
         (t) => ConnectionChoice.twist(
           t,

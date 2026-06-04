@@ -161,6 +161,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     debugLabel: 'NewThread-target-picker-search',
   );
 
+  /// Search-text controller for the inline step-1 picker. Owned here (not by
+  /// the picker) so the typed filter survives the step-1 → step-2 → step-1
+  /// round-trip when the user taps the step-2 Connection field to change the
+  /// connection (a "go back" — see [_returnToTargetStep]). Cleared by
+  /// [_resetToFreshStart] so a brand-new compose starts with an empty filter.
+  final TextEditingController _pickerSearchController = TextEditingController();
+
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
   ThreadHeaderNotifier? _headerNotifier;
@@ -173,6 +180,12 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// rerun when the priority changes (so MRU rerank reflects the new
   /// priority).
   List<CreateTarget> _allConnectionTargets = const [];
+
+  /// Whether the user belongs to ≥1 team, plus team display names by id.
+  /// Loaded once on mount ([_loadTeams]); drives the connection field's
+  /// "Plot" + team scope ([_plotChoiceForDraft]).
+  bool _hasTeams = false;
+  Map<BigInt, String> _teamNames = const {};
 
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
@@ -260,6 +273,9 @@ class NewThreadPageState extends State<NewThreadPage> {
         note: note.copyWith(actions: clearedActions),
       ),
     );
+
+    // Empty the (page-owned) filter so a fresh compose starts unfiltered.
+    _pickerSearchController.clear();
 
     setState(() {
       _step = _ComposeStep.target;
@@ -379,6 +395,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     await _loadConnections();
     if (!mounted) return;
 
+    // Load team scope so the connection field can show "Plot" with the team.
+    // Fire-and-forget — the field reads `_hasTeams`/`_teamNames` reactively.
+    unawaited(_loadTeams());
+
     // Help & Feedback (fresh mount): configure the page for a Plot-Team chat
     // filed under Inbox. A reused live page is handled via [feedbackRequest]
     // instead (this path won't re-run — see [_hasAppliedQueryParams]).
@@ -450,6 +470,22 @@ class NewThreadPageState extends State<NewThreadPage> {
       });
     } catch (e, t) {
       log.warning('[NewThreadPage._loadConnections] failed', e, t);
+      Tracker.captureException(e, t);
+    }
+  }
+
+  /// Loads the user's active team memberships so the connection field can show
+  /// the team scope beside "Plot" (only when the user belongs to ≥1 team).
+  Future<void> _loadTeams() async {
+    try {
+      final teams = await TeamUser.getActive();
+      if (!mounted) return;
+      setState(() {
+        _hasTeams = teams.isNotEmpty;
+        _teamNames = {for (final t in teams) t.teamId: t.teamName};
+      });
+    } catch (e, t) {
+      log.warning('[NewThreadPage._loadTeams] failed', e, t);
       Tracker.captureException(e, t);
     }
   }
@@ -608,6 +644,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     _pickerScrollController.dispose();
     _pickerListFocusNode.dispose();
     _pickerSearchFocusNode.dispose();
+    _pickerSearchController.dispose();
     super.dispose();
   }
 
@@ -744,23 +781,14 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     final action = choice.toUserAction();
     if (action != null) actions.add(action);
-    // Apply Plot-variant defaults: Plot chat marks the sticky-chat intent so
-    // the label/placeholder stay "Chat" even before the user has added a
-    // contact.
-    Note nextNote = note.copyWith(actions: actions);
-    if (choice is PlotThreadChoice) {
-      switch (choice.kind) {
-        case PlotThreadKind.note:
-          break;
-        case PlotThreadKind.chat:
-          if (!_hadContactsThisSession) {
-            setState(() => _hadContactsThisSession = true);
-          }
-      }
-    }
+    // Plot threads no longer carry a note/chat mode — shared-vs-private is
+    // derived from whether recipients are present (see [_computeEditorHint] /
+    // [_computeSendLabel]); a rostered target marks contacts via
+    // [_markContactsAdded] in [_applyTarget].
+    final Note nextNote = note.copyWith(actions: actions);
     // Pass the list directly (even when empty) — Note.copyWith treats a
     // null `actions` arg as "keep existing", so the prior CreateLinkUserAction
-    // would survive when the user picks "Plot thread".
+    // would survive when the user picks a Plot thread.
     await bloc.updateDraft(bloc.state.draft, note: nextNote);
   }
 
@@ -849,28 +877,43 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!feedback) await _suggestFocusForTarget(target);
   }
 
-  /// Re-opens the target picker in a modal (step-2 Connection field tap). On
-  /// choose, re-applies the target and stays in step 2.
-  Future<void> _openConnectionPicker() async {
-    final scrollController = ScrollController();
-    try {
-      final result = await Modal(
-        constraints: const BoxConstraints(maxHeight: 640, maxWidth: 750),
-        padding: const EdgeInsets.all(0),
-        builder: (modalContext) => Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: TargetPickerList(
-            scrollController: scrollController,
-            onSelect: (target) =>
-                Modal.pop<ComposeTarget>(modalContext, Value(target)),
-          ),
-        ),
-      ).show<ComposeTarget>(context);
-      if (!result.present || !mounted) return;
-      // Re-apply the chosen target but stay in step 2 (don't reset to step 1).
-      await _applyTarget(result.value);
-    } finally {
-      scrollController.dispose();
+  /// Tapping the step-2 Connection field is a plain **"go back"** to step 1
+  /// (the target picker), not a modal. The in-progress draft is preserved: the
+  /// page-owned [_pickerSearchController] keeps the prior filter text, and a new
+  /// selection routes through [_applyTarget], which rewrites only the
+  /// connection / roster / team and never touches the note body or title. On
+  /// return the filter text is fully selected and refocused (physical-keyboard
+  /// platforms only) so typing replaces it; selecting the same connection again
+  /// simply re-applies and returns to step 2.
+  void _returnToTargetStep() {
+    setState(() => _step = _ComposeStep.target);
+
+    // Re-seed / re-rank the base list (mirrors [_resetToFreshStart]). The bloc
+    // is already populated, so rows show immediately; this just refreshes MRU.
+    unawaited(
+      context.read<ComposeTargetsBloc>().refresh().catchError((
+        Object e,
+        StackTrace s,
+      ) {
+        Tracker.captureException(e, s);
+      }),
+    );
+
+    // Restore focus and select the prior filter text so typing replaces it.
+    // Gated to physical-keyboard platforms to match the picker's own autofocus
+    // gating (never pops the mobile soft keyboard).
+    if (hasPhysicalKeyboard()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _step != _ComposeStep.target) return;
+        final text = _pickerSearchController.text;
+        if (text.isNotEmpty) {
+          _pickerSearchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: text.length,
+          );
+        }
+        _pickerSearchFocusNode.requestFocus();
+      });
     }
   }
 
@@ -959,17 +1002,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     return _plotChoiceForDraft(state);
   }
 
-  /// Maps the draft's current state to one of the two Plot variants so the
-  /// connection chip stays in sync with whether the thread is (or has been)
-  /// shared this compose session.
+  /// Builds the single Plot connection choice for the draft, carrying the
+  /// draft's team scope so the connection field shows "Plot" with the team
+  /// (only when the user belongs to ≥1 team — see [PlotThreadChoice.scopeLabel]).
   PlotThreadChoice _plotChoiceForDraft(PriorityState state) {
-    final hasContacts = state.draft.contacts.isNotEmpty ||
-        state.draft.groups.isNotEmpty ||
-        state.draft.inviteEmails.isNotEmpty;
-    if (hasContacts || _hadContactsThisSession) {
-      return ConnectionChoice.plotChat;
-    }
-    return ConnectionChoice.plotNote;
+    final teamId = state.draft.teamId;
+    return PlotThreadChoice(
+      teamId: teamId,
+      teamName: teamId == null ? null : _teamNames[teamId],
+      hasTeams: _hasTeams,
+    );
   }
 
   /// The active create-link action attached to the draft note (if any).
@@ -1280,16 +1322,15 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Whether to show the contacts row for the current [activeChoice].
   ///
-  /// Hidden when:
-  /// - The active choice is a Plot Note (private, no sharing UI).
-  /// - The active choice is a connector target whose [SharingModel] is
-  ///   [SharingModel.none] (e.g. Google Tasks — no audience concept).
-  ///
-  /// Shown for Plot Chat, and for connector targets with any other sharing
-  /// model (thread / channel / message) — those all support a recipient roster.
+  /// - Plot threads: **always** shown (no note/chat distinction), so a thread
+  ///   started from a focus without contacts can still add recipients.
+  /// - Connector targets: hidden only when the [SharingModel] is
+  ///   [SharingModel.none] (e.g. Google Tasks — no audience concept); shown for
+  ///   every other sharing model (thread / channel / message).
+  /// - Twist targets: always shown (chat with a twist).
   bool _shouldShowContacts(ConnectionChoice activeChoice) {
     if (activeChoice is PlotThreadChoice) {
-      return activeChoice.kind == PlotThreadKind.chat;
+      return true;
     }
     if (activeChoice is TargetConnectionChoice) {
       return activeChoice.target.linkType.sharingModel != SharingModel.none;
@@ -1316,22 +1357,24 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// Step 1: the inline target picker. Reuses the same [TargetPickerList]
-  /// widget the step-2 Connection field re-opens in a modal, but styled to sit
-  /// on the page. Selecting a target applies it and advances to step 2 (see
-  /// [_applyTarget]). Centered in multi-panel mode to match the compose
-  /// surface; top-anchored and edge-to-edge in single-panel mode.
+  /// Step 1: the inline target picker. Tapping the step-2 Connection field
+  /// navigates back to this same surface (see [_returnToTargetStep]), so it is
+  /// the single styled picker rather than a modal variant. Selecting a target
+  /// applies it and advances to step 2 (see [_applyTarget]).
+  ///
+  /// Multi-panel: a comfortable fixed inset above the prompt, then the list
+  /// fills the remaining height down to the bottom edge (where the scroll fade
+  /// lives). Single-panel: edge-to-edge with the standard page padding.
   Widget _buildTargetPickerStep(
-    BuildContext context,
-    BoxConstraints constraints, {
+    BuildContext context, {
     required bool multiPanel,
   }) {
     final picker = TargetPickerList(
       key: const ValueKey('new-thread-target-picker'),
-      inline: true,
       scrollController: _pickerScrollController,
       listFocusNode: _pickerListFocusNode,
       searchFocusNode: _pickerSearchFocusNode,
+      searchController: _pickerSearchController,
       onSelect: (target) => unawaited(_applyTarget(target)),
     );
 
@@ -1345,20 +1388,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Flexible(
-            child: SizedBox(height: constraints.maxHeight * 0.25),
-          ),
-          Flexible(
-            flex: 2,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: constraints.maxHeight * 0.6,
-              ),
-              child: picker,
-            ),
-          ),
+          // Calm breathing room above the prompt; the picker then fills the
+          // remaining height so the list runs to the bottom of the panel.
+          const SizedBox(height: 48),
+          Expanded(child: picker),
         ],
       ),
     );
@@ -1379,7 +1414,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       children: [
         ConnectionComposeField(
           activeChoice: activeChoice,
-          openModal: _openConnectionPicker,
+          // Tapping the connection field goes back to step 1 (not a modal).
+          openModal: () async => _returnToTargetStep(),
         ),
         PriorityComposeField(
           currentPriority: state.draft.priority,
@@ -1456,7 +1492,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                         if (_step == _ComposeStep.target) {
                           return _buildTargetPickerStep(
                             context,
-                            constraints,
                             multiPanel: layoutState.multiPanel,
                           );
                         }
@@ -1604,13 +1639,13 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Intercepts keys bubbling up from the focused body editor.
   ///
-  /// **Escape** blurs the editor. SuperEditor lets Escape bubble unhandled, and
-  /// the page's global Escape handler (priority.dart's `ClearItemFocusIntent`)
-  /// would otherwise re-focus the editor — so we consume it here, but only when
-  /// the editor actually held focus (otherwise Escape is left to propagate so
-  /// the global handler can focus the editor as before). When a mention popover
-  /// is open SuperEditor consumes Escape to close it first, so this fires only
-  /// on a subsequent Escape.
+  /// **Escape** goes back to step 1 (the target picker) — the same "go back"
+  /// as tapping the Connection field (see [_returnToTargetStep]). When a
+  /// mention popover is open SuperEditor consumes Escape to close it first
+  /// (it's a descendant of this Focus), so this fires only on a subsequent
+  /// Escape. Other step-2 fields (title, etc.) route Escape through the
+  /// page-level [_buildThreadShortcuts] binding instead, which is only present
+  /// on step 2.
   ///
   /// **Shift+Tab** sends focus back to the title field. SuperEditor doesn't
   /// consume Tab outside its mention popover, so the unhandled key reaches this
@@ -1618,8 +1653,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   KeyEventResult _handleEditorKeys(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
-      final blurred = _threadEditorKey.currentState?.unfocus() ?? false;
-      return blurred ? KeyEventResult.handled : KeyEventResult.ignored;
+      _returnToTargetStep();
+      return KeyEventResult.handled;
     }
     if (event.logicalKey != LogicalKeyboardKey.tab) {
       return KeyEventResult.ignored;
@@ -1632,14 +1667,20 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Builds keyboard shortcut bindings for thread-level actions on the
-  /// NewThreadPage: share (contacts). Note-level shortcuts are handled
-  /// inside NoteEditor. Priority, title, and schedule are set via the
-  /// priority chip / title input or after the thread is created.
+  /// NewThreadPage: go-back (Escape, step 2 only), share (contacts), priority,
+  /// title. Note-level shortcuts are handled inside NoteEditor.
   Map<ShortcutActivator, VoidCallback> _buildThreadShortcuts(
     BuildContext context,
     PriorityState state,
   ) {
     return {
+      // Escape on step 2 goes back to step 1 (the target picker), matching the
+      // Connection-field "go back". Scoped to step 2 so step 1's own Escape
+      // (clear filter / close composer) is left untouched. The editor's own
+      // key handler ([_handleEditorKeys]) covers Escape while the body editor
+      // holds focus; this covers the other step-2 fields (title, etc.).
+      if (_step == _ComposeStep.compose)
+        const SingleActivator(LogicalKeyboardKey.escape): _returnToTargetStep,
       // ⌘⇧S — share (contacts)
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
         _openSharedPicker(context);
