@@ -3,9 +3,15 @@ import { PostHog } from "posthog-node";
 
 import { sql } from "kysely";
 
-import { withDb } from "../db";
+import { withDb, createDb } from "../db";
 import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import { processTwistBatch } from "../queue/updates";
+import {
+  utf8ByteLength,
+  buildSizeAwareBatches,
+  splitBatch,
+} from "./twist-sync-batching";
 
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 500; // Minimum time to wait before processing (allows better batching)
@@ -61,6 +67,40 @@ export class TwistSync extends DurableObject<Bindings> {
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());
+  }
+
+  // Process a single oversized batch message inline, bypassing the queue.
+  // Reached only when one sync item exceeds Cloudflare Queues' 128KB limit and
+  // therefore can't be enqueued. Runs in the background (caller passes this to
+  // ctx.waitUntil), so it must not throw — it owns its own DB connection and
+  // PostHog client and reports unexpected failures itself.
+  private async dispatchInline(message: TwistBatchMessage): Promise<void> {
+    const db = createDb(this.env);
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    try {
+      await processTwistBatch(
+        message,
+        this.env,
+        // DurableObjectState exposes the waitUntil/exports surface the twist
+        // factory actually uses; processTwistBatch's ExecutionContext param is
+        // satisfied at runtime (see twistFactory's ctx-narrowing in factory.ts).
+        this.ctx as unknown as ExecutionContext,
+        db,
+        "UPDATES_QUEUE-inline",
+        postHog
+      );
+    } catch (error) {
+      this.captureException(error as Error, {
+        context: "inline-oversized-dispatch",
+      });
+    } finally {
+      await db.destroy();
+      await postHog.shutdown();
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -473,16 +513,16 @@ export class TwistSync extends DurableObject<Bindings> {
         | { array: "noteReactions"; item: (typeof noteReactions)[number]; size: number };
 
       let taggedItems: TaggedItem[] = [
-        ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
-        ...updatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
-        ...updatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
-        ...channelNewLinks.map((item) => ({ array: "channelNewLinks" as const, item, size: JSON.stringify(item).length })),
-        ...channelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: JSON.stringify(item).length })),
-        ...channelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
-        ...threadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
-        ...threadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
-        ...scheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
-        ...noteReactions.map((item) => ({ array: "noteReactions" as const, item, size: JSON.stringify(item).length })),
+        ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...updatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...updatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...channelNewLinks.map((item) => ({ array: "channelNewLinks" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...channelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...channelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...threadReads.map((item) => ({ array: "threadReads" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...threadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...scheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
+        ...noteReactions.map((item) => ({ array: "noteReactions" as const, item, size: utf8ByteLength(JSON.stringify(item)) })),
       ];
 
       // Loop detection: if we keep fetching the same items, skip processing to break the loop.
@@ -523,32 +563,14 @@ export class TwistSync extends DurableObject<Bindings> {
       }
       this.lastFingerprint = itemFingerprint;
 
-      const batches: TaggedItem[][] = [];
-      let currentBatch: TaggedItem[] = [];
-      let currentBatchSize = 0;
+      const batches = buildSizeAwareBatches(
+        taggedItems,
+        MAX_BATCH_BYTES,
+        MAX_ITEMS_PER_BATCH
+      );
 
-      for (const tagged of taggedItems) {
-        // Start a new batch if adding this item would exceed limits (but always allow at least 1 item)
-        if (
-          currentBatch.length > 0 &&
-          (currentBatchSize + tagged.size > MAX_BATCH_BYTES || currentBatch.length >= MAX_ITEMS_PER_BATCH)
-        ) {
-          batches.push(currentBatch);
-          currentBatch = [];
-          currentBatchSize = 0;
-        }
-        currentBatch.push(tagged);
-        currentBatchSize += tagged.size;
-      }
-      if (currentBatch.length > 0) {
-        batches.push(currentBatch);
-      }
-
-      // Send queue messages BEFORE updating sync timestamps
-      // This ensures twist callbacks are always delivered even if timestamp updates fail
-      // (transient PostgREST 500s). If timestamps fail to advance, the next alarm will
-      // re-fetch the same items, causing duplicate but harmless callbacks.
-      for (const batch of batches) {
+      // Build the queue message for a single batch of tagged items.
+      const buildMessage = (batch: TaggedItem[]): TwistBatchMessage => {
         const batchNewNotes = batch.filter((t) => t.array === "newNotes").map((t) => t.item);
         const batchUpdatedNotes = batch.filter((t) => t.array === "updatedNotes").map((t) => t.item);
         const batchUpdatedActivities = batch.filter((t) => t.array === "updatedActivities").map((t) => t.item);
@@ -571,7 +593,7 @@ export class TwistSync extends DurableObject<Bindings> {
         // Note: Kysely returns Date objects for timestamps, but TwistBatchMessage uses
         // supabase view types with string timestamps. The queue serializes to JSON anyway,
         // so the data is equivalent.
-        const message = {
+        return {
           type: "twist_batch" as const,
           twistInstanceId: twistInstanceId,
           twistId: Number(twistInstance.twist_id),
@@ -590,25 +612,53 @@ export class TwistSync extends DurableObject<Bindings> {
           noteReactions: batchNoteReactions,
           twistInstance: null, // TODO: Handle twist_instance config updates
         } as TwistBatchMessage;
+      };
 
+      const isPayloadTooLarge = (error: unknown): boolean =>
+        error instanceof Error && error.message.includes("Payload Too Large");
+
+      // Send one batch, recovering from Cloudflare's 128KB per-message limit:
+      //   - Multi-item batch over the limit (e.g. uncounted tag-change overhead):
+      //     split in half and retry so every item is still delivered.
+      //   - Single item over the limit (can't be split): dispatch it inline in
+      //     the background instead of dropping the callback. Mirrors the
+      //     oversized-webhook fallback in webhook.ts.
+      const sendBatch = async (batch: TaggedItem[]): Promise<void> => {
+        const message = buildMessage(batch);
         try {
           await this.env.UPDATES_QUEUE.send(message);
         } catch (error) {
-          if (batch.length === 1) {
-            // Single oversized item — log and skip so other batches can proceed
-            logger.error("Queue send failed for oversized single item, skipping", error as Error, {
-              twist_instance_id: twistInstanceId,
-              item_array: batch[0].array,
-              item_size: batch[0].size,
-            });
-            this.captureException(error as Error, {
-              item_array: batch[0].array,
-              item_size: batch[0].size,
-            });
-            continue;
+          if (!isPayloadTooLarge(error)) {
+            throw error;
           }
-          throw error;
+
+          if (batch.length > 1) {
+            logger.warn("Queue batch too large, splitting and retrying", {
+              twist_instance_id: twistInstanceId,
+              batch_items: batch.length,
+            });
+            const [left, right] = splitBatch(batch);
+            await sendBatch(left);
+            await sendBatch(right);
+            return;
+          }
+
+          // Genuinely oversized single item: deliver inline rather than drop it.
+          logger.warn("Single sync item too large for queue, dispatching inline", {
+            twist_instance_id: twistInstanceId,
+            item_array: batch[0].array,
+            item_size: batch[0].size,
+          });
+          this.ctx.waitUntil(this.dispatchInline(message));
         }
+      };
+
+      // Send queue messages BEFORE updating sync timestamps
+      // This ensures twist callbacks are always delivered even if timestamp updates fail
+      // (transient PostgREST 500s). If timestamps fail to advance, the next alarm will
+      // re-fetch the same items, causing duplicate but harmless callbacks.
+      for (const batch of batches) {
+        await sendBatch(batch);
       }
 
       // Advance seq cursors to the horizon for the 9 (entity, operation) pairs.
