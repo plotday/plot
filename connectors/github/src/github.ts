@@ -337,6 +337,10 @@ export class GitHub extends Connector<GitHub> {
       channels.push({
         id: owner,
         title: owner,
+        // Enabling an owner cascades to EVERY repo under it (orgs can have
+        // hundreds), so don't pre-select it. The user opts in to the specific
+        // owner or repos they want to sync.
+        enabledByDefault: false,
         children: ownerRepos.map((repo) => ({
           id: repo.full_name,
           title: repo.full_name,

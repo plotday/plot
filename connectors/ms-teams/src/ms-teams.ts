@@ -157,6 +157,9 @@ export class MsTeams extends Connector<MsTeams> {
       channels.push({
         id: team.id,
         title: team.displayName,
+        // A team is a container, not a syncable resource — the user picks the
+        // specific channels under it. Don't pre-select the team itself.
+        enabledByDefault: false,
         children: teamChannels.map((ch) => ({
           id: ch.id,
           title: ch.displayName,

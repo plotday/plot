@@ -400,7 +400,17 @@ export class Gmail extends Connector<Gmail> {
           l.type !== "system" ||
           ["INBOX", "SENT", "DRAFT", "IMPORTANT", "STARRED"].includes(l.id)
       )
-      .map((l: any) => ({ id: l.id, title: l.name }));
+      // Default to syncing the user's actual conversations: Inbox (incoming)
+      // and Sent (outgoing). Important/Starred are overlapping views of mail
+      // that's mostly already in the Inbox, so enabling them by default would
+      // largely re-sync the same threads; Draft and user-created labels would
+      // crowd the view. They're all still available to enable manually, and
+      // Spam/Trash aren't even listed (filtered above).
+      .map((l: any) => ({
+        id: l.id,
+        title: l.name,
+        enabledByDefault: l.id === "INBOX" || l.id === "SENT",
+      }));
   }
 
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {

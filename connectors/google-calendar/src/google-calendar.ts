@@ -44,6 +44,14 @@ type Calendar = {
   name: string;
   description: string | null;
   primary: boolean;
+  /**
+   * The user's access level on this calendar: "owner", "writer", "reader",
+   * or "freeBusyReader". Calendars the user owns (their primary + any
+   * secondary calendars they created) are "owner"; subscribed holiday/
+   * birthday calendars and someone-else's shared calendars are "reader"/
+   * "writer". Drives the default-enable decision in getChannels.
+   */
+  accessRole: string | null;
 };
 
 /**
@@ -203,7 +211,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   ): Promise<Channel[]> {
     const api = new GoogleApi(token.token);
     const calendars = await this.listCalendarsWithApi(api);
-    return calendars.map((c) => ({ id: c.id, title: c.name }));
+    // Default to syncing the user's OWN calendars (their primary + any
+    // secondary calendars they created — accessRole "owner"). Calendars the
+    // user merely subscribes to (holidays, birthdays) or that are shared with
+    // them by someone else are "reader"/"writer"; exclude those from the
+    // default selection so they don't crowd the user's view. The user can
+    // still enable any of them manually.
+    return calendars.map((c) => ({
+      id: c.id,
+      title: c.name,
+      enabledByDefault: c.accessRole === "owner",
+    }));
   }
 
   /**
@@ -372,6 +390,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         summary: string;
         description?: string;
         primary?: boolean;
+        accessRole?: string;
       }>;
     };
 
@@ -379,6 +398,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       id: item.id,
       name: item.summary,
       description: item.description || null,
+      accessRole: item.accessRole ?? null,
       primary: item.primary || false,
     }));
   }
@@ -440,6 +460,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         summary: string;
         description?: string;
         primary?: boolean;
+        accessRole?: string;
       }>;
     };
 
@@ -448,6 +469,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       name: item.summary,
       description: item.description || null,
       primary: item.primary || false,
+      accessRole: item.accessRole ?? null,
     }));
   }
 

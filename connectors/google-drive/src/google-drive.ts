@@ -275,6 +275,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       },
     ];
 
+    // My Drive, Shared drives, and Shared with me are all enabled by default
+    // (the client default for top-level channels) — a Drive user generally
+    // wants their documents from all three. Individual sub-folders stay
+    // collapsed under each, so the user can still narrow the scope.
     if (sharedDriveMap.size > 0) {
       result.push({
         id: VIRTUAL_SHARED_DRIVES,
