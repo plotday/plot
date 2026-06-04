@@ -416,39 +416,47 @@ export function getHeader(message: GmailMessage, name: string): string | null {
  * Returns raw content with its type so HTML can be converted server-side.
  */
 function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
-  // If this part has a body with data, return it
-  if (part.body?.data) {
-    // Gmail API returns base64url-encoded data — decode as UTF-8
-    const binaryString = atob(part.body.data.replace(/-/g, "+").replace(/_/g, "/"));
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const decoded = new TextDecoder("utf-8").decode(bytes);
-    const contentType = part.mimeType === "text/html" ? "html" as const : "text" as const;
-    return { content: decoded, contentType };
-  }
+  // Prefer HTML over plain text — server-side conversion produces cleaner output.
+  // Search the WHOLE MIME tree, not just immediate children: forwarded messages
+  // nest the real body inside a `message/rfc822` part (or a deeper multipart),
+  // which the old immediate-children-only `find` missed, yielding an empty note.
+  const html = findPartContent(part, "text/html");
+  if (html) return { content: html, contentType: "html" };
 
-  // If multipart, recursively search parts
-  if (part.parts) {
-    // Prefer HTML over plain text — server-side conversion produces cleaner output
-    const htmlPart = part.parts.find((p) => p.mimeType === "text/html");
-    if (htmlPart) {
-      return extractBody(htmlPart);
-    }
-
-    const textPart = part.parts.find((p) => p.mimeType === "text/plain");
-    if (textPart) {
-      return extractBody(textPart);
-    }
-
-    // Try first part as fallback
-    if (part.parts.length > 0) {
-      return extractBody(part.parts[0]);
-    }
-  }
+  const text = findPartContent(part, "text/plain");
+  if (text) return { content: text, contentType: "text" };
 
   return { content: "", contentType: "text" };
+}
+
+/**
+ * Recursively finds the first non-empty body of the given MIME type in a Gmail
+ * payload tree. Descends through multipart/* containers AND `message/rfc822`
+ * parts (a forwarded email attached inline carries its original payload there).
+ * Skips real attachments, whose bodies are binary and fetched separately.
+ */
+function findPartContent(part: GmailMessagePart, mimeType: string): string | null {
+  const isAttachment = !!part.filename && !!part.body?.attachmentId;
+  if (!isAttachment && part.mimeType === mimeType && part.body?.data) {
+    return decodeBase64Url(part.body.data);
+  }
+  if (part.parts) {
+    for (const child of part.parts) {
+      const found = findPartContent(child, mimeType);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Decodes Gmail's base64url-encoded part data as UTF-8. */
+function decodeBase64Url(data: string): string {
+  const binaryString = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 /**
@@ -486,6 +494,13 @@ export function stripQuotedReply(
   contentType: "text" | "html"
 ): string {
   if (!content) return content;
+
+  // Forwarded messages: the forwarded email IS the content the user wants to
+  // read. Gmail/Apple Mail wrap a forward in the same quote container Gmail uses
+  // for reply quotes, so the reply-stripping below would delete the whole body
+  // and leave an empty note. Keep the content as-is when it's a forward whose
+  // marker precedes any reply boundary.
+  if (isForwardedMessage(content)) return content;
 
   if (contentType === "html") {
     // Gmail wraps quoted replies in <div class="gmail_quote">
@@ -573,17 +588,26 @@ export function stripQuotedReply(
           .trim();
       }
     }
-
-    // Forwarded message separator
-    if (line === "---------- Forwarded message ----------") {
-      return lines
-        .slice(0, i)
-        .join("\n")
-        .trim();
-    }
   }
 
   return content;
+}
+
+/**
+ * Detects a forwarded message so {@link stripQuotedReply} can preserve it.
+ * Matches Gmail's dashed "---------- Forwarded message ---------" marker and
+ * Apple Mail's "Begin forwarded message:". Returns false when a reply boundary
+ * ("On … wrote:") precedes the forward marker — that's a reply quoting a
+ * forward, which the reply-stripper should still trim.
+ */
+function isForwardedMessage(content: string): boolean {
+  const fwdIdx = content.search(
+    /(-{2,}\s*Forwarded message\s*-{2,}|Begin forwarded message:)/i
+  );
+  if (fwdIdx === -1) return false;
+  const replyIdx = content.search(/On\s[\s\S]{0,200}?\swrote:/i);
+  if (replyIdx !== -1 && replyIdx < fwdIdx) return false;
+  return true;
 }
 
 /**
