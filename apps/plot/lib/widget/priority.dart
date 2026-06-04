@@ -23,6 +23,7 @@ class PriorityWidget extends StatefulWidget {
     this.unread,
     this.reorderableIndex,
     this.onTap,
+    this.command,
     this.borderRadius,
     this.monochrome = false,
     this.boldLeaf = false,
@@ -62,6 +63,12 @@ class PriorityWidget extends StatefulWidget {
 
   /// Optional tap callback that overrides the default navigation behavior.
   final VoidCallback? onTap;
+
+  /// Optional command that replaces the default [ChangeCurrentPriority]
+  /// navigation for both tap and keyboard activation. Used by the global-view
+  /// sidebar to narrow a search/filter to this focus ([SetGlobalViewScope])
+  /// without navigating. [onTap], when set, still takes precedence on tap.
+  final Command? command;
 
   /// Border radius for the hover/selection highlight. When null, the
   /// highlight is rectangular and may show top/bottom selection borders.
@@ -162,9 +169,10 @@ class _PriorityWidgetState extends State<PriorityWidget> {
         ? restingColor
         : priorityAccent;
 
-    final navigationCommand = !isContext
-        ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
-        : null;
+    final navigationCommand = widget.command ??
+        (!isContext
+            ? ChangeCurrentPriority(priority, ancestry: widget.showAncestry)
+            : null);
     final listTile = ListTile(
       command: navigationCommand,
       onTap: () {

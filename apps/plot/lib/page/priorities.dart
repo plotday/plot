@@ -63,16 +63,6 @@ class PrioritiesPanelContent extends StatefulWidget {
 }
 
 class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
-  /// The view (priority + Everything flag) the user was on before a global
-  /// view — search or filter — took over. Restored when search/filter
-  /// clears, but only if the user did not deliberately pick a different
-  /// priority meanwhile (in which case it is cleared).
-  ({Priority? context, bool everything})? _viewBeforeGlobal;
-
-  /// Tracks the previous global-view state (searching or filtering) so we
-  /// can detect rising/falling edges in build.
-  bool _wasGlobalActive = false;
-
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<LocalPreferencesBloc, LocalPreferencesState>(
@@ -84,6 +74,7 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
         bool priorityShowArchived = false;
         String? prioritySearch;
         bool priorityFiltering = false;
+        Priority? globalViewScope;
         try {
           priorityShowArchived = context.select<PriorityBloc, bool>(
             (bloc) => bloc.state.showArchived,
@@ -96,6 +87,11 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                 bloc.state.filter.isNotEmpty ||
                 bloc.state.reactionFilter.isNotEmpty ||
                 bloc.state.iconFilter.isNotEmpty,
+          );
+          // The focus the active global view (search/filter) is narrowed to;
+          // null = Everything. Drives the global-view sidebar highlight.
+          globalViewScope = context.select<PriorityBloc, Priority?>(
+            (bloc) => bloc.state.globalViewScope,
           );
         } on ProviderNotFoundException {
           // No PriorityBloc in tree — use defaults below.
@@ -115,11 +111,10 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
 
         final search = prioritySearch ?? '';
         final isSearching = search.isNotEmpty;
-        _handleGlobalViewTransition(
-          context,
-          isSearching: isSearching,
-          isFiltering: priorityFiltering,
-        );
+        // A global view is open whenever a search or any filter is active. It
+        // shows the focus-as-filter sidebar and queries globally; focus scope
+        // is driven by [globalViewScope] in the bloc, not by route navigation.
+        final isGlobalView = isSearching || priorityFiltering;
 
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
@@ -145,10 +140,10 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
                           fit: layoutState.multiPanel
                               ? FlexFit.loose
                               : FlexFit.tight,
-                          child: isSearching
-                              ? _SearchMatchesList(
+                          child: isGlobalView
+                              ? _GlobalViewSidebar(
                                   root: root,
-                                  selected: selected,
+                                  scope: globalViewScope,
                                 )
                               : PrioritiesList(
                                   root: root,
@@ -169,100 +164,24 @@ class _PrioritiesPanelContentState extends State<PrioritiesPanelContent> {
     );
   }
 
-  /// Drive NowBloc.context off search/filter transitions so both behave the
-  /// same way: querying globally and switching the highlight to the synthetic
-  /// root feed, then coming back to where the user was when cleared.
-  ///   - A search or filter starts: stash the current view (priority +
-  ///     Everything flag) and switch the highlight to the root. A filter
-  ///     opens the full Everything feed (`everything: true`); a bare search
-  ///     keeps the view the user came from (Inbox-titled search, or
-  ///     Everything if they were already in it), matching prior behaviour.
-  ///   - The search/filter mix changes which mode the root view should be in
-  ///     (e.g. a filter is added on top of a search): re-align the flag.
-  ///   - The user picks a non-root priority meanwhile: clear the stash so a
-  ///     later clear does not undo their pick.
-  ///   - Everything clears: if the highlight is still the root, restore the
-  ///     stashed view. Otherwise leave the user's pick in place.
-  ///
-  /// All NowBloc mutations are scheduled in a post-frame callback so they
-  /// never run inside build.
-  void _handleGlobalViewTransition(
-    BuildContext context, {
-    required bool isSearching,
-    required bool isFiltering,
-  }) {
-    final active = isSearching || isFiltering;
-    final nowBloc = context.read<NowBloc>();
-    final nowState = nowBloc.state;
-    if (nowState is! NowLoaded) {
-      _wasGlobalActive = active;
-      return;
-    }
-    final current = nowState.context;
-    final root = context.read<PrioritiesBloc>().state.root;
-
-    void schedule(VoidCallback fn) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        fn();
-      });
-    }
-
-    // Update the stash on edges first.
-    if (active && !_wasGlobalActive) {
-      // Entering a global view — remember where we were so we can come back.
-      _viewBeforeGlobal = (context: current, everything: nowState.everything);
-    } else if (active && current != null && !current.root) {
-      // User picked a non-root priority while a global view was active —
-      // drop the stash so clearing search/filter does not undo their pick.
-      _viewBeforeGlobal = null;
-    }
-
-    if (active) {
-      // A filter opens the full Everything feed; a bare search keeps the
-      // view the user came from (Inbox-titled search, or Everything if they
-      // were already in it), matching the pre-filter search behaviour.
-      final priorEverything =
-          _viewBeforeGlobal?.everything ?? nowState.everything;
-      final desiredEverything = isFiltering || priorEverything;
-      final entering = !_wasGlobalActive;
-      final onRoot = current == null || current.root;
-      // Steer the highlight to the root feed while the user is still on it
-      // (or is just entering). If they navigated to a real priority we leave
-      // them there — the stash was already cleared above.
-      if (root != null &&
-          (entering || onRoot) &&
-          (current?.id != root.id || nowState.everything != desiredEverything)) {
-        schedule(() => nowBloc.setContext(root, everything: desiredEverything));
-      }
-    } else if (_wasGlobalActive) {
-      // Left every global view. Restore the stashed view, but only if the
-      // user did not pick a different priority during search/filter.
-      final stashed = _viewBeforeGlobal;
-      _viewBeforeGlobal = null;
-      if (stashed != null && (current == null || current.root)) {
-        schedule(
-          () => nowBloc.setContext(
-            stashed.context,
-            everything: stashed.everything,
-          ),
-        );
-      }
-    }
-
-    _wasGlobalActive = active;
-  }
 }
 
-/// Flat priority list shown in place of [PrioritiesList] while the user
-/// has an active search. Renders the root "Everything" tile followed by
-/// every priority that owns a thread in the current activity feed, each
-/// with its full ancestry path (like the pinned/top section).
-class _SearchMatchesList extends StatelessWidget {
-  const _SearchMatchesList({required this.root, required this.selected});
+/// Flat focus-as-filter sidebar shown in place of [PrioritiesList] while a
+/// global view (an active search or filter) is open. Leads with a fixed
+/// "Everything" tile, then an "Inbox" tile when the Inbox owns a match, then
+/// every focus that owns a matching thread (each with its full ancestry).
+///
+/// Tapping a tile narrows the global view to that scope via
+/// [SetGlobalViewScope] — it does NOT navigate, so the search/filter stays
+/// active. The highlight is driven by [scope]
+/// ([PriorityBloc.globalViewScope]); `null` = Everything (the full set).
+class _GlobalViewSidebar extends StatelessWidget {
+  const _GlobalViewSidebar({required this.root, required this.scope});
 
   final Priority root;
-  final Priority? selected;
+
+  /// The focus the global view is narrowed to; `null` = Everything.
+  final Priority? scope;
 
   @override
   Widget build(BuildContext context) {
@@ -278,12 +197,10 @@ class _SearchMatchesList extends StatelessWidget {
         : null;
     final bool monochrome = isLeftPanel;
 
-    // Pull the threads currently visible in the activity feed (after
-    // remote-search hydration) and group by priority so each match-
-    // bearing priority appears exactly once. Using the feed as the
-    // source means picking a priority — which scopes the feed — also
-    // narrows this list to that priority, matching the user-visible
-    // results.
+    // The focuses that own a thread in the current (global) feed or the
+    // remote-search extras, each listed once. The Inbox (root) is surfaced
+    // as its own fixed tile below, so it is tracked separately and excluded
+    // here to avoid the duplicate "Inbox" row.
     final feedItems = context.select<PriorityBloc, List<AgendaItem>>(
       (bloc) => bloc.state.activityFeedItems,
     );
@@ -292,8 +209,13 @@ class _SearchMatchesList extends StatelessWidget {
     );
     final matchPriorities = <Priority>[];
     final seen = <PriorityId>{};
+    bool hasInboxMatch = false;
     void addThread(Thread t) {
       final p = t.priority;
+      if (p.root) {
+        hasInboxMatch = true;
+        return;
+      }
       if (seen.add(p.id)) {
         matchPriorities.add(p);
       }
@@ -307,13 +229,8 @@ class _SearchMatchesList extends StatelessWidget {
     }
     matchPriorities.sort((a, b) => a.path.value.compareTo(b.path.value));
 
-    final everythingTile = _EverythingTileForSearch(
-      root: root,
-      isSelected: selected?.id == root.id,
-      borderRadius: itemBorderRadius,
-      textStyle: itemStyle,
-      monochrome: monochrome,
-    );
+    // Fixed Everything/Inbox tiles share the focus tiles' resting weight.
+    final fixedTileStyle = itemStyle.copyWith(fontWeight: FontWeight.w400);
 
     return ScrollEdgeFade(
       transparent: true,
@@ -323,24 +240,53 @@ class _SearchMatchesList extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(height: context.theme.spacing.md),
-            everythingTile,
+            // Everything — the full, unscoped global result set. Selected by
+            // default (no focus scope picked).
+            FixedFocusTile(
+              title: 'Everything',
+              icon: PlotIcon.inboxes,
+              isSelected: scope == null,
+              command: SetGlobalViewScope(null),
+              menuCommand: null,
+              hasUnread: false,
+              active: false,
+              borderRadius: itemBorderRadius,
+              textStyle: fixedTileStyle,
+              monochrome: monochrome,
+            ),
+            // Inbox — narrows to unfiled matches. Only when the Inbox owns one.
+            if (hasInboxMatch)
+              FixedFocusTile(
+                title: 'Inbox',
+                icon: PlotIcon.inbox,
+                isSelected: scope?.root ?? false,
+                command: SetGlobalViewScope(root),
+                menuCommand: null,
+                hasUnread: false,
+                active: false,
+                borderRadius: itemBorderRadius,
+                textStyle: fixedTileStyle,
+                monochrome: monochrome,
+              ),
             for (final priority in matchPriorities)
               PriorityWidget(
-                key: ValueKey('search-${priority.id}'),
+                key: ValueKey('global-${priority.id}'),
                 priority: priority,
                 monochrome: monochrome,
-                selected: selected?.id == priority.id,
+                selected: scope?.id == priority.id,
                 selectedBorder: true,
                 borderRadius: itemBorderRadius,
                 showAncestry: true,
                 boldLeaf: true,
+                // Tap narrows the global view to this focus without navigating.
+                command: SetGlobalViewScope(priority),
                 textStyle: itemStyle.copyWith(
                   color: context.colour.colours.fromTheme(
                     priority.displayColor,
                   ),
                 ),
               ),
-            if (matchPriorities.isEmpty)
+            if (matchPriorities.isEmpty && !hasInboxMatch)
               Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: context.contentPaddingH,
@@ -358,45 +304,6 @@ class _SearchMatchesList extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Minimal "Everything" tile used inside [_SearchMatchesList]. The full
-/// [PrioritiesList] variant carries hover/swipe/menu behaviour that does
-/// not belong in the search view; this version only renders the highlight
-/// and runs [ChangeCurrentPriority] on tap.
-class _EverythingTileForSearch extends StatelessWidget {
-  const _EverythingTileForSearch({
-    required this.root,
-    required this.isSelected,
-    required this.borderRadius,
-    required this.textStyle,
-    required this.monochrome,
-  });
-
-  final Priority root;
-  final bool isSelected;
-  final BorderRadius? borderRadius;
-  final TextStyle textStyle;
-  final bool monochrome;
-
-  @override
-  Widget build(BuildContext context) {
-    final rootAccent = context.colour.colours.fromTheme(root.displayColor);
-    final rootAccentBg = monochrome
-        ? context.colour.colours.backgroundFromTheme(root.displayColor)
-        : null;
-
-    return ListTile(
-      title: root.title,
-      command: ChangeCurrentPriority(root),
-      longPressCommand: null,
-      selected: isSelected,
-      selectedColor: rootAccentBg,
-      highlightColor: rootAccentBg,
-      borderRadius: borderRadius,
-      textStyle: textStyle.copyWith(color: rootAccent),
     );
   }
 }

@@ -321,6 +321,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     _restartActiveTabSubscription();
   }
 
+  /// Narrow (or un-narrow) the active global view — search or filter — to a
+  /// focus. `null` means "Everything" (the full global result set); the root
+  /// scopes to the Inbox (unfiled matches); any other focus scopes to that
+  /// focus. The global-view sidebar calls this when the user taps Everything /
+  /// Inbox / a focus, so results narrow in place WITHOUT route navigation —
+  /// the search text and filter chips stay active. This is a DISPLAY-only
+  /// filter ([PriorityState.activityFeedViewItems] applies it); the global
+  /// query is unchanged, so no subscription restart is needed and the sidebar
+  /// keeps listing every focus with a match. No-op when unchanged.
+  void setGlobalViewScope(Priority? scope) {
+    if (state.globalViewScope?.id == scope?.id) return;
+    log.info('Setting global-view scope to ${scope?.title ?? 'Everything'}');
+    emit(state.copyWith(globalViewScope: Value(scope)));
+  }
+
   void toggleShowArchived() {
     final newShowArchived = !state.showArchived;
     log.info('Toggling showArchived to $newShowArchived');
@@ -352,7 +367,16 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void updateFilter(List<Tag> filter) {
     log.info('Updating filter to $filter');
-    emit(state.copyWith(filter: filter));
+    // Reset the global-view focus scope when this leaves no global view active
+    // (no search and no other filter), so the next view starts at Everything.
+    final willBeGlobal = filter.isNotEmpty ||
+        state.search.isNotEmpty ||
+        state.reactionFilter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+    emit(state.copyWith(
+      filter: filter,
+      globalViewScope: willBeGlobal ? const Value.absent() : const Value(null),
+    ));
 
     // When filtering, force navigation to use activityFeed (matches UI)
     if (filter.isNotEmpty) {
@@ -369,7 +393,14 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   void updateReactionFilter(List<Reaction> reactionFilter) {
     log.info('Updating reaction filter to $reactionFilter');
-    emit(state.copyWith(reactionFilter: reactionFilter));
+    final willBeGlobal = reactionFilter.isNotEmpty ||
+        state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+    emit(state.copyWith(
+      reactionFilter: reactionFilter,
+      globalViewScope: willBeGlobal ? const Value.absent() : const Value(null),
+    ));
 
     if (reactionFilter.isNotEmpty) {
       threadListSource = ThreadListSource.activityFeed;
@@ -389,7 +420,14 @@ class PriorityBloc extends Cubit<PriorityState> {
       current.add(iconValue);
     }
     log.info('Updating icon filter to $current');
-    emit(state.copyWith(iconFilter: current));
+    final willBeGlobal = current.isNotEmpty ||
+        state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.reactionFilter.isNotEmpty;
+    emit(state.copyWith(
+      iconFilter: current,
+      globalViewScope: willBeGlobal ? const Value.absent() : const Value(null),
+    ));
 
     // The agenda is universal and ignores filters; only the activity
     // feed needs to refresh.
@@ -403,6 +441,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (state.search == search) return;
     // Invalidate any in-flight remote search so its response is discarded.
     _searchGeneration++;
+    // Drop the global-view focus scope when clearing search leaves no global
+    // view active (no filter armed), so the next search starts at Everything.
+    // Preserved across keystrokes within a search, and while a filter keeps
+    // the global view alive.
+    final willBeGlobal = search.isNotEmpty || _hasActiveFilter;
     emit(
       state.copyWith(
         search: search,
@@ -410,6 +453,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         remoteSearchInProgress: false,
         remoteSearchOffline: false,
         hasArchivedMatches: false,
+        globalViewScope: willBeGlobal ? const Value.absent() : const Value(null),
       ),
     );
 
@@ -806,22 +850,26 @@ class PriorityBloc extends Cubit<PriorityState> {
       state.iconFilter.isNotEmpty;
 
   ({PriorityId? priorityId, Path? priorityPath}) _feedScope() {
-    // Everything and any active filter both show a global, unscoped feed:
-    // a filter searches across every focus, so it must not stay pinned to
-    // the current one. The priority page additionally flips the highlight
-    // to Everything when a filter is armed (see _handleGlobalViewTransition).
-    if (state.everything || _hasActiveFilter) {
+    // A global view (an active search or any active filter) always QUERIES
+    // across every focus, regardless of [context] — so results are global no
+    // matter which focus was selected when the view opened. Narrowing to a
+    // focus is a display-only concern driven by [globalViewScope] (see
+    // [PriorityState.activityFeedViewItems]); the underlying query stays
+    // global so the focus-as-filter sidebar can keep listing every focus with
+    // a match and the user can switch the narrow without re-querying.
+    if (state.search.isNotEmpty || _hasActiveFilter) {
+      return (priorityId: null, priorityPath: null);
+    }
+    // The dedicated (non-search) Everything feed is also global.
+    if (state.everything) {
       return (priorityId: null, priorityPath: null);
     }
     final p = state.context;
-    final isSearching = state.search.isNotEmpty;
     if (p.root) {
-      return isSearching
-          ? (priorityId: null, priorityPath: null)
-          : (priorityId: p.id, priorityPath: null);
+      return (priorityId: p.id, priorityPath: null);
     }
     final scopeByPath =
-        isSearching || state.showSubPriorities || _currentEventForFeed != null;
+        state.showSubPriorities || _currentEventForFeed != null;
     return (
       priorityId: scopeByPath ? null : p.id,
       priorityPath: scopeByPath ? p.path : null,
@@ -2570,6 +2618,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         filter: const [],
         iconFilter: const [],
         search: '',
+        // A navigation ends any global view, so clear its focus scope too.
+        globalViewScope: const Value(null),
         remoteSearchExtras: const [],
         remoteSearchInProgress: false,
         remoteSearchOffline: false,

@@ -38,6 +38,7 @@ class PriorityState extends Equatable {
     bool hasArchivedMatches = false,
     bool showSubPriorities = true,
     bool everything = false,
+    Priority? globalViewScope,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -89,6 +90,7 @@ class PriorityState extends Equatable {
       hasArchivedMatches: hasArchivedMatches,
       showSubPriorities: showSubPriorities,
       everything: everything,
+      globalViewScope: globalViewScope,
     );
   }
 
@@ -124,6 +126,7 @@ class PriorityState extends Equatable {
     this.hasArchivedMatches = false,
     this.showSubPriorities = true,
     this.everything = false,
+    this.globalViewScope,
   });
 
   final Priority context;
@@ -212,16 +215,38 @@ class PriorityState extends Equatable {
   /// stays the root so drafts land in the Inbox.
   final bool everything;
 
+  /// While a global view is open (an active [search] or any active filter),
+  /// the focus the user has narrowed results to. `null` means "Everything" —
+  /// the full, unscoped global result set. A non-null value scopes the feed to
+  /// that focus (the root scopes to the Inbox / unfiled threads). This drives
+  /// focus-filtering entirely within the bloc, decoupled from route navigation
+  /// and [context], so global views stay global regardless of which focus was
+  /// selected when the view opened. Always `null` outside a global view.
+  final Priority? globalViewScope;
+
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 
   /// The activity feed items as the user should see them — equal to
-  /// [activityFeedItems] except when [muteOnly] is on, in which case the
-  /// view is filtered down to threads carrying a `mute_by_thread_id`
-  /// flag (with empty section headers suppressed).
+  /// [activityFeedItems] except when [muteOnly] is on (filtered to threads
+  /// carrying a `mute_by_thread_id` flag) and/or when a global view is
+  /// narrowed to a focus via [globalViewScope] (filtered to that focus, or
+  /// the Inbox / unfiled threads when the scope is the root). Empty section
+  /// headers are suppressed. The global query itself stays unscoped, so this
+  /// display filter is what makes a focus pick narrow the visible results.
   List<AgendaItem> get activityFeedViewItems {
-    if (!muteOnly) return activityFeedItems;
-    bool keep(Thread t) => t.muteByThreadId != null;
+    final scope = globalViewScope;
+    if (!muteOnly && scope == null) return activityFeedItems;
+    bool keep(Thread t) {
+      if (muteOnly && t.muteByThreadId == null) return false;
+      if (scope != null) {
+        return scope.root
+            ? t.priority.root
+            : t.priority.path.value == scope.path.value;
+      }
+      return true;
+    }
+
     final result = <AgendaItem>[];
     final pendingHeaders = <AgendaHeaderItem>[];
     for (final item in activityFeedItems) {
@@ -342,6 +367,7 @@ class PriorityState extends Equatable {
     bool? hasArchivedMatches,
     bool? showSubPriorities,
     bool? everything,
+    Value<Priority?> globalViewScope = const Value.absent(),
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -402,6 +428,7 @@ class PriorityState extends Equatable {
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
       showSubPriorities: showSubPriorities ?? this.showSubPriorities,
       everything: everything ?? this.everything,
+      globalViewScope: globalViewScope.or(this.globalViewScope),
     );
   }
 
@@ -438,6 +465,7 @@ class PriorityState extends Equatable {
     hasArchivedMatches,
     showSubPriorities,
     everything,
+    globalViewScope,
   ];
 
   @override

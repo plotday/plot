@@ -195,10 +195,12 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   ///
   /// Single-panel search runs across the Everything feed, so switch to it
   /// up front — before any query is typed — so the results span every
-  /// thread. This method only runs from the single-panel bottom nav;
-  /// multi-panel keeps its own deferred switch (priorities.dart's
-  /// `_handleGlobalViewTransition`), which waits for a query or filter and
-  /// restores the prior priority when the search/filter clears.
+  /// thread. This method only runs from the single-panel bottom nav. In
+  /// multi-panel the priorities sidebar swaps to the global-view
+  /// focus-as-filter panel whenever a query or filter is active; results are
+  /// global regardless of the selected focus (driven by
+  /// `PriorityBloc.globalViewScope`), so no context switch or restore is
+  /// needed there.
   void _openSearch(BuildContext context, TabsRouter tabsRouter) {
     final layoutBloc = LayoutBloc.instance;
     final onActivityTab = tabsRouter.activeIndex == _kTabActivity;

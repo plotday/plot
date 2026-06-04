@@ -49,7 +49,7 @@ class PrioritiesList extends StatelessWidget {
             PanelPositionProvider.of(context) == HeaderPosition.left;
         // Every sidebar tile (focuses, Add a focus, Inbox, Everything) shares
         // one default weight — regular. Focus tiles and the Inbox go bold
-        // when they have active threads; see PriorityWidget / _FixedFocusTile.
+        // when they have active threads; see PriorityWidget / FixedFocusTile.
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
@@ -169,7 +169,7 @@ class PrioritiesList extends StatelessWidget {
             // is a fixed, semantic tile (the server projects the root as
             // "Inbox" at apiVersion >= 4, but older synced roots may still
             // carry the legacy "Everything" title).
-            _FixedFocusTile(
+            FixedFocusTile(
               title: 'Inbox',
               icon: PlotIcon.inbox,
               isSelected:
@@ -186,7 +186,7 @@ class PrioritiesList extends StatelessWidget {
 
             // Fixed Everything tile — the unscoped feed across the Inbox and
             // every focus. Rooted on the root with Everything mode on.
-            _FixedFocusTile(
+            FixedFocusTile(
               title: 'Everything',
               icon: PlotIcon.inboxes,
               isSelected: everything,
@@ -234,7 +234,7 @@ class PrioritiesList extends StatelessWidget {
 /// colour on hover/selection — but without the reorder handle, weekly-total
 /// chip, or expansion affordances. Both tiles render in the fixed Resolution
 /// brand colour rather than the root's own colour.
-class _FixedFocusTile extends StatefulWidget {
+class FixedFocusTile extends StatefulWidget {
   final String title;
 
   /// The leading icon (an inbox glyph for Inbox, inboxes for Everything).
@@ -255,7 +255,7 @@ class _FixedFocusTile extends StatefulWidget {
   final TextStyle textStyle;
   final bool monochrome;
 
-  const _FixedFocusTile({
+  const FixedFocusTile({
     required this.title,
     required this.icon,
     required this.isSelected,
@@ -266,13 +266,14 @@ class _FixedFocusTile extends StatefulWidget {
     required this.borderRadius,
     required this.textStyle,
     required this.monochrome,
+    super.key,
   });
 
   @override
-  State<_FixedFocusTile> createState() => _FixedFocusTileState();
+  State<FixedFocusTile> createState() => FixedFocusTileState();
 }
 
-class _FixedFocusTileState extends State<_FixedFocusTile> {
+class FixedFocusTileState extends State<FixedFocusTile> {
   bool _isHovered = false;
 
   @override

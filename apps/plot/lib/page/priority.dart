@@ -1089,29 +1089,41 @@ class _PriorityPageState extends State<PriorityPage>
     ScrollController? scrollController, {
     PageStorageKey<String>? scrollStorageKey,
   }) {
-    // Append remote search extras (threads surfaced by the server that
-    // aren't visible locally) with a section header. Only when searching.
+    // `items` is already the scope-narrowed view (activityFeedViewItems), so
+    // local results respect any focus the global view is narrowed to.
     //
     // Reuse the incoming `items` reference unchanged in the common case
     // (no extras) so the boundary-cache below can hit by identity.
     final isSearching = state.search.isNotEmpty;
-    // The Everything feed spans every focus and is otherwise unsectioned, so
-    // — in multi-panel mode — it leads with a single section header (the same
-    // AgendaTile heading other feeds use for Active/Done/etc.) labelled
-    // "Everything". Only added when the feed actually has threads, so the
-    // header never floats above an empty state.
+    final isFiltering = state.filter.isNotEmpty ||
+        state.reactionFilter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+    final scope = state.globalViewScope;
+    // The dedicated (non-search, non-filter) Everything feed spans every focus
+    // and is otherwise unsectioned, so — in multi-panel mode — it leads with a
+    // single "Everything" section header. Global views (search/filter) render
+    // as one headerless flat list, so the header is suppressed there.
     final everythingHeader =
         state.everything &&
+        !isSearching &&
+        !isFiltering &&
         context.read<LayoutBloc>().state.multiPanel &&
         items.whereType<AgendaThreadItem>().isNotEmpty;
     final List<AgendaItem> displayItems;
     if (isSearching && state.remoteSearchExtras.isNotEmpty) {
-      final merged = <AgendaItem>[
-        if (everythingHeader) const AgendaHeaderItem(text: 'Everything'),
-        ...items,
-      ];
-      merged.add(const AgendaHeaderItem(text: 'From the server'));
-      for (final t in state.remoteSearchExtras) {
+      // Remote extras (threads the server surfaced that aren't visible
+      // locally) append directly to the same list — no section header. When
+      // the view is narrowed to a focus, the extras are filtered to it too so
+      // they match the local results.
+      final extras = scope == null
+          ? state.remoteSearchExtras
+          : state.remoteSearchExtras.where(
+              (t) => scope.root
+                  ? t.priority.root
+                  : t.priority.path.value == scope.path.value,
+            );
+      final merged = <AgendaItem>[...items];
+      for (final t in extras) {
         merged.add(AgendaThreadItem(t));
       }
       displayItems = merged;
@@ -1144,14 +1156,22 @@ class _PriorityPageState extends State<PriorityPage>
       return const LoadingPage();
     }
 
+    // A global view narrowed to a focus filters the loaded global results
+    // client-side, so its emptiness doesn't depend on global pagination being
+    // exhausted — show the empty state without waiting for `activityFeedDoneEnd`
+    // (otherwise an empty narrowed view would spin forever). The unnarrowed
+    // view still waits for done-end so it doesn't flash "no matches" mid-load.
+    final narrowedToFocus = state.globalViewScope != null;
     if (!hasAnyThread &&
         !showFooter &&
-        state.activityFeedDoneEnd &&
-        state.activityFeedLoaded) {
+        state.activityFeedLoaded &&
+        (state.activityFeedDoneEnd || narrowedToFocus)) {
       final isFiltering =
           state.filter.isNotEmpty || state.iconFilter.isNotEmpty;
       final String emptyMessage;
-      if (isSearching && isFiltering) {
+      if (narrowedToFocus) {
+        emptyMessage = 'No matching threads in this focus.';
+      } else if (isSearching && isFiltering) {
         emptyMessage = 'No threads match your search and filters.';
       } else if (isSearching) {
         emptyMessage = 'No threads match your search.';

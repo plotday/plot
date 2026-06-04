@@ -4,6 +4,7 @@ export 'take_photo.dart';
 export 'base.dart';
 export 'filter.dart';
 export 'global.dart';
+export 'global_view_scope.dart';
 export 'navigation.dart';
 export 'priority.dart';
 export 'timer.dart';
