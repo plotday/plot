@@ -645,22 +645,12 @@ BEGIN
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
                     last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
-    -- Also notify per-user schedule owners directly
-    FOR v_user_id IN SELECT DISTINCT
-        n.user_id
-    FROM
-        new_table n
-    WHERE
-        n.user_id IS NOT NULL
-    ORDER BY
-        n.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
-                VALUES (v_user_id, 'schedule', v_max_updated_at, v_max_seq)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
-                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
-        END LOOP;
+    -- The thread_priority loop above covers every user who can see the
+    -- schedule. Schedules are now purely shared/link-scoped (the per-user
+    -- schedule.user_id column was removed when per-user "todo" intent moved
+    -- to thread_state), so there are no per-user schedule owners to notify
+    -- separately. A leftover loop referencing the dropped schedule.user_id
+    -- column here threw "column ... does not exist" on every schedule write.
     RETURN NULL;
 END;
 $function$;
