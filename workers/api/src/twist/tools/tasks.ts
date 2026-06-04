@@ -8,9 +8,12 @@ import { isCallbackError } from "../../errors";
 import { type CallbacksState } from "../../state/callbacks";
 import { extractRunQueueContext } from "../../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
-import { invokeWebhookCallback } from "../invoke-webhook";
+import {
+  type ErrorWithTwistOwner,
+  invokeWebhookCallback,
+} from "../invoke-webhook";
 import { disposeRpc } from "../../utils/rpc";
-import { isTransientError } from "../../utils/transient-error";
+import { isRateLimitError, isTransientError } from "../../utils/transient-error";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -208,6 +211,21 @@ export class Tasks extends Tool implements IRun {
           return;
         }
 
+        // Downstream provider rate-limit / quota errors (Gmail/Google 403
+        // rateLimitExceeded, HTTP 429). Expected under load and self-
+        // resolving, so retry without paging PostHog Error Tracking — see
+        // isRateLimitError. Retrying (not acking) lets the message process
+        // once the provider's rate window clears.
+        if (isRateLimitError(error)) {
+          logger.warn("RunMessage invocation finished", {
+            duration_ms: durationMs,
+            outcome: "rate_limited_retry",
+            error: String(error),
+          });
+          message.retry();
+          return;
+        }
+
         if (isCallbackError(error)) {
           logger.warn("RunMessage invocation finished", {
             duration_ms: durationMs,
@@ -226,7 +244,13 @@ export class Tasks extends Tool implements IRun {
             outcome: "failure_retry",
           }
         );
-        postHog.captureException(error as Error, undefined, {
+        // Attribute the capture to the owning user (distinctId) when
+        // invokeWebhookCallback tagged the error — otherwise PostHog mints a
+        // random per-event distinct_id and the issue shows a UUID instead of
+        // the user. owner_id is the user UUID, matching the worker-wide
+        // captureException distinctId convention.
+        const ownerId = (error as ErrorWithTwistOwner)?.twistOwnerId;
+        postHog.captureException(error as Error, ownerId, {
           twist_instance_id: message.body.twistInstanceId,
           path: message.body.path.join("/"),
           queue: batch.queue,

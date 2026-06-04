@@ -29,3 +29,33 @@ export function isTransientError(error: unknown): boolean {
     msg.includes("Queue send failed: Internal Server Error")
   );
 }
+
+/**
+ * Detect downstream provider rate-limit / quota errors that bubble up from a
+ * connector callback. These are expected under load, self-resolve once the
+ * provider's rate window passes, and the queue consumers already retry them.
+ * Capturing them to PostHog Error Tracking just adds noise (per AGENTS.md:
+ * "Do NOT report expected/handled errors … only unexpected failures that
+ * indicate bugs"). Unlike `isTransientError`, these are downstream-API-side,
+ * not Cloudflare infra — keep the two classifiers separate so the infra list
+ * stays narrow.
+ *
+ * Matched on the flattened error message: connector errors cross the twist
+ * RPC boundary as plain strings (same constraint as `isInsufficientScopeError`
+ * in twist/tools/auth-scope.ts). The markers below are the exact, unambiguous
+ * signatures Google/Gmail emit — `rateLimitExceeded` (usageLimits reason),
+ * `RATE_LIMIT_EXCEEDED` (ErrorInfo reason), `Quota exceeded` (quota message),
+ * `userRateLimitExceeded`, and the HTTP 429 statusText. Deliberately NOT a
+ * bare "429" or "403" substring, which would match unrelated payloads.
+ */
+export function isRateLimitError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("rateLimitExceeded") ||
+    msg.includes("userRateLimitExceeded") ||
+    msg.includes("RATE_LIMIT_EXCEEDED") ||
+    msg.includes("Quota exceeded") ||
+    msg.includes("Too Many Requests")
+  );
+}
