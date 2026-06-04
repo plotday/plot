@@ -190,7 +190,7 @@ async function cleanupAllTwistingTags(
  * Process a batched twist update message
  * Handles notes, activities, and twist_instance updates for a single twist
  */
-async function processTwistBatch(
+export async function processTwistBatch(
   batchData: TwistBatchMessage,
   env: Bindings,
   ctx: ExecutionContext,
