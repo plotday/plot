@@ -1,38 +1,5 @@
--- Ensure user_contact rows exist for all contacts on a thread so that
--- external contacts (e.g. from Gmail, Slack connectors) are visible as
--- actors in the app. Fires after INSERT or UPDATE OF contacts on thread.
---
--- Cross-contact visibility is gated: a recipient only gains a user_contact
--- row pointing at another contact on the thread when they have an
--- independent right to see the thread's membership. Concretely, one of:
---   - they authored the thread
---   - one of their own linked contacts is on the thread (peer share)
---   - they admin one of the thread's groups (announce / private / team)
---   - they're a member of a `private` or `team` group on the thread
---     (matches user.group.member_contact_ids: public/announce groups do
---     not expose their member list to non-admin members)
--- This mirrors the visibility rule encoded in user.group.member_contact_ids:
--- non-admins of announce groups must not learn the other members' identities.
---
--- Re-justification (un-redact): when the predicate PASSES for a (user, contact)
--- pair that already has a redacted row, the ON CONFLICT clause un-archives it
--- instead of leaving it tombstoned. The 20260505 redact_contact_leakage
--- migration archived thread-sourced (linked = false) user_contact rows that
--- FAILED this exact predicate; user.actor then emits a name/email-NULL
--- tombstone, so the contact renders as "Unknown" even on threads the user can
--- now see. Un-archiving here is the precise inverse of that sweep under the
--- same justification rule — it restores the actor's identity without
--- re-leaking, and the UPDATE bumps user_contact.seq so clients re-pull the
--- now-named row. Scoped to linked = false / source = 'thread' so it can never
--- touch self or linked address-book rows.
---
--- Named with sync_ prefix so it fires alphabetically after
--- file_thread_priority_peers (f < s), ensuring peer thread_priority
--- rows exist before we look them up.
-CREATE OR REPLACE FUNCTION public.sync_user_contact_for_thread_contacts ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    AS $$
+-- Modify "sync_user_contact_for_thread_contacts" function
+CREATE OR REPLACE FUNCTION "public"."sync_user_contact_for_thread_contacts" () RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.contacts IS NULL OR cardinality(NEW.contacts) = 0 THEN
         RETURN NEW;
@@ -92,9 +59,3 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-
-CREATE TRIGGER sync_user_contact_for_thread_contacts
-    AFTER INSERT OR UPDATE OF contacts
-    ON public.thread
-    FOR EACH ROW
-    EXECUTE FUNCTION public.sync_user_contact_for_thread_contacts ();
