@@ -37,15 +37,18 @@ class OnboardingFullScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              step.body,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xD9FFFFFF),
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
-                decoration: TextDecoration.none,
-                height: 1.5,
+            SizedBox(
+              width: double.infinity,
+              child: Text(
+                step.body,
+                textAlign: TextAlign.start,
+                style: const TextStyle(
+                  color: Color(0xD9FFFFFF),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  decoration: TextDecoration.none,
+                  height: 1.5,
+                ),
               ),
             ),
             if (step.contentBuilder != null) ...[

@@ -84,7 +84,7 @@ class OnboardingRoles extends StatelessWidget {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      alignment: WrapAlignment.center,
+      alignment: WrapAlignment.start,
       children: [
         for (final sample in kSampleFocuses)
           _SampleFocusChip(
@@ -93,7 +93,7 @@ class OnboardingRoles extends StatelessWidget {
             onTap: () => _createFocus(context, sample),
           ),
         _SampleFocusChip(
-          label: 'Create anything else',
+          label: 'Anything else',
           icon: PlotIcon.add,
           onTap: () => _createFocus(context),
         ),
@@ -123,8 +123,9 @@ class _SampleFocusChip extends StatelessWidget {
       onTap: onTap,
       builder: (context, hovered) {
         final bg = hovered ? const Color(0x4DFFFFFF) : const Color(0x33FFFFFF);
-        final borderColor =
-            hovered ? const Color(0x99FFFFFF) : const Color(0x66FFFFFF);
+        final borderColor = hovered
+            ? const Color(0x99FFFFFF)
+            : const Color(0x66FFFFFF);
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -145,6 +146,12 @@ class _SampleFocusChip extends StatelessWidget {
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   decoration: TextDecoration.none,
+                  // Collapse the line box to the font size so the glyph's
+                  // optical center lines up with the centered icon — matches
+                  // the focus-row pattern in priorities_list.dart. Without it
+                  // the default leading sits above the text and the icon reads
+                  // as too high.
+                  height: 1,
                 ),
               ),
             ],

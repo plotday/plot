@@ -57,6 +57,7 @@ class HighlightStep extends OnboardingStep {
     required this.target,
     required this.overlay,
     this.multiPanelAlignment = MultiPanelContentAlignment.center,
+    this.contentBuilder,
   });
 
   final HighlightTarget target;
@@ -69,6 +70,12 @@ class HighlightStep extends OnboardingStep {
   /// the highlighted panel. Only applies in multi-panel mode; single-panel
   /// uses the horizontal split layout.
   final MultiPanelContentAlignment multiPanelAlignment;
+
+  /// Optional interactive content shown below the body text, beside the
+  /// highlighted panel — e.g. the sample-focus chips on the "Where do you
+  /// focus?" step. The content column scrolls if it outgrows the available
+  /// height so a tall builder never overflows the overlay.
+  final Widget Function(BuildContext context)? contentBuilder;
 }
 
 /// Multi-panel content placement for a [HighlightStep]. The text block is
@@ -144,19 +151,10 @@ class OnboardingSteps {
   // Momentum, Turning Point, Breakthrough, and Climax along the way.
   static List<OnboardingStep> get all => [
     const FullScreenStep(
-      title: 'Your best work every day',
+      title: "Your best work\nevery day",
       body:
-          "Every conversation in its place.\nThe best of your day stays yours to make progress on what matters.",
+          "Plot is your collaboration hub, unifying work across email, chat, meetings, apps and agents. Choose a focus and have everything you need to make progress.",
       background: ThemeColor(0), // Catalyst — opener
-    ),
-    const FullScreenStep(
-      title: 'What fills your days?',
-      body:
-          "Pick a few focuses to start with. Each one gathers the threads — "
-          "messages, tasks, and docs — for that part of your life.",
-      background: ThemeColor(1), // Call to Adventure
-      contentMaxWidth: 540,
-      contentBuilder: _buildRoles,
     ),
     FullScreenStep(
       title: 'Connect your calendar',
@@ -167,39 +165,44 @@ class OnboardingSteps {
     FullScreenStep(
       title: 'Connect everything else',
       body:
-          'Email, chat, comments, issues — bring the conversations from your other tools into Plot so you have everything you need when you choose a focus.',
+          'Email, chat, comments, meeting notes — bring the conversations from your other tools into Plot so you have everything you need when you choose a focus.',
       background: const ThemeColor(3), // Momentum
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
     ),
     const HighlightStep(
-      title: 'Your focuses',
+      title: 'Choose your focus',
       body:
-          "Focuses capture what matters to you — projects, goals, and the areas of your life. Zoom in on any focus to filter and concentrate, or zoom out to see everything.",
+          "In Plot, a focus is a separate inbox with everything related to a role, activity, or project. Focuses are great for concentrating on your top priorities. They're also helpful for collecting low-urgency work to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
       target: PanelTarget.priorities,
       overlay: ThemeColor(4), // Turning Point
       // In multi-panel the left panel stacks agenda on top of the focuses, so
       // anchor this step's text to the bottom — visually next to the focuses
       // list it describes.
-      multiPanelAlignment: MultiPanelContentAlignment.bottom,
+      multiPanelAlignment: MultiPanelContentAlignment.top,
+      // Sample-focus chips let the user spin up their first focuses right
+      // here, beside the highlighted focuses panel they'll appear in.
+      contentBuilder: _buildRoles,
     ),
     const HighlightStep(
-      title: 'Your agenda',
+      title: 'Your day',
       body:
-          "Choose where to invest your focus each day. Plot fills in your scheduled events and the focuses you're actively working on, then groups everything by day so you can shape your best day.",
+          "See your day at glance. Easily add focus blocks to ensure you make progress on what matter most.",
       target: PanelTarget.agenda,
       overlay: ThemeColor(5), // Breakthrough
-      // Multi-panel: agenda sits at the top of the left panel, so anchor the
-      // text to the top. Single-panel: the overlay routes to /agenda and the
+      // Multi-panel: the agenda occupies the bottom half of the left panel
+      // (leftBottom), starting around the vertical midpoint. Center the text
+      // so it sits beside where the agenda begins rather than hugging the
+      // bottom edge. Single-panel: the overlay routes to /agenda and the
       // mobile split layout handles placement.
-      multiPanelAlignment: MultiPanelContentAlignment.top,
+      multiPanelAlignment: MultiPanelContentAlignment.center,
     ),
     const HighlightStep(
-      title: 'Your activity feed',
+      title: 'Everything is a thread',
       body:
-          "What's active (new updates at the top), what's scheduled, and "
-          "what's done — all in one feed. Catch up across every connected "
-          "app without losing your place.",
+          "Threads you create in Plot alongside everything from your connections lands in a focus (or your Inbox). "
+          "Updates appear at the top, followed by threads you've marked Active (something that needs your attention or action). "
+          "You can \"snooze\" threads to clear them from today and make sure you get back to them later.",
       target: PanelTarget.feed,
       overlay: ThemeColor(6), // Climax
     ),
@@ -207,8 +210,7 @@ class OnboardingSteps {
       title: 'Everything is a thread',
       body:
           'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
-          'Threads are shared automatically with everyone on the underlying item, '
-          'and many connectors sync notes both ways (a note on a Linear thread posts a comment back to Linear).',
+          'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
       target: NamedThreadTarget(threadTitle: 'Everything in its place'),
       overlay: ThemeColor(2), // Rising Action — back into the arc
       // The cutout is the right panel; pull the text block toward it so the
@@ -216,7 +218,7 @@ class OnboardingSteps {
       multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     FullScreenStep(
-      title: 'Carry on',
+      title: 'Your best work\nevery day',
       body:
           "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"

@@ -161,25 +161,42 @@ class _DesktopHighlight extends StatelessWidget {
                 mainAxisAlignment: mainAxis,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    step.title,
-                    style: const TextStyle(
-                      color: Color(0xFFFFFFFF),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      decoration: TextDecoration.none,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    step.body,
-                    style: const TextStyle(
-                      color: Color(0xE6FFFFFF),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      decoration: TextDecoration.none,
-                      height: 1.6,
+                  // Title + body (+ optional content) scroll within the
+                  // fixed-height overlay so a tall content builder — e.g. the
+                  // sample-focus chips — never overflows. With no builder the
+                  // block is short and still hugs the chosen anchor edge.
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            step.title,
+                            style: const TextStyle(
+                              color: Color(0xFFFFFFFF),
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              decoration: TextDecoration.none,
+                              height: 1.3,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            step.body,
+                            style: const TextStyle(
+                              color: Color(0xE6FFFFFF),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                              decoration: TextDecoration.none,
+                              height: 1.6,
+                            ),
+                          ),
+                          if (step.contentBuilder != null) ...[
+                            const SizedBox(height: 24),
+                            step.contentBuilder!(context),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -368,6 +385,10 @@ class _MobileHighlight extends StatelessWidget {
                                         height: 1.6,
                                       ),
                                     ),
+                                    if (step.contentBuilder != null) ...[
+                                      const SizedBox(height: 20),
+                                      step.contentBuilder!(context),
+                                    ],
                                   ],
                                 ),
                               ),
