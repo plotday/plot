@@ -193,25 +193,19 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   }
 
   /// Compute and apply smart default channel selections for setup mode.
-  Future<void> _applySuggestedDefaults(TwistIntegrations data) async {
-    final suggestion = await ChannelDefaultSuggester.suggest(
-      channels: data.channels,
-      accounts: data.accounts,
-      teamDomains: data.teamDomains,
-    );
-
-    if (!mounted) return;
+  void _applySuggestedDefaults(TwistIntegrations data) {
+    final suggestion =
+        ChannelDefaultSuggester.suggest(channels: data.channels);
 
     setState(() {
       _localSelectedChannels.addAll(suggestion.enabledChannels);
-      // The suggester can return an empty set (e.g. during onboarding before
-      // priorities have synced locally — see channel_defaults.dart's early
-      // return on `priorities.isEmpty`). The form's "Add connection" button
-      // is gated on at least one selected channel, so an empty default
-      // strands the user on a disabled button. Fall back to the first
-      // available channel so setup always has a sensible starting state.
+      // The suggester can return an empty set (e.g. a connection whose only
+      // channels are explicitly excluded by the connector). The form's "Add
+      // connection" button is gated on at least one selected channel, so fall
+      // back to the first selectable channel so setup isn't stranded on a
+      // disabled button. Skip channels the connector excluded by default.
       if (_localSelectedChannels.isEmpty) {
-        final firstKey = _firstChannelKey(data.channels);
+        final firstKey = _firstSelectableChannelKey(data.channels);
         if (firstKey != null) _localSelectedChannels.add(firstKey);
       }
     });
@@ -219,8 +213,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     _notifyChanged();
   }
 
-  static String? _firstChannelKey(List<TwistChannel> channels) {
+  static String? _firstSelectableChannelKey(List<TwistChannel> channels) {
     for (final c in channels) {
+      if (c.enabledByDefault == false) continue;
       return '${c.providerKey}:${c.id}';
     }
     return null;

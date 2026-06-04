@@ -905,6 +905,13 @@ class TwistChannel extends Equatable {
 
   final String id;
   final String title;
+
+  /// Connector's tri-state hint for whether this channel should be selected by
+  /// default when the connection is first added: `true` = pre-select, `false`
+  /// = exclude (low-value/irrelevant), `null` = let the client decide. Drives
+  /// the setup UI's default selection — see [ChannelDefaultSuggester].
+  final bool? enabledByDefault;
+
   final bool enabled;
   final String? enabledBy;
   final List<TwistLinkType> linkTypes;
@@ -916,6 +923,7 @@ class TwistChannel extends Equatable {
     required this.providerKey,
     required this.id,
     required this.title,
+    this.enabledByDefault,
     required this.enabled,
     this.enabledBy,
     this.linkTypes = const [],
@@ -933,6 +941,7 @@ class TwistChannel extends Equatable {
       providerKey: providerStr,
       id: json['id'] as String,
       title: json['title'] as String,
+      enabledByDefault: json['enabledByDefault'] as bool?,
       enabled: json['enabled'] as bool? ?? false,
       enabledBy: json['enabledBy'] as String?,
       linkTypes: (json['linkTypes'] as List<dynamic>?)
@@ -958,6 +967,7 @@ class TwistChannel extends Equatable {
     providerKey,
     id,
     title,
+    enabledByDefault,
     enabled,
     enabledBy,
     linkTypes,

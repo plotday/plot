@@ -3174,6 +3174,7 @@ export class Integrations extends Tool implements IAuth {
       provider: AuthProvider;
       id: string;
       title: string;
+      enabledByDefault?: boolean;
       enabled: boolean;
       enabledBy: ActorId | undefined;
       currentUserHasAccess: boolean;
@@ -3181,6 +3182,7 @@ export class Integrations extends Tool implements IAuth {
         provider: AuthProvider;
         id: string;
         title: string;
+        enabledByDefault?: boolean;
         enabled: boolean;
         enabledBy: ActorId | undefined;
         currentUserHasAccess: boolean;
@@ -3235,6 +3237,7 @@ export class Integrations extends Tool implements IAuth {
       provider: AuthProvider;
       id: string;
       title: string;
+      enabledByDefault?: boolean;
       enabled: boolean;
       enabledBy: ActorId | undefined;
       linkTypes?: LinkTypeConfig[];
@@ -3438,6 +3441,13 @@ export class Integrations extends Tool implements IAuth {
           provider,
           id: channel.id,
           title: channel.title,
+          // Carry the connector's default-enable signal (tri-state) through to
+          // the setup UI. Stored verbatim in the DO channel-access tree by
+          // setChannels, so it survives without a DB column. Propagate `false`
+          // too (it means "exclude by default"), omitting only undefined.
+          ...(channel.enabledByDefault != null
+            ? { enabledByDefault: channel.enabledByDefault }
+            : {}),
           enabled: channelConfig?.enabled ?? false,
           enabledBy: channelConfig?.enabledBy,
           linkTypes: effectiveLinkTypes,

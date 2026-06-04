@@ -1,5 +1,5 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:plot/api/twist_api.dart';
-import 'package:plot/store/store.dart' show Priority, PriorityOrder;
 
 /// Suggested defaults for which channels to enable.
 class ChannelDefaultSuggestion {
@@ -8,271 +8,86 @@ class ChannelDefaultSuggestion {
   const ChannelDefaultSuggestion({this.enabledChannels = const {}});
 }
 
-/// Common personal email domains that should not match teams.
-const _personalDomains = {
-  'gmail.com',
-  'googlemail.com',
-  'outlook.com',
-  'hotmail.com',
-  'live.com',
-  'yahoo.com',
-  'icloud.com',
-  'me.com',
-  'mac.com',
-  'aol.com',
-  'protonmail.com',
-  'proton.me',
-  'hey.com',
-  'fastmail.com',
-  'zoho.com',
-  'mail.com',
-  'yandex.com',
-  'gmx.com',
-  'gmx.net',
-};
-
-/// Negative signal words in channel titles — likely not user's own content.
-final _negativePatterns = RegExp(
-  r'\b(other|shared|group|all\s+staff)\b',
-  caseSensitive: false,
-);
-
-/// Low-value email labels that are rarely useful to sync.
+/// Low-value email labels that are rarely useful to sync (Sent, Draft, Spam,
+/// Gmail category labels, app-specific bracketed labels, receipts).
 final _lowValueEmailPatterns = RegExp(
   r'^(SENT|DRAFT|UNREAD|SPAM|TRASH|CATEGORY_\w+)$|^\[.+\]|^receipt',
   caseSensitive: false,
 );
 
-/// Informational/read-only channel patterns.
+/// Informational/read-only channels (holiday & birthday calendars, etc.) that
+/// would crowd the user's view if synced.
 final _informationalPatterns = RegExp(
   r'(holidays?\s+in\b|public\s+holidays?|national\s+holidays?|birthdays?|contacts?\b|^phases\s+of\s+the\s+moon)',
   caseSensitive: false,
 );
 
-/// Computes smart default channel selections and priority assignments.
+/// Computes which channels to enable by default when a connection is first
+/// added.
+///
+/// The model is "sync everything the user would reasonably want by default,
+/// then filter out the low-value ones" — for most connectors that means
+/// enabling all of their top-level channels. Two signals refine this:
+///
+/// 1. **Connector hint** ([TwistChannel.enabledByDefault], tri-state): `true`
+///    forces the channel on, `false` excludes it (e.g. a shared/holiday
+///    calendar, a Gmail spam label, a cascading GitHub org or "Shared with me"
+///    drive), and `null` leaves the decision to the heuristic below.
+/// 2. **Client heuristic** (for `null`): enable the channel unless its title
+///    looks low-value (holidays, birthdays, Sent/Draft/Spam, …).
+///
+/// Children of a tree are NOT auto-enabled (only explicit `true` ones are), so
+/// enabling a connection never fans out across every folder/repo/sub-channel.
 class ChannelDefaultSuggester {
-  /// Suggest which channels to enable.
-  ///
-  /// [channels] — available channels from the source.
-  /// [accounts] — connected accounts with email info.
-  /// [teamDomains] — teamId → list of email domains from the API.
-  static Future<ChannelDefaultSuggestion> suggest({
+  /// Suggest which channels to enable. [channels] is the channel tree returned
+  /// by the connector (with [TwistChannel.enabledByDefault] hints populated).
+  static ChannelDefaultSuggestion suggest({
     required List<TwistChannel> channels,
-    required List<TwistAccount> accounts,
-    required Map<int, List<String>>? teamDomains,
-  }) async {
-    if (channels.isEmpty) return const ChannelDefaultSuggestion();
-
-    // Load all priorities from local store
-    final priorities = await Priority.get(order: PriorityOrder.nested);
-    if (priorities.isEmpty) return const ChannelDefaultSuggestion();
-
-    final defaultPriority = await Priority.getDefault();
-
-    // Phase 1: Map account email domains → priority. Focuses are team-agnostic,
-    // so work-domain accounts no longer resolve to a per-team priority; they
-    // map to the default priority purely to drive the domain-match scoring
-    // signal below.
-    final domainToPriority = _buildDomainPriorityMap(
-      accounts,
-      teamDomains,
-      defaultPriority,
-    );
-
-    // Flatten channels for scoring
-    final flat = _flattenChannels(channels);
-    if (flat.isEmpty) return const ChannelDefaultSuggestion();
-
-    // Phase 2: Score each channel
-    final scored = <_ScoredChannel>[];
-    for (var i = 0; i < flat.length; i++) {
-      final channel = flat[i];
-      final score = _scoreChannel(
-        channel: channel,
-        index: i,
-        accounts: accounts,
-        priorities: priorities,
-        domainToPriority: domainToPriority,
-      );
-      scored.add(score);
-    }
-
-    // Phase 3: Select
-    final enabledChannels = <String>{};
-
-    // Enable channels with score >= 3
-    for (final s in scored) {
-      if (s.score >= 3) {
-        enabledChannels.add(s.key);
-      }
-    }
-
-    // Guarantee: enable at least one channel (highest scored)
-    if (enabledChannels.isEmpty && scored.isNotEmpty) {
-      scored.sort((a, b) => b.score.compareTo(a.score));
-      enabledChannels.add(scored.first.key);
-    }
-
-    return ChannelDefaultSuggestion(enabledChannels: enabledChannels);
-  }
-
-  /// Build a map from work-email domain → priority. A domain that belongs to
-  /// one of the user's teams maps to [defaultPriority]; personal domains and
-  /// unknown domains are skipped. Focuses are team-agnostic, so there is no
-  /// per-team priority to resolve — the map exists only so [_scoreChannel] can
-  /// boost channels whose account is on a known team domain.
-  static Map<String, Priority> _buildDomainPriorityMap(
-    List<TwistAccount> accounts,
-    Map<int, List<String>>? teamDomains,
-    Priority defaultPriority,
-  ) {
-    final result = <String, Priority>{};
-    if (teamDomains == null) return result;
-
-    // Invert: domain → teamId
-    final domainToOrgId = <String, int>{};
-    for (final entry in teamDomains.entries) {
-      for (final domain in entry.value) {
-        domainToOrgId[domain.toLowerCase()] = entry.key;
-      }
-    }
-
-    // For each account email on a known team domain, record the default
-    // priority so the domain-match scoring signal fires.
-    for (final account in accounts) {
-      final domain = _extractDomain(account.email);
-      if (domain == null || _personalDomains.contains(domain)) continue;
-      if (!domainToOrgId.containsKey(domain)) continue;
-      result[domain] = defaultPriority;
-    }
-
-    return result;
-  }
-
-  /// Score a channel for auto-enablement.
-  static _ScoredChannel _scoreChannel({
-    required _FlatChannel channel,
-    required int index,
-    required List<TwistAccount> accounts,
-    required List<Priority> priorities,
-    required Map<String, Priority> domainToPriority,
   }) {
-    var score = 0;
-    Priority? matchedPriority;
-
-    final titleLower = channel.title.toLowerCase();
-
-    // Signal: channel title matches account email (primary calendar)
-    for (final account in accounts) {
-      if (account.email != null &&
-          titleLower == account.email!.toLowerCase()) {
-        score += 10;
-        // Assign to the org priority for this account's domain
-        final domain = _extractDomain(account.email);
-        if (domain != null && domainToPriority.containsKey(domain)) {
-          matchedPriority = domainToPriority[domain];
-        }
-        break;
-      }
-    }
-
-    // Signal: account email domain matched a team
-    if (matchedPriority == null) {
-      for (final account in accounts) {
-        final domain = _extractDomain(account.email);
-        if (domain != null && domainToPriority.containsKey(domain)) {
-          score += 5;
-          matchedPriority = domainToPriority[domain];
-          break;
-        }
-      }
-    }
-
-    // Signal: channel title substring-matches a priority name
-    if (matchedPriority == null) {
-      for (final priority in priorities) {
-        final priorityLower = priority.title.toLowerCase();
-        if (priorityLower.length >= 3 &&
-            titleLower.contains(priorityLower)) {
-          score += 3;
-          matchedPriority = priority;
-          break;
-        }
-      }
-    }
-
-    // Signal: first in list (providers often list primary first)
-    if (index == 0) {
-      score += 1;
-    }
-
-    // Negative: shared/other/group channels
-    if (_negativePatterns.hasMatch(titleLower)) {
-      score -= 5;
-    }
-
-    // Negative: informational channels
-    if (_informationalPatterns.hasMatch(titleLower)) {
-      score -= 3;
-    }
-
-    // Negative: low-value email labels (SENT, DRAFT, app-specific, etc.)
-    if (_lowValueEmailPatterns.hasMatch(titleLower)) {
-      score -= 5;
-    }
-
-    return _ScoredChannel(
-      key: channel.key,
-      score: score,
-      matchedPriority: matchedPriority,
+    if (channels.isEmpty) return const ChannelDefaultSuggestion();
+    return ChannelDefaultSuggestion(
+      enabledChannels: selectEnabledChannels(channels),
     );
   }
 
-  /// Flatten a channel tree into a list with provider:id keys.
-  static List<_FlatChannel> _flattenChannels(List<TwistChannel> channels) {
-    final result = <_FlatChannel>[];
-    for (final channel in channels) {
-      result.add(_FlatChannel(
-        key: '${channel.providerKey}:${channel.id}',
-        title: channel.title,
-        providerKey: channel.providerKey,
-      ));
-      if (channel.children.isNotEmpty) {
-        result.addAll(_flattenChannels(channel.children));
+  /// Pure default-selection logic, isolated for testing. Returns the set of
+  /// `providerKey:id` channel keys to enable.
+  ///
+  /// A channel is enabled when:
+  /// - [TwistChannel.enabledByDefault] is `true` (at any depth), or
+  /// - it is top-level, [TwistChannel.enabledByDefault] is `null`, and its
+  ///   title is not low-value.
+  ///
+  /// Channels with `enabledByDefault == false` are never enabled, and
+  /// `null` children are left for the user to pick (avoids enabling every node
+  /// of a large tree).
+  @visibleForTesting
+  static Set<String> selectEnabledChannels(List<TwistChannel> channels) {
+    final enabled = <String>{};
+
+    void walk(List<TwistChannel> nodes, {required bool topLevel}) {
+      for (final c in nodes) {
+        final key = '${c.providerKey}:${c.id}';
+        final hint = c.enabledByDefault;
+        if (hint == true) {
+          enabled.add(key);
+        } else if (hint == null && topLevel && !_isLowValueTitle(c.title)) {
+          enabled.add(key);
+        }
+        // hint == false → excluded; null children → user picks.
+        if (c.children.isNotEmpty) {
+          walk(c.children, topLevel: false);
+        }
       }
     }
-    return result;
+
+    walk(channels, topLevel: true);
+    return enabled;
   }
 
-  /// Extract email domain (lowercase).
-  static String? _extractDomain(String? email) {
-    if (email == null) return null;
-    final atIndex = email.lastIndexOf('@');
-    if (atIndex < 0 || atIndex == email.length - 1) return null;
-    return email.substring(atIndex + 1).toLowerCase();
+  static bool _isLowValueTitle(String title) {
+    final t = title.toLowerCase();
+    return _informationalPatterns.hasMatch(t) ||
+        _lowValueEmailPatterns.hasMatch(t);
   }
-}
-
-class _ScoredChannel {
-  final String key;
-  final int score;
-  final Priority? matchedPriority;
-
-  const _ScoredChannel({
-    required this.key,
-    required this.score,
-    this.matchedPriority,
-  });
-}
-
-class _FlatChannel {
-  final String key;
-  final String title;
-  final String providerKey;
-
-  const _FlatChannel({
-    required this.key,
-    required this.title,
-    required this.providerKey,
-  });
 }
