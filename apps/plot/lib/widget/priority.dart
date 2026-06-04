@@ -306,10 +306,14 @@ class _PriorityWidgetState extends State<PriorityWidget> {
     // Focuses are flat — the list row renders its own leading icon, so the
     // label is just the (already-flattened) title in the focus colour, kept
     // the same colour as the leading icon. Bold (active) when [bold].
+    // No explicit line height: the font's natural metrics centre the cap
+    // within the line box, so the centred label co-centres with the leading
+    // icon. A tight `height: 1` pulls the glyphs to the top of the box,
+    // leaving the text top-aligned against the icon (mirrors the compose
+    // rows, which also omit it).
     final Widget label = FocusLabel(
       priority: priority,
       fontSize: widget.textStyle?.fontSize,
-      height: 1,
       color: labelColor,
       fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
       showIcon: false,

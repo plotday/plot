@@ -337,9 +337,11 @@ class FixedFocusTileState extends State<FixedFocusTile> {
               widget.title,
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
+              // No explicit line height: natural font metrics centre the cap
+              // in the line box so the label co-centres with the leading icon.
+              // A tight `height: 1` leaves the text top-aligned against it.
               style: widget.textStyle.copyWith(
                 color: labelColor,
-                height: 1,
                 fontWeight: widget.active
                     ? FontWeight.w600
                     : FontWeight.w400,
