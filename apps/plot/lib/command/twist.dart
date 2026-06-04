@@ -1440,6 +1440,8 @@ class EditSource extends ShowForm {
                       scopeGroupSelections[provider.provider.name] = groups;
                     },
                     accountHint: existingAccount?.email,
+                    accountLabel:
+                        existingAccount?.email ?? existingAccount?.name,
                     onSuccess: () async {
                       // Pull fresh connection state so needs_reauth flips
                       // off, then refresh the form to swap to the normal
@@ -3611,6 +3613,7 @@ class _AuthWithScopeToggles extends StatefulWidget {
     this.initialEnabledGroups,
     this.onScopeGroupsChanged,
     this.accountHint,
+    this.accountLabel,
   });
 
   final TwistProvider provider;
@@ -3619,6 +3622,12 @@ class _AuthWithScopeToggles extends StatefulWidget {
   final Set<String>? initialEnabledGroups;
   final ValueChanged<Set<String>>? onScopeGroupsChanged;
   final String? accountHint;
+
+  /// Human-readable account (email/name) this connection belongs to. When set,
+  /// it's shown above the auth button so the user knows which account to pick —
+  /// and the server rejects authenticating a different one (account-match
+  /// guard in integrations.onAuth).
+  final String? accountLabel;
 
   @override
   State<_AuthWithScopeToggles> createState() => _AuthWithScopeTogglesState();
@@ -3682,8 +3691,22 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
             ),
           SizedBox(height: context.theme.spacing.xs),
         ],
+        if (widget.accountLabel != null)
+          Padding(
+            padding: EdgeInsets.only(top: context.theme.spacing.md),
+            child: Text(
+              'Sign in as ${widget.accountLabel}',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ),
         Padding(
-          padding: EdgeInsets.only(top: context.theme.spacing.md),
+          padding: EdgeInsets.only(
+            top: widget.accountLabel != null
+                ? context.theme.spacing.xs
+                : context.theme.spacing.md,
+          ),
           child: AuthButton.connect(
             provider: widget.provider.provider,
             scopes: widget.provider.scopes,

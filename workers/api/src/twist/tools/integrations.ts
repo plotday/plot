@@ -83,6 +83,14 @@ type IntegrationOptions = {
 };
 
 const AUTH_EMAIL_CONFLICT_ERROR = "AuthEmailConflictError";
+// Re-auth account-match guard: the user authed a different account than the
+// one this connection is bound to. Thrown from onAuth, surfaced by
+// HandleOauthCallback. The marker lives in the error MESSAGE (not just .name)
+// so it survives the twist RPC boundary, where custom error names are lost.
+const AUTH_ACCOUNT_MISMATCH_ERROR = "AuthAccountMismatchError";
+// Dedup guard: the user tried to connect an account that is already connected
+// to another instance of the same connector.
+const AUTH_ACCOUNT_DUPLICATE_ERROR = "AuthAccountDuplicateError";
 
 type AuthState = {
   provider: AuthProvider;
@@ -2690,21 +2698,74 @@ export class Integrations extends Tool implements IAuth {
     // connector drops stale cursors and re-walks history.
     let isRecovery = false;
     if (contact?.user_id) {
-      try {
-        // Capture the previous actor_id (if any) so we can migrate
-        // channel_config.enabledBy below — re-authing with a different
-        // linked email would otherwise leave channels owned by the
-        // now-invalid old actor, and the next sync would re-flag reauth.
-        const previousRow = await this.db
-          .selectFrom("twist_instance_connection")
-          .select(["actor_id", "needs_reauth_at"])
-          .where("twist_instance_id", "=", this.twistInstanceId)
-          .where("user_id", "=", contact.user_id)
-          .where("provider", "=", tokenInfo.provider)
-          .executeTakeFirst();
-        const previousActorId = previousRow?.actor_id ?? null;
-        isRecovery = previousRow?.needs_reauth_at != null;
+      // Prior connection state for THIS instance. Fetched OUTSIDE the
+      // write try/catch below so the guard rejections that follow actually
+      // propagate to HandleOauthCallback instead of being swallowed as a
+      // logged warning.
+      const previousRow = await this.db
+        .selectFrom("twist_instance_connection")
+        .select(["actor_id", "needs_reauth_at"])
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("user_id", "=", contact.user_id)
+        .where("provider", "=", tokenInfo.provider)
+        .executeTakeFirst();
+      const previousActorId = previousRow?.actor_id ?? null;
+      isRecovery = previousRow?.needs_reauth_at != null;
 
+      // Re-auth account-match guard. A connection is bound to one account.
+      // If this instance already has a connection and the user just
+      // authenticated a DIFFERENT account, reject — re-auth must stay on the
+      // original account, otherwise the connection would silently re-point at
+      // a different mailbox. (login_hint pre-selects the right account, so
+      // this mainly fires when the user deliberately picks another.) To move
+      // a connection to a different account, remove it and add a new one.
+      if (previousActorId && previousActorId !== actor.id) {
+        const expected = await this.db
+          .selectFrom("contact")
+          .select("email")
+          .where("id", "=", previousActorId)
+          .executeTakeFirst();
+        const expectedEmail = expected?.email ?? null;
+        throw new Error(
+          `${AUTH_ACCOUNT_MISMATCH_ERROR}: re-auth used a different account` +
+            (expectedEmail ? ` (expected ${expectedEmail})` : "")
+        );
+      }
+
+      // Dedup guard. Brand-new connect (this instance has no connection yet)
+      // for an account that is already connected on ANOTHER instance of the
+      // SAME connector. Prevents duplicate connections of one account — the
+      // bug that left users with two Gmail connections, the second of which
+      // received a non-refreshable token and 401'd after ~1h. Scoped to the
+      // same twist package (twist_id) so connecting one Google account to
+      // both Gmail and Calendar (different connectors) stays allowed.
+      if (!previousActorId) {
+        const selfInstance = await this.db
+          .selectFrom("twist_instance")
+          .select("twist_id")
+          .where("id", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        if (selfInstance) {
+          const duplicate = await this.db
+            .selectFrom("twist_instance_connection as tic")
+            .innerJoin("twist_instance as ti", "ti.id", "tic.twist_instance_id")
+            .select("tic.twist_instance_id")
+            .where("ti.twist_id", "=", selfInstance.twist_id)
+            .where("ti.archived_at", "is", null)
+            .where("tic.user_id", "=", contact.user_id)
+            .where("tic.provider", "=", tokenInfo.provider)
+            .where("tic.actor_id", "=", actor.id)
+            .where("tic.twist_instance_id", "!=", this.twistInstanceId)
+            .executeTakeFirst();
+          if (duplicate) {
+            throw new Error(
+              `${AUTH_ACCOUNT_DUPLICATE_ERROR}: account already connected to this connector`
+            );
+          }
+        }
+      }
+
+      try {
         await this.db
           .insertInto("twist_instance_connection")
           .values({
@@ -2724,43 +2785,6 @@ export class Integrations extends Tool implements IAuth {
               })
           )
           .execute();
-
-        // If actor_id changed (re-auth with a different linked email),
-        // migrate channel_config.enabledBy from any of this user's
-        // contacts to the new actor so subsequent token lookups hit the
-        // freshly stored token instead of the cleared one.
-        if (previousActorId && previousActorId !== actor.id) {
-          try {
-            const userContacts = await this.db
-              .selectFrom("contact")
-              .select("id")
-              .where("user_id", "=", contact.user_id)
-              .execute();
-            const userContactIds = new Set(userContacts.map((r) => r.id));
-            const configKeys = await this.store.list(
-              `channel_config:${tokenInfo.provider}:`
-            );
-            for (const key of configKeys) {
-              const channelConfig = await this.store.get<ChannelConfig>(key);
-              if (
-                channelConfig?.enabledBy &&
-                channelConfig.enabledBy !== actor.id &&
-                userContactIds.has(channelConfig.enabledBy)
-              ) {
-                await this.store.set(key, {
-                  ...channelConfig,
-                  enabledBy: actor.id,
-                });
-              }
-            }
-          } catch (error) {
-            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
-            logger.warn(
-              `Failed to migrate channel_config.enabledBy from ${previousActorId} to ${actor.id}: ${(error as Error)?.message ?? String(error)}`,
-              { provider: tokenInfo.provider }
-            );
-          }
-        }
 
         await notifyUserSyncByEnv(this.env, contact.user_id);
       } catch (error) {
@@ -4298,6 +4322,32 @@ export class Integrations extends Tool implements IAuth {
               JSON.stringify({
                 error:
                   "The email address for this service is already associated with a different Plot account. You'll need to close that account if you want to associate it with this account.",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          }
+          if (errorMessage.includes(AUTH_ACCOUNT_MISMATCH_ERROR)) {
+            const expected = errorMessage.match(/expected ([^)]+)\)/)?.[1];
+            return new Response(
+              JSON.stringify({
+                error: expected
+                  ? `That's a different account than this connection uses. Please sign in with ${expected}. To connect a different account, remove this connection and add a new one.`
+                  : "That's a different account than this connection uses. Please sign in with the account it was set up with. To connect a different account, remove this connection and add a new one.",
+              }),
+              {
+                status: 409,
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          }
+          if (errorMessage.includes(AUTH_ACCOUNT_DUPLICATE_ERROR)) {
+            return new Response(
+              JSON.stringify({
+                error:
+                  "This account is already connected. Open the existing connection to manage it — you don't need to add it again.",
               }),
               {
                 status: 409,

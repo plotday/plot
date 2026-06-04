@@ -59,3 +59,38 @@ export function isRateLimitError(error: unknown): boolean {
     msg.includes("Too Many Requests")
   );
 }
+
+/**
+ * Detect terminal authentication errors from a connector callback: the stored
+ * OAuth token was rejected by the provider (revoked, expired-and-unrefreshable,
+ * invalid credentials). Unlike rate-limits, these do NOT self-resolve on
+ * retry — the token is dead until the user re-authenticates. Retrying just
+ * loops the same 401 until the queue's retry cap, firing a capture each time
+ * (the storm behind PostHog issue 019dbbae; e.g. a brand-new user whose
+ * second same-account Google connection got a non-refreshable token). Callers
+ * should ACK (drop) these without paging: `getActorToken` already clears the
+ * token and flags `twist_instance_connection.needs_reauth_at` on the next
+ * expiry, which drives the app's re-auth prompt.
+ *
+ * Matched on the flattened cross-RPC error message (same constraint as
+ * `isInsufficientScopeError`). Markers are the exact, unambiguous credential-
+ * rejection signatures: Google's `UNAUTHENTICATED` / `authError` /
+ * `Invalid Credentials`, the OAuth `invalid_grant`, Microsoft Graph's
+ * `InvalidAuthenticationToken`, the `401 Unauthorized` statusText, and the
+ * Google-Calendar connector's `Authentication failed` wrapper. Deliberately
+ * NOT a bare `401` substring, which could match unrelated payloads (ids,
+ * timestamps, quota bodies). Scope-insufficient 403s are intentionally NOT
+ * here — `isInsufficientScopeError` owns that case.
+ */
+export function isAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("Invalid Credentials") ||
+    msg.includes("UNAUTHENTICATED") ||
+    msg.includes("invalid_grant") ||
+    msg.includes("InvalidAuthenticationToken") ||
+    msg.includes("401 Unauthorized") ||
+    msg.includes("Authentication failed")
+  );
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isRateLimitError, isTransientError } from "./transient-error";
+import {
+  isAuthError,
+  isRateLimitError,
+  isTransientError,
+} from "./transient-error";
 
 describe("isTransientError", () => {
   it("matches the well-defined Cloudflare infra blips", () => {
@@ -49,5 +53,37 @@ describe("isRateLimitError", () => {
       false
     );
     expect(isRateLimitError("Quota exceeded")).toBe(false);
+  });
+});
+
+describe("isAuthError", () => {
+  it("matches terminal credential-rejection signatures", () => {
+    // Real Gmail 401 body (PostHog issue 019dbbae).
+    const gmail401 =
+      'GmailApiError: Gmail API error: 401 Unauthorized - {"error":{"code":401,' +
+      '"message":"Request had invalid authentication credentials.","errors":[{' +
+      '"reason":"authError"}],"status":"UNAUTHENTICATED"}}';
+    expect(isAuthError(new Error(gmail401))).toBe(true);
+    expect(isAuthError(new Error("Error: Invalid Credentials"))).toBe(true);
+    expect(isAuthError(new Error("token refresh failed: invalid_grant"))).toBe(
+      true
+    );
+    expect(
+      isAuthError(new Error("InvalidAuthenticationToken: token expired"))
+    ).toBe(true);
+    // Google-Calendar connector 401 wrapper.
+    expect(
+      isAuthError(new Error("Authentication failed - token may be expired"))
+    ).toBe(true);
+  });
+
+  it("does NOT match rate-limits, 404s, bare 401, or non-Errors", () => {
+    expect(isAuthError(new Error("HTTP 404: Not Found"))).toBe(false);
+    expect(isAuthError(new Error("Gmail API error: 403 rateLimitExceeded"))).toBe(
+      false
+    );
+    // A bare "401" inside an unrelated payload must not trip the classifier.
+    expect(isAuthError(new Error("synced 401 messages"))).toBe(false);
+    expect(isAuthError("Invalid Credentials")).toBe(false);
   });
 });

@@ -13,7 +13,11 @@ import {
   invokeWebhookCallback,
 } from "../invoke-webhook";
 import { disposeRpc } from "../../utils/rpc";
-import { isRateLimitError, isTransientError } from "../../utils/transient-error";
+import {
+  isAuthError,
+  isRateLimitError,
+  isTransientError,
+} from "../../utils/transient-error";
 import { Tool } from "./tool";
 
 export type RunMessage = {
@@ -223,6 +227,22 @@ export class Tasks extends Tool implements IRun {
             error: String(error),
           });
           message.retry();
+          return;
+        }
+
+        // Terminal auth errors (revoked/expired-unrefreshable OAuth token,
+        // invalid credentials). Retrying loops the same 401 until the queue's
+        // cap — the storm behind PostHog 019dbbae. ACK to drop it; the token
+        // is dead until re-auth, and getActorToken already flags
+        // needs_reauth_at on the next expiry, which drives the app's re-auth
+        // prompt. Do not page PostHog (expected condition, user re-auths).
+        if (isAuthError(error)) {
+          logger.warn("RunMessage invocation finished", {
+            duration_ms: durationMs,
+            outcome: "auth_error_ack",
+            error: String(error),
+          });
+          message.ack();
           return;
         }
 
