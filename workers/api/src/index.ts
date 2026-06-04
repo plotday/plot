@@ -56,6 +56,7 @@ import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
+import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
 // Import webhook routes
 import webhook from "./webhook";
@@ -354,6 +355,17 @@ async function scheduled(
     await finalizeEventSessions(env, _ctx);
   } catch (error) {
     logger.error("Error in event session finalizer", error as Error);
+  }
+
+  // Every tick (~5 min): backfill missing thread/note embeddings (historical
+  // backlog + any creation-time embedding that failed). Bounded per tick and
+  // idempotent, so it drains the backlog over time and then no-ops. This is the
+  // resiliency backstop that keeps focus-matching / classification working even
+  // when an inline embedding doesn't land.
+  try {
+    await reconcileMissingEmbeddings(env, _ctx);
+  } catch (error) {
+    logger.error("Error in embedding reconciliation sweep", error as Error);
   }
 
   // Hourly: re-enqueue every thread_priority row where classify_at is

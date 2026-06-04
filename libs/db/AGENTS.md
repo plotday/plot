@@ -433,7 +433,9 @@ When `migrations-contract/` is empty, all tooling behaves exactly as the origina
 
 ### Enforcement (CI gate)
 
-The `migration-safety` job in `.github/workflows/lint.yml` runs `atlas migrate lint` on every PR against the expand migrations added since `main`. Atlas's destructive-change analyzers (the `DS*` series) **fail the build** on destructive or backward-incompatible DDL in `migrations/` — dropping a column/table, renaming, narrowing a type, adding a `NOT NULL` column without a default — because those break the OLD workers running against the NEW schema during the deploy window. An `atlas:nolint` directive (which would suppress the check) is also rejected in `migrations/`: destructive changes belong in `migrations-contract/`, not `migrations/`.
+The `migration-safety` job in `.github/workflows/lint.yml` runs [Squawk](https://squawkhq.com) on every PR against the expand migrations changed since `main`. It **fails the build** on backward-incompatible DDL in `migrations/` — dropping a column/table, renaming a column/table, changing a column type, or adding a `NOT NULL` column without a default — because those break the OLD workers running against the NEW schema during the deploy window. A `squawk-ignore` directive (which would suppress the check) is also rejected in `migrations/`: destructive changes belong in `migrations-contract/`, not `migrations/`.
+
+Squawk replaces Atlas's `migrate lint` here because recent Atlas versions gate `migrate lint` behind `atlas login` (a paid Cloud seat) that can't run in CI under our single-seat license; Squawk is free and needs no login. The exact rules that fail the build are scoped in `libs/db/.squawk.toml`. The job is pinned to `squawk-cli@1.6.1`: Squawk 2.x replaced libpg_query with a parser that can't handle schema-qualified operator classes (e.g. `extensions.gin_trgm_ops`, `public.halfvec_cosine_ops`) used by our trigram/vector index migrations, and its parse-error finding can't be suppressed — so do not bump to 2.x without re-verifying the whole `migrations/` corpus parses.
 
 ### Making a destructive change (expand/contract)
 

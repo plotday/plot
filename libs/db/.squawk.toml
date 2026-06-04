@@ -1,0 +1,55 @@
+# Squawk config for the CI "Migration safety" gate (.github/workflows/lint.yml).
+#
+# Squawk replaces Atlas's `migrate lint` here: recent Atlas versions gate
+# `migrate lint` behind `atlas login` (a paid Cloud seat), which can't run in
+# CI under our single-seat license. Squawk is free, needs no login, and is a
+# Postgres-native migration linter.
+#
+# IMPORTANT: this gate is pinned to squawk-cli@1.6.1 in CI. Squawk 2.x replaced
+# libpg_query with a hand-written parser that can't parse syntax this repo uses
+# routinely (schema-qualified operator classes like `USING gin (col
+# extensions.gin_trgm_ops)` and `USING hnsw (col public.halfvec_cosine_ops)`),
+# and its parse-error finding ("syntax-error") can't be suppressed. 1.6.1 uses
+# libpg_query and parses all 454 of our migrations cleanly. Do not bump to 2.x
+# without re-verifying the whole migrations corpus parses.
+#
+# Scope: this gate enforces ONLY backward-incompatible / destructive DDL — the
+# same class Atlas's DS-analyzers caught — because migrations/ apply BEFORE
+# workers deploy, so such a change breaks the still-running OLD workers during
+# the deploy window. Destructive cleanup belongs in migrations-contract/
+# (generate with `pnpm gen-contract-migration`), which drains only after a soak.
+# See libs/db/AGENTS.md "Production Migration Safety".
+#
+# Everything Squawk checks that is NOT about backward compatibility (lock
+# timeouts, CONCURRENTLY, IF [NOT] EXISTS robustness, type-style preferences,
+# constraint validation, parse errors — which `pnpm apply-migrations` already
+# validates against a real database) is excluded so it can't spuriously block a
+# normal expand migration.
+#
+# Rules left ENABLED (these fail the build):
+#   ban-drop-column, ban-drop-table, renaming-column, renaming-table,
+#   changing-column-type, adding-not-nullable-field, adding-required-field
+excluded_rules = [
+  "adding-field-with-default",
+  "adding-foreign-key-constraint",
+  "adding-serial-primary-key-field",
+  "ban-alter-domain-with-add-constraint",
+  "ban-char-field",
+  "ban-concurrent-index-creation-in-transaction",
+  "ban-create-domain-with-constraint",
+  "ban-drop-database",
+  "ban-drop-not-null",
+  "constraint-missing-not-valid",
+  "disallowed-unique-constraint",
+  "invalid-statement",
+  "prefer-big-int",
+  "prefer-bigint-over-int",
+  "prefer-bigint-over-smallint",
+  "prefer-identity",
+  "prefer-robust-stmts",
+  "prefer-text-field",
+  "prefer-timestamptz",
+  "require-concurrent-index-creation",
+  "require-concurrent-index-deletion",
+  "transaction-nesting",
+]

@@ -18,11 +18,38 @@ const CANDIDATE_LIMIT = 60;
 // when the LLM is unavailable. Deliberately permissive; the user deselects.
 const EMBED_ONLY_THRESHOLD = 0.45;
 
+type VectorRow = { thread_id: string; title: string; similarity: number };
+type LexicalRow = { thread_id: string; title: string; rank: number };
+// Unified candidate fed to the LLM re-rank. `score` is cosine similarity for
+// vector hits and ts_rank for lexical hits — used only to order the list and to
+// score the embedding-only fallback; the LLM assigns the real relevance score.
 type CandidateRow = {
   thread_id: string;
   title: string;
-  similarity: number;
+  score: number;
+  source: "vector" | "lexical";
 };
+
+// Stopwords stripped from the lexical query so it ORs only meaningful terms.
+const LEXICAL_STOPWORDS = new Set([
+  "the", "and", "for", "from", "with", "that", "this", "are", "was", "were",
+  "all", "any", "your", "our", "their", "its", "into", "out", "about", "over",
+  "per", "via", "etc", "related", "stuff", "things", "various",
+]);
+
+// Tokenize a focus's title + description into distinct lexical terms for the
+// keyword fallback. Lowercased, alphanumeric-only, stopwords and very short
+// tokens dropped, deduped, capped.
+function lexicalTerms(text: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (raw.length < 3) continue;
+    if (LEXICAL_STOPWORDS.has(raw)) continue;
+    seen.add(raw);
+    if (seen.size >= 20) break;
+  }
+  return [...seen];
+}
 
 const MatchSchema = z.object({
   matches: z.array(
@@ -87,8 +114,30 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
   }
   const queryJson = JSON.stringify(queryEmbedding);
 
-  const candidates = await withUserDb(c.var.db, userId, async (trx) => {
-    const rows = await sql<CandidateRow>`
+  const terms = lexicalTerms(`${title} ${description}`);
+  const lexicalQuery = terms.join(" OR ");
+
+  // Shared visibility predicate for both candidate queries (both alias thread
+  // as `t` and thread_priority as `tp`). Matches the user.thread view's access
+  // rules: contacts OR groups, not archived/revoked, own drafts only, onboarding
+  // pinned to the Inbox.
+  const visible = sql`
+        t.archived_at IS NULL
+        AND tp.archived_at IS NULL
+        AND tp.revoked_at IS NULL
+        AND t.title IS NOT NULL
+        AND length(trim(t.title)) > 0
+        AND t.topic IS DISTINCT FROM 'onboarding'
+        AND (t.draft = FALSE OR t.created_by = ${userId}::uuid)
+        AND (
+          t.contacts && "user".user_contact_ids(${userId}::uuid)
+          OR t.groups && "user".user_group_ids(${userId}::uuid)
+        )
+        ${exclude.length ? sql`AND t.id <> ALL(${sql.val(exclude)}::uuid[])` : sql``}`;
+
+  const { vector, lexical } = await withUserDb(c.var.db, userId, async (trx) => {
+    // Semantic candidates from the HNSW vector index.
+    const vec = await sql<VectorRow>`
       SELECT
         t.id AS thread_id,
         t.title,
@@ -96,27 +145,63 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
       FROM public.thread t
       JOIN public.thread_priority tp
         ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
-      WHERE t.archived_at IS NULL
-        AND tp.archived_at IS NULL
-        AND tp.revoked_at IS NULL
-        AND t.embedding IS NOT NULL
-        AND t.title IS NOT NULL
-        AND length(trim(t.title)) > 0
-        -- Onboarding threads stay pinned to the Inbox: never suggest them as
-        -- matches for a newly created focus (they only leave when the user
-        -- explicitly moves one).
-        AND t.topic IS DISTINCT FROM 'onboarding'
-        AND (t.draft = FALSE OR t.created_by = ${userId}::uuid)
-        AND (
-          t.contacts && "user".user_contact_ids(${userId}::uuid)
-          OR t.groups && "user".user_group_ids(${userId}::uuid)
-        )
-        ${exclude.length ? sql`AND t.id <> ALL(${sql.val(exclude)}::uuid[])` : sql``}
+      WHERE t.embedding IS NOT NULL
+        AND ${visible}
       ORDER BY t.embedding <=> ${queryJson}::halfvec
       LIMIT ${CANDIDATE_LIMIT}
     `.execute(trx);
-    return rows.rows;
+
+    // Lexical candidates from a full-text keyword match. Deliberately does NOT
+    // require an embedding, so threads still awaiting backfill (or that never
+    // embedded) can still match on title/preview keywords. websearch_to_tsquery
+    // never errors on arbitrary input and supports the OR operator.
+    let lex: LexicalRow[] = [];
+    if (terms.length > 0) {
+      const lexResult = await sql<LexicalRow>`
+        SELECT
+          t.id AS thread_id,
+          t.title,
+          ts_rank(
+            to_tsvector('english', coalesce(t.title, '') || ' ' || coalesce(t.preview, '')),
+            websearch_to_tsquery('english', ${lexicalQuery})
+          )::float AS rank
+        FROM public.thread t
+        JOIN public.thread_priority tp
+          ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
+        WHERE to_tsvector('english', coalesce(t.title, '') || ' ' || coalesce(t.preview, ''))
+                @@ websearch_to_tsquery('english', ${lexicalQuery})
+          AND ${visible}
+        ORDER BY rank DESC
+        LIMIT ${CANDIDATE_LIMIT}
+      `.execute(trx);
+      lex = lexResult.rows;
+    }
+
+    return { vector: vec.rows, lexical: lex };
   });
+
+  // Merge: vector hits first (semantic relevance), then lexical hits not already
+  // present, capped at CANDIDATE_LIMIT. A Map preserves insertion order.
+  const byId = new Map<string, CandidateRow>();
+  for (const r of vector) {
+    byId.set(r.thread_id, {
+      thread_id: r.thread_id,
+      title: r.title,
+      score: r.similarity,
+      source: "vector",
+    });
+  }
+  for (const r of lexical) {
+    if (!byId.has(r.thread_id)) {
+      byId.set(r.thread_id, {
+        thread_id: r.thread_id,
+        title: r.title,
+        score: r.rank,
+        source: "lexical",
+      });
+    }
+  }
+  const candidates = [...byId.values()].slice(0, CANDIDATE_LIMIT);
 
   if (candidates.length === 0) {
     return c.json({ matches: [] });
@@ -124,11 +209,19 @@ router.post("/sync/priorities/find-matching-threads", async (c) => {
 
   const llm = await rerankWithLlm(c.env, description, title, candidates, logger);
   if (!llm.ok) {
-    // Embedding-only fallback: keep candidates above the similarity floor.
+    // No-LLM fallback: keep vector hits above the cosine floor, plus any lexical
+    // keyword hits (a strong signal on their own). Lexical hits get a nominal
+    // mid score since ts_rank isn't comparable to cosine similarity; the user
+    // reviews and deselects.
     const matches = candidates
-      .filter((r) => r.similarity >= EMBED_ONLY_THRESHOLD)
+      .filter((c) => (c.source === "vector" ? c.score >= EMBED_ONLY_THRESHOLD : true))
       .slice(0, limit)
-      .map((r) => ({ thread_id: r.thread_id, title: r.title, score: r.similarity, rationale: null }));
+      .map((c) => ({
+        thread_id: c.thread_id,
+        title: c.title,
+        score: c.source === "vector" ? c.score : 0.5,
+        rationale: null,
+      }));
     return c.json({ matches, error: llm.error, llm_used: false });
   }
 

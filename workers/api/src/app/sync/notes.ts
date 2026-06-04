@@ -356,9 +356,13 @@ notes.post("/sync/notes", async (c) => {
               ),
             ]);
 
-            if (aiEnabled && aiLimit.allowed) {
-              aiAllowed = aiLimit;
-
+            // Embedding generation is cheap (bge-small runs in-network) and
+            // powers core focus-matching / classification, so it is NOT subject
+            // to the free-tier note_processing quota — only the user's
+            // built-in-AI opt-out (isAiEnabled). The per-plan history import
+            // window already bounds how many notes a free user can sync. The
+            // expensive LLM analysis below keeps its quota (aiAllowed).
+            if (aiEnabled) {
               try {
                 const response = (await c.env.AI.run(
                   "@cf/baai/bge-small-en-v1.5",
@@ -379,6 +383,12 @@ notes.post("/sync/notes", async (c) => {
                   error
                 );
               }
+            }
+
+            // Expensive AI analysis (thread_state generation) still respects the
+            // free-tier note_processing quota.
+            if (aiEnabled && aiLimit.allowed) {
+              aiAllowed = aiLimit;
             }
           }
 

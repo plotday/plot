@@ -118,6 +118,12 @@ WHERE
 
 CREATE INDEX ON note USING hnsw (embedding halfvec_cosine_ops);
 
+-- Drives the periodic embedding-reconciliation sweep (scheduled/reconcile-embeddings.ts).
+-- Partial on `embedding IS NULL` so it indexes only the backlog and shrinks to
+-- (near) empty once embeddings are filled in, keeping the recurring sweep cheap.
+CREATE INDEX idx_note_embedding_pending ON "public"."note" ("created_at" DESC)
+WHERE embedding IS NULL;
+
 -- Trigram index for ILIKE substring search in /sync/threads/search.
 -- Partial: search only scans non-archived, non-draft notes, so we can
 -- restrict the index to the same rows and keep it dramatically smaller.

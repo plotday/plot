@@ -632,19 +632,33 @@ threads.post("/sync/threads", async (c) => {
     // directly from the thread row (via p_thread_id), so no extra params
     // are needed. We guard the UPDATE on user_moved = FALSE so the user's
     // own filing choice is never overwritten by an auto-classify pass.
-    if (body.auto_file && !threadData.draft && upsertResult) {
-      try {
-        const textToEmbed = threadData.title || threadData.preview;
-        let queryEmbedding: string | undefined;
-        if (textToEmbed) {
+    // Embed every finalized (non-draft) thread so it is eligible for
+    // focus-matching and classification right away — not only auto_file
+    // threads. Connector/twist threads are embedded by upsert_thread; this
+    // covers app-composed threads. Best-effort: a failure leaves the embedding
+    // NULL and the periodic reconciliation sweep backfills it later.
+    let queryEmbedding: string | undefined;
+    if (!threadData.draft && upsertResult) {
+      const textToEmbed = threadData.title || threadData.preview;
+      if (textToEmbed) {
+        try {
           const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
             text: textToEmbed,
           })) as { data: number[][] };
           queryEmbedding = JSON.stringify(response.data[0]);
-
           await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
                     WHERE id = ${sql.val(upsertResult.id)}`.execute(trx);
+        } catch (error) {
+          // Transient Workers AI failures are expected and self-healing: the
+          // thread is left with a NULL embedding and the reconciliation sweep
+          // (scheduled/reconcile-embeddings.ts) backfills it. Not reported.
+          console.error("[sync/threads] Embedding generation failed:", error);
         }
+      }
+    }
+
+    if (body.auto_file && !threadData.draft && upsertResult) {
+      try {
         const matched = await classifyThreadForUser(trx, c.env, {
           userId,
           threadId: upsertResult.id,

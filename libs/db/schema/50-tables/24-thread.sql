@@ -139,6 +139,12 @@ WHERE
 
 CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" halfvec_cosine_ops);
 
+-- Drives the periodic embedding-reconciliation sweep (scheduled/reconcile-embeddings.ts).
+-- Partial on `embedding IS NULL` so it indexes only the backlog and shrinks to
+-- (near) empty once embeddings are filled in, keeping the recurring sweep cheap.
+CREATE INDEX idx_thread_embedding_pending ON "public"."thread" ("created_at" DESC)
+WHERE embedding IS NULL;
+
 -- Reverse-lookup: list all sources merged into a given target.
 CREATE INDEX idx_thread_merged_into ON "public"."thread" ("merged_into_thread_id")
 WHERE merged_into_thread_id IS NOT NULL;

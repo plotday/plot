@@ -70,6 +70,14 @@ app can no longer go live before the API (workers includes migrations).
 
 ### 1b. Destructive-change gate (issue #1, enforcement)
 
+> **Superseded (2026-06-04):** the gate now runs **Squawk** (`squawk-cli@1.6.1`),
+> not Atlas's `migrate lint`. Recent Atlas versions gate `migrate lint` behind
+> `atlas login` (a paid Cloud seat) that can't run in CI under our single-seat
+> license. The enforcement intent below is unchanged — only the engine and the
+> escape-hatch directive (`squawk-ignore` instead of `-- atlas:nolint`) differ.
+> See `libs/db/AGENTS.md` "Production Migration Safety" and `libs/db/.squawk.toml`
+> for the current mechanics.
+
 Add a `migration-safety` job to `lint.yml` (runs on PRs to `main`) that runs
 **Atlas's own `migrate lint`** against migrations added relative to the base
 branch. Verified empirically against atlas v1.1.3:
