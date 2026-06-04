@@ -487,7 +487,7 @@ export async function createThread(
 
     return { id: dbResult.id as Uuid, priorityId };
   } catch (error) {
-    handleDbOperationError(error, "createThread", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "createThread", plot, {
       has_notes: "notes" in activity && !!activity.notes?.length,
       has_source: "source" in activity && !!activity.source,
       has_id: "id" in activity && !!activity.id,
@@ -868,7 +868,7 @@ export async function updateThread(
       await plot.notifySyncDOs(prioritiesToNotify);
     }
   } catch (error) {
-    handleDbOperationError(error, "updateThread", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "updateThread", plot, {
       has_activity_id: "id" in activity && !!activity.id,
       has_source: "source" in activity && !!activity.source,
       update_fields: Object.keys(activity).filter(
@@ -1458,7 +1458,7 @@ export async function createThreads(
     // Return just the IDs for efficiency
     return dbActivities.map((dbActivity) => dbActivity.id as Uuid);
   } catch (error) {
-    handleDbOperationError(error, "createThreads", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "createThreads", plot, {
       count: activities.length,
       has_any_source: activities.some((a) => "source" in a && !!a.source),
     });

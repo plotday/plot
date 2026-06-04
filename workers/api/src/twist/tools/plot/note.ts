@@ -747,7 +747,7 @@ export async function createNote(
     // Return just the ID for efficiency
     return dbResult.id as Uuid;
   } catch (error) {
-    handleDbOperationError(error, "createNote", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "createNote", plot, {
       thread_id: "id" in note.thread ? note.thread.id : undefined,
       has_key: "key" in note && !!note.key,
       has_content: !!note.content,
@@ -1191,7 +1191,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Notify sync DOs since triggers skip HTTP calls for twist writes
     await plot.notifySyncDOs(new Set([priorityId]));
   } catch (error) {
-    handleDbOperationError(error, "updateNote", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "updateNote", plot, {
       has_note_id: "id" in note && !!note.id,
       has_key: "key" in note && !!note.key,
       update_fields: Object.keys(note).filter((k) => k !== "id" && k !== "key"),

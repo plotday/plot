@@ -110,7 +110,7 @@ export async function processOccurrences(
       }
     }
   } catch (error) {
-    handleDbOperationError(error, "processOccurrences", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "processOccurrences", plot, {
       thread_id: activityId,
       occurrence_count: occurrences.length,
     });

@@ -1,4 +1,5 @@
 import LinkifyIt from "linkify-it";
+import { PostHog } from "posthog-node";
 
 import { type Database, DbError } from "@plotday/db";
 import type {
@@ -48,18 +49,18 @@ export async function resolveAccessContacts(
 
 /**
  * Handles errors from database operations:
- * - DbError (unexpected): Logs with full context and stack trace, then throws generic error
+ * - DbError (unexpected): Logs, reports to PostHog Error Tracking, then throws generic error
  * - Regular Error (expected): Re-throws unchanged for caller to handle
  */
-export function handleDbOperationError(
+export async function handleDbOperationError(
   error: unknown,
   operation: string,
-  twistInstanceId: string,
+  plot: Plot,
   context: Record<string, unknown>
-): never {
+): Promise<never> {
   if (error instanceof DbError) {
     // Log full error with stack trace for debugging (PostHog/console)
-    const logger = createLogger({ twist_instance_id: twistInstanceId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
 
     // Extract PostgrestError from cause for full debugging info
     const cause = error.cause as
@@ -74,6 +75,36 @@ export function handleDbOperationError(
       db_hint: cause?.hint,
       db_details: cause?.details,
     });
+
+    // Surface to PostHog Error Tracking. logger.error only emits a console
+    // log (shipped to PostHog Logs via OTel) — it does NOT raise an Error
+    // Tracking issue. Unexpected DB failures in this privileged runtime
+    // (e.g. a schedule write rejected by a stale trigger) were therefore
+    // invisible in Error Tracking and went unnoticed for a week. Report
+    // them explicitly. Never let a reporting failure mask the original error.
+    try {
+      const postHog = new PostHog(plot.env.POSTHOG_API_KEY, {
+        host: plot.env.POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+      const userId = await plot.getUserId().catch(() => undefined);
+      postHog.captureException(error as Error, userId, {
+        context: `plot:${operation}`,
+        twist_instance_id: plot.twistInstanceId,
+        db_code: cause?.code,
+        db_hint: cause?.hint,
+        db_details: cause?.details,
+        ...context,
+      });
+      await postHog.shutdown();
+    } catch (reportError) {
+      logger.error(
+        `Failed to report ${operation} DB error to PostHog`,
+        reportError as Error
+      );
+    }
+
     // Sanitize: throw generic error to caller
     throw new Error("Something went wrong");
   }

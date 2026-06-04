@@ -5,7 +5,6 @@ import type {
   Schedule,
   ScheduleContact,
 } from "@plotday/twister/schedule";
-import type { ActorId } from "@plotday/twister/plot";
 
 import { sql } from "kysely";
 import { rpcUser } from "../../../rpc";

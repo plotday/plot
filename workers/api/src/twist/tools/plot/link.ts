@@ -392,7 +392,7 @@ export async function createLink(
 
     return threadId;
   } catch (error) {
-    handleDbOperationError(error, "createLink", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "createLink", plot, {
       has_notes: !!link.notes?.length,
       has_source: "source" in link && !!(link as any).source,
     });
@@ -508,7 +508,7 @@ export async function createLinkOnly(
       return linkResult.id as Uuid;
     }
   } catch (error) {
-    handleDbOperationError(error, "createLinkOnly", plot.twistInstanceId, {
+    throw await handleDbOperationError(error, "createLinkOnly", plot, {
       has_source: "source" in link && !!(link as any).source,
     });
   }
