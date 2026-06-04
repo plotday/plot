@@ -36,6 +36,11 @@ export async function refreshAllChannels(
       .where("ti.archived_at", "is", null)
       .where("ti.suspended_at", "is", null)
       .where("ti.draft", "=", false)
+      // Skip connections already awaiting re-auth: re-running getChannels would
+      // just re-hit the same auth failure (and re-capture it) every day. The
+      // flag clears automatically when the user re-authorizes (onAuth), so the
+      // sweep resumes then.
+      .where("tic.needs_reauth_at", "is", null)
       .execute();
 
     let success = 0;
@@ -45,6 +50,7 @@ export async function refreshAllChannels(
     const factory = twistFactory({ env, ctx: ctx as any, db });
 
     for (const row of rows) {
+      let integrationsPath: string | undefined;
       try {
         const configJson = await env.TWIST_CONFIG.get(
           `${row.twistPackageId}:${row.version}`
@@ -56,7 +62,7 @@ export async function refreshAllChannels(
         const parsed = JSON.parse(configJson) as {
           integrationsMap?: Record<string, string>;
         };
-        const integrationsPath = parsed.integrationsMap?.[row.provider];
+        integrationsPath = parsed.integrationsMap?.[row.provider];
         if (!integrationsPath) {
           skipped++;
           continue;
@@ -73,8 +79,34 @@ export async function refreshAllChannels(
         success++;
       } catch (error) {
         failed++;
+        const message = (error as Error).message;
+        // If the failure is a missing-scope 403, flag the connection for
+        // re-auth (and stop sweeping it — see the needs_reauth_at filter above)
+        // instead of re-capturing the same error every day.
+        if (integrationsPath) {
+          try {
+            const wrapper = await factory({
+              twistInstanceId: row.twistInstanceId,
+            });
+            const flagResult = await wrapper.callCallback(
+              integrationsPath.split(":"),
+              "flagReauthIfInsufficientScope",
+              row.provider,
+              row.actorId,
+              message
+            );
+            disposeRpc(flagResult);
+          } catch (flagError) {
+            logger.warn("Failed to flag needs_reauth after refresh failure", {
+              error: (flagError as Error).message,
+              twist_instance_id: row.twistInstanceId,
+              provider: row.provider,
+              actor_id: row.actorId,
+            });
+          }
+        }
         logger.warn("Periodic channel refresh failed for connection", {
-          error: (error as Error).message,
+          error: message,
           twist_instance_id: row.twistInstanceId,
           provider: row.provider,
           actor_id: row.actorId,

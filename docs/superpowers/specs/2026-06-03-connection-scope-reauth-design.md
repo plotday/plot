@@ -131,7 +131,7 @@ failures.)
 The legacy Google 403 comes from `getChannels`, not the refresh endpoint, and
 arrives at the sweep catch only as a flattened `__TWIST_ERROR__` envelope. Add a
 narrow public method on the `Integrations` tool —
-`flagReauthIfPermanentScopeError(provider, actorId, error)` — that unwraps the
+`flagReauthIfInsufficientScope(provider, actorId, error)` — that unwraps the
 `__TWIST_ERROR__` envelope, reads the inner `.message`, and calls the private
 `flagNeedsReauth` only when the message carries the explicit
 `ACCESS_TOKEN_SCOPE_INSUFFICIENT` / `insufficientPermissions` marker. The sweep's
@@ -179,7 +179,7 @@ sweep thereafter. No production DB surgery required.
     for other providers; the auth-time check rejects a partial Slack grant.
   - Fix B2: `classifyRefreshHttpError` returns `permanent: true` for a 403 body
     with OAuth `error: "insufficient_scope"`.
-  - Fix B3: `flagReauthIfPermanentScopeError` flags on a `__TWIST_ERROR__`
+  - Fix B3: `flagReauthIfInsufficientScope` flags on a `__TWIST_ERROR__`
     envelope whose inner message contains `ACCESS_TOKEN_SCOPE_INSUFFICIENT`, and
     does **not** flag on a generic 403 / transient error / unrelated message.
 - **Marker propagation is now confirmed** (RPC flattens to `.message`, marker

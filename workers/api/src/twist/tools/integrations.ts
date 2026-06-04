@@ -36,6 +36,7 @@ import {
   type ProviderData,
   type StoredTokenData,
 } from "../../provider";
+import { isInsufficientScopeError, parseGrantedScopes } from "./auth-scope";
 import { hashExternalContent } from "./hash-external-content";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
 import { deleteUnipileAccount } from "./unipile/account-cleanup";
@@ -157,6 +158,10 @@ const PERMANENT_OAUTH_ERRORS = new Set([
   "unauthorized_client",
   "invalid_request",
   "unsupported_grant_type",
+  // A token-refresh response of `insufficient_scope` means the stored grant is
+  // missing a required scope and cannot be refreshed into a working token —
+  // the user must re-authorize. Routes through getActorToken → flagNeedsReauth.
+  "insufficient_scope",
 ]);
 
 /**
@@ -2265,6 +2270,28 @@ export class Integrations extends Tool implements IAuth {
     await this.flagNeedsReauth(provider, config.enabledBy);
   }
 
+  /**
+   * Sweep-time re-auth signal. The daily channel-refresh sweep calls a
+   * connector's getChannels via the stored token; if the token is missing a
+   * required scope the provider returns a 403 (e.g. Google
+   * ACCESS_TOKEN_SCOPE_INSUFFICIENT). That error reaches the sweep only as a
+   * flattened `__TWIST_ERROR__` string, so we classify it here and flag the
+   * connection for re-auth. Returns true when it flagged.
+   *
+   * Conservative by design: only the explicit insufficient-scope markers flag.
+   * A generic 403 (ACL, transient WAF) is left alone — a false positive would
+   * force a needless reconnect.
+   */
+  async flagReauthIfInsufficientScope(
+    provider: AuthProvider,
+    actorId: ActorId,
+    rawErrorMessage: string
+  ): Promise<boolean> {
+    if (!isInsufficientScopeError(rawErrorMessage)) return false;
+    await this.flagNeedsReauth(provider, actorId);
+    return true;
+  }
+
   async getActorToken(provider: AuthProvider, actorId: ActorId): Promise<AuthToken | null> {
     // Direct lookup by provider + actor ID
     const tokenKey = `auth_token:${provider}:${actorId}`;
@@ -4207,7 +4234,10 @@ export class Integrations extends Tool implements IAuth {
       // PostHog error while the user sees a connection that silently
       // produced no channels. Fail fast with a user-friendly message
       // instead so the auth button can re-display.
-      const grantedScopes = Integrations.parseGrantedScopes(tokenResponse);
+      const grantedScopes = parseGrantedScopes(
+        tokenResponse,
+        PROVIDER_CONFIGS[authState.provider]
+      );
       if (grantedScopes && authState.scopes?.length) {
         const providerConfig = PROVIDER_CONFIGS[authState.provider];
         const emailScopes = new Set(providerConfig?.emailScopes ?? []);
@@ -4336,23 +4366,6 @@ export class Integrations extends Tool implements IAuth {
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=/g, "");
-  }
-
-  /**
-   * Extract the scopes the user actually granted from an OAuth token
-   * exchange response. OAuth 2.0 defines `scope` as a space-separated
-   * string of granted scopes (RFC 6749 §3.3); when present, it reflects
-   * the user's actual consent — including any scopes they unchecked on a
-   * granular consent screen (Google, Microsoft). Returns null when the
-   * provider didn't return a scope field, so the caller can skip
-   * enforcement instead of treating absence as "everything missing".
-   */
-  static parseGrantedScopes(tokenResponse: any): string[] | null {
-    const scope = tokenResponse?.scope;
-    if (typeof scope === "string" && scope.trim().length > 0) {
-      return scope.split(/\s+/).filter(Boolean);
-    }
-    return null;
   }
 
   private static async exchangeCodeForTokens({

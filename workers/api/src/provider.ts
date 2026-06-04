@@ -430,6 +430,11 @@ type ProviderConfig = {
   // that request only user scopes return the user token at
   // `authed_user.access_token`, so we remap it here.
   extractAccessToken?: (response: any) => string | undefined;
+  // Pick the granted-scope string from the token-exchange response when it
+  // isn't at the default top-level `scope`. Slack user-token-only apps return
+  // the user's granted scopes at `authed_user.scope`. Used by auth-time scope
+  // validation (parseGrantedScopes) so a partial grant is detected per-provider.
+  extractGrantedScopes?: (response: any) => string | undefined;
   // Extract metadata for AuthToken.provider field
   extractMetadata?: (providerData: ProviderData) => Record<string, string> | undefined;
   // Extract the per-connection account label shown as disambiguator in the
@@ -525,6 +530,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     // the top-level `access_token` may be absent. Fall back to it to stay
     // compatible with any legacy tokens still in storage.
     extractAccessToken: (r) => r?.authed_user?.access_token ?? r?.access_token,
+    // Slack returns the user's granted scopes at `authed_user.scope` (top-level
+    // `scope` carries bot scopes). Without this, auth-time validation reads the
+    // wrong field and silently skips the granted-vs-required check.
+    extractGrantedScopes: (r) => r?.authed_user?.scope,
     parseTokenResponse: (response: any): SlackProviderData | undefined => {
       if (!response.ok) {
         return undefined;

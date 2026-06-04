@@ -1,3 +1,4 @@
+- When a connected account (like a calendar) is missing a permission Plot needs, we'll now prompt you to reconnect it instead of silently failing to sync.
 - When you're writing a new thread, pressing Esc now steps out of the editor. And clicking the empty space around the input no longer drops you out of it — your place is kept until you press Esc or move to another field.
 - Filtering when you start a thread is now instant. Typing a person's name or an email in the first step of the new-thread picker updates the list as fast as you type, instead of lagging a beat or two behind on accounts with lots of contacts and connections.
 - Pressing Enter inside a quote now continues the quote on a new line, just like lists do — press Enter on an empty quote line to step back out.
