@@ -757,6 +757,13 @@ class _TargetPickerListState extends State<TargetPickerList> {
   ) {
     final t = view.target;
 
+    // The main row label (contact names / channel / twist name) reads as quiet
+    // secondary text — muted rather than full-strength foreground so it doesn't
+    // pull attention the way a primary title would.
+    final labelStyle = context.theme.typography.md.copyWith(
+      color: context.theme.colors.mutedForeground,
+    );
+
     // Focus-note: focus icon + name in the focus colour (via FocusLabel),
     // replacing the leading logo.
     if (t.kind == ComposeTargetKind.note && view.focusPriority != null) {
@@ -804,7 +811,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
               names,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.md,
+              style: labelStyle,
             ),
           ),
         ],
@@ -822,7 +829,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
               t.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.theme.typography.md,
+              style: labelStyle,
             ),
           ),
         ],
@@ -839,7 +846,7 @@ class _TargetPickerListState extends State<TargetPickerList> {
             channelName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.md,
+            style: labelStyle,
           ),
         ),
       ],
