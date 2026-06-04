@@ -250,28 +250,24 @@ class Note extends Equatable implements Comparable<Note> {
   final int? pending;
   final NoteTagsRow? _tags;
 
-  /// Pull all notes and tags for a specific activity (lazy-loaded on first view).
+  /// Pull this activity's notes (lazy-loaded on first view).
   /// Tracked in SyncStates as "notes:{threadId}".
   static Future<void> pullForActivity(ThreadId threadId) async {
-    // Pull all notes for this activity (first time only)
+    // Pull only THIS activity's notes (thread-scoped: NotesBase adds
+    // `thread_id`, so the server returns just this thread's notes — fast).
+    //
+    // Note tags and reactions are intentionally NOT pulled here. They are
+    // global seq-cursor entities — the server `note-tags`/`note-reactions`
+    // endpoints have no thread filter, so a per-thread `initial: true` pull
+    // re-downloaded the user's ENTIRE tag/reaction history from seq 0 on every
+    // cold open (measured 1.5–5.8s, dominated by note_tags), keyed per-thread
+    // so the horizon was never reused across threads. They are already kept
+    // current by the `note` SyncEntity's `Note.pullUpdates()` — at startup
+    // (syncAll) and on every realtime broadcast touching note/note_tag/
+    // note_reaction — so dropping them here costs nothing but the latency.
     await Store.get.pull(
       Store.get.notes,
       NotesBase(threadId: threadId),
-      initial: true,
-    );
-
-    // Pull all note tags (unfiltered - Drift filters locally based on available notes)
-    // We use the threadId in the BaseTable just for sync state tracking
-    await Store.get.pull(
-      Store.get.noteTags,
-      NoteTagsBase(threadId: threadId),
-      initial: true,
-    );
-
-    // Pull all note reactions for notes in this thread (parallel to noteTags).
-    await Store.get.pull(
-      Store.get.noteReactions,
-      NoteReactionsBase(threadId: threadId),
       initial: true,
     );
   }
