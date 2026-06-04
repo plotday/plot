@@ -253,6 +253,15 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         actorId: ActorId.fromUuid(cId),
       ));
     }
+    // Groups shared on the thread render by name (no avatar — a group isn't an
+    // actor). The group cache holds the full set after the startup pull, so
+    // fromCache resolves; an uncached group is skipped rather than shown blank.
+    for (final gId in t.groups) {
+      final group = Group.fromCache(gId);
+      if (group != null) {
+        inputs.add((name: group.name, email: null, actorId: null));
+      }
+    }
     for (final encoded in t.inviteEmails) {
       final inv = InviteAddress.parse(encoded);
       inputs
