@@ -210,7 +210,15 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       }
     });
 
-    _notifyChanged();
+    // _seedLocalState runs synchronously from initState when initialData is
+    // provided, i.e. while this widget is being built as a descendant of the
+    // FormModal. _notifyChanged walks up to the parent form (onChanged +
+    // notifyValidationChanged → FormModalState.setState), and marking an
+    // ancestor dirty during build throws. Defer to after the frame — same
+    // pattern as didUpdateWidget below.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _notifyChanged();
+    });
   }
 
   static String? _firstSelectableChannelKey(List<TwistChannel> channels) {
