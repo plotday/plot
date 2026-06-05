@@ -118,18 +118,23 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* Pin the status row to the bottom so cards in a row line up. */
+  margin-top: auto;
 }
 
-.entities {
-  font-size: rem(12px);
-  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+.description {
+  font-size: rem(13px);
+  line-height: 1.45;
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-4));
 }
 
 .voteButton {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
+  gap: 6px;
+  /* Pin the action to the bottom so cards in a row line up. */
+  margin-top: auto;
+  padding: 4px 10px 4px 12px;
   border: 1px solid
     light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
   border-radius: var(--mantine-radius-sm);
@@ -150,14 +155,40 @@
   }
 }
 
-.voteCount {
+/* Read-only confirmation shown after the visitor has voted. */
+.votedButton {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  font-size: rem(13px);
-  font-weight: 500;
+  gap: 6px;
+  margin-top: auto;
+  padding: 4px 10px 4px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--mantine-radius-sm);
+  background-color: light-dark(
+    var(--mantine-color-brand-0),
+    rgba(var(--mantine-color-brand-9-rgb), 0.15)
+  );
   color: var(--mantine-color-brand-6);
+  font-size: rem(13px);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Proper count badge replacing the old "(#)" suffix. */
+.voteCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background-color: var(--mantine-color-brand-6);
+  color: var(--mantine-color-white);
+  font-size: rem(11px);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .graySection {

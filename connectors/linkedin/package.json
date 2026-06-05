@@ -2,7 +2,7 @@
   "name": "@plotday/connector-linkedin",
   "plotTwistId": "4e6a959d-ebe2-4a85-bd06-ec46fbac204a",
   "displayName": "LinkedIn",
-  "description": "LinkedIn messages and connection requests",
+  "description": "Reply to LinkedIn messages, handle connection requests, and start conversations.",
   "logoUrl": "https://api.iconify.design/logos/linkedin-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

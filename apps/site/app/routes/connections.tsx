@@ -127,7 +127,7 @@ function ConnectionCard({
       <Badge size="xs" variant="light" color="gray">
         {connection.category}
       </Badge>
-      <Text className={classes.entities}>{connection.entities.join(", ")}</Text>
+      <Text className={classes.description}>{connection.description}</Text>
       {connection.available ? (
         <span className={classes.badgeRow}>
           <span className={classes.availableBadge}>Available</span>
@@ -135,20 +135,23 @@ function ConnectionCard({
             <span className={classes.premiumBadge}>Premium</span>
           )}
         </span>
-      ) : hasVoted ? (
-        <span className={classes.voteCount}>
-          <IconThumbUp size={14} />
-          {voteCount}
-        </span>
       ) : (
         <button
-          className={classes.voteButton}
+          className={hasVoted ? classes.votedButton : classes.voteButton}
           onClick={() => onVote(connection.name)}
           type="button"
+          disabled={hasVoted}
+          aria-label={
+            hasVoted
+              ? `Voted for ${connection.name}`
+              : `Vote for ${connection.name}`
+          }
         >
           <IconThumbUp size={14} />
-          +1
-          {voteCount > 0 && ` (${voteCount})`}
+          <span>{hasVoted ? "Voted" : "Vote"}</span>
+          {voteCount > 0 && (
+            <span className={classes.voteCountBadge}>{voteCount}</span>
+          )}
         </button>
       )}
     </Box>
@@ -198,6 +201,7 @@ export default function Connections({ loaderData }: Route.ComponentProps) {
         (c) =>
           c.name.toLowerCase().includes(q) ||
           c.category.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q) ||
           c.entities.some((e) => e.toLowerCase().includes(q)),
       );
     }

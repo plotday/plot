@@ -1,5 +1,6 @@
 export type Connection = {
   name: string;
+  description: string;
   logo: string;
   logoDark?: string;
   category: string;
@@ -21,6 +22,7 @@ export const CONNECTIONS: Connection[] = [
   // ── Available sources (deployed to production) ──
   {
     name: "Google Calendar",
+    description: "See your schedule, respond to invites, and add notes and to-dos to events.",
     logo: "https://api.iconify.design/logos/google-calendar.svg",
     category: "Calendar",
     entities: ["Events", "RSVPs"],
@@ -28,6 +30,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Gmail",
+    description: "Send and reply to email, tracking threads for follow-up and snoozing what can wait.",
     logo: "https://api.iconify.design/logos/google-gmail.svg",
     category: "Email",
     entities: ["Emails", "Threads"],
@@ -35,6 +38,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Linear",
+    description: "Track your assigned issues, reply to comments, and update status without leaving Plot.",
     logo: "https://api.iconify.design/logos/linear-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
     category: "Project Management",
@@ -43,6 +47,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "GitHub",
+    description: "Track pull requests and issues, reply to reviews, and update status from Plot.",
     logo: "https://api.iconify.design/logos/github-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
     category: "Development",
@@ -51,6 +56,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Drive",
+    description: "Keep up with comments on your Google Docs and reply right from Plot.",
     logo: "https://api.iconify.design/logos/google-drive.svg",
     category: "Documents",
     entities: ["Comment Threads"],
@@ -58,6 +64,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "LinkedIn",
+    description: "Reply to LinkedIn messages, handle connection requests, and start conversations.",
     logo: "https://api.iconify.design/logos/linkedin-icon.svg",
     category: "Communication",
     entities: ["Messages", "Connection requests"],
@@ -66,6 +73,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "WhatsApp",
+    description: "Reply to WhatsApp messages and start new chats without leaving Plot.",
     logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
     category: "Communication",
     entities: ["Messages", "Groups"],
@@ -74,6 +82,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Instagram",
+    description: "Reply to Instagram DMs and message requests, and start new conversations.",
     logo: "https://api.iconify.design/skill-icons/instagram.svg",
     category: "Communication",
     entities: ["Messages", "Requests"],
@@ -84,6 +93,7 @@ export const CONNECTIONS: Connection[] = [
   // ── Written but not yet deployed ──
   {
     name: "Jira",
+    description: "Track your Jira issues and reply to comments from your agenda.",
     logo: "https://api.iconify.design/logos/jira.svg",
     category: "Project Management",
     entities: ["Issues", "Sprints"],
@@ -91,6 +101,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Asana",
+    description: "Keep your assigned Asana tasks in view so nothing slips.",
     ...si("asana", "F06A6A", "F06A6A"),
     category: "Project Management",
     entities: ["Tasks", "Projects"],
@@ -98,6 +109,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Notion",
+    description: "Turn Notion pages and databases into threads you can act on and follow up.",
     logo: "https://api.iconify.design/logos/notion-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/notion.svg?color=%23ffffff",
     category: "Documents",
@@ -106,6 +118,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Slack",
+    description: "Follow Slack channels and DMs, reply in threads, and start new conversations.",
     logo: "https://api.iconify.design/logos/slack-icon.svg",
     category: "Communication",
     entities: ["Messages", "Channels"],
@@ -113,6 +126,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Outlook Calendar",
+    description: "See your Outlook schedule, respond to invites, and add notes and to-dos to events.",
     ...si("microsoftoutlook", "0078D4", "47A5ED"),
     category: "Calendar",
     entities: ["Events", "RSVPs"],
@@ -124,6 +138,7 @@ export const CONNECTIONS: Connection[] = [
   // Calendar
   {
     name: "Apple Calendar",
+    description: "See your iCloud schedule, respond to invites, and add notes and to-dos to events.",
     logo: "/assets/logo-apple-calendar.svg",
     category: "Calendar",
     entities: ["Events", "Reminders"],
@@ -131,6 +146,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Calendly",
+    description: "Turn every Calendly booking into a thread, ready with notes and follow-ups.",
     ...si("calendly", "006BFF", "4D9AFF"),
     category: "Calendar",
     entities: ["Events", "Invitees"],
@@ -138,6 +154,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Cal.com",
+    description: "Turn Cal.com bookings into threads, with notes and follow-ups in one place.",
     ...si("caldotcom", "111827", "ffffff"),
     category: "Calendar",
     entities: ["Events", "Bookings"],
@@ -147,6 +164,7 @@ export const CONNECTIONS: Connection[] = [
   // Communication
   {
     name: "Microsoft Teams",
+    description: "Keep up with Teams channels and chats, reply, and start new conversations.",
     logo: "https://api.iconify.design/logos/microsoft-teams.svg",
     category: "Communication",
     entities: ["Messages", "Channels"],
@@ -154,6 +172,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Discord",
+    description: "Follow Discord channels and DMs, and reply without losing your place.",
     logo: "https://api.iconify.design/logos/discord-icon.svg",
     category: "Communication",
     entities: ["Messages", "Channels"],
@@ -161,6 +180,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Zoom",
+    description: "Keep meeting details and recordings together with notes and follow-up to-dos.",
     logo: "https://api.iconify.design/logos/zoom-icon.svg",
     category: "Communication",
     entities: ["Meetings", "Recordings"],
@@ -168,6 +188,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Meet",
+    description: "Keep meeting links, notes, and follow-ups for every Google Meet in one place.",
     logo: "https://api.iconify.design/logos/google-meet.svg",
     category: "Communication",
     entities: ["Meetings", "Recordings"],
@@ -175,6 +196,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Loom",
+    description: "Catch new comments on your Looms and reply without switching tabs.",
     logo: "https://api.iconify.design/logos/loom-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/loom.svg?color=%23625DF5",
     category: "Communication",
@@ -183,6 +205,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Twilio",
+    description: "Turn incoming messages and calls into threads you can act on.",
     logo: "https://api.iconify.design/logos/twilio-icon.svg",
     category: "Communication",
     entities: ["Messages", "Calls"],
@@ -192,6 +215,7 @@ export const CONNECTIONS: Connection[] = [
   // Email
   {
     name: "Outlook Mail",
+    description: "Send and reply to Outlook email, tracking threads for follow-up and snoozing the rest.",
     ...si("microsoftoutlook", "0078D4", "47A5ED"),
     category: "Email",
     entities: ["Emails", "Threads"],
@@ -199,6 +223,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "SendGrid",
+    description: "Turn delivery events and replies into threads you can act on.",
     ...si("sendgrid", "1A82E2", "4DA6F0"),
     category: "Email",
     entities: ["Emails", "Stats"],
@@ -208,6 +233,7 @@ export const CONNECTIONS: Connection[] = [
   // Project Management
   {
     name: "Trello",
+    description: "Track your Trello cards and check them off as work moves forward.",
     logo: "https://api.iconify.design/logos/trello.svg",
     category: "Project Management",
     entities: ["Cards", "Boards"],
@@ -215,6 +241,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Monday.com",
+    description: "Keep your Monday.com items on track and update them from Plot.",
     logo: "https://api.iconify.design/logos/monday-icon.svg",
     category: "Project Management",
     entities: ["Items", "Boards"],
@@ -222,6 +249,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "ClickUp",
+    description: "Track your ClickUp tasks and check them off without switching tools.",
     ...si("clickup", "7B68EE", "9B8AFE"),
     category: "Project Management",
     entities: ["Tasks", "Spaces"],
@@ -229,6 +257,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Basecamp",
+    description: "Follow Basecamp to-dos and messages, and reply in context.",
     ...si("basecamp", "1D2D35", "ffffff"),
     category: "Project Management",
     entities: ["To-dos", "Messages"],
@@ -236,6 +265,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Shortcut",
+    description: "Track your Shortcut stories and keep status moving from Plot.",
     logo: "https://api.iconify.design/logos/shortcut-icon.svg",
     category: "Project Management",
     entities: ["Stories", "Epics"],
@@ -243,6 +273,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Teamwork",
+    description: "Keep your Teamwork tasks in view and update them as you go.",
     logo: "https://api.iconify.design/logos/teamwork-icon.svg",
     category: "Project Management",
     entities: ["Tasks", "Projects"],
@@ -252,6 +283,7 @@ export const CONNECTIONS: Connection[] = [
   // Design
   {
     name: "Figma",
+    description: "Catch new comments on your Figma files and reply without leaving your flow.",
     logo: "https://api.iconify.design/logos/figma.svg",
     category: "Design",
     entities: ["Comments", "Files"],
@@ -259,6 +291,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Miro",
+    description: "Follow comments on your Miro boards and reply in context.",
     logo: "https://api.iconify.design/logos/miro-icon.svg",
     category: "Design",
     entities: ["Boards", "Comments"],
@@ -266,6 +299,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Canva",
+    description: "Keep up with comments on your Canva designs and reply from Plot.",
     ...si("canva", "00C4CC", "00C4CC"),
     category: "Design",
     entities: ["Designs", "Comments"],
@@ -273,6 +307,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Adobe Creative Cloud",
+    description: "Track comments on your Creative Cloud files and reply in one place.",
     ...si("adobe", "FF0000", "FF4444"),
     category: "Design",
     entities: ["Files", "Comments"],
@@ -280,6 +315,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Webflow",
+    description: "Turn Webflow form submissions into threads you can act on and follow up.",
     ...si("webflow", "146EF5", "146EF5"),
     category: "Design",
     entities: ["Forms", "CMS Items"],
@@ -287,6 +323,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Framer",
+    description: "Turn Framer form submissions into threads with notes and follow-ups.",
     logo: "https://api.iconify.design/logos/framer.svg",
     logoDark: "https://api.iconify.design/simple-icons/framer.svg?color=%230055FF",
     category: "Design",
@@ -297,6 +334,7 @@ export const CONNECTIONS: Connection[] = [
   // Documents
   {
     name: "Confluence",
+    description: "Keep up with comments on your Confluence pages and reply from Plot.",
     logo: "https://api.iconify.design/logos/confluence.svg",
     category: "Documents",
     entities: ["Pages", "Comments"],
@@ -304,6 +342,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Coda",
+    description: "Follow comments across your Coda docs and reply in context.",
     ...si("coda", "F46A54", "F46A54"),
     category: "Documents",
     entities: ["Docs", "Tables"],
@@ -311,6 +350,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Dropbox Paper",
+    description: "Catch new comments on your Paper docs and reply without switching apps.",
     logo: "https://api.iconify.design/logos/dropbox.svg",
     category: "Documents",
     entities: ["Docs", "Comments"],
@@ -318,6 +358,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Microsoft Word",
+    description: "Keep up with comments on your Word documents and reply from Plot.",
     ...si("microsoftword", "2B579A", "4B8BBE"),
     category: "Documents",
     entities: ["Documents", "Comments"],
@@ -325,6 +366,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Docs",
+    description: "Keep up with comments on your Google Docs and reply right from Plot.",
     ...si("googledocs", "4285F4", "4285F4"),
     category: "Documents",
     entities: ["Documents", "Comments"],
@@ -332,6 +374,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "DocuSign",
+    description: "Track envelopes and signatures, with reminders for what still needs signing.",
     ...si("docusign", "FFCD00", "FFCD00"),
     category: "Documents",
     entities: ["Envelopes", "Signatures"],
@@ -341,6 +384,7 @@ export const CONNECTIONS: Connection[] = [
   // Development
   {
     name: "GitLab",
+    description: "Track issues and merge requests, reply to reviews, and update status from Plot.",
     logo: "https://api.iconify.design/logos/gitlab-icon.svg",
     category: "Development",
     entities: ["Issues", "Merge Requests"],
@@ -348,6 +392,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Bitbucket",
+    description: "Follow your pull requests and issues, and reply to reviews in context.",
     logo: "https://api.iconify.design/logos/bitbucket.svg",
     category: "Development",
     entities: ["Issues", "Pull Requests"],
@@ -355,6 +400,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Sentry",
+    description: "Turn new issues and alerts into threads you can triage and follow up.",
     logo: "https://api.iconify.design/logos/sentry-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/sentry.svg?color=%23ffffff",
     category: "Development",
@@ -363,6 +409,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Vercel",
+    description: "Track deployments and reply to comments without leaving your flow.",
     logo: "https://api.iconify.design/logos/vercel-icon.svg",
     logoDark: "https://api.iconify.design/simple-icons/vercel.svg?color=%23ffffff",
     category: "Development",
@@ -371,6 +418,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "PagerDuty",
+    description: "Turn incidents and alerts into threads you can act on and follow up.",
     ...si("pagerduty", "06AC38", "06AC38"),
     category: "Development",
     entities: ["Incidents", "Alerts"],
@@ -378,6 +426,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Datadog",
+    description: "Turn alerts and monitors into threads you can triage and follow up.",
     logo: "https://api.iconify.design/logos/datadog.svg",
     category: "Development",
     entities: ["Alerts", "Monitors"],
@@ -385,6 +434,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "LaunchDarkly",
+    description: "Track flag changes as threads, with context and follow-ups in one place.",
     logo: "https://api.iconify.design/logos/launchdarkly-icon.svg",
     category: "Development",
     entities: ["Flags", "Changes"],
@@ -392,6 +442,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Supabase",
+    description: "Turn alerts and logs into threads you can act on and follow up.",
     logo: "https://api.iconify.design/logos/supabase-icon.svg",
     category: "Development",
     entities: ["Alerts", "Logs"],
@@ -399,6 +450,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Firebase",
+    description: "Turn alerts and analytics into threads you can act on and follow up.",
     logo: "https://api.iconify.design/logos/firebase-icon.svg",
     category: "Development",
     entities: ["Alerts", "Analytics"],
@@ -408,6 +460,7 @@ export const CONNECTIONS: Connection[] = [
   // CRM
   {
     name: "Salesforce",
+    description: "Stay on top of leads and opportunities, with tasks and follow-ups in one place.",
     logo: "https://api.iconify.design/logos/salesforce.svg",
     category: "CRM",
     entities: ["Leads", "Opportunities", "Tasks"],
@@ -415,6 +468,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "HubSpot",
+    description: "Track contacts and deals, with tasks and follow-ups alongside everything else.",
     ...si("hubspot", "FF7A59"),
     category: "CRM",
     entities: ["Contacts", "Deals", "Tasks"],
@@ -422,6 +476,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Attio",
+    description: "Stay on top of deals and contacts, reply with context, and move deals forward.",
     logo: "/assets/logo-attio.svg",
     logoDark: "/assets/logo-attio-dark.svg",
     category: "CRM",
@@ -430,6 +485,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Pipedrive",
+    description: "Keep deals moving with activities and follow-ups in one place.",
     logo: "/assets/logo-pipedrive.svg",
     logoDark: "/assets/logo-pipedrive-dark.svg",
     category: "CRM",
@@ -440,6 +496,7 @@ export const CONNECTIONS: Connection[] = [
   // Customer Support
   {
     name: "Zendesk",
+    description: "Turn support tickets into threads you can respond to and follow up.",
     logo: "https://api.iconify.design/logos/zendesk-icon.svg",
     category: "Customer Support",
     entities: ["Tickets", "Comments"],
@@ -447,6 +504,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Intercom",
+    description: "Track conversations and tickets, and reply without switching tools.",
     logo: "https://api.iconify.design/logos/intercom-icon.svg",
     category: "Customer Support",
     entities: ["Conversations", "Tickets"],
@@ -454,6 +512,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Front",
+    description: "Follow conversations and reply in context, with follow-ups in one place.",
     logo: "https://api.iconify.design/logos/frontapp.svg",
     category: "Customer Support",
     entities: ["Conversations", "Tags"],
@@ -463,6 +522,7 @@ export const CONNECTIONS: Connection[] = [
   // Cloud Storage
   {
     name: "Dropbox",
+    description: "Catch new comments on your Dropbox files and reply from Plot.",
     logo: "https://api.iconify.design/logos/dropbox.svg",
     category: "Cloud Storage",
     entities: ["Files", "Comments"],
@@ -470,6 +530,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "OneDrive",
+    description: "Keep up with comments on your OneDrive files and reply in context.",
     ...si("microsoftonedrive", "0078D4", "2B88D8"),
     category: "Cloud Storage",
     entities: ["Files", "Comments"],
@@ -477,6 +538,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Box",
+    description: "Follow comments on your Box files and reply without switching apps.",
     ...si("box", "0061D5", "3B8DF0"),
     category: "Cloud Storage",
     entities: ["Files", "Comments"],
@@ -486,6 +548,7 @@ export const CONNECTIONS: Connection[] = [
   // Finance
   {
     name: "Stripe",
+    description: "Turn payments and invoices into threads you can track and follow up.",
     ...si("stripe", "635BFF"),
     category: "Finance",
     entities: ["Payments", "Invoices"],
@@ -493,6 +556,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "QuickBooks",
+    description: "Track invoices and expenses, with reminders for what needs attention.",
     ...si("quickbooks", "2CA01C", "2FBF4E"),
     category: "Finance",
     entities: ["Invoices", "Expenses"],
@@ -500,6 +564,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Xero",
+    description: "Keep invoices and bills on track, with follow-ups in one place.",
     ...si("xero", "13B5EA", "13B5EA"),
     category: "Finance",
     entities: ["Invoices", "Bills"],
@@ -509,6 +574,7 @@ export const CONNECTIONS: Connection[] = [
   // HR
   {
     name: "Gusto",
+    description: "Track time-off requests and tasks, with reminders for what needs action.",
     ...si("gusto", "F45D48", "F45D48"),
     category: "HR",
     entities: ["Time Off", "Tasks"],
@@ -516,6 +582,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "BambooHR",
+    description: "Stay on top of time-off and tasks, with follow-ups alongside everything else.",
     ...si("bamboo", "73C41D", "73C41D"),
     category: "HR",
     entities: ["Time Off", "Tasks"],
@@ -525,6 +592,7 @@ export const CONNECTIONS: Connection[] = [
   // Marketing
   {
     name: "Mailchimp",
+    description: "Turn campaign activity and reports into threads you can act on.",
     logo: "https://api.iconify.design/logos/mailchimp-freddie.svg",
     category: "Marketing",
     entities: ["Campaigns", "Reports"],
@@ -534,6 +602,7 @@ export const CONNECTIONS: Connection[] = [
   // Analytics
   {
     name: "Google Analytics",
+    description: "Turn reports and alerts into threads you can review and follow up.",
     logo: "https://api.iconify.design/logos/google-analytics.svg",
     category: "Analytics",
     entities: ["Reports", "Alerts"],
@@ -541,6 +610,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Amplitude",
+    description: "Track reports and experiments as threads, with follow-ups in one place.",
     logo: "https://api.iconify.design/logos/amplitude-icon.svg",
     category: "Analytics",
     entities: ["Reports", "Experiments"],
@@ -548,6 +618,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Mixpanel",
+    description: "Turn reports and alerts into threads you can review and act on.",
     ...si("mixpanel", "7856FF", "9B7FFF"),
     category: "Analytics",
     entities: ["Reports", "Alerts"],
@@ -555,6 +626,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "PostHog",
+    description: "Turn PostHog events into person threads you can track and follow up on.",
     ...si("posthog", "F54E00", "F54E00"),
     category: "Analytics",
     entities: ["Insights", "Flags"],
@@ -564,6 +636,7 @@ export const CONNECTIONS: Connection[] = [
   // Notes
   {
     name: "Evernote",
+    description: "Bring your Evernote notes into focus, with to-dos and follow-ups alongside.",
     ...si("evernote", "00A82D", "00A82D"),
     category: "Notes",
     entities: ["Notes", "Notebooks"],
@@ -571,6 +644,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Apple Notes",
+    description: "Bring your Apple Notes into Plot, with to-dos and follow-ups in one place.",
     ...si("apple", "000000", "ffffff"),
     category: "Notes",
     entities: ["Notes", "Folders"],
@@ -578,6 +652,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Obsidian",
+    description: "Bring your Obsidian notes into focus, with to-dos and follow-ups alongside.",
     ...si("obsidian", "7C3AED", "A78BFA"),
     category: "Notes",
     entities: ["Notes", "Vaults"],
@@ -587,6 +662,7 @@ export const CONNECTIONS: Connection[] = [
   // Productivity
   {
     name: "Todoist",
+    description: "Bring your Todoist tasks into focus and check them off as you go.",
     logo: "https://api.iconify.design/logos/todoist-icon.svg",
     category: "Productivity",
     entities: ["Tasks", "Projects"],
@@ -594,6 +670,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Airtable",
+    description: "Track Airtable tasks and comments, and mark work done from Plot.",
     ...si("airtable", "18BFFF", "18BFFF"),
     category: "Productivity",
     entities: ["Tasks", "Comments"],
@@ -601,6 +678,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Sheets",
+    description: "Keep up with comments on your Sheets and reply from Plot.",
     ...si("googlesheets", "34A853", "34A853"),
     category: "Productivity",
     entities: ["Spreadsheets", "Comments"],
@@ -608,6 +686,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Microsoft Excel",
+    description: "Catch new comments on your Excel files and reply in context.",
     ...si("microsoftexcel", "217346", "33AB67"),
     category: "Productivity",
     entities: ["Spreadsheets", "Comments"],
@@ -615,6 +694,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Fellow",
+    description: "Bring Fellow meeting notes and action items into your calendar events.",
     logo: "/assets/logo-fellow.svg",
     logoDark: "/assets/logo-fellow-dark.svg",
     category: "Productivity",
@@ -623,6 +703,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Granola",
+    description: "Attach Granola meeting notes and transcripts to your calendar events.",
     logo: "/assets/logo-granola.png",
     category: "Productivity",
     entities: ["Meeting Notes", "Transcripts"],
@@ -630,6 +711,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Tasks",
+    description: "Manage your Google Tasks lists and check off to-dos from Plot.",
     logo: "/assets/logo-google-tasks.svg",
     category: "Productivity",
     entities: ["Tasks", "Lists"],
@@ -637,6 +719,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Apple Reminders",
+    description: "Bring your Apple Reminders into focus and check them off from Plot.",
     ...si("apple", "000000", "ffffff"),
     category: "Productivity",
     entities: ["Reminders", "Lists"],
@@ -644,6 +727,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Typeform",
+    description: "Turn Typeform responses into threads you can act on and follow up.",
     logo: "/assets/logo-typeform.svg",
     logoDark: "/assets/logo-typeform-dark.svg",
     category: "Productivity",
@@ -652,6 +736,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "SurveyMonkey",
+    description: "Turn survey responses into threads you can review and follow up.",
     ...si("surveymonkey", "00BF6F", "00BF6F"),
     category: "Productivity",
     entities: ["Responses", "Surveys"],
@@ -661,6 +746,7 @@ export const CONNECTIONS: Connection[] = [
   // Automation
   {
     name: "Zapier",
+    description: "Turn your Zaps into threads you can track and act on.",
     ...si("zapier", "FF4A00", "FF4A00"),
     category: "Automation",
     entities: ["Zaps", "Tasks"],
@@ -668,6 +754,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Make",
+    description: "Track your Make scenarios as threads, with follow-ups in one place.",
     ...si("make", "6D00CC", "9B4DFF"),
     category: "Automation",
     entities: ["Scenarios", "Operations"],
@@ -675,6 +762,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "n8n",
+    description: "Track your n8n workflows as threads you can act on and follow up.",
     ...si("n8n", "EA4B71", "EA4B71"),
     category: "Automation",
     entities: ["Workflows", "Executions"],
@@ -684,6 +772,7 @@ export const CONNECTIONS: Connection[] = [
   // E-commerce
   {
     name: "Shopify",
+    description: "Turn orders and product activity into threads you can act on.",
     logo: "https://api.iconify.design/logos/shopify.svg",
     category: "E-commerce",
     entities: ["Orders", "Products"],
@@ -691,6 +780,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "WooCommerce",
+    description: "Track orders and products as threads, with follow-ups in one place.",
     logo: "https://api.iconify.design/logos/woocommerce-icon.svg",
     category: "E-commerce",
     entities: ["Orders", "Products"],
@@ -700,6 +790,7 @@ export const CONNECTIONS: Connection[] = [
   // Cloud
   {
     name: "AWS",
+    description: "Turn alerts and deployments into threads you can triage and follow up.",
     logo: "https://api.iconify.design/logos/aws.svg",
     logoDark: "https://api.iconify.design/simple-icons/amazonaws.svg?color=%23FF9900",
     category: "Cloud",
@@ -708,6 +799,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Cloud",
+    description: "Turn alerts and deployments into threads you can act on and follow up.",
     logo: "https://api.iconify.design/logos/google-cloud.svg",
     category: "Cloud",
     entities: ["Alerts", "Deployments"],
@@ -715,6 +807,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Cloudflare",
+    description: "Track Workers activity and analytics as threads, with follow-ups in one place.",
     logo: "https://api.iconify.design/logos/cloudflare-icon.svg",
     category: "Cloud",
     entities: ["Workers", "Analytics"],
@@ -724,6 +817,7 @@ export const CONNECTIONS: Connection[] = [
   // Security
   {
     name: "1Password",
+    description: "Turn security events and alerts into threads you can review and act on.",
     ...si("1password", "0094F5", "3DB4FF"),
     category: "Security",
     entities: ["Events", "Alerts"],
@@ -731,6 +825,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Okta",
+    description: "Track sign-in events and user changes as threads you can follow up.",
     ...si("okta", "007DC1", "2EAADC"),
     category: "Security",
     entities: ["Events", "Users"],
@@ -740,6 +835,7 @@ export const CONNECTIONS: Connection[] = [
   // Product
   {
     name: "Productboard",
+    description: "Turn features and customer insights into threads you can act on.",
     logo: "https://api.iconify.design/logos/productboard-icon.svg",
     category: "Product",
     entities: ["Features", "Insights"],

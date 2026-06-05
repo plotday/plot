@@ -2,7 +2,7 @@
   "name": "@plotday/connector-whatsapp",
   "plotTwistId": "3345727d-7979-4153-8769-e800588cd742",
   "displayName": "WhatsApp",
-  "description": "WhatsApp messages",
+  "description": "Reply to WhatsApp messages and start new chats without leaving Plot.",
   "logoUrl": "https://api.iconify.design/logos/whatsapp-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

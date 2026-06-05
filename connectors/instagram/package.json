@@ -2,7 +2,7 @@
   "name": "@plotday/connector-instagram",
   "plotTwistId": "e80fe77e-eeba-4ac5-983a-6f769cff42b9",
   "displayName": "Instagram",
-  "description": "Instagram messages",
+  "description": "Reply to Instagram DMs and message requests, and start new conversations.",
   "logoUrl": "https://api.iconify.design/logos/instagram-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
