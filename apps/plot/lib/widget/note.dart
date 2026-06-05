@@ -1080,7 +1080,7 @@ class NoteCommands extends StatelessWidget {
             // Build command buttons (only if showCommands is true)
             final commandButtons = showCommands
                 ? [
-                    // "Make a task" (circlePlus). Hidden when others are already
+                    // "To do" (circlePlus). Hidden when others are already
                     // assigned — the always-visible userCircle chip is the
                     // self-assign affordance in that case.
                     if (!selfTodo && !selfDone && othersTodo.isEmpty)

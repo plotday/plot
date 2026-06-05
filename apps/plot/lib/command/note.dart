@@ -66,7 +66,11 @@ abstract class NoteCommand extends Command {
   final Note note;
 }
 
-enum _SelfTaskState { unassigned, todo, done }
+// Two states only: "To do" (assign the note as the user's own task) and
+// "Done" (complete it). Un-completing a done note is handled by the check
+// toggle under the note ([ToggleSelfDone]), so this action is never offered
+// for notes the user has already completed.
+enum _SelfTaskState { unassigned, todo }
 
 class SelfTaskAction extends NoteCommand {
   SelfTaskAction(super.note)
@@ -83,34 +87,29 @@ class SelfTaskAction extends NoteCommand {
 
   static _SelfTaskState _computeState(Note note) {
     final actorId = Base.actorId;
-    if (note.isCompletedBy(actorId)) return _SelfTaskState.done;
     if (note.isAssignedTo(actorId)) return _SelfTaskState.todo;
     return _SelfTaskState.unassigned;
   }
 
   static String _titleForState(_SelfTaskState state) => switch (state) {
-    _SelfTaskState.unassigned => 'Make a task',
-    _SelfTaskState.todo => 'Mark done',
-    _SelfTaskState.done => 'Remove done',
+    _SelfTaskState.unassigned => 'To do',
+    _SelfTaskState.todo => 'Done',
   };
 
   static EventAction _eventActionForState(_SelfTaskState state) =>
       switch (state) {
         _SelfTaskState.unassigned => EventAction.started,
         _SelfTaskState.todo => EventAction.finished,
-        _SelfTaskState.done => EventAction.untagged,
       };
 
   static IconData _iconForState(_SelfTaskState state) => switch (state) {
     _SelfTaskState.unassigned => PlotIcon.selfTask,
     _SelfTaskState.todo => PlotIcon.selfTaskTodo,
-    _SelfTaskState.done => PlotIcon.selfTaskDone,
   };
 
   static IconData? _hoverIconForState(_SelfTaskState state) => switch (state) {
     _SelfTaskState.unassigned => null,
     _SelfTaskState.todo => PlotIcon.selfTaskHover,
-    _SelfTaskState.done => null,
   };
 
   @override
@@ -126,9 +125,6 @@ class SelfTaskAction extends NoteCommand {
         case _SelfTaskState.todo:
           // Mark done
           updatedNote = note.completeFor(actorId);
-        case _SelfTaskState.done:
-          // Remove done (reverts to non-task, does NOT re-add todo)
-          updatedNote = note.setTag(Tag.done, actorId, false);
       }
 
       await updatedNote.save();
@@ -143,7 +139,7 @@ class SelfTaskAction extends NoteCommand {
 class ToggleSelfTask extends NoteCommand {
   ToggleSelfTask(super.note)
     : super(
-        title: 'Add task',
+        title: 'To do',
         eventObject: EventObject.note,
         eventAction: note.isAssignedTo(Base.actorId)
             ? EventAction.untagged
@@ -783,7 +779,9 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
   }
 
   return [
-    SelfTaskAction(note),
+    // "To do" / "Done" — omitted once the user has completed the note; they
+    // un-complete via the check toggle under the note instead.
+    if (!note.isCompletedBy(Base.actorId)) SelfTaskAction(note),
     if (!note.draft && activityBloc != null)
       ReplyToNote(note, activityBloc: activityBloc),
     if (!note.draft) AddNoteReaction(note, activityBloc: activityBloc),

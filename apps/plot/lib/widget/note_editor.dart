@@ -2057,7 +2057,7 @@ class NoteEditorState extends State<NoteEditor> {
     }
 
     // Cmd-Enter (alt) adds the thread to agenda (Do Now scheduling).
-    // Note assignment is never automatic — users toggle "Add task" in the
+    // Note assignment is never automatic — users toggle "To do" in the
     // editor when they want a note assigned to themselves.
     return ThreadWithNote(thread: thread, note: note);
   }

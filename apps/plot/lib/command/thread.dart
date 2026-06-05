@@ -860,6 +860,7 @@ class ToggleThreadActive extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final markingDone = thread.todo;
     await saveOptimistically(
       context,
       thread.copyWith(
@@ -870,6 +871,11 @@ class ToggleThreadActive extends _UpdateThreadCommand {
             : const Value.absent(),
       ),
     );
+    // Marking the thread done also completes the user's todo notes on it
+    // (matches FinishThread). Flipping back to todo leaves notes untouched.
+    if (markingDone) {
+      await _completeUserTodoNotes(thread.id, Base.actorId);
+    }
     return const CommandDone();
   }
 }
@@ -915,6 +921,19 @@ class DisassociateThread extends Command {
       await thread.withScheduleRestored(order: order).save();
     }
     return const CommandDone();
+  }
+}
+
+/// Completes (marks done) every note on [threadId] that the current user has
+/// flagged as their own todo. Shared by the thread-finish paths so marking a
+/// thread done also marks the user's notes done. Note-done never propagates
+/// back to thread state, so this is a one-way thread → notes effect.
+Future<void> _completeUserTodoNotes(ThreadId threadId, ActorId actorId) async {
+  final notes = await Note.getForThread(threadId);
+  for (final note in notes) {
+    if (note.hasTag(Tag.todo, actorId)) {
+      await note.completeFor(actorId).save();
+    }
   }
 }
 
@@ -999,12 +1018,7 @@ class FinishThread extends _UpdateThreadCommand {
 
     // Complete notes assigned to current user
     final actorId = Base.actorId;
-    final notes = await Note.getForThread(thread.id);
-    for (final note in notes) {
-      if (note.hasTag(Tag.todo, actorId)) {
-        await note.completeFor(actorId).save();
-      }
-    }
+    await _completeUserTodoNotes(thread.id, actorId);
 
     // Set done status on links assigned to user or unassigned
     if (context.mounted) {

@@ -418,7 +418,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         //   - !active hovered: `circlePlus` with "To do" tooltip; tap sets
         //                      active=true (lands in Doing).
         //   - active resting:  `circle`.
-        //   - active hovered:  `circleCheck` with "Mark done" tooltip; tap
+        //   - active hovered:  `circleCheck` with "Done" tooltip; tap
         //                      clears active and marks read (lands in
         //                      Activity).
         void longPress() => buildContext.run(PickScheduleThread(activity));
