@@ -720,6 +720,17 @@ export async function convertNoteToMarkdown(
 export function stripMarkdown(text: string): string {
   let result = text;
 
+  // Remove zero-width / invisible format characters. Newsletters pad their
+  // preheader with these (e.g. U+034F combining grapheme joiner + U+200B
+  // zero-width space, repeated) to push later content out of the inbox
+  // snippet. They are not matched by \s, so they survive whitespace collapse
+  // and render as a long run of blank space before the truncation ellipsis.
+  // Keep in sync with createPreviewFromMarkdown in apps/plot/lib/store/thread.dart.
+  result = result.replace(
+    /[\u00AD\u034F\u061C\u200B-\u200F\u2060-\u2064\u206A-\u206F\uFEFF]/g,
+    ""
+  );
+
   // Strip HTML tags (keep inner text)
   result = result.replace(/<(?!https?:\/\/)[^>]+>/g, "");
 
