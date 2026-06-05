@@ -41,6 +41,10 @@ class LinkTypeConfig {
   final String? logoMono;
   final List<LinkStatus>? statuses;
   final bool supportsAssignee;
+  /// Whether this link type produces time-anchored schedule/agenda items
+  /// (calendar events). Drives whether the app surfaces the agenda. Mirrors
+  /// `LinkTypeConfig.includesSchedules` in twister. Defaults to false.
+  final bool includesSchedules;
   /// Opt-in: declares this link type is composable from Plot via
   /// `Connector.onCreateLink`. Null = sync-only (no Create entry).
   final ComposeConfig? compose;
@@ -87,6 +91,7 @@ class LinkTypeConfig {
     this.logoMono,
     this.statuses,
     this.supportsAssignee = false,
+    this.includesSchedules = false,
     this.compose,
     this.contactRoles,
     this.supportsContactChanges = false,
@@ -114,6 +119,10 @@ class LinkTypeConfig {
       supportsAssignee:
           json['supportsAssignee'] as bool? ??
           json['supports_assignee'] as bool? ??
+          false,
+      includesSchedules:
+          json['includesSchedules'] as bool? ??
+          json['includes_schedules'] as bool? ??
           false,
       compose: ComposeConfig.fromJson(json),
       contactRoles: (json['contactRoles'] as List<dynamic>? ??

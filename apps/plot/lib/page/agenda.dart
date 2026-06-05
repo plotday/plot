@@ -88,34 +88,48 @@ class AgendaPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<LayoutBloc, LayoutState>(
-      buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
-      builder: (context, layoutState) {
-        // In multi-panel mode the agenda is already rendered in the left
-        // sidebar via [LeftPanelAgendaView], so navigating to /agenda is
-        // redundant. Bounce back through the `/` route, which picks the
-        // current priority from [NowLoaded.priority] and forwards there.
-        if (layoutState.multiPanel) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!context.mounted) return;
-            context.router.replaceAll([const RootRoute()]);
-          });
-          return const LoadingPage();
-        }
-        return BlocBuilder<NowBloc, NowState>(
-          builder: (context, nowState) {
-            if (nowState is! NowLoaded) {
+    return StreamBuilder<bool>(
+      stream: TwistInstance.watchHasCalendarConnection(),
+      initialData: TwistInstance.hasCalendarConnectionInCache,
+      builder: (context, snap) {
+        final hasCalendar = snap.data ?? false;
+        // Only act on the no-calendar branch once the stream has emitted a
+        // real value. On a cold deep-link to /agenda the [initialData]
+        // ([hasCalendarConnectionInCache]) can be a stale `false` before the
+        // cache warms; redirecting on that frame would bounce a calendar user
+        // off /agenda. The multi-panel redirect doesn't depend on the stream.
+        final streamReady = snap.connectionState == ConnectionState.active;
+        return BlocBuilder<LayoutBloc, LayoutState>(
+          buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
+          builder: (context, layoutState) {
+            // Redirect away when the agenda shouldn't be shown here:
+            //  - multi-panel renders the agenda in the left sidebar, so a
+            //    dedicated /agenda page is redundant; bounce through `/`.
+            //  - no calendar connection → the agenda is hidden entirely, so
+            //    a deep-link/saved /agenda URL must not strand the user.
+            if (layoutState.multiPanel || (streamReady && !hasCalendar)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!context.mounted) return;
+                context.router.replaceAll([const RootRoute()]);
+              });
               return const LoadingPage();
             }
-            return PriorityBlocProvider(
-              priority: nowState.defaultPriority,
-              // Universal agenda — keyed to default priority for data, but
-              // doesn't represent a user-chosen context. Don't overwrite
-              // [NowBloc.context], or the bottom-nav Activity/New buttons
-              // would always navigate to the default priority instead of
-              // the priority the user was last viewing.
-              setContext: false,
-              child: const _AgendaBody(),
+            return BlocBuilder<NowBloc, NowState>(
+              builder: (context, nowState) {
+                if (nowState is! NowLoaded) {
+                  return const LoadingPage();
+                }
+                return PriorityBlocProvider(
+                  priority: nowState.defaultPriority,
+                  // Universal agenda — keyed to default priority for data, but
+                  // doesn't represent a user-chosen context. Don't overwrite
+                  // [NowBloc.context], or the bottom-nav Activity/New buttons
+                  // would always navigate to the default priority instead of
+                  // the priority the user was last viewing.
+                  setContext: false,
+                  child: const _AgendaBody(),
+                );
+              },
             );
           },
         );

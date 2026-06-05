@@ -75,5 +75,28 @@ void main() {
       expect(cfg.supportsLinks, isFalse);
       expect(cfg.supportsFileAttachments, isFalse);
     });
+
+    test('parses includesSchedules (camelCase)', () {
+      final cfg = LinkTypeConfig.fromJson({
+        'type': 'event',
+        'label': 'Event',
+        'includesSchedules': true,
+      });
+      expect(cfg.includesSchedules, isTrue);
+    });
+
+    test('parses includes_schedules (snake_case)', () {
+      final cfg = LinkTypeConfig.fromJson({
+        'type': 'event',
+        'label': 'Event',
+        'includes_schedules': true,
+      });
+      expect(cfg.includesSchedules, isTrue);
+    });
+
+    test('includesSchedules defaults to false when absent', () {
+      final cfg = LinkTypeConfig.fromJson({'type': 'note', 'label': 'Note'});
+      expect(cfg.includesSchedules, isFalse);
+    });
   });
 }

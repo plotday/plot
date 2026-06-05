@@ -22,12 +22,20 @@ const int _kTabPriorities = 0;
 const int _kTabAgenda = 1;
 const int _kTabActivity = 2;
 
-/// Visual indices used by the bottom nav (5 items, no Activity).
-const int _kNavPriorities = 0;
-const int _kNavAgenda = 1;
-const int _kBtnNew = 2;
-const int _kBtnSearch = 3;
-const int _kBtnMore = 4;
+/// Bottom-nav slots in display order. [agenda] is present only when the user
+/// has an active calendar connection (see
+/// [TwistInstance.watchHasCalendarConnection]); when absent, New/Search/More
+/// shift left automatically and nothing references a stale visual index.
+enum NavSlot { focuses, agenda, newThread, search, more }
+
+/// The ordered nav slots for the current state.
+List<NavSlot> navSlotsFor({required bool hasCalendar}) => [
+      NavSlot.focuses,
+      if (hasCalendar) NavSlot.agenda,
+      NavSlot.newThread,
+      NavSlot.search,
+      NavSlot.more,
+    ];
 
 @RoutePage(name: "PrioritiesShellRoute")
 class PrioritiesShell extends StatefulWidget {
@@ -125,9 +133,13 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   /// longer has a bottom-nav button, so it (and any priority page) shows
   /// no highlight. "New" lights up while the user is on `…/new`; thread
   /// pages hide the nav so they have no highlighted index either.
-  int _currentNavIndex(BuildContext context, TabsRouter tabsRouter) {
+  int _currentNavIndex(
+    BuildContext context,
+    TabsRouter tabsRouter,
+    List<NavSlot> slots,
+  ) {
     final currentPath = context.router.currentPath;
-    if (currentPath.endsWith('/new')) return _kBtnNew;
+    if (currentPath.endsWith('/new')) return slots.indexOf(NavSlot.newThread);
     final pathSegments =
         currentPath.split('/').where((s) => s.isNotEmpty).toList();
     if (pathSegments.length >= 3 ||
@@ -136,9 +148,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     }
     switch (tabsRouter.activeIndex) {
       case _kTabPriorities:
-        return _kNavPriorities;
+        return slots.indexOf(NavSlot.focuses);
       case _kTabAgenda:
-        return _kNavAgenda;
+        return slots.indexOf(NavSlot.agenda);
       default:
         // Activity tab (or anything else) — no bottom-nav highlight.
         return -1;
@@ -148,17 +160,20 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   void _handleNavTap(
     BuildContext context,
     TabsRouter tabsRouter,
+    List<NavSlot> slots,
     int index,
   ) {
+    if (index < 0 || index >= slots.length) return;
+    final slot = slots[index];
     // Navigating away from the current page should leave search closed —
     // otherwise coming back via Search would toggle the stale state closed
     // instead of opening it fresh. More just opens a modal, so it leaves
     // search alone.
-    if (index != _kBtnSearch && index != _kBtnMore) {
+    if (slot != NavSlot.search && slot != NavSlot.more) {
       LayoutBloc.instance?.requestSearchClose();
     }
-    switch (index) {
-      case _kNavPriorities:
+    switch (slot) {
+      case NavSlot.focuses:
         // Bottom nav is "replace" — back from /priorities should exit
         // the app, not return to whatever cross-tab origin was tracked.
         // [markUrlStateForReplace] is consumed by the next URL state
@@ -170,18 +185,18 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
         context.router.root.navigationHistory.markUrlStateForReplace();
         tabsRouter.setActiveIndex(_kTabPriorities);
         return;
-      case _kNavAgenda:
+      case NavSlot.agenda:
         PrioritiesShell.sourceTab = null;
         context.router.root.navigationHistory.markUrlStateForReplace();
         tabsRouter.setActiveIndex(_kTabAgenda);
         return;
-      case _kBtnNew:
+      case NavSlot.newThread:
         _openNewThread(context, tabsRouter);
         return;
-      case _kBtnSearch:
+      case NavSlot.search:
         _openSearch(context, tabsRouter);
         return;
-      case _kBtnMore:
+      case NavSlot.more:
         ShowSettings().run(context);
         return;
     }
@@ -349,7 +364,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   @override
   Widget build(BuildContext context) {
     return AutoTabsRouter(
-      homeIndex: _kTabAgenda,
+      homeIndex: TwistInstance.hasCalendarConnectionInCache
+          ? _kTabAgenda
+          : _kTabPriorities,
       routes: [
         PrioritiesRoute(),
         EmptyShellRoute("AgendaShell")(),
@@ -375,14 +392,37 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
               return child;
             }
 
-            final hideNav = _isFullScreenRoute(context);
-            final navIndex = _currentNavIndex(context, tabsRouter);
-            return _MobileShellChrome(
-              showNav: !hideNav,
-              currentIndex: navIndex,
-              onChange: (i) => _handleNavTap(context, tabsRouter, i),
-              items: _buildNavItems(context),
-              child: child,
+            return StreamBuilder<bool>(
+              stream: TwistInstance.watchHasCalendarConnection(),
+              initialData: TwistInstance.hasCalendarConnectionInCache,
+              builder: (context, snap) {
+                final hasCalendar = snap.data ?? false;
+                final slots = navSlotsFor(hasCalendar: hasCalendar);
+
+                // Guard: if the agenda is hidden but the user is on the
+                // agenda tab (e.g. removed their last calendar connection
+                // while viewing it), bounce to Focuses. Mirrors the
+                // multi-panel force-to-Activity pattern above.
+                if (!hasCalendar && tabsRouter.activeIndex == _kTabAgenda) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted) return;
+                    if (tabsRouter.activeIndex == _kTabAgenda) {
+                      tabsRouter.setActiveIndex(_kTabPriorities);
+                    }
+                  });
+                }
+
+                final hideNav = _isFullScreenRoute(context);
+                final navIndex = _currentNavIndex(context, tabsRouter, slots);
+                return _MobileShellChrome(
+                  showNav: !hideNav,
+                  currentIndex: navIndex,
+                  onChange: (i) =>
+                      _handleNavTap(context, tabsRouter, slots, i),
+                  items: _buildNavItems(context, slots),
+                  child: child,
+                );
+              },
             );
           },
         );
@@ -390,69 +430,80 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
     );
   }
 
-  List<FBottomNavigationBarItem> _buildNavItems(BuildContext context) {
-    return [
-      FBottomNavigationBarItem(
-        icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-          builder: (context, state) {
-            final hasUnread = state.priorities.any(
-              (p) => p.unread || p.descendants().any((d) => d.unread),
-            );
+  List<FBottomNavigationBarItem> _buildNavItems(
+    BuildContext context,
+    List<NavSlot> slots,
+  ) =>
+      slots.map((slot) => _buildNavItem(context, slot)).toList();
 
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(PlotIcon.priorities),
-                if (hasUnread)
-                  Positioned(
-                    top: -2,
-                    right: -4,
-                    child: Container(
-                      width: 6.0,
-                      height: 6.0,
-                      decoration: BoxDecoration(
-                        color: context.colour.accent.withValues(alpha: 0.7),
-                        shape: BoxShape.circle,
+  FBottomNavigationBarItem _buildNavItem(BuildContext context, NavSlot slot) {
+    switch (slot) {
+      case NavSlot.focuses:
+        return FBottomNavigationBarItem(
+          icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+            builder: (context, state) {
+              final hasUnread = state.priorities.any(
+                (p) => p.unread || p.descendants().any((d) => d.unread),
+              );
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(PlotIcon.priorities),
+                  if (hasUnread)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 6.0,
+                        height: 6.0,
+                        decoration: BoxDecoration(
+                          color: context.colour.accent.withValues(alpha: 0.7),
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            );
-          },
-        ),
-        label: _buildNavLabel('Focuses'),
-      ),
-      FBottomNavigationBarItem(
-        icon: Icon(PlotIcon.agenda),
-        label: _buildNavLabel('Agenda'),
-      ),
-      FBottomNavigationBarItem(
-        icon: Icon(PlotIcon.addNote),
-        label: _buildNavLabel('New'),
-      ),
-      FBottomNavigationBarItem(
-        icon: Icon(PlotIcon.search),
-        label: _buildNavLabel('Search'),
-      ),
-      FBottomNavigationBarItem(
-        icon: StreamBuilder<List<TwistConnectionRow>>(
-          stream: TwistConnection.watchAll(),
-          initialData: const [],
-          builder: (context, snap) {
-            final needsReauth =
-                (snap.data ?? const []).any((c) => c.needsReauth);
-            if (needsReauth) {
-              return Icon(
-                PlotIcon.plugCircleExclamation,
-                color: context.theme.colors.destructive,
+                ],
               );
-            }
-            return Icon(PlotIcon.menu);
-          },
-        ),
-        label: _buildNavLabel('More'),
-      ),
-    ];
+            },
+          ),
+          label: _buildNavLabel('Focuses'),
+        );
+      case NavSlot.agenda:
+        return FBottomNavigationBarItem(
+          icon: Icon(PlotIcon.agenda),
+          label: _buildNavLabel('Agenda'),
+        );
+      case NavSlot.newThread:
+        return FBottomNavigationBarItem(
+          icon: Icon(PlotIcon.addNote),
+          label: _buildNavLabel('New'),
+        );
+      case NavSlot.search:
+        return FBottomNavigationBarItem(
+          icon: Icon(PlotIcon.search),
+          label: _buildNavLabel('Search'),
+        );
+      case NavSlot.more:
+        return FBottomNavigationBarItem(
+          icon: StreamBuilder<List<TwistConnectionRow>>(
+            stream: TwistConnection.watchAll(),
+            initialData: const [],
+            builder: (context, snap) {
+              final needsReauth =
+                  (snap.data ?? const []).any((c) => c.needsReauth);
+              if (needsReauth) {
+                return Icon(
+                  PlotIcon.plugCircleExclamation,
+                  color: context.theme.colors.destructive,
+                );
+              }
+              return Icon(PlotIcon.menu);
+            },
+          ),
+          label: _buildNavLabel('More'),
+        );
+    }
   }
 }
 

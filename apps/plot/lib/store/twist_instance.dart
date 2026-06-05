@@ -223,6 +223,40 @@ class TwistInstance extends TwistInstanceRow {
     return query;
   }
 
+  /// True when [types] contains a link type that produces schedule/agenda
+  /// items — i.e. this is a calendar connector. See
+  /// `LinkTypeConfig.includesSchedules`.
+  static bool linkTypesIncludeSchedules(List<LinkTypeConfig>? types) =>
+      types?.any((lt) => lt.includesSchedules) ?? false;
+
+  /// True when this source connection produces schedule/agenda items.
+  bool get isCalendarConnection =>
+      isSource && linkTypesIncludeSchedules(parsedLinkTypes);
+
+  /// Reactive "does the user have an active calendar connection?" signal.
+  ///
+  /// Built on [watchSourceAccounts] (already filtered to non-draft,
+  /// `isSource`, not-archived — connections needing re-auth or mid
+  /// initial-sync still count). Drives agenda visibility across the bottom
+  /// nav, the sidebar agenda, and the `/agenda` route. `.distinct()` so
+  /// consumers only rebuild when the boolean actually flips.
+  static Stream<bool> watchHasCalendarConnection() => watchSourceAccounts()
+      .map((sources) =>
+          sources.any((t) => linkTypesIncludeSchedules(t.parsedLinkTypes)))
+      .distinct();
+
+  /// Synchronous best-effort read of the same signal from the in-memory
+  /// [_cache], for first-paint decisions (e.g. bottom-nav `homeIndex`) where
+  /// awaiting the stream isn't possible. Re-checks active-connection
+  /// criteria because the cache holds draft/archived rows too.
+  static bool get hasCalendarConnectionInCache => _cache.values.any(
+        (t) =>
+            t.isSource &&
+            t.archivedAt == null &&
+            !t.draft &&
+            linkTypesIncludeSchedules(t.parsedLinkTypes),
+      );
+
   /// Watch source accounts (all active, non-draft source twists).
   static Stream<List<TwistInstance>> watchSourceAccounts() {
     // Defensive check: Return empty stream if Store is not available (user signing out)

@@ -157,91 +157,100 @@ class _PriorityWrapperHostState extends State<_PriorityWrapperHost> {
           child: ThreadHeaderNotifierProvider(
             child: BlocBuilder<LayoutBloc, LayoutState>(
               builder: (context, layoutState) {
-                // In single-panel mode UnifiedHeader sits above the panel
-                // layout. In multi-panel mode the panel layout splits the
-                // window into A (sidebar header + priorities + agenda) and
-                // B (main header + shared squircle containing middle +
-                // right). The outer A|B divider runs top-to-bottom; the
-                // inner middle|right divider stays inside the squircle.
-                final panelLayout = ResizablePanelLayout(
-                  left: PrioritiesPanelContent(),
-                  leftBottom: const LeftPanelAgendaView(),
-                  leftFooter: layoutState.multiPanel
-                      ? const LeftPanelFooter()
-                      : null,
-                  middle: PriorityPage(priorityId: priorityId),
-                  child: BlocSelector<PriorityBloc, PriorityState, int>(
-                    selector: (state) =>
-                        (state.thread?.priority.displayColor ??
-                                state.draft.priority.displayColor)
-                            .index,
-                    builder: (context, threadColorIndex) {
-                      final threadColor = ThemeColor(threadColorIndex);
-                      final brightness = context.colour.brightness;
-                      return ProxyProvider0<ColourSchemeData>(
-                        update: (_, _) => ColourSchemeData(
-                          themeColor: threadColor,
-                          brightness: brightness,
-                        ),
-                        child: AutoRouter(
-                          key: _routerKey,
-                          placeholder: (context) => const LoadingPage(),
-                          clipBehavior: Clip.none,
-                        ),
-                      );
-                    },
-                  ),
-                );
+                return StreamBuilder<bool>(
+                  stream: TwistInstance.watchHasCalendarConnection(),
+                  initialData: TwistInstance.hasCalendarConnectionInCache,
+                  builder: (context, snap) {
+                    final hasCalendar = snap.data ?? false;
+                    // In single-panel mode UnifiedHeader sits above the panel
+                    // layout. In multi-panel mode the panel layout splits the
+                    // window into A (sidebar header + priorities + agenda) and
+                    // B (main header + shared squircle containing middle +
+                    // right). The outer A|B divider runs top-to-bottom; the
+                    // inner middle|right divider stays inside the squircle.
+                    final panelLayout = ResizablePanelLayout(
+                      left: PrioritiesPanelContent(),
+                      leftBottom: hasCalendar
+                          ? const LeftPanelAgendaView()
+                          : null,
+                      leftFooter: layoutState.multiPanel
+                          ? const LeftPanelFooter()
+                          : null,
+                      middle: PriorityPage(priorityId: priorityId),
+                      child: BlocSelector<PriorityBloc, PriorityState, int>(
+                        selector: (state) =>
+                            (state.thread?.priority.displayColor ??
+                                    state.draft.priority.displayColor)
+                                .index,
+                        builder: (context, threadColorIndex) {
+                          final threadColor = ThemeColor(threadColorIndex);
+                          final brightness = context.colour.brightness;
+                          return ProxyProvider0<ColourSchemeData>(
+                            update: (_, _) => ColourSchemeData(
+                              themeColor: threadColor,
+                              brightness: brightness,
+                            ),
+                            child: AutoRouter(
+                              key: _routerKey,
+                              placeholder: (context) => const LoadingPage(),
+                              clipBehavior: Clip.none,
+                            ),
+                          );
+                        },
+                      ),
+                    );
 
-                Widget body = layoutState.multiPanel
-                    ? panelLayout
-                    // Single-panel (mobile): paint the OS status-bar slot
-                    // with the header's background color so the two read
-                    // as one continuous strip on iOS/Android. The
-                    // SafeArea pushes the actual UnifiedHeader below the
-                    // status bar; the ColoredBox extends *behind* that
-                    // inset so the area showing through the system clock
-                    // / dynamic island matches the header.
-                    : ColoredBox(
-                        color: context.colour.panelDarkestBackground,
-                        child: SafeArea(
-                          top: true,
-                          bottom: false,
-                          left: false,
-                          right: false,
-                          child: Column(
-                            children: [
-                              const UnifiedHeader(),
-                              Expanded(child: panelLayout),
-                            ],
-                          ),
-                        ),
-                      );
+                    Widget body = layoutState.multiPanel
+                        ? panelLayout
+                        // Single-panel (mobile): paint the OS status-bar slot
+                        // with the header's background color so the two read
+                        // as one continuous strip on iOS/Android. The
+                        // SafeArea pushes the actual UnifiedHeader below the
+                        // status bar; the ColoredBox extends *behind* that
+                        // inset so the area showing through the system clock
+                        // / dynamic island matches the header.
+                        : ColoredBox(
+                            color: context.colour.panelDarkestBackground,
+                            child: SafeArea(
+                              top: true,
+                              bottom: false,
+                              left: false,
+                              right: false,
+                              child: Column(
+                                children: [
+                                  const UnifiedHeader(),
+                                  Expanded(child: panelLayout),
+                                ],
+                              ),
+                            ),
+                          );
 
-                if (layoutState.multiPanel) {
-                  body = DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: context.colour.frameBackgroundGradient,
-                    ),
-                    child: body,
-                  );
-                }
-                // PriorityPage doesn't use the Plot Scaffold (it owns its
-                // own Column/UnifiedHeader/ResizablePanelLayout), so the
-                // route-level DefaultTextStyle override in app.dart is
-                // the only thing standing between this content and
-                // MaterialApp's `_errorTextStyle` (yellow double-underline).
-                // On mobile, descendants here can end up resolving to a
-                // Material-injected DefaultTextStyle whose decoration
-                // leaks through. Force forui defaults with an explicit
-                // `decoration: TextDecoration.none` so headers and any
-                // other Text in this subtree paint cleanly.
-                return DefaultTextStyle(
-                  style: context.theme.typography.md.copyWith(
-                    color: context.theme.colors.foreground,
-                    decoration: TextDecoration.none,
-                  ),
-                  child: body,
+                    if (layoutState.multiPanel) {
+                      body = DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: context.colour.frameBackgroundGradient,
+                        ),
+                        child: body,
+                      );
+                    }
+                    // PriorityPage doesn't use the Plot Scaffold (it owns its
+                    // own Column/UnifiedHeader/ResizablePanelLayout), so the
+                    // route-level DefaultTextStyle override in app.dart is
+                    // the only thing standing between this content and
+                    // MaterialApp's `_errorTextStyle` (yellow double-underline).
+                    // On mobile, descendants here can end up resolving to a
+                    // Material-injected DefaultTextStyle whose decoration
+                    // leaks through. Force forui defaults with an explicit
+                    // `decoration: TextDecoration.none` so headers and any
+                    // other Text in this subtree paint cleanly.
+                    return DefaultTextStyle(
+                      style: context.theme.typography.md.copyWith(
+                        color: context.theme.colors.foreground,
+                        decoration: TextDecoration.none,
+                      ),
+                      child: body,
+                    );
+                  },
                 );
               },
             ),

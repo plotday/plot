@@ -252,6 +252,13 @@ class OnboardingOverlay extends StatelessWidget {
       case PanelTarget.priorities:
         return (const PrioritiesRoute(), '/priorities');
       case PanelTarget.agenda:
+        // The agenda is hidden when the user has no active calendar
+        // connection; navigating to /agenda would bounce back through `/`
+        // and loop. Target Focuses directly so onboarding's repeated
+        // (path-gated) navigation settles instead of looping.
+        if (!TwistInstance.hasCalendarConnectionInCache) {
+          return (const PrioritiesRoute(), '/priorities');
+        }
         return (const AgendaRoute(), '/agenda');
       case PanelTarget.feed:
         final nowState = context.read<NowBloc>().state;
