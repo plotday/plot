@@ -412,6 +412,49 @@ export function getHeader(message: GmailMessage, name: string): string | null {
 }
 
 /**
+ * True when a mailing list (Google Groups, etc.) rewrote the `From` *address*
+ * for DMARC alignment, so the From display name no longer belongs to the From
+ * email address.
+ *
+ * A message from `Cloudflare <noreply@cloudflare.com>` distributed through the
+ * `team@plot.day` group arrives as:
+ *
+ *     From: "Cloudflare via Plot Team" <team@plot.day>
+ *     X-Original-Sender: noreply@cloudflare.com
+ *
+ * The display name ("Cloudflare") describes the original sender, but the From
+ * email is now the *group* address. Naming the group contact after the From
+ * display name overwrites the shared `contact.name` with each sender's name in
+ * turn (server-side `normalizeName` even strips the " via <group>" suffix,
+ * making the wrong name look clean). Callers should suppress the name on the
+ * From-address contact when this returns true.
+ *
+ * Detection (in priority order):
+ *  1. An `X-Original-Sender` / `X-Original-From` header whose address differs
+ *     from the From address — the precise signal that the address was rewritten
+ *     (and which leaves legit DMARC-passing list posts, where the original
+ *     address is retained, untouched).
+ *  2. Fallback when no original-sender header is present: the RFC 5322
+ *     "<name> via <list>" display-name decoration, which only a list adds.
+ */
+export function isFromAddressRewritten(
+  message: GmailMessage,
+  fromEmail: string
+): boolean {
+  const originalHeader =
+    getHeader(message, "X-Original-Sender") ??
+    getHeader(message, "X-Original-From");
+  if (originalHeader) {
+    const originalEmail = parseEmailAddress(originalHeader.trim())?.email;
+    if (originalEmail) {
+      return originalEmail.toLowerCase() !== fromEmail.toLowerCase();
+    }
+  }
+  const fromName = parseEmailAddress(getHeader(message, "From") ?? "")?.name;
+  return !!fromName && /\svia\s/i.test(fromName);
+}
+
+/**
  * Extracts the body from a Gmail message (handles multipart messages).
  * Returns raw content with its type so HTML can be converted server-side.
  */
@@ -645,12 +688,19 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const to = getHeader(message, "To");
     const cc = getHeader(message, "Cc");
     const fromContact = from ? parseEmailAddress(from) : null;
+    // When a mailing list rewrote the From address (DMARC), its display name
+    // describes the original sender, not the From (group) address — don't use
+    // it to name the group's contact. See isFromAddressRewritten.
+    const fromName =
+      fromContact && !isFromAddressRewritten(message, fromContact.email)
+        ? fromContact.name || undefined
+        : undefined;
     const allParticipants: NewContact[] = [
       ...(fromContact
         ? [
             {
               email: fromContact.email,
-              name: fromContact.name || undefined,
+              name: fromName,
               // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
               source: { accountId: fromContact.email.toLowerCase() },
             } as NewContact,
@@ -696,6 +746,12 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const sender = from ? parseEmailAddress(from) : null;
     if (!sender) continue; // Skip messages without sender
 
+    // Suppress the display name when the list rewrote the From address — it
+    // belongs to the original sender, not this (group) address.
+    const senderName = isFromAddressRewritten(message, sender.email)
+      ? undefined
+      : sender.name || undefined;
+
     const { content: rawBody, contentType } = extractBody(message.payload);
     const body = stripQuotedReply(rawBody, contentType);
     const attachmentParts = collectAttachments(message.payload);
@@ -715,12 +771,12 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     // source is populated so the DM recipient picker can resolve Gmail contacts.
     const senderActor: NewActor = {
       email: sender.email,
-      name: sender.name || undefined,
+      name: senderName,
     };
     const messageContacts: NewContact[] = [
       {
         email: sender.email,
-        name: sender.name || undefined,
+        name: senderName,
         // See parseEmailAddressesToContacts for the email-vs-sub keying rationale.
         source: { accountId: sender.email.toLowerCase() },
       },
