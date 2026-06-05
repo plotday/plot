@@ -38,7 +38,10 @@ SELECT
     GREATEST(uc.seq, a.seq) AS seq,
     COALESCE(a.archived_at, uc.archived_at) AS archived_at,
     a.type,
-    CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.name       ELSE NULL END AS name,
+    -- Per-viewer name: this user's own user_contact.name override wins, else
+    -- the shared contact.name. So one user's data source can never rename a
+    -- contact for other viewers. See the per-user-contact-names plan.
+    CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN COALESCE(uc.name, a.name) ELSE NULL END AS name,
     CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.email      ELSE NULL END AS email,
     CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.avatar_url ELSE NULL END AS avatar_url,
     EXISTS (

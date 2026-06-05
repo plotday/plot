@@ -96,24 +96,64 @@ export async function addContacts(
     avatar_url: contact.avatar || null,
   }));
 
-  // Use RPC function to support COALESCE - preserve existing name if new name is null
+  // upsert_contacts sets the shared contact.name FIRST-TOUCH-ONLY (it never
+  // overwrites an existing global name). The freshly-observed name is instead
+  // attributed to the connector owner's user_contact row below, so it shows in
+  // their view without churning the shared name across all users.
   const rpcResult = await rpc(plot.db, "upsert_contacts", {
     contacts: contactsToUpsert,
   });
 
+  // Observed (normalized) name per lowercased email, for per-user attribution.
+  const observedNameByEmail = new Map<string, string>();
+  for (const c of normalizedContacts) {
+    if (c.email && c.name) observedNameByEmail.set(c.email, c.name);
+  }
+
   // Map the upserted contacts to Actor type
   const rpcData = Array.isArray(rpcResult) ? rpcResult : rpcResult ? [rpcResult] : [];
   const emailActors: Actor[] = rpcData.map((contact: any) => {
+    const observed = contact.email
+      ? observedNameByEmail.get(String(contact.email).toLowerCase())
+      : undefined;
     const actor: Actor = {
       id: contact.id as ActorId,
       type: contact.user_id ? ActorType.User : ActorType.Contact,
-      name: contact.name || null,
+      // Prefer the just-observed name for the caller; fall back to the shared
+      // (first-touch) global name.
+      name: observed ?? contact.name ?? null,
     };
     if (contact.email) {
       actor.email = contact.email;
     }
     return actor;
   });
+
+  // Per-user names: attribute each observed name to the connector OWNER's
+  // user_contact row so it shows only in their view, never globally.
+  if (observedNameByEmail.size > 0) {
+    let ownerId: string | undefined;
+    try {
+      ownerId = await plot.getUserId();
+    } catch {
+      // No owning user (e.g. a system instance) — skip per-user names; the
+      // global first-touch name still applies. Not an unexpected error.
+      ownerId = undefined;
+    }
+    if (ownerId) {
+      for (const contact of rpcData as Array<{ id: string; email?: string }>) {
+        const observed = contact.email
+          ? observedNameByEmail.get(String(contact.email).toLowerCase())
+          : undefined;
+        if (!observed) continue;
+        await rpc(plot.db, "upsert_user_contact_name", {
+          p_user_id: ownerId,
+          p_contact_id: contact.id,
+          p_name: observed,
+        });
+      }
+    }
+  }
 
   // Store external account mappings for email contacts. The
   // `contact_external_account` row is scoped to the dispatching twist

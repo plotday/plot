@@ -45,7 +45,12 @@ SELECT
             'id', sc.id,
             'contact_id', sc.contact_id,
             'contact_email', c.email,
-            'contact_name', c.name,
+            -- Per-viewer: this user's user_contact.name override wins, else the
+            -- shared contact.name. Matches user.actor name resolution.
+            'contact_name', COALESCE(
+                (SELECT uc.name FROM user_contact uc
+                 WHERE uc.contact_id = sc.contact_id AND uc.user_id = tp.user_id),
+                c.name),
             'contact_user_id', c.user_id,
             'status', sc.status,
             'role', sc.role,

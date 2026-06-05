@@ -83,6 +83,8 @@ BEGIN
             )
       )
     ORDER BY tp.user_id, arr.contact_id
+    -- Only touches archived_at; never writes `name`, so a per-user name set by
+    -- upsert_user_contact_name (source = 'observed') is preserved.
     ON CONFLICT (user_id, contact_id) DO UPDATE
         SET archived_at = NULL
         WHERE user_contact.archived_at IS NOT NULL

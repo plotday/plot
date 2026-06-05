@@ -3063,6 +3063,7 @@ export type Database = {
           contact_id: string
           created_at: string
           linked: boolean
+          name: string | null
           primary: boolean
           seq: unknown
           source: string | null
@@ -3074,6 +3075,7 @@ export type Database = {
           contact_id: string
           created_at?: string
           linked?: boolean
+          name?: string | null
           primary?: boolean
           seq?: unknown
           source?: string | null
@@ -3085,6 +3087,7 @@ export type Database = {
           contact_id?: string
           created_at?: string
           linked?: boolean
+          name?: string | null
           primary?: boolean
           seq?: unknown
           source?: string | null
@@ -4753,6 +4756,10 @@ export type Database = {
           user_name: string
         }
         Returns: string
+      }
+      upsert_user_contact_name: {
+        Args: { p_contact_id: string; p_name: string; p_user_id: string }
+        Returns: undefined
       }
       user_has_priority_access: {
         Args: { p_priority_id: string; p_user_id: string }

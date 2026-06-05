@@ -16,6 +16,12 @@ CREATE TABLE "public"."user_contact" (
     "contact_id" uuid NOT NULL REFERENCES "public"."contact" ("id") ON DELETE CASCADE,
     "linked" boolean NOT NULL DEFAULT false,
     "primary" boolean NOT NULL DEFAULT false,
+    -- Per-user display name override for this contact. NULL = fall back to the
+    -- shared contact.name. Populated from THIS user's own data sources (their
+    -- connectors' observed names) so one user's source can never rename a
+    -- contact for other users.
+    -- See docs/superpowers/plans/2026-06-04-per-user-contact-names.md.
+    "name" text,
     "source" text,
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),
