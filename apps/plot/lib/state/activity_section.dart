@@ -179,9 +179,18 @@ String relativeDateLabel(Date date) {
 /// Per-feed build output. Kept for callers that still expect a typed
 /// container; mirrors the pre-tab and tab-era shape.
 class ActivityFeedTabData {
-  const ActivityFeedTabData({required this.items});
+  const ActivityFeedTabData({required this.items, this.everythingFeed = false});
 
   final List<AgendaItem> items;
+
+  /// True when these items were built for the dedicated (non-search,
+  /// non-filter) "Everything" feed — i.e. the unsectioned cross-focus list
+  /// that leads with a single "Everything" header. The page reads this
+  /// (via [PriorityState.activeTabEverythingFeed]) instead of the live
+  /// `everything` flag so the header and the items always belong to the
+  /// same generation: when the flag flips on navigation but the feed hasn't
+  /// rebuilt yet, the header doesn't appear over stale sectioned data.
+  final bool everythingFeed;
 
   static const empty = ActivityFeedTabData(items: []);
 }

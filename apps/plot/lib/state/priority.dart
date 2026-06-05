@@ -1037,7 +1037,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     final byTab = Map<ActivityTab, ActivityFeedTabData>.from(
       state.activityFeedByTab,
     );
-    byTab[tab] = ActivityFeedTabData(items: items);
+    // Tag the data with whether it's the dedicated Everything feed (everything
+    // mode, no search/filter). The page leads with the "Everything" header
+    // based on THIS flag, not the live `state.everything`, so the header and
+    // the items flip together — never an "Everything" header over the old
+    // sectioned focus list during the frame between the flag changing and the
+    // feed rebuilding.
+    final everythingFeed =
+        state.everything && state.search.isEmpty && !_hasActiveFilter;
+    byTab[tab] = ActivityFeedTabData(
+      items: items,
+      everythingFeed: everythingFeed,
+    );
     emit(
       state.copyWith(
         activityFeedByTab: byTab,
@@ -2569,9 +2580,17 @@ class PriorityBloc extends Cubit<PriorityState> {
         context: newPriority,
         agenda: newAgenda,
         agendaItems: newAgenda.flatItems(),
-        activityFeedByTab: const {},
-        activityFeedDoneEnd: false,
-        activityFeedLoaded: false,
+        // Deliberately KEEP the previous focus's `activityFeedByTab` /
+        // `activityFeedDoneEnd` / `activityFeedLoaded` here. Clearing them
+        // dropped the feed to a blank LoadingPage for the few frames until the
+        // new subscription's first emission, so the shared "Active" header (and
+        // everything else) visibly disappeared and reappeared across the
+        // switch. Holding the prior list — exactly as `setEverything` does —
+        // lets `_rebuildActiveTabSection` swap it for the new focus's data in a
+        // single frame, with no intervening blank. The restarted subscription
+        // below overwrites both the items and `activityFeedLoaded` on its first
+        // emission. (First app load still shows LoadingPage: the bloc starts
+        // with `activityFeedLoaded == false` and no items.)
         // Reset to the default rolled-up feed (priority + descendants) on
         // every priority switch, including navigation from the agenda.
         showSubPriorities: true,

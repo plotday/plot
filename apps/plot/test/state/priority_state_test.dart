@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plot/state/activity_section.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
 
@@ -29,6 +30,8 @@ Priority _testPriority() {
 PriorityState _stateWith({
   required Priority priority,
   required List<AgendaItem> agendaItems,
+  bool everything = false,
+  Map<ActivityTab, ActivityFeedTabData> activityFeedByTab = const {},
 }) {
   final draft = Thread(priority: priority, draft: true);
   final draftNote = Note(
@@ -45,6 +48,8 @@ PriorityState _stateWith({
     draft: draft,
     draftNote: draftNote,
     agendaItems: agendaItems,
+    everything: everything,
+    activityFeedByTab: activityFeedByTab,
   );
 }
 
@@ -168,6 +173,72 @@ void main() {
         view.first,
         isA<AgendaHeaderItem>().having((h) => h.date, 'date', today),
       );
+    });
+  });
+
+  // The page leads the feed with the "Everything" header off
+  // `activeTabEverythingFeed` rather than the live `everything` flag, so the
+  // header and the items always belong to the same generation. This is what
+  // prevents the double-header frame (both "Everything" and "Active") during a
+  // focus→Everything switch, where the flag flips a frame before the feed
+  // rebuilds.
+  group('PriorityState.activeTabEverythingFeed', () {
+    test(
+        'follows the active tab data, not the live everything flag (no '
+        'Everything header over still-sectioned focus data mid-switch)', () {
+      final priority = _testPriority();
+      final thread = Thread(priority: priority, title: 'Active item');
+
+      // The exact frame between setEverything(true) and the feed rebuilding:
+      // the live flag has flipped to true, but the active tab still holds the
+      // previous focus's SECTIONED data (built with everythingFeed: false).
+      final state = _stateWith(
+        priority: priority,
+        agendaItems: const [],
+        everything: true,
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [
+              AgendaHeaderItem(
+                text: ActivitySectionMarker.encode(ActivitySection.doing),
+              ),
+              AgendaThreadItem(thread),
+            ],
+            everythingFeed: false,
+          ),
+        },
+      );
+
+      expect(state.everything, isTrue);
+      expect(
+        state.activeTabEverythingFeed,
+        isFalse,
+        reason: 'header must not lead the stale sectioned list before the '
+            'unsectioned Everything data arrives',
+      );
+    });
+
+    test('true once the active tab holds the dedicated Everything data', () {
+      final priority = _testPriority();
+      final thread = Thread(priority: priority, title: 'Anywhere');
+      final state = _stateWith(
+        priority: priority,
+        agendaItems: const [],
+        everything: true,
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [AgendaThreadItem(thread)],
+            everythingFeed: true,
+          ),
+        },
+      );
+      expect(state.activeTabEverythingFeed, isTrue);
+    });
+
+    test('false when the active tab has no data yet', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const []);
+      expect(state.activeTabEverythingFeed, isFalse);
     });
   });
 }

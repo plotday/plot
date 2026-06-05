@@ -1083,18 +1083,19 @@ class _PriorityPageState extends State<PriorityPage>
     // Reuse the incoming `items` reference unchanged in the common case
     // (no extras) so the boundary-cache below can hit by identity.
     final isSearching = state.search.isNotEmpty;
-    final isFiltering = state.filter.isNotEmpty ||
-        state.reactionFilter.isNotEmpty ||
-        state.iconFilter.isNotEmpty;
     final scope = state.globalViewScope;
     // The dedicated (non-search, non-filter) Everything feed spans every focus
     // and is otherwise unsectioned, so — in multi-panel mode — it leads with a
     // single "Everything" section header. Global views (search/filter) render
     // as one headerless flat list, so the header is suppressed there.
+    //
+    // Drive this off `activeTabEverythingFeed` (recorded when the items were
+    // built) rather than the live `state.everything`: on a focus→Everything
+    // switch the flag flips a frame before the feed rebuilds, and reading the
+    // live flag would prepend "Everything" above the old focus list while its
+    // "Active" section header is still present (a visible double-header frame).
     final everythingHeader =
-        state.everything &&
-        !isSearching &&
-        !isFiltering &&
+        state.activeTabEverythingFeed &&
         context.read<LayoutBloc>().state.multiPanel &&
         items.whereType<AgendaThreadItem>().isNotEmpty;
     final List<AgendaItem> displayItems;
@@ -1134,12 +1135,12 @@ class _PriorityPageState extends State<PriorityPage>
 
     final hasAnyThread = displayItems.whereType<AgendaThreadItem>().isNotEmpty;
 
-    // Initial load / priority switch: the bloc has reset `activityFeedByTab`
-    // and `activityFeedLoaded` to wait for the new subscription's first
-    // emission. Show a LoadingPage so the user doesn't see the empty-state
-    // text flash before the real list arrives. Typing a search keeps
-    // `activityFeedLoaded == true` so the existing filtered list keeps
-    // rendering through the transition.
+    // First app load: the bloc starts with `activityFeedLoaded == false` and
+    // no items, so show a LoadingPage rather than flashing the empty-state text
+    // before the first subscription emission arrives. Priority switches and
+    // search/Everything toggles deliberately KEEP the prior list (and
+    // `activityFeedLoaded == true`), so they never hit this branch — the old
+    // list renders until the new data swaps in, avoiding a blank frame.
     if (!hasAnyThread && !showFooter && !state.activityFeedLoaded) {
       return const LoadingPage();
     }

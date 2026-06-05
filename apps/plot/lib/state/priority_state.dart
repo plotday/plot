@@ -176,6 +176,14 @@ class PriorityState extends Equatable {
   List<AgendaItem> get activityFeedItems =>
       activityFeedByTab[activeTab]?.items ?? const [];
 
+  /// True when the active tab's items were built for the dedicated
+  /// "Everything" feed (see [ActivityFeedTabData.everythingFeed]). The page
+  /// uses this — not the live [everything] flag — to decide whether to lead
+  /// the feed with the "Everything" header, so the header tracks the items'
+  /// generation and never renders over a stale sectioned focus list mid-switch.
+  bool get activeTabEverythingFeed =>
+      activityFeedByTab[activeTab]?.everythingFeed ?? false;
+
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 
