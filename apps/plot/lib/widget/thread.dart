@@ -89,6 +89,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   StreamSubscription<List<Link>>? _linksSub;
   List<Link> _links = const [];
 
+  /// Resolved actors for the "other contacts" on the thread (see
+  /// [_otherContactIds]), keyed for the header name label. The *set* of ids is
+  /// stable thread-row data; only the resolved [Actor] objects (for their
+  /// names) warm in asynchronously here, filling the already-reserved label
+  /// slot without shifting layout.
+  Map<Uuid, Actor> _otherActors = const {};
+  String? _otherContactsKey;
+
   /// True while a block-level drag is in progress anywhere in the agenda.
   /// Threads are not drop targets for block drags — suppressing the hover
   /// effect prevents the row from looking like one.
@@ -98,6 +106,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void initState() {
     super.initState();
     _subscribeLinks();
+    _loadOtherActors();
   }
 
   void _subscribeLinks() {
@@ -108,13 +117,38 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     });
   }
 
+  /// Warm [_otherActors] from the Actor store so the header name label can
+  /// render names. Only the names settle in — the *set* of ids (and therefore
+  /// every layout decision) is already known synchronously from the thread row.
+  void _loadOtherActors() {
+    final ids = _otherContactIds();
+    final key = ids.map((u) => u.toString()).join('|');
+    if (key == _otherContactsKey) return;
+    _otherContactsKey = key;
+    () async {
+      final resolved = <Uuid, Actor>{};
+      for (final id in ids) {
+        try {
+          resolved[id] = await Actor.getOne(ActorId.fromUuid(id));
+        } catch (_) {
+          // Skip contacts whose actors can't be resolved.
+        }
+      }
+      if (!mounted) return;
+      setState(() => _otherActors = resolved);
+    }();
+  }
+
   @override
   void didUpdateWidget(covariant ThreadWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activity.id != widget.activity.id) {
       _links = const [];
+      _otherActors = const {};
+      _otherContactsKey = null;
       _subscribeLinks();
     }
+    _loadOtherActors();
   }
 
   @override
@@ -159,6 +193,55 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         ? Channel.findByChannel(ptId, channelId)?.title
         : null;
     return formatChannelBreadcrumb(workspace: workspace, channel: channel);
+  }
+
+  /// True when this thread's sharing is scoped to an external channel. Channel
+  /// threads show the [_channelLabel] breadcrumb instead of contact names.
+  /// Empty links resolve to [SharingModel.thread], so this is false (the stable
+  /// default) until links load.
+  bool get _isChannelThread =>
+      Thread.resolveSharingModel(_links) == SharingModel.channel;
+
+  /// The "other contacts" on the thread, in thread order: every contact except
+  /// the current user, dropped contacts, and connection-source twists (Google
+  /// Calendar, Slack, …). Non-connection twists (e.g. "Plot AI") are kept.
+  ///
+  /// Derived purely from the thread row plus startup-critical caches
+  /// (current-user actors, twist instances), so the result — and whether the
+  /// header name label is reserved — is stable from first paint.
+  List<Uuid> _otherContactIds() {
+    final self = Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    final dropped = activity.droppedContacts.toSet();
+    final out = <Uuid>[];
+    final seen = <Uuid>{};
+    for (final id in activity.contacts) {
+      if (self.contains(id)) continue;
+      if (dropped.contains(id)) continue;
+      // Connection-source twist (a connection like Google Calendar). Plain
+      // twists (isSource == false, e.g. Plot AI) are kept as participants.
+      if (TwistInstance.fromCache(id)?.isSource ?? false) continue;
+      if (seen.add(id)) out.add(id);
+    }
+    return out;
+  }
+
+  /// Comma-joined participant names for the header, shown in the same slot as
+  /// [_channelLabel] for non-channel threads. Returns null for channel threads
+  /// (they use the breadcrumb) and when there are no other contacts. Names
+  /// settle in as [_otherActors] warms; whether the slot is reserved is decided
+  /// synchronously by [_otherContactIds] so it never shifts layout.
+  String? _contactsLabel() {
+    if (_isChannelThread) return null;
+    final ids = _otherContactIds();
+    if (ids.isEmpty) return null;
+
+    final names = <String>[];
+    for (final id in ids) {
+      final actor = _otherActors[id] ?? Actor.fromCache(ActorId.fromUuid(id));
+      if (actor != null) names.add(actor.nameOrEmail);
+    }
+    if (names.isEmpty) return null;
+    return names.join(', ');
   }
 
   void _onDragChanged() {
@@ -237,7 +320,15 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final channelLabel = _channelLabel();
     final hasChannelLabel = channelLabel != null;
 
-    final hasBodyLabel = hasChannelLabel || hasSubPriorityLabel;
+    // Participant names in the header. `hasContactsLabel` is gated on the
+    // *stable* id set (not the resolved names) so the label slot — and
+    // `hasTopLabel`/`labelOffset` — never shifts as the Actor cache warms; the
+    // names text settles into the reserved slot.
+    final hasContactsLabel = !_isChannelThread && _otherContactIds().isNotEmpty;
+    final contactsLabel = hasContactsLabel ? _contactsLabel() : null;
+
+    final hasBodyLabel =
+        hasChannelLabel || hasContactsLabel || hasSubPriorityLabel;
 
     final scheduleDate = () {
       // User-scheduled todos only show the label when a linked event provides
@@ -478,6 +569,15 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                           Flexible(
                             child: Text(
                               channelLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (contactsLabel != null)
+                          Flexible(
+                            child: Text(
+                              contactsLabel,
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
@@ -727,7 +827,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // shed the priority page tree.
       final priorityBloc = buildContext.read<PriorityBloc?>();
       return ContextMenu(
-        items: (close) => threadCommands(activity, priorityBloc: priorityBloc)
+        items: (close) => threadCommands(
+              activity,
+              isPlotThread: Thread.isPlotThread(_links),
+              priorityBloc: priorityBloc,
+            )
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
@@ -801,12 +905,9 @@ class ThreadCommands extends HookWidget {
   @override
   Widget build(BuildContext context) {
     // Get commands (only if showCommands is true).
-    // Share affordance lives in the trailing slot (as an [AvatarGroup]) when
-    // the thread is shared, so we drop it from the hover-command pool to
-    // avoid duplication. When the thread isn't shared yet, we surface a
-    // share button after the more-commands menu so the affordance stays
-    // visible without competing with tag buttons for the take() limit.
-    final isShared = isThreadShared(activity);
+    // Sharing is surfaced by the leading primary-contact avatar (and the
+    // header name label), not by a trailing avatar group or a hover share
+    // icon, so PickThreadShared is dropped from the hover-command pool.
     final rawHoverCommands = threadCommands(
       activity,
       skipPrimary: true,
@@ -815,13 +916,12 @@ class ThreadCommands extends HookWidget {
     ).toList();
     // Lead the hover-command row with Schedule, then the remaining frequent
     // commands. Schedule is otherwise only reachable via the leading-icon
-    // long-press, so surface it explicitly here. Rename (EditThread) is
-    // appended after the Skip/Cleanup button below, not here. Schedule is a
+    // long-press, so surface it explicitly here. Rename (EditThread) is never
+    // shown on hover — it lives only in the more-commands menu. Schedule is a
     // per-user agenda action — allowed even on read-only (announce-group /
     // onboarding) threads, same as the leading-icon long-press — so it is
-    // not gated on isReadOnly. PickThreadShared stays filtered out — it's
-    // rendered separately (see [trailingShareButton]) when the thread isn't
-    // shared.
+    // not gated on isReadOnly. PickThreadShared stays filtered out — sharing
+    // is reachable via the more-commands menu.
     final hoverCommands = [
       PickScheduleThread(activity),
       ...rawHoverCommands.where(
@@ -836,13 +936,6 @@ class ThreadCommands extends HookWidget {
     final threadCommandButtons = showCommands
         ? hoverCommands.map(buildCommandButton).toList()
         : <Widget>[];
-
-    // When the thread isn't shared, render the share command as an icon
-    // button anchored after the more-commands menu — the trailing
-    // AvatarGroup slot is reserved for the avatars of shared threads.
-    final trailingShareButton = !isShared && showCommands
-        ? Button.icon(PickThreadShared(activity))
-        : null;
 
     // Conferencing/RSVP buttons only for threads shown by their own event
     // timing, not for user-scheduled todos.
@@ -870,6 +963,15 @@ class ThreadCommands extends HookWidget {
         ? RsvpChip(activity: activity)
         : null;
 
+    // Trailing assignee avatar — shown only for assignment-capable threads
+    // (e.g. Linear), never for plain sharing. [SharedCommandButton] renders the
+    // assignee avatar (or an "Assign" affordance) in its assignment branch, so
+    // gating on the primary assignment link keeps the sharing avatar group and
+    // share icon out of the row entirely.
+    final hasAssignment =
+        Thread.resolvePrimaryAssignmentLink(linksSnapshot.data ?? const []) !=
+        null;
+
     final List<Widget> allButtons;
     if (showCommands) {
       allButtons = [
@@ -879,8 +981,8 @@ class ThreadCommands extends HookWidget {
         // semantics flip based on whether the thread already carries the
         // mute flag.
         Button.icon(MuteSimilarThreads(activity)),
-        // Rename follows Skip/Cleanup (it leads no longer — see hoverCommands).
-        if (!activity.isReadOnly) Button.icon(EditThread(activity)),
+        // Rename is intentionally NOT surfaced on hover — it lives only in the
+        // more-commands menu, and only for Plot threads (see threadCommands).
         // Always add ShowThreadCommands as the 6th button
         Button.icon(
           CommandWrapper(
@@ -888,9 +990,6 @@ class ThreadCommands extends HookWidget {
             icon: Value(PlotIcon.more),
           ),
         ),
-        // When the thread isn't shared, the share affordance sits to
-        // the right of the more-commands menu so it's always visible.
-        ?trailingShareButton,
       ];
     } else {
       // Mute toggle is treated like an enabled tag: when the flag is set the
@@ -909,11 +1008,9 @@ class ThreadCommands extends HookWidget {
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
         ?rsvpChip,
-        // Trailing AvatarGroup slot — only present when the thread is
-        // actually shared. When not shared we leave the slot empty (no
-        // padding, no tooltip); the share command is reachable via the
-        // hover commands list instead.
-        if (isShared) SharedCommandButton(thread: activity),
+        // Assignment avatar (assignee / "Assign"), assignment-capable threads
+        // only. No sharing avatar group or share icon in the row.
+        if (hasAssignment) SharedCommandButton(thread: activity),
         // Trailing-most "Remove from event" X-icon for associated
         // threads, surfaced only on hover. The row is positioned at
         // the right edge with mainAxisSize.min, so adding this as
@@ -1518,7 +1615,14 @@ class _MoveHoverIconState extends State<_MoveHoverIcon> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.run(command),
-          onLongPress: () => context.run(EditThread(widget.activity)),
+          onLongPress: () async {
+            // Rename is restricted to Plot threads (user- or non-connection-
+            // twist-created); connector-created threads take their title from
+            // the source. See Thread.isPlotThread.
+            final links = await Link.getForThread(widget.activity.id);
+            if (!Thread.isPlotThread(links)) return;
+            if (context.mounted) context.run(EditThread(widget.activity));
+          },
           child: Center(
             child: FaIcon(
               iconData,

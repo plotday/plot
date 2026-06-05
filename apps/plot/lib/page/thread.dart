@@ -549,6 +549,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                         ...noteCommandGroups(note, activityBloc: threadBloc),
                       ...threadCommandGroupsSync(
                         state.thread,
+                        isPlotThread: Thread.isPlotThread(state.links),
                         priorityBloc: priorityBloc,
                       ),
                     ];

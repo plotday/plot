@@ -4731,6 +4731,27 @@ SELECT
     return cfg?.sharingModel ?? SharingModel.thread;
   }
 
+  /// Whether this is a "Plot thread" — one created by a user or a
+  /// non-connection twist, as opposed to one a connector created via a link.
+  /// Determined from the primary (earliest-created) link's creator: when that
+  /// link was authored by a connection-source twist instance
+  /// ([TwistInstance.isSource]) the thread originated from a connector and is
+  /// not a Plot thread. Threads with no links, or whose primary link was
+  /// authored by a user or a non-connection twist (e.g. Plot AI), are Plot
+  /// threads.
+  ///
+  /// Until links load the list is empty, so this defaults to `true` (Plot
+  /// thread) — the stable default that keeps Plot-only affordances (e.g.
+  /// Rename) visible rather than flickering them in once links resolve.
+  static bool isPlotThread(List<Link> links) {
+    if (links.isEmpty) return true;
+    final primary = [...links]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final creator = primary.first.createdBy;
+    if (creator == null) return true;
+    return !(TwistInstance.fromCache(creator)?.isSource ?? false);
+  }
+
   /// Returns the link whose assignee should be shown in the thread row /
   /// unified header avatar slot, or null when the thread is not in
   /// "assignment mode".

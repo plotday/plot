@@ -3583,10 +3583,12 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
   PriorityBloc? priorityBloc,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
+  final links = await Link.getForThread(thread.id);
   return threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: hasMerged,
+    isPlotThread: Thread.isPlotThread(links),
     priorityBloc: priorityBloc,
   );
 }
@@ -3597,12 +3599,14 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   Thread thread, {
   bool open = true,
   bool showSplitThread = false,
+  bool isPlotThread = true,
   PriorityBloc? priorityBloc,
 }) {
   final commands = threadCommands(
     thread,
     open: open,
     showSplitThread: showSplitThread,
+    isPlotThread: isPlotThread,
     priorityBloc: priorityBloc,
   );
 
@@ -3619,6 +3623,7 @@ List<Command> threadCommands(
   bool skipPrimary = false,
   bool showSplitThread = false,
   bool showEventTiming = false,
+  bool isPlotThread = true,
   PriorityBloc? priorityBloc,
 }) {
   // Read-only viewers (announce-group-only access): no metadata edits, no
@@ -3652,7 +3657,10 @@ List<Command> threadCommands(
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
-    if (!skipInfrequent) EditThread(thread),
+    // Rename is only offered on Plot threads (user- or non-connection-twist-
+    // created). Connector-created threads (Gmail, Calendar, …) take their
+    // title from the source, so renaming is disallowed.
+    if (!skipInfrequent && isPlotThread) EditThread(thread),
     if (!skipInfrequent) MoveThreadToPriority(thread),
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
