@@ -10,6 +10,8 @@ import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 
 import 'package:plot/state/compose_targets.dart';
+import 'package:plot/widget/compose/compose_sections_view.dart';
+import 'package:plot/widget/compose/connection_picker_view.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
@@ -62,14 +64,16 @@ class NewThreadPage extends StatefulWidget {
   State<NewThreadPage> createState() => NewThreadPageState();
 }
 
-/// The two phases of the new-thread compose flow.
+/// The three phases of the new-thread compose flow.
 ///
-/// [target] is step 1: the inline target picker (focus-notes, people, twists,
-/// and connector combos, MRU-ordered). [compose] is step 2: today's compose
-/// surface with the
-/// editor focused and fields ordered Connection → Focus → Contacts → Title →
-/// Body. A fresh mount always starts in [target] (see [NewThread] command).
-enum _ComposeStep { target, compose }
+/// [sections] is step 1: the inline sections picker (people & twists, channels,
+/// and private-note focuses). Picking a people pill advances to [connection]
+/// (step 2: choose which connection to reach that recipient through); picking a
+/// twist/channel/focus skips straight to [compose]. [compose] is the final
+/// step: today's compose surface with the editor focused and fields ordered
+/// Connection → Focus → Contacts → Title → Body. A fresh mount always starts in
+/// [sections] (see [NewThread] command).
+enum _ComposeStep { sections, connection, compose }
 
 class NewThreadPageState extends State<NewThreadPage> {
   /// Monotonic "start a fresh new-thread" signal. The [NewThread] command
@@ -105,7 +109,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// picker). Lets the search-close focus-restore path branch to the filter
   /// input rather than the note editor (which isn't mounted on step 1).
   static bool get isOnStep1 =>
-      _live != null && _live!.mounted && _live!._step == _ComposeStep.target;
+      _live != null && _live!.mounted && _live!._step == _ComposeStep.sections;
 
   /// Focuses the live step-1 inline filter input on the next frame. No-op when
   /// no page is live, the page isn't on step 1, or there's no physical keyboard
@@ -115,10 +119,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   static void focusFilter() {
     final live = _live;
     if (live == null || !live.mounted) return;
-    if (live._step != _ComposeStep.target) return;
+    if (live._step != _ComposeStep.sections) return;
     if (!hasPhysicalKeyboard()) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (live.mounted && live._step == _ComposeStep.target) {
+      if (live.mounted && live._step == _ComposeStep.sections) {
         live._pickerSearchFocusNode.requestFocus();
       }
     });
@@ -129,8 +133,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   final GlobalKey<TitleComposeFieldState> _titleFieldKey =
       GlobalKey<TitleComposeFieldState>();
 
-  /// Current step. Always starts on the target picker (step 1).
-  _ComposeStep _step = _ComposeStep.target;
+  /// Current step. Always starts on the sections picker (step 1).
+  _ComposeStep _step = _ComposeStep.sections;
 
   /// True when this compose was opened by the Help & Feedback command. Drives
   /// the feedback-specific editor placeholder. Set by [_applyFeedbackMode] /
@@ -141,6 +145,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// The target chosen in step 1, retained so submit can record it.
   ComposeTarget? _selectedTarget;
 
+  /// The recipient chosen in step 1 (a people pill), retained to drive the
+  /// step-2 connection picker and the compose-step back-nav. Null on
+  /// twist/channel/private-note paths (which skip step 2).
+  ComposePeopleEntry? _selectedRecipient;
+
+  /// The step-1 filter text stashed when advancing to step 2 (which clears the
+  /// shared field for "Select a connection"); restored on back.
+  String _stashedSectionsQuery = '';
+
   /// Focuses ordered for the focus picker by recency of threads filed with the
   /// chosen target's roster (MRU-top is the auto-suggested focus). Empty until
   /// a target is applied. See [_suggestFocusForTarget].
@@ -149,22 +162,18 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Controllers for the inline step-1 picker. Recreated for the step-2 modal
   // re-open so the two mounts don't share scroll/highlight state.
   final ScrollController _pickerScrollController = ScrollController();
-  final FocusNode _pickerListFocusNode = FocusNode(
-    debugLabel: 'NewThread-target-picker',
-  );
-
   /// Focus node for the inline step-1 search field. Owned here (not by the
   /// picker) so [_resetToFreshStart] can re-focus the filter when the
   /// already-mounted page is reset to step 1 — AutoRoute reuses the same
-  /// [TargetPickerList] instance, so its `autofocus` won't fire again.
+  /// [ComposeSectionsView] instance, so its `autofocus` won't fire again.
   final FocusNode _pickerSearchFocusNode = FocusNode(
     debugLabel: 'NewThread-target-picker-search',
   );
 
   /// Search-text controller for the inline step-1 picker. Owned here (not by
   /// the picker) so the typed filter survives the step-1 → step-2 → step-1
-  /// round-trip when the user taps the step-2 Connection field to change the
-  /// connection (a "go back" — see [_returnToTargetStep]). Cleared by
+  /// round-trip (the page stashes it on advance and restores it on a "go back"
+  /// — see [_pickRecipient] / [_returnToSectionsStep]). Cleared by
   /// [_resetToFreshStart] so a brand-new compose starts with an empty filter.
   final TextEditingController _pickerSearchController = TextEditingController();
 
@@ -278,8 +287,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     _pickerSearchController.clear();
 
     setState(() {
-      _step = _ComposeStep.target;
+      _step = _ComposeStep.sections;
       _selectedTarget = null;
+      _selectedRecipient = null;
+      _stashedSectionsQuery = '';
       _selectedTwist = null;
       _hadContactsThisSession = false;
       _focusSuggestionOrder = const [];
@@ -287,7 +298,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     });
 
     // Re-focus the inline filter after the rebuild. AutoRoute reuses the same
-    // TargetPickerList instance, so its `autofocus` won't re-fire on this
+    // ComposeSectionsView instance, so its `autofocus` won't re-fire on this
     // reset — request focus explicitly (physical-keyboard platforms only, to
     // match the picker's own autofocus gating and avoid popping the soft
     // keyboard on mobile).
@@ -642,7 +653,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Clear middle panel preference when leaving NewThreadPage
     LayoutBloc.instance?.preferMiddle = false;
     _pickerScrollController.dispose();
-    _pickerListFocusNode.dispose();
     _pickerSearchFocusNode.dispose();
     _pickerSearchController.dispose();
     super.dispose();
@@ -878,43 +888,61 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!feedback) await _suggestFocusForTarget(target);
   }
 
-  /// Tapping the step-2 Connection field is a plain **"go back"** to step 1
-  /// (the target picker), not a modal. The in-progress draft is preserved: the
-  /// page-owned [_pickerSearchController] keeps the prior filter text, and a new
-  /// selection routes through [_applyTarget], which rewrites only the
-  /// connection / roster / team and never touches the note body or title. On
-  /// return the filter text is fully selected and refocused (physical-keyboard
-  /// platforms only) so typing replaces it; selecting the same connection again
-  /// simply re-applies and returns to step 2.
-  void _returnToTargetStep() {
-    setState(() => _step = _ComposeStep.target);
+  /// Refocuses the shared picker search field after a step transition, on the
+  /// next frame, only on physical-keyboard platforms (never pops the mobile
+  /// soft keyboard) and only if we're still on [expectedStep].
+  void _focusSearchAfterTransition(_ComposeStep expectedStep) {
+    if (!hasPhysicalKeyboard()) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _step == expectedStep) {
+        _pickerSearchFocusNode.requestFocus();
+      }
+    });
+  }
 
-    // Re-seed / re-rank the base list (mirrors [_resetToFreshStart]). The bloc
-    // is already populated, so rows show immediately; this just refreshes MRU.
-    unawaited(
-      context.read<ComposeTargetsBloc>().refresh().catchError((
-        Object e,
-        StackTrace s,
-      ) {
-        Tracker.captureException(e, s);
-      }),
-    );
+  /// Step 1 people pill -> step 2. Stash the step-1 query, clear the shared
+  /// field for "Select a connection", remember the recipient.
+  void _pickRecipient(ComposePeopleEntry entry) {
+    _stashedSectionsQuery = _pickerSearchController.text;
+    _pickerSearchController.clear();
+    setState(() {
+      _selectedRecipient = entry;
+      _step = _ComposeStep.connection;
+    });
+    _focusSearchAfterTransition(_ComposeStep.connection);
+  }
 
-    // Restore focus and select the prior filter text so typing replaces it.
-    // Gated to physical-keyboard platforms to match the picker's own autofocus
-    // gating (never pops the mobile soft keyboard).
+  /// Step 1 twist/channel/private-note pill -> compose (skip step 2). Clears the
+  /// recipient so compose-step back-nav returns to step 1.
+  Future<void> _applyDirectTarget(ComposeTarget target) async {
+    setState(() => _selectedRecipient = null);
+    await _applyTarget(target);
+  }
+
+  /// Step 2 ✕/Esc -> step 1, restoring the stashed filter text.
+  void _returnToSectionsStep() {
+    _pickerSearchController.text = _stashedSectionsQuery;
+    setState(() => _step = _ComposeStep.sections);
     if (hasPhysicalKeyboard()) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _step != _ComposeStep.target) return;
+        if (!mounted || _step != _ComposeStep.sections) return;
         final text = _pickerSearchController.text;
         if (text.isNotEmpty) {
-          _pickerSearchController.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: text.length,
-          );
+          _pickerSearchController.selection =
+              TextSelection(baseOffset: 0, extentOffset: text.length);
         }
         _pickerSearchFocusNode.requestFocus();
       });
+    }
+  }
+
+  /// Compose-step "go back": to step 2 when a recipient is chosen, else step 1.
+  void _backFromCompose() {
+    if (_selectedRecipient != null) {
+      setState(() => _step = _ComposeStep.connection);
+      _focusSearchAfterTransition(_ComposeStep.connection);
+    } else {
+      _returnToSectionsStep();
     }
   }
 
@@ -1358,10 +1386,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// Step 1: the inline target picker. Tapping the step-2 Connection field
-  /// navigates back to this same surface (see [_returnToTargetStep]), so it is
-  /// the single styled picker rather than a modal variant. Selecting a target
-  /// applies it and advances to step 2 (see [_applyTarget]).
+  /// Step 1: the inline sections picker. Picking a people pill advances to the
+  /// connection step (see [_pickRecipient]); picking a twist/channel/focus pill
+  /// skips straight to compose (see [_applyDirectTarget]). Returning here from
+  /// the connection step restores the stashed filter text
+  /// (see [_returnToSectionsStep]).
   ///
   /// Multi-panel: a comfortable fixed inset above the prompt, then the list
   /// fills the remaining height down to the bottom edge (where the scroll fade
@@ -1370,13 +1399,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context, {
     required bool multiPanel,
   }) {
-    final picker = TargetPickerList(
-      key: const ValueKey('new-thread-target-picker'),
+    final picker = ComposeSectionsView(
+      key: const ValueKey('new-thread-sections'),
       scrollController: _pickerScrollController,
-      listFocusNode: _pickerListFocusNode,
-      searchFocusNode: _pickerSearchFocusNode,
       searchController: _pickerSearchController,
-      onSelect: (target) => unawaited(_applyTarget(target)),
+      searchFocusNode: _pickerSearchFocusNode,
+      onPickRecipient: _pickRecipient,
+      onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
     );
 
     if (!multiPanel) {
@@ -1400,6 +1429,46 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Step 2: the connection picker. Reached from step 1 by picking a people
+  /// pill (see [_pickRecipient]). Shows the chosen recipient as a chip and the
+  /// connections available to reach them; picking one advances to compose (see
+  /// [_applyTarget]). The chip's ✕ / Esc returns to step 1
+  /// (see [_returnToSectionsStep]). Mirrors [_buildTargetPickerStep]'s padding.
+  Widget _buildConnectionStep(
+    BuildContext context, {
+    required bool multiPanel,
+  }) {
+    final view = ConnectionPickerView(
+      key: const ValueKey('new-thread-connection'),
+      recipient: _selectedRecipient!,
+      scrollController: _pickerScrollController,
+      searchController: _pickerSearchController,
+      searchFocusNode: _pickerSearchFocusNode,
+      onPickConnection: (t) => unawaited(_applyTarget(t)),
+      onBack: _returnToSectionsStep,
+    );
+
+    if (!multiPanel) {
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+        child: view,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Calm breathing room above the prompt; the picker then fills the
+          // remaining height so the list runs to the bottom of the panel.
+          const SizedBox(height: 48),
+          Expanded(child: view),
+        ],
+      ),
+    );
+  }
+
   /// Step-2 compose surface. Field order is **Connection → Focus → Contacts →
   /// Title** (the two-step redesign): the chosen connection sits at the top
   /// (tapping it re-opens the target picker), then the auto-suggested focus,
@@ -1415,8 +1484,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       children: [
         ConnectionComposeField(
           activeChoice: activeChoice,
-          // Tapping the connection field goes back to step 1 (not a modal).
-          openModal: () async => _returnToTargetStep(),
+          // Tapping the connection field goes back a step (to the connection
+          // picker when a recipient was chosen, else the sections picker).
+          openModal: () async => _backFromCompose(),
         ),
         PriorityComposeField(
           currentPriority: state.draft.priority,
@@ -1487,11 +1557,20 @@ class NewThreadPageState extends State<NewThreadPage> {
                     childPad: false,
                     body: LayoutBuilder(
                       builder: (context, constraints) {
-                        // Step 1: the inline target picker. Shown on a fresh
+                        // Step 1: the inline sections picker. Shown on a fresh
                         // mount (and after the New-thread command remounts) in
                         // place of the compose surface + editor.
-                        if (_step == _ComposeStep.target) {
+                        if (_step == _ComposeStep.sections) {
                           return _buildTargetPickerStep(
+                            context,
+                            multiPanel: layoutState.multiPanel,
+                          );
+                        }
+
+                        // Step 2: the connection picker, reached by choosing a
+                        // recipient in step 1.
+                        if (_step == _ComposeStep.connection) {
+                          return _buildConnectionStep(
                             context,
                             multiPanel: layoutState.multiPanel,
                           );
@@ -1640,13 +1719,14 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Intercepts keys bubbling up from the focused body editor.
   ///
-  /// **Escape** goes back to step 1 (the target picker) — the same "go back"
-  /// as tapping the Connection field (see [_returnToTargetStep]). When a
-  /// mention popover is open SuperEditor consumes Escape to close it first
-  /// (it's a descendant of this Focus), so this fires only on a subsequent
-  /// Escape. Other step-2 fields (title, etc.) route Escape through the
-  /// page-level [_buildThreadShortcuts] binding instead, which is only present
-  /// on step 2.
+  /// **Escape** goes back a step — to the connection picker when a recipient
+  /// was chosen, else the sections picker — the same "go back" as tapping the
+  /// Connection field (see [_backFromCompose]). When a mention popover is open
+  /// SuperEditor consumes Escape to close it first (it's a descendant of this
+  /// Focus), so this fires only on a subsequent Escape. Other compose-step
+  /// fields (title, etc.) route Escape through the page-level
+  /// [_buildThreadShortcuts] binding instead, which is only present on the
+  /// compose step.
   ///
   /// **Shift+Tab** sends focus back to the title field. SuperEditor doesn't
   /// consume Tab outside its mention popover, so the unhandled key reaches this
@@ -1654,7 +1734,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   KeyEventResult _handleEditorKeys(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
-      _returnToTargetStep();
+      _backFromCompose();
       return KeyEventResult.handled;
     }
     if (event.logicalKey != LogicalKeyboardKey.tab) {
@@ -1681,7 +1761,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // key handler ([_handleEditorKeys]) covers Escape while the body editor
       // holds focus; this covers the other step-2 fields (title, etc.).
       if (_step == _ComposeStep.compose)
-        const SingleActivator(LogicalKeyboardKey.escape): _returnToTargetStep,
+        const SingleActivator(LogicalKeyboardKey.escape): _backFromCompose,
       // ⌘⇧S — share (contacts)
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
         _openSharedPicker(context);

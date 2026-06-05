@@ -9,12 +9,92 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/theme_color.dart' show ThemeColor;
+import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/compose/compose_target_view.dart';
 import 'package:plot/widget/compose/email_parser.dart';
 import 'package:plot/widget/connection_targets.dart';
 
 part 'compose_targets_state.dart';
+
+/// One recipient option in section 1 "People & twists": a roster whose
+/// connection is chosen later (step 2). [display] drives the pill.
+class ComposePeopleEntry extends Equatable {
+  const ComposePeopleEntry({
+    required this.contacts,
+    required this.groups,
+    required this.inviteEmails,
+    required this.display,
+  });
+  final List<Uuid> contacts;
+  final List<Uuid> groups;
+  final List<String> inviteEmails;
+  final ComposePillData display;
+  bool get hasGroup => groups.isNotEmpty;
+  @override
+  List<Object?> get props => [contacts, groups, inviteEmails];
+}
+
+/// Sectioned step-1 data. Each list is limited for the at-rest view;
+/// [ComposeTargetsBloc.searchSections] returns the same shape filtered/expanded
+/// by query.
+class ComposeSections extends Equatable {
+  const ComposeSections({
+    required this.people,
+    required this.twists,
+    required this.channels,
+    required this.focuses,
+  });
+  final List<ComposePeopleEntry> people;
+  final List<ComposeTarget> twists; // kind == twist
+  final List<ComposeTarget> channels; // kind == connector, channel != null
+  final List<ComposeTarget> focuses; // kind == note (focusNote)
+  @override
+  List<Object?> get props => [people, twists, channels, focuses];
+}
+
+/// A distinct compose roster, ignoring team scope and connection. Produced by
+/// [dedupePeopleByRoster] and resolved into a [ComposePeopleEntry] by the bloc.
+typedef RosterKey = ({
+  List<Uuid> contacts,
+  List<Uuid> groups,
+  List<String> inviteEmails,
+});
+
+/// Canonical dedup key for a roster. Stable sort on each dimension so order
+/// of inputs doesn't matter; includes invite emails so two rosters differing
+/// only by invite address are treated as distinct.
+String _rosterKey(
+  Iterable<Uuid> contacts,
+  Iterable<Uuid> groups,
+  Iterable<String> inviteEmails,
+) {
+  final c = contacts.map((u) => u.toString()).toList()..sort();
+  final g = groups.map((u) => u.toString()).toList()..sort();
+  final e = inviteEmails.toList()..sort();
+  return 'c=${c.join(",")}|g=${g.join(",")}|e=${e.join(",")}';
+}
+
+/// Collapses chat/connector-DM targets to distinct rosters, ignoring team scope
+/// and connection. First-seen order preserved (callers pass MRU-ordered input).
+/// Targets with no roster are skipped.
+List<RosterKey> dedupePeopleByRoster(List<ComposeTarget> targets) {
+  final seen = <String>{};
+  final out = <RosterKey>[];
+  for (final t in targets) {
+    if (t.contacts.isEmpty && t.groups.isEmpty && t.inviteEmails.isEmpty) {
+      continue;
+    }
+    final key = _rosterKey(t.contacts, t.groups, t.inviteEmails);
+    if (!seen.add(key)) continue;
+    out.add((
+      contacts: t.contacts,
+      groups: t.groups,
+      inviteEmails: t.inviteEmails,
+    ));
+  }
+  return out;
+}
 
 /// Materializes and caches the step-1 **target picker** list: a globally
 /// MRU-ranked list of "ways to create a thread" (a focus-note per
@@ -85,6 +165,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// per connection); the full channel/contact space is reachable via
   /// [search]. Mirrors the share-scan window in `actor.dart`.
   static const int _authoredScanWindow = 80;
+
+  /// Cap on the source pool loaded by [searchSections] before filtering.
+  /// Exceeding this is implausible given the MRU scan window ([_authoredScanWindow]).
+  static const int _kSearchPoolLimit = 1000;
 
   /// Rebuild the cached base list from the stores + MRU recency. Call on the
   /// inputs that change it: connections/channels syncing, team membership
@@ -522,22 +606,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         title: ctx.priorityById[f.priorityId]?.displayTitle ?? 'Note',
       ));
     }
-    // Twist targets (chat with a twist). Only twists that opt in via a
-    // non-empty `threadType` and aren't source/connector instances are chat
-    // targets — connectors are also twist_instances, so without this filter a
-    // connection (e.g. Gmail) would wrongly appear as a "chat with a twist"
-    // row. Matches the `chatTwists` filter in connection_chip.dart.
-    final twists = await TwistInstance.get();
-    final chatTwists = twists
-        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
-        .toList();
-    for (final twist in chatTwists) {
-      templates.add(ComposeTarget.twist(
-        twist,
-        allInstances: twists,
-        teamName: twist.teamId == null ? null : ctx.teamNames[twist.teamId],
-      ));
-    }
+    // Twist targets (chat with a twist).
+    templates.addAll(await _twistTargets(ctx));
     // One fresh template per CHANNEL connection link type. DM/address
     // connectors (Gmail, Slack DMs, …) only make sense with a recipient, so a
     // bare "Gmail" template is noise — those connectors surface via used-combos
@@ -553,6 +623,232 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     }
 
     return _dedupeForDisplay([...used, ...templates]);
+  }
+
+  /// Twist targets (chat with a twist). Only twists that opt in via a
+  /// non-empty `threadType` and aren't source/connector instances are chat
+  /// targets — connectors are also twist_instances, so without this filter a
+  /// connection (e.g. Gmail) would wrongly appear as a "chat with a twist"
+  /// row. Matches the `chatTwists` filter in connection_chip.dart.
+  Future<List<ComposeTarget>> _twistTargets(_ComposeSearchContext ctx) async {
+    final twists = await TwistInstance.get();
+    final chatTwists = twists
+        .where((t) => !t.isSource && (t.threadType?.isNotEmpty ?? false))
+        .toList();
+    return [
+      for (final twist in chatTwists)
+        ComposeTarget.twist(
+          twist,
+          allInstances: twists,
+          teamName: twist.teamId == null ? null : ctx.teamNames[twist.teamId],
+        ),
+    ];
+  }
+
+  // --- Sectioned step-1 producers ------------------------------------------
+
+  /// Step-1 at-rest sections. People = MRU rosters (deduped) classified into
+  /// contact/group/ad-hoc pills; twists/channels/focuses reuse existing
+  /// builders.
+  Future<ComposeSections> loadSections({int perSection = 8}) async {
+    final ctx = await _searchContextFor();
+    final scan = ctx.scan;
+
+    final usedSignatures = buildUsedTargetSignatures(scan.threads);
+    final rankedUsed = _prefs.rankSignaturesByMru(signatures: usedSignatures);
+    final rosterTargets = <ComposeTarget>[];
+    for (final sig in rankedUsed) {
+      final st = scan.bySignature[sig];
+      if (st == null) continue;
+      final t = _composeTargetForScanThread(
+        st,
+        templateBySignature: ctx.templateBySignature,
+        connectionCount: ctx.connectionCount,
+        hasTeams: ctx.hasTeams,
+        teamNames: ctx.teamNames,
+      );
+      if (t != null) rosterTargets.add(t);
+    }
+    final people = <ComposePeopleEntry>[];
+    for (final r in dedupePeopleByRoster(rosterTargets)) {
+      final entry = _peopleEntryFor(r);
+      if (entry != null) people.add(entry);
+      if (people.length >= perSection) break;
+    }
+
+    final twists = await _twistTargets(ctx);
+
+    final channels = <ComposeTarget>[
+      for (final t in ctx.createTargets)
+        if (!t.isDmType)
+          ComposeTarget.connector(
+            t,
+            connectionCount: ctx.connectionCount(t),
+            channelDetail: t.channel?.title,
+          ),
+    ];
+
+    final focuses = <ComposeTarget>[
+      for (final f in ctx.focusNoteOrder.take(perSection))
+        ComposeTarget.focusNote(
+          priorityId: f.priorityId,
+          teamId: f.teamId,
+          title: ctx.priorityById[f.priorityId]?.displayTitle ?? 'Note',
+        ),
+    ];
+
+    return ComposeSections(
+      people: people,
+      twists: twists.take(perSection).toList(),
+      channels: channels.take(perSection).toList(),
+      focuses: focuses,
+    );
+  }
+
+  /// Resolve a deduped [RosterKey] into a presentable [ComposePeopleEntry], or
+  /// null when nothing in the roster resolves (uncached group/contacts and no
+  /// invites). A formal group wins; a single contact is a [ContactPillData];
+  /// everything else (multiple contacts, or pending invites) is an ad-hoc group.
+  ComposePeopleEntry? _peopleEntryFor(RosterKey r) {
+    final ComposePillData display;
+    if (r.groups.isNotEmpty) {
+      final g = Group.fromCache(r.groups.first);
+      if (g == null) return null;
+      final members = [
+        for (final id in (g.memberContactIds ?? const <Uuid>[]))
+          Actor.fromCache(ActorId.fromUuid(id)),
+      ].whereType<Actor>().toList();
+      display = GroupPillData(g, members);
+    } else if (r.contacts.length == 1 && r.inviteEmails.isEmpty) {
+      final a = Actor.fromCache(ActorId.fromUuid(r.contacts.single));
+      if (a == null) return null;
+      display = ContactPillData(a);
+    } else {
+      final actors = [
+        for (final id in r.contacts) Actor.fromCache(ActorId.fromUuid(id)),
+      ].whereType<Actor>().toList();
+      if (actors.isEmpty && r.inviteEmails.isEmpty) return null;
+      display = AdHocGroupPillData(actors, inviteEmails: r.inviteEmails);
+    }
+    return ComposePeopleEntry(
+      contacts: r.contacts,
+      groups: r.groups,
+      inviteEmails: r.inviteEmails,
+      display: display,
+    );
+  }
+
+  /// Step-1 sections filtered/expanded by [query]. Empty query ->
+  /// [loadSections].
+  Future<ComposeSections> searchSections(
+    String query, {
+    int perSection = 8,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return loadSections(perSection: perSection);
+    // Unbounded-ish base, then filter; perSection caps the final output.
+    final base = await loadSections(perSection: _kSearchPoolLimit);
+    final lower = trimmed.toLowerCase();
+
+    bool matchesEntry(ComposePeopleEntry e) {
+      final names = <String>[];
+      for (final c in e.contacts) {
+        final a = Actor.fromCache(ActorId.fromUuid(c));
+        if (a != null) {
+          names.add(a.name ?? '');
+          names.add(a.email ?? '');
+        }
+      }
+      for (final g in e.groups) {
+        final grp = Group.fromCache(g);
+        if (grp != null) names.add(grp.name);
+      }
+      names.addAll(e.inviteEmails);
+      return names.any((n) => n.toLowerCase().contains(lower));
+    }
+
+    bool matchesTarget(ComposeTarget t) => t.label.toLowerCase().contains(lower);
+
+    final people = <ComposePeopleEntry>[];
+    final seenRosters = <String>{};
+    for (final e in base.people) {
+      if (matchesEntry(e) &&
+          seenRosters.add(_rosterKey(e.contacts, e.groups, e.inviteEmails))) {
+        people.add(e);
+      }
+    }
+
+    // Synthesize single-contact entries for any matching correspondent not
+    // already surfaced by a recently-used roster, so search reaches the whole
+    // roster (not just recently-used). Reuses the lean name LIKE query
+    // [_searchByName] uses; self ids are excluded as elsewhere in the bloc.
+    if (people.length < perSection) {
+      final selfIds =
+          Actor.getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+      final matches = await Actor.get(
+        types: const [ActorType.user, ActorType.contact],
+        search: trimmed,
+        inviteable: true,
+        primary: true,
+      );
+      for (final a in matches) {
+        if (people.length >= perSection) break;
+        final uuid = a.id.toUuid();
+        if (selfIds.contains(uuid)) continue;
+        final entry = _peopleEntryFor((
+          contacts: [uuid],
+          groups: const [],
+          inviteEmails: const [],
+        ));
+        if (entry != null &&
+            seenRosters.add(
+                _rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+          people.add(entry);
+        }
+      }
+    }
+
+    return ComposeSections(
+      people: people.take(perSection).toList(),
+      twists: base.twists.where(matchesTarget).take(perSection).toList(),
+      channels: base.channels.where(matchesTarget).take(perSection).toList(),
+      focuses: base.focuses.where(matchesTarget).take(perSection).toList(),
+    );
+  }
+
+  /// Connections that can reach [contacts]/[groups]/[inviteEmails], MRU-first.
+  /// Plot per applicable scope + DM-type connectors (only when no formal group).
+  Future<List<ComposeTarget>> connectionsForRoster({
+    required List<Uuid> contacts,
+    required List<Uuid> groups,
+    required List<String> inviteEmails,
+  }) async {
+    final ctx = await _searchContextFor();
+    final options = <ComposeTarget>[];
+    for (final teamId in <BigInt?>{null, ...ctx.teamNames.keys}) {
+      options.add(ComposeTarget.chat(
+        teamId: teamId,
+        hasTeams: ctx.hasTeams,
+        teamName: teamId == null ? null : ctx.teamNames[teamId],
+        contacts: contacts,
+        groups: groups,
+        inviteEmails: inviteEmails,
+      ));
+    }
+    if (groups.isEmpty) {
+      for (final t in ctx.createTargets.where((t) => t.isDmType)) {
+        options.add(ComposeTarget.connector(
+          t,
+          connectionCount: ctx.connectionCount(t),
+          contacts: contacts,
+        ));
+      }
+    }
+    final ranked = _prefs.rankSignaturesByMru(
+      signatures: options.map((o) => o.signature).toList(),
+    );
+    final bySig = {for (final o in options) o.signature: o};
+    return [for (final s in ranked) if (bySig[s] != null) bySig[s]!];
   }
 
   /// Resolve a [ComposeTarget] for a used-combo scan thread, or null when its

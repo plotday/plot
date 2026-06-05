@@ -8,5 +8,4 @@ export 'connection_compose_field.dart';
 export 'contacts_compose_field.dart';
 export 'email_parser.dart';
 export 'priority_compose_field.dart';
-export 'target_picker_list.dart';
 export 'title_compose_field.dart';

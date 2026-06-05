@@ -1,0 +1,389 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
+
+import 'package:plot/analytics/tracker.dart';
+import 'package:plot/command/command.dart'
+    show BuildContextCommandExtension, ManageConnections;
+import 'package:plot/state/compose_targets.dart';
+import 'package:plot/store/store.dart' show Priority, Uuid;
+import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/compose/compose_pill.dart';
+import 'package:plot/widget/compose/compose_target.dart';
+import 'package:plot/widget/compose/compose_search_field.dart';
+import 'package:plot/widget/compose/pill_grid.dart';
+import 'package:plot/widget/icon.dart';
+
+/// The step-1 "sections" view of the new-thread picker.
+///
+/// Displays a [ComposeSearchField] above a [PillGrid] partitioned into three
+/// sections — **People & twists**, **Channels**, and **Private notes** — each
+/// populated from [ComposeTargetsBloc.loadSections] /
+/// [ComposeTargetsBloc.searchSections].
+///
+/// Selecting a people entry invokes [onPickRecipient] (→ step 2 connection
+/// picker); selecting a twist, channel, or focus target invokes [onPickTarget]
+/// (→ compose directly).
+///
+/// The view owns a debounced search loop (180 ms) and restores any
+/// pre-filled filter text on mount so round-tripping back from step 2 shows
+/// the same filtered results.
+class ComposeSectionsView extends StatefulWidget {
+  const ComposeSectionsView({
+    super.key,
+    required this.scrollController,
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.onPickRecipient,
+    required this.onPickTarget,
+    this.autofocusSearch = true,
+  });
+
+  /// Scroll controller for the pill grid (owned by the host page so it
+  /// persists across step round-trips).
+  final ScrollController scrollController;
+
+  /// The search text controller. Owned by the page so the filter text
+  /// survives navigation back from step 2.
+  final TextEditingController searchController;
+
+  /// Focus node for the search field. Owned by the page so the page can
+  /// re-focus it when returning to step 1.
+  final FocusNode searchFocusNode;
+
+  /// Called when the user picks a people pill (→ advance to the connection
+  /// picker in step 2).
+  final void Function(ComposePeopleEntry entry) onPickRecipient;
+
+  /// Called when the user picks a twist, channel, or focus pill (→ start
+  /// compose with the chosen target).
+  final void Function(ComposeTarget target) onPickTarget;
+
+  /// Whether to autofocus the search field on mount. Enabled by default (the
+  /// page's normal open); the host can disable it when restoring step 1 after
+  /// the user returns from step 2 and already has a typed filter.
+  final bool autofocusSearch;
+
+  @override
+  State<ComposeSectionsView> createState() => _ComposeSectionsViewState();
+}
+
+class _ComposeSectionsViewState extends State<ComposeSectionsView> {
+  // ─── State ─────────────────────────────────────────────────────────────────
+
+  /// Most-recently-loaded sectioned data. Null while the initial load is in
+  /// flight (the grid shows an empty placeholder).
+  ComposeSections? _sections;
+
+  /// Priorities by id, co-loaded with [_sections], used to resolve a
+  /// focus-note target's [ComposeTarget.priorityId] into a [Priority] for
+  /// [FocusPillData].
+  Map<Uuid, Priority> _priorityById = const {};
+
+  /// Monotonic request counter used to discard stale responses.
+  int _requestId = 0;
+
+  /// Debounce timer for the search field.
+  Timer? _debounce;
+
+  static const Duration _searchDebounce = Duration(milliseconds: 180);
+
+  bool _isDisposed = false;
+
+  /// Key for the [PillGrid]; exposes [PillGridState.focusFirst].
+  final _gridKey = GlobalKey<PillGridState>();
+
+  /// The grid's focus node — owned here and disposed with the widget.
+  final FocusNode _gridFocusNode = FocusNode(debugLabel: 'compose-sections-grid');
+
+  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    // Restore a pre-filled filter (returning from step 2) or load at rest.
+    if (widget.searchController.text.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) _runSearch(widget.searchController.text);
+      });
+    } else {
+      _loadSections();
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _debounce?.cancel();
+    _gridFocusNode.dispose();
+    super.dispose();
+  }
+
+  // ─── Data loading ──────────────────────────────────────────────────────────
+
+  /// Loads sections at rest (no query) and populates [_priorityById].
+  void _loadSections() {
+    final requestId = ++_requestId;
+    final bloc = context.read<ComposeTargetsBloc>();
+    bloc
+        .loadSections()
+        .then((sections) async {
+          if (_isDisposed || requestId != _requestId) return;
+          // Co-load priorities in parallel so focus-note pills can resolve.
+          final priorities = await Priority.getRaw();
+          if (_isDisposed || requestId != _requestId) return;
+          setState(() {
+            _sections = sections;
+            _priorityById = {for (final p in priorities) p.id: p};
+          });
+        })
+        .catchError((Object e, StackTrace s) {
+          Tracker.captureException(e, s);
+        });
+  }
+
+  /// Runs a debounced search for [query], or delegates to [_loadSections] when
+  /// the query is empty.
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    final query = widget.searchController.text.trim();
+    if (query.isEmpty) {
+      _loadSections();
+      return;
+    }
+    _debounce = Timer(_searchDebounce, () {
+      if (_isDisposed) return;
+      _runSearch(query);
+    });
+  }
+
+  void _runSearch(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _loadSections();
+      return;
+    }
+    final requestId = ++_requestId;
+    final bloc = context.read<ComposeTargetsBloc>();
+    bloc
+        .searchSections(trimmed)
+        .then((sections) async {
+          if (_isDisposed || requestId != _requestId) return;
+          final priorities = await Priority.getRaw();
+          if (_isDisposed || requestId != _requestId) return;
+          setState(() {
+            _sections = sections;
+            _priorityById = {for (final p in priorities) p.id: p};
+          });
+        })
+        .catchError((Object e, StackTrace s) {
+          Tracker.captureException(e, s);
+        });
+  }
+
+  // ─── Keyboard ──────────────────────────────────────────────────────────────
+
+  /// Activates the first pill in the grid — used when the user presses Enter in
+  /// the search field. Finds the first item across all built sections and calls
+  /// its [PillGridItem.onActivate].
+  void _activateFirst() {
+    final items = _buildSections();
+    for (final section in items) {
+      if (section.items.isNotEmpty) {
+        section.items.first.onActivate();
+        return;
+      }
+    }
+  }
+
+  // ─── Section building ──────────────────────────────────────────────────────
+
+  List<PillGridSection> _buildSections() {
+    final s = _sections;
+    if (s == null) return const [];
+    final sections = <PillGridSection>[];
+
+    // 1. People & twists
+    final peopleItems = [
+      for (final e in s.people)
+        PillGridItem(
+          data: e.display,
+          onActivate: () => widget.onPickRecipient(e),
+        ),
+      for (final t in s.twists)
+        PillGridItem(
+          data: TwistPillData(t),
+          onActivate: () => widget.onPickTarget(t),
+        ),
+    ];
+    if (peopleItems.isNotEmpty) {
+      sections.add(PillGridSection(
+        header: _peopleHeader(),
+        items: peopleItems,
+      ));
+    }
+
+    // 2. Channels
+    final channelItems = [
+      for (final t in s.channels)
+        PillGridItem(
+          data: ChannelPillData(t),
+          onActivate: () => widget.onPickTarget(t),
+        ),
+    ];
+    if (channelItems.isNotEmpty) {
+      sections.add(PillGridSection(
+        header: _sectionHeader('Channels'),
+        items: channelItems,
+      ));
+    }
+
+    // 3. Private notes (focuses)
+    final focusItems = <PillGridItem>[];
+    for (final t in s.focuses) {
+      final pid = t.priorityId;
+      if (pid == null) continue;
+      final priority = _priorityById[pid];
+      if (priority == null) continue;
+      focusItems.add(PillGridItem(
+        data: FocusPillData(priority),
+        onActivate: () => widget.onPickTarget(t),
+      ));
+    }
+    if (focusItems.isNotEmpty) {
+      sections.add(PillGridSection(
+        header: _sectionHeader('Private notes'),
+        items: focusItems,
+      ));
+    }
+
+    return sections;
+  }
+
+  // ─── Header widgets ────────────────────────────────────────────────────────
+
+  /// "People and twists" header where "twists" is rendered more muted than
+  /// the rest.
+  Widget _peopleHeader() {
+    return Builder(builder: (context) {
+      final colors = context.theme.colors;
+      final style = context.theme.typography.xs.copyWith(
+        color: colors.mutedForeground,
+        letterSpacing: 0.5,
+        height: 1,
+      );
+      final twistsStyle = style.copyWith(
+        color: colors.mutedForeground.withValues(alpha: 0.55),
+      );
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: 'People and ', style: style),
+            TextSpan(text: 'twists', style: twistsStyle),
+          ],
+        ),
+      );
+    });
+  }
+
+  /// A plain section-label widget: small, muted, slightly spaced.
+  Widget _sectionHeader(String text) {
+    return Builder(builder: (context) {
+      final colors = context.theme.colors;
+      final style = context.theme.typography.xs.copyWith(
+        color: colors.mutedForeground,
+        letterSpacing: 0.5,
+        height: 1,
+      );
+      return Text(text, style: style);
+    });
+  }
+
+  // ─── Connections footer ────────────────────────────────────────────────────
+
+  /// Opens the connections manager.
+  void _runManageConnections() {
+    final runner = context;
+    unawaited(() async {
+      try {
+        await runner.run(ManageConnections());
+      } catch (e, s) {
+        Tracker.captureException(e, s);
+      }
+    }());
+  }
+
+  Widget _buildAddConnectionFooter(BuildContext context) {
+    final colors = context.theme.colors;
+    final spacing = context.theme.spacing;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _runManageConnections,
+      child: Padding(
+        padding: EdgeInsets.only(top: spacing.sm, bottom: spacing.md),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PlotIcon.add,
+              size: 13,
+              color: colors.mutedForeground.withValues(alpha: 0.6),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Add a connection…',
+              style: context.theme.typography.xs.copyWith(
+                color: colors.mutedForeground.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final spacing = context.theme.spacing;
+    final colors = context.theme.colors;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ComposeSearchField(
+          controller: widget.searchController,
+          focusNode: widget.searchFocusNode,
+          hint: 'Start a thread',
+          autofocus: widget.autofocusSearch,
+          leading: Icon(
+            PlotIcon.search,
+            size: 16,
+            color: colors.mutedForeground,
+          ),
+          onChanged: _onSearchChanged,
+          onArrowDown: () => _gridKey.currentState?.focusFirst(),
+          onSubmit: _activateFirst,
+          onEscape: null,
+        ),
+        SizedBox(height: spacing.lg),
+        Expanded(
+          child: _sections == null
+              ? const SizedBox.shrink()
+              : PillGrid(
+                  key: _gridKey,
+                  sections: _buildSections(),
+                  scrollController: widget.scrollController,
+                  gridFocusNode: _gridFocusNode,
+                  onMoveToSearch: () =>
+                      widget.searchFocusNode.requestFocus(),
+                ),
+        ),
+        _buildAddConnectionFooter(context),
+      ],
+    );
+  }
+}
