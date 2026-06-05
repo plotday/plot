@@ -1,7 +1,7 @@
 {
   "name": "@plotday/connector-ms-teams",
   "displayName": "Microsoft Teams",
-  "description": "Messages from your Microsoft Teams channels and chats",
+  "description": "Keep up with Teams channels and chats, reply, and start new conversations.",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",

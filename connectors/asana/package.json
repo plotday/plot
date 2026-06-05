@@ -2,7 +2,7 @@
   "name": "@plotday/connector-asana",
   "plotTwistId": "d8f4e839-c152-41a2-926c-700e23d4fc77",
   "displayName": "Asana",
-  "description": "Tasks from Asana",
+  "description": "Keep your assigned Asana tasks in view so nothing slips.",
   "logoUrl": "https://api.iconify.design/logos/asana-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

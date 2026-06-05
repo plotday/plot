@@ -2,7 +2,7 @@
   "name": "@plotday/connector-google-contacts",
   "plotTwistId": "748bb590-5da3-4782-aa6f-6a98fc2d3555",
   "displayName": "Google Contacts",
-  "description": "Contacts from Google",
+  "description": "Recognize the people you know by syncing your Google contacts.",
   "logoUrl": "https://api.iconify.design/logos/google-contacts.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

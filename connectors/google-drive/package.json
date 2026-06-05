@@ -2,7 +2,7 @@
   "name": "@plotday/connector-google-drive",
   "plotTwistId": "c27741c2-0f26-444c-9e50-e1d70dab0dee",
   "displayName": "Google Drive",
-  "description": "Comment threads from your Google Docs",
+  "description": "Keep up with comments on your Google Docs and reply right from Plot.",
   "logoUrl": "https://api.iconify.design/logos/google-drive.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
