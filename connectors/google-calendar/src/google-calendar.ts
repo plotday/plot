@@ -181,6 +181,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       type: "event",
       label: "Event",
       sharingModel: "thread" as const,
+      includesSchedules: true,
       logo: "https://api.iconify.design/logos/google-calendar.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",
       statuses: [

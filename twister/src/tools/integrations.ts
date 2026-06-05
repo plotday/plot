@@ -114,6 +114,16 @@ export type LinkTypeConfig = {
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;
+  /**
+   * Whether this link type produces time-anchored schedule/agenda items
+   * (i.e. calendar events). The Plot app shows the agenda (the bottom-nav
+   * tab on mobile and the left-sidebar agenda on desktop) only when the
+   * user has at least one active connection whose link types include one
+   * with `includesSchedules: true`. Calendar connectors (Google / Apple /
+   * Outlook Calendar) set this on their `event` link type. Defaults to
+   * false — non-calendar link types (messages, issues, tasks, docs) omit it.
+   */
+  includesSchedules?: boolean;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
   /**
