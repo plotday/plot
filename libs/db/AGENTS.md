@@ -298,55 +298,15 @@ psql "$DATABASE_URL" -tAc "show port;"   # must print the worktree PORT, not 543
 
 Hardcoding the worktree's actual port (from `.worktree-db`) when the ambient env is stale is correct; hardcoding `54322` is what's wrong.
 
-## CRITICAL: When Modifying Synced Tables
+## Surfacing New Columns to Clients
 
-**When you modify columns in `activity`, `note`, `priority`, `session`, `twist_instance`, or `activity_read` tables, you MUST update TWO additional locations:**
-
-### 1. Database Notification Functions (`schema/60-functions/70-update.sql`)
-
-Each synced table has a corresponding `notify_internal_api_for_<table>()` function that builds JSON payloads. When adding/removing/renaming columns:
-
-- **For `activity` table**: Update `notify_internal_api_for_activity()`
-  - Add new fields to the `jsonb_build_object()` call on line ~59 (current item)
-  - Add new fields to the `jsonb_build_object()` call on line ~88 (previous item for updates)
-  - Example: `'sync_depth', current_item.sync_depth,`
-
-- **For `note` table**: Update `notify_internal_api_for_note()`
-  - Add new fields to the `jsonb_build_object()` call on line ~274 (current item)
-  - Add new fields to the `jsonb_build_object()` call on line ~295 (previous item for updates)
-  - Example: `'key', current_item.key,`
-
-- **For `priority` table**: Update `notify_internal_api_for_priority()`
-  - Add new fields to the `jsonb_build_object()` call on line ~160
-  - Example: `'sync_depth', current_item.sync_depth,`
-
-- **For `session` table**: Update `notify_internal_api_for_session()`
-  - Add new fields to the `jsonb_build_object()` call on line ~202
-
-- **For `twist_instance` table**: Update `notify_internal_api_for_twist_instance()`
-  - Add new fields to the `jsonb_build_object()` call on line ~371
-
-- **For `activity_read` table**: Update `notify_internal_api_for_activity_read()`
-  - Add new fields to the `jsonb_build_object()` call on line ~413
-
-### 2. API Zod Schemas (`workers/api/src/types.ts`)
-
-Update the corresponding Zod schema to match the database columns:
-
-- **ActivityItemSchema** (line ~3): For `activity` table changes
-- **NoteItemSchema** (line ~38): For `note` table changes
-- **PriorityItemSchema** (line ~63): For `priority` table changes
-- **SessionItemSchema** (line ~76): For `session` table changes
-- **TwistInstanceItemSchema** (line ~92): For `twist_instance` table changes
-- **ActivityReadItemSchema** (line ~106): For `activity_read` table changes
-
-**Field type mapping**:
-- Nullable database columns: Use `.nullable()` in Zod (NOT `.optional()`)
-- Non-null database columns: Don't use `.nullable()` or `.optional()`
-- Array columns: Use `z.array(...)` and add `.nullable()` if NULL is allowed
-- JSONB columns: Use `z.record(z.string(), z.any())` or specific schema
-
-**Why this matters**: The notification functions send database changes to the API, which validates them against these Zod schemas. Missing fields cause validation errors that break real-time sync.
+Sync is pure view-based pull. To expose a new column on a synced entity, add it
+to the relevant `user.*` view (e.g. `user.thread` / `user.thread_redacted`) —
+that is the entire server-side surfacing step. The sync endpoints
+(`/sync/threads`, etc.) `selectAll()` from these views and pass the rows through
+unchanged, so there is no `pg_notify` path, no notification function, and no Zod
+schema to keep in sync. (The legacy `notify_internal_api_for_*` functions and the
+`*ItemSchema` Zod schemas in `workers/api/src/types.ts` no longer exist.)
 
 ## Available Commands
 
