@@ -1326,7 +1326,7 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
 /// buttons — they live here, fixed at the top of the squircle so the
 /// notes scroll list underneath can fade against its top edge cleanly.
 ///
-/// Start of the row: tag toggles, Todo/Finish, Schedule.
+/// Start of the row: tag toggles, Todo/Finish, Snooze.
 /// End of the row: Edit, Share, "…" menu (thread-level commands only).
 class _ThreadActionsRow extends StatelessWidget {
   const _ThreadActionsRow({required this.thread});
@@ -1348,7 +1348,7 @@ class _ThreadActionsRow extends StatelessWidget {
         CommandWrapper(
           ToggleThreadActive(thread),
           icon: Value(FontAwesomeIcons.circlePlus),
-          title: 'Add to active',
+          title: 'To do',
         ),
         tooltipBelow: true,
       );
@@ -1358,7 +1358,7 @@ class _ThreadActionsRow extends StatelessWidget {
           FinishThread(thread),
           icon: Value(FontAwesomeIcons.circle),
           hoverIcon: Value(FontAwesomeIcons.circleCheck),
-          title: 'Move to done',
+          title: 'Done',
         ),
         selected: true,
         selectedColor: threadColor,
@@ -1369,8 +1369,8 @@ class _ThreadActionsRow extends StatelessWidget {
     final scheduleButton = Button.icon(
       CommandWrapper(
         PickScheduleThread(thread),
-        icon: Value(PlotIcon.schedule),
-        title: 'Schedule',
+        icon: Value(PlotIcon.snooze),
+        title: 'Snooze',
       ),
       selected: isScheduled,
       selectedColor: threadColor,

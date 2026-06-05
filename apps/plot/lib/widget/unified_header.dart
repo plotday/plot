@@ -859,8 +859,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final calendarIcon = Button.icon(
       CommandWrapper(
         PickScheduleThread(thread),
-        icon: Value(PlotIcon.schedule),
-        title: 'Schedule',
+        icon: Value(PlotIcon.snooze),
+        title: 'Snooze',
       ),
       selected: isScheduled,
       selectedColor: threadColor,
@@ -872,7 +872,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         CommandWrapper(
           ToggleThreadActive(thread),
           icon: Value(FontAwesomeIcons.circlePlus),
-          title: 'Add to Active',
+          title: 'To do',
         ),
       );
     } else {
@@ -881,7 +881,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           FinishThread(thread),
           icon: Value(FontAwesomeIcons.circle),
           hoverIcon: Value(FontAwesomeIcons.circleCheck),
-          title: 'Move to Done',
+          title: 'Done',
         ),
         selected: true,
         selectedColor: threadColor,

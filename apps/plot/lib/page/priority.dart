@@ -1007,7 +1007,7 @@ class _PriorityPageState extends State<PriorityPage>
                         source: ThreadListSource.activityFeed,
                         // Sticky tab header. In multi-panel mode it
                         // sits above the scrollable list and carries
-                        // the "Reschedule all" button on the right.
+                        // the "Snooze all" button on the right.
                         // In single-panel (phone) mode it sits at
                         // the bottom of the screen for thumb reach,
                         // offset upward by the measured bottom-nav
@@ -1297,7 +1297,7 @@ class _PriorityPageState extends State<PriorityPage>
                 // here when a section marker is present.
                 final tileDate = marker != null ? null : header.date;
 
-                // "Reschedule all" affordance for the Doing block and
+                // "Snooze all" affordance for the Doing block and
                 // every Scheduled-day block. Collect the threads that
                 // follow this header until the next AgendaHeaderItem and
                 // skip rendering the button when the block is empty.
@@ -1525,7 +1525,7 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
 }
 
 /// Section header (Doing or a Scheduled-day bucket) paired with a small
-/// trailing-edge "Reschedule all" button. The underlying [AgendaTile] keeps
+/// trailing-edge "Snooze all" button. The underlying [AgendaTile] keeps
 /// its centered text; the button sits in a Row with an invisible mirror on
 /// the left so the centered title stays at the row's true horizontal
 /// midpoint regardless of the button's width.
@@ -1551,7 +1551,7 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
     );
     // The whole header sits on the subtle section-header band. Wrapping the
     // full Row (not just the centered tile) means the band also runs behind
-    // the trailing "Reschedule all" button and its invisible left mirror —
+    // the trailing "Snooze all" button and its invisible left mirror —
     // otherwise the band only paints under the tile in the middle and the
     // sides show through. The tile paints the same opaque band internally for
     // button-less sections, so the two coincide here with no seam.

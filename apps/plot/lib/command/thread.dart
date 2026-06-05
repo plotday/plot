@@ -921,7 +921,7 @@ abstract class _UpdateThreadCommand extends Command {
 class ToggleThreadActive extends _UpdateThreadCommand {
   ToggleThreadActive(super.thread, {super.onUpdate})
     : super(
-        title: thread.todo ? 'Move to Done' : 'Add to Active',
+        title: thread.todo ? 'Done' : 'To do',
         eventObject: EventObject.activity,
         eventAction: thread.todo ? EventAction.finished : EventAction.started,
         icon: thread.todo
@@ -998,7 +998,7 @@ class FinishThread extends _UpdateThreadCommand {
     this.bump = true,
     this.onBeforeRun,
   }) : super(
-         title: 'Move to Done',
+         title: 'Done',
          eventObject: EventObject.activity,
          eventAction: EventAction.finished,
          icon: stateIcon && thread.todo
@@ -1212,12 +1212,12 @@ class ScheduleThread extends _UpdateThreadCommand {
     super.onUpdate,
     super.priorityBloc,
   }) : super(
-         title: thread.on != null ? 'Reschedule' : 'Schedule',
+         title: 'Snooze',
          eventObject: EventObject.activity,
          eventAction: thread.on != null
              ? EventAction.rescheduled
              : EventAction.scheduled,
-         icon: PlotIcon.schedule,
+         icon: PlotIcon.snooze,
        );
 
   final Date when;
@@ -1342,8 +1342,8 @@ class PickScheduleThread extends Command {
     // ignore: prefer_initializing_formals
     : _onUpdate = onUpdate,
       super(
-        title: _thread.on != null ? 'Reschedule' : 'Schedule',
-        icon: PlotIcon.schedule,
+        title: 'Snooze',
+        icon: PlotIcon.snooze,
         eventObject: EventObject.modal,
         eventAction: EventAction.opened,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD, shift: true),
@@ -1369,7 +1369,7 @@ class PickScheduleThread extends Command {
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                'Schedule',
+                'Snooze',
                 style: context.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -1472,8 +1472,8 @@ class PickScheduleThread extends Command {
 class RescheduleAllInBlock extends Command {
   RescheduleAllInBlock(this.threads, {required this.sectionLabel})
     : super(
-        title: 'Reschedule all',
-        icon: PlotIcon.reschedule,
+        title: 'Snooze all',
+        icon: PlotIcon.snooze,
         eventObject: EventObject.modal,
         eventAction: EventAction.opened,
       );
@@ -1500,7 +1500,7 @@ class RescheduleAllInBlock extends Command {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                'Reschedule all',
+                'Snooze all',
                 style: modalContext.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),

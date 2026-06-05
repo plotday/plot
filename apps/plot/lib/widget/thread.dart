@@ -361,7 +361,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        final String leadingTitle = !isTodo ? 'Add to Active' : 'Move to Done';
+        final String leadingTitle = !isTodo ? 'To do' : 'Done';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
