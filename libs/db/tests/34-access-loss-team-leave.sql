@@ -1,7 +1,10 @@
 -- Access-loss via team_user archive (user leaves a team):
---   • team_user_archive_priorities must set thread_priority.revoked_at on
---     every row filed under a team-scoped priority for the leaving user.
+--   • team_user_revoke_team_threads must set thread_priority.revoked_at on
+--     every thread scoped to the team (thread.team_id) for the leaving user,
+--     except threads where the leaver is an external (customer) contact.
 --   • user.thread stops emitting; user.thread_redacted emits the stub.
+-- Team scope now lives solely on thread.team_id (priority.team_id is gone),
+-- so there are no per-team priorities to set up.
 -- See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
 BEGIN;
 SET LOCAL search_path = public, extensions;
@@ -12,7 +15,6 @@ CREATE TEMP TABLE _ids (
     owner_id uuid,
     leaver_id uuid,
     team_id bigint,
-    team_priority_id uuid,
     thread_id uuid
 );
 
@@ -23,9 +25,9 @@ DECLARE
     v_owner_c uuid;
     v_leaver_c uuid;
     v_team bigint;
-    v_team_priority uuid;
     v_thread uuid := gen_random_uuid();
     v_owner_root uuid;
+    v_leaver_root uuid;
 BEGIN
     INSERT INTO "public"."user" (id, email) VALUES
         (v_owner, 'owner34@test.local'),
@@ -39,35 +41,30 @@ BEGIN
         (v_team, v_owner, 'admin'),
         (v_team, v_leaver, 'member');
 
-    -- Find leaver's team-scoped priority (auto-created by
-    -- team_user_ensure_team_priority on team_user INSERT).
-    SELECT id INTO v_team_priority
-      FROM public.priority
-     WHERE user_id = v_leaver AND team_id = v_team
-     LIMIT 1;
-
-    -- Author the thread with leaver in thread.contacts so file_thread_priority_peers
-    -- fires for them. Owner's filing goes under their root, leaver's under
-    -- their team-scoped priority (we re-file explicitly below to set up the
-    -- team-firewall scenario the trigger is supposed to clean up).
+    -- Author a team-scoped thread: team_id is set explicitly (as upsert_thread
+    -- does for user threads), and the leaver appears in thread.contacts so
+    -- file_thread_priority_peers files their thread_priority row. Both owner
+    -- and leaver are current members at insert time, so neither is recorded as
+    -- external — both are gated by the team firewall (keyed on thread.team_id).
     SELECT id INTO v_owner_root FROM public.priority
       WHERE user_id = v_owner AND nlevel(path) = 1 LIMIT 1;
-    INSERT INTO public.thread (id, created_by, title, preview, contacts, groups)
-    VALUES (v_thread, v_owner, 'Team thread', 'team preview',
+    SELECT id INTO v_leaver_root FROM public.priority
+      WHERE user_id = v_leaver AND nlevel(path) = 1 LIMIT 1;
+    INSERT INTO public.thread (id, created_by, title, preview, team_id, contacts, groups)
+    VALUES (v_thread, v_owner, 'Team thread', 'team preview', v_team,
             ARRAY[v_owner_c, v_leaver_c], ARRAY[]::uuid[]);
     INSERT INTO public.thread_priority (thread_id, user_id, priority_id)
     VALUES (v_thread, v_owner, v_owner_root)
     ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
-    UPDATE public.thread SET contacts = contacts WHERE id = v_thread;
 
-    -- Move leaver's filing under the team priority so the team firewall is
-    -- the gating mechanism (mirrors what classify_thread_for_user would do
-    -- for a thread that matches a team priority).
+    -- Settle the leaver's auto-filed pending row to their root so it's visible
+    -- pre-leave (the team firewall, not pending-classification, is the gating
+    -- mechanism under test).
     UPDATE public.thread_priority
-       SET priority_id = v_team_priority, classify_at = NULL
+       SET priority_id = v_leaver_root, classify_at = NULL
      WHERE thread_id = v_thread AND user_id = v_leaver;
 
-    INSERT INTO _ids VALUES (v_owner, v_leaver, v_team, v_team_priority, v_thread);
+    INSERT INTO _ids VALUES (v_owner, v_leaver, v_team, v_thread);
 END $$;
 
 SELECT ok(

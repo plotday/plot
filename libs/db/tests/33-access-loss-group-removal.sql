@@ -4,7 +4,7 @@
 --   • user.thread stops emitting the row (revoked_at IS NOT NULL filter).
 --   • user.thread_redacted emits a redacted stub with archived_at =
 --     updated_at = revoked_at, sensitive fields NULLed, revoked = TRUE.
---   • thread_unread is cleaned up.
+--   • thread_state is cleaned up.
 --   • Re-adding the user to the group clears revoked_at (un-revoke) and
 --     restores visibility on user.thread.
 -- See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
@@ -75,7 +75,7 @@ BEGIN
     INSERT INTO _ids VALUES (v_admin, v_alice, v_admin_contact, v_alice_contact, v_group, v_thread);
 END $$;
 
--- Sanity: before revocation, Alice has a thread_priority row, a thread_unread
+-- Sanity: before revocation, Alice has a thread_priority row, a thread_state
 -- row, and user.thread emits the thread for her.
 SELECT ok(
     EXISTS (
@@ -88,10 +88,10 @@ SELECT ok(
 
 SELECT ok(
     EXISTS (
-        SELECT 1 FROM thread_unread tu, _ids
+        SELECT 1 FROM thread_state tu, _ids
          WHERE tu.thread_id = _ids.thread_id AND tu.user_id = _ids.alice_id
     ),
-    'pre-revoke: Alice has a thread_unread row'
+    'pre-revoke: Alice has a thread_state row'
 ) FROM _ids LIMIT 1;
 
 SELECT ok(
@@ -117,15 +117,15 @@ SELECT ok(
     'post-revoke: thread_priority survives with revoked_at set (not bare-deleted)'
 ) FROM _ids LIMIT 1;
 
--- thread_unread is cleaned up (it feeds user.thread.unread via LEFT JOIN;
+-- thread_state is cleaned up (it feeds user.thread.unread via LEFT JOIN;
 -- the redacted stub emits unread=false regardless, so the table can be
 -- bare-deleted here without stranding the client).
 SELECT ok(
     NOT EXISTS (
-        SELECT 1 FROM thread_unread tu, _ids
+        SELECT 1 FROM thread_state tu, _ids
          WHERE tu.thread_id = _ids.thread_id AND tu.user_id = _ids.alice_id
     ),
-    'post-revoke: thread_unread for Alice is cleaned up'
+    'post-revoke: thread_state for Alice is cleaned up'
 ) FROM _ids LIMIT 1;
 
 -- user.thread no longer emits the row for Alice.
