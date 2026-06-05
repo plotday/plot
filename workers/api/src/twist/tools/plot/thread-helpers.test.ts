@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { markdownToPlainText, plainTextToMarkdown } from "./thread-helpers";
+import {
+  createPreviewFromMarkdown,
+  markdownToPlainText,
+  plainTextToMarkdown,
+  stripMarkdown,
+} from "./thread-helpers";
 
 describe("plainTextToMarkdown", () => {
   it("auto-links bare URLs", () => {
@@ -172,5 +177,38 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText(input)).toBe(
       "Before\n\nconst x = 1;\n\nAfter"
     );
+  });
+});
+
+describe("createPreviewFromMarkdown", () => {
+  it("strips email preheader padding (zero-width invisibles)", () => {
+    // Real-world newsletter preheader: a space + combining grapheme joiner
+    // (U+034F) + zero-width space (U+200B) repeated to push later content out
+    // of the inbox snippet. The invisibles are not matched by \s, so without
+    // stripping them the collapse leaves the spaces between them intact and
+    // the preview renders as text followed by a long run of blank space.
+    const padding = " ͏​".repeat(20);
+    const input = `Breathe some fresh air into your releases.${padding}Read the changelog`;
+    const preview = createPreviewFromMarkdown(input);
+
+    expect(preview).toBe(
+      "Breathe some fresh air into your releases. Read the changelog"
+    );
+    expect(preview).not.toMatch(/͏|​/);
+    // No consecutive spaces in the rendered preview.
+    expect(preview).not.toMatch(/ {2,}/);
+  });
+
+  it("strips a variety of zero-width / invisible format characters", () => {
+    const input =
+      "Hello​‌‍⁠﻿­͏ world";
+    expect(createPreviewFromMarkdown(input)).toBe("Hello world");
+  });
+});
+
+describe("stripMarkdown", () => {
+  it("removes zero-width / invisible format characters", () => {
+    const input = "Read​ more͏ here";
+    expect(stripMarkdown(input)).toBe("Read more here");
   });
 });

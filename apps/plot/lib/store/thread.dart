@@ -5032,11 +5032,25 @@ SELECT
     return _remainderPreview(preview!, derivedTitle);
   }
 
+  /// Removes zero-width / invisible format characters. Newsletters pad their
+  /// preheader with these (e.g. U+034F combining grapheme joiner + U+200B
+  /// zero-width space, repeated) to push later content out of the inbox
+  /// snippet. They are not matched by `\s`, so they survive whitespace collapse
+  /// and render as a long run of blank space before the truncation ellipsis.
+  /// Keep in sync with `stripMarkdown` in
+  /// `workers/api/src/twist/tools/plot/thread-helpers.ts`.
+  static final RegExp _invisibleChars = RegExp(
+    r'[\u00AD\u034F\u061C\u200B-\u200F\u2060-\u2064\u206A-\u206F\uFEFF]',
+  );
+
+  static String _stripMarkdownAndInvisible(String input) =>
+      input.removeMarkdown(replaceLinksWithURL: false).replaceAll(_invisibleChars, '');
+
   /// Derives a display title from content (preview or note body).
   /// Strips markdown, takes the first line, truncates at word boundary if > 60 chars.
   static String? _titleFromContent(String? content) {
     if (content == null || content.trim().isEmpty) return null;
-    final stripped = content.removeMarkdown(replaceLinksWithURL: false);
+    final stripped = _stripMarkdownAndInvisible(content);
     final firstLine = stripped.split('\n').first.trim();
     if (firstLine.isEmpty) return null;
     if (firstLine.length <= 60) return firstLine;
@@ -5053,7 +5067,7 @@ SELECT
   /// sync so client and server agree on what `thread.preview` contains.
   static String? createPreviewFromMarkdown(String? markdown) {
     if (markdown == null || markdown.isEmpty) return null;
-    var preview = markdown.removeMarkdown(replaceLinksWithURL: false);
+    var preview = _stripMarkdownAndInvisible(markdown);
     preview = preview.replaceAll(RegExp(r'https?://[^\s)>\]]+'), '');
     preview = preview.replaceAll(RegExp(r'\n+'), ' / ');
     preview = preview.replaceAll(RegExp(r'\s+'), ' ');
@@ -5071,7 +5085,7 @@ SELECT
     if (prefix.endsWith('\u2026')) {
       prefix = prefix.substring(0, prefix.length - 1);
     }
-    final stripped = preview.removeMarkdown(replaceLinksWithURL: false);
+    final stripped = _stripMarkdownAndInvisible(preview);
     final idx = stripped.indexOf(prefix);
     if (idx < 0) return null;
     var remainder = stripped.substring(idx + prefix.length).trim();
