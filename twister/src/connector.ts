@@ -169,6 +169,33 @@ export type CreateLinkDraft = {
   inviteEmails?: string[];
 };
 
+/** An optional OAuth scope group the user can toggle at connect time. */
+export type OptionalScopeGroup = {
+  /** Stable id used to track the user's selection. */
+  id: string;
+  /** Value-forward switch label, e.g. "Add names to events using contacts". */
+  label: string;
+  /** Optional secondary line shown under the label. */
+  description?: string;
+  /** The OAuth scope strings this group grants. */
+  scopes: string[];
+  /** Whether the group is requested by default (switch on). */
+  default: boolean;
+};
+
+/**
+ * Structured scope declaration. `required` scopes must be granted — auth fails
+ * and re-prompts if any is declined. `optional` groups are requested by default
+ * but auth still succeeds if the user declines them; the connector should detect
+ * the absence via the granted `token.scopes` and degrade gracefully.
+ */
+export type ScopeConfig = {
+  required: string[];
+  /** Friendly bullets describing what the always-on (required) access does. */
+  description?: string[];
+  optional?: OptionalScopeGroup[];
+};
+
 /**
  * Base class for connectors — twists that sync data from external services.
  *
@@ -226,8 +253,9 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /** The OAuth provider this connector authenticates with. */
   readonly provider?: AuthProvider;
 
-  /** OAuth scopes to request for this connector. */
-  readonly scopes?: string[];
+  /** OAuth scopes to request for this connector — a flat list (all required), or
+   *  a {@link ScopeConfig} declaring required + optional scope groups. */
+  readonly scopes?: string[] | ScopeConfig;
 
   // ---- Auth model ----
 
