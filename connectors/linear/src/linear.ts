@@ -255,21 +255,26 @@ export class Linear extends Connector<Linear> {
   }
 
   /**
-   * Called when a link's status is changed from the Flutter app.
-   * Status values are either Linear state IDs (UUIDs from dynamic linkTypes)
-   * or state type categories (from static fallback linkTypes).
+   * Called when a link's status or assignee is changed from the Flutter app.
+   * Delegates to updateIssue which reconciles status + assignee (+ title).
+   * Best-effort: a failed external write is reconciled on the next sync-in
+   * (external is the source of truth for assignment).
    */
   async onLinkUpdated(link: Link): Promise<void> {
     const issueId = link.meta?.linearId as string | undefined;
-    if (!issueId || !link.status) return;
-
     const projectId = link.meta?.projectId as string | undefined;
-    if (!projectId) return;
+    if (!issueId || !projectId) return;
 
-    const client = await this.getClient(projectId);
-    const stateId = await this.resolveStateId(client, issueId, link.status);
-    if (stateId) {
-      await client.updateIssue(issueId, { stateId });
+    // updateIssue reconciles status + assignee (+ title) for this issue.
+    // Best-effort: a failed external write is reconciled on the next sync-in
+    // (external is the source of truth for assignment).
+    try {
+      await this.updateIssue(link);
+    } catch (error) {
+      console.error(
+        "[linear] onLinkUpdated write-back failed:",
+        error instanceof Error ? error.message : String(error)
+      );
     }
   }
 
