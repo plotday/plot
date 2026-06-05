@@ -2,7 +2,7 @@
   "name": "@plotday/connector-todoist",
   "private": true,
   "displayName": "Todoist",
-  "description": "Tasks from Todoist",
+  "description": "Bring your Todoist tasks into focus and check them off as you go.",
   "logoUrl": "https://api.iconify.design/logos/todoist-icon.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

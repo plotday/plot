@@ -2,7 +2,7 @@
   "name": "@plotday/connector-airtable",
   "plotTwistId": "2ac7fdb2-f8a4-43bc-b95a-fb545e9176e9",
   "displayName": "Airtable",
-  "description": "Tasks and comments from Airtable",
+  "description": "Track Airtable tasks and comments, and mark work done from Plot.",
   "logoUrl": "https://api.iconify.design/simple-icons/airtable.svg?color=%2318BFFF",
   "logoUrlDark": "https://api.iconify.design/simple-icons/airtable.svg?color=%2318BFFF",
   "publisher": "Plot",

@@ -2,7 +2,7 @@
   "name": "@plotday/connector-posthog",
   "private": true,
   "displayName": "PostHog",
-  "description": "Sync PostHog events as person threads",
+  "description": "Turn PostHog events into person threads you can track and follow up on.",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",

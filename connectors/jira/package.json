@@ -2,7 +2,7 @@
   "name": "@plotday/connector-jira",
   "plotTwistId": "07f11ed7-9555-431d-b01a-99aff550d778",
   "displayName": "Jira",
-  "description": "Issues from Jira",
+  "description": "Track your Jira issues and reply to comments from your agenda.",
   "logoUrl": "https://api.iconify.design/logos/jira.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

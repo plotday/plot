@@ -2,7 +2,7 @@
   "name": "@plotday/connector-gmail",
   "plotTwistId": "7176b853-4495-4bba-82ee-645ae5d398d7",
   "displayName": "Gmail",
-  "description": "Email threads from Gmail",
+  "description": "Send and reply to email, tracking threads for follow-up and snoozing what can wait.",
   "logoUrl": "https://api.iconify.design/logos/google-gmail.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",

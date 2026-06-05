@@ -2,7 +2,7 @@
   "name": "@plotday/connector-github",
   "plotTwistId": "ba3afb64-af6e-4c64-bcff-5fa8575d21f0",
   "displayName": "GitHub",
-  "description": "Pull requests, issues, and code reviews",
+  "description": "Track pull requests and issues, reply to reviews, and update status from Plot.",
   "logoUrl": "https://api.iconify.design/logos/github-icon.svg",
   "logoUrlDark": "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
   "publisher": "Plot",
