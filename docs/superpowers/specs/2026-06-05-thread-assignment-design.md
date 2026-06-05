@@ -73,13 +73,17 @@ the synced-scalar-contact-column plumbing — except `assignee_id` is **mutable*
   - adding a mutable `assigneeId` Drift column (`ActorIdConverter`) in
     `apps/plot/lib/store/thread.dart` with a `schemaVersion` bump + `addColumn`
     migration step.
-- `link.supports_assignee boolean NOT NULL DEFAULT false` — set by the API
-  runtime in `upsert_link` from the link type's config, evaluating the **same**
-  condition the client resolver uses: `sharingModel == 'channel' &&
-  supportsAssignee == true`. This is the one signal SQL needs to identify the
-  primary assignment-capable link without the connector registry. `upsert_link`
-  only sets it when provided (COALESCE-keep on user edits, which never change a
-  type property).
+- `link.supports_assignee boolean NOT NULL DEFAULT false` — a **sticky** flag set
+  true inside `upsert_link` whenever a non-null `assignee_id` is written, and
+  never reset. Only assignment-capable connectors ever write an assignee, so
+  "has carried an assignee" is a sound server-side proxy for "is
+  assignment-capable" — and because it stays sticky after an external *unassign*
+  (assignee → NULL), the trigger can still mirror that NULL down to the thread.
+  This avoids needing the connector's `LinkTypeConfig` server-side (it isn't
+  available in the link-save path, which only has the `type` string). The Flutter
+  client still uses the real `LinkTypeConfig` (`sharingModel == 'channel' &&
+  supportsAssignee`) to decide write-routing (connector vs Plot-only); the two
+  notions stay behavior-consistent (see Section 3).
 
 ### Inbound (connector → thread) — external wins
 
@@ -231,12 +235,17 @@ in the Twister SDK, **no `twister/src` change and no changeset** are needed — 
 ships as a standalone PR in the `public/` submodule, and the core repo bumps the
 submodule pointer after it merges.
 
-### Runtime: persist `link.supports_assignee`
+### `link.supports_assignee` is set in SQL, not the runtime
 
-In the link-save path (`workers/api/src/twist/tools/plot/link.ts` /
-`thread-helpers.ts` → `upsert_link`), pass `supports_assignee` derived from the
-connector's `LinkTypeConfig` (`sharingModel == 'channel' && supportsAssignee`),
-available in the connector's dispatch context at save time.
+`upsert_link` sets `supports_assignee = true` whenever the resolved
+`assignee_id` is non-null (sticky — `OR`'d with the existing value, never reset).
+No `link.ts` / runtime change is needed. Behavior consistency with the Flutter
+resolver: the client routes a thread's assignment to the link (vs. Plot-only)
+based on the real `LinkTypeConfig`, so an unassigned-but-capable connector thread
+still writes through the link; that first write sets `assignee_id` non-null,
+which flips the sticky flag, after which the trigger mirrors in both directions.
+A non-capable link (calendar event) never receives an assignee, so its flag stays
+false and the trigger never clobbers a Plot-only assignment with its NULL.
 
 ### Build order (for the plan)
 
@@ -244,9 +253,9 @@ available in the connector's dispatch context at save time.
    column + `schemaVersion` bump); `link.supports_assignee`; the mirror trigger;
    backfill + `updated_at` bump; expand migration (all additive/nullable → passes
    the Squawk safety gate).
-2. **API** — pass `supports_assignee` in link upsert; make `thread.assignee_id` a
-   mutable field in `upsert_thread` (the existing `onLinkUpdated` dispatch is
-   reused as-is).
+2. **API/SQL** — `upsert_link` sets `supports_assignee` sticky; make
+   `thread.assignee_id` a mutable field in `upsert_thread` (the existing
+   `onLinkUpdated` dispatch is reused as-is — no `link.ts` change).
 3. **Connector** — Linear `onLinkUpdated` assignee write-back (public PR).
 4. **Flutter** — `ThreadAssignee` + `ThreadSharing` widgets; header; row +
    `AssignThread` hover command; `pickThreadAssignee` modal; assignee search
