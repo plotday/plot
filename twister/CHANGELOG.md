@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.55.0
+
+### Added
+
+- `enabledByDefault?: boolean` (tri-state) on the `Channel` type returned by `getChannels()`. Lets a connector influence which channels are pre-selected when a connection is first added: `true` pre-selects, `false` excludes a low-value/irrelevant channel or a too-broad container (e.g. a holiday or someone-else's shared calendar, a GitHub org that cascades to every repo, a Teams team container), and `undefined` leaves the choice to the client (which enables the channel unless its title looks low-value). The setup UI now defaults to enabling all top-level channels and filtering out the low-value ones, rather than picking a single "primary." ([#166](https://github.com/plotday/plot/pull/166) [`18f10dd`](https://github.com/plotday/plot/commit/18f10dd7c6a5da9560d206d1781e96c738f6f38b))
+- includesSchedules flag on LinkTypeConfig to mark calendar/schedule-producing link types (drives agenda visibility in the Plot app) ([#172](https://github.com/plotday/plot/pull/172) [`7f7c670`](https://github.com/plotday/plot/commit/7f7c67096ff60cd30aa2d707f7093122640be715))
+- composePlaceholder, composeVerb, replyPlaceholder, replyVerb optional string fields on LinkTypeConfig. Connectors can now override the editor placeholder text and Send-button label per link type for both new-thread composition and in-thread replies. When unset, Plot derives values from existing label / noteLabel fields. ([`bd63065`](https://github.com/plotday/plot/commit/bd630657215410452d77fc6301563719b248f549))
+- `supportsLinks` and `supportsFileAttachments` capability flags on `LinkTypeConfig` so connectors can declare whether a note/reply of that link type can carry a link or a file attachment back to the source. ([#163](https://github.com/plotday/plot/pull/163) [`07b3261`](https://github.com/plotday/plot/commit/07b3261429099100ca6d3c2b86db7cfe2ded2265))
+- `ScopeConfig` for a connector's `scopes` — declare `required` scopes, an optional `description` (friendly permission bullets shown at connect time), and `optional` scope groups the user can toggle. Auth now succeeds even when optional scopes are declined; connectors detect the result via the granted `token.scopes`. ([#167](https://github.com/plotday/plot/pull/167) [`58db1ad`](https://github.com/plotday/plot/commit/58db1ad669ddca0603ee27e3831072e4ef1acd46))
+- `"none"` sharing model for `LinkTypeConfig.sharingModel`. Link types with no recipient roster (e.g. Google Tasks) can declare `sharingModel: "none"` so Plot shows no contacts/sharing UI for their threads. ([#164](https://github.com/plotday/plot/pull/164) [`a51d137`](https://github.com/plotday/plot/commit/a51d137acdc91e5af52a5d8b5e653106a5470aae))
+
 ## 0.54.0
 
 ### Added
