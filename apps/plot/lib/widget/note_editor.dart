@@ -696,9 +696,20 @@ class NoteEditorState extends State<NoteEditor> {
           prev.links != curr.links ||
           prev.linksLoaded != curr.linksLoaded,
       builder: (context, state) {
+        final topBarState = _computeTopBarState(state);
+        // Omit the bar entirely once links have loaded and there are no pills
+        // to show — an unshared Plot thread, where Note/Task were the only
+        // tabs and "Task" now lives as the bottom-bar "To do" toggle. The
+        // pre-load placeholder (empty pills before links load) still reserves
+        // height to avoid the connector-pill flash.
+        if (topBarState is PillRowState &&
+            topBarState.pills.isEmpty &&
+            state.linksLoaded) {
+          return const SizedBox.shrink();
+        }
         final threadBloc = context.read<ThreadBloc>();
         return NoteEditorTopBar(
-          state: _computeTopBarState(state),
+          state: topBarState,
           onClearReply: () => threadBloc.setReplyTo(null),
           onCancelEdit: () => threadBloc.setEditingNote(null),
         );
@@ -855,7 +866,6 @@ class NoteEditorState extends State<NoteEditor> {
     final draft = widget.draft;
     if (draft.isPrivate) return 'private';
     if (_hasMentionableTwist(s)) return 'reply';
-    if (draft.isAssignedTo(Base.actorId)) return 'task';
     final cfg = s.primaryLinkTypeConfig;
     final isPlotThread = cfg == null;
     final hasSharing =
@@ -910,13 +920,9 @@ class NoteEditorState extends State<NoteEditor> {
 
     if (isPlotThread) {
       if (!hasSharing) {
-        // Unshared Plot thread: just Note / Task.
-        pills.add(
-          TopBarPill(id: 'note', label: 'Note', onTap: _activatePlotNote),
-        );
-        pills.add(
-          TopBarPill(id: 'task', label: 'Task', onTap: _activatePlotTask),
-        );
+        // Unshared Plot thread: nothing to choose between — it's just a note.
+        // (Task is now the bottom-bar "To do" toggle, not a tab.) Returning
+        // no pills makes _buildTopBar omit the bar entirely.
         return pills;
       }
 
@@ -945,9 +951,6 @@ class NoteEditorState extends State<NoteEditor> {
           ),
         );
       }
-      pills.add(
-        TopBarPill(id: 'task', label: 'Task', onTap: _activatePlotTask),
-      );
       pills.add(
         TopBarPill(
           id: 'private',
@@ -1017,39 +1020,14 @@ class NoteEditorState extends State<NoteEditor> {
 
   // -- Pill activation handlers --
 
-  /// Returns the canonical "thread default" draft: not assigned to the
-  /// current user (Task off) and accessContacts/accessGroups cleared so
-  /// the audience is the whole thread.
+  /// Returns the canonical "thread default" draft: accessContacts/accessGroups
+  /// cleared so the audience is the whole thread. The To-do tag is left as-is —
+  /// it's an independent bottom-bar toggle, orthogonal to the chosen audience.
   Note _draftAsThreadDefault() {
-    var draft = widget.draft;
-    if (draft.isAssignedTo(Base.actorId)) {
-      draft = draft.toggleTag(Tag.todo, Base.actorId);
-    }
-    draft = draft.copyWith(
+    return widget.draft.copyWith(
       accessContacts: const Value(null),
       accessGroups: const Value(null),
     );
-    return draft;
-  }
-
-  void _activatePlotNote() {
-    final draft = _draftAsThreadDefault();
-    context.read<ThreadBloc>().updateDraft(draft);
-  }
-
-  void _activatePlotTask() {
-    // Toggle on Tag.todo for the current user. Clear access constraints so
-    // the task is visible to the whole thread (matches the previous
-    // ToggleSelfTask UX in the bottom bar).
-    var draft = widget.draft;
-    if (!draft.isAssignedTo(Base.actorId)) {
-      draft = draft.toggleTag(Tag.todo, Base.actorId);
-    }
-    draft = draft.copyWith(
-      accessContacts: const Value(null),
-      accessGroups: const Value(null),
-    );
-    context.read<ThreadBloc>().updateDraft(draft);
   }
 
   void _activatePlotReply() {
@@ -1151,8 +1129,6 @@ class NoteEditorState extends State<NoteEditor> {
     switch (pillId) {
       case 'note':
         return 'Add a note';
-      case 'task':
-        return 'Add a task';
       case 'reply':
         if (cfg == null) return 'Reply';
         return cfg.replyPlaceholder?.isNotEmpty == true
@@ -1182,8 +1158,6 @@ class NoteEditorState extends State<NoteEditor> {
     switch (pillId) {
       case 'note':
         return 'Save';
-      case 'task':
-        return 'Save task';
       case 'reply':
         return cfg == null ? 'Send' : composerVerbForNote(cfg);
       case 'replyOriginal':
@@ -1472,6 +1446,25 @@ class NoteEditorState extends State<NoteEditor> {
 
   // -- Bottom bars --
 
+  /// Leading "To do" toggle, shown first in both bottom bars (note and
+  /// new-thread modes). Marks the draft as the user's own task (Tag.todo on
+  /// self), independent of the note's audience. Runs the same path as the ⌘T
+  /// shortcut so button and shortcut stay in lockstep. [draftNote] is the
+  /// freshest draft for the selected state (bloc state in note mode, the
+  /// widget prop in new-thread mode).
+  Widget _buildTodoToggle(Note draftNote) {
+    return Button.icon(
+      CommandWrapper(
+        ToggleSelfTask(draftNote),
+        run: (action, ctx) async {
+          _shortcutToggleSelfTask(ctx);
+          return const CommandDone();
+        },
+      ),
+      selected: draftNote.isAssignedTo(Base.actorId),
+    );
+  }
+
   Widget _buildNoteBottomBar(BuildContext context) {
     return BlocBuilder<ThreadBloc, ThreadState>(
       buildWhen: (prev, curr) =>
@@ -1495,6 +1488,9 @@ class NoteEditorState extends State<NoteEditor> {
                 opacity: _saving ? 0.6 : 1.0,
                 child: Row(
                   children: [
+                    // To-do toggle — first item, marks this note as the user's
+                    // own task. Hidden for viewers who can't compose.
+                    if (!widget.viewerMode) _buildTodoToggle(activityState.draft),
                     // Link / Attach availability comes from the primary link's
                     // type config. Withhold both until links load so they don't
                     // render as plain-Plot affordances and then vanish on a
@@ -1584,6 +1580,9 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
+                // To-do toggle — first item, marks the first note as the
+                // user's own task. Hidden for viewers who can't compose.
+                if (!widget.viewerMode) _buildTodoToggle(draftNote),
                 // Link button — only when the target source can carry a link.
                 if (_canAddLink(linkType))
                   Button.icon(

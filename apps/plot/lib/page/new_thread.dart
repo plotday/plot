@@ -746,9 +746,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Routes a ConnectionChoice from the modal/dropdown into the draft.
-  /// - Plot note/task/chat: clear CreateLinkUserAction and twist; apply the
-  ///   variant's default state (task tag for Plot task; sticky-chat flag for
-  ///   Plot chat).
+  /// - Plot thread: clear CreateLinkUserAction and twist. Plot threads no
+  ///   longer carry a note/task/chat mode — the To-do tag is set via the
+  ///   editor's bottom-bar toggle, and shared-vs-private is derived from
+  ///   whether recipients are present.
   /// - CreateTarget: set CreateLinkUserAction; clear any selected twist.
   /// - Twist: clear CreateLinkUserAction; set the twist (icon + selected state).
   Future<void> _applyConnectionChoice(ConnectionChoice choice) async {
