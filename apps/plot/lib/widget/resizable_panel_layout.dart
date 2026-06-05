@@ -205,14 +205,32 @@ class _ResizablePanelLayoutState extends State<ResizablePanelLayout> {
   /// outline below). The sidebar header sits above this in the column.
   Widget _buildSidebarBody(BuildContext context) {
     if (widget.leftBottom == null) {
+      const sidePadding = EdgeInsets.fromLTRB(
+        _outerInset,
+        0,
+        _halfGap,
+        _outerInset,
+      );
+      if (widget.leftFooter == null) {
+        return Padding(padding: sidePadding, child: widget.left);
+      }
+      // No agenda squircle to show (e.g. the user has no calendar
+      // connection), but the left-panel footer (connection status +
+      // account tiles) still belongs in the sidebar — it's where a user
+      // goes to add a connection in the first place. Let the priorities
+      // list fill the column and pin the footer to the bottom. Without
+      // this branch the footer is silently dropped whenever the agenda is
+      // hidden.
       return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          _outerInset,
-          0,
-          _halfGap,
-          _outerInset,
+        padding: sidePadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: widget.left),
+            SizedBox(height: context.theme.spacing.xl),
+            widget.leftFooter!,
+          ],
         ),
-        child: widget.left,
       );
     }
     const bottomRadius = BorderRadius.all(Radius.circular(_panelRadius));
