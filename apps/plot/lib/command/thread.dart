@@ -617,78 +617,6 @@ class MuteSimilarThreads extends Command {
   }
 }
 
-class ArchiveThread extends Command {
-  ArchiveThread(Thread thread, {PriorityBloc? bloc})
-    : _thread = Future.value(thread),
-      // ignore: prefer_initializing_formals
-      _bloc = bloc,
-      super(
-        title: thread.archivedAt != null ? 'Un-archive' : 'Archive',
-        eventObject: EventObject.activity,
-        eventAction: thread.archivedAt != null
-            ? EventAction.unarchived
-            : EventAction.archived,
-        icon: PlotIcon.archived,
-        shortcut: thread.archivedAt == null
-            ? platformSingleActivator(LogicalKeyboardKey.backspace)
-            : null,
-      );
-
-  ArchiveThread.future(this._thread, {PriorityBloc? bloc})
-    // ignore: prefer_initializing_formals
-    : _bloc = bloc,
-      super(
-        title: 'Archive',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.archived,
-        icon: PlotIcon.archived,
-      );
-
-  final Future<Thread> _thread;
-
-  /// Captured at construction time when the caller has a context that
-  /// resolves [PriorityBloc]. The CommandModal flow may dispatch `run` with
-  /// a context whose nearest ancestor is the global Overlay (no bloc above
-  /// it), so the run-time `context.read` returns null and the optimistic
-  /// update silently no-ops. Capturing here keeps the optimistic path firing
-  /// regardless of dispatch.
-  final PriorityBloc? _bloc;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final thread = await _thread;
-    final isArchived = thread.archivedAt != null;
-
-    // Capture navigation BEFORE archive (only when archiving, not un-archiving)
-    if (!context.mounted) return const CommandDone();
-    final priorityBloc = _bloc ?? context.read<PriorityBloc?>();
-    final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
-    final isAgenda =
-        priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
-    CommandReturn? navigationResult;
-    if (!isArchived && isCurrentThread && isAgenda) {
-      navigationResult = await OpenNextThread().run(context);
-      if (navigationResult is CommandSkipped) {
-        if (!context.mounted) return const CommandDone();
-        navigationResult = await NewThread().run(context);
-      }
-    }
-
-    if (isArchived) {
-      // Un-archive: set archivedAt to null
-      final unarchived = thread.copyWith(archivedAt: const Value(null));
-      priorityBloc?.optimisticallyUpdateThread(unarchived);
-      await unarchived.save();
-    } else {
-      // Archive: set archivedAt to current time
-      final archived = thread.copyWith(archivedAt: Value(DateTime.now()));
-      priorityBloc?.optimisticallyArchiveThread(archived);
-      await archived.save();
-    }
-    return navigationResult ?? const CommandDone();
-  }
-}
-
 /// Whether an RSVP change should target this specific occurrence rather than
 /// the series. True only when the user already has an occurrence-level RSVP
 /// that was set directly on the occurrence (not inherited from the series).
@@ -3469,10 +3397,6 @@ class ToggleStartFinishCurrentThreadIntent extends Intent {
   const ToggleStartFinishCurrentThreadIntent();
 }
 
-class ArchiveCurrentThreadIntent extends Intent {
-  const ArchiveCurrentThreadIntent();
-}
-
 /// Focuses the current list if nothing is focused; otherwise switches
 /// between the Agenda and Activity lists.
 class FocusOrToggleAgendaActivityIntent extends Intent {
@@ -3589,6 +3513,7 @@ Future<List<StaticCommandGroup>> threadCommandGroups(
     open: open,
     showSplitThread: hasMerged,
     isPlotThread: Thread.isPlotThread(links),
+    sharingModel: Thread.resolveSharingModel(links),
     priorityBloc: priorityBloc,
   );
 }
@@ -3600,6 +3525,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool open = true,
   bool showSplitThread = false,
   bool isPlotThread = true,
+  SharingModel sharingModel = SharingModel.thread,
   PriorityBloc? priorityBloc,
 }) {
   final commands = threadCommands(
@@ -3607,6 +3533,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     open: open,
     showSplitThread: showSplitThread,
     isPlotThread: isPlotThread,
+    sharingModel: sharingModel,
     priorityBloc: priorityBloc,
   );
 
@@ -3624,17 +3551,17 @@ List<Command> threadCommands(
   bool showSplitThread = false,
   bool showEventTiming = false,
   bool isPlotThread = true,
+  SharingModel sharingModel = SharingModel.thread,
   PriorityBloc? priorityBloc,
 }) {
   // Read-only viewers (announce-group-only access): no metadata edits, no
-  // sharing changes, no merges/splits, no thread tags. Archive routes
-  // per-user server-side. Marking read/unread and per-user filing remain.
+  // sharing changes, no merges/splits, no thread tags. Marking read/unread
+  // and per-user filing remain.
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
       if (!skipInfrequent) MoveThreadToPriority(thread),
       if (!skipInfrequent) MuteSimilarThreads(thread, bloc: priorityBloc),
-      if (!skipInfrequent) ArchiveThread(thread, bloc: priorityBloc),
     ];
   }
 
@@ -3651,7 +3578,10 @@ List<Command> threadCommands(
 
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;
-  final hideArchive = showEventTiming && thread.isLinkScheduleInstance;
+  // Suppress the trailing infrequent actions for a link-schedule instance
+  // shown in the event-timing context.
+  final hideTrailingActions =
+      showEventTiming && thread.isLinkScheduleInstance;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
@@ -3662,13 +3592,20 @@ List<Command> threadCommands(
     // title from the source, so renaming is disallowed.
     if (!skipInfrequent && isPlotThread) EditThread(thread),
     if (!skipInfrequent) MoveThreadToPriority(thread),
-    PickThreadShared(thread),
-    if (!skipInfrequent) MergeThreadInto(thread),
+    // Share/Sharing only applies to the default thread roster model. In
+    // message mode (email) the roster is an auto-maintained union of per-note
+    // recipients (chosen per-reply in the composer); in channel mode (Slack
+    // channel, Linear) visibility is the external channel's membership; and
+    // none mode has no sharing UI. In all three the thread-level share roster
+    // isn't editable, so the menu entry is dropped.
+    if (sharingModel == SharingModel.thread) PickThreadShared(thread),
+    // Merge is only offered on Plot threads. Connector-created threads
+    // (Gmail, Calendar, …) mirror an external source, so folding another
+    // thread's notes into them would desync from that source.
+    if (!skipInfrequent && isPlotThread) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent && !hideArchive)
+    if (!skipInfrequent && !hideTrailingActions)
       MuteSimilarThreads(thread, bloc: priorityBloc),
-    if (!skipInfrequent && !hideArchive)
-      ArchiveThread(thread, bloc: priorityBloc),
   ];
 }
 

@@ -524,16 +524,6 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                         return null;
                       },
                     ),
-                ArchiveCurrentThreadIntent:
-                    CallbackAction<ArchiveCurrentThreadIntent>(
-                      onInvoke: (_) {
-                        final thread = _resolveFocusedOrCurrentThread(context);
-                        if (thread != null) {
-                          ArchiveThread(thread).run(context);
-                        }
-                        return null;
-                      },
-                    ),
                 FocusOrToggleAgendaActivityIntent:
                     CallbackAction<FocusOrToggleAgendaActivityIntent>(
                       onInvoke: (_) {
@@ -564,8 +554,6 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                       const ToggleStartFinishCurrentThreadIntent(),
                   platformSingleActivator(LogicalKeyboardKey.keyD, shift: true):
                       const ScheduleCurrentThreadIntent(),
-                  platformSingleActivator(LogicalKeyboardKey.backspace):
-                      const ArchiveCurrentThreadIntent(),
                   // Global Escape handler - focus ThreadEditor when ThreadPage is open
                   if (_activityEditorFocusCallback != null)
                     const SingleActivator(LogicalKeyboardKey.escape):

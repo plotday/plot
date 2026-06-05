@@ -438,19 +438,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
-                  // Handle Cmd+Backspace / Ctrl+Backspace to archive the open thread
-                  if (event.logicalKey == LogicalKeyboardKey.backspace &&
-                      (HardwareKeyboard.instance.isMetaPressed ||
-                          HardwareKeyboard.instance.isControlPressed) &&
-                      !HardwareKeyboard.instance.isShiftPressed &&
-                      !HardwareKeyboard.instance.isAltPressed) {
-                    final thread = context.read<PriorityBloc>().state.thread;
-                    if (thread != null) {
-                      ArchiveThread(thread).run(context);
-                      return KeyEventResult.handled;
-                    }
-                  }
-
                   // Only handle plain arrow keys/enter/escape (no modifiers)
                   // Cmd-Up/Down should bubble up to global PriorityPage handler
                   if (!hasModifiers) {
@@ -550,6 +537,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       ...threadCommandGroupsSync(
                         state.thread,
                         isPlotThread: Thread.isPlotThread(state.links),
+                        sharingModel:
+                            Thread.resolveSharingModel(state.links),
                         priorityBloc: priorityBloc,
                       ),
                     ];

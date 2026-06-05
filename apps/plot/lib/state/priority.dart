@@ -2275,43 +2275,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _rebuildAgendaModel();
   }
 
-  /// Optimistically remove an archived thread from the agenda and the
-  /// activity feed. When the user is viewing the archive (showArchived),
-  /// the thread stays in the feed and is just updated in place via
-  /// [optimisticallyUpdateThread].
-  void optimisticallyArchiveThread(Thread archivedThread) {
-    final id = archivedThread.id;
-    // When viewing the archive, expect the thread to remain with
-    // archivedAt set; otherwise expect it to disappear from the list.
-    _optimisticOverrides[id] = state.showArchived
-        ? _OptimisticOverride.expect(
-            expected: archivedThread,
-            fields: const {_OverrideField.archived},
-          )
-        : _OptimisticOverride.absent();
-    // Mirror in the per-tab overlay so the active tab reflects archive
-    // in the same frame.
-    _overlay[id] = state.showArchived
-        ? _Overlay(
-            expected: archivedThread,
-            watched: const {_OverrideField.archived},
-          )
-        : const _Overlay.drop();
-
-    // Drop the archived thread from the cached source list so the
-    // rebuilt model omits it.
-    _lastAgendaThreads = _lastAgendaThreads.where((t) => t.id != id).toList();
-
-    // The overlay write above is what the per-tab subscription consults
-    // to drop or keep the archived row. _rebuildAgendaModel re-emits
-    // the active tab's section in the same frame.
-    _rebuildAgendaModel(
-      thread: state.thread?.id == id
-          ? Value(archivedThread)
-          : const Value.absent(),
-    );
-  }
-
   /// Optimistically remove associated copies of a thread from the agenda.
   /// Non-associated copies (user-scheduled) are preserved.
   void optimisticallyDisassociate(ThreadId id) {
