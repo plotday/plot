@@ -10,6 +10,7 @@ import {
   generateSummary,
   fallbackSummary,
 } from "../app/notification-summary";
+import { selectDigestThreads } from "./email-digest-query";
 
 /** 18 hours in milliseconds */
 const EMAIL_DELAY_MS = 18 * 60 * 60 * 1000;
@@ -130,40 +131,9 @@ export class EmailNotify extends DurableObject<Bindings> {
 
       // Query all unread threads grouped by priority
       await withDb(this.env, async (db) => {
-        const threadsResult = await sql<{
-          thread_id: string;
-          thread_title: string | null;
-          thread_preview: string | null;
-          thread_updated_at: string;
-          priority_id: string;
-          priority_path: string;
-          priority_title: string;
-        }>`
-          SELECT
-            t.id::text AS thread_id,
-            t.title AS thread_title,
-            t.preview AS thread_preview,
-            tu.updated_at::text AS thread_updated_at,
-            p.id::text AS priority_id,
-            p.path::text AS priority_path,
-            p.title AS priority_title
-          FROM thread_state tu
-          JOIN thread t ON t.id = tu.thread_id
-          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
-          JOIN priority p ON p.id = tp.priority_id
-          WHERE tu.user_id = ${this.userId!}::uuid
-            AND tu.read_at IS NULL
-            AND (tu.importance >= 50 OR tu.urgent = TRUE)
-            AND t.archived_at IS NULL
-            AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND (
-              t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
-              OR t.groups && "user".user_group_ids(${this.userId!}::uuid)
-            )
-          ORDER BY tu.updated_at DESC
-        `.execute(db);
+        const rows = await selectDigestThreads(db, this.userId!);
 
-        if (threadsResult.rows.length === 0) {
+        if (rows.length === 0) {
           logger.info("Skipping email — no unread threads", {
             user_id: this.userId ?? undefined,
           });
@@ -172,7 +142,7 @@ export class EmailNotify extends DurableObject<Bindings> {
         }
 
         // Dedup: check if there are new unreads since last email
-        const latestUpdatedAt = threadsResult.rows[0].thread_updated_at;
+        const latestUpdatedAt = rows[0].thread_updated_at;
         const lastEmailedUnreadAt =
           await this.ctx.storage.get<string>("lastEmailedUnreadAt");
         if (lastEmailedUnreadAt && latestUpdatedAt <= lastEmailedUnreadAt) {
@@ -261,7 +231,7 @@ export class EmailNotify extends DurableObject<Bindings> {
         };
         const priorityMap = new Map<string, PriorityGroup>();
 
-        for (const row of threadsResult.rows) {
+        for (const row of rows) {
           const segments = row.priority_path.split(".");
           const firstLevelPath = segments
             .slice(0, Math.min(2, segments.length))
@@ -356,7 +326,7 @@ export class EmailNotify extends DurableObject<Bindings> {
 
         logger.info("Email notification sent", {
           user_id: this.userId ?? undefined,
-          thread_count: threadsResult.rows.length,
+          thread_count: rows.length,
           priority_count: priorities.length,
         });
       });
