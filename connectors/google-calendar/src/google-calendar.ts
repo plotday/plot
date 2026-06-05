@@ -147,16 +147,35 @@ type SyncOptions = {
  */
 export class GoogleCalendar extends Connector<GoogleCalendar> {
   static readonly PROVIDER = AuthProvider.Google;
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-    "https://www.googleapis.com/auth/calendar.events",
-  ];
+  static readonly EVENTS_SCOPE =
+    "https://www.googleapis.com/auth/calendar.events";
+  static readonly CALENDAR_LIST_SCOPE =
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 
   readonly provider = AuthProvider.Google;
-  readonly scopes = Integrations.MergeScopes(
-    GoogleCalendar.SCOPES,
-    GoogleContacts.SCOPES
-  );
+  readonly scopes = {
+    required: [GoogleCalendar.EVENTS_SCOPE],
+    description: [
+      "Reads your events to add them to your agenda",
+      "Writes your event RSVPs",
+    ],
+    optional: [
+      {
+        id: "contacts",
+        label: "Add names to events using contacts",
+        scopes: GoogleContacts.SCOPES,
+        default: true,
+      },
+      {
+        id: "calendars",
+        label: "List all calendars",
+        description:
+          "List all calendars so you can choose which to sync. If disabled, only your primary calendar will be synced.",
+        scopes: [GoogleCalendar.CALENDAR_LIST_SCOPE],
+        default: true,
+      },
+    ],
+  };
   readonly linkTypes = [
     {
       type: "event",
@@ -209,6 +228,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     _auth: Authorization,
     token: AuthToken
   ): Promise<Channel[]> {
+    // Listing the user's calendars needs the (optional) calendar-list scope.
+    // If the user didn't grant it, sync only the primary calendar — calling
+    // calendarList without the scope 403s and would wrongly flag the
+    // connection for re-auth.
+    if (!token.scopes.includes(GoogleCalendar.CALENDAR_LIST_SCOPE)) {
+      return [{ id: "primary", title: "Calendar", enabledByDefault: true }];
+    }
     const api = new GoogleApi(token.token);
     const calendars = await this.listCalendarsWithApi(api);
     // Default to syncing the user's OWN calendars (their primary + any
@@ -1388,9 +1414,9 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     const batch = Array.from(linksBySource.values());
     if (batch.length > 0) {
       // Enrich attendee/organizer contacts with names + avatars from the
-      // user's Google Contacts and "other contacts". Calendar already
-      // merges GoogleContacts.SCOPES into its scopes, so the People API
-      // is reachable without a separate connector install.
+      // user's Google Contacts and "other contacts". The People API is
+      // reachable when the user granted the optional contacts scope;
+      // enrichLinkContactsFromGoogle already no-ops when the scope is absent.
       try {
         const token = await this.tools.integrations.get(calendarId);
         if (token) {
