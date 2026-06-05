@@ -142,6 +142,12 @@ class Threads extends Table
   BlobColumn get mergedIntoThreadId =>
       blob().nullable().map(const UuidConverter())();
 
+  /// Thread-level assignee (contact id), mirrored from `thread.assignee_id`
+  /// on the server. Mutable; for connector threads it tracks the primary
+  /// assignment-capable link's assignee.
+  BlobColumn get assigneeId =>
+      blob().nullable().map(const ActorIdConverter())();
+
   /// Server-side access-loss tombstone marker. TRUE when the row arrived
   /// from `user.thread_redacted` — the user lost access (removed from a
   /// group, removed from a team) and the row carries no meaningful data.
@@ -2324,6 +2330,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<Tag>? filter,
     List<Reaction>? reactionFilter,
     List<String>? iconFilter,
+    List<ActorId>? assigneeFilter,
     bool requireTodoPredicate = false,
     bool requireUnread = false,
     bool requireLinkSched = false,
@@ -2435,6 +2442,17 @@ LEFT JOIN links l ON l.thread_id = a.id''');
       }
       if (preds.isNotEmpty) {
         wheres.add('(${preds.join(' OR ')})');
+      }
+    }
+
+    // Assignee filter — match thread-level assignee_id (the contact the
+    // thread is assigned to). OR-within-dimension across the selected
+    // assignees; AND across other filter dimensions (via [wheres]).
+    if (assigneeFilter != null && assigneeFilter.isNotEmpty) {
+      final placeholders = assigneeFilter.map((_) => '?').join(',');
+      wheres.add('a.assignee_id IN ($placeholders)');
+      for (final id in assigneeFilter) {
+        variables.add(Variable.withBlob(const ActorIdConverter().toSql(id)));
       }
     }
 
@@ -3203,6 +3221,7 @@ SELECT
     List<Tag>? filter,
     List<Reaction>? reactionFilter,
     List<String>? iconFilter,
+    List<ActorId>? assigneeFilter,
     required int limit,
   }) async* {
     final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
@@ -3216,6 +3235,7 @@ SELECT
       filter: filter,
       reactionFilter: reactionFilter,
       iconFilter: iconFilter,
+      assigneeFilter: assigneeFilter,
       limit: limit,
     ).asyncMap((idRows) async {
       if (idRows.isEmpty) {
@@ -3315,6 +3335,7 @@ SELECT
     List<Tag>? filter,
     List<Reaction>? reactionFilter,
     List<String>? iconFilter,
+    List<ActorId>? assigneeFilter,
     required int limit,
     int offset = 0,
     ({String activityAt, ThreadId id})? after,
@@ -3347,6 +3368,7 @@ SELECT
       filter: filter,
       reactionFilter: reactionFilter,
       iconFilter: iconFilter,
+      assigneeFilter: assigneeFilter,
     );
     sqlBuf.write(parts.sql);
     variables.addAll(parts.variables);
@@ -4929,6 +4951,7 @@ SELECT
   String? get title => _thread.title;
   String? get preview => _thread.preview;
   String? get icon => _thread.icon;
+  ActorId? get assigneeId => _thread.assigneeId;
   bool get hasEmbedding => _thread.hasEmbedding;
 
   /// Anchor for the "Skip active for threads like this" mute rule. Non-null
@@ -5888,6 +5911,24 @@ SELECT
           }
           return map;
         });
+  }
+
+  /// Optimistically set the thread-level assignee and push to the server.
+  /// Use ONLY for Plot-only threads (no assignment-capable link); connector
+  /// threads write the primary link's assignee instead (see pickThreadAssignee).
+  static Future<void> updateAssignee(
+    Thread thread,
+    ActorId? newAssigneeId,
+  ) async {
+    final updated = thread._thread.copyWith(
+      assigneeId: Value(newAssigneeId),
+      updatedAt: DateTime.now(),
+    );
+    await Store.get.save(
+      Store.get.threads,
+      updated.toCompanion(false),
+      ThreadsBase(),
+    );
   }
 
   Thread copyWith({

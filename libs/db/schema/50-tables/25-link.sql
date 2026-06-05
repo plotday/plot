@@ -34,6 +34,10 @@ CREATE TABLE "public"."link" (
     "preview" text,
     -- Assignment
     "assignee_id" uuid,
+    -- Sticky capability flag: TRUE once this link has carried an assignee.
+    -- Set by upsert_link; used by the mirror trigger to identify
+    -- assignment-capable links (only such connectors ever set an assignee).
+    "supports_assignee" boolean NOT NULL DEFAULT false,
     -- Source-defined type and status (free text)
     "type" text,
     "status" text,

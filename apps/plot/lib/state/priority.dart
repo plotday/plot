@@ -435,6 +435,32 @@ class PriorityBloc extends Cubit<PriorityState> {
     _restartActiveTabSubscription();
   }
 
+  void updateAssigneeFilter(List<ActorId> assigneeFilter) {
+    log.info('Updating assignee filter to $assigneeFilter');
+    final willBeGlobal = assigneeFilter.isNotEmpty ||
+        state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.reactionFilter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
+    emit(state.copyWith(
+      assigneeFilter: assigneeFilter,
+      globalViewScope: willBeGlobal ? const Value.absent() : const Value(null),
+    ));
+
+    if (assigneeFilter.isNotEmpty) {
+      threadListSource = ThreadListSource.activityFeed;
+    } else if (state.filter.isEmpty &&
+        state.reactionFilter.isEmpty &&
+        state.iconFilter.isEmpty) {
+      threadListSource = null;
+    }
+
+    // The agenda is universal and ignores filters; only the activity
+    // feed needs to refresh.
+    _loadPriority(reloadAgenda: false);
+    _restartActiveTabSubscription();
+  }
+
   /// Called immediately on every keystroke to update search text in state
   /// and cancel stale subscriptions so old results stop flowing.
   void prepareSearch(String search) {
@@ -847,7 +873,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   bool get _hasActiveFilter =>
       state.filter.isNotEmpty ||
       state.reactionFilter.isNotEmpty ||
-      state.iconFilter.isNotEmpty;
+      state.iconFilter.isNotEmpty ||
+      state.assigneeFilter.isNotEmpty;
 
   ({PriorityId? priorityId, Path? priorityPath}) _feedScope() {
     // A global view (an active search or any active filter) always QUERIES
@@ -886,6 +913,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     final reactionFilter =
         state.reactionFilter.isNotEmpty ? state.reactionFilter : null;
     final iconFilter = state.iconFilter.isNotEmpty ? state.iconFilter : null;
+    final assigneeFilter =
+        state.assigneeFilter.isNotEmpty ? state.assigneeFilter : null;
     final search = isSearching ? state.search : null;
 
     // Flat mode (Everything / search / filter / icon) renders one unsectioned
@@ -909,6 +938,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         filter: filter,
         reactionFilter: reactionFilter,
         iconFilter: iconFilter,
+        assigneeFilter: assigneeFilter,
         search: search,
         limit: _activityFeedLimit,
       ).listen((result) {

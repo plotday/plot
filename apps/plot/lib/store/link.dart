@@ -606,6 +606,18 @@ class Link extends Equatable {
     return rows.map((row) => Link(row)).toList();
   }
 
+  /// All locally-present links created by [connectionId] (a twist_instance id).
+  /// Used to rank likely assignees within a connection in the assignee picker.
+  /// [connectionId] is a `Uuid` (the owning twist_instance), not an `ActorId`.
+  /// The local `links` table has no `archived_at`: connector removals arrive as
+  /// revoked tombstones that are hard-deleted on pull, so present rows are live.
+  static Future<List<Link>> getForConnection(Uuid connectionId) async {
+    final rows = await (Store.get.select(Store.get.links)
+          ..where((l) => l.createdBy.equals(connectionId.toBytes())))
+        .get();
+    return rows.map((row) => Link(row)).toList();
+  }
+
   /// Watch links for a given thread.
   ///
   /// Returns every link the user can see on this thread. Per-user link

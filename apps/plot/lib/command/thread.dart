@@ -20,6 +20,7 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/widget/thread_assignee.dart';
 import 'logging.dart';
 
 /// Holds data for creating a new Thread with its first Note
@@ -2346,6 +2347,26 @@ class ShowThreadCommands extends ShowCommands {
       );
 }
 
+/// Opens the assignee picker for a thread. Title is "Reassign" when the thread
+/// already has an assignee, "Assign" otherwise.
+class AssignThread extends Command {
+  AssignThread(this._thread)
+    : super(
+        title: _thread.assigneeId != null ? 'Reassign' : 'Assign',
+        icon: PlotIcon.assignAdd,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread _thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await pickThreadAssignee(context, _thread);
+    return const CommandDone();
+  }
+}
+
 // Thread sharing commands
 
 class PickThreadShared extends ShowCommands {
@@ -3613,6 +3634,7 @@ List<Command> threadCommands(
     // none mode has no sharing UI. In all three the thread-level share roster
     // isn't editable, so the menu entry is dropped.
     if (sharingModel == SharingModel.thread) PickThreadShared(thread),
+    AssignThread(thread),
     // Merge is only offered on Plot threads. Connector-created threads
     // (Gmail, Calendar, …) mirror an external source, so folding another
     // thread's notes into them would desync from that source.

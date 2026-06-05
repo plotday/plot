@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 356;
+  int get schemaVersion => 357;
 
   @override
   MigrationStrategy get migration {
@@ -3844,6 +3844,10 @@ class Store extends _$Store {
       // Sync thread.author_id (the actor credited with causing the thread's
       // creation). Mirrors link.author_id; not yet surfaced in the UI.
       await m.addColumn(threads, threads.authorId);
+    }
+
+    if (from < 357) {
+      await _safeAddColumn(m, threads, threads.assigneeId);
     }
   }
 

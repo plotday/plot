@@ -126,6 +126,7 @@ Replying to a specific note from the feed replaces the pill row with a
 - Shared priorities
 - Built-in contact database
 - Self-assigned note tasks (each person marks a shared note as their own task; everyone sees who's on it)
+- Thread assignment: any thread can be assigned to a contact — assign from the thread header or a row's hover actions, filter your list by assignee. For connector-backed threads (e.g. Linear issues), the assignee syncs two-way: changes in Plot write back to the source, and changes in the source flow into Plot
 - Author tracking (activities and notes)
 - @-mentions for notifications
 - Per-user unread tracking

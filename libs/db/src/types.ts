@@ -777,6 +777,7 @@ export type Database = {
           source_url: string | null
           sources: string[]
           status: string | null
+          supports_assignee: boolean
           sync_depth: number | null
           thread_id: string | null
           title: string | null
@@ -807,6 +808,7 @@ export type Database = {
           source_url?: string | null
           sources?: string[]
           status?: string | null
+          supports_assignee?: boolean
           sync_depth?: number | null
           thread_id?: string | null
           title?: string | null
@@ -837,6 +839,7 @@ export type Database = {
           source_url?: string | null
           sources?: string[]
           status?: string | null
+          supports_assignee?: boolean
           sync_depth?: number | null
           thread_id?: string | null
           title?: string | null
@@ -1961,6 +1964,7 @@ export type Database = {
       thread: {
         Row: {
           archived_at: string | null
+          assignee_id: string | null
           author_id: string | null
           contact_meta: Json
           contacts: string[]
@@ -1991,6 +1995,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          assignee_id?: string | null
           author_id?: string | null
           contact_meta?: Json
           contacts?: string[]
@@ -2021,6 +2026,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          assignee_id?: string | null
           author_id?: string | null
           contact_meta?: Json
           contacts?: string[]
@@ -3497,6 +3503,7 @@ export type Database = {
       thread_x: {
         Row: {
           archived_at: string | null
+          assignee_id: string | null
           author_id: string | null
           contact_meta: Json | null
           contacts: string[] | null
@@ -3527,6 +3534,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          assignee_id?: string | null
           author_id?: string | null
           contact_meta?: Json | null
           contacts?: string[] | null
@@ -3557,6 +3565,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          assignee_id?: string | null
           author_id?: string | null
           contact_meta?: Json | null
           contacts?: string[] | null
@@ -4673,6 +4682,10 @@ export type Database = {
         }
         Returns: number
       }
+      recompute_thread_assignee: {
+        Args: { p_thread_ids: string[] }
+        Returns: undefined
+      }
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
         Returns: Json
@@ -5515,6 +5528,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
+          assignee_id: string | null
           author_id: string | null
           bumped_at: string | null
           contact_meta: Json | null
@@ -5700,6 +5714,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
+          assignee_id: string | null
           author_id: string | null
           bumped_at: string | null
           contact_meta: Json | null

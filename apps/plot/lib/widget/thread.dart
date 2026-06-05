@@ -7,7 +7,7 @@ import 'package:prism_flutter/prism_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/agenda_block_drag.dart';
-import 'package:plot/widget/link_assignee_picker.dart';
+import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -929,6 +929,7 @@ class ThreadCommands extends HookWidget {
         (cmd) =>
             cmd is! PickScheduleThread &&
             cmd is! PickThreadShared &&
+            cmd is! AssignThread &&
             cmd is! EditThread,
       ),
     ];
@@ -964,15 +965,6 @@ class ThreadCommands extends HookWidget {
         ? RsvpChip(activity: activity)
         : null;
 
-    // Trailing assignee avatar — shown only for assignment-capable threads
-    // (e.g. Linear), never for plain sharing. [SharedCommandButton] renders the
-    // assignee avatar (or an "Assign" affordance) in its assignment branch, so
-    // gating on the primary assignment link keeps the sharing avatar group and
-    // share icon out of the row entirely.
-    final hasAssignment =
-        Thread.resolvePrimaryAssignmentLink(linksSnapshot.data ?? const []) !=
-        null;
-
     final List<Widget> allButtons;
     if (showCommands) {
       allButtons = [
@@ -982,6 +974,10 @@ class ThreadCommands extends HookWidget {
         // semantics flip based on whether the thread already carries the
         // mute flag.
         Button.icon(MuteSimilarThreads(activity)),
+        // Surface "Assign" on hover for unassigned, writable threads. Assigned
+        // threads get the persistent trailing [ThreadAssignee] avatar instead.
+        if (activity.assigneeId == null && !activity.isReadOnly)
+          Button.icon(AssignThread(activity)),
         // Rename is intentionally NOT surfaced on hover — it lives only in the
         // more-commands menu, and only for Plot threads (see threadCommands).
         // Always add ShowThreadCommands as the 6th button
@@ -1009,9 +1005,8 @@ class ThreadCommands extends HookWidget {
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
         ?rsvpChip,
-        // Assignment avatar (assignee / "Assign"), assignment-capable threads
-        // only. No sharing avatar group or share icon in the row.
-        if (hasAssignment) SharedCommandButton(thread: activity),
+        // Persistent thread-level assignee avatar (any assigned thread).
+        if (activity.assigneeId != null) ThreadAssignee(thread: activity),
         // Trailing-most "Remove from event" X-icon for associated
         // threads, surfaced only on hover. The row is positioned at
         // the right edge with mainAxisSize.min, so adding this as
@@ -1020,263 +1015,6 @@ class ThreadCommands extends HookWidget {
         if (isAssociated && showCommands)
           Button.icon(DisassociateThread(activity)),
       ],
-    );
-  }
-}
-
-/// Renders the "Share" / "Shared" command. When the thread is shared, the
-/// button hugs an [AvatarGroup] so the avatars sit at the row's natural
-/// height. When the thread is not yet shared, it shows the share icon at the
-/// same visual weight so the share affordance stays visible — callers that
-/// don't want an empty-state icon (e.g. [ThreadCommands], which surfaces the
-/// share command via hover commands instead) should gate this widget on
-/// `isThreadShared(thread)`.
-class SharedCommandButton extends HookWidget {
-  const SharedCommandButton({
-    required this.thread,
-    this.tooltipBelow = false,
-    super.key,
-  });
-
-  final Thread thread;
-
-  /// Anchor the hover tooltip below the button instead of above. Use when
-  /// the button sits at the top of a clipped container.
-  final bool tooltipBelow;
-
-  @override
-  Widget build(BuildContext context) {
-    final command = PickThreadShared(thread);
-    final shared = isThreadShared(thread);
-
-    // Expand the avatar circle into the button's icon padding so the
-    // initials are legible while the button's overall height still matches
-    // neighbouring icon buttons (icon + padding == avatar + zero padding).
-    // Use `iconSizes.base` as the baseline because Plot's `Button.icon`
-    // wraps icons in a `SizedBox(height: iconSizes.base)` regardless of
-    // forui's `iconContentStyle.iconStyle.size` (which is `lg`); using `lg`
-    // here makes the avatar 2px taller than sibling buttons and grows the
-    // surrounding row height.
-    final iconContentStyle =
-        context.theme.buttonStyles.ghost.md.iconContentStyle;
-    final iconPadding = iconContentStyle.padding.resolve(TextDirection.ltr);
-    final iconSize = context.theme.iconSizes.base;
-    final avatarSize = iconSize + iconPadding.top + iconPadding.bottom;
-
-    // Watch links to resolve the thread's sharing model (channel / message /
-    // thread). The stream is cheap — same table and index as ThreadCommands'
-    // conferencing-actions stream — and keeps the model in sync when links
-    // are added or removed without a full thread rebuild.
-    final linksSnapshot = useStream<List<Link>>(
-      useMemoized(() => Link.watchForThread(thread.id), [thread.id]),
-    );
-    final links = linksSnapshot.data ?? const <Link>[];
-    final sharingModel = Thread.resolveSharingModel(links);
-
-    // Assignment mode: primary link is from a connector with channel
-    // sharing AND assignment. The avatar slot shows/edits the assignee
-    // instead of the channel title.
-    final assignmentLink = Thread.resolvePrimaryAssignmentLink(links);
-
-    // Resolve the assignee Actor for the AvatarGroup. useFuture rebuilds
-    // when assignmentLink.assigneeId changes; null assigneeId is the
-    // "unassigned" state.
-    final assigneeId = assignmentLink?.assigneeId;
-    final assigneeSnapshot = useFuture(
-      useMemoized(() async {
-        if (assigneeId == null) return null;
-        try {
-          return await Actor.getOne(assigneeId);
-        } catch (_) {
-          return null;
-        }
-      }, [assigneeId?.toString(), thread.id]),
-    );
-    // Synchronous cache fallback to avoid a first-frame "Assign" flicker
-    // on warm cache hits, mirroring the shared-AvatarGroup branch's
-    // synchronous fallback to command.sharedDisplayActors.
-    final assignee =
-        assigneeSnapshot.data ??
-        (assigneeId != null ? Actor.fromCache(assigneeId) : null);
-
-    // Channel-mode: derive the human-readable channel title from the primary
-    // (earliest-created) link. Falls back to null when the channel isn't in
-    // the local cache (deleted or not yet synced), in which case we fall
-    // through to the AvatarGroup path below.
-    String? channelTitle;
-    if (sharingModel == SharingModel.channel && links.isNotEmpty) {
-      final primaryLink = ([
-        ...links,
-      ]..sort((a, b) => a.createdAt.compareTo(b.createdAt))).first;
-      if (primaryLink.createdBy != null && primaryLink.channelId != null) {
-        channelTitle = Channel.findByChannel(
-          primaryLink.createdBy!,
-          primaryLink.channelId!,
-        )?.title;
-      }
-    }
-
-    // Avatar overview reads thread.contacts directly — the synced union of
-    // everyone ever on the thread — for every sharing model. thread.contacts
-    // is always present on the thread row, so list rows and the first-paint
-    // header populate even before notes load. Hidden-role (BCC) contacts are
-    // stripped per-viewer server-side, so this never leaks.
-    final contactsKey = thread.contacts.map((u) => u.toString()).join('|');
-    final loadedActors = useFuture(
-      useMemoized(() => command.loadSharedDisplayActors(), [contactsKey]),
-    ).data;
-    final actors = loadedActors ?? command.sharedDisplayActors;
-
-    // Surface RSVP info in the unified avatar tooltip when the thread is a
-    // calendar event with other invitees. Otherwise the tooltip falls back
-    // to plain actor names.
-    final scheduleContacts = thread.hasOtherAttendees
-        ? thread.scheduleContacts
-        : null;
-
-    // Track hover so the unshared icon matches sibling `Button.icon`s:
-    // resting `muted`, hover lifts to `foreground`.
-    final isHovered = useState(false);
-    final iconColor = isHovered.value
-        ? context.colour.foreground
-        : context.colour.muted;
-
-    // Branch on sharing model:
-    //   channel (with resolved title) → muted text label, no avatar stack
-    //   channel (title unresolvable) / thread / message → AvatarGroup or
-    //     unshared-icon fallback, same as before. For message-mode the actors
-    //     are already derived per-viewer above.
-    final Widget child;
-    if (assignmentLink != null) {
-      if (assignee != null) {
-        // Assigned: single-avatar group, same sizing/styling as the
-        // shared variant so visual swap is seamless.
-        child = AvatarGroup(
-          actors: [assignee],
-          totalCount: 1,
-          size: avatarSize,
-          scheduleContacts: null,
-          tooltipBelow: tooltipBelow,
-          clickable: true,
-        );
-      } else {
-        // Unassigned: matches the unshared icon button's geometry.
-        child = SizedBox(
-          width: iconSize,
-          height: iconSize,
-          child: Center(
-            child: FaIcon(
-              PlotIcon.shareAdd, // userPlus glyph — see widget/icon.dart:202
-              size: iconSize,
-              color: iconColor,
-            ),
-          ),
-        );
-      }
-    } else if (sharingModel == SharingModel.channel && channelTitle != null) {
-      // Render the channel name at the same vertical position as AvatarGroup
-      // would occupy. SizedBox height matches avatarSize so the button row
-      // stays stable when switching between thread/channel modes.
-      child = SizedBox(
-        height: avatarSize,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            channelTitle,
-            style: TextStyle(
-              color: context.colour.muted,
-              fontSize: context.theme.typography.sm.fontSize,
-              height: 1,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      );
-    } else if (shared) {
-      child = AvatarGroup(
-        actors: actors,
-        totalCount: command.sharedTotalCount,
-        size: avatarSize,
-        scheduleContacts: scheduleContacts,
-        tooltipBelow: tooltipBelow,
-        clickable: true,
-      );
-    } else {
-      child = SizedBox(
-        width: iconSize,
-        height: iconSize,
-        child: Center(
-          child: FaIcon(
-            command.icon ?? PlotIcon.shareAdd,
-            size: iconSize,
-            color: iconColor,
-          ),
-        ),
-      );
-    }
-
-    final button = FButton.icon(
-      style: FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
-          ),
-        ]),
-        iconContentStyle: FButtonIconContentStyleDelta.delta(
-          // Keep horizontal padding so this button hugs the row edge the
-          // same way as sibling icon buttons; zero vertical so the avatar
-          // fills the full button height.
-          padding: EdgeInsetsGeometryDelta.value(
-            EdgeInsets.symmetric(horizontal: iconPadding.left),
-          ),
-          // Drop the default minWidth (36) so the button hugs the avatar
-          // group's natural width — narrower groups (1–2 avatars) shouldn't
-          // get padded out to the size of a 3-slot group. Keep minHeight so
-          // vertical alignment with sibling icon buttons is preserved.
-          constraints: BoxConstraints(
-            minHeight: iconContentStyle.constraints.minHeight,
-          ),
-        ),
-      ),
-      variant: FButtonVariant.ghost,
-      // Channel-mode is non-tappable per the spec ("no tap behavior"): the
-      // channel title is informational only.
-      onPress: assignmentLink != null
-          ? () => pickLinkAssignee(context, assignmentLink)
-          : (sharingModel == SharingModel.channel && channelTitle != null)
-          ? null
-          : sharingModel == SharingModel.message
-          ? () => context.run(PickThreadParticipants(thread))
-          : () => context.run(command),
-      child: child,
-    );
-
-    // No tooltip wrap when the visible child already conveys context:
-    // - Assigned avatar (assignee name is in the AvatarGroup's own tooltip)
-    // - Channel-mode title (visible label)
-    // - Shared AvatarGroup (unified contact tooltip)
-    if ((assignmentLink != null && assignee != null) ||
-        shared ||
-        (sharingModel == SharingModel.channel && channelTitle != null)) {
-      return button;
-    }
-
-    // Unassigned (assignment mode) → "Assign". Unshared → command.title ("Share").
-    final tooltipText = (assignmentLink != null && assignee == null)
-        ? 'Assign'
-        : command.title;
-
-    return MouseRegion(
-      onEnter: (_) => isHovered.value = true,
-      onExit: (_) => isHovered.value = false,
-      child: FTooltip(
-        tipAnchor: tooltipBelow ? Alignment.topCenter : Alignment.bottomCenter,
-        childAnchor: tooltipBelow
-            ? Alignment.bottomCenter
-            : Alignment.topCenter,
-        tipBuilder: (context, controller) => Text(tooltipText),
-        child: button,
-      ),
     );
   }
 }

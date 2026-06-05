@@ -31,6 +31,7 @@ class PriorityState extends Equatable {
     bool activityFeedLoaded = false,
     List<AgendaItem>? reorderViewItems,
     List<String> iconFilter = const [],
+    List<ActorId> assigneeFilter = const [],
     List<(String, int)> iconCounts = const [],
     List<Thread> remoteSearchExtras = const [],
     bool remoteSearchInProgress = false,
@@ -79,6 +80,9 @@ class PriorityState extends Equatable {
       iconFilter: iconFilter.isNotEmpty
           ? List.unmodifiable(iconFilter)
           : iconFilter,
+      assigneeFilter: assigneeFilter.isNotEmpty
+          ? List.unmodifiable(assigneeFilter)
+          : assigneeFilter,
       iconCounts: iconCounts.isNotEmpty
           ? List.unmodifiable(iconCounts)
           : iconCounts,
@@ -119,6 +123,7 @@ class PriorityState extends Equatable {
     this.activityFeedLoaded = false,
     this.reorderViewItems,
     this.iconFilter = const [],
+    this.assigneeFilter = const [],
     this.iconCounts = const [],
     this.remoteSearchExtras = const [],
     this.remoteSearchInProgress = false,
@@ -193,6 +198,12 @@ class PriorityState extends Equatable {
   final List<AgendaItem>? reorderViewItems;
 
   final List<String> iconFilter;
+
+  /// Active assignee filter — narrows the thread feed to threads whose
+  /// `thread.assignee_id` is one of these actors. Parallel to [iconFilter];
+  /// like the other filter dimensions it forces the feed global + flat.
+  final List<ActorId> assigneeFilter;
+
   final List<(String, int)> iconCounts;
 
   /// Threads returned by the remote search endpoint that are not already
@@ -368,6 +379,7 @@ class PriorityState extends Equatable {
     bool? activityFeedLoaded,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
     List<String>? iconFilter,
+    List<ActorId>? assigneeFilter,
     List<(String, int)>? iconCounts,
     List<Thread>? remoteSearchExtras,
     bool? remoteSearchInProgress,
@@ -426,6 +438,11 @@ class PriorityState extends Equatable {
       iconFilter: iconFilter != null
           ? (iconFilter.isNotEmpty ? List.unmodifiable(iconFilter) : iconFilter)
           : this.iconFilter,
+      assigneeFilter: assigneeFilter != null
+          ? (assigneeFilter.isNotEmpty
+                ? List.unmodifiable(assigneeFilter)
+                : assigneeFilter)
+          : this.assigneeFilter,
       iconCounts: iconCounts != null
           ? (iconCounts.isNotEmpty ? List.unmodifiable(iconCounts) : iconCounts)
           : this.iconCounts,
@@ -466,6 +483,7 @@ class PriorityState extends Equatable {
     activityFeedLoaded,
     reorderViewItems,
     iconFilter,
+    assigneeFilter,
     iconCounts,
     remoteSearchExtras,
     remoteSearchInProgress,

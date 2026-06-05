@@ -24,12 +24,13 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
+import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
+import 'package:plot/widget/thread_sharing.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
 import 'button.dart';
 import 'icon.dart';
-import 'thread.dart';
 import 'window.dart';
 
 /// Selects which slice of the header to render.
@@ -455,7 +456,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final trailing = <Widget>[
       if (thread != null) _buildTodoToggle(context, thread),
       if (thread != null && !thread.isReadOnly)
-        SharedCommandButton(thread: thread),
+        ThreadSharing(thread: thread, tooltipBelow: true),
+      if (thread != null && !thread.isReadOnly)
+        ThreadAssignee(
+          thread: thread,
+          showWhenUnassigned: true,
+          tooltipBelow: true,
+        ),
       // Single-panel: search lives in the bottom nav, not the header.
       Button.icon(
         _buildPriorityAndThreadMenuCommand(state, layoutState, notifier),
@@ -752,6 +759,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           allReactions.putIfAbsent(r.$1, () => r);
         }
       }
+      // Candidate assignees (v1): the distinct, non-null assignees present
+      // on the threads currently loaded in the feed, plus any assignee
+      // already active in [state.assigneeFilter] (so it stays toggleable
+      // even if it has scrolled out of the loaded head). Resolved to actors
+      // for their display name; unresolved ids are skipped from the options
+      // list (active ones still get a chip below with a fallback label).
+      final assigneeIds = <ActorId>{
+        for (final item in state.activityFeedItems)
+          if (item is AgendaThreadItem && item.thread.assigneeId != null)
+            item.thread.assigneeId!,
+        ...state.assigneeFilter,
+      };
       return [
         ...state.iconCounts.map((d) => ToggleIconFilter(d.$1, context: ctx)),
         ...allTags.keys.map((tag) => ToggleActivityFilter(tag, context: ctx)),
@@ -766,6 +785,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ...state.reactionFilter
             .where((e) => !allReactions.containsKey(e))
             .map((e) => ToggleReactionFilter(e, context: ctx)),
+        for (final id in assigneeIds)
+          if (Actor.fromCache(id) case final actor?)
+            ToggleAssigneeFilter(id, label: actor.nameOrEmail, context: ctx),
       ];
     }
 
@@ -773,6 +795,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty ||
         state.reactionFilter.isNotEmpty ||
+        state.assigneeFilter.isNotEmpty ||
         (notifier?.filter.isNotEmpty == true) ||
         (notifier?.reactionFilter.isNotEmpty == true);
 
@@ -817,6 +840,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                       for (final emoji in notifier!.reactionFilter)
                         if (!state.reactionFilter.contains(emoji))
                           ToggleReactionFilter(emoji, context: context),
+                    for (final id in state.assigneeFilter)
+                      ToggleAssigneeFilter(
+                        id,
+                        label: Actor.fromCache(id)?.nameOrEmail ?? 'Assignee',
+                        context: context,
+                      ),
                   ];
                   return Row(
                     mainAxisSize: MainAxisSize.min,

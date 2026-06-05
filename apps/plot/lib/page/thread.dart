@@ -18,7 +18,9 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/util/note_initial_view.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
+import 'package:plot/widget/thread_sharing.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 
@@ -1373,7 +1375,13 @@ class _ThreadActionsRow extends StatelessWidget {
     ];
 
     final endGroup = <Widget>[
-      if (!readOnly) SharedCommandButton(thread: thread, tooltipBelow: true),
+      if (!readOnly) ThreadSharing(thread: thread, tooltipBelow: true),
+      if (!readOnly)
+        ThreadAssignee(
+          thread: thread,
+          showWhenUnassigned: true,
+          tooltipBelow: true,
+        ),
       Button.icon(_buildThreadMenuCommand(thread), tooltipBelow: true),
     ];
 

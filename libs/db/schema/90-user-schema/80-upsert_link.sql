@@ -159,7 +159,7 @@ BEGIN
     INSERT INTO link (id, thread_id, source, sources, source_created_at, author_id, twist_id,
         created_by, updated_by, sync_depth, title, preview, assignee_id, type, status,
         actions, meta, source_url, merged_from_thread_id, related_source,
-        channel_id)
+        channel_id, supports_assignee)
         VALUES (v_id, v_thread_id, v_source, v_sources,
             COALESCE((p_link ->> 'source_created_at')::timestamptz, (p_defaults ->> 'source_created_at')::timestamptz, now()),
             v_author_id, v_twist_id, v_created_by,
@@ -175,7 +175,8 @@ BEGIN
             COALESCE(p_link ->> 'source_url', p_defaults ->> 'source_url'),
             COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid),
             COALESCE(p_link ->> 'related_source', p_defaults ->> 'related_source'),
-            COALESCE(p_link ->> 'channel_id', p_defaults ->> 'channel_id'))
+            COALESCE(p_link ->> 'channel_id', p_defaults ->> 'channel_id'),
+            (v_assignee_id IS NOT NULL))
     ON CONFLICT (source, source_priority_root) WHERE archived_at IS NULL
         DO UPDATE SET
             title = CASE WHEN p_link ? 'title' THEN
@@ -256,7 +257,15 @@ BEGIN
                 p_link ->> 'channel_id'
             ELSE
                 link.channel_id
-            END
+            END,
+            -- Sticky: once true, stays true. Flips true the first time an
+            -- assignee is written (only assignment-capable connectors do).
+            supports_assignee = link.supports_assignee
+                OR (CASE WHEN p_link ? 'assignee_id' THEN
+                        (p_link ->> 'assignee_id')::uuid
+                    ELSE
+                        COALESCE(v_assignee_id, link.assignee_id)
+                    END) IS NOT NULL
         RETURNING
             * INTO v_result;
     RETURN v_result;

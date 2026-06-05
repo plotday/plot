@@ -31,6 +31,10 @@ CREATE TABLE "public"."thread" (
     "last_note_source_created_at" timestamp with time zone,
     "key" text,
     "icon" text,
+    -- Thread-level assignee (contact id). Mutable, user-settable, synced.
+    -- Mirrors the primary assignment-capable link's assignee for connector
+    -- threads (see link-assignee-thread-mirror trigger); Plot-managed otherwise.
+    "assignee_id" uuid,
     "groups" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
     "topic" text,
     "embedding" halfvec(384),

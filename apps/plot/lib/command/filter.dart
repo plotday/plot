@@ -348,6 +348,63 @@ class ToggleIconFilter extends Command {
   }
 }
 
+/// Toggle an assignee filter — narrows the feed to threads assigned to a
+/// given contact (`thread.assignee_id`). Mirrors [ToggleIconFilter].
+class ToggleAssigneeFilter extends Command {
+  ToggleAssigneeFilter._({
+    required this.assigneeId,
+    required this.label,
+    super.on,
+  }) : super(
+         title: label,
+         icon: PlotIcon.assignAdd,
+         eventObject: EventObject.filter,
+         eventAction: EventAction.filtered,
+       );
+
+  factory ToggleAssigneeFilter(
+    ActorId assigneeId, {
+    required String label,
+    required BuildContext context,
+  }) {
+    return ToggleAssigneeFilter._(
+      assigneeId: assigneeId,
+      label: label,
+      on: _isActive(context, assigneeId),
+    );
+  }
+
+  final ActorId assigneeId;
+  final String label;
+
+  static bool? _isActive(BuildContext context, ActorId assigneeId) {
+    try {
+      return context.read<PriorityBloc>().state.assigneeFilter.contains(
+        assigneeId,
+      );
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final bloc = context.read<PriorityBloc>();
+      final next = List<ActorId>.from(bloc.state.assigneeFilter);
+      if (next.contains(assigneeId)) {
+        next.remove(assigneeId);
+      } else {
+        next.add(assigneeId);
+      }
+      bloc.updateAssigneeFilter(next);
+    } on ProviderNotFoundException {
+      // PriorityBloc not in scope
+    }
+    return const CommandDone();
+  }
+}
+
 /// Replace the reaction filter set across whichever bloc is in scope.
 class SetReactionFilters extends Command {
   SetReactionFilters({required this.emojis, String? title})
@@ -482,16 +539,19 @@ class PickFilterCommand extends ShowCommands {
                .toList();
            final reactionFilters =
                commands.whereType<ToggleReactionFilter>().toList();
+           final assigneeFilters =
+               commands.whereType<ToggleAssigneeFilter>().toList();
 
            // Split active vs. inactive across all filter types. Active
            // filters collect into a single "Filters" section at the top
            // (mirroring the share picker's "Shared" section). Inactive
            // options stay grouped by type below — Thread type, then Tags,
-           // then Reactions.
+           // then Reactions, then Assignee.
            final activeFilters = <Command>[
              ...iconFilters.where((c) => c.on == true),
              ...tagFilters.where((c) => c.on == true),
              ...reactionFilters.where((c) => c.on == true),
+             ...assigneeFilters.where((c) => c.on == true),
            ];
            final inactiveIconFilters = iconFilters
                .where((c) => c.on != true)
@@ -500,6 +560,9 @@ class PickFilterCommand extends ShowCommands {
                .where((c) => c.on != true)
                .toList();
            final inactiveReactionFilters = reactionFilters
+               .where((c) => c.on != true)
+               .toList();
+           final inactiveAssigneeFilters = assigneeFilters
                .where((c) => c.on != true)
                .toList();
 
@@ -524,6 +587,11 @@ class PickFilterCommand extends ShowCommands {
                  StaticCommandGroup(
                    title: 'Reactions',
                    commands: inactiveReactionFilters,
+                 ),
+               if (inactiveAssigneeFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Assignee',
+                   commands: inactiveAssigneeFilters,
                  ),
              ],
            );
