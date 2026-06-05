@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isInsufficientScopeError, parseGrantedScopes } from "./auth-scope";
+import {
+  findMissingRequiredScopes,
+  isInsufficientScopeError,
+  parseGrantedScopes,
+  resolveRequestedScopes,
+} from "./auth-scope";
 
 describe("parseGrantedScopes", () => {
   it("reads the top-level `scope` field by default (Google/Microsoft)", () => {
@@ -85,5 +90,72 @@ describe("isInsufficientScopeError", () => {
 
   it("does not throw on a malformed __TWIST_ERROR__ envelope", () => {
     expect(isInsufficientScopeError("__TWIST_ERROR__not-json")).toBe(false);
+  });
+});
+
+describe("resolveRequestedScopes", () => {
+  const optional = [
+    { id: "contacts", label: "Contacts", scopes: ["s.contacts"], default: true },
+    { id: "calendars", label: "Calendars", scopes: ["s.list"], default: true },
+  ];
+
+  it("returns required scopes when there are no optional groups", () => {
+    expect(resolveRequestedScopes(["s.events"], undefined, undefined)).toEqual([
+      "s.events",
+    ]);
+  });
+
+  it("includes default-on groups when the client sends no selection", () => {
+    expect(resolveRequestedScopes(["s.events"], optional, undefined)).toEqual([
+      "s.events",
+      "s.contacts",
+      "s.list",
+    ]);
+  });
+
+  it("includes only the groups the client explicitly enabled", () => {
+    expect(
+      resolveRequestedScopes(["s.events"], optional, ["calendars"])
+    ).toEqual(["s.events", "s.list"]);
+  });
+
+  it("excludes all optional scopes when the client sends an empty selection", () => {
+    expect(resolveRequestedScopes(["s.events"], optional, [])).toEqual([
+      "s.events",
+    ]);
+  });
+
+  it("deduplicates overlapping scopes", () => {
+    const overlap = [
+      { id: "a", label: "A", scopes: ["s.events", "s.a"], default: true },
+    ];
+    expect(resolveRequestedScopes(["s.events"], overlap, undefined)).toEqual([
+      "s.events",
+      "s.a",
+    ]);
+  });
+});
+
+describe("findMissingRequiredScopes", () => {
+  it("returns required scopes the user did not grant", () => {
+    expect(
+      findMissingRequiredScopes(["s.events", "s.write"], ["s.events"])
+    ).toEqual(["s.write"]);
+  });
+
+  it("returns [] when every required scope was granted", () => {
+    expect(
+      findMissingRequiredScopes(["s.events"], ["s.events", "s.extra"])
+    ).toEqual([]);
+  });
+
+  it("ignores email/identity scopes the runtime always appends", () => {
+    expect(
+      findMissingRequiredScopes(["s.events", "openid"], ["s.events"], ["openid"])
+    ).toEqual([]);
+  });
+
+  it("never flags optional scopes (they are not passed in requiredScopes)", () => {
+    expect(findMissingRequiredScopes(["s.events"], ["s.events"])).toEqual([]);
   });
 });

@@ -36,7 +36,11 @@ import {
   type ProviderData,
   type StoredTokenData,
 } from "../../provider";
-import { isInsufficientScopeError, parseGrantedScopes } from "./auth-scope";
+import {
+  findMissingRequiredScopes,
+  isInsufficientScopeError,
+  parseGrantedScopes,
+} from "./auth-scope";
 import { hashExternalContent } from "./hash-external-content";
 import { ThreadFilingSkippedError } from "./plot/thread-helpers";
 import { deleteUnipileAccount } from "./unipile/account-cleanup";
@@ -70,6 +74,8 @@ type IntegrationProviderConfig = {
     scopes: string[];
     default: boolean;
   }>;
+  /** Friendly bullets describing the always-on (required) access. */
+  description?: string[];
   linkTypes?: LinkTypeConfig[];
   getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
   onChannelEnabled: (channel: Channel, context?: SyncContext) => Promise<void>;
@@ -95,6 +101,9 @@ const AUTH_ACCOUNT_DUPLICATE_ERROR = "AuthAccountDuplicateError";
 type AuthState = {
   provider: AuthProvider;
   scopes: string[];
+  /** The subset of `scopes` that must be granted; optional scopes are excluded.
+   *  Absent for sign-in flows and legacy states → treat all of `scopes` as required. */
+  requiredScopes?: string[];
   codeVerifier?: string; // Optional for Google Sign-In flows
   timestamp?: number; // Optional for Google Sign-In flows
   callback?: Callback;
@@ -3181,7 +3190,7 @@ export class Integrations extends Tool implements IAuth {
    * Returns accounts, providers, and channels.
    */
   async getIntegrationData(currentActorId?: ActorId): Promise<{
-    providers: Array<{ provider: AuthProvider; scopes: string[]; optionalScopes?: any[] }>;
+    providers: Array<{ provider: AuthProvider; scopes: string[]; optionalScopes?: any[]; description?: string[] }>;
     accounts: Array<{
       provider: AuthProvider;
       actorId: ActorId;
@@ -3218,6 +3227,7 @@ export class Integrations extends Tool implements IAuth {
       provider: p.provider,
       scopes: p.scopes,
       ...(p.optionalScopes ? { optionalScopes: p.optionalScopes } : {}),
+      ...(p.description ? { description: p.description } : {}),
     }));
 
     // Resolve all contact IDs belonging to the current user so we can
@@ -4272,20 +4282,23 @@ export class Integrations extends Tool implements IAuth {
         tokenResponse,
         PROVIDER_CONFIGS[authState.provider]
       );
-      if (grantedScopes && authState.scopes?.length) {
+      // Enforce only REQUIRED scopes. Optional scopes the user declined on the
+      // consent screen are tolerated — the connector degrades gracefully.
+      // Fallback to the full requested set when requiredScopes is absent
+      // (sign-in flows, legacy in-flight states) to preserve strict behaviour.
+      const enforcedScopes = authState.requiredScopes ?? authState.scopes;
+      if (grantedScopes && enforcedScopes?.length) {
         const providerConfig = PROVIDER_CONFIGS[authState.provider];
-        const emailScopes = new Set(providerConfig?.emailScopes ?? []);
-        const requiredScopes = authState.scopes.filter(
-          (s) => !emailScopes.has(s)
+        const missing = findMissingRequiredScopes(
+          enforcedScopes,
+          grantedScopes,
+          providerConfig?.emailScopes ?? []
         );
-        const grantedSet = new Set(grantedScopes);
-        const missing = requiredScopes.filter((s) => !grantedSet.has(s));
         if (missing.length > 0) {
-          const providerName =
-            providerConfig?.name ?? authState.provider;
+          const providerName = providerConfig?.name ?? authState.provider;
           return new Response(
             JSON.stringify({
-              error: `${providerName} access wasn't fully granted. Please try again and leave all permission boxes checked so Plot can sync.`,
+              error: `${providerName} access wasn't fully granted. Please try again and grant the required permissions so Plot can sync.`,
             }),
             {
               status: 400,
@@ -4307,9 +4320,10 @@ export class Integrations extends Tool implements IAuth {
             {
               // Spread all token response fields (provider-specific fields included)
               ...tokenResponse,
-              // Add our metadata
+              // Add our metadata. Persist GRANTED scopes so connectors can gate
+              // optional features on what the user actually consented to.
               provider: authState.provider,
-              scopes: authState.scopes,
+              scopes: grantedScopes ?? authState.scopes,
               client_id: clientId,
             }
           );
@@ -4496,6 +4510,7 @@ export class Integrations extends Tool implements IAuth {
   static async GenerateAuthUrl({
     provider,
     scopes,
+    requiredScopes,
     callback,
     redirectUri,
     platform,
@@ -4507,6 +4522,7 @@ export class Integrations extends Tool implements IAuth {
   }: {
     provider: AuthProvider;
     scopes: string[];
+    requiredScopes?: string[];
     callback?: Callback;
     redirectUri: string;
     platform?: "ios" | "android" | "desktop";
@@ -4608,6 +4624,7 @@ export class Integrations extends Tool implements IAuth {
     const authState: AuthState = {
       provider,
       scopes: allScopes,
+      requiredScopes,
       codeVerifier,
       timestamp: Date.now(),
       callback,

@@ -65,3 +65,52 @@ export function isInsufficientScopeError(rawErrorMessage: string): boolean {
   }
   return INSUFFICIENT_SCOPE_MARKERS.some((m) => message.includes(m));
 }
+
+/** An optional scope group a connector declares, toggleable at connect time. */
+export type OptionalScopeGroup = {
+  id: string;
+  label: string;
+  description?: string;
+  scopes: string[];
+  default: boolean;
+};
+
+/**
+ * The full set of scopes to REQUEST for an OAuth flow: the required scopes plus
+ * every enabled optional group, deduplicated. A group is enabled when the client
+ * sent an explicit `enabledScopeGroups` list containing its id, or — when the
+ * client sent no list — when the group's `default` is true.
+ */
+export function resolveRequestedScopes(
+  requiredScopes: string[],
+  optionalGroups: OptionalScopeGroup[] | undefined,
+  enabledScopeGroups: string[] | undefined
+): string[] {
+  const scopes = [...requiredScopes];
+  if (optionalGroups) {
+    for (const group of optionalGroups) {
+      const isEnabled = enabledScopeGroups
+        ? enabledScopeGroups.includes(group.id)
+        : group.default;
+      if (isEnabled) scopes.push(...group.scopes);
+    }
+  }
+  return [...new Set(scopes)];
+}
+
+/**
+ * The required scopes the user did NOT grant. `emailScopes` (identity scopes the
+ * runtime always appends, e.g. openid/email/profile) are excluded from
+ * enforcement. Optional scopes are never passed in `requiredScopes`, so declining
+ * an optional scope never appears here. Returns [] when nothing required is
+ * missing.
+ */
+export function findMissingRequiredScopes(
+  requiredScopes: string[],
+  grantedScopes: string[],
+  emailScopes: string[] = []
+): string[] {
+  const email = new Set(emailScopes);
+  const granted = new Set(grantedScopes);
+  return requiredScopes.filter((s) => !email.has(s) && !granted.has(s));
+}
