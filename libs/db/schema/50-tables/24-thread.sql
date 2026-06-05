@@ -3,6 +3,13 @@ CREATE TABLE "public"."thread" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL,
+    -- The actor to credit with CAUSING this thread's creation. For app
+    -- (user-created) threads this is the user's primary contact; for connector
+    -- threads, the resolved external author of the originating link; for
+    -- non-connection twist threads, the twist_instance. Distinct from
+    -- created_by, which is the user_id/twist_instance that performed the
+    -- creation action (permissions/callbacks). Set once; never overwritten.
+    "author_id" uuid,
     "updated_by" integer NOT NULL DEFAULT 0,
     "archived_at" timestamp with time zone,
     "draft" boolean NOT NULL DEFAULT FALSE,
@@ -168,6 +175,8 @@ COMMENT ON COLUMN "public"."thread"."twist_id" IS 'Twist definition that created
 COMMENT ON COLUMN "public"."thread"."pending_contacts" IS 'Contacts whose own sync wants to join but who have not yet been attested by another user''s sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.';
 
 COMMENT ON COLUMN "public"."thread"."created_by" IS 'The user_id or twist_instance_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
+
+COMMENT ON COLUMN "public"."thread"."author_id" IS 'The actor (contact or twist_instance) credited with causing this thread''s creation. User threads: user''s primary contact. Connector threads: resolved external link author. Non-connection twist threads: the twist_instance. Immutable after first set.';
 
 COMMENT ON COLUMN "public"."thread"."last_note_created_at" IS 'Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_thread and user_priority_unread views.';
 

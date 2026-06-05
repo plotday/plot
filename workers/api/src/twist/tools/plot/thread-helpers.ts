@@ -1315,6 +1315,10 @@ export async function prepareThreadForDb(
   // Build defaults object for INSERT
   const defaults: ActivityInsert = {
     created_by: plot.twistInstanceId,
+    // Who CAUSED the thread: the resolved external author (above), or the
+    // twist instance itself when no author was supplied. upsert_thread reads
+    // this from p_defaults (source path) and the direct insert writes the row.
+    author_id: authorId,
     updated_by: plot.getUpdatedBy(),
     title: cleanTitle(activity.title?.trim() || "Untitled"),
     preview: previewText,

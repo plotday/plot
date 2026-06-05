@@ -116,6 +116,13 @@ class Threads extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get icon => text().nullable()();
 
+  /// The contact (or twist_instance) credited with causing this thread's
+  /// creation. User threads: the user's primary contact. Connector threads:
+  /// the resolved external link author. Non-connection twist threads: the
+  /// twist. Synced from user.thread; not yet surfaced in the UI.
+  BlobColumn get authorId =>
+      blob().nullable().map(const ActorIdConverter())();
+
   /// Whether the thread has a content embedding on the server.
   /// Used to decide whether "move similar" rule options are available.
   BoolColumn get hasEmbedding => boolean().withDefault(const Constant(false))();

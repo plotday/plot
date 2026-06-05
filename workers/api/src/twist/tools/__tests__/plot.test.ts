@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ThreadAccess } from "@plotday/twister/tools/plot";
 
 import { Plot } from "../plot";
+import { prepareThreadForDb } from "../plot/thread-helpers";
 
 vi.mock("../../../rpc", () => ({
   rpc: vi.fn(async (_db: unknown, fn: string) => {
@@ -246,6 +247,89 @@ describe("Plot", () => {
       });
 
       expect(result).toBe("activity-123");
+    });
+
+    it("prepareThreadForDb defaults author_id to the twist instance when no author is given", async () => {
+      const plot = new Plot({
+        db: dbMock,
+        priorityId: "priority-1",
+        twistInstanceId: "pt-1",
+        options: { thread: { access: ThreadAccess.Create } },
+        env: envMock,
+      });
+
+      const prepared = await prepareThreadForDb(plot, {
+        title: "Twist-made thread",
+      } as any);
+
+      expect(prepared).not.toBeNull();
+      const insert =
+        "insert" in prepared! ? prepared!.insert : prepared!.defaults;
+      expect(prepared!.authorId).toBe("pt-1");
+      expect(insert.author_id).toBe("pt-1");
+    });
+
+    it("prepareThreadForDb puts the resolved author (not the twist) into author_id", async () => {
+      const plot = new Plot({
+        db: dbMock,
+        priorityId: "priority-1",
+        twistInstanceId: "pt-1",
+        options: { thread: { access: ThreadAccess.Create } },
+        env: envMock,
+      });
+
+      // An existing-actor author reference resolves to that contact id with no
+      // DB round-trip (processNewActorArray returns existing ids directly), so
+      // the thread credits the external author rather than the connector twist.
+      const prepared = await prepareThreadForDb(plot, {
+        title: "Issue synced",
+        author: { id: "contact-ada" },
+      } as any);
+
+      expect(prepared).not.toBeNull();
+      const insert =
+        "insert" in prepared! ? prepared!.insert : prepared!.defaults;
+      expect(prepared!.authorId).toBe("contact-ada");
+      expect(insert.author_id).toBe("contact-ada");
+      expect(insert.author_id).not.toBe("pt-1");
+    });
+
+    it("createLink sets link.author_id to the resolved author, not the twist", async () => {
+      const threadInsert = createInsertQuery({
+        id: "thread-1",
+        author_id: "contact-ada",
+        created_by: "pt-1",
+        priority_id: "priority-1",
+        title: "Issue",
+      });
+      const linkInsert = createInsertQuery({ id: "link-1" });
+      dbMock.insertInto = vi.fn((table: string) => {
+        if (table === "thread") return threadInsert;
+        if (table === "link") return linkInsert;
+        return createInsertQuery(null);
+      });
+
+      const plot = new Plot({
+        db: dbMock,
+        priorityId: "priority-1",
+        twistInstanceId: "pt-1",
+        options: { thread: { access: ThreadAccess.Create } },
+        env: envMock,
+      });
+
+      // Non-source link with an existing-actor author. unread:true skips the
+      // post-insert author read-marking so the assertion depends only on the
+      // captured link insert. The link must credit the resolved author, not
+      // the connector twist instance (the original link.author_id bug).
+      await plot.createLink({
+        title: "Issue",
+        author: { id: "contact-ada" },
+        unread: true,
+      } as any);
+
+      const linkValues = linkInsert.values.mock.calls[0][0];
+      expect(linkValues.author_id).toBe("contact-ada");
+      expect(linkValues.author_id).not.toBe("pt-1");
     });
 
     it("createThread with Action type auto-assigns start", async () => {

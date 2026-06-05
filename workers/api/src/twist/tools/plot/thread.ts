@@ -191,7 +191,7 @@ export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes,
   skipNotify = false
-): Promise<{ id: Uuid; priorityId: string }> {
+): Promise<{ id: Uuid; priorityId: string; authorId: string }> {
   try {
     // Use shared helper for all preparation logic
     const prepared = await prepareThreadForDb(plot, activity);
@@ -485,7 +485,7 @@ export async function createThread(
       await plot.notifySyncDOs(new Set([priorityId]));
     }
 
-    return { id: dbResult.id as Uuid, priorityId };
+    return { id: dbResult.id as Uuid, priorityId, authorId };
   } catch (error) {
     throw await handleDbOperationError(error, "createThread", plot, {
       has_notes: "notes" in activity && !!activity.notes?.length,

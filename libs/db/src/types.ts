@@ -1961,6 +1961,7 @@ export type Database = {
       thread: {
         Row: {
           archived_at: string | null
+          author_id: string | null
           contact_meta: Json
           contacts: string[]
           created_at: string
@@ -1990,6 +1991,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          author_id?: string | null
           contact_meta?: Json
           contacts?: string[]
           created_at?: string
@@ -2019,6 +2021,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          author_id?: string | null
           contact_meta?: Json
           contacts?: string[]
           created_at?: string
@@ -3494,6 +3497,7 @@ export type Database = {
       thread_x: {
         Row: {
           archived_at: string | null
+          author_id: string | null
           contact_meta: Json | null
           contacts: string[] | null
           created_at: string | null
@@ -3523,6 +3527,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          author_id?: string | null
           contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
@@ -3552,6 +3557,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          author_id?: string | null
           contact_meta?: Json | null
           contacts?: string[] | null
           created_at?: string | null
@@ -5509,6 +5515,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
+          author_id: string | null
           bumped_at: string | null
           contact_meta: Json | null
           contacts: string[] | null
@@ -5693,6 +5700,7 @@ export type Database = {
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
+          author_id: string | null
           bumped_at: string | null
           contact_meta: Json | null
           contacts: string[] | null

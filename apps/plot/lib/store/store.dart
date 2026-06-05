@@ -2408,7 +2408,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 355;
+  int get schemaVersion => 356;
 
   @override
   MigrationStrategy get migration {
@@ -3838,6 +3838,12 @@ class Store extends _$Store {
       // the Plot Team group offline. _safeAddColumn keeps it idempotent for
       // test harnesses opened at the current schema.
       await _safeAddColumn(m, groups, groups.key);
+    }
+
+    if (from < 356) {
+      // Sync thread.author_id (the actor credited with causing the thread's
+      // creation). Mirrors link.author_id; not yet surfaced in the UI.
+      await m.addColumn(threads, threads.authorId);
     }
   }
 

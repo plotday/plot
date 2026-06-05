@@ -163,7 +163,7 @@ export async function createLink(
     // thread with no link yet and activity_at falls back to created_at=now(),
     // briefly placing the thread at the top of today before it settles to the
     // link's source_created_at.
-    let { id: threadId, priorityId: threadPriorityId } = await createThread(plot, threadData, true);
+    let { id: threadId, priorityId: threadPriorityId, authorId } = await createThread(plot, threadData, true);
 
     // Step 2: Create the link row (priority_id returned from createThread)
 
@@ -198,7 +198,9 @@ export async function createLink(
     const linkDefaults: Record<string, any> = {
       thread_id: threadId,
       created_by: plot.twistInstanceId,
-      author_id: plot.twistInstanceId,
+      // Credit the resolved external author (from createThread), not the
+      // connector twist instance. Falls back to the twist when no author.
+      author_id: authorId,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
@@ -442,11 +444,18 @@ export async function createLinkOnly(
       }
     }
 
+    // Resolve the link's external author directly (no createThread here to do
+    // it for us). Falls back to the twist instance when no author is supplied.
+    const linkAuthorId = link.author
+      ? ((await processNewActor(plot, link.author, rootPriorityId)) ??
+          plot.twistInstanceId)
+      : plot.twistInstanceId;
+
     const linkValues: Record<string, any> = {
       thread_id: null,
       priority_id: rootPriorityId,
       created_by: plot.twistInstanceId,
-      author_id: plot.twistInstanceId,
+      author_id: linkAuthorId,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
