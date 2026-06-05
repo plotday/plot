@@ -65,23 +65,33 @@ class _OnboardingToolsState extends State<OnboardingTools> {
 
   Future<void> _openSetup(Twist twist) async {
     await AddSourceDetail(twist, dismissable: true).run(context);
-    // Mirror ManageConnections: AddSourceDetail handles OAuth and activates
-    // the draft, but it does NOT open EditSource for channel selection.
-    // Without that step, the source ends up with enabledCount == 0 and our
-    // "established connection" filter (matches ManageConnections) hides it,
-    // so the user sees the modal close without a card appearing.
-    final activatedId = AddSourceDetail.lastActivatedSourceId;
-    AddSourceDetail.lastActivatedSourceId = null;
-    if (mounted && activatedId != null && twist.providers.isNotEmpty) {
-      EditSource.preloadIntegrations(activatedId);
+    // Mirror ManageConnections: after OAuth, AddSourceDetail leaves the
+    // connection as a DRAFT and hands it off here. We open EditSource so the
+    // user picks channels; saving there activates the draft, abandoning
+    // deletes it. Without this step the source would stay an unconfirmed draft
+    // and never appear as an established connection.
+    final connectedDraftId = AddSourceDetail.lastConnectedDraftId;
+    final connectedTeamId = AddSourceDetail.lastConnectedTeamId;
+    final completedInSetup = AddSourceDetail.lastActivatedInSetupModal;
+    AddSourceDetail.lastConnectedDraftId = null;
+    AddSourceDetail.lastConnectedTeamId = null;
+    AddSourceDetail.lastActivatedInSetupModal = false;
+    if (mounted &&
+        shouldOpenChannelSetupAfterConnect(
+          connectedDraftId: connectedDraftId,
+          hasProviders: twist.providers.isNotEmpty,
+          completedInSetupModal: completedInSetup,
+        )) {
+      EditSource.preloadIntegrations(connectedDraftId!);
       if (!mounted) return;
       await EditSource(
-        twistInstanceId: activatedId,
+        twistInstanceId: connectedDraftId,
         name: twist.name,
         isNewlyActivated: true,
         dismissable: true,
         logoUrl: twist.logoUrl,
         logoUrlDark: twist.logoUrlDark,
+        initialTeamHint: connectedTeamId,
       ).run(context);
     }
     if (mounted) await _load();

@@ -9,7 +9,6 @@ import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
-import 'package:plot/widget/toast.dart';
 
 /// Calendar providers surfaced in the onboarding "Connect your calendars"
 /// step. Each entry maps a UI provider (with brand styling and label) to the
@@ -50,7 +49,12 @@ class _ProviderData {
   final Twist twist;
   final String draftId;
   final TwistProvider provider;
-  bool activated = false;
+
+  /// True once ownership of [draftId] has been transferred to EditSource —
+  /// i.e. the user authenticated and EditSource opened on the draft. EditSource
+  /// then either activates the draft (on save) or deletes it (on abandon), so
+  /// [dispose] must NOT also try to delete it.
+  bool handedOff = false;
 }
 
 /// Renders the content of the "Connect your calendars" onboarding step.
@@ -58,8 +62,9 @@ class _ProviderData {
 /// Lists any calendars the user has already connected and a brand-styled
 /// auth button for each supported provider. Tapping a button runs the
 /// provider's OAuth flow inline (with a spinner on the same button); on
-/// success, the draft is activated and an [EditSource] modal opens so the
-/// user can pick channels and confirm. The step's Next/Continue button
+/// success, an [EditSource] modal opens on the still-draft connection so the
+/// user can pick channels and confirm — saving there activates it, abandoning
+/// discards it. The step's Next/Continue button
 /// (rendered by [OnboardingFullScreen]) advances to the next step whenever
 /// the user chooses to proceed.
 class OnboardingCalendars extends StatefulWidget {
@@ -82,9 +87,10 @@ class _OnboardingCalendarsState extends State<OnboardingCalendars> {
 
   @override
   void dispose() {
-    // Clean up any drafts the user didn't activate so they don't accumulate.
+    // Clean up any drafts EditSource never took ownership of (the user never
+    // authenticated them) so they don't accumulate.
     for (final data in _byPackageId.values) {
-      if (!data.activated) {
+      if (!data.handedOff) {
         unawaited(_safeDeleteDraft(data.draftId));
       }
     }
@@ -175,37 +181,18 @@ class _OnboardingCalendarsState extends State<OnboardingCalendars> {
   }
 
   Future<void> _onAuthSuccess(_ProviderData data) async {
-    data.activated = true;
-    String? activatedId;
-    try {
-      // Activate the draft as a personal connection. The user can re-assign
-      // a team later from Manage connections; the onboarding step is
-      // intentionally minimal.
-      await TwistApi.activateDraft(
-        draftId: data.draftId,
-        name: data.twist.name,
-      );
-      activatedId = data.draftId;
-    } catch (e, t) {
-      log.warning('Failed to activate ${data.twist.name}', e, t);
-      if (mounted) {
-        context.showToast(
-          message: 'Failed to set up ${data.twist.name}. Please try again.',
-          isError: true,
-        );
-      }
-      // Re-create a fresh draft so the user can retry.
-      data.activated = false;
-      return;
-    }
-
-    // Open EditSource so the user can pick channels and confirm. After it
-    // closes, refresh the connected list and prepare a new draft so the
-    // user can connect another account of the same provider.
+    // The OAuth result is attached to the draft, but we do NOT activate it
+    // here. Open EditSource so the user picks channels and confirms; saving
+    // there activates the draft, and abandoning deletes it. EditSource now
+    // owns this draft's lifecycle, so mark it handed off to keep dispose()
+    // from also trying to delete it. After EditSource closes, refresh the
+    // connected list and prepare a fresh draft so "Add another account" works.
+    data.handedOff = true;
     if (mounted) {
-      EditSource.preloadIntegrations(activatedId);
+      EditSource.preloadIntegrations(data.draftId);
+      if (!mounted) return;
       await EditSource(
-        twistInstanceId: activatedId,
+        twistInstanceId: data.draftId,
         name: data.twist.name,
         isNewlyActivated: true,
         dismissable: true,

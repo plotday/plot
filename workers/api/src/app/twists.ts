@@ -195,7 +195,11 @@ twists.get("/sources/summary", async (c) => {
   try {
     const userId = c.var.user.id;
 
-    // Get all active source twist_instances for the current user
+    // Get all non-draft, non-archived source twist_instances for the current
+    // user. This is a superset of "active connections" — it still includes
+    // committed instances with zero enabled channels. Callers apply the
+    // `enabled_count > 0` leg to get the fully-active set (see
+    // isActiveConnection in twist/tools/active-connection.ts).
     const sources = await c.var.db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
@@ -216,6 +220,7 @@ twists.get("/sources/summary", async (c) => {
       .where("twist.is_source", "=", true)
       .where("twist_instance.owner_id", "=", userId)
       .where("twist_instance.archived_at", "is", null)
+      .where("twist_instance.draft", "=", false) // exclude in-progress setups
       .execute();
 
     if (sources.length === 0) {

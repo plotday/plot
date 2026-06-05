@@ -229,24 +229,29 @@ class ManageConnections extends Command {
             }
           } else if (item is _AvailableSource) {
             await AddSourceDetail(item.twist).run(ctx);
-            final activatedId = AddSourceDetail.lastActivatedSourceId;
-            final activatedInSetup =
+            final connectedDraftId = AddSourceDetail.lastConnectedDraftId;
+            final connectedTeamId = AddSourceDetail.lastConnectedTeamId;
+            final completedInSetup =
                 AddSourceDetail.lastActivatedInSetupModal;
-            AddSourceDetail.lastActivatedSourceId = null;
+            AddSourceDetail.lastConnectedDraftId = null;
+            AddSourceDetail.lastConnectedTeamId = null;
             AddSourceDetail.lastActivatedInSetupModal = false;
-            if (activatedId != null &&
-                item.twist.providers.isNotEmpty &&
-                !activatedInSetup) {
-              // OAuth: push EditSource on top of the connections list so the
-              // list isn't visible as a standalone interstitial. Popping
+            if (shouldOpenChannelSetupAfterConnect(
+                  connectedDraftId: connectedDraftId,
+                  hasProviders: item.twist.providers.isNotEmpty,
+                  completedInSetupModal: completedInSetup,
+                ) &&
+                ctx.mounted) {
+              // OAuth: the instance is still a DRAFT. Push EditSource on top of
+              // the connections list so the user picks channels; saving there
+              // activates the draft, and abandoning deletes it. Popping
               // EditSource returns the user to ManageConnections naturally.
-              if (ctx.mounted) {
-                await EditSource(
-                  twistInstanceId: activatedId,
-                  name: item.twist.name,
-                  isNewlyActivated: true,
-                ).run(ctx);
-              }
+              await EditSource(
+                twistInstanceId: connectedDraftId!,
+                name: item.twist.name,
+                isNewlyActivated: true,
+                initialTeamHint: connectedTeamId,
+              ).run(ctx);
             }
             // Non-OAuth, or OAuth where setup completed in the AddSourceDetail
             // modal itself: channels configured during setup, just refresh +
@@ -1147,6 +1152,7 @@ class EditSource extends ShowForm {
     this.logoUrl,
     this.logoUrlDark,
     this.accountLabel,
+    this.initialTeamHint,
     super.subtitle,
   }) : super(
          title: isNewlyActivated ? 'Set up $name' : name,
@@ -1160,6 +1166,7 @@ class EditSource extends ShowForm {
            logoUrl: logoUrl,
            logoUrlDark: logoUrlDark,
            initialAccountLabel: accountLabel,
+           initialTeamHint: initialTeamHint,
          ),
        );
 
@@ -1170,8 +1177,36 @@ class EditSource extends ShowForm {
   final String? logoUrlDark;
   final String? accountLabel;
 
+  /// For a just-connected OAuth draft ([isNewlyActivated]), the team resolved
+  /// from the account's email domain (null = personal). Defaults the team
+  /// selector so the connection is filed where AddSourceDetail computed.
+  final String? initialTeamHint;
+
   /// When true, hides the Archive button (source was just set up).
   final bool isNewlyActivated;
+
+  /// Set by [SaveSource] when it successfully activates a newly-connected
+  /// draft. [run] reads it to decide whether to delete the draft on dismissal:
+  /// if the user closed channel-setup without committing, the abandoned draft
+  /// must be cleaned up so no orphaned connection lingers.
+  static bool _committed = false;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Reset per open — statics persist across modal instances.
+    if (isNewlyActivated) _committed = false;
+    final result = await super.run(context);
+    if (isNewlyActivated && !_committed) {
+      // The user dismissed channel setup without committing. The instance is
+      // still a draft (SaveSource never ran), so delete it.
+      try {
+        await TwistApi.deleteDraft(twistInstanceId);
+      } catch (e, t) {
+        log.warning('Failed to delete abandoned connection draft', e, t);
+      }
+    }
+    return result;
+  }
 
   /// When true, the modal renders a close (X) button in the header even
   /// when it's the only modal on the stack. Used by the onboarding flow,
@@ -1180,8 +1215,8 @@ class EditSource extends ShowForm {
   /// for callers that open EditSource from inside ManageConnections.
   final bool dismissable;
 
-  /// Integrations prefetch kicked off by `_activateSource` so the first
-  /// EditSource open after activation doesn't block on a fresh network call
+  /// Integrations prefetch kicked off by `_connectedAfterOAuth` so the first
+  /// EditSource open after connecting doesn't block on a fresh network call
   /// (which otherwise leaves the ManageConnections list visible with an item
   /// spinner for ~1s between AddSourceDetail closing and EditSource opening).
   static Future<TwistIntegrations>? _preloadedIntegrations;
@@ -1201,6 +1236,7 @@ class EditSource extends ShowForm {
     String? logoUrl,
     String? logoUrlDark,
     String? initialAccountLabel,
+    String? initialTeamHint,
   }) async {
     final twistInstanceUuid = Uuid.fromString(twistInstanceId);
 
@@ -1255,6 +1291,14 @@ class EditSource extends ShowForm {
         return twistInstance!.teamId.toString();
       }
       if (!isNewlyActivated) return 'personal';
+      // Prefer the team resolved from the OAuth account's email domain, as
+      // long as it still exists and can host another connection.
+      if (initialTeamHint != null) {
+        final hinted = teams.firstWhereOrNull((t) => t.id == initialTeamHint);
+        if (hinted != null && !hinted.connections.isAtLimit) {
+          return hinted.id;
+        }
+      }
       for (final t in teams) {
         if (!t.connections.isAtLimit) return t.id;
       }
@@ -1352,12 +1396,12 @@ class EditSource extends ShowForm {
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
-                // Enforce the limit on newly-activated sources (the activation
-                // already incremented the count, so the channel-batch save
-                // would 403 with plan_limit_exceeded) and on scope changes
-                // (the destination's count will increment on save). Existing
-                // connections saving in place are exempt — they already count
-                // toward their current scope.
+                // Enforce the limit on newly-connected sources (saving here
+                // activates the draft, which increments the count and would
+                // 403 with plan_limit_exceeded server-side) and on scope
+                // changes (the destination's count will increment on save).
+                // Existing connections saving in place are exempt — they
+                // already count toward their current scope.
                 if (isNewlyActivated || owner != initialTeamId) {
                   final premiumGate = _premiumGateCommand(
                     usage: usage,
@@ -1619,6 +1663,22 @@ class AddSource extends ShowCommands {
   }
 }
 
+/// After an OAuth connect, decide whether to open the channel-setup
+/// (EditSource) step on the still-draft instance.
+///
+/// OAuth connectors (those exposing [hasProviders]) defer channel selection to
+/// a second step: the connection stays a draft until the user picks channels in
+/// EditSource and saves (which activates the draft). No-provider connectors
+/// finish inside the setup modal itself ([completedInSetupModal]), so there is
+/// nothing more to open. A null [connectedDraftId] means the user backed out
+/// before connecting, so there is no draft to set up.
+bool shouldOpenChannelSetupAfterConnect({
+  required String? connectedDraftId,
+  required bool hasProviders,
+  required bool completedInSetupModal,
+}) =>
+    connectedDraftId != null && hasProviders && !completedInSetupModal;
+
 /// Shows source description and branded auth button for setup.
 class AddSourceDetail extends ShowForm {
   AddSourceDetail(this.twist, {this.dismissable = false})
@@ -1657,7 +1717,8 @@ class AddSourceDetail extends ShowForm {
     }
 
     _currentDraftId = draftId;
-    lastActivatedSourceId = null;
+    lastConnectedDraftId = null;
+    lastConnectedTeamId = null;
 
     // Re-run the form when a CommandRefresh is returned (e.g. after connecting
     // a no-provider connector — the form rebuilds to show channels).
@@ -1683,8 +1744,17 @@ class AddSourceDetail extends ShowForm {
 
   static String? _currentDraftId;
 
-  /// Set after activation so ManageConnections can open EditSource.
-  static String? lastActivatedSourceId;
+  /// Set after a successful OAuth connect. The instance is still a DRAFT at
+  /// this point — ManageConnections (and the onboarding flows) read this to
+  /// open the channel-setup (EditSource) step, which activates the draft on
+  /// save and deletes it if the user abandons setup.
+  static String? lastConnectedDraftId;
+
+  /// The team (owner) resolved for [lastConnectedDraftId] from the OAuth
+  /// account's email domain, or null for personal. EditSource uses it to
+  /// default the team selector for the just-connected draft. Cleared by
+  /// EditSource once consumed.
+  static String? lastConnectedTeamId;
 
   /// True when the user finished setup (Label, channels, options, activate)
   /// inside the setup modal itself — i.e. activation went through
@@ -1950,7 +2020,7 @@ class AddSourceDetail extends ShowForm {
                               groups;
                         },
                         onSuccess: () async {
-                          await _activateAfterOAuth(
+                          await _connectedAfterOAuth(
                             formContext,
                             draftId,
                             twist.name,
@@ -2142,7 +2212,7 @@ class AddSourceDetail extends ShowForm {
                               groups;
                         },
                         onSuccess: () async {
-                          await _activateAfterOAuth(
+                          await _connectedAfterOAuth(
                             formContext,
                             draftId,
                             twist.name,
@@ -2252,11 +2322,15 @@ class AddSourceDetail extends ShowForm {
     return 'Personal';
   }
 
-  /// After a successful OAuth, re-fetch integrations so we can default the
-  /// connection's team based on the authenticated account's email domain.
-  /// If the form has a visible team selector (post-auth state from a previous
-  /// flow), its value wins over the computed default.
-  static Future<void> _activateAfterOAuth(
+  /// After a successful OAuth, hand the still-DRAFT instance off to the
+  /// channel-setup step (EditSource) without activating it. We re-fetch
+  /// integrations only to default the connection's team based on the
+  /// authenticated account's email domain; if the form has a visible team
+  /// selector (post-auth state from a previous flow), its value wins. The
+  /// draft is activated later, in EditSource's save, once the user has picked
+  /// channels — and deleted if they abandon setup. This keeps `draft` meaning
+  /// "uncommitted setup" so an abandoned OAuth leaves no orphaned connection.
+  static Future<void> _connectedAfterOAuth(
     BuildContext context,
     String draftId,
     String name,
@@ -2300,65 +2374,21 @@ class AddSourceDetail extends ShowForm {
       if (selected != null) owner = selected;
     }
 
-    if (!context.mounted) return;
-    await _activateSource(
-      context,
-      draftId,
-      name,
-      teamId: owner == 'personal' ? null : owner,
-    );
-  }
+    // Record the connected draft + its default team so the caller opens
+    // EditSource on it. Releasing our cleanup claim (clearDraft) transfers
+    // ownership of the draft to EditSource, which now deletes it on abandon —
+    // otherwise AddSourceDetail.run() would delete it the moment this modal
+    // pops, before channel setup opens.
+    lastConnectedDraftId = draftId;
+    lastConnectedTeamId = owner == 'personal' ? null : owner;
+    clearDraft();
 
-  static Future<void> _activateSource(
-    BuildContext context,
-    String draftId,
-    String name, {
-    String? teamId,
-  }) async {
-    try {
-      await TwistApi.activateDraft(
-        draftId: draftId,
-        name: name,
-        teamId: teamId,
-      );
+    // Start fetching integrations for the upcoming EditSource in parallel with
+    // the modal-pop animation, so the next modal can open immediately.
+    EditSource.preloadIntegrations(draftId);
 
-      lastActivatedSourceId = draftId;
-      clearDraft();
-
-      // Start fetching integrations for the upcoming EditSource in parallel
-      // with the modal-pop animation, so the next modal can open immediately.
-      EditSource.preloadIntegrations(draftId);
-
-      if (context.mounted) {
-        Modal.pop<CommandReturn>(context, Value(const CommandDone()));
-      }
-    } on ApiException catch (e, t) {
-      log.warning('Failed to activate source', e, t);
-      if (context.mounted) {
-        if (e.isPlanLimitExceeded) {
-          context.showToast(
-            message: _planLimitConnectionMessage(
-              isTeam: e.isTeam == true,
-              isAdmin: e.isAdmin == true,
-            ),
-            isError: true,
-          );
-        } else {
-          context.showToast(
-            message: 'Failed to add connection. Please try again.',
-            isError: true,
-          );
-        }
-      }
-    } catch (e, t) {
-      log.warning('Failed to activate source', e, t);
-      Tracker.captureException(e, t);
-      if (context.mounted) {
-        context.showToast(
-          message: 'Failed to add connection. Please try again.',
-          isError: true,
-        );
-      }
+    if (context.mounted) {
+      Modal.pop<CommandReturn>(context, Value(const CommandDone()));
     }
   }
 }
@@ -3437,7 +3467,7 @@ class ConnectNoProviderCommand extends Command {
           name: activateAs!,
           teamId: teamId,
         );
-        AddSourceDetail.lastActivatedSourceId = twistInstanceId;
+        AddSourceDetail.lastConnectedDraftId = twistInstanceId;
         AddSourceDetail.clearDraft();
         return const CommandDone(message: 'Connected');
       }
@@ -3518,7 +3548,7 @@ class _ActivateNoProviderSource extends Command {
         }
       }
 
-      AddSourceDetail.lastActivatedSourceId = draftId;
+      AddSourceDetail.lastConnectedDraftId = draftId;
       AddSourceDetail.lastActivatedInSetupModal = true;
       AddSourceDetail.clearDraft();
 
@@ -3792,6 +3822,41 @@ class SaveSource extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      // Newly-connected OAuth draft: the instance is still a draft, so commit
+      // it by activating with exactly the chosen channels (the channels
+      // validator guarantees at least one). Activation enables the channels
+      // and files it under the selected team in one call; the account label is
+      // applied afterwards (activateDraft takes no label). Marking it committed
+      // tells EditSource.run not to delete the draft on dismissal.
+      if (isNewlyActivated) {
+        final channels = changes.selectedChannels.map((key) {
+          final parts = key.split(':');
+          return <String, Object>{
+            'provider': parts.first,
+            'syncableId': parts.skip(1).join(':'),
+          };
+        }).toList();
+        await TwistApi.activateDraft(
+          draftId: twistInstanceId,
+          name: name,
+          channels: channels,
+          teamId: teamId,
+        );
+        if (accountLabel != null) {
+          try {
+            await TwistApi.updateTwist(
+              twistInstanceId: twistInstanceId,
+              accountLabel: Value(accountLabel),
+            );
+          } catch (e, t) {
+            log.warning('Failed to apply account label after activation', e, t);
+          }
+        }
+        EditSource._committed = true;
+        await TwistInstance.pull();
+        return CommandMessage('Connection "$name" saved');
+      }
+
       // 0. Save updated metadata (teamId and account_label). Wrapping in
       // Value() so a null teamId is sent to the server as a clear, not
       // omitted — picking "Personal" must move the twist out of any team

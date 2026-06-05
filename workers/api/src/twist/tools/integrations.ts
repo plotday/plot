@@ -2748,6 +2748,12 @@ export class Integrations extends Tool implements IAuth {
       // received a non-refreshable token and 401'd after ~1h. Scoped to the
       // same twist package (twist_id) so connecting one Google account to
       // both Gmail and Calendar (different connectors) stays allowed.
+      //
+      // Only ACTIVE connections count: committed (draft = false) AND has at
+      // least one enabled channel. A committed-but-channel-less orphan (left
+      // behind when a user backs out after OAuth but before picking channels)
+      // must NOT silently block a re-connect of the same account. See
+      // isActiveConnection in active-connection.ts for the shared definition.
       if (!previousActorId) {
         const selfInstance = await this.db
           .selectFrom("twist_instance")
@@ -2761,10 +2767,22 @@ export class Integrations extends Tool implements IAuth {
             .select("tic.twist_instance_id")
             .where("ti.twist_id", "=", selfInstance.twist_id)
             .where("ti.archived_at", "is", null)
+            .where("ti.draft", "=", false) // ignore in-progress (uncommitted) setups
             .where("tic.user_id", "=", contact.user_id)
             .where("tic.provider", "=", tokenInfo.provider)
             .where("tic.actor_id", "=", actor.id)
             .where("tic.twist_instance_id", "!=", this.twistInstanceId)
+            // Only an ACTIVE connection (>=1 enabled channel) blocks a re-connect.
+            // A committed-but-channel-less orphan must not silently block the user.
+            .where((eb) =>
+              eb.exists(
+                eb
+                  .selectFrom("channel as ch")
+                  .select("ch.id")
+                  .whereRef("ch.twist_instance_id", "=", "tic.twist_instance_id")
+                  .where("ch.enabled", "=", true),
+              ),
+            )
             .executeTakeFirst();
           if (duplicate) {
             throw new Error(
