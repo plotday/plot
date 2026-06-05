@@ -3645,10 +3645,37 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
   @override
   Widget build(BuildContext context) {
     final optionalScopes = widget.provider.optionalScopes;
+    final description = widget.provider.description;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (description.isNotEmpty) ...[
+          for (final line in description)
+            Padding(
+              padding: EdgeInsets.only(bottom: context.theme.spacing.xs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '•  ',
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.colors.mutedForeground,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          SizedBox(height: context.theme.spacing.sm),
+        ],
         if (optionalScopes != null && optionalScopes.isNotEmpty) ...[
           for (final group in optionalScopes)
             Padding(

@@ -803,11 +803,15 @@ class TwistIntegrations {
 class TwistProvider extends Equatable {
   final AuthProvider provider;
   final List<String> scopes;
+
+  /// Friendly bullets describing the always-on (required) permissions.
+  final List<String> description;
   final List<OptionalScopeGroup>? optionalScopes;
 
   const TwistProvider({
     required this.provider,
     required this.scopes,
+    this.description = const [],
     this.optionalScopes,
   });
 
@@ -818,6 +822,8 @@ class TwistProvider extends Equatable {
         orElse: () => AuthProvider.other,
       ),
       scopes: (json['scopes'] as List<dynamic>).cast<String>(),
+      description:
+          (json['description'] as List<dynamic>?)?.cast<String>() ?? const [],
       optionalScopes: (json['optionalScopes'] as List<dynamic>?)
           ?.map((g) => OptionalScopeGroup.fromJson(g as Map<String, dynamic>))
           .toList(),
@@ -825,7 +831,7 @@ class TwistProvider extends Equatable {
   }
 
   @override
-  List<Object?> get props => [provider, scopes, optionalScopes];
+  List<Object?> get props => [provider, scopes, description, optionalScopes];
 }
 
 /// A connected account for a twist integration

@@ -1,5 +1,7 @@
 import type { Kysely } from "kysely";
 
+import type { OptionalScopeGroup } from "./auth-scope";
+
 import type { OptionsSchema } from "@plotday/twister/options";
 import type {
   AICapabilities,
@@ -327,14 +329,10 @@ export function collectToolPermissions(
 export type ProviderDeclaration = {
   provider: string;
   scopes: string[];
+  /** Friendly bullets describing the always-on (required) access. */
+  description?: string[];
   /** Optional scope groups the user can toggle before OAuth. */
-  optionalScopes?: Array<{
-    id: string;
-    label: string;
-    description?: string;
-    scopes: string[];
-    default: boolean;
-  }>;
+  optionalScopes?: OptionalScopeGroup[];
 };
 
 /**
@@ -357,7 +355,8 @@ export function mergeProviderDeclarations(
 ): ProviderDeclaration[] {
   const byProvider = new Map<string, {
     scopes: Set<string>;
-    optionalScopes?: ProviderDeclaration["optionalScopes"];
+    description?: string[];
+    optionalScopes?: OptionalScopeGroup[];
   }>();
 
   for (const decl of declarations) {
@@ -368,7 +367,10 @@ export function mergeProviderDeclarations(
     for (const scope of decl.scopes) {
       entry.scopes.add(scope);
     }
-    // First declaration with optionalScopes wins (connector-level)
+    // First declaration with these wins (connector-level).
+    if (decl.description && !entry.description) {
+      entry.description = decl.description;
+    }
     if (decl.optionalScopes && !entry.optionalScopes) {
       entry.optionalScopes = decl.optionalScopes;
     }
@@ -379,6 +381,7 @@ export function mergeProviderDeclarations(
     .map(([provider, entry]) => ({
       provider,
       scopes: Array.from(entry.scopes).sort(),
+      ...(entry.description ? { description: entry.description } : {}),
       ...(entry.optionalScopes ? { optionalScopes: entry.optionalScopes } : {}),
     }));
 }

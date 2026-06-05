@@ -16,6 +16,7 @@ import { checkChannelConnectionLimit, PlanLimitError } from "../utils/limits";
 import { handleValidationError } from "../utils/validation";
 import type { OptionsSchema } from "@plotday/twister/options";
 import { saveSecureOptions } from "../utils/secure-options";
+import { resolveRequestedScopes } from "../twist/tools/auth-scope";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -168,10 +169,14 @@ function createReadOnlyIntegrations(
   twistPackageId: string,
   environment: string
 ): Integrations {
-  // Create stub provider configs (no lifecycle callbacks needed for read-only)
+  // Create stub provider configs (no lifecycle callbacks needed for read-only).
+  // Carry optionalScopes + description so getIntegrationData can surface them
+  // to the connect modal (toggles + permission bullets).
   const providerConfigs = providers.map((p) => ({
     provider: p.provider as any,
     scopes: p.scopes,
+    ...(p.optionalScopes ? { optionalScopes: p.optionalScopes } : {}),
+    ...(p.description ? { description: p.description } : {}),
     getChannels: async () => [],
     onChannelEnabled: async () => {},
     onChannelDisabled: async () => {},
@@ -579,23 +584,15 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     );
   }
 
-  // Resolve final scopes including optional scope groups
-    let finalScopes = [...providerDecl.scopes];
-    const { enabledScopeGroups } = parseResult.data;
-    if (providerDecl.optionalScopes) {
-      for (const group of providerDecl.optionalScopes) {
-        // If client sent explicit selections, use those; otherwise use defaults
-        const isEnabled = enabledScopeGroups
-          ? enabledScopeGroups.includes(group.id)
-          : group.default;
-        if (isEnabled) {
-          finalScopes.push(...group.scopes);
-        }
-      }
-      finalScopes = [...new Set(finalScopes)];
-    }
+  // Resolve final scopes including enabled optional scope groups.
+  const { enabledScopeGroups } = parseResult.data;
+  const finalScopes = resolveRequestedScopes(
+    providerDecl.scopes,
+    providerDecl.optionalScopes,
+    enabledScopeGroups
+  );
 
-    // Create a callback token pointing to the Integrations tool's onAuth method
+  // Create a callback token pointing to the Integrations tool's onAuth method
   const callbacksId = c.env.CALLBACKS.idFromName(twistInstanceId);
   const callbacksStub = c.env.CALLBACKS.get(callbacksId);
   const callback = await callbacksStub.create({
@@ -609,6 +606,7 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   const result = await Integrations.GenerateAuthUrl({
     provider: provider as any,
     scopes: finalScopes,
+    requiredScopes: providerDecl.scopes,
     enabledScopeGroups,
     callback: callback as any,
     redirectUri,
