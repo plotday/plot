@@ -186,18 +186,28 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final sections = <PillGridSection>[];
 
     // 1. People & twists
-    final peopleItems = [
+    final personItems = [
       for (final e in s.people)
         PillGridItem(
           data: e.display,
           onActivate: () => widget.onPickRecipient(e),
         ),
+    ];
+    final twistItems = [
       for (final t in s.twists)
         PillGridItem(
           data: TwistPillData(t),
           onActivate: () => widget.onPickTarget(t),
         ),
     ];
+    // At rest, recently-used people lead. Under an active query, twists go first
+    // so an explicit name search (e.g. "Plot") surfaces the matching twist at the
+    // top instead of being buried below contacts that incidentally match (e.g.
+    // anyone with an @plot.day email).
+    final hasQuery = widget.searchController.text.trim().isNotEmpty;
+    final peopleItems = hasQuery
+        ? [...twistItems, ...personItems]
+        : [...personItems, ...twistItems];
     if (peopleItems.isNotEmpty) {
       sections.add(
         PillGridSection(header: _peopleHeader(), items: peopleItems),
