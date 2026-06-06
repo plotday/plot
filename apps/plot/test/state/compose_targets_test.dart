@@ -861,6 +861,109 @@ void main() {
     });
 
     test(
+        'searchSections(known contact email) surfaces a People entry carrying '
+        'that contact', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      // _insertActor derives the email from the name.
+      final sections = await bloc.searchSections('greg.smith@x.test');
+      // A single People entry resolving the typed address to the known contact,
+      // with no pending invite. The connection is chosen in step 2.
+      expect(sections.people, hasLength(1));
+      final entry = sections.people.single;
+      expect(entry.contacts, [greg]);
+      expect(entry.inviteEmails, isEmpty);
+    });
+
+    test(
+        'searchSections(unseen email) surfaces a People entry carrying a '
+        'pending invite', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.searchSections('new@unseen.com');
+      // An unmatched address becomes a pending invite on the roster (no
+      // contact), so the user can start a thread inviting it.
+      expect(sections.people, hasLength(1));
+      final entry = sections.people.single;
+      expect(entry.contacts, isEmpty);
+      expect(entry.inviteEmails, ['new@unseen.com']);
+    });
+
+    test(
+        'searchSections(multiple addresses) collapses them into one People '
+        'entry mixing known contacts and invites', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      // One known contact + one unseen address, comma-separated.
+      final sections =
+          await bloc.searchSections('greg.smith@x.test, new@unseen.com');
+      expect(sections.people, hasLength(1),
+          reason: 'typed addresses collapse into one ad-hoc roster entry');
+      final entry = sections.people.single;
+      expect(entry.contacts, [greg]);
+      expect(entry.inviteEmails, ['new@unseen.com']);
+    });
+
+    test(
+        'searchSections(twist name) surfaces the twist row even though its '
+        'thread-type label differs from the name', () async {
+      final self = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await Actor.get(self: true);
+
+      // A chat twist whose name is "Plot" but whose thread-type label (the
+      // row's content line, also [ComposeTarget.label]) is "Plot AI chat".
+      await _insertChatTwist(store, name: 'Plot', threadType: 'Plot AI chat');
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      // Typing the twist's NAME must match: the filter checks [twistHeader]
+      // (the name), not just [label] (the thread type).
+      final byName = await bloc.searchSections('Plot');
+      expect(byName.twists.map((t) => t.twistHeader), contains('Plot'),
+          reason: 'a twist must be findable by its name, not only its '
+              'thread-type label');
+
+      // And the existing thread-type match still works.
+      final byType = await bloc.searchSections('AI chat');
+      expect(byType.twists.map((t) => t.twistHeader), contains('Plot'));
+    });
+
+    test(
         'base list has no duplicate signatures or labels; a connector with '
         'multiple bare-roster recent threads collapses to one entry', () async {
       final self = Uuid.generate();
@@ -1118,6 +1221,30 @@ Future<void> _insertTeamUser(
           teamName: Value(name),
         ),
       );
+}
+
+/// Inserts a chat-capable twist instance (not a source/connector, with a
+/// non-empty [threadType]) so it passes the `chatTwists` filter and appears as
+/// a "chat with a twist" row. Returns the twist_instance id.
+Future<Uuid> _insertChatTwist(
+  Store store, {
+  required String name,
+  String threadType = 'AI chat',
+}) async {
+  final instanceId = Uuid.generate();
+  await store.into(store.twistInstances).insert(
+        TwistInstancesCompanion(
+          id: Value(instanceId),
+          twistId: Value(BigInt.from(name.hashCode & 0x7fffffff)),
+          twistEnvironment: const Value('test'),
+          isSource: const Value(false),
+          name: Value(name),
+          threadType: Value(threadType),
+          config: const Value(<String, dynamic>{}),
+        ),
+      );
+  await TwistInstance.get();
+  return instanceId;
 }
 
 /// Inserts a connector connection (twist_instance + one enabled channel whose

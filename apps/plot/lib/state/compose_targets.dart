@@ -738,6 +738,34 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     );
   }
 
+  /// Resolve parsed [recipients] into a single roster: each address matching a
+  /// known inviteable contact joins [contacts]; the rest become pending named
+  /// invites encoded as `"Name <email>"` (see [InviteAddress]). Order follows
+  /// [recipients].
+  Future<({List<Uuid> contacts, List<String> invites})> _resolveRecipientRoster(
+    List<ParsedRecipient> recipients,
+  ) async {
+    final contacts = <Uuid>[];
+    final invites = <String>[];
+    for (final r in recipients) {
+      final actors = await Actor.get(
+        search: r.email,
+        types: const [ActorType.user, ActorType.contact],
+        primary: true,
+        inviteable: true,
+      );
+      final matched = actors
+          .where((a) => (a.email ?? '').toLowerCase() == r.email)
+          .toList();
+      if (matched.isNotEmpty) {
+        contacts.add(matched.first.id.toUuid());
+      } else {
+        invites.add(InviteAddress.format(email: r.email, name: r.name));
+      }
+    }
+    return (contacts: contacts, invites: invites);
+  }
+
   /// Step-1 sections filtered/expanded by [query]. Empty query ->
   /// [loadSections].
   Future<ComposeSections> searchSections(
@@ -749,6 +777,14 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     // Unbounded-ish base, then filter; perSection caps the final output.
     final base = await loadSections(perSection: _kSearchPoolLimit);
     final lower = trimmed.toLowerCase();
+
+    // Email mode: when the query parses to one or more addresses (comma-,
+    // semicolon-, or space-separated), synthesize a single ad-hoc People entry
+    // for the combined roster so the user can start a thread with typed
+    // addresses. Known correspondents join the roster as contacts; unknown
+    // addresses become pending named invites. The connection is chosen in
+    // step 2 ([connectionsForRoster] already carries inviteEmails).
+    final recipients = EmailParser.parseRecipients(trimmed);
 
     bool matchesEntry(ComposePeopleEntry e) {
       final names = <String>[];
@@ -767,11 +803,33 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       return names.any((n) => n.toLowerCase().contains(lower));
     }
 
-    bool matchesTarget(ComposeTarget t) => t.label.toLowerCase().contains(lower);
+    // Twist rows split their identity: [label] is the thread-type content line
+    // ("Plot AI chat") while [twistHeader] holds the twist's name ("Plot"). Match
+    // both so typing a twist's name surfaces it, not just its thread type.
+    bool matchesTarget(ComposeTarget t) =>
+        t.label.toLowerCase().contains(lower) ||
+        (t.twistHeader?.toLowerCase().contains(lower) ?? false);
 
     final people = <ComposePeopleEntry>[];
     final seenRosters = <String>{};
+
+    // Surface the typed-address roster first, above name matches.
+    if (recipients.isNotEmpty) {
+      final resolved = await _resolveRecipientRoster(recipients);
+      final entry = _peopleEntryFor((
+        contacts: resolved.contacts,
+        groups: const [],
+        inviteEmails: resolved.invites,
+      ));
+      if (entry != null &&
+          seenRosters.add(
+              _rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+        people.add(entry);
+      }
+    }
+
     for (final e in base.people) {
+      if (people.length >= perSection) break;
       if (matchesEntry(e) &&
           seenRosters.add(_rosterKey(e.contacts, e.groups, e.inviteEmails))) {
         people.add(e);
@@ -1028,24 +1086,9 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   ) async {
     final ctx = await _searchContextFor();
 
-    final contactIds = <Uuid>[];
-    final invites = <String>[];
-    for (final r in recipients) {
-      final actors = await Actor.get(
-        search: r.email,
-        types: const [ActorType.user, ActorType.contact],
-        primary: true,
-        inviteable: true,
-      );
-      final matched = actors
-          .where((a) => (a.email ?? '').toLowerCase() == r.email)
-          .toList();
-      if (matched.isNotEmpty) {
-        contactIds.add(matched.first.id.toUuid());
-      } else {
-        invites.add(InviteAddress.format(email: r.email, name: r.name));
-      }
-    }
+    final resolved = await _resolveRecipientRoster(recipients);
+    final contactIds = resolved.contacts;
+    final invites = resolved.invites;
 
     // 1. Plot Chat options (Personal + each active team), pinned to the top.
     final teamScopes = <BigInt?>[null, ...ctx.teams.map((t) => t.teamId)];
