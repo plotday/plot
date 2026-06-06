@@ -58,8 +58,8 @@ class AdHocGroupPillData extends ComposePillData {
   final List<String> inviteEmails;
 }
 
-/// A non-connection twist (assistant): logo + name. Muted (reads as secondary
-/// to people in the same section).
+/// A non-connection twist (assistant): logo + name, in the same name colour as
+/// the contact rows it shares the section with.
 class TwistPillData extends ComposePillData {
   const TwistPillData(this.target);
   final ComposeTarget target; // kind == twist
@@ -217,7 +217,7 @@ class ComposePill extends StatelessWidget {
                   target.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: nameStyle.copyWith(color: colors.mutedForeground),
+                  style: nameStyle,
                 ),
               ),
             ],
