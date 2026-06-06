@@ -1408,7 +1408,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             builder: (context, stackLength, _) {
                               final nested = stackLength > 1;
                               if (!nested && widget.title == null) {
-                                return const SizedBox.shrink();
+                                // Top-level, header-less list (e.g. the mobile
+                                // "More" menu with no filter bar). Reserve top
+                                // space so the floating close button rendered
+                                // by [Modal] doesn't overlap the first row.
+                                return const SizedBox(
+                                  height: modalCloseButtonReservedHeight,
+                                );
                               }
                               return Padding(
                                 // Reserve room on the right for the floating

@@ -17,6 +17,12 @@ import 'package:plot/widget/toast.dart';
 /// their top row so the X doesn't visually collide with their content.
 const double modalCloseButtonReservedWidth = 40;
 
+/// Reserved vertical space (px) at the top of a modal whose content has no
+/// header row to absorb the floating close button (e.g. a header-less select
+/// list shown as a mobile bottom sheet). Reserve this as top space so the X
+/// doesn't overlap the first row.
+const double modalCloseButtonReservedHeight = 40;
+
 class Modal extends StatelessWidget {
   const Modal({
     required this.builder,
@@ -37,8 +43,10 @@ class Modal extends StatelessWidget {
   final EdgeInsets padding;
 
   /// Whether this modal should show the floating close (X) button in the
-  /// top-right corner when rendered as a dialog (multi-panel) at the top of
-  /// the modal stack. Bottom sheets and nested modals never show it.
+  /// top-right corner when it is the top of the modal stack. Shown on both
+  /// dialogs (multi-panel) and bottom sheets (single-panel) so every
+  /// top-level modal has an explicit close affordance. Nested modals never
+  /// show it — they render their own back button instead.
   final bool showCloseButton;
 
   Future<Value<T>> show<T>(BuildContext context) {
@@ -197,15 +205,15 @@ class Modal extends StatelessWidget {
 }
 
 /// Floating close (X) button rendered by [Modal] in the top-right corner.
-/// Only visible when the modal is the top of the stack and rendered as a
-/// dialog (multi-panel). Nested modals show their own back button; bottom
-/// sheets dismiss via swipe.
+/// Visible when the modal is the top of the stack, on both dialogs
+/// (multi-panel) and bottom sheets (single-panel) — every top-level modal
+/// gets an explicit close affordance, in addition to swipe-to-dismiss on
+/// sheets. Nested modals show their own back button instead.
 class _ModalCloseButton extends StatelessWidget {
   const _ModalCloseButton();
 
   @override
   Widget build(BuildContext context) {
-    if (!context.isMultiPanel) return const SizedBox.shrink();
     return ValueListenableBuilder<int>(
       valueListenable: ModalProvider.of(context).modalStackNotifier,
       builder: (context, stackLength, _) {
