@@ -133,27 +133,27 @@ export abstract class Network extends ITool {
    *
    * **Provider-Specific Behavior:**
    * - **Slack**: Uses provider-specific routing via team_id. Requires `authorization` parameter.
-   * - **Gmail** (Google with Gmail scopes): Returns a Google Pub/Sub topic name instead of a webhook URL.
-   *   The topic name (e.g., "projects/plot-prod/topics/gmail-webhook-abc123") should be passed
-   *   to the Gmail API's `users.watch` endpoint. Requires `authorization` parameter with Gmail scopes.
-   * - **Pub/Sub** (`pubsub: true`): Returns a Google Pub/Sub topic name instead of a webhook URL.
-   *   Use this for services that deliver events via Pub/Sub (e.g., Google Workspace Events API).
-   *   A Pub/Sub topic and push subscription are created automatically; the returned topic name
-   *   can be passed to any Google API that accepts a Pub/Sub notification endpoint.
+   * - **Pub/Sub** (`pubsub: "gmail" | "workspace"`): Returns a Google Pub/Sub topic name instead
+   *   of a webhook URL. `"gmail"` targets Gmail `users.watch` (set this only on the Gmail
+   *   connector); `"workspace"` targets Google Workspace Events (Chat, etc.). A Pub/Sub topic and
+   *   push subscription are created automatically; the returned topic name (e.g.
+   *   "projects/plot-prod/topics/gmail-abc123") is passed to the relevant Google API. Other Google
+   *   connectors (Calendar, Drive) omit `pubsub` and use the default HTTPS webhook.
    * - **Default**: Returns a standard webhook URL for all other cases.
    *
    * @param options - Webhook creation options
    * @param options.provider - Optional provider for provider-specific webhook routing
-   * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack and Gmail)
+   * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack)
+   * @param options.pubsub - Optional Google Pub/Sub push product ("gmail" | "workspace")
    * @param callback - Function receiving (request, ...extraArgs)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
-   * @returns Promise resolving to the webhook URL, or for Gmail/Pub/Sub, a Pub/Sub topic name
+   * @returns Promise resolving to the webhook URL, or for Pub/Sub, a Pub/Sub topic name
    *
    * @example
    * ```typescript
-   * // Pub/Sub webhook for Workspace Events API
+   * // Pub/Sub webhook for Workspace Events API (Chat, etc.)
    * const topicName = await this.tools.network.createWebhook(
-   *   { pubsub: true },
+   *   { pubsub: "workspace" },
    *   this.onEventReceived,
    *   channelId
    * );
@@ -165,9 +165,9 @@ export abstract class Network extends ITool {
    *
    * @example
    * ```typescript
-   * // Gmail webhook - auto-detected from scopes, returns Pub/Sub topic name
+   * // Gmail webhook - returns a Gmail Pub/Sub topic name for users.watch
    * const topicName = await this.tools.network.createWebhook(
-   *   {},
+   *   { pubsub: "gmail" },
    *   this.onGmailNotification,
    *   "inbox"
    * );
@@ -180,8 +180,20 @@ export abstract class Network extends ITool {
     options: {
       provider?: AuthProvider;
       authorization?: Authorization;
-      /** When true, creates a Google Pub/Sub topic instead of a webhook URL. */
-      pubsub?: boolean;
+      /**
+       * Create a Google Pub/Sub topic instead of a webhook URL, and return
+       * the topic name. Selects the push product:
+       *
+       * - `"gmail"` — Gmail `users.watch` (topic published to by
+       *   `gmail-api-push`). Set this only on the Gmail connector.
+       * - `"workspace"` — Google Workspace Events (Chat, etc.).
+       *
+       * This opt-in must be explicit. Other Google connectors (Calendar,
+       * Drive) omit it and receive a standard HTTPS webhook URL — they must
+       * never be routed to a Pub/Sub topic, which `events.watch` /
+       * `files.watch` reject as non-HTTPS.
+       */
+      pubsub?: "gmail" | "workspace";
       /**
        * Controls whether the returned webhook URL runs callbacks synchronously
        * or asynchronously.
