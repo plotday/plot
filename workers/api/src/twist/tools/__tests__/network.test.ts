@@ -135,6 +135,88 @@ describe("Network", () => {
     });
   });
 
+  describe("createWebhook Gmail routing", () => {
+    const makeNetwork = (opts: { store?: any; env?: any }) => {
+      const mockCallbacksStub = {
+        create: vi.fn().mockResolvedValue("doid:cb_token"),
+      };
+      const mockCallbacksNamespace = {
+        idFromName: vi.fn(() => "mock-id"),
+        get: vi.fn(() => mockCallbacksStub),
+      } as any;
+      return new Network({
+        callbacks: mockCallbacksNamespace,
+        twistInstanceId: "pa-1",
+        twistId: "test-twist",
+        environment: "personal",
+        baseUrl: "https://api.plot.com",
+        path: ["Tool1", "Network"],
+        store: opts.store,
+        env: opts.env,
+      });
+    };
+
+    // A store holding a Gmail-scoped Google auth token, as it would when the
+    // user also has the Gmail connector installed on the same Google account.
+    const gmailScopedStore = () => ({
+      list: vi.fn(async (prefix: string) =>
+        prefix === "auth_token:google:" ? ["auth_token:google:actor-1"] : []
+      ),
+      get: vi.fn(async () => ({
+        scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+      })),
+    });
+
+    const emptyStore = () => ({
+      list: vi.fn(async () => [] as string[]),
+      get: vi.fn(async () => null),
+    });
+
+    it("does NOT route a provider-less webhook (calendar/drive) to Gmail Pub/Sub even when a Gmail-scoped Google token exists", async () => {
+      const network = makeNetwork({
+        store: gmailScopedStore(),
+        // Only GCP_PROJECT_ID is set. If the call wrongly took the Gmail
+        // Pub/Sub path it would throw "GCP configuration missing"; the
+        // default HTTPS path ignores GCP config and returns a webhook URL.
+        env: { GCP_PROJECT_ID: "plot-test" } as any,
+      });
+
+      const callback = async function onCalendarWebhook(_r: any) {};
+      const url = await network.createWebhook({}, callback);
+
+      expect(url).toContain("https://api.plot.com/hook/");
+    });
+
+    it("routes to Gmail Pub/Sub only when the caller explicitly opts in with { pubsub: 'gmail' }", async () => {
+      const network = makeNetwork({
+        store: emptyStore(),
+        env: { GCP_PROJECT_ID: "plot-test" } as any,
+      });
+
+      const callback = async function onGmailWebhook(_r: any) {};
+
+      // The Pub/Sub path requires full GCP config; with only GCP_PROJECT_ID
+      // set it throws — proving the Pub/Sub branch was taken. The default
+      // HTTPS path would have returned a URL without touching GCP config.
+      await expect(
+        network.createWebhook({ pubsub: "gmail" }, callback)
+      ).rejects.toThrow("GCP configuration missing");
+    });
+
+    it("routes { pubsub: 'workspace' } to the Pub/Sub path", async () => {
+      const network = makeNetwork({
+        store: emptyStore(),
+        env: { GCP_PROJECT_ID: "plot-test" } as any,
+      });
+
+      const callback = async function onChatWebhook(_r: any) {};
+
+      await expect(
+        network.createWebhook({ pubsub: "workspace" }, callback)
+      ).rejects.toThrow("GCP configuration missing");
+    });
+  });
+
   describe("PATH constant", () => {
     it("should have correct webhook path", () => {
       expect(Network.PATH).toBe("/hook/:token");

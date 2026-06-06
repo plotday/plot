@@ -275,18 +275,44 @@ export class Network extends Tool implements INetwork {
   }
 
   /**
-   * Creates a Gmail-specific webhook using Google Pub/Sub.
-   * Each webhook gets its own dedicated Pub/Sub topic and push subscription.
-   *
-   * @returns Pub/Sub topic name (e.g., "projects/plot-prod/topics/gmail-webhook-abc123")
-   *          instead of a webhook URL
+   * Per-variant configuration for the two Google Pub/Sub push products we
+   * support. Gmail (`users.watch`) and Google Workspace Events (Chat, etc.)
+   * are distinct: each requires its own publisher service account, ingress
+   * route, and topic-name prefix, and the gmail route decodes a different
+   * message envelope than the workspace route. The topic prefix is also load
+   * bearing — `deleteWebhook` and the `/hook/*` handlers key off it.
    */
-  private async createGmailWebhook(
-    scopes: string[],
+  private static readonly PUBSUB_VARIANTS = {
+    gmail: {
+      topicPrefix: "gmail",
+      // Gmail's users.watch() sends a verification publish from this account,
+      // so the topic must grant it publish access or the watch is rejected.
+      publisher: "gmail-api-push@system.gserviceaccount.com",
+      route: "gmail",
+      label: "Gmail",
+    },
+    // Google Workspace Events service agent (Chat, etc.).
+    workspace: {
+      topicPrefix: "ps",
+      publisher: "chat-api-push@system.gserviceaccount.com",
+      route: "pubsub",
+      label: "Pub/Sub",
+    },
+  } as const;
+
+  /**
+   * Creates a Google Pub/Sub-backed webhook for the given push product.
+   * Each webhook gets its own dedicated Pub/Sub topic and push subscription,
+   * and the call returns the topic name (e.g.
+   * "projects/plot-prod/topics/gmail-abc123") to hand to the relevant Google
+   * API (`users.watch`, Workspace Events `createSubscription`) instead of a
+   * webhook URL.
+   */
+  private async createGooglePubSubWebhook(
+    variant: "gmail" | "workspace",
     callbackFunctionName: string,
     extraArgs?: any[]
   ): Promise<string> {
-    // Get GCP configuration from environment
     if (
       !this.env?.GCP_PROJECT_ID ||
       !this.env?.GCP_SERVICE_ACCOUNT_EMAIL ||
@@ -297,6 +323,9 @@ export class Network extends Tool implements INetwork {
       );
     }
 
+    const { topicPrefix, publisher, route, label } =
+      Network.PUBSUB_VARIANTS[variant];
+
     const pubsubConfig = {
       projectId: this.env.GCP_PROJECT_ID,
       serviceAccountEmail: this.env.GCP_SERVICE_ACCOUNT_EMAIL,
@@ -304,39 +333,29 @@ export class Network extends Tool implements INetwork {
     };
 
     try {
-      // First, create the callback to get a token
-      // Use standard callback creation with twistInstanceId for DO sharding
       const callbackToken = await this.callbacks!.create({
         twistInstanceId: this.twistInstanceId!,
         path: this.path!,
         functionName: callbackFunctionName,
         extraArgs,
-        meta: {
-          scopes,
-          provider: AuthProvider.Google,
-        },
+        ...(variant === "gmail"
+          ? { meta: { scopes: GMAIL_SCOPES, provider: AuthProvider.Google } }
+          : {}),
       });
 
-      // Encode the callback token into the topic ID
-      // This allows us to decode the token when receiving Pub/Sub messages.
-      // Callback tokens use ":" as a separator (doId:token) which is invalid
-      // in Pub/Sub topic names. Replace with "." for topic name safety.
-      const topicId = `gmail-${callbackToken.replaceAll(":", ".")}`;
-
-      // Create Pub/Sub topic with the encoded token
+      // Encode the callback token into the topic ID so we can decode it when
+      // receiving Pub/Sub messages. Callback tokens use ":" as a separator
+      // (doId:token), which is invalid in Pub/Sub topic names — replace with
+      // "." (valid in topic names, absent from callback tokens).
+      const topicId = `${topicPrefix}-${callbackToken.replaceAll(":", ".")}`;
       const topicName = await createTopic(pubsubConfig, topicId);
 
-      // Grant Gmail's push service account publish access to the topic.
-      // Gmail's users.watch() sends a test message to verify access.
-      await grantTopicPublisher(
-        pubsubConfig,
-        topicName,
-        "gmail-api-push@system.gserviceaccount.com"
-      );
+      await grantTopicPublisher(pubsubConfig, topicName, publisher);
 
-      // Create Push subscription pointing to our webhook endpoint
-      // The endpoint URL includes the topic ID (which contains the token)
-      const pushEndpoint = `${this.baseUrl}/hook/gmail/${topicId}`;
+      // Push subscription endpoint includes the topic ID (which carries the
+      // token). The route differs per product so each envelope is decoded by
+      // the matching /hook handler.
+      const pushEndpoint = `${this.baseUrl}/hook/${route}/${topicId}`;
       await createPushSubscription(pubsubConfig, {
         topicName,
         subscriptionName: topicId, // Use same ID for subscription
@@ -345,80 +364,11 @@ export class Network extends Tool implements INetwork {
         audience: this.env!.GCP_PROJECT_ID,
       });
 
-      // Return Pub/Sub topic name (NOT a webhook URL)
+      // Return the Pub/Sub topic name (NOT a webhook URL).
       return topicName;
     } catch (error) {
       throw new Error(
-        `Failed to create Gmail webhook: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  }
-
-  /**
-   * Creates a generic Pub/Sub-backed webhook.
-   * Each webhook gets its own dedicated Pub/Sub topic and push subscription.
-   * Used when connectors explicitly request `pubsub: true`.
-   *
-   * @returns Pub/Sub topic name (e.g., "projects/plot-prod/topics/ps-abc123")
-   */
-  private async createPubSubWebhook(
-    callbackFunctionName: string,
-    extraArgs?: any[]
-  ): Promise<string> {
-    if (
-      !this.env?.GCP_PROJECT_ID ||
-      !this.env?.GCP_SERVICE_ACCOUNT_EMAIL ||
-      !this.env?.GCP_SERVICE_ACCOUNT_KEY
-    ) {
-      throw new Error(
-        "GCP configuration missing. Required: GCP_PROJECT_ID, GCP_SERVICE_ACCOUNT_EMAIL, GCP_SERVICE_ACCOUNT_KEY"
-      );
-    }
-
-    const pubsubConfig = {
-      projectId: this.env.GCP_PROJECT_ID,
-      serviceAccountEmail: this.env.GCP_SERVICE_ACCOUNT_EMAIL,
-      serviceAccountKey: this.env.GCP_SERVICE_ACCOUNT_KEY,
-    };
-
-    try {
-      const callbackToken = await this.callbacks!.create({
-        twistInstanceId: this.twistInstanceId!,
-        path: this.path!,
-        functionName: callbackFunctionName,
-        extraArgs,
-      });
-
-      // Callback tokens use ":" as a separator (doId:token) which is invalid
-      // in Pub/Sub topic names. Replace with "." which is valid in topic names
-      // but doesn't appear in callback tokens (hex DO ID + base64url token).
-      const topicId = `ps-${callbackToken.replaceAll(":", ".")}`;
-      const topicName = await createTopic(pubsubConfig, topicId);
-
-      // Grant the Google Workspace Events service agent publish access.
-      // All Pub/Sub webhooks are for Google Workspace services (Chat, etc.)
-      // that need to publish events to the topic.
-      await grantTopicPublisher(
-        pubsubConfig,
-        topicName,
-        "chat-api-push@system.gserviceaccount.com"
-      );
-
-      const pushEndpoint = `${this.baseUrl}/hook/pubsub/${topicId}`;
-      await createPushSubscription(pubsubConfig, {
-        topicName,
-        subscriptionName: topicId,
-        pushEndpoint,
-        oidcServiceAccountEmail: pubsubConfig.serviceAccountEmail,
-        audience: this.env!.GCP_PROJECT_ID,
-      });
-
-      return topicName;
-    } catch (error) {
-      throw new Error(
-        `Failed to create Pub/Sub webhook: ${
+        `Failed to create ${label} webhook: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -429,7 +379,12 @@ export class Network extends Tool implements INetwork {
     options: {
       provider?: AuthProvider;
       authorization?: Authorization;
-      pubsub?: boolean;
+      /**
+       * Create a Google Pub/Sub topic instead of a webhook URL, and return
+       * the topic name. Selects the push product: "gmail" (Gmail
+       * `users.watch`) or "workspace" (Google Workspace Events — Chat, etc.).
+       */
+      pubsub?: "gmail" | "workspace";
       async?: boolean;
     },
     callback: TCallback,
@@ -459,9 +414,18 @@ export class Network extends Tool implements INetwork {
       );
     }
 
-    // Handle explicit Pub/Sub webhook request (connector opt-in)
+    // Handle explicit Google Pub/Sub webhook request (connector opt-in).
+    // `pubsub` selects the push product: "gmail" (users.watch) or "workspace"
+    // (Workspace Events — Chat, etc.). This opt-in must be explicit: a
+    // provider-less webhook for another Google service (Calendar, Drive) must
+    // never be routed to a Pub/Sub topic, which events.watch / files.watch
+    // reject as "WebHook callback must be HTTPS".
     if (options.pubsub && this.env?.GCP_PROJECT_ID) {
-      return this.createPubSubWebhook(callbackFunctionName, extraArgs);
+      return this.createGooglePubSubWebhook(
+        options.pubsub === "gmail" ? "gmail" : "workspace",
+        callbackFunctionName,
+        extraArgs
+      );
     }
 
     // Handle provider-specific webhook creation
@@ -476,42 +440,6 @@ export class Network extends Tool implements INetwork {
         callbackFunctionName,
         extraArgs
       );
-    }
-
-    // Handle Gmail webhooks (Google provider with Gmail scopes)
-    // Supports both explicit provider/authorization and auto-detection from stored auth
-    if (this.store && this.env?.GCP_PROJECT_ID) {
-      let gmailScopes: string[] | null = null;
-
-      if (provider === AuthProvider.Google && authorization) {
-        // Explicit authorization: look up scopes from stored token
-        const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
-        const tokenData = await this.store.get<{ scopes: string[] }>(tokenKey);
-        if (tokenData) {
-          const scopes = tokenData.scopes || [];
-          if (scopes.some((scope) => GMAIL_SCOPES.includes(scope))) {
-            gmailScopes = scopes;
-          }
-        }
-      } else if (!provider) {
-        // Auto-detect: scan store for any Google auth token with Gmail scopes
-        const googleAuthKeys = await this.store.list("auth_token:google:");
-        for (const key of googleAuthKeys) {
-          const tokenData = await this.store.get<{ scopes: string[] }>(key);
-          if (tokenData?.scopes?.some((s) => GMAIL_SCOPES.includes(s))) {
-            gmailScopes = tokenData.scopes;
-            break;
-          }
-        }
-      }
-
-      if (gmailScopes) {
-        return this.createGmailWebhook(
-          gmailScopes,
-          callbackFunctionName,
-          extraArgs
-        );
-      }
     }
 
     // Default webhook creation for non-provider-specific webhooks.
