@@ -19,7 +19,7 @@ import 'package:plot/state/agenda_model.dart';
 import 'package:plot/store/store.dart' hide PriorityBlock;
 // Bring the timeline class in under an alias for the few places we
 // need to construct/save one.
-import 'package:plot/store/store.dart' as store show PriorityBlock;
+import 'package:plot/store/store.dart' as store show PriorityBlock, Link;
 
 // Re-export the agenda atom types so existing consumers that import
 // `package:plot/state/priority.dart` still see them after their move
@@ -941,11 +941,21 @@ class PriorityBloc extends Cubit<PriorityState> {
         assigneeFilter: assigneeFilter,
         search: search,
         limit: _activityFeedLimit,
-      ).listen((result) {
+      ).listen((result) async {
         if (isClosed) return;
         _activeTabHead = result.threads;
         _activeTabHeadSaturated = result.saturated;
         _allTabHeadTailCursor = result.tailCursor;
+        // Warm the channel-breadcrumb links for these threads before the feed
+        // swaps in, so rows don't render headerless for a frame mid-switch.
+        // Mark `received` only after priming (gating adjacent rebuilds off the
+        // cold cache); a prime failure must not wedge the feed, so proceed.
+        try {
+          await store.Link.primeForThreads(result.threads.map((t) => t.id));
+        } catch (e, st) {
+          Tracker.captureException(e, st);
+        }
+        if (isClosed) return;
         _activeTabHeadReceived = true;
         _rebuildActiveTabSection();
       });
@@ -1020,11 +1030,21 @@ class PriorityBloc extends Cubit<PriorityState> {
           doneSaturated: done.saturated,
         );
       },
-    ).listen((result) {
+    ).listen((result) async {
       if (isClosed) return;
       _activeTabHead = result.threads;
       _activeTabHeadSaturated = result.doneSaturated;
       _doneHeadTailCursor = result.doneCursor;
+      // Warm the channel-breadcrumb links for these threads before the feed
+      // swaps in, so rows don't render headerless for a frame mid-switch.
+      // Mark `received` only after priming (gating adjacent rebuilds off the
+      // cold cache); a prime failure must not wedge the feed, so proceed.
+      try {
+        await store.Link.primeForThreads(result.threads.map((t) => t.id));
+      } catch (e, st) {
+        Tracker.captureException(e, st);
+      }
+      if (isClosed) return;
       _activeTabHeadReceived = true;
       _rebuildActiveTabSection();
     });
@@ -1078,6 +1098,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     byTab[tab] = ActivityFeedTabData(
       items: items,
       everythingFeed: everythingFeed,
+      context: state.context,
     );
     emit(
       state.copyWith(

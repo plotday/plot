@@ -397,6 +397,53 @@ class LinksBase extends BaseTable {
 }
 
 class Link extends Equatable {
+  /// Synchronous per-thread links cache, keyed by thread id. Populated by
+  /// [watchForThread] emissions and bulk-warmed by [primeForThreads] so a
+  /// freshly-built [ThreadWidget] can seed its `_links` on first paint —
+  /// otherwise the channel breadcrumb header (which is derived from the
+  /// primary link's sharing model) is absent for the frame or two until the
+  /// per-row Drift watch fires, popping the header in mid-transition. An
+  /// empty list is a cached "no links" answer (distinct from a missing key).
+  static final Map<ThreadId, List<Link>> _byThreadCache = {};
+
+  /// The cached links for [threadId], or null when the thread has never been
+  /// watched or primed. Callers seed first-paint state from this and rely on
+  /// their own [watchForThread] subscription to keep it live afterwards.
+  static List<Link>? cachedForThread(ThreadId threadId) =>
+      _byThreadCache[threadId];
+
+  /// Drop the synchronous links cache. Called on sign-out so a different user
+  /// on the same device never seeds rows from the previous user's links.
+  static void clearCache() {
+    _byThreadCache.clear();
+  }
+
+  /// Bulk-warm [_byThreadCache] for [threadIds] in a single query so the next
+  /// feed render has channel breadcrumbs ready. Only thread ids missing from
+  /// the cache are queried — already-watched rows keep themselves live via
+  /// [watchForThread], so re-priming them would be wasted work on incremental
+  /// feed updates. Threads with no links are cached as empty lists so they're
+  /// not re-queried on every rebuild.
+  static Future<void> primeForThreads(Iterable<ThreadId> threadIds) async {
+    final missing = <ThreadId>[
+      for (final id in threadIds)
+        if (!_byThreadCache.containsKey(id)) id,
+    ];
+    if (missing.isEmpty) return;
+    final rows = await (Store.get.select(Store.get.links)
+          ..where((l) => l.threadId.isIn(missing.map((i) => i.toBytes()))))
+        .get();
+    final grouped = <ThreadId, List<Link>>{};
+    for (final row in rows) {
+      final tid = row.threadId;
+      if (tid == null) continue;
+      (grouped[tid] ??= []).add(Link(row));
+    }
+    for (final id in missing) {
+      _byThreadCache[id] = grouped[id] ?? const [];
+    }
+  }
+
   static Future<void> pull() async {
     await Store.get.pull(Store.get.links, LinksBase());
   }
@@ -639,7 +686,13 @@ class Link extends Equatable {
     return (db.select(db.links)
           ..where((l) => l.threadId.equals(threadId.toBytes())))
         .watch()
-        .map((rows) => rows.map(Link.new).toList());
+        .map((rows) {
+          final links = rows.map(Link.new).toList();
+          // Keep the synchronous cache live for this thread so a later
+          // remount seeds the correct channel breadcrumb on first paint.
+          _byThreadCache[threadId] = links;
+          return links;
+        });
   }
 
   @override

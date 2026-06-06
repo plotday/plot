@@ -241,4 +241,45 @@ void main() {
       expect(state.activeTabEverythingFeed, isFalse);
     });
   });
+
+  // The per-row focus label keys on `activeTabContext` (the context the
+  // displayed items were built for), not the live `context`, so the previous
+  // focus's kept rows don't flash the previous focus's label during a switch.
+  group('PriorityState.activeTabContext', () {
+    test(
+        'follows the active tab data, not the live context (no focus label '
+        'flash on kept rows mid-switch)', () {
+      final previousFocus = _testPriority();
+      final newFocus = _testPriority();
+      final thread = Thread(priority: previousFocus, title: 'Kept item');
+
+      // The exact frame between setPriority(newFocus) and the feed rebuilding:
+      // the live context has flipped to newFocus, but the active tab still
+      // holds the previous focus's items (built under previousFocus).
+      final state = _stateWith(
+        priority: newFocus,
+        agendaItems: const [],
+        activityFeedByTab: {
+          ActivityTab.catchUp: ActivityFeedTabData(
+            items: [AgendaThreadItem(thread)],
+            context: previousFocus,
+          ),
+        },
+      );
+
+      expect(state.context.id, newFocus.id);
+      expect(
+        state.activeTabContext?.id,
+        previousFocus.id,
+        reason: 'the kept rows must compare against the context they were '
+            'built for so they keep their pre-switch appearance',
+      );
+    });
+
+    test('null when the active tab has no data yet', () {
+      final priority = _testPriority();
+      final state = _stateWith(priority: priority, agendaItems: const []);
+      expect(state.activeTabContext, isNull);
+    });
+  });
 }

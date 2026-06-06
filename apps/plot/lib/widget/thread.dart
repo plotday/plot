@@ -105,6 +105,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   @override
   void initState() {
     super.initState();
+    // Seed from the synchronous links cache so the channel breadcrumb header
+    // is present on first paint instead of popping in a frame or two later
+    // (jank when switching focuses). The subscription below keeps it live.
+    _links = Link.cachedForThread(activity.id) ?? const [];
     _subscribeLinks();
     _loadOtherActors();
   }
@@ -143,7 +147,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void didUpdateWidget(covariant ThreadWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activity.id != widget.activity.id) {
-      _links = const [];
+      // Re-seed from cache rather than blanking, so a recycled row keeps its
+      // channel breadcrumb on the first frame after the id changes.
+      _links = Link.cachedForThread(widget.activity.id) ?? const [];
       _otherActors = const {};
       _otherContactsKey = null;
       _subscribeLinks();

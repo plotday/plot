@@ -1352,7 +1352,12 @@ class _PriorityPageState extends State<PriorityPage>
                       state.thread != null && baseThread.id == state.thread!.id,
                   now: agendaActivity.now,
                   focusNode: focusNode,
-                  priorityContext: state.context,
+                  // Use the context the displayed items were built for (not the
+                  // live one) so the per-row focus label stays consistent with
+                  // the rows during a focus switch — the previous focus's kept
+                  // rows must not flash the previous focus's label before they
+                  // swap out. Drag (below) still targets the live context.
+                  priorityContext: state.activeTabContext ?? state.context,
                   isAssociated: agendaActivity.isAssociated,
                 );
                 if (agendaActivity.pinned) {

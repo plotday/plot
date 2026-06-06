@@ -189,6 +189,13 @@ class PriorityState extends Equatable {
   bool get activeTabEverythingFeed =>
       activityFeedByTab[activeTab]?.everythingFeed ?? false;
 
+  /// The priority context the active tab's currently-displayed items were
+  /// built for. Used for the per-row sub-priority (focus) label so it never
+  /// disagrees with the items during a focus switch (the previous focus's
+  /// rows are kept until the new feed rebuilds). Null until the first feed
+  /// build — callers fall back to the live [context].
+  Priority? get activeTabContext => activityFeedByTab[activeTab]?.context;
+
   final bool activityFeedDoneEnd;
   final bool activityFeedLoaded;
 

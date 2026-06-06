@@ -179,9 +179,24 @@ String relativeDateLabel(Date date) {
 /// Per-feed build output. Kept for callers that still expect a typed
 /// container; mirrors the pre-tab and tab-era shape.
 class ActivityFeedTabData {
-  const ActivityFeedTabData({required this.items, this.everythingFeed = false});
+  const ActivityFeedTabData({
+    required this.items,
+    this.everythingFeed = false,
+    this.context,
+  });
 
   final List<AgendaItem> items;
+
+  /// The priority context these items were built for. The page compares each
+  /// row's filed priority against THIS (via [PriorityState.activeTabContext])
+  /// — not the live `state.context` — to decide whether to show the per-row
+  /// sub-priority (focus) label. During a focus switch the previous focus's
+  /// items are deliberately kept on screen until the new feed rebuilds; if the
+  /// label keyed on the live context, those kept rows would briefly sprout the
+  /// previous focus's label (their filed priority no longer matches the new
+  /// context) for the frame before they swap out. Keeping the comparison on
+  /// the build-time context keeps header and items in the same generation.
+  final Priority? context;
 
   /// True when these items were built for the dedicated (non-search,
   /// non-filter) "Everything" feed — i.e. the unsectioned cross-focus list
