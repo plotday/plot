@@ -5,8 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/analytics/tracker.dart';
-import 'package:plot/command/command.dart'
-    show BuildContextCommandExtension, ManageConnections;
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/store/store.dart' show Priority, Uuid;
 import 'package:plot/style/spacing.dart';
@@ -287,49 +285,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     );
   }
 
-  // ─── Connections footer ────────────────────────────────────────────────────
-
-  /// Opens the connections manager.
-  void _runManageConnections() {
-    final runner = context;
-    unawaited(() async {
-      try {
-        await runner.run(ManageConnections());
-      } catch (e, s) {
-        Tracker.captureException(e, s);
-      }
-    }());
-  }
-
-  Widget _buildAddConnectionFooter(BuildContext context) {
-    final colors = context.theme.colors;
-    final spacing = context.theme.spacing;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _runManageConnections,
-      child: Padding(
-        padding: EdgeInsets.only(top: spacing.sm, bottom: spacing.md),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PlotIcon.add,
-              size: 13,
-              color: colors.mutedForeground.withValues(alpha: 0.6),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              'Add a connection…',
-              style: context.theme.typography.xs.copyWith(
-                color: colors.mutedForeground.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ─── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -366,7 +321,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
                   scrollController: widget.scrollController,
                 ),
         ),
-        _buildAddConnectionFooter(context),
       ],
     );
   }

@@ -13,6 +13,22 @@ import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/priority.dart';
 
+// ─── Layout constants ────────────────────────────────────────────────────────
+
+/// Fixed leading-glyph gutter shared by every pill variant. Sized to the widest
+/// glyph (the 24px avatar / count badge); narrower glyphs — logos, focus and
+/// twist icons — are centred within it, so every row's name starts at the same
+/// x and the glyphs line up on a single vertical centreline.
+const double composePillGutter = 24;
+
+/// Gap between the leading-glyph gutter and the name.
+const double composePillIconGap = 8;
+
+/// Size of the smaller leading glyphs — connector/twist logos and focus icons.
+/// Matches the thread list's logo size, sitting centred within the wider
+/// [composePillGutter] (which is sized to the 24px avatars / count badges).
+const double composePillLogoSize = 16;
+
 // ─── Data model ──────────────────────────────────────────────────────────────
 
 /// What a [ComposePill] renders. Sealed so the widget switches exhaustively.
@@ -122,8 +138,8 @@ class ComposePill extends StatelessWidget {
     return switch (data) {
       ContactPillData(:final actor) => Row(
           children: [
-            Avatar(actor: actor, size: 24, tooltip: false),
-            const SizedBox(width: 8),
+            _gutter(Avatar(actor: actor, size: 24, tooltip: false)),
+            const SizedBox(width: composePillIconGap),
             Expanded(
               child: _nameMetaLine(
                 name: actor.nameOrEmail,
@@ -137,8 +153,8 @@ class ComposePill extends StatelessWidget {
 
       GroupPillData(:final group, :final members) => Row(
           children: [
-            _countBadge(context, members.length),
-            const SizedBox(width: 8),
+            _gutter(_countBadge(context, members.length)),
+            const SizedBox(width: composePillIconGap),
             Expanded(
               child: _nameMetaLine(
                 name: group.name,
@@ -162,8 +178,8 @@ class ComposePill extends StatelessWidget {
               actors.map((a) => a.email).whereType<String>().join(', ');
           return Row(
             children: [
-              _countBadge(context, total),
-              const SizedBox(width: 8),
+              _gutter(_countBadge(context, total)),
+              const SizedBox(width: composePillIconGap),
               Expanded(
                 child: _nameMetaLine(
                   name: names,
@@ -183,14 +199,19 @@ class ComposePill extends StatelessWidget {
               : (isDark ? (twist.logoUrlDark ?? twist.logoUrl) : twist.logoUrl);
           return Row(
             children: [
-              logo == null
-                  ? const Icon(PlotIcon.twist, size: 22)
-                  : LogoImage(
-                      url: logo,
-                      size: 22,
-                      fallback: const Icon(PlotIcon.twist, size: 22),
-                    ),
-              const SizedBox(width: 8),
+              _gutter(
+                logo == null
+                    ? const Icon(PlotIcon.twist, size: composePillLogoSize)
+                    : LogoImage(
+                        url: logo,
+                        size: composePillLogoSize,
+                        fallback: const Icon(
+                          PlotIcon.twist,
+                          size: composePillLogoSize,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: composePillIconGap),
               Expanded(
                 child: Text(
                   target.label,
@@ -216,14 +237,19 @@ class ComposePill extends StatelessWidget {
           final channelTitle = target.channel?.title ?? target.label;
           return Row(
             children: [
-              logo == null
-                  ? const Icon(PlotIcon.link, size: 22)
-                  : LogoImage(
-                      url: logo,
-                      size: 22,
-                      fallback: const Icon(PlotIcon.link, size: 22),
-                    ),
-              const SizedBox(width: 8),
+              _gutter(
+                logo == null
+                    ? const Icon(PlotIcon.link, size: composePillLogoSize)
+                    : LogoImage(
+                        url: logo,
+                        size: composePillLogoSize,
+                        fallback: const Icon(
+                          PlotIcon.link,
+                          size: composePillLogoSize,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: composePillIconGap),
               Expanded(
                 child: Row(
                   children: [
@@ -264,7 +290,16 @@ class ComposePill extends StatelessWidget {
         }(),
 
       FocusPillData(:final priority) => Row(
-          children: [Expanded(child: FocusLabel(priority: priority))],
+          children: [
+            Expanded(
+              child: FocusLabel(
+                priority: priority,
+                iconColumnWidth: composePillGutter,
+                iconGap: composePillIconGap,
+                iconSize: composePillLogoSize,
+              ),
+            ),
+          ],
         ),
 
       ConnectionPillData(:final target, :final label, :final detail) => () {
@@ -278,18 +313,25 @@ class ComposePill extends StatelessWidget {
                   : (isDark ? (lt.logoDark ?? lt.logo) : lt.logo));
           final displayName = label ?? target.label;
           final Widget leading = isPlotNative
-              ? SvgPicture.asset('assets/plot-icon.svg', width: 22, height: 22)
+              ? SvgPicture.asset(
+                  'assets/plot-icon.svg',
+                  width: composePillLogoSize,
+                  height: composePillLogoSize,
+                )
               : (logo == null
-                  ? const Icon(PlotIcon.link, size: 22)
+                  ? const Icon(PlotIcon.link, size: composePillLogoSize)
                   : LogoImage(
                       url: logo,
-                      size: 22,
-                      fallback: const Icon(PlotIcon.link, size: 22),
+                      size: composePillLogoSize,
+                      fallback: const Icon(
+                        PlotIcon.link,
+                        size: composePillLogoSize,
+                      ),
                     ));
           return Row(
             children: [
-              leading,
-              const SizedBox(width: 8),
+              _gutter(leading),
+              const SizedBox(width: composePillIconGap),
               Expanded(
                 child: _nameMetaLine(
                   name: displayName,
@@ -305,6 +347,12 @@ class ComposePill extends StatelessWidget {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  /// Centres a leading [glyph] within the shared [composePillGutter] so glyphs
+  /// of differing intrinsic widths (avatars, logos, badges, icons) share one
+  /// vertical centreline and every name starts at the same x.
+  Widget _gutter(Widget glyph) =>
+      SizedBox(width: composePillGutter, child: Center(child: glyph));
 
   /// A 24px circular count badge: a filled chip that sits just off the page
   /// surface, with the count in the full `foreground` for a strong read.
@@ -340,7 +388,11 @@ class ComposePill extends StatelessWidget {
   }
 
   /// A single-line name + optional inline meta (e.g. "Greg  greg@acme.com").
-  /// Both segments ellipsize when the row is tight.
+  ///
+  /// Rendered as one [Text.rich] so the name and meta truncate as a single
+  /// combination: the trailing meta (the email / address list) ellipsizes
+  /// first and the name is only clipped once it alone overflows the row. This
+  /// shows full names whenever the row is wide enough, trimming only the email.
   Widget _nameMetaLine({
     required String name,
     required String? meta,
@@ -355,26 +407,16 @@ class ComposePill extends StatelessWidget {
         style: nameStyle,
       );
     }
-    return Row(
-      children: [
-        Flexible(
-          child: Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: nameStyle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            meta,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: metaStyle,
-          ),
-        ),
-      ],
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: name, style: nameStyle),
+          const WidgetSpan(child: SizedBox(width: 8)),
+          TextSpan(text: meta, style: metaStyle),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 

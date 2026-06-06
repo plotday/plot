@@ -230,7 +230,14 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
     final sectionWidgets = <Widget>[];
 
     for (final section in widget.sections) {
-      sectionWidgets.add(section.header);
+      // Indent each section header by the row chrome's horizontal padding so
+      // its left edge lines up with the item content (the leading icons) below.
+      sectionWidgets.add(
+        Padding(
+          padding: EdgeInsets.only(left: spacing.sm),
+          child: section.header,
+        ),
+      );
       sectionWidgets.add(SizedBox(height: spacing.sm));
 
       for (final item in section.items) {
@@ -288,6 +295,15 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: highlighted ? context.colour.editableBackground : null,
         borderRadius: tileBorderRadius,
+        // A light selection ring. The border width is a constant 1px in both
+        // states (transparent when not highlighted), so moving the selection
+        // only changes the colour and never reflows the row content.
+        border: Border.all(
+          color: highlighted
+              ? context.colour.border
+              : const Color(0x00000000),
+          width: 1,
+        ),
       ),
       child: child,
     );
