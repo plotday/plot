@@ -46,7 +46,7 @@ class TopBarPill {
   final IconData? leadingIcon;
 
   /// Recipient count rendered in a small pill just before [editIcon].
-  /// Null = no count shown.
+  /// Only shown when [editIcon] is non-null. Null = no count shown.
   final int? recipientCount;
 
   /// Trailing edit-affordance icon (pencil to edit recipients, user-plus to
@@ -72,7 +72,10 @@ class TopBarPill {
     this.editTooltip,
     required this.onTap,
     this.onEdit,
-  });
+  }) : assert(
+         recipientCount == null || editIcon != null,
+         'recipientCount is only rendered when editIcon is non-null',
+       );
 }
 
 // ---------------------------------------------------------------------------
