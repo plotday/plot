@@ -54,6 +54,7 @@ import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../../rpc";
 import { notifyUserSyncByEnv } from "../../app/sync/notify";
+import { emitNeedsReauthEvent } from "../../utils/twist-events";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { disposeRpc } from "../../utils/rpc";
@@ -486,7 +487,11 @@ export class Integrations extends Tool implements IAuth {
         // was cleared by a previous failure that pre-dated this signal —
         // never goes through those paths. Flag here as a backstop so the
         // app's reauth prompt fires on the very next sync attempt.
-        await this.flagNeedsReauth(provider, config.enabledBy);
+        await this.flagNeedsReauth(provider, config.enabledBy, {
+          trigger: "token_missing",
+          reason:
+            "Channel enabled but no usable token for actor (never stored or cleared by an earlier failure)",
+        });
       }
       return token;
     }
@@ -2212,10 +2217,26 @@ export class Integrations extends Tool implements IAuth {
    * Uses INSERT…ON CONFLICT so that connections with no existing
    * `twist_instance_connection` row (e.g. ones whose original
    * saveAuth-time write was lost or never ran) still get flagged.
+   *
+   * `details` (optional) carries the reason this connection was flagged. When
+   * a row is *newly* flagged it's emitted to PostHog as `connector_needs_reauth`
+   * — the DB column only stores a timestamp, so this is the only durable record
+   * of *why* the connection demanded re-auth (worker logs age out within days).
    */
   private async flagNeedsReauth(
     provider: AuthProvider,
-    actorId: ActorId
+    actorId: ActorId,
+    details?: {
+      trigger:
+        | "refresh_permanent"
+        | "no_refresh_token"
+        | "insufficient_scope"
+        | "token_missing"
+        | "connector_signal";
+      reason: string;
+      oauthError?: string | null;
+      status?: number | null;
+    }
   ): Promise<void> {
     const logger = createLogger({ twist_instance_id: this.twistInstanceId });
     try {
@@ -2261,6 +2282,21 @@ export class Integrations extends Tool implements IAuth {
 
       if ((result.numInsertedOrUpdatedRows ?? 0n) > 0n) {
         await notifyUserSyncByEnv(this.env, reauthContact.user_id);
+        // Only on a *fresh* flag (not repeated retries of an already-flagged
+        // connection): preserve why this connection demanded re-auth.
+        if (details) {
+          await emitNeedsReauthEvent({
+            env: this.env,
+            userId: reauthContact.user_id,
+            twistInstanceId: this.twistInstanceId,
+            provider,
+            actorId,
+            trigger: details.trigger,
+            reason: details.reason,
+            oauthError: details.oauthError ?? null,
+            status: details.status ?? null,
+          });
+        }
       }
     } catch (dbError) {
       logger.warn(
@@ -2284,7 +2320,10 @@ export class Integrations extends Tool implements IAuth {
     if (!provider) return;
     const config = await this.getChannelConfig(provider, channelId);
     if (!config?.enabledBy) return;
-    await this.flagNeedsReauth(provider, config.enabledBy);
+    await this.flagNeedsReauth(provider, config.enabledBy, {
+      trigger: "connector_signal",
+      reason: `Connector reported a permanent auth error for channel ${channelId}`,
+    });
   }
 
   /**
@@ -2305,7 +2344,10 @@ export class Integrations extends Tool implements IAuth {
     rawErrorMessage: string
   ): Promise<boolean> {
     if (!isInsufficientScopeError(rawErrorMessage)) return false;
-    await this.flagNeedsReauth(provider, actorId);
+    await this.flagNeedsReauth(provider, actorId, {
+      trigger: "insufficient_scope",
+      reason: rawErrorMessage,
+    });
     return true;
   }
 
@@ -2400,7 +2442,12 @@ export class Integrations extends Tool implements IAuth {
             );
             // Refresh_token is genuinely dead — user must re-authenticate.
             await this.store.clear(foundTokenKey);
-            await this.flagNeedsReauth(provider, actorId);
+            await this.flagNeedsReauth(provider, actorId, {
+              trigger: "refresh_permanent",
+              reason,
+              oauthError: refreshErr.oauthError,
+              status: refreshErr.status,
+            });
             return null;
           }
 
@@ -2431,7 +2478,10 @@ export class Integrations extends Tool implements IAuth {
       // No refresh token available — token is unrecoverable; clear it so the
       // user sees an explicit re-auth prompt rather than a silent expired token.
       await this.store.clear(foundTokenKey);
-      await this.flagNeedsReauth(provider, actorId);
+      await this.flagNeedsReauth(provider, actorId, {
+        trigger: "no_refresh_token",
+        reason: "Access token expired and no refresh_token is stored",
+      });
       return null;
     }
 
