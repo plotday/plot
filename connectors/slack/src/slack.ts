@@ -328,6 +328,24 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
+    // The stored "auth" Authorization is written once in `activate()` and is
+    // never cleared when the underlying OAuth token is removed (account
+    // disconnected, re-auth with a different account, or a token cleared after
+    // a failure). Its presence therefore does NOT guarantee a usable token.
+    // `createWebhook` -> `createSlackWebhook` does a direct `auth_token` lookup
+    // and throws "No integration found for authorization" when the token is
+    // gone, which then fails-and-retries forever on the webhook queue. Confirm
+    // a live token through the integrations resolver (the same check `getApi`
+    // uses); `integrations.get()` also flags the connection for re-auth when
+    // the token is missing, so the user is prompted to reconnect.
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      console.error(
+        `Slack connector has no usable token for channel ${channelId}; skipping webhook registration. Reconnect the account.`
+      );
+      return;
+    }
+
     const webhookUrl = await this.tools.network.createWebhook(
       { provider: AuthProvider.Slack, authorization },
       this.onSlackWebhook,
