@@ -797,15 +797,6 @@ class NoteEditorState extends State<NoteEditor> {
     return (actors: actors, total: total);
   }
 
-  /// Drawable single-avatar list for a contact (e.g. the "Reply to original"
-  /// pill). Empty until the actor is cached; warms the cache otherwise.
-  List<Actor> _singleAvatar(Uuid contactId) {
-    final a = Actor.fromCache(ActorId.fromUuid(contactId));
-    if (a != null) return [a];
-    _warmAvatarCache([contactId]);
-    return const [];
-  }
-
   /// Fetches any uncached [Actor]s for [contactIds] in the background and
   /// rebuilds once they land, so avatar clusters resolve on first paint even
   /// when the thread's contacts weren't eagerly loaded into the cache.
@@ -897,23 +888,12 @@ class NoteEditorState extends State<NoteEditor> {
         s.thread.groups.isNotEmpty;
 
     if (_hasMentionableTwist(s)) {
-      final replyAudience = _replyAudience(s);
+      // Twist chat: chat-like — a single Reply (to everyone) + Private note.
       pills.add(
-        TopBarPill(
-          id: 'reply',
-          label: 'Reply',
-          avatarActors: replyAudience.actors,
-          avatarTotalCount: replyAudience.total,
-          onTap: _activatePlotReply,
-          onAvatarsTap: hasSharing ? _openRecipientPicker : null,
-        ),
+        TopBarPill(id: 'reply', label: 'Reply', onTap: _activatePlotReply),
       );
       pills.add(
-        TopBarPill(
-          id: 'private',
-          label: 'Private note',
-          onTap: _activatePrivate,
-        ),
+        TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
       );
       return pills;
     }
@@ -921,42 +901,16 @@ class NoteEditorState extends State<NoteEditor> {
     if (isPlotThread) {
       if (!hasSharing) {
         // Unshared Plot thread: nothing to choose between — it's just a note.
-        // (Task is now the bottom-bar "To do" toggle, not a tab.) Returning
-        // no pills makes _buildTopBar omit the bar entirely.
+        // Returning no pills makes _buildTopBar omit the bar entirely.
         return pills;
       }
-
-      // Shared Plot thread.
-      final replyAudience = _replyAudience(s);
+      // Shared Plot thread: chat-like — a single Reply (to everyone on the
+      // thread) + Private note. No reply-to-original, no recipient editing.
       pills.add(
-        TopBarPill(
-          id: 'reply',
-          label: 'Reply',
-          avatarActors: replyAudience.actors,
-          avatarTotalCount: replyAudience.total,
-          onTap: _activatePlotReply,
-          onAvatarsTap: _openRecipientPicker,
-        ),
+        TopBarPill(id: 'reply', label: 'Reply', onTap: _activatePlotReply),
       );
-      final orig = _originalAuthorIfDistinct(s);
-      if (orig != null) {
-        pills.add(
-          TopBarPill(
-            id: 'replyOriginal',
-            label: 'Reply to ${_displayName(orig)}',
-            avatarActors: _singleAvatar(orig),
-            avatarTotalCount: 1,
-            onTap: () => _activateReplyToOriginal(orig),
-            onAvatarsTap: _openRecipientPicker,
-          ),
-        );
-      }
       pills.add(
-        TopBarPill(
-          id: 'private',
-          label: 'Private note',
-          onTap: _activatePrivate,
-        ),
+        TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
       );
       return pills;
     }
@@ -966,35 +920,32 @@ class NoteEditorState extends State<NoteEditor> {
     switch (cfg.sharingModel) {
       case SharingModel.message:
         final replyAudience = _replyAudience(s);
+        final orig = _originalAuthorIfDistinct(s);
+        final bothTabs = orig != null;
         pills.add(
           TopBarPill(
             id: 'reply',
-            label: cfg.noteLabel ?? 'Reply',
-            avatarActors: replyAudience.actors,
-            avatarTotalCount: replyAudience.total,
+            label: bothTabs ? 'Reply all' : 'Reply',
+            leadingIcon: bothTabs ? FontAwesomeIcons.replyAll : null,
+            recipientCount: bothTabs ? replyAudience.total : null,
+            editIcon: bothTabs ? PlotIcon.edit : PlotIcon.share,
+            editTooltip: 'Edit recipients',
             onTap: _activateConnectorReply,
-            onAvatarsTap: _openRecipientPicker,
+            onEdit: _openRecipientPicker,
           ),
         );
-        final orig = _originalAuthorIfDistinct(s);
         if (orig != null) {
           pills.add(
             TopBarPill(
               id: 'replyOriginal',
               label: 'Reply to ${_displayName(orig)}',
-              avatarActors: _singleAvatar(orig),
-              avatarTotalCount: 1,
+              leadingIcon: FontAwesomeIcons.reply,
               onTap: () => _activateReplyToOriginal(orig),
-              onAvatarsTap: _openRecipientPicker,
             ),
           );
         }
         pills.add(
-          TopBarPill(
-            id: 'private',
-            label: 'Private note',
-            onTap: _activatePrivate,
-          ),
+          TopBarPill(id: 'private', label: 'Private note', onTap: _activatePrivate),
         );
         return pills;
       case SharingModel.channel:
