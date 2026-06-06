@@ -351,8 +351,11 @@ class ComposePill extends StatelessWidget {
   /// Centres a leading [glyph] within the shared [composePillGutter] so glyphs
   /// of differing intrinsic widths (avatars, logos, badges, icons) share one
   /// vertical centreline and every name starts at the same x.
-  Widget _gutter(Widget glyph) =>
-      SizedBox(width: composePillGutter, child: Center(child: glyph));
+  Widget _gutter(Widget glyph) => SizedBox(
+        width: composePillGutter,
+        height: composePillGutter,
+        child: Center(child: glyph),
+      );
 
   /// A 24px circular count badge: a filled chip that sits just off the page
   /// surface, with the count in the full `foreground` for a strong read.

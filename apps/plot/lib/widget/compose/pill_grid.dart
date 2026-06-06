@@ -305,7 +305,14 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
           width: 1,
         ),
       ),
-      child: child,
+      // Reserve a uniform content height (the widest leading glyph) so the
+      // centred name sits at the same vertical position in every row — rows
+      // with a short 16px logo/focus glyph would otherwise collapse to the
+      // text height and render the name higher than the 24px avatar rows.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: composePillGutter),
+        child: child,
+      ),
     );
   }
 }
