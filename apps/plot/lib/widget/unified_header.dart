@@ -27,6 +27,7 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/widget/fading_underline.dart';
 import 'package:plot/widget/pomodoro_ring.dart';
 import 'package:plot/widget/thread_assignee.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
@@ -67,10 +68,23 @@ class UnifiedHeader extends StatefulWidget {
   State<UnifiedHeader> createState() => _UnifiedHeaderState();
 }
 
-class _UnifiedHeaderState extends State<UnifiedHeader> {
+class _UnifiedHeaderState extends State<UnifiedHeader>
+    with SingleTickerProviderStateMixin {
   bool _searchExpanded = false;
+  // Drives the search field's open/close transition: text fades in and the
+  // underline grows from the centre on open, reversing on close. Decoupled
+  // from [_searchExpanded] (the logical "search mode" flag) so the field stays
+  // mounted through the closing animation before it's removed.
+  late final AnimationController _searchAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+
+  /// Whether the search field should be painted: while expanded, or while the
+  /// closing animation is still running its tail out.
+  bool get _searchVisible => _searchExpanded || _searchAnim.value > 0.001;
   Timer? _debounceTimer;
   String _lastSearchText = '';
   PriorityShortcutsProviderState? _panelController;
@@ -80,6 +94,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   // NewThreadPage variant in the same frame the route changes, instead
   // of waiting for NewThreadPage's post-frame `register` callback.
   ChangeNotifier? _navHistory;
+  // Cached alongside [_navHistory]. The route-change notification can fire
+  // while this header is being deactivated (e.g. mid-navigation), at which
+  // point `mounted` is still true but `context.router` ancestor lookups throw
+  // "Looking up a deactivated widget's ancestor is unsafe". The router object
+  // itself is stable, so we read `currentPath` from this saved reference
+  // instead of resolving it from `context` in the listener.
+  StackRouter? _rootRouter;
   bool _isNewThreadRoute = false;
 
   @override
@@ -108,7 +129,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // NewThreadRoute) sits below UnifiedHeader, so its pushes don't
     // notify our local router's history — only the root history hears
     // every navigation across the tree.
-    final history = context.router.root.navigationHistory;
+    final rootRouter = context.router.root;
+    _rootRouter = rootRouter;
+    final history = rootRouter.navigationHistory;
     if (_navHistory != history) {
       _navHistory?.removeListener(_onRouteChanged);
       _navHistory = history;
@@ -126,8 +149,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   bool _computeIsNewThreadRoute() {
     // Root `currentPath` walks the full nested-router tree, so it
     // becomes `/p/<id>/new` the moment the inner router pushes
-    // NewThreadRoute — even though that route lives below us.
-    return context.router.root.currentPath.endsWith('/new');
+    // NewThreadRoute — even though that route lives below us. Read from
+    // the cached router rather than `context.router`: this can run from a
+    // route-change notification while the header is deactivated, where the
+    // context ancestor lookup would throw.
+    return _rootRouter?.currentPath.endsWith('/new') ?? false;
   }
 
   void _onRouteChanged() {
@@ -187,6 +213,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       _searchExpanded = true;
       _panelController?.updateSearchExpanded(true);
     });
+    _searchAnim.forward(from: 0);
     _focusSearchSoon();
   }
 
@@ -212,10 +239,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   }
 
   void _closeSearch() {
+    if (!_searchExpanded) return;
     setState(() {
       _searchExpanded = false;
       _panelController?.updateSearchExpanded(false);
       _searchController.clear();
+    });
+    // Play the entrance in reverse, then rebuild once to drop the (now
+    // invisible) field. The field keeps rendering while [_searchVisible] is
+    // true — i.e. until [_searchAnim] settles back to 0.
+    _searchAnim.reverse().whenComplete(() {
+      if (mounted && !_searchExpanded) setState(() {});
     });
     // Only invoke bloc mutations when there's something to undo. Calling
     // these unconditionally — even with the search field empty and no
@@ -258,6 +292,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _searchAnim.dispose();
     _debounceTimer?.cancel();
     super.dispose();
   }
@@ -442,11 +477,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ),
     );
 
-    // Single-panel search takes over the entire header: the input fills the
-    // width with a filled background and square corners (no border radius),
-    // and the back / more buttons are dropped — the in-field ✕ closes search
-    // and restores them.
-    if (_searchExpanded) {
+    // Single-panel search takes over the entire header: the input runs
+    // edge-to-edge (no header page padding) as a borderless prompt with a
+    // fading underline, and the back / more buttons are dropped — the in-field
+    // ✕ closes search and restores them. Only the macOS traffic-light gutter is
+    // reserved.
+    if (_searchVisible) {
       return _wrapHeader(
         context,
         layoutState,
@@ -466,6 +502,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             SizedBox(width: resolvedToolbarPadding.right),
         ],
         decoration: decoration,
+        contentPadding: EdgeInsets.zero,
       );
     }
 
@@ -575,7 +612,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         Button.icon(ToggleLeftSidebarCommand(isVisible: false)),
     ];
 
-    final Widget titleSection = _searchExpanded
+    final Widget titleSection = _searchVisible
         ? _buildSearchField(context, layoutState, state, notifier)
         : _buildTitleSection(
             context,
@@ -767,11 +804,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     LayoutState layoutState,
     PriorityState state,
     ThreadHeaderNotifier? notifier, {
-    // Single-panel takeover: drop the centered max-width cap, fill the input
-    // with a background, and square off its corners so it reads as the whole
-    // header band rather than a floating pill.
+    // Single-panel takeover: drop the centered max-width cap so the borderless
+    // prompt + underline run the full width of the header band.
     bool fullWidth = false,
   }) {
+    final typography = context.theme.typography;
+    final colors = context.theme.colors;
     List<Command> buildFilters(BuildContext ctx) {
       final allTags = <Tag, (Tag, int)>{};
       for (final tagData in state.tags) {
@@ -849,45 +887,57 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         control: .managed(controller: _searchController),
         focusNode: _searchFocusNode,
         hint: 'Search…',
-        style: fullWidth
-            ? FTextFieldStyleDelta.delta(
-                contentPadding: EdgeInsetsGeometryDelta.value(
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                ),
-                // Filled background in every state so the field reads as the
-                // whole header band, not a focus-only fill.
-                color: FVariantsValueDelta.delta([
-                  FVariantValueDeltaOperation.all(
-                    context.colour.editableBackground,
-                  ),
-                  FVariantValueDeltaOperation.exact(
-                    {FTextFieldVariantConstraint.focused},
-                    context.colour.editableBackground,
-                  ),
-                ]),
-                // Square corners (no border radius), borderless in every
-                // state.
-                border: FVariantsValueDelta.delta([
-                  FVariantValueDeltaOperation.all(
-                    const OutlineInputBorder(
-                      borderSide: BorderSide.none,
-                      borderRadius: BorderRadius.zero,
-                    ),
-                  ),
-                  FVariantValueDeltaOperation.exact(
-                    {FTextFieldVariantConstraint.focused},
-                    const OutlineInputBorder(
-                      borderSide: BorderSide.none,
-                      borderRadius: BorderRadius.zero,
-                    ),
-                  ),
-                ]),
-              )
-            : FTextFieldStyleDelta.delta(
-                contentPadding: EdgeInsetsGeometryDelta.value(
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                ),
+        // Visual chrome mirrors the step-1 new-thread filter
+        // ([ComposeSearchField]): a borderless, transparent-fill prompt with a
+        // fading underline (added below) as the only focus cue. Text is kept at
+        // the base body size (compose uses [Typography.lg]) and vertical padding
+        // is tighter, because the header band is height-locked to
+        // [_kHeaderHeight].
+        style: FTextFieldStyleDelta.delta(
+          contentPadding: EdgeInsetsGeometryDelta.value(
+            const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          ),
+          // Transparent fill in EVERY state — the global text-field delta fills
+          // the field with `editableBackground` on focus; without this override
+          // the borderless prompt would grow a focus background.
+          color: FVariantsValueDelta.delta([
+            FVariantValueDeltaOperation.all(
+              const Color(0x00000000),
+            ),
+            FVariantValueDeltaOperation.exact(
+              {FTextFieldVariantConstraint.focused},
+              const Color(0x00000000),
+            ),
+          ]),
+          contentTextStyle: FVariantsDelta.delta([
+            FVariantOperation.all(
+              TextStyleDelta.delta(fontSize: typography.md.fontSize),
+            ),
+          ]),
+          hintTextStyle: FVariantsDelta.delta([
+            FVariantOperation.all(
+              TextStyleDelta.delta(fontSize: typography.md.fontSize),
+            ),
+          ]),
+          // Borderless in every state — the focused override is explicit
+          // because the app theme otherwise paints a focused accent border that
+          // the `all` override does not replace.
+          border: FVariantsValueDelta.delta([
+            FVariantValueDeltaOperation.all(
+              const OutlineInputBorder(
+                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.zero,
               ),
+            ),
+            FVariantValueDeltaOperation.exact(
+              {FTextFieldVariantConstraint.focused},
+              const OutlineInputBorder(
+                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.zero,
+              ),
+            ),
+          ]),
+        ),
         suffixBuilder: (context, style, states) {
           final activeFilters = <Command>[
             if (state.muteOnly) ToggleMutedFilter(context: context),
@@ -934,8 +984,39 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ),
     );
 
+    // Open/close transition: the prompt fades in and its underline grows from
+    // the centre as [_searchAnim] runs forward; both reverse on close. The
+    // [FTextField] is passed as the AnimatedBuilder `child` so it isn't rebuilt
+    // every frame (only the cheap Opacity/Transform wrappers are).
+    final Widget prompt = AnimatedBuilder(
+      animation: _searchAnim,
+      child: field,
+      builder: (context, child) {
+        final t = Curves.easeOut.transform(_searchAnim.value);
+        return Opacity(
+          opacity: t,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              child!,
+              Transform.scale(
+                scaleX: t,
+                alignment: Alignment.center,
+                child: FadingUnderline(
+                  focusNode: _searchFocusNode,
+                  color: colors.border,
+                  focusedColor: colors.foreground.withValues(alpha: 0.3),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
     if (fullWidth) {
-      return Expanded(child: field);
+      return Expanded(child: prompt);
     }
     return Expanded(
       child: Align(
@@ -944,7 +1025,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: field,
+            child: prompt,
           ),
         ),
       ),

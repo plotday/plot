@@ -297,9 +297,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
     // Single-panel mode hands a back affordance down so it can stand in for
     // the (now-dropped) global header back button; otherwise the leading
-    // slot is a plain search icon. The back button mirrors the step-2
-    // connection picker's leading affordance (PlotIcon.left, muted).
-    final Widget leading = widget.onBack != null
+    // slot is empty. The back button mirrors the step-2 connection picker's
+    // leading affordance (PlotIcon.left, muted).
+    final Widget? leading = widget.onBack != null
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: widget.onBack,
@@ -312,11 +312,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
               ),
             ),
           )
-        : Icon(
-            PlotIcon.search,
-            size: 16,
-            color: colors.mutedForeground,
-          );
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

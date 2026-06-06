@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/util/platform.dart';
+import 'package:plot/widget/fading_underline.dart';
 
 /// A reusable borderless search input with a fading underline, a leading slot,
 /// and keyboard-navigation callbacks (Enter / ↓ / Escape).
@@ -249,58 +250,12 @@ class ComposeSearchField extends StatelessWidget {
         // Fading underline: glows in the centre, dissolves into the page
         // background at both edges; neutral, brightening slightly on focus
         // (no accent tint).
-        _FadingUnderline(
+        FadingUnderline(
           focusNode: focusNode,
           color: colors.border,
           focusedColor: colors.foreground.withValues(alpha: 0.3),
         ),
       ],
-    );
-  }
-}
-
-/// A ~1.5px horizontal hairline that glows in the centre and dissolves into
-/// the page background at both ends (a gradient from transparent → [color] →
-/// transparent). The sole chrome under the search input. It brightens from
-/// [color] to [focusedColor] when [focusNode] gains focus, animated so the
-/// transition reads as calm. The colour stays neutral — no accent tint —
-/// consistent with the picker's deliberately un-tinted focus state.
-class _FadingUnderline extends StatelessWidget {
-  const _FadingUnderline({
-    required this.focusNode,
-    required this.color,
-    required this.focusedColor,
-  });
-
-  final FocusNode focusNode;
-  final Color color;
-  final Color focusedColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: focusNode,
-      builder: (context, _) {
-        final line = focusNode.hasFocus ? focusedColor : color;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          height: 1.5,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                line.withValues(alpha: 0),
-                line,
-                line,
-                line.withValues(alpha: 0),
-              ],
-              stops: const [0.0, 0.18, 0.82, 1.0],
-            ),
-          ),
-        );
-      },
     );
   }
 }
