@@ -364,9 +364,10 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
   @override
   Widget build(BuildContext context) {
     return AutoTabsRouter(
-      homeIndex: TwistInstance.hasCalendarConnectionInCache
-          ? _kTabAgenda
-          : _kTabPriorities,
+      // The app lands on Threads (the Priorities tab) by default. Agenda
+      // stays reachable via its own bottom-nav slot when a calendar
+      // connection exists, but it's no longer the home tab.
+      homeIndex: _kTabPriorities,
       routes: [
         PrioritiesRoute(),
         EmptyShellRoute("AgendaShell")(),
@@ -467,7 +468,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> {
               );
             },
           ),
-          label: _buildNavLabel('Focuses'),
+          label: _buildNavLabel('Threads'),
         );
       case NavSlot.agenda:
         return FBottomNavigationBarItem(

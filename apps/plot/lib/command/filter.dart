@@ -405,6 +405,42 @@ class ToggleAssigneeFilter extends Command {
   }
 }
 
+/// Toggle the "Muted" search filter — restricts the feed to threads carrying
+/// a `mute_by_thread_id` flag (the ones swept up by a Mute rule) so users can
+/// find and un-mute them. Backed by `muteOnly` on [PriorityBloc]; unlike the
+/// set-valued tag/reaction/assignee filters this is a standalone boolean.
+class ToggleMutedFilter extends Command {
+  ToggleMutedFilter._({super.on})
+    : super(
+        title: 'Muted',
+        icon: PlotIcon.volumeSlash,
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+      );
+
+  factory ToggleMutedFilter({required BuildContext context}) {
+    return ToggleMutedFilter._(on: _isActive(context));
+  }
+
+  static bool? _isActive(BuildContext context) {
+    try {
+      return context.read<PriorityBloc>().state.muteOnly;
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      context.read<PriorityBloc>().toggleMuteOnly();
+    } on ProviderNotFoundException {
+      // PriorityBloc not in scope
+    }
+    return const CommandDone();
+  }
+}
+
 /// Replace the reaction filter set across whichever bloc is in scope.
 class SetReactionFilters extends Command {
   SetReactionFilters({required this.emojis, String? title})
@@ -541,18 +577,24 @@ class PickFilterCommand extends ShowCommands {
                commands.whereType<ToggleReactionFilter>().toList();
            final assigneeFilters =
                commands.whereType<ToggleAssigneeFilter>().toList();
+           final mutedFilters =
+               commands.whereType<ToggleMutedFilter>().toList();
 
            // Split active vs. inactive across all filter types. Active
            // filters collect into a single "Filters" section at the top
            // (mirroring the share picker's "Shared" section). Inactive
-           // options stay grouped by type below — Thread type, then Tags,
-           // then Reactions, then Assignee.
+           // options stay grouped by type below — Status (Muted), then
+           // Thread type, then Tags, then Reactions, then Assignee.
            final activeFilters = <Command>[
+             ...mutedFilters.where((c) => c.on == true),
              ...iconFilters.where((c) => c.on == true),
              ...tagFilters.where((c) => c.on == true),
              ...reactionFilters.where((c) => c.on == true),
              ...assigneeFilters.where((c) => c.on == true),
            ];
+           final inactiveMutedFilters = mutedFilters
+               .where((c) => c.on != true)
+               .toList();
            final inactiveIconFilters = iconFilters
                .where((c) => c.on != true)
                .toList();
@@ -572,6 +614,11 @@ class PickFilterCommand extends ShowCommands {
                  StaticCommandGroup(
                    title: 'Filters',
                    commands: activeFilters,
+                 ),
+               if (inactiveMutedFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Status',
+                   commands: inactiveMutedFilters,
                  ),
                if (inactiveIconFilters.isNotEmpty)
                  StaticCommandGroup(

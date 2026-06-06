@@ -1466,6 +1466,12 @@ class NewThreadPageState extends State<NewThreadPage> {
       searchFocusNode: _pickerSearchFocusNode,
       onPickRecipient: _pickRecipient,
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
+      // Single-panel mode drops the global header back button; the picker's
+      // search-field leading slot carries the back affordance instead and
+      // closes the new-thread page. Multi-panel keeps a plain search icon.
+      onBack: multiPanel
+          ? null
+          : () => context.run(ChangeCurrentThread(null)),
     );
 
     if (!multiPanel) {
@@ -1648,56 +1654,59 @@ class NewThreadPageState extends State<NewThreadPage> {
                           );
                         }
 
-                        // Single panel mode: editor at bottom, edge-to-edge
+                        // Single panel mode: editor at bottom, edge-to-edge.
+                        // The compose fields keep their horizontal inset, but
+                        // the editor itself runs full-bleed (no horizontal
+                        // padding) so the note surface reaches both edges.
                         if (!layoutState.multiPanel) {
-                          return Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: context.contentPaddingH,
-                            ),
-                            child: FocusTraversalGroup(
-                              policy: WidgetOrderTraversalPolicy(),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildComposeSurface(context, state),
-                                  SizedBox(height: context.theme.spacing.md),
-                                  Flexible(
-                                    child: EditableArea(
-                                      padding: false,
-                                      position: EditableAreaPosition.bottom,
-                                      flushToBottom: true,
-                                      builder: (context, _) => Focus(
-                                        canRequestFocus: false,
-                                        skipTraversal: true,
-                                        onKeyEvent: _handleEditorKeys,
-                                        child: NoteEditor(
-                                          key: _threadEditorKey,
-                                          bodyOnly: true,
-                                          draft: state.draftNote,
-                                          thread: state.draft,
-                                          onDraftChanged: _handleDraftChanged,
-                                          flushToBottom: true,
-                                          showScheduleActions: false,
-                                          hint: _computeEditorHint(state),
-                                          sendLabel: _computeSendLabel(state),
-                                          additionalMentions: _twistMentions,
-                                          onSubmitted: _onChatSubmitted,
-                                          submitValidator: _validateDmSubmit,
-                                          selectedTwist: _selectedTwist,
-                                          onTwistSelected: _selectTwist,
-                                          onTwistMentioned: _onTwistMentioned,
-                                          onNavigateToThread: (thread) {
-                                            context.run(
-                                              ChangeCurrentThread(thread),
-                                            );
-                                          },
-                                        ),
+                          return FocusTraversalGroup(
+                            policy: WidgetOrderTraversalPolicy(),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.contentPaddingH,
+                                  ),
+                                  child: _buildComposeSurface(context, state),
+                                ),
+                                SizedBox(height: context.theme.spacing.md),
+                                Flexible(
+                                  child: EditableArea(
+                                    padding: false,
+                                    position: EditableAreaPosition.bottom,
+                                    flushToBottom: true,
+                                    builder: (context, _) => Focus(
+                                      canRequestFocus: false,
+                                      skipTraversal: true,
+                                      onKeyEvent: _handleEditorKeys,
+                                      child: NoteEditor(
+                                        key: _threadEditorKey,
+                                        bodyOnly: true,
+                                        draft: state.draftNote,
+                                        thread: state.draft,
+                                        onDraftChanged: _handleDraftChanged,
+                                        flushToBottom: true,
+                                        showScheduleActions: false,
+                                        hint: _computeEditorHint(state),
+                                        sendLabel: _computeSendLabel(state),
+                                        additionalMentions: _twistMentions,
+                                        onSubmitted: _onChatSubmitted,
+                                        submitValidator: _validateDmSubmit,
+                                        selectedTwist: _selectedTwist,
+                                        onTwistSelected: _selectTwist,
+                                        onTwistMentioned: _onTwistMentioned,
+                                        onNavigateToThread: (thread) {
+                                          context.run(
+                                            ChangeCurrentThread(thread),
+                                          );
+                                        },
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           );
                         }

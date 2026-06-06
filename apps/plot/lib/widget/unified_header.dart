@@ -1,5 +1,9 @@
 import 'dart:async';
 import 'package:auto_route/auto_route.dart';
+// OutlineInputBorder is used to give the single-panel full-takeover search
+// field square corners (BorderRadius.zero). Imported with `show` per the
+// established pattern in widget/compose/compose_search_field.dart.
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -402,23 +406,25 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final hasActivity = thread != null || isThreadVisible;
 
     // NewThreadPage in single-panel mode: chrome lives inside the page
-    // (priority chip, type chip, etc.), so the global header collapses
-    // to a bare back-button row. Background matches the NewThreadPage
-    // surface (which is translucent over `context.colour.background`) so
-    // the header reads as part of the same canvas.
+    // (the back affordance is the leading slot of the page's own search
+    // field — see [ComposeSectionsView]), so the global header drops out
+    // entirely rather than showing a redundant bare back-button row.
+    //
+    // On desktop single-panel (a narrow window) the macOS traffic lights
+    // still need a gutter to sit in, so keep a minimal strip whenever
+    // there's toolbar padding to reserve. On mobile (no traffic lights,
+    // zero toolbar padding) the header collapses to nothing.
     if (isNewThread) {
+      if (resolvedToolbarPadding.left == 0 &&
+          resolvedToolbarPadding.right == 0) {
+        return const SizedBox.shrink();
+      }
       return _wrapHeader(
         context,
         layoutState,
         [
           if (resolvedToolbarPadding.left != 0)
             SizedBox(width: resolvedToolbarPadding.left),
-          Button.icon(
-            CommandWrapper(
-              ChangeCurrentThread(null),
-              icon: Value(PlotIcon.back),
-            ),
-          ),
           const Expanded(child: SizedBox.shrink()),
         ],
         suffixes: <Widget>[
@@ -426,6 +432,40 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             SizedBox(width: resolvedToolbarPadding.right),
         ],
         decoration: BoxDecoration(color: context.colour.background),
+      );
+    }
+
+    final decoration = BoxDecoration(
+      color: context.colour.panelDarkestBackground,
+      border: Border(
+        bottom: BorderSide(color: context.theme.colors.border, width: 1),
+      ),
+    );
+
+    // Single-panel search takes over the entire header: the input fills the
+    // width with a filled background and square corners (no border radius),
+    // and the back / more buttons are dropped — the in-field ✕ closes search
+    // and restores them.
+    if (_searchExpanded) {
+      return _wrapHeader(
+        context,
+        layoutState,
+        [
+          if (resolvedToolbarPadding.left != 0)
+            SizedBox(width: resolvedToolbarPadding.left),
+          _buildSearchField(
+            context,
+            layoutState,
+            state,
+            notifier,
+            fullWidth: true,
+          ),
+        ],
+        suffixes: <Widget>[
+          if (resolvedToolbarPadding.right != 0)
+            SizedBox(width: resolvedToolbarPadding.right),
+        ],
+        decoration: decoration,
       );
     }
 
@@ -439,9 +479,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     ];
 
     final Widget titleSection;
-    if (_searchExpanded) {
-      titleSection = _buildSearchField(context, layoutState, state, notifier);
-    } else if (thread != null) {
+    if (thread != null) {
       titleSection = _buildThreadTitleSection(context, thread);
     } else {
       titleSection = _buildTitleSection(
@@ -470,13 +508,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
     ];
-
-    final decoration = BoxDecoration(
-      color: context.colour.panelDarkestBackground,
-      border: Border(
-        bottom: BorderSide(color: context.theme.colors.border, width: 1),
-      ),
-    );
 
     return _wrapHeader(
       context,
@@ -735,8 +766,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     BuildContext context,
     LayoutState layoutState,
     PriorityState state,
-    ThreadHeaderNotifier? notifier,
-  ) {
+    ThreadHeaderNotifier? notifier, {
+    // Single-panel takeover: drop the centered max-width cap, fill the input
+    // with a background, and square off its corners so it reads as the whole
+    // header band rather than a floating pill.
+    bool fullWidth = false,
+  }) {
     List<Command> buildFilters(BuildContext ctx) {
       final allTags = <Tag, (Tag, int)>{};
       for (final tagData in state.tags) {
@@ -772,6 +807,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ...state.assigneeFilter,
       };
       return [
+        ToggleMutedFilter(context: ctx),
         ...state.iconCounts.map((d) => ToggleIconFilter(d.$1, context: ctx)),
         ...allTags.keys.map((tag) => ToggleActivityFilter(tag, context: ctx)),
         ...state.filter
@@ -796,9 +832,111 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         state.iconFilter.isNotEmpty ||
         state.reactionFilter.isNotEmpty ||
         state.assigneeFilter.isNotEmpty ||
+        state.muteOnly ||
         (notifier?.filter.isNotEmpty == true) ||
         (notifier?.reactionFilter.isNotEmpty == true);
 
+    final Widget field = Focus(
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          _closeSearch();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: FTextField(
+        control: .managed(controller: _searchController),
+        focusNode: _searchFocusNode,
+        hint: 'Search…',
+        style: fullWidth
+            ? FTextFieldStyleDelta.delta(
+                contentPadding: EdgeInsetsGeometryDelta.value(
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                // Filled background in every state so the field reads as the
+                // whole header band, not a focus-only fill.
+                color: FVariantsValueDelta.delta([
+                  FVariantValueDeltaOperation.all(
+                    context.colour.editableBackground,
+                  ),
+                  FVariantValueDeltaOperation.exact(
+                    {FTextFieldVariantConstraint.focused},
+                    context.colour.editableBackground,
+                  ),
+                ]),
+                // Square corners (no border radius), borderless in every
+                // state.
+                border: FVariantsValueDelta.delta([
+                  FVariantValueDeltaOperation.all(
+                    const OutlineInputBorder(
+                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
+                  FVariantValueDeltaOperation.exact(
+                    {FTextFieldVariantConstraint.focused},
+                    const OutlineInputBorder(
+                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
+                ]),
+              )
+            : FTextFieldStyleDelta.delta(
+                contentPadding: EdgeInsetsGeometryDelta.value(
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                ),
+              ),
+        suffixBuilder: (context, style, states) {
+          final activeFilters = <Command>[
+            if (state.muteOnly) ToggleMutedFilter(context: context),
+            for (final iconValue in state.iconFilter)
+              ToggleIconFilter(iconValue, context: context),
+            for (final tag in state.filter)
+              ToggleActivityFilter(tag, context: context),
+            if (notifier?.isThreadVisible == true)
+              for (final tag in notifier!.filter)
+                if (!state.filter.contains(tag))
+                  ToggleActivityFilter(tag, context: context),
+            for (final emoji in state.reactionFilter)
+              ToggleReactionFilter(emoji, context: context),
+            if (notifier?.isThreadVisible == true)
+              for (final emoji in notifier!.reactionFilter)
+                if (!state.reactionFilter.contains(emoji))
+                  ToggleReactionFilter(emoji, context: context),
+            for (final id in state.assigneeFilter)
+              ToggleAssigneeFilter(
+                id,
+                label: Actor.fromCache(id)?.nameOrEmail ?? 'Assignee',
+                context: context,
+              ),
+          ];
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final filter in activeFilters)
+                Button.icon(filter, selected: true),
+              if (buildFilters(context).isNotEmpty)
+                Button.icon(
+                  PickFilterCommand(filterCommandsBuilder: buildFilters),
+                  selected: hasActiveFilters,
+                ),
+              Button.icon(
+                ToggleSearchCommand(
+                  searchExpanded: true,
+                  onToggle: _closeSearch,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (fullWidth) {
+      return Expanded(child: field);
+    }
     return Expanded(
       child: Align(
         alignment: Alignment.centerLeft,
@@ -806,70 +944,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Focus(
-              onKeyEvent: (node, event) {
-                if (event is KeyDownEvent &&
-                    event.logicalKey == LogicalKeyboardKey.escape) {
-                  _closeSearch();
-                  return KeyEventResult.handled;
-                }
-                return KeyEventResult.ignored;
-              },
-              child: FTextField(
-                control: .managed(controller: _searchController),
-                focusNode: _searchFocusNode,
-                hint: 'Search…',
-                style: FTextFieldStyleDelta.delta(
-                  contentPadding: EdgeInsetsGeometryDelta.value(
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  ),
-                ),
-                suffixBuilder: (context, style, states) {
-                  final activeFilters = <Command>[
-                    for (final iconValue in state.iconFilter)
-                      ToggleIconFilter(iconValue, context: context),
-                    for (final tag in state.filter)
-                      ToggleActivityFilter(tag, context: context),
-                    if (notifier?.isThreadVisible == true)
-                      for (final tag in notifier!.filter)
-                        if (!state.filter.contains(tag))
-                          ToggleActivityFilter(tag, context: context),
-                    for (final emoji in state.reactionFilter)
-                      ToggleReactionFilter(emoji, context: context),
-                    if (notifier?.isThreadVisible == true)
-                      for (final emoji in notifier!.reactionFilter)
-                        if (!state.reactionFilter.contains(emoji))
-                          ToggleReactionFilter(emoji, context: context),
-                    for (final id in state.assigneeFilter)
-                      ToggleAssigneeFilter(
-                        id,
-                        label: Actor.fromCache(id)?.nameOrEmail ?? 'Assignee',
-                        context: context,
-                      ),
-                  ];
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final filter in activeFilters)
-                        Button.icon(filter, selected: true),
-                      if (buildFilters(context).isNotEmpty)
-                        Button.icon(
-                          PickFilterCommand(
-                            filterCommandsBuilder: buildFilters,
-                          ),
-                          selected: hasActiveFilters,
-                        ),
-                      Button.icon(
-                        ToggleSearchCommand(
-                          searchExpanded: true,
-                          onToggle: _closeSearch,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
+            child: field,
           ),
         ),
       ),

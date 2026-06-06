@@ -412,12 +412,18 @@ class AgendaTile extends StatelessWidget {
       final Widget child;
       if (dateTimeRange == null) {
         // Plain text section heading — center, not in the time column.
+        // One step up the prominence ladder from `veryMuted`
+        // (veryMuted → muted → foreground → hover) so the section labels
+        // ("Active", "Done", etc.) read a touch stronger than time labels.
         child = Center(
           child: Text(
             centerText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: timeStyle.copyWith(fontWeight: FontWeight.w500),
+            style: timeStyle.copyWith(
+              fontWeight: FontWeight.w500,
+              color: context.theme.plotColors.muted,
+            ),
           ),
         );
       } else {

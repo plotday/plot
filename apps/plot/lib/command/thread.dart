@@ -2451,46 +2451,49 @@ class PickThreadShared extends ShowCommands {
 /// to edit here — recipients are chosen per-reply in the composer.
 class PickThreadParticipants extends ShowCommands {
   PickThreadParticipants(Thread thread)
-      : super(
-          title: 'People on this thread',
-          icon: PlotIcon.users,
-          commandsBuilder: (context) async {
-            final meta = thread.contactMeta;
-            final rows = <Command>[];
-            final seen = <ActorId>{};
-            for (final contactId in thread.contacts) {
-              try {
-                final actor = await Actor.getOne(ActorId.fromUuid(contactId));
-                if (!seen.add(actor.id)) continue;
-                final role = (meta[contactId.toString()]
-                    as Map<String, dynamic>?)?['role'] as String?;
-                rows.add(_ThreadParticipantRow(actor, roleLabel: role));
-              } catch (_) {
-                // Skip unresolvable contacts.
-              }
+    : super(
+        title: 'People on this thread',
+        icon: PlotIcon.users,
+        commandsBuilder: (context) async {
+          final meta = thread.contactMeta;
+          final rows = <Command>[];
+          final seen = <ActorId>{};
+          for (final contactId in thread.contacts) {
+            try {
+              final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+              if (!seen.add(actor.id)) continue;
+              final role =
+                  (meta[contactId.toString()] as Map<String, dynamic>?)?['role']
+                      as String?;
+              rows.add(_ThreadParticipantRow(actor, roleLabel: role));
+            } catch (_) {
+              // Skip unresolvable contacts.
             }
-            return Commands(
-              prompt: 'People on this thread',
-              emptyMessage: 'No participants',
-              groups: [
-                StaticCommandGroup(
-                    title: 'People on this thread', commands: rows),
-              ],
-            );
-          },
-        );
+          }
+          return Commands(
+            prompt: 'People on this thread',
+            emptyMessage: 'No participants',
+            groups: [
+              StaticCommandGroup(
+                title: 'People on this thread',
+                commands: rows,
+              ),
+            ],
+          );
+        },
+      );
 }
 
 /// Non-actionable participant row: shows an avatar + name (+ role for the
 /// privileged viewer). Tapping is a no-op — this list is read-only.
 class _ThreadParticipantRow extends Command {
   _ThreadParticipantRow(this.actor, {this.roleLabel})
-      : super(
-          title: actor.nameOrEmail,
-          subtitle: roleLabel,
-          eventObject: EventObject.activity,
-          eventAction: EventAction.opened,
-        );
+    : super(
+        title: actor.nameOrEmail,
+        subtitle: roleLabel,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.opened,
+      );
 
   final Actor actor;
   final String? roleLabel;
@@ -3613,8 +3616,7 @@ List<Command> threadCommands(
   final isPrimarySchedule = !thread.todo && thread.on != null;
   // Suppress the trailing infrequent actions for a link-schedule instance
   // shown in the event-timing context.
-  final hideTrailingActions =
-      showEventTiming && thread.isLinkScheduleInstance;
+  final hideTrailingActions = showEventTiming && thread.isLinkScheduleInstance;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,

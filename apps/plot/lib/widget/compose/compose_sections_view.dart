@@ -36,6 +36,7 @@ class ComposeSectionsView extends StatefulWidget {
     required this.searchFocusNode,
     required this.onPickRecipient,
     required this.onPickTarget,
+    this.onBack,
     this.autofocusSearch = true,
   });
 
@@ -58,6 +59,13 @@ class ComposeSectionsView extends StatefulWidget {
   /// Called when the user picks a twist, channel, or focus pill (→ start
   /// compose with the chosen target).
   final void Function(ComposeTarget target) onPickTarget;
+
+  /// Optional "go back" affordance. When provided, the search field's leading
+  /// slot becomes a back button (in place of the search icon) that invokes
+  /// this — used in single-panel mode where the global header no longer
+  /// carries a back button. Null in multi-panel, where the leading stays a
+  /// plain search icon.
+  final VoidCallback? onBack;
 
   /// Whether to autofocus the search field on mount. Enabled by default (the
   /// page's normal open); the host can disable it when restoring step 1 after
@@ -259,24 +267,8 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
   // ─── Header widgets ────────────────────────────────────────────────────────
 
-  /// The "People and twists" section header. Only "People" is bold; " and
-  /// twists" continues in the regular heading weight.
-  Widget _peopleHeader() {
-    return Builder(
-      builder: (context) {
-        final style = _headingStyle(context);
-        final regular = style.copyWith(fontWeight: FontWeight.w400);
-        return Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: 'People', style: style),
-              TextSpan(text: ' and twists', style: regular),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  /// The "People and twists" section header.
+  Widget _peopleHeader() => _sectionHeader('People and twists');
 
   /// A plain section-label widget using the shared heading style.
   Widget _sectionHeader(String text) {
@@ -285,12 +277,13 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     );
   }
 
-  /// Section-heading text style: a calm step up in size from the body, bold,
-  /// and muted so each group reads as a clear divider.
+  /// Section-heading text style: a calm step up in size from the body and
+  /// muted so each group reads as a clear divider. Matches the colour
+  /// (`muted`) and weight (`w500`) of the thread-list section headings.
   TextStyle _headingStyle(BuildContext context) {
     return context.theme.typography.sm.copyWith(
       color: context.theme.colors.mutedForeground,
-      fontWeight: FontWeight.w700,
+      fontWeight: FontWeight.w500,
       letterSpacing: 0.3,
     );
   }
@@ -302,6 +295,29 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final spacing = context.theme.spacing;
     final colors = context.theme.colors;
 
+    // Single-panel mode hands a back affordance down so it can stand in for
+    // the (now-dropped) global header back button; otherwise the leading
+    // slot is a plain search icon. The back button mirrors the step-2
+    // connection picker's leading affordance (PlotIcon.left, muted).
+    final Widget leading = widget.onBack != null
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onBack,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              child: Icon(
+                PlotIcon.left,
+                size: 18,
+                color: colors.mutedForeground,
+              ),
+            ),
+          )
+        : Icon(
+            PlotIcon.search,
+            size: 16,
+            color: colors.mutedForeground,
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -310,11 +326,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           focusNode: widget.searchFocusNode,
           hint: 'Start a thread',
           autofocus: widget.autofocusSearch,
-          leading: Icon(
-            PlotIcon.search,
-            size: 16,
-            color: colors.mutedForeground,
-          ),
+          leading: leading,
           onChanged: _onSearchChanged,
           onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
           onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
