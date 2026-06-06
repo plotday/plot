@@ -263,6 +263,12 @@ class NewThread extends Command {
     // alive while the user views another thread — would reappear mid-compose.
     // A live page resets to step 1 with a fresh draft; a fresh mount ignores
     // this bump (it already starts clean). See [NewThreadPageState].
+    //
+    // Mark this as an explicit user-invoked open so the page starts in its
+    // "active" (full-strength) styling rather than the muted resting state a
+    // passive default mount uses. Set before requestReset() so a live page
+    // consumes it synchronously; a fresh mount consumes it in initState.
+    NewThreadPageState.activateOnOpen();
     NewThreadPageState.requestReset();
 
     // Prefer middle panel on resize when new thread is open

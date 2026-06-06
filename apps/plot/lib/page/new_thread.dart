@@ -28,6 +28,11 @@ import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
+/// Opacity of the new-thread panel content in its "inactive" (resting) state —
+/// muted by one step so it doesn't catch the eye when not in use. 1.0 is the
+/// "active" state. Tunable; "one step" is subjective. See [NewThreadPageState].
+const double kNewThreadInactiveOpacity = 0.55;
+
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
   const NewThreadWrapper();
@@ -172,6 +177,131 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// [_resetToFreshStart] so a brand-new compose starts with an empty filter.
   final TextEditingController _pickerSearchController = TextEditingController();
 
+  // ---- Active/inactive panel styling ------------------------------------
+  //
+  // To reduce how much the panel catches the eye when it isn't in use, the
+  // whole body fades between an "active" (full strength) and "inactive" (muted
+  // by one step — see [kNewThreadInactiveOpacity]) appearance. The state is
+  // computed from the inputs below into [_active]; a [ValueListenableBuilder]
+  // drives only the opacity layer so toggling never rebuilds the (expensive)
+  // editor subtree.
+
+  /// Drives the body's [AnimatedOpacity]. Recomputed by [_recomputeActive]
+  /// whenever an input changes; never via `setState` (which would rebuild the
+  /// NoteEditor and flicker). Starts inactive — the autofocus the page grabs on
+  /// open is "by design" and must NOT light the panel.
+  final ValueNotifier<bool> _active = ValueNotifier<bool>(false);
+
+  /// Whether the pointer is currently over the panel.
+  bool _mouseInside = false;
+
+  /// Whether any descendant holds keyboard focus. NOT an activation input —
+  /// focus alone (e.g. the on-open autofocus) must not light the panel, and
+  /// focus-LOSS must not deactivate it (the app churns focus internally — e.g.
+  /// [_focusPickerSearch] drops then re-grabs focus on reset — which would wipe
+  /// a just-applied engagement). Used only to gate [_onHardwareKey].
+  bool _pageFocused = false;
+
+  /// True while the panel is "engaged": the user navigated/typed within the
+  /// focused panel (a non-modifier, non-shortcut key), OR an explicit New-thread
+  /// command opened/reset it (see [_activateOnOpen] / [_onResetRequested]).
+  /// Cleared on pointer-exit or an Escape on the empty step-1 filter.
+  bool _engaged = false;
+
+  /// True when the user pressed Escape on the empty step-1 filter to dismiss the
+  /// panel. Forces inactive even while the pointer is still over the panel
+  /// ("press Esc again to dismiss"). Cleared the moment the pointer crosses the
+  /// panel boundary again, or the user types / re-engages.
+  bool _dismissed = false;
+
+  /// Whether this page is in single-panel mode. Single-panel is always active
+  /// (no dimming on mobile / narrow layouts). Assigned from `!multiPanel` in
+  /// [build] and OR-ed into the opacity at render time — deliberately NOT part
+  /// of [_active], so toggling the layout can never strand a stale active value.
+  bool _singlePanel = false;
+
+  /// Set by the [NewThread] command (button / ⌘N) just before it navigates, so
+  /// a fresh mount can tell it was opened by an explicit user command — and
+  /// should start active — versus the passive default mount (root panel), which
+  /// stays inactive. Consumed once: by the mounting page's [initState], or by
+  /// [_onResetRequested] when a live page handles the command instead.
+  static bool _activateOnOpen = false;
+
+  /// Called by the [NewThread] command right before it routes to the page.
+  static void activateOnOpen() => _activateOnOpen = true;
+
+  /// Recomputes [_active] from the current inputs. Updates only the notifier —
+  /// never `setState` — so the body subtree isn't rebuilt.
+  void _recomputeActive() {
+    if (_dismissed) {
+      _active.value = false;
+      return;
+    }
+    _active.value = _mouseInside ||
+        _engaged ||
+        _pickerSearchController.text.trim().isNotEmpty;
+  }
+
+  /// Filter-controller listener: the filter text contributes to [_active] (any
+  /// text keeps the panel active), so recompute whenever it changes. Typing also
+  /// lifts an Escape-dismiss.
+  void _onFilterChanged() {
+    if (_pickerSearchController.text.trim().isNotEmpty) _dismissed = false;
+    _recomputeActive();
+  }
+
+  /// Global key handler. Two jobs, both gated on the panel being focused:
+  ///
+  /// 1. **Dismiss**: Escape on the empty step-1 filter disengages the panel
+  ///    (it dims unless the pointer is still over it). The field's own Escape
+  ///    first clears any text, so this fires on the *second* Escape — "press
+  ///    Esc again to dismiss". Never consumes the event (other Esc handlers run).
+  /// 2. **Engage**: any other real key press (not a modifier, not a ⌘/Ctrl/Alt
+  ///    shortcut like ⌘N) counts as in-panel keyboard navigation and engages.
+  bool _onHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (!_pageFocused) return false;
+
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_active.value &&
+          _step == _ComposeStep.sections &&
+          _pickerSearchController.text.trim().isEmpty) {
+        _engaged = false;
+        _dismissed = true;
+        _recomputeActive();
+      }
+      return false;
+    }
+
+    if (_engaged) return false;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isMetaPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isAltPressed) {
+      return false;
+    }
+    if (_modifierKeys.contains(event.logicalKey)) return false;
+    _engaged = true;
+    _dismissed = false;
+    _recomputeActive();
+    return false;
+  }
+
+  static final Set<LogicalKeyboardKey> _modifierKeys = {
+    LogicalKeyboardKey.shift,
+    LogicalKeyboardKey.shiftLeft,
+    LogicalKeyboardKey.shiftRight,
+    LogicalKeyboardKey.control,
+    LogicalKeyboardKey.controlLeft,
+    LogicalKeyboardKey.controlRight,
+    LogicalKeyboardKey.alt,
+    LogicalKeyboardKey.altLeft,
+    LogicalKeyboardKey.altRight,
+    LogicalKeyboardKey.meta,
+    LogicalKeyboardKey.metaLeft,
+    LogicalKeyboardKey.metaRight,
+  };
+
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
   ThreadHeaderNotifier? _headerNotifier;
@@ -222,6 +352,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     super.initState();
     NewThreadPageState.resetRequest.addListener(_onResetRequested);
     NewThreadPageState.feedbackRequest.addListener(_onFeedbackRequested);
+    _pickerSearchController.addListener(_onFilterChanged);
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
+    // Start active only when an explicit New-thread command opened this fresh
+    // mount; a passive default mount (root panel) stays inactive. Consume the
+    // one-shot flag so it can't leak into a later passive mount.
+    if (NewThreadPageState._activateOnOpen) {
+      NewThreadPageState._activateOnOpen = false;
+      _engaged = true;
+      _recomputeActive();
+    }
   }
 
   /// Reacts to a [HelpAndFeedback] re-invocation against this already-mounted
@@ -239,6 +379,14 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return;
     if (NewThreadPageState.resetRequest.value == _lastResetSeen) return;
     _lastResetSeen = NewThreadPageState.resetRequest.value;
+    // An explicit New-thread command re-invoked this live page → engage it
+    // (mirrors a command-driven fresh mount). requestReset() is only ever called
+    // by that command, so reaching here always means an explicit invocation.
+    // Consume the open flag so it can't leak to a later passive mount.
+    NewThreadPageState._activateOnOpen = false;
+    _engaged = true;
+    _dismissed = false;
+    _recomputeActive();
     _resetToFreshStart();
   }
 
@@ -646,7 +794,10 @@ class NewThreadPageState extends State<NewThreadPage> {
     LayoutBloc.instance?.preferMiddle = false;
     _pickerScrollController.dispose();
     _pickerSearchFocusNode.dispose();
+    _pickerSearchController.removeListener(_onFilterChanged);
     _pickerSearchController.dispose();
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    _active.dispose();
     super.dispose();
   }
 
@@ -1464,6 +1615,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       scrollController: _pickerScrollController,
       searchController: _pickerSearchController,
       searchFocusNode: _pickerSearchFocusNode,
+      // Only multi-panel fades the panel, so only there does the "Start a
+      // thread" hint need the level-holding boost. Single-panel never dims, so
+      // pass null (no boost) — boosting an un-faded hint would over-darken it.
+      activeListenable: multiPanel ? _active : null,
       onPickRecipient: _pickRecipient,
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
       // Single-panel mode drops the global header back button; the picker's
@@ -1594,6 +1749,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       // tree as the LayoutBloc emits during load.
       buildWhen: (prev, curr) => prev.multiPanel != curr.multiPanel,
       builder: (context, layoutState) {
+        // Single-panel mode is always active (no eye-catch dimming on mobile /
+        // narrow layouts). OR-ed into the body opacity at render time.
+        _singlePanel = !layoutState.multiPanel;
         return BlocBuilder<PriorityBloc, PriorityState>(
             // During initial load PriorityBloc emits 6-10 times (agenda,
             // activity feed, tags, icon counts, twists, actors). Only the
@@ -1633,8 +1791,45 @@ class NewThreadPageState extends State<NewThreadPage> {
                     translucent: true,
                     scrollable: false,
                     childPad: false,
-                    body: LayoutBuilder(
-                      builder: (context, constraints) {
+                    // Active/inactive styling: the body fades between full
+                    // strength and a muted resting state so it doesn't catch
+                    // the eye when idle. The MouseRegion/Focus drive [_active]
+                    // (via the notifier only — never setState — so the editor
+                    // subtree isn't rebuilt on hover/focus), and the
+                    // ValueListenableBuilder animates just the opacity layer.
+                    body: MouseRegion(
+                      opaque: false,
+                      onEnter: (_) {
+                        _mouseInside = true;
+                        _dismissed = false;
+                        _recomputeActive();
+                      },
+                      onExit: (_) {
+                        _mouseInside = false;
+                        _engaged = false;
+                        _dismissed = false;
+                        _recomputeActive();
+                      },
+                      child: Focus(
+                        canRequestFocus: false,
+                        skipTraversal: true,
+                        // Track focus only to gate the key handler. Do NOT
+                        // deactivate on focus-loss: the app drops/re-grabs focus
+                        // internally (e.g. on reset), which would wipe a
+                        // just-applied engagement. Mouse-leave / Esc deactivate.
+                        onFocusChange: (hasFocus) => _pageFocused = hasFocus,
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: _active,
+                          builder: (context, active, child) => AnimatedOpacity(
+                            opacity: (active || _singlePanel)
+                                ? 1.0
+                                : kNewThreadInactiveOpacity,
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            child: child,
+                          ),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
                         // Step 1: the inline sections picker. Shown on a fresh
                         // mount (and after the New-thread command remounts) in
                         // place of the compose surface + editor.
@@ -1777,7 +1972,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                             ],
                           ),
                         );
-                      },
+                            },
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

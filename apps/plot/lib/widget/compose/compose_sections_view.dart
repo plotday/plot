@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
@@ -38,6 +39,7 @@ class ComposeSectionsView extends StatefulWidget {
     required this.onPickTarget,
     this.onBack,
     this.autofocusSearch = true,
+    this.activeListenable,
   });
 
   /// Scroll controller for the pill grid (owned by the host page so it
@@ -71,6 +73,12 @@ class ComposeSectionsView extends StatefulWidget {
   /// page's normal open); the host can disable it when restoring step 1 after
   /// the user returns from step 2 and already has a typed filter.
   final bool autofocusSearch;
+
+  /// Forwarded to [ComposeSearchField.activeListenable]: when the host fades the
+  /// panel in its inactive state, this carries the active-state so the "Start a
+  /// thread" hint holds its level through the fade. Null disables the boost
+  /// (e.g. single-panel mode, where the panel never fades).
+  final ValueListenable<bool>? activeListenable;
 
   @override
   State<ComposeSectionsView> createState() => _ComposeSectionsViewState();
@@ -321,7 +329,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           controller: widget.searchController,
           focusNode: widget.searchFocusNode,
           hint: 'Start a thread',
+          hintDetail: 'with a name, email, channel, or focus',
           autofocus: widget.autofocusSearch,
+          activeListenable: widget.activeListenable,
           leading: leading,
           onChanged: _onSearchChanged,
           onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
