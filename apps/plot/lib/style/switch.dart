@@ -4,6 +4,24 @@ import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
 
+/// IMPORTANT — sizing convention for `FSwitch`:
+///
+/// A bare `FSwitch` renders LARGE (its default forui size). Every switch in
+/// the app must be shrunk to the standard 32×20 footprint by wrapping it:
+///
+/// ```dart
+/// SizedBox(
+///   width: 32,
+///   height: 20,
+///   child: FittedBox(fit: BoxFit.contain, child: FSwitch(...)),
+/// )
+/// ```
+///
+/// See `lib/widget/setup_source.dart`, `lib/widget/form.dart`, and
+/// `lib/command/twist.dart` for existing call sites. Dropping in a raw
+/// `FSwitch` produces oversized green toggles that don't match the rest of
+/// the UI — always use the wrapper.
+///
 /// Builds a switch style with better thumb contrast against the track.
 ///
 /// Forui's defaults render the thumb and the off-state track at very similar

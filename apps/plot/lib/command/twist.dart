@@ -2012,8 +2012,14 @@ class AddSourceDetail extends ShowForm {
                   divider: false,
                   builder: (formContext) {
                     return Padding(
-                      padding:
-                          formContext.theme.spacing.padding.copyWith(top: 0),
+                      // Match the xl horizontal padding every other form item
+                      // (and the description above) uses, so the bullets,
+                      // toggles, and auth button left-align with the rest.
+                      padding: EdgeInsets.only(
+                        left: formContext.theme.spacing.xl,
+                        right: formContext.theme.spacing.xl,
+                        bottom: formContext.theme.spacing.lg,
+                      ),
                       child: _AuthWithScopeToggles(
                         provider: provider,
                         twistInstanceId: draftId,
@@ -2204,8 +2210,14 @@ class AddSourceDetail extends ShowForm {
                   divider: false,
                   builder: (formContext) {
                     return Padding(
-                      padding:
-                          formContext.theme.spacing.padding.copyWith(top: 0),
+                      // Match the xl horizontal padding every other form item
+                      // (and the description above) uses, so the bullets,
+                      // toggles, and auth button left-align with the rest.
+                      padding: EdgeInsets.only(
+                        left: formContext.theme.spacing.xl,
+                        right: formContext.theme.spacing.xl,
+                        bottom: formContext.theme.spacing.lg,
+                      ),
                       child: _AuthWithScopeToggles(
                         provider: provider,
                         twistInstanceId: draftId,
@@ -3734,18 +3746,28 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
                       ],
                     ),
                   ),
-                  FSwitch(
-                    value: _enabledGroups.contains(group.id),
-                    onChange: (value) {
-                      setState(() {
-                        if (value) {
-                          _enabledGroups.add(group.id);
-                        } else {
-                          _enabledGroups.remove(group.id);
-                        }
-                      });
-                      widget.onScopeGroupsChanged?.call(_enabledGroups);
-                    },
+                  // FSwitch renders large by default; the app standardises on
+                  // a 32x20 FittedBox so every switch matches. See the note in
+                  // lib/style/switch.dart before changing.
+                  SizedBox(
+                    width: 32,
+                    height: 20,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(
+                        value: _enabledGroups.contains(group.id),
+                        onChange: (value) {
+                          setState(() {
+                            if (value) {
+                              _enabledGroups.add(group.id);
+                            } else {
+                              _enabledGroups.remove(group.id);
+                            }
+                          });
+                          widget.onScopeGroupsChanged?.call(_enabledGroups);
+                        },
+                      ),
+                    ),
                   ),
                 ],
               ),
