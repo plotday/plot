@@ -1474,7 +1474,11 @@ class EditSource extends ShowForm {
                   (a) => a.provider == provider.provider,
                 );
                 return Padding(
-                  padding: formContext.theme.spacing.padding.copyWith(top: 0),
+                  padding: EdgeInsets.only(
+                    left: formContext.theme.spacing.xl,
+                    right: formContext.theme.spacing.xl,
+                    bottom: formContext.theme.spacing.lg,
+                  ),
                   child: _AuthWithScopeToggles(
                     provider: provider,
                     twistInstanceId: twistInstanceId,
