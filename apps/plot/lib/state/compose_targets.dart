@@ -670,9 +670,19 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
       if (t != null) rosterTargets.add(t);
     }
     final people = <ComposePeopleEntry>[];
+    // Dropping non-inviteable contacts in [_peopleEntryFor] can collapse two
+    // distinct rosters (e.g. {Greg} and {Greg, mailer-daemon}) to the same
+    // filtered set, so dedupe again on the resolved roster to avoid duplicate
+    // pills.
+    final seenRosters = <String>{};
     for (final r in dedupePeopleByRoster(rosterTargets)) {
       final entry = _peopleEntryFor(r);
-      if (entry != null) people.add(entry);
+      if (entry == null) continue;
+      if (!seenRosters
+          .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+        continue;
+      }
+      people.add(entry);
       if (people.length >= perSection) break;
     }
 
@@ -710,28 +720,41 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// invites). A formal group wins; a single contact is a [ContactPillData];
   /// everything else (multiple contacts, or pending invites) is an ad-hoc group.
   ComposePeopleEntry? _peopleEntryFor(RosterKey r) {
-    final ComposePillData display;
     if (r.groups.isNotEmpty) {
       final g = Group.fromCache(r.groups.first);
       if (g == null) return null;
+      // Drop non-inviteable members (noreply@, mailer-daemon@, and other
+      // automated senders the server flagged via `contact.inviteable`) from
+      // the group's member preview so they don't surface as people.
       final members = [
         for (final id in (g.memberContactIds ?? const <Uuid>[]))
           Actor.fromCache(ActorId.fromUuid(id)),
-      ].whereType<Actor>().toList();
-      display = GroupPillData(g, members);
-    } else if (r.contacts.length == 1 && r.inviteEmails.isEmpty) {
-      final a = Actor.fromCache(ActorId.fromUuid(r.contacts.single));
-      if (a == null) return null;
-      display = ContactPillData(a);
-    } else {
-      final actors = [
-        for (final id in r.contacts) Actor.fromCache(ActorId.fromUuid(id)),
-      ].whereType<Actor>().toList();
-      if (actors.isEmpty && r.inviteEmails.isEmpty) return null;
-      display = AdHocGroupPillData(actors, inviteEmails: r.inviteEmails);
+      ].whereType<Actor>().where((a) => a.inviteable).toList();
+      return ComposePeopleEntry(
+        contacts: r.contacts,
+        groups: r.groups,
+        inviteEmails: r.inviteEmails,
+        display: GroupPillData(g, members),
+      );
     }
+
+    // Resolve roster contacts, dropping non-inviteable actors so automated
+    // addresses never appear as a person to start a thread with — the at-rest
+    // people list is sourced straight from authored-thread rosters, which (via
+    // group bounces, CC'd daemons, transactional senders) can include them.
+    // Invite emails are user-typed, so they're always kept. Filtering can
+    // collapse a multi-contact roster to a single contact, so the pill type is
+    // decided from the filtered set, not the raw roster.
+    final actors = [
+      for (final id in r.contacts) Actor.fromCache(ActorId.fromUuid(id)),
+    ].whereType<Actor>().where((a) => a.inviteable).toList();
+    if (actors.isEmpty && r.inviteEmails.isEmpty) return null;
+    final contacts = actors.map((a) => a.id.toUuid()).toList();
+    final display = contacts.length == 1 && r.inviteEmails.isEmpty
+        ? ContactPillData(actors.single)
+        : AdHocGroupPillData(actors, inviteEmails: r.inviteEmails);
     return ComposePeopleEntry(
-      contacts: r.contacts,
+      contacts: contacts,
       groups: r.groups,
       inviteEmails: r.inviteEmails,
       display: display,

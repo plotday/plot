@@ -92,6 +92,11 @@ const LOCAL_WORD_CONTAINS = [
   /(^|-)(noreply|no-reply|donotreply)(-|$)/,
   /(^|-)reply(-|\+|$)/,
   /(^|-)(newsletter|newsletters|unsubscribe)(-|$)/,
+  // Transactional / billing senders: invoice(s), statement(s), receipt(s),
+  // billing, payment(s). `+` is treated as a word boundary on both sides so
+  // plus-tagged variants like `invoice+statements@`, `invoice+statements+acct_x@`,
+  // and `billing+acct_x@` are caught alongside `failed-payments@`.
+  /(^|-|\+)(invoices?|statements?|receipts?|billing|payments?)(-|\+|$)/,
 ];
 
 const DOMAIN_LABELS = new Set([

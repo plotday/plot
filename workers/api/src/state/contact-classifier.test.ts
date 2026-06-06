@@ -104,6 +104,22 @@ describe("classifyInviteable", () => {
       expect(classifyInviteable("@bar.com")).toBe(false);
     });
 
+    it("for transactional billing / statement locals", () => {
+      expect(classifyInviteable("invoice@example.com")).toBe(false);
+      expect(classifyInviteable("invoices@example.com")).toBe(false);
+      expect(classifyInviteable("statements@example.com")).toBe(false);
+      expect(classifyInviteable("billing@example.com")).toBe(false);
+      expect(classifyInviteable("payments@example.com")).toBe(false);
+      expect(classifyInviteable("failed-payments@mail.anthropic.com")).toBe(false);
+      expect(classifyInviteable("account-statements@example.com")).toBe(false);
+    });
+
+    it("for plus-tagged transactional locals", () => {
+      expect(classifyInviteable("invoice+statements@mail.anthropic.com")).toBe(false);
+      expect(classifyInviteable("invoice+statements+acct_1n84@stripe.com")).toBe(false);
+      expect(classifyInviteable("billing+acct_1hdt@stripe.com")).toBe(false);
+    });
+
     it("for newsletter and unsubscribe locals", () => {
       expect(classifyInviteable("newsletter@floatfinancial.com")).toBe(false);
       expect(classifyInviteable("newsletters@example.com")).toBe(false);

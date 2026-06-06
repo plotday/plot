@@ -9,6 +9,7 @@ import 'package:plot/state/compose_targets.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/profile_preferences.dart';
+import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/compose/compose_target_view.dart';
 import 'package:plot/widget/connection_targets.dart';
@@ -628,6 +629,91 @@ void main() {
     });
 
     test(
+        'loadSections at-rest people list drops non-inviteable roster contacts',
+        () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate(); // inviteable correspondent
+      final daemon = Uuid.generate(); // bounced mailer-daemon (non-inviteable)
+      final priorityId = Uuid.generate();
+
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await _insertActor(store, daemon,
+          name: 'Mail Delivery Subsystem', inviteable: false);
+      await Actor.get(self: true);
+
+      // An authored thread whose roster mixes Greg with a bounced
+      // mailer-daemon address — the shape that leaked daemons into the
+      // picker before the inviteable filter.
+      final thread = Uuid.generate();
+      await _insertThread(store, thread,
+          priorityId: priorityId,
+          contacts: [self, greg, daemon],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, thread, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.loadSections();
+      final peopleContacts = sections.people
+          .expand((e) => e.contacts.map((u) => u.toString()))
+          .toSet();
+
+      // The daemon used to ride along on the {Greg} roster; now only Greg
+      // surfaces and the roster collapses to a single-contact pill.
+      expect(peopleContacts, contains(greg.toString()));
+      expect(peopleContacts, isNot(contains(daemon.toString())));
+    });
+
+    test('loadSections drops non-inviteable members from a group pill preview',
+        () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate(); // inviteable member
+      final daemon = Uuid.generate(); // non-inviteable member
+      final groupId = Uuid.generate();
+      final priorityId = Uuid.generate();
+
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await _insertActor(store, daemon, name: 'Mailer Daemon', inviteable: false);
+      await Actor.get(self: true);
+      // The group thread carries no individual contacts, so the context's
+      // own cache-warm is skipped — warm the members explicitly the way a
+      // real session does via the global actor sync.
+      await Actor.get();
+      await _insertGroup(store, groupId,
+          name: 'Acme Team', memberContactIds: [greg, daemon]);
+
+      final chatThread = Uuid.generate();
+      await _insertThread(store, chatThread,
+          priorityId: priorityId,
+          contacts: [self],
+          groups: [groupId],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, chatThread, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final sections = await bloc.loadSections();
+      final groupEntry = sections.people.firstWhere((e) => e.hasGroup);
+      final memberIds = (groupEntry.display as GroupPillData)
+          .members
+          .map((a) => a.id.toUuid().toString())
+          .toSet();
+
+      expect(memberIds, contains(greg.toString()));
+      expect(memberIds, isNot(contains(daemon.toString())));
+    });
+
+    test(
         'per-keystroke search reuses a cached context; refresh() invalidates it',
         () async {
       // Guards the search-performance optimization: a name search must NOT
@@ -1158,7 +1244,12 @@ Future<void> _insertThread(
       );
 }
 
-Future<void> _insertGroup(Store store, Uuid id, {required String name}) async {
+Future<void> _insertGroup(
+  Store store,
+  Uuid id, {
+  required String name,
+  List<Uuid> memberContactIds = const [],
+}) async {
   await store.into(store.groups).insert(
         GroupsCompanion(
           id: Value(id),
@@ -1166,6 +1257,7 @@ Future<void> _insertGroup(Store store, Uuid id, {required String name}) async {
           type: const Value('team'),
           joinPolicy: const Value('closed'),
           isMember: const Value(true),
+          memberContactIds: Value(memberContactIds),
         ),
       );
   // Populate the synchronous Group cache (Group.fromCache) the way the picker
