@@ -295,6 +295,12 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
   // costs a single callback per row's lifetime.
   double? _renderedWidth;
 
+  // Captured at drag start. The drag-end/cancel callbacks can fire after
+  // this row has unmounted (e.g. the feed rebuilt mid-drag), at which
+  // point `State.context` throws. Holding the controller directly lets
+  // those callbacks finish the drag without touching `context`.
+  BlockDragController? _activeController;
+
   BlockDragPayload _payload() => BlockDragPayload(
     blockId: widget.threadId.toString(),
     priorityId: widget.priorityContext.id,
@@ -325,6 +331,7 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
     // doesn't leave the feedback sized to a stale width.
     _captureRenderedWidth();
     final controller = BlockDragScope.maybeOf(context);
+    _activeController = controller;
     controller?.start(
       _payload(),
       sourceContextProvider: () => _rowKey.currentContext ?? context,
@@ -332,15 +339,17 @@ class _ActivityFeedDraggableRowState extends State<ActivityFeedDraggableRow> {
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    BlockDragScope.maybeOf(context)?.updatePointer(details.globalPosition);
+    _activeController?.updatePointer(details.globalPosition);
   }
 
   void _onDragEnd(DraggableDetails details) {
-    BlockDragScope.maybeOf(context)?.end();
+    _activeController?.end();
+    _activeController = null;
   }
 
   void _onDragCancelled() {
-    BlockDragScope.maybeOf(context)?.end(dispatch: false);
+    _activeController?.end(dispatch: false);
+    _activeController = null;
   }
 
   @override
