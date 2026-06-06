@@ -705,6 +705,37 @@ export class CallbacksState extends DurableObject<Bindings> {
     return callbacks;
   }
 
+  /**
+   * True if this twist_instance has at least one *scheduled* callback whose
+   * `call_at` is still in the future — i.e. a pending `Tasks.runTask({ runAt })`
+   * batch that the alarm will fire to resume work. The stuck-sync watchdog
+   * (workers/api/src/scheduled/recover-stuck-syncs.ts) uses this to tell a
+   * healthy long-running / rate-limited sync (has a future batch queued)
+   * apart from one orphaned by a worker crash (nothing left to fire).
+   *
+   * Only future scheduled rows count as "alive": an immediate (`call_at IS
+   * NULL`) task row can linger after the run queue exhausts its retries, so
+   * it is NOT a reliable liveness signal; a past-due scheduled row is
+   * consumed-and-deleted by the alarm, so it never lingers either.
+   */
+  hasPendingScheduledCallback(twistInstanceId: string): boolean {
+    const result = this.sql
+      .exec(
+        `
+        SELECT 1
+        FROM callbacks
+        WHERE twist_instance_id = ?
+          AND call_at IS NOT NULL
+          AND call_at > ?
+        LIMIT 1
+        `,
+        twistInstanceId,
+        Date.now()
+      )
+      .next();
+    return !result.done;
+  }
+
   delete(token: string): void {
     [, token] = token.split(":");
     this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);

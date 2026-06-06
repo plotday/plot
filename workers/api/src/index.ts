@@ -55,6 +55,7 @@ import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
 import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
+import { recoverStuckSyncs } from "./scheduled/recover-stuck-syncs";
 import { finalizeEventSessions } from "./scheduled/finalize-event-sessions";
 import { reconcileMissingEmbeddings } from "./scheduled/reconcile-embeddings";
 import { runSweep as runClassifySweep } from "./state/classify-thread";
@@ -341,6 +342,13 @@ async function scheduled(
   const scheduledTime = new Date(event.scheduledTime);
   const scheduledMinutes = scheduledTime.getUTCMinutes();
   if (scheduledMinutes < 5 || (scheduledMinutes >= 30 && scheduledMinutes < 35)) {
+    // Flag syncs orphaned mid-flight (worker crash) so the recover-pending
+    // sweep below picks them up and re-dispatches them in this same tick.
+    try {
+      await recoverStuckSyncs(env, _ctx);
+    } catch (error) {
+      logger.error("Error in stuck-sync watchdog", error as Error);
+    }
     try {
       await recoverPendingConnections(env, _ctx);
     } catch (error) {
