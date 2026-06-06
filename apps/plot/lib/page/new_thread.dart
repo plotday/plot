@@ -861,6 +861,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return;
     if (picked is PickedPriorityChoice) {
       await _switchToPriority(picked.priority);
+      if (!mounted) return;
+      // A mouse tap on the focus field moved keyboard focus to the field
+      // before the picker opened (ComposeSelectField._handleTap), so the
+      // navigator restores focus to the field — not the editor — when the
+      // picker closes, stranding the caret. Return focus to the composer so
+      // the user can keep typing. Post-frame so it lands after the picker
+      // route's own focus restoration; idempotent for the keyboard-shortcut
+      // path, where the editor already holds focus.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _threadEditorKey.currentState?.focus();
+      });
     }
   }
 
