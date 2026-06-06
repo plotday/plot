@@ -1697,11 +1697,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         selectedTwist: _selectedTwist,
                                         onTwistSelected: _selectTwist,
                                         onTwistMentioned: _onTwistMentioned,
-                                        onNavigateToThread: (thread) {
-                                          context.run(
-                                            ChangeCurrentThread(thread),
-                                          );
-                                        },
                                       ),
                                     ),
                                   ),
@@ -1769,11 +1764,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                                 onTwistSelected: _selectTwist,
                                                 onTwistMentioned:
                                                     _onTwistMentioned,
-                                                onNavigateToThread: (thread) {
-                                                  context.run(
-                                                    ChangeCurrentThread(thread),
-                                                  );
-                                                },
                                                 autofocus: !isMobilePlatform(),
                                               ),
                                             ),

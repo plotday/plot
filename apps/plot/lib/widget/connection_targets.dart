@@ -323,31 +323,3 @@ ListTile connectionTargetTile(BuildContext context, CreateTarget target) {
     subtitle: subtitle.isEmpty ? null : subtitle,
   );
 }
-
-/// Shared list-tile builder for "Create new …" rows in pickers.
-ListTile createTargetTile(BuildContext context, CreateTarget target) {
-  final isDark = context.read<ThemeBloc>().isDarkMode(context);
-  final logo = isDark
-      ? (target.linkType.logoDark ?? target.linkType.logo)
-      : target.linkType.logo;
-  return ListTile(
-    leadingBuilder: logo != null
-        ? (_, _) => Builder(
-              builder: (context) => Padding(
-                padding: EdgeInsets.only(
-                  left: context.theme.spacing.lg,
-                  right: 8,
-                ),
-                child: LogoImage(
-                  url: logo,
-                  size: 16,
-                  fallback: const Icon(PlotIcon.add, size: 16),
-                ),
-              ),
-            )
-        : null,
-    icon: logo == null ? PlotIcon.add : null,
-    title: target.title,
-    subtitle: target.subtitle,
-  );
-}

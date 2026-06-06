@@ -3,37 +3,27 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/widget/widget.dart' hide Link;
 
-/// Result from the link modal: an existing thread to navigate to, a link to
-/// attach, or a request to create a new external item via a connector.
+/// Result from the link modal: an existing thread to attach as a reference,
+/// or a plain URL link to attach.
 class LinkModalResult {
   final String? url;
   final String? title;
   final String? favicon;
   final Thread? existingThread;
-  final CreateLinkUserAction? createAction;
 
   LinkModalResult.link({
     required String this.url,
     this.title,
     this.favicon,
-  })  : existingThread = null,
-        createAction = null;
+  }) : existingThread = null;
 
   LinkModalResult.thread(Thread this.existingThread)
       : url = null,
         title = null,
-        favicon = null,
-        createAction = null;
-
-  LinkModalResult.create(CreateLinkUserAction this.createAction)
-      : url = null,
-        title = null,
-        favicon = null,
-        existingThread = null;
+        favicon = null;
 
   bool get isThread => existingThread != null;
   bool get isLink => url != null;
-  bool get isCreateAction => createAction != null;
 }
 
 /// A modal for searching or pasting a link, using the standard SelectModal pattern.
@@ -46,26 +36,13 @@ class LinkModal {
     String? fetchedTitle;
     String? fetchedFavicon;
 
-    // Enabled channels whose link types declare a `compose` block become
-    // "Create new …" picker entries. Loaded on first items() call.
-    List<CreateTarget>? createTargets;
-
     final result = await SelectModal.open<_LinkItem>(
       context,
       items: (search) async {
-        createTargets ??= await loadCreateTargets();
         final text = search?.trim() ?? '';
         final groups = <SelectGroup<_LinkItem>>[];
 
         if (text.isEmpty) {
-          if (createTargets!.isNotEmpty) {
-            groups.add(SelectGroup(
-              title: 'Create new',
-              items: createTargets!
-                  .map((t) => _LinkItem.createExternal(t))
-                  .toList(),
-            ));
-          }
           final recentLinks = await Link.listRecent();
           if (recentLinks.isNotEmpty) {
             groups.add(SelectGroup(
@@ -76,19 +53,6 @@ class LinkModal {
             ));
           }
           return groups;
-        }
-
-        // Include any matching create targets above other results.
-        final matchingCreate = createTargets!
-            .where((t) => t.searchText.contains(text.toLowerCase()))
-            .toList();
-        if (matchingCreate.isNotEmpty) {
-          groups.add(SelectGroup(
-            title: 'Create new',
-            items: matchingCreate
-                .map((t) => _LinkItem.createExternal(t))
-                .toList(),
-          ));
         }
 
         final isUrl = _checkIsUrl(text);
@@ -128,13 +92,33 @@ class LinkModal {
                   .toList(),
             ));
           }
+
+          // Surface Plot threads (incl. notes-only threads with no Link row),
+          // which only appear via remote search. Network-backed; offline this
+          // silently yields nothing. Network failures are expected here, so
+          // swallow them rather than reporting to error tracking.
+          List<Thread> threads = const [];
+          try {
+            threads = await Thread.searchRemote(text, archived: false);
+          } catch (_) {
+            threads = const [];
+          }
+          if (threads.isNotEmpty) {
+            groups.add(SelectGroup(
+              title: 'Threads',
+              items: threads.map((t) => _LinkItem.thread(t)).toList(),
+            ));
+          }
         }
 
         return groups;
       },
       itemBuilder: (item, isLoading) {
-        if (item.isCreateExternal) {
-          return createTargetTile(context, item.createTarget!);
+        if (item.isThread) {
+          return ListTile(
+            icon: PlotIcon.inbox,
+            title: item.thread!.title ?? 'Untitled',
+          );
         }
         if (item.isCreate) {
           return ListTile(
@@ -189,8 +173,8 @@ class LinkModal {
     if (!result.present) return null;
 
     final item = result.value;
-    if (item.isCreateExternal) {
-      return LinkModalResult.create(item.createTarget!.toUserAction());
+    if (item.isThread) {
+      return LinkModalResult.thread(item.thread!);
     }
     if (item.isCreate) {
       return LinkModalResult.link(
@@ -201,10 +185,10 @@ class LinkModal {
     }
 
     final link = item.linkResult!.link;
-    // Links that point at a Plot thread navigate to it; resolve the Thread
-    // lazily here (instead of eagerly for every Recent row at modal-open
-    // time) so the modal opens immediately. Fall through to the URL form
-    // if the thread has been deleted locally.
+    // Links that point at a Plot thread attach a reference to that thread;
+    // resolve the Thread lazily here (instead of eagerly for every Recent row
+    // at modal-open time) so the modal opens immediately. Fall through to the
+    // URL form if the thread has been deleted locally.
     if (link.threadId != null) {
       try {
         final thread = await Thread.getOne(link.threadId!);
@@ -230,35 +214,34 @@ class LinkModal {
         uri.hasScheme &&
         (uri.scheme == 'http' || uri.scheme == 'https');
   }
-
 }
 
 /// Internal item type for the SelectModal.
 class _LinkItem {
   final _LinkSearchResult? linkResult;
-  final CreateTarget? createTarget;
+  final Thread? thread;
   final String? url;
   final String? title;
   final String? favicon;
 
   _LinkItem.existing(this.linkResult)
-      : createTarget = null,
+      : thread = null,
+        url = null,
+        title = null,
+        favicon = null;
+
+  _LinkItem.thread(this.thread)
+      : linkResult = null,
         url = null,
         title = null,
         favicon = null;
 
   _LinkItem.create({required this.url, this.title, this.favicon})
       : linkResult = null,
-        createTarget = null;
+        thread = null;
 
-  _LinkItem.createExternal(this.createTarget)
-      : linkResult = null,
-        url = null,
-        title = null,
-        favicon = null;
-
-  bool get isCreate => linkResult == null && createTarget == null;
-  bool get isCreateExternal => createTarget != null;
+  bool get isThread => thread != null;
+  bool get isCreate => linkResult == null && thread == null;
 }
 
 class _LinkSearchResult {

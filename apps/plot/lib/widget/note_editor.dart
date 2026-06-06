@@ -44,8 +44,6 @@ class NoteEditor extends StatefulWidget {
     this.selectedTwist,
     this.onTwistSelected,
     this.onTwistMentioned,
-    // Link/navigation callbacks
-    this.onNavigateToThread,
     this.autofocus,
     this.bodyOnly = false,
     super.key,
@@ -101,9 +99,6 @@ class NoteEditor extends StatefulWidget {
   /// the contact-mention → add-to-thread behavior). The mention text is
   /// still inserted; this is an additive signal.
   final void Function(String twistId)? onTwistMentioned;
-
-  /// Called when user selects an existing thread from the link modal.
-  final void Function(Thread thread)? onNavigateToThread;
 
   /// Override the editor's default autofocus behavior. When null, the editor
   /// autofocuses in new-thread mode or when a physical keyboard is present.
@@ -1138,6 +1133,7 @@ class NoteEditorState extends State<NoteEditor> {
           (a) =>
               a.type == UserActionType.file ||
               a.type == UserActionType.external ||
+              a.type == UserActionType.thread ||
               (a.type == UserActionType.createLink && !widget.isNewThreadMode),
         )
         .toList();
@@ -1188,6 +1184,9 @@ class NoteEditorState extends State<NoteEditor> {
             )
           : Icon(PlotIcon.link, size: 12, color: context.colour.muted);
       label = action.title;
+    } else if (action is ThreadUserAction) {
+      icon = Icon(PlotIcon.inbox, size: 12, color: context.colour.muted);
+      label = action.title ?? 'Thread';
     } else {
       return const SizedBox.shrink();
     }
@@ -1454,7 +1453,6 @@ class NoteEditorState extends State<NoteEditor> {
                         AddLink(
                           currentActions: _currentActions,
                           onActionsChanged: applyActions,
-                          onNavigateToThread: widget.onNavigateToThread,
                         ),
                       ),
                     if (threadState.linksLoaded &&
@@ -1545,7 +1543,6 @@ class NoteEditorState extends State<NoteEditor> {
                           note: draftNote.copyWith(actions: actions),
                         );
                       },
-                      onNavigateToThread: widget.onNavigateToThread,
                     ),
                   ),
                 if (_canAttachFile(linkType))
@@ -1657,7 +1654,6 @@ class NoteEditorState extends State<NoteEditor> {
       AddLink(
         currentActions: _currentActions,
         onActionsChanged: _setCurrentActions,
-        onNavigateToThread: widget.onNavigateToThread,
       ),
     );
   }

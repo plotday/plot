@@ -9,7 +9,6 @@ class AddLink extends Command {
   AddLink({
     required this.currentActions,
     required this.onActionsChanged,
-    this.onNavigateToThread,
   }) : super(
          title: 'Add link',
          eventObject: EventObject.note,
@@ -23,7 +22,6 @@ class AddLink extends Command {
 
   final List<UserAction> currentActions;
   final void Function(List<UserAction> actions) onActionsChanged;
-  final void Function(Thread thread)? onNavigateToThread;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -31,16 +29,17 @@ class AddLink extends Command {
     if (result == null) return const CommandSkipped();
 
     if (result.isThread) {
-      onNavigateToThread?.call(result.existingThread!);
-      return const CommandDone();
-    }
-
-    if (result.isCreateAction) {
-      // Only one create-link action per thread; replace any existing one.
-      final filtered = currentActions
-          .where((a) => a is! CreateLinkUserAction)
-          .toList();
-      onActionsChanged([result.createAction!, ...filtered]);
+      // Attach a reference to the existing Plot thread instead of navigating
+      // to it. Deduped by threadId so re-picking the same thread is a no-op.
+      final thread = result.existingThread!;
+      onActionsChanged(
+        appendThreadReference(
+          currentActions,
+          threadId: thread.id.toString(),
+          title: thread.title,
+          priorityId: thread.priority.id.toString(),
+        ),
+      );
       return const CommandDone();
     }
 
@@ -55,4 +54,24 @@ class AddLink extends Command {
 
     return const CommandDone();
   }
+}
+
+/// Returns a new actions list with a [ThreadUserAction] for [threadId]
+/// appended. If a thread reference for [threadId] is already present, the
+/// list is returned unchanged (no duplicate, existing reference preserved).
+/// Does not mutate [current].
+List<UserAction> appendThreadReference(
+  List<UserAction> current, {
+  required String threadId,
+  String? title,
+  String? priorityId,
+}) {
+  final alreadyAttached = current.any(
+    (a) => a is ThreadUserAction && a.threadId == threadId,
+  );
+  if (alreadyAttached) return current;
+  return [
+    ...current,
+    ThreadUserAction(threadId: threadId, title: title, priorityId: priorityId),
+  ];
 }
