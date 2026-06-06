@@ -2,9 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/store/store.dart';
-import 'package:plot/widget/avatar.dart';
-
 // ---------------------------------------------------------------------------
 // State hierarchy
 // ---------------------------------------------------------------------------
@@ -45,30 +42,36 @@ class TopBarPill {
   final String id;
   final String label;
 
-  /// Resolved actors to draw in the pill's avatar cluster, in display order.
-  /// Null/empty = no cluster. Groups and any not-yet-cached contacts aren't
-  /// drawn individually — they're folded into the "+N" overflow via
-  /// [avatarTotalCount].
-  final List<Actor>? avatarActors;
+  /// Icon drawn before the label (e.g. reply / reply-all). Null = no icon.
+  final IconData? leadingIcon;
 
-  /// Total audience size (non-self contacts + groups) the cluster represents,
-  /// driving the "+N" overflow badge. Defaults to [avatarActors] length.
-  final int? avatarTotalCount;
+  /// Recipient count rendered in a small pill just before [editIcon].
+  /// Null = no count shown.
+  final int? recipientCount;
 
-  /// Called when the pill body is tapped.
+  /// Trailing edit-affordance icon (pencil to edit recipients, user-plus to
+  /// add). Null = no edit affordance.
+  final IconData? editIcon;
+
+  /// Tooltip shown over the [editIcon]/[recipientCount] affordance.
+  final String? editTooltip;
+
+  /// Called when the pill body (leading icon + label) is tapped.
   final VoidCallback onTap;
 
-  /// Called when the avatar cluster is tapped (opens the recipient picker).
-  /// When non-null the cluster brightens on hover to signal the affordance.
-  final VoidCallback? onAvatarsTap;
+  /// Called when the [recipientCount]/[editIcon] affordance is tapped (opens
+  /// the recipient editor). When non-null the affordance brightens on hover.
+  final VoidCallback? onEdit;
 
   const TopBarPill({
     required this.id,
     required this.label,
-    this.avatarActors,
-    this.avatarTotalCount,
+    this.leadingIcon,
+    this.recipientCount,
+    this.editIcon,
+    this.editTooltip,
     required this.onTap,
-    this.onAvatarsTap,
+    this.onEdit,
   });
 }
 
@@ -186,6 +189,14 @@ class _PillState extends State<_Pill> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.pill.leadingIcon != null) ...[
+                  Icon(
+                    widget.pill.leadingIcon,
+                    size: 11,
+                    color: foregroundColor,
+                  ),
+                  const SizedBox(width: 5),
+                ],
                 Text(
                   widget.pill.label,
                   style: context.theme.typography.sm.copyWith(
@@ -195,18 +206,13 @@ class _PillState extends State<_Pill> {
                         : FontWeight.normal,
                   ),
                 ),
-                if (widget.pill.avatarActors != null &&
-                    widget.pill.avatarActors!.isNotEmpty) ...[
+                if (widget.pill.editIcon != null) ...[
                   const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: widget.pill.onAvatarsTap,
-                    child: AvatarGroup(
-                      actors: widget.pill.avatarActors!,
-                      totalCount: widget.pill.avatarTotalCount,
-                      maxVisible: 3,
-                      size: 16,
-                      clickable: widget.pill.onAvatarsTap != null,
-                    ),
+                  _EditAffordance(
+                    count: widget.pill.recipientCount,
+                    icon: widget.pill.editIcon!,
+                    tooltip: widget.pill.editTooltip,
+                    onTap: widget.pill.onEdit,
                   ),
                 ],
               ],
@@ -214,6 +220,78 @@ class _PillState extends State<_Pill> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The recipient count pill + edit icon shown on the reply-all / reply pills.
+/// Its own tap target (so it fires [onTap] instead of the pill's body tap) and
+/// brightens on hover. Wrapped in an [FTooltip] when [tooltip] is set.
+class _EditAffordance extends StatefulWidget {
+  final int? count;
+  final IconData icon;
+  final String? tooltip;
+  final VoidCallback? onTap;
+
+  const _EditAffordance({
+    required this.count,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  State<_EditAffordance> createState() => _EditAffordanceState();
+}
+
+class _EditAffordanceState extends State<_EditAffordance> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final color = _hovering ? colors.foreground : colors.mutedForeground;
+
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.count != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: colors.mutedForeground
+                  .withValues(alpha: _hovering ? 0.18 : 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${widget.count}',
+              style: context.theme.typography.xs.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        Icon(widget.icon, size: 11, color: color),
+      ],
+    );
+
+    final hoverable = MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: content,
+      ),
+    );
+
+    final tooltip = widget.tooltip;
+    if (tooltip == null) return hoverable;
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(tooltip),
+      child: hoverable,
     );
   }
 }
