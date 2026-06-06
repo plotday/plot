@@ -1014,6 +1014,30 @@ class ThreadCommands extends HookWidget {
       ];
     }
 
+    // The trailing row is overlaid via a [Positioned] (see _buildListTile)
+    // whose negative right offset is tuned for ghost icon buttons: it pushes
+    // the row right by the button's internal icon padding so the visible glyph
+    // lands at the content's right edge. Non-button trailing items (the RSVP
+    // chip, the assignee avatar) carry no such internal inset, so when one of
+    // them is the trailing-most child it overshoots and sits flush against the
+    // panel edge. When resting (no hover commands, which always end in a
+    // button), add a right inset equal to that button icon padding so the
+    // chip/avatar lands at the same x a button glyph would — matching the
+    // agenda's RSVP padding.
+    final trailingIsNonButton =
+        !showCommands && (rsvpChip != null || activity.assigneeId != null);
+    final trailingInset = trailingIsNonButton
+        ? context
+              .theme
+              .buttonStyles
+              .ghost
+              .md
+              .iconContentStyle
+              .padding
+              .resolve(TextDirection.ltr)
+              .right
+        : 0.0;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1030,6 +1054,7 @@ class ThreadCommands extends HookWidget {
         // avatars) to the left.
         if (isAssociated && showCommands)
           Button.icon(DisassociateThread(activity)),
+        if (trailingInset > 0) SizedBox(width: trailingInset),
       ],
     );
   }
