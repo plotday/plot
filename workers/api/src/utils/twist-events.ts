@@ -74,6 +74,77 @@ export async function emitCustomDeploymentEvent(
   }
 }
 
+type NeedsReauthEventInput = {
+  env: Bindings;
+  userId: string;
+  twistInstanceId: string;
+  provider: string;
+  actorId: string;
+  // Which code path detected the dead/invalid token and flagged re-auth.
+  trigger:
+    | "refresh_permanent"
+    | "no_refresh_token"
+    | "insufficient_scope"
+    | "token_missing"
+    | "connector_signal";
+  // Human-readable reason captured at flag time (usually the raw OAuth error).
+  reason: string;
+  // RFC 6749 OAuth error code when available (e.g. "invalid_grant").
+  oauthError?: string | null;
+  // HTTP status from the failed token/refresh call when available.
+  status?: number | null;
+};
+
+/**
+ * Emit a PostHog event when a connection is flagged for re-authentication.
+ *
+ * `twist_instance_connection` only stores `needs_reauth_at` (a timestamp); the
+ * *reason* is otherwise written only to short-retention worker logs, so by the
+ * time a user re-auths the "why" is gone (this is exactly what blocked the
+ * kris@plot.day Google re-auth investigation — the reason had aged out). This
+ * event preserves the reason (trigger + OAuth error + message), attributed to
+ * the user, so we can tell after the fact why a connection demanded re-auth.
+ *
+ * Opens a dedicated PostHog client so it flushes reliably from the background
+ * sync/refresh paths where the request-scoped tracker may already be shut down.
+ * Never throws — telemetry failures must not look like (or block) the re-auth
+ * flag itself.
+ */
+export async function emitNeedsReauthEvent(
+  input: NeedsReauthEventInput,
+): Promise<void> {
+  if (!input.env.POSTHOG_API_KEY) return;
+
+  try {
+    const postHog = new PostHog(input.env.POSTHOG_API_KEY, {
+      host: input.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    try {
+      postHog.capture({
+        distinctId: input.userId,
+        event: "connector_needs_reauth",
+        properties: {
+          provider: input.provider,
+          trigger: input.trigger,
+          reason: input.reason,
+          oauth_error: input.oauthError ?? null,
+          status: input.status ?? null,
+          twist_instance_id: input.twistInstanceId,
+          actor_id: input.actorId,
+          api_env: currentEnv(),
+        },
+      });
+    } finally {
+      await postHog.shutdown();
+    }
+  } catch {
+    // Best-effort telemetry — swallow so a PostHog hiccup never masks or
+    // aborts the needs_reauth flag.
+  }
+}
+
 type GenerationFailureInput = {
   env: Bindings;
   userId: string | null | undefined;
