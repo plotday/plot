@@ -204,7 +204,8 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
   /// The "other contacts" on the thread, in thread order: every contact except
   /// the current user, dropped contacts, and connection-source twists (Google
-  /// Calendar, Slack, …). Non-connection twists (e.g. "Plot AI") are kept.
+  /// Calendar, Slack, …). Non-connection twists (e.g. "Plot AI") are kept. The
+  /// thread's author (if not the current user) is promoted to the front.
   ///
   /// Derived purely from the thread row plus startup-critical caches
   /// (current-user actors, twist instances), so the result — and whether the
@@ -221,6 +222,21 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // twists (isSource == false, e.g. Plot AI) are kept as participants.
       if (TwistInstance.fromCache(id)?.isSource ?? false) continue;
       if (seen.add(id)) out.add(id);
+    }
+
+    // Promote the thread's author to the front so the person who started the
+    // thread leads the name list. Skip when the current user is the author —
+    // own threads keep their natural order (self is already excluded from
+    // `out` above) — and when the author isn't a current participant or is
+    // already first, both of which no-op below. `authorId` is null on older /
+    // un-backfilled threads, leaving the order untouched.
+    final authorId = activity.authorId?.toUuid();
+    if (authorId != null && !self.contains(authorId)) {
+      final index = out.indexOf(authorId);
+      if (index > 0) {
+        out.removeAt(index);
+        out.insert(0, authorId);
+      }
     }
     return out;
   }

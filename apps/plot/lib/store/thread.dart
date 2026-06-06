@@ -4729,6 +4729,13 @@ SELECT
   DateTime get updatedAt => _thread.updatedAt;
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
+
+  /// The actor credited with causing this thread's creation: the user's
+  /// primary contact for app threads, the resolved external author for
+  /// connector threads, and the twist for non-connection twist threads.
+  /// Null on older / un-backfilled threads. Synced from `thread.author_id`.
+  ActorId? get authorId => _thread.authorId;
+
   List<Uuid> get contacts => _thread.contacts ?? const [];
 
   /// Contacts who have been dropped from the active recipient set. They remain
