@@ -164,6 +164,7 @@ class RecipientPickerModal {
       includeGroupIds: includeGroupIds,
       threadMemberIds: threadContacts.map(Uuid.fromString).toList(),
       sharedSectionTitle: 'Recipients',
+      prompt: 'Select recipients',
       onUpdate: (next) async {
         selection = next;
         changed = true;
