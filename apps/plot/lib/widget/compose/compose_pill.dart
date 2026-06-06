@@ -5,7 +5,6 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/state/theme.dart' show ThemeBloc;
 import 'package:plot/store/store.dart' show Actor, GroupRow, Priority;
-import 'package:plot/style/colors.dart';
 import 'package:plot/widget/avatar.dart';
 import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/icon.dart';
@@ -70,86 +69,49 @@ class ConnectionPillData extends ComposePillData {
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
 
-/// A fully-rounded pill representing a single compose target (person, group,
-/// connection, focus, twist, or channel).
+/// Renders the inner content of a single compose target (person, group,
+/// connection, focus, twist, or channel) as a single horizontal line: a leading
+/// glyph (avatar / logo / count badge / focus icon), the name, and — when
+/// present — an inline muted meta detail (email / channel / scope).
 ///
-/// Focus / hover state is supplied by the parent (a [PillGrid]). When
-/// [focused], the pill shows an accent border and soft fill; at rest it is
-/// transparent with a hairline border.
+/// This is a pure content widget. The row chrome (full-width hit area, rounded
+/// hover / selection highlight, tap handling) is supplied by the parent
+/// ([PillGrid]); it can also be rendered bare as a static line (e.g. the chosen
+/// recipient in the step-2 connection picker).
 ///
-/// Group and ad-hoc pills are wrapped in an [FTooltip] listing all member
+/// Group and ad-hoc entries are wrapped in an [FTooltip] listing all member
 /// names and addresses.
 class ComposePill extends StatelessWidget {
   const ComposePill({
     required this.data,
-    required this.focused,
-    required this.onTap,
-    this.onRemove,
     super.key,
   });
 
   final ComposePillData data;
-  final bool focused;
-  final VoidCallback onTap;
-  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
     final isDark = context.read<ThemeBloc>().isDarkMode(context);
-    final colors = context.theme.colors;
-
-    // Border and fill: stronger/accent + soft fill when focused; hairline at rest.
-    final border = focused
-        ? Border.all(color: colors.primary, width: 1.5)
-        : Border.all(color: colors.border, width: 1);
-    final bgColor = focused ? context.colour.editableBackground : null;
-
-    final pill = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(7, 6, 13, 6),
-        decoration: BoxDecoration(
-          color: bgColor,
-          border: border,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildContent(context, isDark),
-            if (onRemove != null) ...[
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: onRemove,
-                child: Icon(
-                  PlotIcon.close,
-                  size: 12,
-                  color: colors.mutedForeground,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    final content = _buildContent(context, isDark);
 
     return switch (data) {
       GroupPillData(:final members) => _withTooltip(
           context,
           members.map(_formatActorLine).toList(),
-          pill,
+          content,
         ),
       AdHocGroupPillData(:final actors, :final inviteEmails) => _withTooltip(
           context,
           [...actors.map(_formatActorLine), ...inviteEmails],
-          pill,
+          content,
         ),
-      _ => pill,
+      _ => content,
     };
   }
 
-  /// The inner content for each variant: leading slot + text.
+  /// The single-line content for each variant: leading slot + name (+ inline
+  /// meta). Each arm returns a full-width [Row]; the text region is wrapped in
+  /// an [Expanded] so long names ellipsize within the row.
   Widget _buildContent(BuildContext context, bool isDark) {
     final colors = context.theme.colors;
     final nameStyle = context.theme.typography.md;
@@ -157,14 +119,11 @@ class ComposePill extends StatelessWidget {
 
     return switch (data) {
       ContactPillData(:final actor) => Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Avatar(actor: actor, size: 24, tooltip: false),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: _nameMetaColumn(
-                context,
+            const SizedBox(width: 8),
+            Expanded(
+              child: _nameMetaLine(
                 name: actor.nameOrEmail,
                 meta: actor.email,
                 nameStyle: nameStyle,
@@ -175,14 +134,11 @@ class ComposePill extends StatelessWidget {
         ),
 
       GroupPillData(:final group, :final members) => Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             _countBadge(context, members.length),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: _nameMetaColumn(
-                context,
+            const SizedBox(width: 8),
+            Expanded(
+              child: _nameMetaLine(
                 name: group.name,
                 meta: members.map((a) => a.email ?? a.nameOrEmail).join(', '),
                 nameStyle: nameStyle,
@@ -198,18 +154,20 @@ class ComposePill extends StatelessWidget {
             ...actors.map((a) => a.nameOrEmail),
             ...inviteEmails,
           ].join(', ');
+          // Email addresses listed comma-separated after the names (muted),
+          // matching the member-email detail on a formal group row.
+          final emails =
+              actors.map((a) => a.email).whereType<String>().join(', ');
           return Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               _countBadge(context, total),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: Text(
-                  names,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: nameStyle,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _nameMetaLine(
+                  name: names,
+                  meta: emails,
+                  nameStyle: nameStyle,
+                  metaStyle: metaStyle,
                 ),
               ),
             ],
@@ -222,7 +180,6 @@ class ComposePill extends StatelessWidget {
               ? null
               : (isDark ? (twist.logoUrlDark ?? twist.logoUrl) : twist.logoUrl);
           return Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               logo == null
                   ? const Icon(PlotIcon.twist, size: 22)
@@ -231,9 +188,8 @@ class ComposePill extends StatelessWidget {
                       size: 22,
                       fallback: const Icon(PlotIcon.twist, size: 22),
                     ),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Text(
                   target.label,
                   maxLines: 1,
@@ -249,9 +205,14 @@ class ComposePill extends StatelessWidget {
           final lt = target.linkType;
           final logo =
               lt == null ? null : (isDark ? (lt.logoDark ?? lt.logo) : lt.logo);
-          final channelTitle = target.channel?.title;
+          // The channel is the primary distinguishing element, so it leads
+          // (after the connection label, when there is one) and the connector
+          // name trails muted: "{connection} › {channel}  {connector}".
+          final ct = target.target;
+          final connectionLabel = ct?.accountName;
+          final connectorName = ct?.connectorName;
+          final channelTitle = target.channel?.title ?? target.label;
           return Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               logo == null
                   ? const Icon(PlotIcon.link, size: 22)
@@ -260,23 +221,48 @@ class ComposePill extends StatelessWidget {
                       size: 22,
                       fallback: const Icon(PlotIcon.link, size: 22),
                     ),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: _nameMetaColumn(
-                  context,
-                  name: target.label,
-                  meta: channelTitle,
-                  nameStyle: nameStyle,
-                  metaStyle: metaStyle,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  children: [
+                    if (connectionLabel != null &&
+                        connectionLabel.isNotEmpty) ...[
+                      Flexible(
+                        child: Text(
+                          connectionLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: nameStyle,
+                        ),
+                      ),
+                      Text(' › ', style: metaStyle),
+                    ],
+                    Flexible(
+                      child: Text(
+                        channelTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: nameStyle,
+                      ),
+                    ),
+                    if (connectorName != null && connectorName.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        connectorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: metaStyle,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
           );
         }(),
 
-      FocusPillData(:final priority) => Flexible(
-          child: FocusLabel(priority: priority),
+      FocusPillData(:final priority) => Row(
+          children: [Expanded(child: FocusLabel(priority: priority))],
         ),
 
       ConnectionPillData(:final target, :final label, :final detail) => () {
@@ -299,14 +285,11 @@ class ComposePill extends StatelessWidget {
                       fallback: const Icon(PlotIcon.link, size: 22),
                     ));
           return Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               leading,
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: _nameMetaColumn(
-                  context,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _nameMetaLine(
                   name: displayName,
                   meta: detail,
                   nameStyle: nameStyle,
@@ -342,9 +325,9 @@ class ComposePill extends StatelessWidget {
     );
   }
 
-  /// A two-row name + optional meta column (meta ellipsizes).
-  Widget _nameMetaColumn(
-    BuildContext context, {
+  /// A single-line name + optional inline meta (e.g. "Greg  greg@acme.com").
+  /// Both segments ellipsize when the row is tight.
+  Widget _nameMetaLine({
     required String name,
     required String? meta,
     required TextStyle nameStyle,
@@ -358,21 +341,24 @@ class ComposePill extends StatelessWidget {
         style: nameStyle,
       );
     }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: nameStyle,
+        Flexible(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle,
+          ),
         ),
-        Text(
-          meta,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: metaStyle,
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            meta,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: metaStyle,
+          ),
         ),
       ],
     );

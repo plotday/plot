@@ -264,41 +264,36 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
   // ─── Header widgets ────────────────────────────────────────────────────────
 
-  /// "People and twists" header where "twists" is rendered more muted than
-  /// the rest.
+  /// The "People and twists" section header. Only "People" is bold; " and
+  /// twists" continues in the regular heading weight.
   Widget _peopleHeader() {
     return Builder(builder: (context) {
-      final colors = context.theme.colors;
-      final style = context.theme.typography.xs.copyWith(
-        color: colors.mutedForeground,
-        letterSpacing: 0.5,
-        height: 1,
-      );
-      final twistsStyle = style.copyWith(
-        color: colors.mutedForeground.withValues(alpha: 0.55),
-      );
+      final style = _headingStyle(context);
+      final regular = style.copyWith(fontWeight: FontWeight.w400);
       return Text.rich(
         TextSpan(
           children: [
-            TextSpan(text: 'People and ', style: style),
-            TextSpan(text: 'twists', style: twistsStyle),
+            TextSpan(text: 'People', style: style),
+            TextSpan(text: ' and twists', style: regular),
           ],
         ),
       );
     });
   }
 
-  /// A plain section-label widget: small, muted, slightly spaced.
+  /// A plain section-label widget using the shared heading style.
   Widget _sectionHeader(String text) {
-    return Builder(builder: (context) {
-      final colors = context.theme.colors;
-      final style = context.theme.typography.xs.copyWith(
-        color: colors.mutedForeground,
-        letterSpacing: 0.5,
-        height: 1,
-      );
-      return Text(text, style: style);
-    });
+    return Builder(builder: (context) => Text(text, style: _headingStyle(context)));
+  }
+
+  /// Section-heading text style: a calm step up in size from the body, bold,
+  /// and muted so each group reads as a clear divider.
+  TextStyle _headingStyle(BuildContext context) {
+    return context.theme.typography.sm.copyWith(
+      color: context.theme.colors.mutedForeground,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.3,
+    );
   }
 
   // ─── Connections footer ────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import 'package:plot/widget/compose/compose_search_field.dart';
 import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/compose/connection_compose_field.dart';
 import 'package:plot/widget/compose/pill_grid.dart';
+import 'package:plot/widget/icon.dart';
 
 /// The step-2 "connection picker" view of the new-thread flow.
 ///
@@ -199,15 +200,14 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
 
   // ─── Header widget ─────────────────────────────────────────────────────────
 
-  /// A plain section-label widget: small, muted, slightly spaced. Mirrors the
-  /// style in [ComposeSectionsView._sectionHeader].
+  /// A plain section-label widget. Mirrors the heading style in
+  /// [ComposeSectionsView].
   Widget _sectionHeader(String text) {
     return Builder(builder: (context) {
-      final colors = context.theme.colors;
-      final style = context.theme.typography.xs.copyWith(
-        color: colors.mutedForeground,
-        letterSpacing: 0.5,
-        height: 1,
+      final style = context.theme.typography.sm.copyWith(
+        color: context.theme.colors.mutedForeground,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.3,
       );
       return Text(text, style: style);
     });
@@ -219,14 +219,19 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
 
-    // The recipient chip is shown as the leading widget in the search field.
-    // Both onTap and onRemove call onBack so tapping the chip or its ✕ returns
-    // to step 1.
-    final recipientChip = ComposePill(
-      data: widget.recipient.display,
-      focused: false,
+    // A back button at the start of the input returns to step 1 (the same
+    // affordance as Escape, wired through onBack below).
+    final backButton = GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: widget.onBack,
-      onRemove: widget.onBack,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Icon(
+          PlotIcon.left,
+          size: 18,
+          color: context.theme.colors.mutedForeground,
+        ),
+      ),
     );
 
     return Column(
@@ -237,7 +242,7 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
           focusNode: widget.searchFocusNode,
           hint: 'Select a connection',
           autofocus: widget.autofocusSearch,
-          leading: recipientChip,
+          leading: backButton,
           onChanged: () => setState(() {}),
           onArrowDown: () => _gridKey.currentState?.focusFirst(),
           onSubmit: _activateFirst,
@@ -245,6 +250,12 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
             widget.onBack();
             return true;
           },
+        ),
+        // The chosen recipient as a static line below the input so the user can
+        // see who they are picking a connection for.
+        Padding(
+          padding: EdgeInsets.only(top: spacing.md, left: spacing.sm),
+          child: ComposePill(data: widget.recipient.display),
         ),
         SizedBox(height: spacing.lg),
         Expanded(

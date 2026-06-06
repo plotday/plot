@@ -2,24 +2,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/colors.dart';
+import 'package:plot/style/layout.dart' show tileBorderRadius;
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/pill_grid_geometry.dart';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
-/// A single pill item in a [PillGrid]: its data, activation callback, and
-/// optional remove callback.
+/// A single row item in a [PillGrid]: its data and activation callback.
 class PillGridItem {
   PillGridItem({
     required this.data,
     required this.onActivate,
-    this.onRemove,
   });
 
   final ComposePillData data;
   final VoidCallback onActivate;
-  final VoidCallback? onRemove;
 }
 
 /// A labeled group of [PillGridItem]s rendered as a section inside [PillGrid].
@@ -33,8 +32,9 @@ class PillGridSection {
 
 // ─── Widget ──────────────────────────────────────────────────────────────────
 
-/// A scrollable grid of [ComposePill]s organised into [PillGridSection]s with
-/// geometry-aware 2D arrow-key navigation.
+/// A scrollable list of single-line rows ([ComposePill] content wrapped in row
+/// chrome) organised into [PillGridSection]s with geometry-aware arrow-key
+/// navigation.
 ///
 /// The parent owns the [scrollController] and [gridFocusNode]. Arrow-key
 /// navigation (←/→ reading-order, ↑/↓ visual rows) is driven by
@@ -268,7 +268,7 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
 
-    // Build flat-index-to-pill mapping as we iterate sections.
+    // Build flat-index-to-row mapping as we iterate sections.
     int flatIndex = 0;
     final sectionWidgets = <Widget>[];
 
@@ -276,19 +276,21 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
       sectionWidgets.add(section.header);
       sectionWidgets.add(SizedBox(height: spacing.sm));
 
-      final pillWidgets = <Widget>[];
       for (final item in section.items) {
         final index = flatIndex;
-        pillWidgets.add(
+        sectionWidgets.add(
           KeyedSubtree(
             key: _keys[index],
             child: MouseRegion(
               onEnter: (_) => _setFocus(index),
-              child: ComposePill(
-                data: item.data,
-                focused: index == _focused,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: item.onActivate,
-                onRemove: item.onRemove,
+                child: _rowChrome(
+                  context,
+                  focused: index == _focused,
+                  child: ComposePill(data: item.data),
+                ),
               ),
             ),
           ),
@@ -296,14 +298,8 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
         flatIndex++;
       }
 
-      sectionWidgets.add(
-        Wrap(
-          spacing: spacing.sm,
-          runSpacing: spacing.sm,
-          children: pillWidgets,
-        ),
-      );
-      sectionWidgets.add(SizedBox(height: spacing.md));
+      // Generous gap below each section so the groups read as distinct.
+      sectionWidgets.add(SizedBox(height: spacing.xl));
     }
 
     return Focus(
@@ -317,6 +313,30 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
           children: sectionWidgets,
         ),
       ),
+    );
+  }
+
+  /// Row chrome shared by every grid item: a full-width hit area with a rounded
+  /// hover / selection fill (no border) at the sidebar tile radius. The
+  /// highlight matches the thread list's row hover level
+  /// ([ColourSchemeData.editableBackground]); the keyboard-selected and
+  /// mouse-hovered states share the same fill.
+  Widget _rowChrome(
+    BuildContext context, {
+    required bool focused,
+    required Widget child,
+  }) {
+    final spacing = context.theme.spacing;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.sm,
+        vertical: spacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: focused ? context.colour.editableBackground : null,
+        borderRadius: tileBorderRadius,
+      ),
+      child: child,
     );
   }
 }
