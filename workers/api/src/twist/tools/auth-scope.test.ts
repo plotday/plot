@@ -33,6 +33,25 @@ describe("parseGrantedScopes", () => {
     expect(parseGrantedScopes(resp, config)).toEqual(["users:read", "chat:write"]);
   });
 
+  it("splits Slack's comma-delimited authed_user.scope", () => {
+    // Slack returns the granted user scopes COMMA-separated (not space-
+    // separated like RFC 6749's top-level `scope`). Without comma handling
+    // the whole string parses as a single bogus scope and every real Slack
+    // connect fails the granted-vs-required check.
+    const resp = {
+      authed_user: {
+        scope: "channels:history,channels:read,chat:write,users:read",
+      },
+    };
+    const config = { extractGrantedScopes: (r: any) => r?.authed_user?.scope };
+    expect(parseGrantedScopes(resp, config)).toEqual([
+      "channels:history",
+      "channels:read",
+      "chat:write",
+      "users:read",
+    ]);
+  });
+
   it("falls back to top-level scope when extractGrantedScopes returns undefined", () => {
     const resp = { scope: "a b" };
     const config = { extractGrantedScopes: (r: any) => r?.authed_user?.scope };

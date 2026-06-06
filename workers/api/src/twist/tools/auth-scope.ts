@@ -15,6 +15,11 @@
  * `authed_user.scope`. Pass the provider config's `extractGrantedScopes` to
  * read from the right place.
  *
+ * Delimiter handling: RFC 6749 §3.3 specifies space-separated scopes (Google,
+ * Microsoft, and the top-level `scope`), but Slack returns `authed_user.scope`
+ * COMMA-separated. Scope tokens never contain a space or comma, so we split on
+ * either delimiter — covering both conventions without misparsing any provider.
+ *
  * Returns null when no scope string is present, so callers can skip enforcement
  * instead of treating absence as "everything missing".
  */
@@ -24,7 +29,7 @@ export function parseGrantedScopes(
 ): string[] | null {
   const raw = config?.extractGrantedScopes?.(tokenResponse) ?? tokenResponse?.scope;
   if (typeof raw === "string" && raw.trim().length > 0) {
-    return raw.split(/\s+/).filter(Boolean);
+    return raw.split(/[\s,]+/).filter(Boolean);
   }
   return null;
 }
