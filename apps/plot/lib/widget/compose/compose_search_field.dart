@@ -32,6 +32,7 @@ class ComposeSearchField extends StatelessWidget {
     this.onChanged,
     this.onSubmit,
     this.onArrowDown,
+    this.onArrowUp,
     this.onEscape,
   });
 
@@ -59,9 +60,16 @@ class ComposeSearchField extends StatelessWidget {
   /// Fired when the user presses Enter.
   final VoidCallback? onSubmit;
 
-  /// Fired when the user presses ↓. Intended to move focus into the grid/list
-  /// below the field.
+  /// Fired when the user presses a bare ↓ (no modifiers). Intended to move the
+  /// highlighted row in the list below one step down — keyboard focus stays on
+  /// this field. A modified ↓ (e.g. ⌘/Ctrl+↓ = next thread) is left to
+  /// propagate to the global shortcuts.
   final VoidCallback? onArrowDown;
+
+  /// Fired when the user presses a bare ↑ (no modifiers). Moves the highlighted
+  /// row in the list below one step up. A modified ↑ (e.g. ⌘/Ctrl+↑ = previous
+  /// thread) is left to propagate to the global shortcuts.
+  final VoidCallback? onArrowUp;
 
   /// Fired when the user presses Escape. Return true if handled (suppresses
   /// further propagation), false to let the event propagate.
@@ -80,15 +88,25 @@ class ComposeSearchField extends StatelessWidget {
   KeyEventResult _onKey(FocusNode _, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      if (onArrowDown != null) {
-        onArrowDown!();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
+      // Only bare arrows drive the list highlight. A modified arrow — notably
+      // ⌘/Ctrl+↑/↓ (previous/next thread) — must reach the global command
+      // shortcuts, so don't consume it here.
+      final hasModifier = HardwareKeyboard.instance.isMetaPressed ||
+          HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isAltPressed ||
+          HardwareKeyboard.instance.isShiftPressed;
+      if (hasModifier) return KeyEventResult.ignored;
+      final handler =
+          key == LogicalKeyboardKey.arrowDown ? onArrowDown : onArrowUp;
+      if (handler == null) return KeyEventResult.ignored;
+      handler();
+      return KeyEventResult.handled;
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
+    if (key == LogicalKeyboardKey.escape) {
       if (onEscape != null) {
         final handled = onEscape!();
         return handled ? KeyEventResult.handled : KeyEventResult.ignored;

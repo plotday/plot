@@ -92,11 +92,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
   bool _isDisposed = false;
 
-  /// Key for the [PillGrid]; exposes [PillGridState.focusFirst].
+  /// Key for the [PillGrid]; drives [PillGridState.moveHighlight] /
+  /// [PillGridState.activateHighlighted] as the user navigates the search field.
   final _gridKey = GlobalKey<PillGridState>();
-
-  /// The grid's focus node — owned here and disposed with the widget.
-  final FocusNode _gridFocusNode = FocusNode(debugLabel: 'compose-sections-grid');
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -117,7 +115,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   void dispose() {
     _isDisposed = true;
     _debounce?.cancel();
-    _gridFocusNode.dispose();
     super.dispose();
   }
 
@@ -181,21 +178,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         .catchError((Object e, StackTrace s) {
           Tracker.captureException(e, s);
         });
-  }
-
-  // ─── Keyboard ──────────────────────────────────────────────────────────────
-
-  /// Activates the first pill in the grid — used when the user presses Enter in
-  /// the search field. Finds the first item across all built sections and calls
-  /// its [PillGridItem.onActivate].
-  void _activateFirst() {
-    final items = _buildSections();
-    for (final section in items) {
-      if (section.items.isNotEmpty) {
-        section.items.first.onActivate();
-        return;
-      }
-    }
   }
 
   // ─── Section building ──────────────────────────────────────────────────────
@@ -360,8 +342,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
             color: colors.mutedForeground,
           ),
           onChanged: _onSearchChanged,
-          onArrowDown: () => _gridKey.currentState?.focusFirst(),
-          onSubmit: _activateFirst,
+          onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
+          onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
+          onSubmit: () => _gridKey.currentState?.activateHighlighted(),
           onEscape: null,
         ),
         SizedBox(height: spacing.lg),
@@ -372,9 +355,6 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
                   key: _gridKey,
                   sections: _buildSections(),
                   scrollController: widget.scrollController,
-                  gridFocusNode: _gridFocusNode,
-                  onMoveToSearch: () =>
-                      widget.searchFocusNode.requestFocus(),
                 ),
         ),
         _buildAddConnectionFooter(context),

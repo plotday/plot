@@ -120,12 +120,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     final live = _live;
     if (live == null || !live.mounted) return;
     if (live._step != _ComposeStep.sections) return;
-    if (!hasPhysicalKeyboard()) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (live.mounted && live._step == _ComposeStep.sections) {
-        live._pickerSearchFocusNode.requestFocus();
-      }
-    });
+    live._focusPickerSearch(_ComposeStep.sections);
   }
 
   final GlobalKey<NoteEditorState> _threadEditorKey =
@@ -299,14 +294,11 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     // Re-focus the inline filter after the rebuild. AutoRoute reuses the same
     // ComposeSectionsView instance, so its `autofocus` won't re-fire on this
-    // reset — request focus explicitly (physical-keyboard platforms only, to
-    // match the picker's own autofocus gating and avoid popping the soft
-    // keyboard on mobile).
-    if (hasPhysicalKeyboard()) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _pickerSearchFocusNode.requestFocus();
-      });
-    }
+    // reset — claim focus explicitly. [_focusPickerSearch] drops focus first so
+    // the request is a real change even when the (page-owned, step-shared) node
+    // already held focus; otherwise the field wouldn't re-open its text-input
+    // connection and would need an OS focus round-trip (alt-tab) to engage.
+    _focusPickerSearch(_ComposeStep.sections);
 
     // Re-seed the target picker's base list so step 1 shows its rows (focuses,
     // people, twists, connectors) immediately (mirrors the fresh-mount path in
@@ -888,11 +880,22 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!feedback) await _suggestFocusForTarget(target);
   }
 
-  /// Refocuses the shared picker search field after a step transition, on the
-  /// next frame, only on physical-keyboard platforms (never pops the mobile
-  /// soft keyboard) and only if we're still on [expectedStep].
-  void _focusSearchAfterTransition(_ComposeStep expectedStep) {
+  /// Hands keyboard focus to the shared picker search field after a step
+  /// transition or (re)entry, on the next frame.
+  ///
+  /// The picker reuses one page-owned focus node ([_pickerSearchFocusNode])
+  /// across every step. On re-entry paths (the New-thread button reset, Esc
+  /// back to step 1) that node can still be the primary focus, so a plain
+  /// `requestFocus()` is a no-op (no focus *change*) and the freshly shown
+  /// field never re-opens its text-input connection — it shows no caret until
+  /// an OS focus round-trip (alt-tab). Dropping focus first guarantees the
+  /// request below is a real lose→gain that re-opens the connection.
+  ///
+  /// Physical-keyboard only (never pops the mobile soft keyboard); no-ops if
+  /// we've already left [expectedStep] by the time the frame runs.
+  void _focusPickerSearch(_ComposeStep expectedStep) {
     if (!hasPhysicalKeyboard()) return;
+    _pickerSearchFocusNode.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _step == expectedStep) {
         _pickerSearchFocusNode.requestFocus();
@@ -909,7 +912,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       _selectedRecipient = entry;
       _step = _ComposeStep.connection;
     });
-    _focusSearchAfterTransition(_ComposeStep.connection);
+    _focusPickerSearch(_ComposeStep.connection);
   }
 
   /// Step 1 twist/channel/private-note pill -> compose (skip step 2). Clears the
@@ -923,7 +926,13 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _returnToSectionsStep() {
     _pickerSearchController.text = _stashedSectionsQuery;
     setState(() => _step = _ComposeStep.sections);
-    if (hasPhysicalKeyboard()) {
+    // Claim focus (drops-then-requests so it engages even though the shared
+    // node was just focused on step 2).
+    _focusPickerSearch(_ComposeStep.sections);
+    // Select-all the restored filter in a later frame — after focus engages —
+    // so the user can immediately retype to replace it. Kept separate from the
+    // focus claim so a selection edit can't pre-empt the focus request.
+    if (hasPhysicalKeyboard() && _stashedSectionsQuery.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _step != _ComposeStep.sections) return;
         final text = _pickerSearchController.text;
@@ -931,7 +940,6 @@ class NewThreadPageState extends State<NewThreadPage> {
           _pickerSearchController.selection =
               TextSelection(baseOffset: 0, extentOffset: text.length);
         }
-        _pickerSearchFocusNode.requestFocus();
       });
     }
   }
@@ -940,7 +948,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _backFromCompose() {
     if (_selectedRecipient != null) {
       setState(() => _step = _ComposeStep.connection);
-      _focusSearchAfterTransition(_ComposeStep.connection);
+      _focusPickerSearch(_ComposeStep.connection);
     } else {
       _returnToSectionsStep();
     }

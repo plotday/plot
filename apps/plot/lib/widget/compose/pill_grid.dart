@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
@@ -6,7 +5,6 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/layout.dart' show tileBorderRadius;
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/compose/compose_pill.dart';
-import 'package:plot/widget/compose/pill_grid_geometry.dart';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
@@ -33,34 +31,29 @@ class PillGridSection {
 // ─── Widget ──────────────────────────────────────────────────────────────────
 
 /// A scrollable list of single-line rows ([ComposePill] content wrapped in row
-/// chrome) organised into [PillGridSection]s with geometry-aware arrow-key
-/// navigation.
+/// chrome) organised into [PillGridSection]s with a keyboard-driven highlight.
 ///
-/// The parent owns the [scrollController] and [gridFocusNode]. Arrow-key
-/// navigation (←/→ reading-order, ↑/↓ visual rows) is driven by
-/// [PillGridGeometry] which operates on measured on-screen [Rect]s. Moving up
-/// past the top row calls [onMoveToSearch] so the host can return focus to the
-/// search field.
+/// Keyboard focus never moves into the grid — it stays on the host's search
+/// field at all times (mirroring the select modal). The host drives the highlight
+/// by calling [PillGridState.moveHighlight] (±1 row) and
+/// [PillGridState.activateHighlighted] (Enter) through a
+/// [GlobalKey<PillGridState>] as the user presses ↑/↓/Enter in the search
+/// field. The first row is highlighted at rest, so the first ↓ moves to the
+/// second row; ↑ on the first row is a no-op (the first row stays highlighted,
+/// and the filter keeps focus). Mouse hover also updates the highlight.
 ///
-/// The state is kept public ([PillGridState]) so the parent can call
-/// [PillGridState.focusFirst] via a [GlobalKey<PillGridState>] when the user
-/// presses ↓ in the search field.
+/// The parent owns the [scrollController]. Scroll-into-view uses each row's
+/// measured on-screen [Rect] (captured in the scroll content's coordinate
+/// space) so the highlighted row is kept visible as it moves.
 class PillGrid extends StatefulWidget {
   const PillGrid({
     super.key,
     required this.sections,
     required this.scrollController,
-    required this.gridFocusNode,
-    required this.onMoveToSearch,
   });
 
   final List<PillGridSection> sections;
   final ScrollController scrollController;
-  final FocusNode gridFocusNode;
-
-  /// Called when ↑ is pressed from the top row of pills — the host should
-  /// return keyboard focus to the search bar.
-  final VoidCallback onMoveToSearch;
 
   @override
   PillGridState createState() => PillGridState();
@@ -83,8 +76,9 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
   /// context isn't laid out yet.
   late List<Rect> _rects;
 
-  /// Index of the currently focused pill (keyboard or mouse hover).
-  int _focused = 0;
+  /// Index of the currently highlighted row (keyboard or mouse hover). The
+  /// first row is highlighted at rest.
+  int _highlighted = 0;
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -101,12 +95,9 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sections != widget.sections) {
       _rebuild();
-      // Clamp focus into the new range.
-      if (_flat.isNotEmpty) {
-        _focused = _focused.clamp(0, _flat.length - 1);
-      } else {
-        _focused = 0;
-      }
+      // A new result set (e.g. the filter text changed) re-highlights the first
+      // row so the top match is preselected, matching the select modal.
+      _highlighted = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     }
   }
@@ -125,14 +116,25 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
-  /// Focus the first pill and request keyboard focus for [widget.gridFocusNode].
-  /// Called by the parent (via [GlobalKey<PillGridState>]) when the user presses
-  /// ↓ in the search field.
-  void focusFirst() {
+  /// Moves the highlight by [delta] rows (+1 down, −1 up), clamped to the list
+  /// bounds. The grid never requests keyboard focus — the search field above
+  /// keeps it — so the user can keep typing to refine the filter. ↑ on the
+  /// first row is a no-op (the first row stays highlighted), mirroring the
+  /// select modal. Called by the host (via [GlobalKey<PillGridState>]) when the
+  /// user presses ↑/↓ in the search field.
+  void moveHighlight(int delta) {
     if (_flat.isEmpty) return;
-    setState(() => _focused = 0);
-    widget.gridFocusNode.requestFocus();
-    _scrollIntoView(0);
+    final next = (_highlighted + delta).clamp(0, _flat.length - 1);
+    if (next == _highlighted) return;
+    setState(() => _highlighted = next);
+    _scrollIntoView(next);
+  }
+
+  /// Activates the currently-highlighted row. Called by the host when the user
+  /// presses Enter in the search field. No-op when the list is empty.
+  void activateHighlighted() {
+    if (_highlighted < 0 || _highlighted >= _flat.length) return;
+    _flat[_highlighted].onActivate();
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -180,9 +182,9 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
     }
   }
 
-  void _setFocus(int i) {
+  void _setHighlight(int i) {
     if (_flat.isEmpty) return;
-    setState(() => _focused = i.clamp(0, _flat.length - 1));
+    setState(() => _highlighted = i.clamp(0, _flat.length - 1));
   }
 
   /// Scroll [_rects[i]] into view. Rects are in content-space so
@@ -217,51 +219,6 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
     });
   }
 
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (_flat.isEmpty) return KeyEventResult.ignored;
-
-    final g = PillGridGeometry(_rects);
-
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      final n = g.horizontal(_focused, -1);
-      _setFocus(n);
-      _scrollIntoView(n);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowRight) {
-      final n = g.horizontal(_focused, 1);
-      _setFocus(n);
-      _scrollIntoView(n);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowDown) {
-      final n = g.vertical(_focused, 1);
-      _setFocus(n);
-      _scrollIntoView(n);
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowUp) {
-      final n = g.vertical(_focused, -1);
-      if (n == PillGridGeometry.toSearchBar) {
-        widget.onMoveToSearch();
-      } else {
-        _setFocus(n);
-        _scrollIntoView(n);
-      }
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter) {
-      if (_focused >= 0 && _focused < _flat.length) {
-        _flat[_focused].onActivate();
-      }
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
   // ─── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -282,13 +239,13 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
           KeyedSubtree(
             key: _keys[index],
             child: MouseRegion(
-              onEnter: (_) => _setFocus(index),
+              onEnter: (_) => _setHighlight(index),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: item.onActivate,
                 child: _rowChrome(
                   context,
-                  focused: index == _focused,
+                  highlighted: index == _highlighted,
                   child: ComposePill(data: item.data),
                 ),
               ),
@@ -302,28 +259,24 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
       sectionWidgets.add(SizedBox(height: spacing.xl));
     }
 
-    return Focus(
-      focusNode: widget.gridFocusNode,
-      onKeyEvent: _onKey,
-      child: SingleChildScrollView(
-        controller: widget.scrollController,
-        child: Column(
-          key: _contentKey,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: sectionWidgets,
-        ),
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      child: Column(
+        key: _contentKey,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: sectionWidgets,
       ),
     );
   }
 
   /// Row chrome shared by every grid item: a full-width hit area with a rounded
-  /// hover / selection fill (no border) at the sidebar tile radius. The
+  /// hover / highlight fill (no border) at the sidebar tile radius. The
   /// highlight matches the thread list's row hover level
-  /// ([ColourSchemeData.editableBackground]); the keyboard-selected and
+  /// ([ColourSchemeData.editableBackground]); the keyboard-highlighted and
   /// mouse-hovered states share the same fill.
   Widget _rowChrome(
     BuildContext context, {
-    required bool focused,
+    required bool highlighted,
     required Widget child,
   }) {
     final spacing = context.theme.spacing;
@@ -333,7 +286,7 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
         vertical: spacing.sm,
       ),
       decoration: BoxDecoration(
-        color: focused ? context.colour.editableBackground : null,
+        color: highlighted ? context.colour.editableBackground : null,
         borderRadius: tileBorderRadius,
       ),
       child: child,

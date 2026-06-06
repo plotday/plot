@@ -73,12 +73,9 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
 
   bool _isDisposed = false;
 
-  /// Key for the [PillGrid]; exposes [PillGridState.focusFirst].
+  /// Key for the [PillGrid]; drives [PillGridState.moveHighlight] /
+  /// [PillGridState.activateHighlighted] as the user navigates the search field.
   final _gridKey = GlobalKey<PillGridState>();
-
-  /// The grid's focus node — owned here and disposed with the widget.
-  final FocusNode _gridFocusNode =
-      FocusNode(debugLabel: 'connection-picker-grid');
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -91,7 +88,6 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
   @override
   void dispose() {
     _isDisposed = true;
-    _gridFocusNode.dispose();
     super.dispose();
   }
 
@@ -113,20 +109,6 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
         .catchError((Object e, StackTrace s) {
           Tracker.captureException(e, s);
         });
-  }
-
-  // ─── Keyboard ──────────────────────────────────────────────────────────────
-
-  /// Activates the first visible (filtered) connection, if any. Called when
-  /// the user presses Enter in the search field.
-  void _activateFirst() {
-    final sections = _buildSections();
-    for (final section in sections) {
-      if (section.items.isNotEmpty) {
-        section.items.first.onActivate();
-        return;
-      }
-    }
   }
 
   // ─── Section building ──────────────────────────────────────────────────────
@@ -244,8 +226,9 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
           autofocus: widget.autofocusSearch,
           leading: backButton,
           onChanged: () => setState(() {}),
-          onArrowDown: () => _gridKey.currentState?.focusFirst(),
-          onSubmit: _activateFirst,
+          onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
+          onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
+          onSubmit: () => _gridKey.currentState?.activateHighlighted(),
           onEscape: () {
             widget.onBack();
             return true;
@@ -265,8 +248,6 @@ class _ConnectionPickerViewState extends State<ConnectionPickerView> {
                   key: _gridKey,
                   sections: _buildSections(),
                   scrollController: widget.scrollController,
-                  gridFocusNode: _gridFocusNode,
-                  onMoveToSearch: () => widget.searchFocusNode.requestFocus(),
                 ),
         ),
       ],
