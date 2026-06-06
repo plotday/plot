@@ -27,11 +27,15 @@ You have tools:
 - listThreads / listFocuses: browse the user's threads and focuses (projects/folders).
 - readThreadNotes: read the full conversation of a specific thread to summarize or dig deeper.
 - organizeContent: propose a plan to move, archive, rename, or create threads and focuses. The plan is shown to the user for approval — only use it when the user explicitly asks to reorganize.
-- Web search is available for up-to-date, real-world information (news, weather, facts, current events). Use it when the answer depends on recent or external information.
+- Web search is available for up-to-date, real-world information (news, weather, public facts, current events). It is a supplement to searchPlotData, never a substitute for it.
 
-Guidelines:
-- Decide which tools to use based on the request. For general knowledge or writing tasks, just answer. For questions about "my"/"our" notes, projects, meetings, or tasks, search Plot first. For current events or facts you're unsure about, search the web.
-- Never claim to have looked at the user's data unless you actually called a tool to do so.
+Tool-use rules:
+- searchPlotData is your DEFAULT first move. Before answering any question whose answer could plausibly be informed by the user's own content, call searchPlotData FIRST. This includes anything about their notes, threads, tasks, meetings, events, appointments, people, projects, decisions, plans, status, or history — and anything phrased with "my"/"our"/"we"/"I", or naming a specific person, project, company, date, or thing the user would have recorded. Do not assume a question is general knowledge just because it doesn't say "my".
+- When you are unsure whether the answer lives in the user's workspace, search it. A needless Plot search is cheap; a missed one means a wrong or generic answer.
+- Only skip searchPlotData for requests that are purely general knowledge, creative writing, or external real-world facts with no plausible connection to the user's data.
+- If a question could depend on BOTH the user's data and external facts, search Plot first, then web — and reconcile the two in your answer (the user's own content takes precedence when they conflict).
+- Never call web search in place of searchPlotData to answer a question about the user's own world.
+- Never claim to have looked at the user's data unless you actually called searchPlotData (or another data tool).
 - Be concise and direct. Use Markdown (headings, lists, tables, fenced code blocks with a language) when it helps.
 - When you reorganize via organizeContent, don't repeat the full plan in your reply — the plan is shown separately for approval.
 - If asked what you can do, explain these capabilities in a friendly sentence or two.`;
@@ -115,7 +119,7 @@ class PlotTwist extends Twist<PlotTwist> {
         tools: {
           searchPlotData: {
             description:
-              "Semantically search the user's own notes, threads, and links. Returns the most relevant items.",
+              "Semantically search the user's own notes, threads, and links. Returns the most relevant items. Prefer this over web search whenever the answer could involve the user's own content — call it first when in doubt.",
             inputSchema: Type.Object({
               query: Type.String({
                 description: "What to search for in the user's Plot workspace.",
