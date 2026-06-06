@@ -358,6 +358,11 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         // Header = twist name (+ scope suffix); the content line shows the
         // thread type (t.label).
         return t.twistHeader ?? t.label;
+      case ComposeTargetKind.topic:
+        // Topics surface only as pills (TopicPillData) in the sections view,
+        // never through the flat target views, so this header is effectively
+        // unused; keep a sensible value for search-by-header matching.
+        return 'Topic';
       case ComposeTargetKind.chat:
       case ComposeTargetKind.note:
         final hasTeams = ctx?.hasTeams ?? false;
@@ -645,6 +650,24 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     ];
   }
 
+  /// Plot **topic** targets the user can post to, most-recently-active first.
+  /// Each becomes a [ComposeTarget.topic] that, when picked, files the new
+  /// thread into the topic (sets `thread.topic_id`). Ordered by `updatedAt`
+  /// descending so a freshly-created topic (which just synced) leads the list.
+  Future<List<ComposeTarget>> _topicTargets() async {
+    final rows = await Topic.getPostable();
+    // Most-recently-active first, so a just-created topic leads the list.
+    rows.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return [
+      for (final t in rows)
+        ComposeTarget.topic(
+          topicId: t.id,
+          name: t.name,
+          teamId: t.teamId == null ? null : BigInt.from(t.teamId!),
+        ),
+    ];
+  }
+
   // --- Sectioned step-1 producers ------------------------------------------
 
   /// Step-1 at-rest sections. People = MRU rosters (deduped) classified into
@@ -688,7 +711,11 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
 
     final twists = await _twistTargets(ctx);
 
+    // Plot topics (Plot-only channels) lead the Channels section, most-recently
+    // active first, so a just-created topic surfaces at the top.
+    final topicTargets = await _topicTargets();
     final channels = <ComposeTarget>[
+      ...topicTargets,
       for (final t in ctx.createTargets)
         if (!t.isDmType)
           ComposeTarget.connector(

@@ -20,4 +20,5 @@ export 'settings.dart';
 export 'debug.dart';
 export 'share.dart';
 export 'group.dart';
+export 'topic.dart';
 export 'package:plot/util/value.dart';

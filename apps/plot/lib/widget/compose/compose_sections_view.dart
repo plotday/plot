@@ -8,6 +8,8 @@ import 'package:forui/forui.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/store/store.dart' show Priority, Uuid;
+import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/compose/compose_pill.dart';
 import 'package:plot/widget/compose/compose_target.dart';
@@ -37,6 +39,7 @@ class ComposeSectionsView extends StatefulWidget {
     required this.searchFocusNode,
     required this.onPickRecipient,
     required this.onPickTarget,
+    this.onCreateTopic,
     this.onBack,
     this.autofocusSearch = true,
     this.activeListenable,
@@ -61,6 +64,11 @@ class ComposeSectionsView extends StatefulWidget {
   /// Called when the user picks a twist, channel, or focus pill (→ start
   /// compose with the chosen target).
   final void Function(ComposeTarget target) onPickTarget;
+
+  /// Called when the user taps the "+ Topic" affordance in the Channels header
+  /// to create a new Plot topic. Returns true when a topic was created (so the
+  /// section list is reloaded to surface it). Null hides the affordance.
+  final Future<bool> Function()? onCreateTopic;
 
   /// Optional "go back" affordance. When provided, the search field's leading
   /// slot becomes a back button (in place of the search icon) that invokes
@@ -230,22 +238,23 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
       );
     }
 
-    // 2. Channels
+    // 2. Channels (Plot topics + connector channels). Always rendered so the
+    // "+ Topic" affordance in the header is reachable even with no channels.
     final channelItems = [
       for (final t in s.channels)
         PillGridItem(
-          data: ChannelPillData(t),
+          data: t.kind == ComposeTargetKind.topic
+              ? TopicPillData(t.label)
+              : ChannelPillData(t),
           onActivate: () => widget.onPickTarget(t),
         ),
     ];
-    if (channelItems.isNotEmpty) {
-      sections.add(
-        PillGridSection(
-          header: _sectionHeader('Channels'),
-          items: channelItems,
-        ),
-      );
-    }
+    sections.add(
+      PillGridSection(
+        header: _channelsHeader(),
+        items: channelItems,
+      ),
+    );
 
     // 3. Private notes (focuses)
     final focusItems = <PillGridItem>[];
@@ -277,6 +286,65 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
   /// The "People and twists" section header.
   Widget _peopleHeader() => _sectionHeader('People and twists');
+
+  /// The "Channels" section header, with a right-aligned "+ Topic" ghost button
+  /// (shown only when [ComposeSectionsView.onCreateTopic] is provided) for
+  /// creating a new Plot topic.
+  Widget _channelsHeader() {
+    return Builder(
+      builder: (context) {
+        return Row(
+          children: [
+            Text('Channels', style: _headingStyle(context)),
+            const Spacer(),
+            if (widget.onCreateTopic != null)
+              FButton(
+                onPress: _onCreateTopicPressed,
+                variant: FButtonVariant.ghost,
+                style: ghostSizedStyleDelta(
+                  context,
+                  textStyle: context.theme.typography.sm,
+                  iconSize: context.theme.iconSizes.xs,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+                mainAxisSize: MainAxisSize.min,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 4,
+                  children: [
+                    Icon(PlotIcon.add),
+                    Text('Topic'),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Opens the create-topic flow and, when a topic was created, reloads the
+  /// sections so the new topic surfaces at the top of the Channels list.
+  Future<void> _onCreateTopicPressed() async {
+    final create = widget.onCreateTopic;
+    if (create == null) return;
+    final created = await create();
+    if (created && !_isDisposed) _reload();
+  }
+
+  /// Reloads the current view — re-running the active search, or the at-rest
+  /// load when the filter is empty.
+  void _reload() {
+    final query = widget.searchController.text.trim();
+    if (query.isEmpty) {
+      _loadSections();
+    } else {
+      _runSearch(query);
+    }
+  }
 
   /// A plain section-label widget using the shared heading style.
   Widget _sectionHeader(String text) {

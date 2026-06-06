@@ -71,6 +71,12 @@ class ChannelPillData extends ComposePillData {
   final ComposeTarget target; // kind == connector, channel != null
 }
 
+/// A Plot topic (a Plot-only channel): hashtag glyph + topic name.
+class TopicPillData extends ComposePillData {
+  const TopicPillData(this.name);
+  final String name;
+}
+
 /// A focus (private note): focus icon + name in focus colour.
 class FocusPillData extends ComposePillData {
   const FocusPillData(this.priority);
@@ -288,6 +294,27 @@ class ComposePill extends StatelessWidget {
             ],
           );
         }(),
+
+      TopicPillData(:final name) => Row(
+          children: [
+            _gutter(
+              SvgPicture.asset(
+                'assets/plot-icon.svg',
+                width: composePillLogoSize,
+                height: composePillLogoSize,
+              ),
+            ),
+            const SizedBox(width: composePillIconGap),
+            Expanded(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle,
+              ),
+            ),
+          ],
+        ),
 
       FocusPillData(:final priority) => Row(
           children: [

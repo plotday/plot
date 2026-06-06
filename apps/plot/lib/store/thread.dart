@@ -591,6 +591,15 @@ class ThreadsBase extends BaseTable {
       }
     }
 
+    // Only send `topic_id` when it is set (create-into-a-topic). The server's
+    // `upsert_thread` overwrites `thread.topic_id` whenever the key is *present*
+    // (even null), so a blanket include on every push would wipe the topic of
+    // unrelated thread updates. Sending it only when non-null leaves an existing
+    // topic untouched on subsequent edits while still filing new topic threads.
+    if (json['topic_id'] == null) {
+      json.remove('topic_id');
+    }
+
     // Convert invite_emails from stored string to JSON array for the API,
     // then clear the local field so it's only sent once.
     final inviteEmails = json.remove('invite_emails');
@@ -5989,6 +5998,10 @@ SELECT
     bool bump = false,
     Value<DateTime?> bumpedAt = const Value.absent(),
     Value<DateTime?> readAt = const Value.absent(),
+
+    // The topic (Plot channel) this thread is posted into. Set on
+    // create-into-a-topic (see the new-thread compose flow); null clears it.
+    Value<Uuid?> topicId = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -6020,6 +6033,7 @@ SELECT
         muteByThreadId.present ||
         bumpedAt.present ||
         readAt.present ||
+        topicId.present ||
         title.present) {
       activityDirty = true;
       // Read-state fields (unread, readAt, bumpedAt) sync via
@@ -6039,6 +6053,7 @@ SELECT
           mergedIntoThreadId.present ||
           archivedAt.present ||
           muteByThreadId.present ||
+          topicId.present ||
           title.present;
       activity = _thread.copyWith(
         priorityId: priority?.id,
@@ -6064,6 +6079,7 @@ SELECT
         muteByThreadId: muteByThreadId,
         bumpedAt: bumpedAt,
         readAt: readAt,
+        topicId: topicId,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
       );

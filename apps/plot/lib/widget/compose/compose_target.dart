@@ -10,8 +10,10 @@ import 'package:plot/widget/connection_targets.dart';
 /// `note`/`chat` are the Plot-native variants (the "Plot" prefix and the
 /// dedicated Task type are dropped — see the two-step-thread-creation spec);
 /// `connector` is a connection/channel/DM/address target backed by a
-/// [CreateTarget]; `twist` is a chat-with-a-twist target (Plot AI, etc.).
-enum ComposeTargetKind { note, chat, connector, twist }
+/// [CreateTarget]; `twist` is a chat-with-a-twist target (Plot AI, etc.);
+/// `topic` is a Plot-only channel the thread is posted into (sets
+/// `thread.topic_id`).
+enum ComposeTargetKind { note, chat, connector, twist, topic }
 
 /// A single row in the step-1 target picker: a "way to create a thread".
 ///
@@ -42,6 +44,7 @@ class ComposeTarget extends Equatable {
     this.groups = const [],
     this.inviteEmails = const [],
     this.priorityId,
+    this.topicId,
     this.twistHeader,
   });
 
@@ -123,6 +126,25 @@ class ComposeTarget extends Equatable {
       label: title,
       teamId: teamId,
       priorityId: priorityId,
+    );
+  }
+
+  /// A Plot **topic** target: a Plot-only channel the thread is posted into.
+  /// Carries the [topicId] (set on the draft as `thread.topic_id`); the topic's
+  /// membership and routing drive the thread's audience and focus, so it has no
+  /// per-thread roster. [name] becomes the [label] (searchable, distinct rows).
+  /// [teamId] is the topic's team scope (null = Personal).
+  factory ComposeTarget.topic({
+    required Uuid topicId,
+    required String name,
+    BigInt? teamId,
+  }) {
+    return ComposeTarget._(
+      kind: ComposeTargetKind.topic,
+      signature: 'topic:$topicId',
+      label: name,
+      teamId: teamId,
+      topicId: topicId,
     );
   }
 
@@ -235,6 +257,10 @@ class ComposeTarget extends Equatable {
   /// other kinds. Carried into step-2 compose so the focus is pre-selected.
   final Uuid? priorityId;
 
+  /// For a topic target, the topic the thread is posted into; null for all
+  /// other kinds. Carried into compose so the draft's `topic_id` is set.
+  final Uuid? topicId;
+
   /// For a twist target, the header line (twist name + disambiguating scope
   /// suffix, e.g. "Plot AI (Personal)"); null for every other kind. Pure
   /// presentation, so it's excluded from [props].
@@ -245,11 +271,13 @@ class ComposeTarget extends Equatable {
   /// Note: the roster ([contacts]/[groups]) is carried on the [ComposeTarget]
   /// itself; the returned choice only selects the connection/variant.
   ConnectionChoice toConnectionChoice() => switch (kind) {
-        // Note/chat are both just a Plot thread now (no stored distinction).
+        // Note/chat/topic are all just a Plot thread (no stored distinction).
         // The compose page resolves the scoped Plot choice for display from
-        // the draft; this only needs to select "a Plot thread".
+        // the draft; this only needs to select "a Plot thread". A topic thread
+        // additionally carries [topicId], applied to the draft separately.
         ComposeTargetKind.note ||
-        ComposeTargetKind.chat =>
+        ComposeTargetKind.chat ||
+        ComposeTargetKind.topic =>
           ConnectionChoice.plotDefault,
         ComposeTargetKind.connector => ConnectionChoice.target(target!),
         // The roster of allInstances is only needed for the twist label, which
@@ -311,5 +339,6 @@ class ComposeTarget extends Equatable {
         groups,
         inviteEmails,
         priorityId,
+        topicId,
       ];
 }

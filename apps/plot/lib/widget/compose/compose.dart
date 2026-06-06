@@ -10,3 +10,4 @@ export 'contacts_compose_field.dart';
 export 'email_parser.dart';
 export 'priority_compose_field.dart';
 export 'title_compose_field.dart';
+export 'topic_compose_field.dart';

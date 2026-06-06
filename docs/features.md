@@ -32,6 +32,12 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Unread indicators per focus
 - Multi-thread notification taps open the focus on the Catch up tab (single-thread taps still jump straight to the thread)
 
+### Topics
+- Topics are Plot-only channels that own a stream of threads (e.g. "#eng-standup")
+- Created from the new-thread Channels section ("+ Topic"): name, optional team scope, and initial members (contacts + groups)
+- Membership = contacts + included groups, minus per-user opt-outs; posting a thread to a topic reaches the whole topic, so no per-thread recipients are picked
+- Topics appear alongside connector channels in the new-thread picker
+
 ### Thread Sharing
 - Threads are shared by adding contacts via the "With" field at creation
 - Globally shareable thread URLs (/t/{id}) — no priority context needed

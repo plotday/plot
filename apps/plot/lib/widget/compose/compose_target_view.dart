@@ -70,6 +70,8 @@ String connectionColorKey(ComposeTarget t) {
     case ComposeTargetKind.connector:
     case ComposeTargetKind.twist:
       return 'conn:${t.connection?.id ?? t.target?.twist.id}';
+    case ComposeTargetKind.topic:
+      return 'topic:${t.topicId}';
     case ComposeTargetKind.chat:
     case ComposeTargetKind.note:
       return 'plot:${t.teamId?.toString() ?? 'personal'}';

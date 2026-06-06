@@ -418,6 +418,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       inviteEmails: const Value(null),
       teamId: const Value(null),
       icon: const Value(null),
+      topicId: const Value(null),
     );
     unawaited(
       bloc.updateDraft(
@@ -1021,6 +1022,10 @@ class NewThreadPageState extends State<NewThreadPage> {
           : target.inviteEmails.isEmpty
               ? const Value.absent()
               : Value(target.inviteEmails),
+      // Topic targets file the thread into a Plot topic (sets thread.topic_id);
+      // every other target clears it so switching away from a topic doesn't
+      // strand the previous filing.
+      topicId: Value(target.topicId),
     );
     await bloc.updateDraft(updated);
     if (!mounted) return;
@@ -1082,6 +1087,85 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _applyDirectTarget(ComposeTarget target) async {
     setState(() => _selectedRecipient = null);
     await _applyTarget(target);
+  }
+
+  /// Opens the create-topic modal — team scope (when the user belongs to ≥1
+  /// team), topic name, and a contact+group members picker — and creates the
+  /// Plot topic. Returns true when a topic was created so the picker reloads its
+  /// Channels list to surface it.
+  Future<bool> _createTopic() async {
+    final teams = await TeamUser.getActive();
+    if (!mounted) return false;
+
+    final items = <FormItem>[
+      FormTextInput(
+        key: 'name',
+        label: 'Name',
+        required: true,
+        placeholder: 'e.g. Marketing',
+      ),
+    ];
+
+    // Team scope is offered only when the user belongs to ≥1 team; otherwise
+    // every topic is Personal and the field would be a pointless single option.
+    if (teams.isNotEmpty) {
+      final scopes = <_TopicScope>[
+        const _TopicScope(teamId: null, name: 'Personal'),
+        for (final t in teams) _TopicScope(teamId: t.teamId, name: t.teamName),
+      ];
+      items.add(
+        FormSelect<_TopicScope>(
+          key: 'team',
+          label: 'Team',
+          items: (_) async => scopes,
+          titleBuilder: (s) => s.name,
+          initialValue: scopes.first,
+        ),
+      );
+    }
+
+    items.add(
+      FormShareSelect(
+        key: 'members',
+        label: 'Members',
+        placeholder: 'Add people and groups',
+      ),
+    );
+
+    items.add(
+      FormButton(
+        key: 'create',
+        isPrimary: true,
+        buildCommand: (values) {
+          final name = (values['name'] as String?)?.trim() ?? '';
+          final scope = values['team'] as _TopicScope?;
+          final members = values['members'] as SharedSelection?;
+          return CreateTopic(
+            name: name,
+            teamId: scope?.teamId,
+            contactIds:
+                members?.contacts.map((u) => u.toString()).toList() ?? const [],
+            groupIds:
+                members?.groups.map((u) => u.toString()).toList() ?? const [],
+          );
+        },
+      ),
+    );
+
+    final form = FormData(
+      title: 'New topic',
+      dismissable: true,
+      groups: [StaticFormGroup(items: items)],
+    );
+    final groups = await form.list();
+    if (!mounted) return false;
+    final result = await FormModal(
+      form,
+      groups: groups,
+      rootContext: context,
+      constraints: const BoxConstraints(maxHeight: 520, maxWidth: 460),
+    ).run(context);
+    return result is CommandDone;
   }
 
   /// Step 2 ✕/Esc -> step 1, restoring the stashed filter text.
@@ -1438,13 +1522,15 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
     final cfg = _activeLinkTypeConfig;
     if (cfg != null) return composerHintForNewThread(cfg);
-    // Plot target: mode-aware placeholder.
+    // Plot target: mode-aware placeholder. A topic thread is always shared
+    // (its audience is the topic membership).
     final draft = state.draft;
     final hasContacts =
         draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
         draft.inviteEmails.isNotEmpty;
-    final shared = hasContacts || _hadContactsThisSession;
+    final shared =
+        hasContacts || _hadContactsThisSession || draft.topicId != null;
     return composerHintForNewThreadPlot(shared: shared);
   }
 
@@ -1457,13 +1543,14 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (_selectedTwist != null || cfg != null) {
       return composerVerbForNewThread(cfg);
     }
-    // Plot target.
+    // Plot target. A topic thread is always shared (posts to the topic).
     final draft = state.draft;
     final hasContacts =
         draft.contacts.isNotEmpty ||
         draft.groups.isNotEmpty ||
         draft.inviteEmails.isNotEmpty;
-    final shared = hasContacts || _hadContactsThisSession;
+    final shared =
+        hasContacts || _hadContactsThisSession || draft.topicId != null;
     return shared ? 'Send' : 'Save';
   }
 
@@ -1598,6 +1685,8 @@ class NewThreadPageState extends State<NewThreadPage> {
   bool _targetHasNoRoster(ComposeTarget target) {
     switch (target.kind) {
       case ComposeTargetKind.note:
+      // A topic's membership/routing is the audience — no per-thread roster.
+      case ComposeTargetKind.topic:
         return true;
       case ComposeTargetKind.chat:
       case ComposeTargetKind.twist:
@@ -1632,6 +1721,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       activeListenable: multiPanel ? _active : null,
       onPickRecipient: _pickRecipient,
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
+      onCreateTopic: _createTopic,
       // Single-panel mode drops the global header back button; the picker's
       // search-field leading slot carries the back affordance instead and
       // closes the new-thread page. Multi-panel keeps a plain search icon.
@@ -1717,6 +1807,12 @@ class NewThreadPageState extends State<NewThreadPage> {
         ? activeChoice.target
         : null;
 
+    // A thread posted into a Plot topic shows a topic field in place of the
+    // contacts field: the audience is the topic's membership, not a per-thread
+    // roster. Tapping it steps back to the target picker.
+    final topicId = state.draft.topicId;
+    final topicName = topicId == null ? null : Topic.fromCache(topicId)?.name;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1732,7 +1828,12 @@ class NewThreadPageState extends State<NewThreadPage> {
           isAuto: false,
           openModal: () => _selectPriority(context, state),
         ),
-        if (channelTarget != null)
+        if (topicId != null)
+          TopicComposeField(
+            topicName: topicName ?? '',
+            openModal: () async => _backFromCompose(),
+          )
+        else if (channelTarget != null)
           ChannelComposeField(
             channelTitle: channelTarget.channel?.title ?? '',
             openModal: () => _openChannelPicker(context, channelTarget),
@@ -2060,4 +2161,12 @@ class NewThreadPageState extends State<NewThreadPage> {
       },
     };
   }
+}
+
+/// A team-scope option for the create-topic modal's team field: null [teamId]
+/// is Personal, otherwise a team and its display [name].
+class _TopicScope {
+  const _TopicScope({required this.teamId, required this.name});
+  final BigInt? teamId;
+  final String name;
 }
