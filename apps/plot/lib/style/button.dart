@@ -356,10 +356,10 @@ FButtonStyleDelta _buildGhostStyleDelta(
           color: colourScheme.veryMuted, fontWeight: FontWeight.w500, height: 1,
         ),
         hovered: typography.md.copyWith(
-          color: colourScheme.foreground, fontWeight: FontWeight.w500, height: 1,
+          color: colourScheme.hover, fontWeight: FontWeight.w500, height: 1,
         ),
         pressed: typography.md.copyWith(
-          color: colourScheme.foreground, fontWeight: FontWeight.w500, height: 1,
+          color: colourScheme.hover, fontWeight: FontWeight.w500, height: 1,
         ),
       ),
       iconStyle: _iconVariants(
@@ -369,10 +369,10 @@ FButtonStyleDelta _buildGhostStyleDelta(
           size: iconSizes.base,
         ),
         hovered: IconThemeData(
-          color: colourScheme.foreground, size: iconSizes.base,
+          color: colourScheme.hover, size: iconSizes.base,
         ),
         pressed: IconThemeData(
-          color: colourScheme.foreground, size: iconSizes.base,
+          color: colourScheme.hover, size: iconSizes.base,
         ),
       ),
     ),
@@ -385,10 +385,10 @@ FButtonStyleDelta _buildGhostStyleDelta(
           size: iconSizes.lg,
         ),
         hovered: IconThemeData(
-          color: colourScheme.foreground, size: iconSizes.lg,
+          color: colourScheme.hover, size: iconSizes.lg,
         ),
         pressed: IconThemeData(
-          color: colourScheme.foreground, size: iconSizes.lg,
+          color: colourScheme.hover, size: iconSizes.lg,
         ),
       ),
     ),
@@ -410,7 +410,7 @@ FButtonStyleDelta _buildGhostStyleDelta(
 ///   which keeps icon and text vertically centered.
 /// - [iconSize]: icon size applied to prefix/suffix icons.
 /// - [color] / [hoverColor]: override base and hovered colors. Default to
-///   `plotColors.veryMuted` and `colors.foreground` (the ghost defaults).
+///   `plotColors.veryMuted` and `colour.hover` (the ghost defaults).
 /// - [padding]: override the FButton content padding. Pass `EdgeInsets.zero`
 ///   for flush-left placement that aligns with the surrounding row content.
 FButtonStyleDelta ghostSizedStyleDelta(
@@ -427,7 +427,7 @@ FButtonStyleDelta ghostSizedStyleDelta(
   );
   final iconPx = iconSize ?? context.theme.iconSizes.base;
   final baseColor = color ?? context.theme.plotColors.veryMuted;
-  final hoverC = hoverColor ?? context.theme.colors.foreground;
+  final hoverC = hoverColor ?? context.colour.hover;
 
   return FButtonStyleDelta.delta(
     contentStyle: FButtonContentStyleDelta.delta(

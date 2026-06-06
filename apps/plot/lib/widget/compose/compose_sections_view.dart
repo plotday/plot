@@ -201,10 +201,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         ),
     ];
     if (peopleItems.isNotEmpty) {
-      sections.add(PillGridSection(
-        header: _peopleHeader(),
-        items: peopleItems,
-      ));
+      sections.add(
+        PillGridSection(header: _peopleHeader(), items: peopleItems),
+      );
     }
 
     // 2. Channels
@@ -216,10 +215,12 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         ),
     ];
     if (channelItems.isNotEmpty) {
-      sections.add(PillGridSection(
-        header: _sectionHeader('Channels'),
-        items: channelItems,
-      ));
+      sections.add(
+        PillGridSection(
+          header: _sectionHeader('Channels'),
+          items: channelItems,
+        ),
+      );
     }
 
     // 3. Private notes (focuses)
@@ -229,16 +230,20 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
       if (pid == null) continue;
       final priority = _priorityById[pid];
       if (priority == null) continue;
-      focusItems.add(PillGridItem(
-        data: FocusPillData(priority),
-        onActivate: () => widget.onPickTarget(t),
-      ));
+      focusItems.add(
+        PillGridItem(
+          data: FocusPillData(priority),
+          onActivate: () => widget.onPickTarget(t),
+        ),
+      );
     }
     if (focusItems.isNotEmpty) {
-      sections.add(PillGridSection(
-        header: _sectionHeader('Private notes'),
-        items: focusItems,
-      ));
+      sections.add(
+        PillGridSection(
+          header: _sectionHeader('Private note'),
+          items: focusItems,
+        ),
+      );
     }
 
     return sections;
@@ -249,23 +254,27 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   /// The "People and twists" section header. Only "People" is bold; " and
   /// twists" continues in the regular heading weight.
   Widget _peopleHeader() {
-    return Builder(builder: (context) {
-      final style = _headingStyle(context);
-      final regular = style.copyWith(fontWeight: FontWeight.w400);
-      return Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: 'People', style: style),
-            TextSpan(text: ' and twists', style: regular),
-          ],
-        ),
-      );
-    });
+    return Builder(
+      builder: (context) {
+        final style = _headingStyle(context);
+        final regular = style.copyWith(fontWeight: FontWeight.w400);
+        return Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: 'People', style: style),
+              TextSpan(text: ' and twists', style: regular),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// A plain section-label widget using the shared heading style.
   Widget _sectionHeader(String text) {
-    return Builder(builder: (context) => Text(text, style: _headingStyle(context)));
+    return Builder(
+      builder: (context) => Text(text, style: _headingStyle(context)),
+    );
   }
 
   /// Section-heading text style: a calm step up in size from the body, bold,

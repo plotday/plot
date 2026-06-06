@@ -54,10 +54,10 @@ class ThreadAssignee extends HookWidget {
     final avatarSize = iconSize + iconPadding.top + iconPadding.bottom;
 
     // Track hover so the unassigned icon matches sibling `Button.icon`s:
-    // resting `muted`, hover lifts to `foreground`.
+    // resting `muted`, hover lifts to `hover`.
     final isHovered = useState(false);
     final iconColor =
-        isHovered.value ? context.colour.foreground : context.colour.muted;
+        isHovered.value ? context.colour.hover : context.colour.muted;
 
     if (assignee == null && !showWhenUnassigned) {
       return const SizedBox.shrink();

@@ -21,6 +21,15 @@ class OklchColours {
   final RayOklch accentBackground;
   final RayOklch highlight;
   final RayOklch foreground;
+
+  /// Emphasis colour for hover/active states on interactive elements (e.g.
+  /// ghost-button text/icons lifting on hover). Deliberately pushed *past*
+  /// [foreground]: darker than the body-text foreground in light mode, and
+  /// brighter than it in dark mode, so a hover reads as a clear step up in
+  /// prominence. Kept separate from [foreground] because the ideal text
+  /// lightness and the ideal hover lightness differ per brightness.
+  final RayOklch hover;
+
   final RayOklch muted;
   final RayOklch veryMuted;
   final RayOklch border;
@@ -44,6 +53,7 @@ class OklchColours {
     required this.accentBackground,
     required this.highlight,
     required this.foreground,
+    required this.hover,
     required this.muted,
     required this.veryMuted,
     required this.border,
@@ -140,6 +150,10 @@ class OklchColours {
         // still reads as a tinted band rather than a coloured panel.
         highlight: neutral(0.91, 0.04, null, 1.0),
         foreground: neutral(0.25, 0.01),
+        // Hover emphasis sits *darker* than the L=0.25 body foreground so a
+        // hovered ghost button steps up in contrast against the near-white
+        // surface (foreground alone read as too soft for hover here).
+        hover: neutral(0.15, 0.01),
         muted: neutral(0.48, 0.01),
         veryMuted: neutral(0.58, 0.01),
         border: neutral(0.0, 0.0, 0.0, 0.18),
@@ -163,7 +177,14 @@ class OklchColours {
         // — enough to track keyboard focus, especially when an adjacent
         // row already carries the same tint.
         highlight: neutral(0.58, 0.015, null, 0.30),
-        foreground: neutral(0.88, 0.004),
+        // Dimmed from L=0.88 (the old foreground) — at 0.88 body text read as
+        // slightly too bright/harsh on the dark surface. 0.82 stays high
+        // contrast while easing off the glare.
+        foreground: neutral(0.82, 0.004),
+        // Hover emphasis keeps the old 0.88 foreground value, which is the
+        // right brightness for a hovered ghost button to lift above the
+        // (now dimmer) body foreground.
+        hover: neutral(0.88, 0.004),
         muted: neutral(0.65, 0.006),
         veryMuted: neutral(0.48, 0.005),
         border: neutral(1.0, 0.0, 0.0, 0.12),
@@ -425,6 +446,7 @@ class ColourSchemeData extends Equatable {
   Color get accentBackground => _colours.accentBackground.toColor();
   Color get highlight => _colours.highlight.toColor();
   Color get foreground => _colours.foreground.toColor();
+  Color get hover => _colours.hover.toColor();
   Color get muted => _colours.muted.toColor();
   Color get veryMuted => _colours.veryMuted.toColor();
   Color get border => _colours.border.toColor();

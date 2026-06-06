@@ -398,7 +398,7 @@ class _ButtonState extends State<Button> {
     }
 
     final restingColor = widget.color ?? context.colour.muted;
-    final hoverColor = widget.hoverColor ?? context.colour.foreground;
+    final hoverColor = widget.hoverColor ?? context.colour.hover;
     final iconStyle = style.iconContentStyle.iconStyle;
 
     return style.copyWith(

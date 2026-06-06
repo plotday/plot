@@ -130,7 +130,7 @@ class _HeaderState extends State<Header> {
         final frameRestingColor = context.colour.foreground.withValues(
           alpha: 0.55,
         );
-        final frameHoverColor = context.colour.foreground;
+        final frameHoverColor = context.colour.hover;
         Widget frameIcon(Command cmd, {bool selected = false, Key? key}) {
           return Button.icon(
             cmd,

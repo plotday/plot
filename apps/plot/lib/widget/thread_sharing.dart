@@ -33,7 +33,7 @@ class ThreadSharing extends HookWidget {
 
     final isHovered = useState(false);
     final iconColor =
-        isHovered.value ? context.colour.foreground : context.colour.muted;
+        isHovered.value ? context.colour.hover : context.colour.muted;
     final iconSize = context.theme.iconSizes.base;
 
     final Widget child = shared
