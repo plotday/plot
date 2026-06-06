@@ -614,11 +614,13 @@ export class Gmail extends Connector<Gmail> {
       }
     }
 
-    // createWebhook returns a Pub/Sub topic name when the provider is Google
-    // with Gmail scopes. The webhook delivers no extra args — onGmailWebhook
-    // operates on the single mailbox-wide watch.
+    // `pubsub: "gmail"` returns a Gmail-specific Pub/Sub topic name (instead
+    // of a webhook URL) to hand to users.watch. This opt-in must be explicit
+    // so a sibling Google connector's provider-less webhook (Calendar, Drive)
+    // is never misrouted to a Gmail topic. The webhook delivers no extra
+    // args — onGmailWebhook operates on the single mailbox-wide watch.
     const topicName = await this.tools.network.createWebhook(
-      {},
+      { pubsub: "gmail" },
       this.onGmailWebhook
     );
 

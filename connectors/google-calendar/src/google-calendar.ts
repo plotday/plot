@@ -332,8 +332,20 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       return;
     }
 
-    // Setup webhook for this calendar
-    await this.setupCalendarWatch(resolvedCalendarId);
+    // Set up the push webhook for this calendar. The watch only powers live
+    // incremental updates — it is NOT required for the initial backfill, and
+    // periodic sync still picks up changes without it. A watch failure (e.g.
+    // a transient Google API error, or an environment without an HTTPS
+    // webhook endpoint) must therefore never abort sync setup before the
+    // sync batch below is queued, or the calendar would never populate.
+    try {
+      await this.setupCalendarWatch(resolvedCalendarId);
+    } catch (error) {
+      console.error(
+        `Failed to set up calendar watch for ${resolvedCalendarId}; continuing with sync (live updates disabled until next renewal):`,
+        error
+      );
+    }
 
     // Default sync range: 2 years back
     // Quick pass: sync only upcoming events (timeMin = now). Front-loads
@@ -518,8 +530,20 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       return;
     }
 
-    // Setup webhook for this calendar
-    await this.setupCalendarWatch(resolvedCalendarId);
+    // Set up the push webhook for this calendar. The watch only powers live
+    // incremental updates — it is NOT required for the initial backfill, and
+    // periodic sync still picks up changes without it. A watch failure (e.g.
+    // a transient Google API error, or an environment without an HTTPS
+    // webhook endpoint) must therefore never abort sync setup before the
+    // sync batch below is queued, or the calendar would never populate.
+    try {
+      await this.setupCalendarWatch(resolvedCalendarId);
+    } catch (error) {
+      console.error(
+        `Failed to set up calendar watch for ${resolvedCalendarId}; continuing with sync (live updates disabled until next renewal):`,
+        error
+      );
+    }
 
     // Determine sync range
     let min: Date | null;

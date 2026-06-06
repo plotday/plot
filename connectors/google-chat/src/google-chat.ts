@@ -684,10 +684,11 @@ export class GoogleChat extends Connector<GoogleChat> {
       // Tear down any existing realtime sync first (handles reconnect/retry)
       await this.teardownRealtimeSync(channelId);
 
-      // Request a Pub/Sub-backed webhook — returns a topic name instead of a URL
+      // Request a Workspace Events Pub/Sub webhook — returns a topic name
+      // instead of a URL.
       console.log(`[google-chat] Setting up realtime sync for ${channelId}`);
       const topicName = await this.tools.network.createWebhook(
-        { pubsub: true },
+        { pubsub: "workspace" },
         this.onChatWebhook,
         channelId
       );
