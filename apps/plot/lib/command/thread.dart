@@ -579,14 +579,12 @@ class MuteSimilarThreads extends Command {
     // ignore: prefer_initializing_formals
     : _bloc = bloc,
       super(
-        title: _thread.muteByThreadId == null
-            ? 'Skip active for threads like this'
-            : 'Stop skipping active for these',
+        title: _thread.muteByThreadId == null ? 'Mute' : 'Unmute',
         eventObject: EventObject.activity,
         eventAction: _thread.muteByThreadId == null
             ? EventAction.tagged
             : EventAction.untagged,
-        icon: PlotIcon.broom,
+        icon: PlotIcon.volumeSlash,
       );
 
   final Thread _thread;
