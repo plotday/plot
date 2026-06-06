@@ -1,6 +1,7 @@
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:plot/widget/widget.dart' hide Link;
@@ -243,6 +244,22 @@ Future<void> pickThreadAssignee(BuildContext context, Thread thread) async {
                 option.email != option.name)
             ? option.email
             : null,
+        // Leading avatar, matching the share modal's rows. The 20/12 padding
+        // and iconSizes.base size reproduce the spacing the command-based
+        // share rows get from the leading slot + 12px icon gap.
+        leadingBuilder: (isHovered, hasFocus) => Padding(
+          padding: const EdgeInsets.only(left: 20, right: 12),
+          child: option.id != null
+              ? Avatar(
+                  actorId: option.id,
+                  size: context.theme.iconSizes.base,
+                )
+              : Icon(
+                  PlotIcon.shareRemove,
+                  size: context.theme.iconSizes.base,
+                  color: context.theme.plotColors.muted,
+                ),
+        ),
         disableInternalHover: true,
       );
     },
