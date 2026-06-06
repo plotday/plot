@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:plot/widget/note_editor_top_bar.dart';
 
@@ -14,7 +15,12 @@ void main() {
 
   Widget host(Widget child) => FTheme(
         data: FThemes.zinc.light.desktop,
-        child: Directionality(textDirection: TextDirection.ltr, child: child),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Overlay(
+            initialEntries: [OverlayEntry(builder: (_) => child)],
+          ),
+        ),
       );
 
   group('NoteEditorTopBar — PillRowState', () {
@@ -106,6 +112,74 @@ void main() {
       )));
       await tester.tap(find.byKey(const Key('top-bar-clear')));
       expect(cancelled, isTrue);
+    });
+  });
+
+  group('NoteEditorTopBar — pill affordances', () {
+    testWidgets('renders leading icon and recipient count pill', (tester) async {
+      await tester.pumpWidget(host(NoteEditorTopBar(
+        state: PillRowState(
+          pills: [
+            TopBarPill(
+              id: 'reply',
+              label: 'Reply all',
+              leadingIcon: FontAwesomeIcons.replyAll,
+              recipientCount: 3,
+              editIcon: FontAwesomeIcons.pen,
+              editTooltip: 'Edit recipients',
+              onTap: () {},
+              onEdit: () {},
+            ),
+          ],
+          activeId: 'reply',
+        ),
+        onClearReply: () {},
+        onCancelEdit: () {},
+      )));
+      expect(find.byIcon(FontAwesomeIcons.replyAll), findsOneWidget);
+      expect(find.byIcon(FontAwesomeIcons.pen), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+    });
+
+    testWidgets('tapping the edit affordance invokes onEdit, not onTap',
+        (tester) async {
+      var tapped = false;
+      var edited = false;
+      await tester.pumpWidget(host(NoteEditorTopBar(
+        state: PillRowState(
+          pills: [
+            TopBarPill(
+              id: 'reply',
+              label: 'Reply',
+              editIcon: FontAwesomeIcons.userPlus,
+              editTooltip: 'Edit recipients',
+              onTap: () => tapped = true,
+              onEdit: () => edited = true,
+            ),
+          ],
+          activeId: 'reply',
+        ),
+        onClearReply: () {},
+        onCancelEdit: () {},
+      )));
+      await tester.tap(find.byIcon(FontAwesomeIcons.userPlus));
+      // Drain the FTooltip hide-delay timer before the test ends.
+      await tester.pumpAndSettle();
+      expect(edited, isTrue);
+      expect(tapped, isFalse);
+    });
+
+    testWidgets('no edit affordance when editIcon is null', (tester) async {
+      await tester.pumpWidget(host(NoteEditorTopBar(
+        state: PillRowState(
+          pills: [TopBarPill(id: 'reply', label: 'Reply', onTap: () {})],
+          activeId: 'reply',
+        ),
+        onClearReply: () {},
+        onCancelEdit: () {},
+      )));
+      expect(find.byIcon(FontAwesomeIcons.pen), findsNothing);
+      expect(find.byIcon(FontAwesomeIcons.userPlus), findsNothing);
     });
   });
 }

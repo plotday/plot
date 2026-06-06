@@ -189,6 +189,7 @@ Future<Commands> buildSharedSelectionCommands({
   List<Uuid> threadMemberIds = const [],
   String sharedSectionTitle = 'Shared',
   String threadSectionTitle = 'In this thread',
+  String prompt = 'Share with contact or email',
 }) async {
   // Resolve groups.
   final sharedGroups = <GroupRow>[];
@@ -257,7 +258,7 @@ Future<Commands> buildSharedSelectionCommands({
       ShareSelectionGroup(selection, group, onUpdate: onUpdate);
 
   return Commands(
-    prompt: 'Share with contact or email',
+    prompt: prompt,
     emptyMessage: 'Enter an email address to invite someone',
     groups: [
       if (sharedActors.isNotEmpty ||
@@ -507,6 +508,7 @@ class PickShared extends ShowCommands {
     List<Uuid> threadMemberIds = const [],
     String sharedSectionTitle = 'Shared',
     String threadSectionTitle = 'In this thread',
+    String prompt = 'Share with contact or email',
   }) {
     final ref = [selection];
     final cache = ShareCandidatesCache(includeGroupIds: includeGroupIds);
@@ -528,6 +530,7 @@ class PickShared extends ShowCommands {
         threadMemberIds: threadMemberIds,
         sharedSectionTitle: sharedSectionTitle,
         threadSectionTitle: threadSectionTitle,
+        prompt: prompt,
       ),
     );
   }
