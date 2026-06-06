@@ -51,6 +51,7 @@ WHERE
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
+        OR (a.topic_id IS NOT NULL AND a.topic_id = ANY("user".user_topic_ids(tp.user_id)))
     );
 
 
@@ -98,6 +99,7 @@ WHERE
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
+        OR (a.topic_id IS NOT NULL AND a.topic_id = ANY("user".user_topic_ids(tp.user_id)))
     )
     -- Hidden by note-level access restriction
     AND n.created_by != tp.user_id

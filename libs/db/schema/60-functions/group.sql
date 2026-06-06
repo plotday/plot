@@ -5,7 +5,8 @@ CREATE OR REPLACE FUNCTION public.create_group (
     p_type group_type DEFAULT 'private',
     p_join_policy group_join_policy DEFAULT 'member',
     p_team_id bigint DEFAULT NULL,
-    p_member_contact_ids uuid[] DEFAULT ARRAY[]::uuid[]
+    p_member_contact_ids uuid[] DEFAULT ARRAY[]::uuid[],
+    p_privacy group_privacy DEFAULT NULL
 )
     RETURNS uuid
     LANGUAGE plpgsql
@@ -13,6 +14,7 @@ CREATE OR REPLACE FUNCTION public.create_group (
     AS $function$
 DECLARE
     v_group_id uuid;
+    v_privacy group_privacy;
 BEGIN
     IF p_team_id IS NOT NULL THEN
         IF NOT EXISTS (
@@ -23,8 +25,13 @@ BEGIN
         END IF;
     END IF;
 
-    INSERT INTO "group" (name, type, join_policy, team_id, created_by)
-    VALUES (p_name, p_type, p_join_policy, p_team_id, p_user_id)
+    -- privacy is now caller-set; fall back to deriving from the legacy type
+    -- (announce -> private, else open) when the caller doesn't specify it.
+    v_privacy := COALESCE(p_privacy,
+        CASE WHEN p_type = 'announce' THEN 'private'::group_privacy ELSE 'open'::group_privacy END);
+
+    INSERT INTO "group" (name, type, join_policy, team_id, created_by, privacy)
+    VALUES (p_name, p_type, p_join_policy, p_team_id, p_user_id, v_privacy)
     RETURNING id INTO v_group_id;
 
     INSERT INTO group_admin (group_id, user_id)

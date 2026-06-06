@@ -148,6 +148,10 @@ class Threads extends Table
   BlobColumn get assigneeId =>
       blob().nullable().map(const ActorIdConverter())();
 
+  /// The topic (channel) this thread belongs to. Synced from
+  /// `user.thread.topic_id`.
+  BlobColumn get topicId => blob().nullable().map(const UuidConverter())();
+
   /// Server-side access-loss tombstone marker. TRUE when the row arrived
   /// from `user.thread_redacted` — the user lost access (removed from a
   /// group, removed from a team) and the row carries no meaningful data.
@@ -5473,6 +5477,10 @@ SELECT
   /// When non-null, this thread was merged into the referenced target and
   /// is archived. Discoverable via the back-reference column.
   ThreadId? get mergedIntoThreadId => _thread.mergedIntoThreadId;
+
+  /// The topic (channel) this thread belongs to. Null for threads not posted
+  /// to a topic.
+  Uuid? get topicId => _thread.topicId;
 
   /// The current user's RSVP status on this schedule ('attend', 'skip', or null).
   String? get currentUserRsvp => _schedule?.currentUserStatus;

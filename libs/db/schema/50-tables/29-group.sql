@@ -5,6 +5,11 @@ CREATE TABLE "public"."group" (
     "archived_at" timestamptz,
     "name" text NOT NULL,
     "type" group_type NOT NULL DEFAULT 'private',
+    -- Single privacy axis (supersedes the conflated `type` gating). Governs
+    -- roster visibility and address permission in user.group. Admins bypass.
+    -- Legacy `type`/`join_policy` are kept for client back-compat and dropped
+    -- in a later contract migration.
+    "privacy" group_privacy NOT NULL DEFAULT 'open',
     "join_policy" group_join_policy NOT NULL DEFAULT 'member',
     "team_id" bigint REFERENCES team ON DELETE SET NULL,
     "created_by" uuid NOT NULL REFERENCES public."user" ("id") ON DELETE CASCADE,

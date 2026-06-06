@@ -26,6 +26,8 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
 
 export type GroupJoinPolicy = "admin" | "member" | "open";
 
+export type GroupPrivacy = "open" | "private";
+
 export type GroupType = "announce" | "private" | "public" | "team";
 
 export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
@@ -55,6 +57,8 @@ export type SyncOperation = "create" | "update";
 export type TeamRole = "admin" | "member";
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
+
+export type TopicJoinPolicy = "admin" | "open";
 
 export type TwistEnvironment = "personal" | "private" | "public" | "review";
 
@@ -345,6 +349,7 @@ export interface Group {
    */
   key: string | null;
   name: string;
+  privacy: Generated<GroupPrivacy>;
   seq: Generated<string>;
   team_id: Int8 | null;
   type: Generated<GroupType>;
@@ -407,6 +412,7 @@ export interface Link {
    * Source-defined status string (e.g., open, done, closed). Free text.
    */
   status: string | null;
+  supports_assignee: Generated<boolean>;
   sync_depth: number | null;
   thread_id: string | null;
   title: string | null;
@@ -736,6 +742,11 @@ export interface TeamUser {
 
 export interface Thread {
   archived_at: Timestamp | null;
+  assignee_id: string | null;
+  /**
+   * The actor (contact or twist_instance) credited with causing this thread's creation. User threads: user's primary contact. Connector threads: resolved external link author. Non-connection twist threads: the twist_instance. Immutable after first set.
+   */
+  author_id: string | null;
   contact_meta: Generated<Json>;
   /**
    * Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester's sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.
@@ -789,6 +800,7 @@ export interface Thread {
    * Routing key used by classify_thread_for_user. Two conventions: (1) priority:{KEY}[:{SUB_TOPIC}] defaults the thread into the user's priority with that key when no user_moved example wins; (2) any other string acts as the topic filter over user_moved training examples. On INSERT defaults to, in order: explicit input, or groups[1]::text when unset.
    */
   topic: string | null;
+  topic_id: string | null;
   /**
    * Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.
    */
@@ -913,6 +925,8 @@ export interface ThreadTags {
 
 export interface ThreadX {
   archived_at: Timestamp | null;
+  assignee_id: string | null;
+  author_id: string | null;
   contact_meta: Json | null;
   contacts: string[] | null;
   created_at: Timestamp | null;
@@ -936,6 +950,7 @@ export interface ThreadX {
   team_id: Int8 | null;
   title: string | null;
   topic: string | null;
+  topic_id: string | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -951,6 +966,51 @@ export interface Token {
   token: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
+}
+
+export interface Topic {
+  announce: Generated<boolean>;
+  archived_at: Timestamp | null;
+  /**
+   * TRUE for system-managed topics (Plot Updates). Membership composition is maintained by triggers and cannot be modified via API.
+   */
+  auto_maintained: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  join_policy: Generated<TopicJoinPolicy>;
+  /**
+   * Stable identifier for system-managed topics (e.g. '@plot.updates'). Nullable; user-created topics have no key.
+   */
+  key: string | null;
+  name: string;
+  seq: Generated<string>;
+  team_id: Int8 | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TopicAdmin {
+  created_at: Generated<Timestamp>;
+  topic_id: string;
+  user_id: string;
+}
+
+export interface TopicContact {
+  contact_id: string;
+  created_at: Generated<Timestamp>;
+  topic_id: string;
+}
+
+export interface TopicGroup {
+  created_at: Generated<Timestamp>;
+  group_id: string;
+  topic_id: string;
+}
+
+export interface TopicMemberOptout {
+  created_at: Generated<Timestamp>;
+  topic_id: string;
+  user_id: string;
 }
 
 export interface Twist {
@@ -1375,6 +1435,7 @@ export interface UserContact {
   contact_id: string;
   created_at: Generated<Timestamp>;
   linked: Generated<boolean>;
+  name: string | null;
   primary: Generated<boolean>;
   seq: Generated<string>;
   source: string | null;
@@ -1385,6 +1446,7 @@ export interface UserContact {
 export interface UserGroup {
   archived_at: Timestamp | null;
   auto_maintained: boolean | null;
+  can_address: boolean | null;
   can_post: boolean | null;
   created_at: Timestamp | null;
   id: string | null;
@@ -1394,6 +1456,7 @@ export interface UserGroup {
   key: string | null;
   member_contact_ids: string[] | null;
   name: string | null;
+  privacy: GroupPrivacy | null;
   seq: string | null;
   team_id: Int8 | null;
   type: GroupType | null;
@@ -1673,6 +1736,8 @@ export interface UserThread {
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
+  assignee_id: string | null;
+  author_id: string | null;
   bumped_at: Timestamp | null;
   contact_meta: Json | null;
   contacts: string[] | null;
@@ -1698,6 +1763,7 @@ export interface UserThread {
   team_id: Int8 | null;
   title: string | null;
   topic: string | null;
+  topic_id: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -1734,6 +1800,8 @@ export interface UserThreadRedacted {
   activity_at: Timestamp | null;
   agenda_at: string | null;
   archived_at: Timestamp | null;
+  assignee_id: string | null;
+  author_id: string | null;
   bumped_at: Timestamp | null;
   contact_meta: Json | null;
   contacts: string[] | null;
@@ -1759,6 +1827,7 @@ export interface UserThreadRedacted {
   team_id: Int8 | null;
   title: string | null;
   topic: string | null;
+  topic_id: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -1774,6 +1843,27 @@ export interface UserThreadTags {
   priority_path: string | null;
   seq: string | null;
   tags: Json | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface UserTopic {
+  announce: boolean | null;
+  archived_at: Timestamp | null;
+  auto_maintained: boolean | null;
+  can_manage: boolean | null;
+  can_post: boolean | null;
+  created_at: Timestamp | null;
+  id: string | null;
+  is_admin: boolean | null;
+  is_member: boolean | null;
+  join_policy: TopicJoinPolicy | null;
+  key: string | null;
+  member_contact_ids: string[] | null;
+  name: string | null;
+  opted_out: boolean | null;
+  seq: string | null;
+  team_id: Int8 | null;
   updated_at: Timestamp | null;
   user_id: string | null;
 }
@@ -1879,6 +1969,11 @@ export interface DB {
   thread_tags: ThreadTags;
   thread_x: ThreadX;
   token: Token;
+  topic: Topic;
+  topic_admin: TopicAdmin;
+  topic_contact: TopicContact;
+  topic_group: TopicGroup;
+  topic_member_optout: TopicMemberOptout;
   twist: Twist;
   twist_instance: TwistInstance;
   twist_instance_channel: TwistInstanceChannel;
@@ -1924,6 +2019,7 @@ export interface DB {
   "user.thread_reactions": UserThreadReactions;
   "user.thread_redacted": UserThreadRedacted;
   "user.thread_tags": UserThreadTags;
+  "user.topic": UserTopic;
   "user.twist": UserTwist;
   "user.twist_connection": UserTwistConnection;
 }

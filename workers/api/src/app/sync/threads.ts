@@ -557,6 +557,12 @@ threads.post("/sync/threads", async (c) => {
   }
   delete threadData.teamId;
 
+  // camelCase alias for topic_id (the topic this thread belongs to).
+  if (threadData.topic_id === undefined && threadData.topicId !== undefined) {
+    threadData.topic_id = threadData.topicId;
+  }
+  delete threadData.topicId;
+
   const userId = c.var.user.id;
 
   // Set when the user's explicit priority pick transitions this thread's

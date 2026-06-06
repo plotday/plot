@@ -625,6 +625,7 @@ export type Database = {
           join_policy: Database["public"]["Enums"]["group_join_policy"]
           key: string | null
           name: string
+          privacy: Database["public"]["Enums"]["group_privacy"]
           seq: unknown
           team_id: number | null
           type: Database["public"]["Enums"]["group_type"]
@@ -641,6 +642,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
           key?: string | null
           name: string
+          privacy?: Database["public"]["Enums"]["group_privacy"]
           seq?: unknown
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]
@@ -657,6 +659,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
           key?: string | null
           name?: string
+          privacy?: Database["public"]["Enums"]["group_privacy"]
           seq?: unknown
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]
@@ -1989,6 +1992,7 @@ export type Database = {
           team_id: number | null
           title: string | null
           topic: string | null
+          topic_id: string | null
           twist_id: number | null
           updated_at: string
           updated_by: number
@@ -2020,6 +2024,7 @@ export type Database = {
           team_id?: number | null
           title?: string | null
           topic?: string | null
+          topic_id?: string | null
           twist_id?: number | null
           updated_at?: string
           updated_by?: number
@@ -2051,6 +2056,7 @@ export type Database = {
           team_id?: number | null
           title?: string | null
           topic?: string | null
+          topic_id?: string | null
           twist_id?: number | null
           updated_at?: string
           updated_by?: number
@@ -2546,6 +2552,188 @@ export type Database = {
           },
           {
             foreignKeyName: "token_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topic: {
+        Row: {
+          announce: boolean
+          archived_at: string | null
+          auto_maintained: boolean
+          created_at: string
+          created_by: string
+          id: string
+          join_policy: Database["public"]["Enums"]["topic_join_policy"]
+          key: string | null
+          name: string
+          seq: unknown
+          team_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          announce?: boolean
+          archived_at?: string | null
+          auto_maintained?: boolean
+          created_at?: string
+          created_by: string
+          id?: string
+          join_policy?: Database["public"]["Enums"]["topic_join_policy"]
+          key?: string | null
+          name: string
+          seq?: unknown
+          team_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          announce?: boolean
+          archived_at?: string | null
+          auto_maintained?: boolean
+          created_at?: string
+          created_by?: string
+          id?: string
+          join_policy?: Database["public"]["Enums"]["topic_join_policy"]
+          key?: string | null
+          name?: string
+          seq?: unknown
+          team_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_team_id_fkey"
+            columns: ["team_id"]
+            referencedRelation: "team"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topic_admin: {
+        Row: {
+          created_at: string
+          topic_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          topic_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          topic_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_admin_topic_id_fkey"
+            columns: ["topic_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_admin_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topic_contact: {
+        Row: {
+          contact_id: string
+          created_at: string
+          topic_id: string
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          topic_id: string
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          topic_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_contact_contact_id_fkey"
+            columns: ["contact_id"]
+            referencedRelation: "contact"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_contact_topic_id_fkey"
+            columns: ["topic_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topic_group: {
+        Row: {
+          created_at: string
+          group_id: string
+          topic_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          topic_id: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          topic_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_group_group_id_fkey"
+            columns: ["group_id"]
+            referencedRelation: "group"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_group_topic_id_fkey"
+            columns: ["topic_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topic_member_optout: {
+        Row: {
+          created_at: string
+          topic_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          topic_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          topic_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_member_optout_topic_id_fkey"
+            columns: ["topic_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_member_optout_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -3528,6 +3716,7 @@ export type Database = {
           team_id: number | null
           title: string | null
           topic: string | null
+          topic_id: string | null
           twist_id: number | null
           updated_at: string | null
           updated_by: number | null
@@ -3559,6 +3748,7 @@ export type Database = {
           team_id?: number | null
           title?: string | null
           topic?: string | null
+          topic_id?: string | null
           twist_id?: number | null
           updated_at?: string | null
           updated_by?: number | null
@@ -3590,6 +3780,7 @@ export type Database = {
           team_id?: number | null
           title?: string | null
           topic?: string | null
+          topic_id?: string | null
           twist_id?: number | null
           updated_at?: string | null
           updated_by?: number | null
@@ -4501,6 +4692,14 @@ export type Database = {
         Args: { p_contact_ids: string[]; p_group_id: string; p_user_id: string }
         Returns: undefined
       }
+      add_topic_contacts: {
+        Args: { p_contact_ids: string[]; p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      add_topic_groups: {
+        Args: { p_group_ids: string[]; p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
       apply_channel_default: { Args: { p_channel_id: number }; Returns: number }
       apply_pending_thread_state: {
         Args: { p_thread_id: string; p_user_id: string }
@@ -4547,13 +4746,29 @@ export type Database = {
           p_join_policy?: Database["public"]["Enums"]["group_join_policy"]
           p_member_contact_ids?: string[]
           p_name: string
+          p_privacy?: Database["public"]["Enums"]["group_privacy"]
           p_team_id?: number
           p_type?: Database["public"]["Enums"]["group_type"]
           p_user_id: string
         }
         Returns: string
       }
+      create_topic: {
+        Args: {
+          p_announce?: boolean
+          p_contact_ids?: string[]
+          p_group_ids?: string[]
+          p_name: string
+          p_team_id?: number
+          p_user_id: string
+        }
+        Returns: string
+      }
       expand_contacts: { Args: { p_contacts: string[] }; Returns: string[] }
+      expand_group_contacts: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: string[]
+      }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_twists: {
         Args: { p_user_id: string }
@@ -4631,6 +4846,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      grant_topic_threads_to_user: {
+        Args: { p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
       insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_twist: {
         Args: { p_twist_id: number; p_user_id: string }
@@ -4638,6 +4857,14 @@ export type Database = {
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
+      join_topic: {
+        Args: { p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      leave_topic: {
+        Args: { p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
       mark_channel_default_candidates: {
         Args: { p_channel_id: number }
         Returns: {
@@ -4692,6 +4919,18 @@ export type Database = {
       }
       remove_group_members: {
         Args: { p_contact_ids: string[]; p_group_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      remove_topic_contacts: {
+        Args: { p_contact_ids: string[]; p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      remove_topic_groups: {
+        Args: { p_group_ids: string[]; p_topic_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      revoke_topic_threads_from_user: {
+        Args: { p_topic_id: string; p_user_id: string }
         Returns: undefined
       }
       search_notes_and_links: {
@@ -4780,6 +5019,14 @@ export type Database = {
         Args: { p_contact_id: string; p_name: string; p_user_id: string }
         Returns: undefined
       }
+      user_can_address_group: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      user_can_manage_topic: {
+        Args: { p_topic_id: string; p_user_id: string }
+        Returns: boolean
+      }
       user_has_priority_access: {
         Args: { p_priority_id: string; p_user_id: string }
         Returns: boolean
@@ -4791,6 +5038,7 @@ export type Database = {
       email_frequency: "daily" | "weekly" | "never"
       enter_behavior: "enter_newline" | "enter_submits"
       group_join_policy: "member" | "open" | "admin"
+      group_privacy: "open" | "private"
       group_type: "public" | "team" | "private" | "announce"
       subscription_plan: "free" | "core" | "pro" | "team"
       subscription_status:
@@ -4804,6 +5052,7 @@ export type Database = {
       sync_operation: "create" | "update"
       tag_type: "toggle" | "count" | "compute"
       team_role: "admin" | "member"
+      topic_join_policy: "open" | "admin"
       twist_environment: "personal" | "private" | "review" | "public"
     }
     CompositeTypes: {
@@ -4856,6 +5105,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_maintained: boolean | null
+          can_address: boolean | null
           can_post: boolean | null
           created_at: string | null
           id: string | null
@@ -4865,6 +5115,7 @@ export type Database = {
           key: string | null
           member_contact_ids: string[] | null
           name: string | null
+          privacy: Database["public"]["Enums"]["group_privacy"] | null
           seq: unknown
           team_id: number | null
           type: Database["public"]["Enums"]["group_type"] | null
@@ -5015,6 +5266,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       note: {
@@ -5118,6 +5375,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       note_reactions: {
@@ -5136,6 +5399,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5241,6 +5510,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       note_tags: {
@@ -5259,6 +5534,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5309,9 +5590,21 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
           {
+            foreignKeyName: "priority_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5367,6 +5660,12 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
           {
+            foreignKeyName: "priority_block_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "priority_block_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority"
@@ -5382,6 +5681,12 @@ export type Database = {
             foreignKeyName: "priority_block_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "priority_block_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5418,6 +5723,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       priority_unread: {
@@ -5432,6 +5743,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5501,6 +5818,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       team_user: {
@@ -5518,6 +5841,12 @@ export type Database = {
             foreignKeyName: "team_user_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "team_user_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5555,6 +5884,7 @@ export type Database = {
           team_id: number | null
           title: string | null
           topic: string | null
+          topic_id: string | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -5614,6 +5944,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5685,6 +6021,12 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       thread_reactions: {
@@ -5704,6 +6046,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5741,6 +6089,7 @@ export type Database = {
           team_id: number | null
           title: string | null
           topic: string | null
+          topic_id: string | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -5752,6 +6101,12 @@ export type Database = {
             foreignKeyName: "thread_priority_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5775,7 +6130,36 @@ export type Database = {
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
         ]
+      }
+      topic: {
+        Row: {
+          announce: boolean | null
+          archived_at: string | null
+          auto_maintained: boolean | null
+          can_manage: boolean | null
+          can_post: boolean | null
+          created_at: string | null
+          id: string | null
+          is_admin: boolean | null
+          is_member: boolean | null
+          join_policy: Database["public"]["Enums"]["topic_join_policy"] | null
+          key: string | null
+          member_contact_ids: string[] | null
+          name: string | null
+          opted_out: boolean | null
+          seq: unknown
+          team_id: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
       }
       twist: {
         Row: {
@@ -5819,6 +6203,18 @@ export type Database = {
             foreignKeyName: "twist_instance_owner_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["owner_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -5877,6 +6273,12 @@ export type Database = {
             foreignKeyName: "twist_instance_connection_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "twist_instance_connection_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
         ]
@@ -6308,10 +6710,15 @@ export type Database = {
       user_contact_id: { Args: { p_user_id: string }; Returns: string }
       user_contact_ids: { Args: { p_user_id: string }; Returns: string[] }
       user_group_ids: { Args: { p_user_id: string }; Returns: string[] }
+      user_has_thread_access: {
+        Args: { p_thread_id: string; p_user_id: string }
+        Returns: boolean
+      }
       user_has_thread_write_access: {
         Args: { p_thread_id: string; p_user_id: string }
         Returns: boolean
       }
+      user_topic_ids: { Args: { p_user_id: string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
@@ -6446,6 +6853,7 @@ export const Constants = {
       email_frequency: ["daily", "weekly", "never"],
       enter_behavior: ["enter_newline", "enter_submits"],
       group_join_policy: ["member", "open", "admin"],
+      group_privacy: ["open", "private"],
       group_type: ["public", "team", "private", "announce"],
       subscription_plan: ["free", "core", "pro", "team"],
       subscription_status: [
@@ -6460,6 +6868,7 @@ export const Constants = {
       sync_operation: ["create", "update"],
       tag_type: ["toggle", "count", "compute"],
       team_role: ["admin", "member"],
+      topic_join_policy: ["open", "admin"],
       twist_environment: ["personal", "private", "review", "public"],
     },
   },

@@ -27,6 +27,7 @@ FROM
         AND (
             a.contacts && "user".user_contact_ids(tp.user_id)
             OR a.groups && "user".user_group_ids(tp.user_id)
+            OR (a.topic_id IS NOT NULL AND a.topic_id = ANY("user".user_topic_ids(tp.user_id)))
         )
         -- Pending case-A rows past the visibility window fall back to root;
         -- fresh pending rows are hidden so phantom unread dots don't appear.

@@ -60,7 +60,11 @@ CREATE TRIGGER file_thread_priority_for_group_members
     EXECUTE FUNCTION public.file_thread_priority_for_group_members ();
 
 -- When a contact is added to or removed from a group, cascade to
--- thread_priority/thread_state for all threads that reference the group.
+-- thread_priority/thread_state for all threads that reference the group
+-- directly (thread.groups) AND all threads whose topic includes the group
+-- (topic_group). The revoke decision is centralised in
+-- user.user_has_thread_access so every access path (direct contact, group
+-- on thread, topic membership) is checked identically.
 --
 -- On INSERT we classify the threads inline via classify_thread_for_user
 -- instead of leaving the rows pending for the async worker. The async
@@ -88,26 +92,26 @@ BEGIN
     IF TG_OP = 'INSERT' THEN
         SELECT uc.user_id INTO v_peer_user_id
         FROM public.user_contact uc
-        WHERE uc.contact_id = NEW.contact_id
-          AND uc.linked = TRUE
-          AND uc.archived_at IS NULL
+        WHERE uc.contact_id = NEW.contact_id AND uc.linked = TRUE AND uc.archived_at IS NULL
         LIMIT 1;
+        IF v_peer_user_id IS NULL THEN RETURN NEW; END IF;
 
-        IF v_peer_user_id IS NULL THEN
-            RETURN NEW;
-        END IF;
-
-        WITH candidates AS (
-            SELECT t.id AS thread_id,
-                   public.classify_thread_for_user(v_peer_user_id, t.id) AS pid
-            FROM public.thread t
-            WHERE NEW.group_id = ANY(t.groups)
-              AND t.archived_at IS NULL
+        WITH affected AS (
+            SELECT t.id AS thread_id FROM public.thread t
+            WHERE NEW.group_id = ANY(t.groups) AND t.archived_at IS NULL
+            UNION
+            SELECT t.id FROM public.thread t
+            JOIN public.topic_group tg ON tg.group_id = NEW.group_id AND tg.topic_id = t.topic_id
+            WHERE t.archived_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM public.topic_member_optout o
+                              WHERE o.topic_id = t.topic_id AND o.user_id = v_peer_user_id)
+        ),
+        candidates AS (
+            SELECT a.thread_id, public.classify_thread_for_user(v_peer_user_id, a.thread_id) AS pid
+            FROM affected a
         )
         INSERT INTO thread_priority (thread_id, user_id, priority_id, classify_at)
-        SELECT c.thread_id,
-               v_peer_user_id,
-               c.pid,
+        SELECT c.thread_id, v_peer_user_id, c.pid,
                CASE WHEN c.pid IS NOT NULL THEN NULL ELSE now() END
         FROM candidates c
         -- Re-join case: if a row already exists with revoked_at set
@@ -120,20 +124,27 @@ BEGIN
         WHERE thread_priority.revoked_at IS NOT NULL;
 
         INSERT INTO thread_state (user_id, thread_id)
-        SELECT v_peer_user_id, t.id
-        FROM public.thread t
-        WHERE NEW.group_id = ANY(t.groups)
-          AND t.archived_at IS NULL
+        SELECT v_peer_user_id, a.thread_id
+        FROM (
+            SELECT t.id AS thread_id FROM public.thread t
+            WHERE NEW.group_id = ANY(t.groups) AND t.archived_at IS NULL
+            UNION
+            SELECT t.id FROM public.thread t
+            JOIN public.topic_group tg ON tg.group_id = NEW.group_id AND tg.topic_id = t.topic_id
+            WHERE t.archived_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM public.topic_member_optout o
+                              WHERE o.topic_id = t.topic_id AND o.user_id = v_peer_user_id)
+        ) a
         ON CONFLICT (user_id, thread_id) DO NOTHING;
 
         RETURN NEW;
 
     -- DELETE: member removed from group. For every thread whose access
-    -- came solely through this group, mark the user's thread_priority
-    -- row as revoked so "user".thread_redacted emits a cleanup stub
-    -- (sensitive fields NULLed, archived_at = revoked_at, seq frozen)
-    -- and the client hard-deletes its local copy. See libs/db/AGENTS.md
-    -- "Handling Access Loss to Synced Entities".
+    -- came solely through this group (direct or via topic), mark the
+    -- user's thread_priority row as revoked so "user".thread_redacted
+    -- emits a cleanup stub (sensitive fields NULLed, archived_at =
+    -- revoked_at, seq frozen) and the client hard-deletes its local copy.
+    -- See libs/db/AGENTS.md "Handling Access Loss to Synced Entities".
     --
     -- Do NOT bare-DELETE thread_priority here — that would strand the
     -- client (no seq bump, no row in user.thread*, local row lives
@@ -141,41 +152,21 @@ BEGIN
     ELSIF TG_OP = 'DELETE' THEN
         SELECT uc.user_id INTO v_peer_user_id
         FROM public.user_contact uc
-        WHERE uc.contact_id = OLD.contact_id
-          AND uc.linked = TRUE
-          AND uc.archived_at IS NULL
+        WHERE uc.contact_id = OLD.contact_id AND uc.linked = TRUE AND uc.archived_at IS NULL
         LIMIT 1;
-
-        IF v_peer_user_id IS NULL THEN
-            RETURN OLD;
-        END IF;
+        IF v_peer_user_id IS NULL THEN RETURN OLD; END IF;
 
         FOR r_thread IN
-            SELECT t.id AS thread_id
-            FROM public.thread t
-            WHERE OLD.group_id = ANY(t.groups)
-              AND t.archived_at IS NULL
+            SELECT t.id AS thread_id FROM public.thread t
+            WHERE OLD.group_id = ANY(t.groups) AND t.archived_at IS NULL
+            UNION
+            SELECT t.id FROM public.thread t
+            JOIN public.topic_group tg ON tg.group_id = OLD.group_id AND tg.topic_id = t.topic_id
+            WHERE t.archived_at IS NULL
         LOOP
-            IF NOT EXISTS (
-                SELECT 1 FROM public.thread t2
-                WHERE t2.id = r_thread.thread_id
-                  AND (
-                    t2.contacts && "user".user_contact_ids(v_peer_user_id)
-                    OR EXISTS (
-                        SELECT 1 FROM unnest(t2.groups) AS gid
-                        JOIN group_member gm2 ON gm2.group_id = gid
-                        JOIN user_contact uc2 ON uc2.contact_id = gm2.contact_id
-                            AND uc2.linked = TRUE AND uc2.archived_at IS NULL
-                        WHERE uc2.user_id = v_peer_user_id
-                          AND gm2.group_id != OLD.group_id
-                    )
-                  )
-            ) THEN
-                UPDATE thread_priority
-                SET revoked_at = now()
-                WHERE thread_id = r_thread.thread_id
-                  AND user_id = v_peer_user_id
-                  AND revoked_at IS NULL;
+            IF NOT "user".user_has_thread_access(v_peer_user_id, r_thread.thread_id) THEN
+                UPDATE thread_priority SET revoked_at = now()
+                WHERE thread_id = r_thread.thread_id AND user_id = v_peer_user_id AND revoked_at IS NULL;
 
                 -- thread_state is consumed via "user".thread's LEFT JOIN;
                 -- the redacted stub emits unread=false regardless, so the
@@ -183,8 +174,7 @@ BEGIN
                 -- table is not directly synced — it feeds computed columns
                 -- on user.thread, which is now serving the redacted stub.
                 DELETE FROM thread_state
-                WHERE thread_id = r_thread.thread_id
-                  AND user_id = v_peer_user_id;
+                WHERE thread_id = r_thread.thread_id AND user_id = v_peer_user_id;
             END IF;
         END LOOP;
 

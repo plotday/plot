@@ -14,6 +14,7 @@ const CreateGroupSchema = z.object({
   joinPolicy: z.enum(["member", "open", "admin"]).default("member"),
   teamId: z.number().int().optional(),
   memberContactIds: z.array(z.string().uuid()).default([]),
+  privacy: z.enum(["open", "private"]).optional(),
 });
 
 group.post("/group", async (c) => {
@@ -24,7 +25,7 @@ group.post("/group", async (c) => {
   const parseResult = CreateGroupSchema.safeParse(rawBody);
   if (!parseResult.success) return handleValidationError(parseResult.error);
 
-  const { name, type, joinPolicy, teamId, memberContactIds } = parseResult.data;
+  const { name, type, joinPolicy, teamId, memberContactIds, privacy } = parseResult.data;
 
   try {
     const groupId = await c.var.db.transaction().execute(async (trx) => {
@@ -35,6 +36,7 @@ group.post("/group", async (c) => {
         p_join_policy: joinPolicy,
         ...(teamId !== undefined ? { p_team_id: teamId } : {}),
         p_member_contact_ids: `{${memberContactIds.join(",")}}` as any,
+        ...(privacy !== undefined ? { p_privacy: privacy } : {}),
       });
     });
     return c.json({ id: groupId });
@@ -189,6 +191,31 @@ group.delete("/group/:id/admins", async (c) => {
     return c.json({ success: true });
   } catch (err) {
     return captureServerError(c, err as Error, "Failed to remove group admin", {
+      user_id: user.id, group_id: groupId,
+    });
+  }
+});
+
+group.get("/group/:id/contacts", async (c) => {
+  const user = c.var.user;
+  if (!user) return c.json({ message: "Unauthorized" }, 401);
+
+  const groupId = c.req.param("id");
+  const uuidResult = z.string().uuid().safeParse(groupId);
+  if (!uuidResult.success) return c.json({ message: "Invalid group ID" }, 400);
+
+  try {
+    const contactIds = await rpc(c.var.db, "expand_group_contacts", {
+      p_user_id: user.id,
+      p_group_id: groupId,
+    });
+    return c.json({ contactIds: contactIds ?? [] });
+  } catch (err) {
+    const errMsg = (err as Error).message;
+    if (errMsg.includes("Insufficient permission") || errMsg.includes("Group not found")) {
+      return c.json({ message: errMsg }, 403);
+    }
+    return captureServerError(c, err as Error, "Failed to expand group contacts", {
       user_id: user.id, group_id: groupId,
     });
   }

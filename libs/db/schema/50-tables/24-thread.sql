@@ -43,6 +43,13 @@ CREATE TABLE "public"."thread" (
     -- threads, which do not participate in cross-user key dedup. FK intentionally
     -- omitted to match link.twist_id and avoid load-order coupling with twist.
     "twist_id" bigint,
+    -- The topic (channel) this thread belongs to. ≤1 per thread, giving the
+    -- thread a single stable routing string. FK intentionally omitted (mirrors
+    -- twist_id) to avoid load-order coupling with the topic table, which is
+    -- defined after thread in schema order. Visibility flows through topic
+    -- membership (see user_topic_ids); ad-hoc extra recipients still go in
+    -- contacts/groups.
+    "topic_id" uuid,
     -- Contacts whose own sync attempted to join this thread before being
     -- attested by another user's sync. Promoted into `contacts` when an
     -- attester's upsert includes them. See upsert_thread + file_thread_priority_peers.
@@ -147,6 +154,10 @@ CREATE INDEX idx_thread_external_contacts ON "public"."thread" USING gin ("exter
 CREATE INDEX idx_thread_topic ON "public"."thread" ("topic")
 WHERE
     topic IS NOT NULL;
+
+CREATE INDEX idx_thread_topic_id ON "public"."thread" ("topic_id")
+WHERE
+    topic_id IS NOT NULL;
 
 CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" halfvec_cosine_ops);
 

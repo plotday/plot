@@ -61,6 +61,8 @@ DECLARE
     v_input_groups uuid[];
     -- Input topic (text) — explicit value or NULL to derive the default.
     v_input_topic text;
+    -- Input topic_id — the channel the thread belongs to.
+    v_input_topic_id uuid;
     -- Derived topic for INSERT path.
     v_resolved_topic text;
     -- Whether the caller should get a thread_priority row this call.
@@ -285,6 +287,7 @@ BEGIN
     END;
 
     v_input_topic := COALESCE(p_thread ->> 'topic', p_defaults ->> 'topic');
+    v_input_topic_id := COALESCE((p_thread ->> 'topic_id')::uuid, (p_defaults ->> 'topic_id')::uuid);
 
     -- On INSERT, derive a default topic when none was provided.
     --
@@ -302,7 +305,12 @@ BEGIN
     -- priority. Connector threads must be keyed by their channel, not by the
     -- priority the classifier happened to pick at creation.
     IF v_existing.id IS NULL AND v_input_topic IS NULL THEN
-        IF v_twist_id IS NULL THEN
+        IF v_input_topic_id IS NOT NULL THEN
+            -- A topic-addressed thread routes by its channel, stable across
+            -- the whole stream, so the classifier topic short-circuit groups
+            -- the user's moves of any one thread onto all the others.
+            v_resolved_topic := 'topic:' || v_input_topic_id::text;
+        ELSIF v_twist_id IS NULL THEN
             SELECT
                 COALESCE(
                     p.config ->> 'topic',
@@ -388,7 +396,7 @@ BEGIN
     -- path preserves thread.twist_id so first-creator wins.
     INSERT INTO thread (
         id, created_by, author_id, title, preview, updated_by, sync_depth, contacts, contact_meta, groups, topic,
-        draft, key, icon, twist_id, pending_contacts, team_id, embedding, assignee_id
+        draft, key, icon, twist_id, pending_contacts, team_id, embedding, assignee_id, topic_id
     )
     VALUES (
         v_id,
@@ -438,7 +446,11 @@ BEGIN
         -- otherwise preserve the existing row's assignee (archived-refile path).
         -- For connector threads the mirror trigger owns this column, so
         -- connectors that never send assignee_id leave it untouched here.
-        COALESCE((p_thread ->> 'assignee_id')::uuid, (p_defaults ->> 'assignee_id')::uuid, v_existing.assignee_id)
+        COALESCE((p_thread ->> 'assignee_id')::uuid, (p_defaults ->> 'assignee_id')::uuid, v_existing.assignee_id),
+        -- topic_id: the channel this thread belongs to. Written on INSERT;
+        -- on update it is preserved unless the payload includes 'topic_id'
+        -- (or the thread is re-filed from archive). See the ON CONFLICT clause.
+        v_input_topic_id
     )
     ON CONFLICT (id)
         DO UPDATE SET
@@ -591,6 +603,11 @@ BEGIN
                         THEN NULLIF(p_thread ->> 'embedding', '')::halfvec
                         ELSE thread.embedding
                     END
+            END,
+            topic_id = CASE WHEN v_is_archived THEN
+                v_input_topic_id
+            ELSE
+                CASE WHEN p_thread ? 'topic_id' THEN v_input_topic_id ELSE thread.topic_id END
             END
         RETURNING * INTO v_result;
 

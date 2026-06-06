@@ -84,6 +84,7 @@ part 'thread_sub_type.dart';
 part 'user_settings.dart';
 part 'channel.dart';
 part 'group.dart';
+part 'topic.dart';
 part 'team_user.dart';
 
 part 'store.g.dart';
@@ -466,6 +467,7 @@ abstract class BaseTable {
     UserSettings,
     Channels,
     Groups,
+    Topics,
     ThreadAssociations,
     TeamUsers,
   ],
@@ -2408,7 +2410,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 357;
+  int get schemaVersion => 358;
 
   @override
   MigrationStrategy get migration {
@@ -3848,6 +3850,13 @@ class Store extends _$Store {
 
     if (from < 357) {
       await _safeAddColumn(m, threads, threads.assigneeId);
+    }
+
+    if (from < 358) {
+      await m.createTable(topics);
+      await m.addColumn(groups, groups.privacy);
+      await m.addColumn(groups, groups.canAddress);
+      await m.addColumn(threads, threads.topicId);
     }
   }
 

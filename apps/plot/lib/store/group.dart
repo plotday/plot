@@ -16,6 +16,14 @@ class Groups extends Table with SyncableTable, UuidTable, DeletableTable {
   BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
   BoolColumn get isMember => boolean().withDefault(const Constant(false))();
   BoolColumn get canPost => boolean().withDefault(const Constant(false))();
+
+  /// Group privacy: `open` or `private`. Synced from `user.group.privacy`.
+  TextColumn get privacy => text().nullable()();
+
+  /// May the user add this group to a thread/topic. Synced from
+  /// `user.group.can_address`.
+  BoolColumn get canAddress => boolean().withDefault(const Constant(false))();
+
   TextColumn get memberContactIds =>
       text().nullable().map(const UuidListConverter())();
 }

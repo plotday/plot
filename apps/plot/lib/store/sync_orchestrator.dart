@@ -56,6 +56,16 @@ class SyncOrchestrator {
     pullFn: Group.pull,
   );
 
+  /// Topic entity (read-only, no dependencies). The client is on apiVersion 4,
+  /// so /sync/topics returns the new topic entity (user.topic), not the legacy
+  /// group-compat shape.
+  static final topic = SyncEntity(
+    debugName: 'topic',
+    dependsOn: [],
+    pushFn: () async => true, // Read-only, skip push
+    pullFn: Topic.pull,
+  );
+
   /// TeamUser entity (read-only, no dependencies).
   /// Tracks which teams the current user belongs to. On a team-leave the
   /// server archives the user's team priorities (Task 6 trigger); those
@@ -149,6 +159,7 @@ class SyncOrchestrator {
   static final allEntities = [
     actor,
     group,
+    topic,
     teamUser,
     userSettings,
     priority,
@@ -239,7 +250,8 @@ class SyncOrchestrator {
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
       'user_actor' || 'actor' => actor,
-      'user_group' || 'group' || 'user_topic' || 'topic' => group,
+      'user_group' || 'group' => group,
+      'user_topic' || 'topic' => topic,
       'user_team_user' || 'team_user' => teamUser,
       'user_settings' => userSettings,
       'user_priority' || 'priority' => priority,

@@ -58,6 +58,7 @@ SELECT
     a.groups,
     a.team_id,
     a.topic,
+    a.topic_id,
     a.title,
     a.preview,
     a.icon,
@@ -200,6 +201,7 @@ WHERE
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
         OR a.groups && "user".user_group_ids(tp.user_id)
+        OR (a.topic_id IS NOT NULL AND a.topic_id = ANY("user".user_topic_ids(tp.user_id)))
     )
     -- Pending-classification visibility:
     --   priority_id NOT NULL                       → settled, visible at priority_id
@@ -272,6 +274,7 @@ SELECT
     CAST(ARRAY[]::uuid[] AS uuid[]) AS groups,
     NULL::bigint AS team_id,
     NULL::text AS topic,
+    NULL::uuid AS topic_id,
     NULL::text AS title,
     NULL::text AS preview,
     NULL::text AS icon,
