@@ -1134,6 +1134,51 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Opens a picker listing the enabled channels for [active]'s connection and
+  /// switches the draft to the chosen channel.
+  ///
+  /// The options are the already-loaded [_allConnectionTargets] for the same
+  /// connection + link type — [loadCreateTargets] enumerates one target per
+  /// enabled channel, so switching is just selecting a different one. Applying
+  /// it swaps the draft's [CreateLinkUserAction] (via [_applyConnectionChoice])
+  /// while leaving the focus, title, and body untouched.
+  Future<void> _openChannelPicker(
+    BuildContext context,
+    CreateTarget active,
+  ) async {
+    final options = _allConnectionTargets
+        .where((t) =>
+            !t.isDmType &&
+            t.twist.id == active.twist.id &&
+            t.linkType.type == active.linkType.type)
+        .toList()
+      ..sort((a, b) => (a.channel?.title ?? '')
+          .toLowerCase()
+          .compareTo((b.channel?.title ?? '').toLowerCase()));
+    final selected = options
+        .where((t) => t.channel?.channelId == active.channel?.channelId)
+        .firstOrNull;
+    final result = await SelectModal.open<CreateTarget>(
+      context,
+      items: (search) async {
+        final query = search?.trim().toLowerCase() ?? '';
+        final filtered = query.isEmpty
+            ? options
+            : options
+                .where((t) =>
+                    (t.channel?.title ?? '').toLowerCase().contains(query))
+                .toList();
+        return [SelectGroup<CreateTarget>(title: null, items: filtered)];
+      },
+      itemBuilder: (t, _) => ListTile(body: Text(t.channel?.title ?? '')),
+      selectedValue: selected,
+      prompt: 'Select a channel',
+    );
+    if (!result.present) return;
+    if (!mounted) return;
+    await _applyConnectionChoice(ConnectionChoice.target(result.value));
+  }
+
   /// Returns a validation error message when submit should be blocked,
   /// or null if submit is allowed.
   ///
@@ -1361,27 +1406,33 @@ class NewThreadPageState extends State<NewThreadPage> {
   ///
   /// - Plot threads: **always** shown (no note/chat distinction), so a thread
   ///   started from a focus without contacts can still add recipients.
-  /// - Connector targets: hidden only when the [SharingModel] is
-  ///   [SharingModel.none] (e.g. Google Tasks — no audience concept); shown for
-  ///   every other sharing model (thread / channel / message).
+  /// - Connector targets: hidden when the [SharingModel] has no per-thread
+  ///   recipient roster — [SharingModel.none] (e.g. Google Tasks — no audience
+  ///   concept) and [SharingModel.channel] (e.g. a Slack channel, where the
+  ///   audience is the channel's membership, not a per-thread contact set).
+  ///   Shown for [SharingModel.thread] / [SharingModel.message].
   /// - Twist targets: always shown (chat with a twist).
   bool _shouldShowContacts(ConnectionChoice activeChoice) {
     if (activeChoice is PlotThreadChoice) {
       return true;
     }
     if (activeChoice is TargetConnectionChoice) {
-      return activeChoice.target.linkType.sharingModel != SharingModel.none;
+      final model = activeChoice.target.linkType.sharingModel;
+      return model == SharingModel.thread || model == SharingModel.message;
     }
     // TwistConnectionChoice: always show contacts (chat with a twist)
     return true;
   }
 
-  /// Whether [target] has no audience concept — a Plot **Note**, or a connector
-  /// target whose [SharingModel] is [SharingModel.none] (e.g. Google Tasks).
-  /// The negation of the [_shouldShowContacts] rule, expressed directly over a
-  /// [ComposeTarget] so [_applyTarget] can clear the draft's roster when one is
-  /// picked. Chat and any other connector sharing model (thread / channel /
-  /// message) support a roster, so they are not no-roster.
+  /// Whether [target] has no per-thread recipient roster — a Plot **Note**, or
+  /// a connector target whose [SharingModel] is [SharingModel.none] (e.g.
+  /// Google Tasks — no audience concept) or [SharingModel.channel] (e.g. a
+  /// Slack channel, whose audience is the channel membership and which surfaces
+  /// a channel field rather than a contacts field). The negation of the
+  /// [_shouldShowContacts] rule, expressed directly over a [ComposeTarget] so
+  /// [_applyTarget] can clear the draft's roster when one is picked. Chat and
+  /// the thread / message connector sharing models support a roster, so they
+  /// are not no-roster.
   bool _targetHasNoRoster(ComposeTarget target) {
     switch (target.kind) {
       case ComposeTargetKind.note:
@@ -1390,7 +1441,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       case ComposeTargetKind.twist:
         return false;
       case ComposeTargetKind.connector:
-        return target.linkType?.sharingModel == SharingModel.none;
+        final model = target.linkType?.sharingModel;
+        return model == SharingModel.none || model == SharingModel.channel;
     }
   }
 
@@ -1485,6 +1537,13 @@ class NewThreadPageState extends State<NewThreadPage> {
   Widget _buildComposeSurface(BuildContext context, PriorityState state) {
     final activeChoice = _resolveActiveConnectionChoice(state);
     final showContacts = _shouldShowContacts(activeChoice);
+    // A channel-sharing connection (Slack, Linear) shows a channel field in
+    // place of the contacts field: the audience is the channel's membership,
+    // and tapping the field switches which channel the thread targets.
+    final channelTarget = activeChoice is TargetConnectionChoice &&
+            activeChoice.target.linkType.sharingModel == SharingModel.channel
+        ? activeChoice.target
+        : null;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1501,7 +1560,12 @@ class NewThreadPageState extends State<NewThreadPage> {
           isAuto: false,
           openModal: () => _selectPriority(context, state),
         ),
-        if (showContacts)
+        if (channelTarget != null)
+          ChannelComposeField(
+            channelTitle: channelTarget.channel?.title ?? '',
+            openModal: () => _openChannelPicker(context, channelTarget),
+          )
+        else if (showContacts)
           ContactsComposeField(
             chips: _resolveContactChips(state),
             openModal: () => _openSharedPicker(context),

@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:plot/state/theme.dart' show ThemeBloc;
+import 'package:plot/store/store.dart' show SharingModel;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/widget.dart';
@@ -56,7 +57,14 @@ class ConnectionComposeField extends StatelessWidget {
               )
             : const Icon(PlotIcon.link);
         title = connectionTargetTitle(target);
-        subtitle = connectionTargetSubtitle(target);
+        // A channel-sharing target surfaces its channel in the dedicated
+        // channel field below, so the connection row identifies the
+        // *connection* (account label) instead of the channel. DM/address
+        // targets keep their normal subtitle (which is already the account).
+        subtitle =
+            target.linkType.sharingModel == SharingModel.channel
+                ? (target.accountName ?? '')
+                : connectionTargetSubtitle(target);
       case TwistConnectionChoice():
         final url = isDark
             ? (activeChoice.logoDark ?? activeChoice.logo)
