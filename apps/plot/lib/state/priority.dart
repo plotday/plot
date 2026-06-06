@@ -151,15 +151,20 @@ class _Overlay {
     Set<_OverrideField> watched = _OptimisticOverride._defaultWatched,
   }) : this(expected: null, watched: watched);
 
-  /// Sticky-unread: a Catch up thread the user just read should remain
-  /// visible at its pre-read sort position until the tab is switched away.
-  /// Never auto-settles — cleared only by explicit triggers (tab switch,
-  /// setThread away, archive, drop-to-Done).
+  /// Sticky-unread: a Catch up thread the user just opened should remain
+  /// visible at its pre-read sort position until well after the user has
+  /// navigated away (see [PriorityBloc._stickyMoveDelay]). The snapshot is
+  /// frozen as *read* (`unread: false`) so the unread dot clears the moment
+  /// the thread is opened, while the entry's presence (matched via
+  /// [PriorityBloc._isStickyPinned]) keeps the row pinned in the unread
+  /// cluster regardless of that flag. Never auto-settles — cleared only by
+  /// explicit triggers (tab switch, post-unfocus delay, archive,
+  /// drop-to-Done).
   factory _Overlay.stickyUnread(
     Thread thread, {
     required ({int urgent, int importance, DateTime activityAt}) sortKeys,
   }) => _Overlay(
-    expected: thread,
+    expected: thread.copyWith(unread: false),
     watched: const <_OverrideField>{},
     catchUpSortKeys: sortKeys,
     sticky: true,
@@ -657,6 +662,26 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// activity feed.
   final Map<ThreadId, _Overlay> _overlay = {};
 
+  /// How long a just-read thread stays pinned at its pre-read position
+  /// after the user navigates away from it, before it animates to its
+  /// natural (read) section. Avoids the disconcerting jump where a thread
+  /// moves out from under the cursor the instant the user clicks away.
+  static const _stickyMoveDelay = Duration(milliseconds: 1500);
+
+  /// Pending [_stickyMoveDelay] timers, keyed by thread. While a timer is
+  /// live the thread keeps its sticky overlay entry (pinned at its pre-read
+  /// position); when it fires the entry is dropped and the feed rebuilds so
+  /// the thread settles into its natural section. Re-focusing the thread
+  /// cancels its pending timer. Cancelled wholesale on overlay clear / close.
+  final Map<ThreadId, Timer> _stickyRemovalTimers = {};
+
+  /// Whether [id] currently has a sticky-unread overlay entry. Sticky
+  /// entries are pinned into the unread cluster regardless of their live
+  /// `unread` flag, so a thread the user just read holds its pre-read
+  /// position (with the dot already cleared) until its [_stickyMoveDelay]
+  /// elapses.
+  bool _isStickyPinned(ThreadId id) => _overlay[id]?.sticky ?? false;
+
   /// Live subscription for the currently-active activity-feed tab's
   /// per-tab query. Started in [_restartActiveTabSubscription], cancelled
   /// and re-started on tab / filter / scope / priority changes. `null`
@@ -851,6 +876,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _doneHeadTailCursor = null;
     _doneAppendCursor = null;
     _overlay.clear();
+    for (final timer in _stickyRemovalTimers.values) {
+      timer.cancel();
+    }
+    _stickyRemovalTimers.clear();
 
     // Unified feed: a single subscription returns every visible thread.
     // The section structure (Updates / Doing / Scheduled / Activity) is
@@ -1125,11 +1154,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     final activity = <Thread>[];
 
     for (final t in merged) {
-      if (t.unread) {
+      if (t.unread || _isStickyPinned(t.id)) {
         // All unread threads cluster at the top of Doing — regardless
         // of whether they would otherwise be active, scheduled, or
         // inactive. Underlying state is preserved so the thread returns
-        // to its natural section once read.
+        // to its natural section once read. Sticky-pinned threads (the
+        // one the user just opened, plus any in their post-unfocus
+        // grace window) stay in this cluster too even though their dot
+        // has cleared, so they hold their pre-read position until the
+        // sticky overlay is dropped.
         unreadDoing.add(t);
         continue;
       }
@@ -1301,18 +1334,20 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Mirror of the SQL `ORDER BY urgent DESC, importance DESC,
   /// activity_at DESC, id DESC` used by [Thread.watchCatchUpHead], with a
-  /// leading `unread DESC` key for the sticky behavior below. Used in
-  /// **sectioned mode only** (see [_applyOverlay]) to position sticky-unread
+  /// leading `unread-or-sticky DESC` key for the sticky behavior below. Used
+  /// in **sectioned mode only** (see [_applyOverlay]) to position sticky-unread
   /// injections (overlay entries whose live row fell past the SQL LIMIT) in
   /// the merged list before it is re-bucketed into sections. The merger
-  /// substitutes the live thread with the overlay's `expected` thread, so the
-  /// expected's cached fields (including `unread = true` at sticky-creation
-  /// time) keep the row pinned in the unread cluster even after `unread` flips
-  /// to false. The flat "Everything" feed sorts purely by `activity_at` via
+  /// substitutes the live thread with the overlay's `expected` snapshot, which
+  /// is frozen as *read* at sticky-creation time so the unread dot clears the
+  /// moment the thread is opened. The leading key keys off [_isStickyPinned]
+  /// (not the row's `unread` flag) so the just-read row keeps its pre-read
+  /// position in the unread cluster until its sticky entry is dropped. The
+  /// flat "Everything" feed sorts purely by `activity_at` via
   /// [_flatFeedCompare] instead.
   int _catchUpCompare(Thread a, Thread b) {
-    final aUn = a.unread ? 1 : 0;
-    final bUn = b.unread ? 1 : 0;
+    final aUn = (a.unread || _isStickyPinned(a.id)) ? 1 : 0;
+    final bUn = (b.unread || _isStickyPinned(b.id)) ? 1 : 0;
     if (aUn != bUn) return bUn.compareTo(aUn);
 
     final aUrg = a.urgent ? 1 : 0;
@@ -2268,6 +2303,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _reactionsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     _activeTabSubscription?.cancel();
+    for (final timer in _stickyRemovalTimers.values) {
+      timer.cancel();
+    }
+    _stickyRemovalTimers.clear();
     return super.close();
   }
 
@@ -2839,20 +2878,23 @@ class PriorityBloc extends Cubit<PriorityState> {
       headerNotifier?.isThreadVisible = false;
     }
 
-    // Sticky-unread tracking: when navigating away from a thread, drop
-    // the overlay entry so the thread can fall back to its natural
-    // position on the next emission. When selecting an unread thread,
-    // pin it via the overlay so the per-tab Catch up subscription keeps
-    // it visible at its pre-read position even after `unread` flips to
-    // false. The bump itself is set inside `Thread.copyWith` when the
-    // unread → read transition happens (read-by-viewing in
-    // `page/thread.dart`), so no separate bump is needed here.
+    // Sticky-unread tracking: when navigating away from a thread, keep
+    // its overlay entry pinned for [_stickyMoveDelay] before dropping it,
+    // so the just-read thread doesn't jump out from under the cursor the
+    // instant the user clicks away — it settles into its natural section
+    // only after the grace window. When selecting an unread thread, pin
+    // it via the overlay so the per-tab Catch up subscription keeps it
+    // visible at its pre-read position; the snapshot is frozen as read so
+    // the unread dot clears immediately on open. The thread's own
+    // unread → read DB write happens in `page/thread.dart`.
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
-      final removed = _overlay.remove(oldThread.id);
-      if (removed != null && _activeTabSubscriptionTab == ActivityTab.catchUp) {
-        _rebuildActiveTabSection();
-      }
+      _scheduleStickyRemoval(oldThread.id);
+    }
+    // Re-focusing a thread (or focusing a fresh one) cancels any pending
+    // move for it so it stays put while open.
+    if (thread != null) {
+      _stickyRemovalTimers.remove(thread.id)?.cancel();
     }
     if (thread != null &&
         thread.unread &&
@@ -2881,6 +2923,31 @@ class PriorityBloc extends Cubit<PriorityState> {
       _threadSubscription = null;
       _watchingThreadId = null;
     }
+  }
+
+  /// Schedule a just-unfocused sticky-unread thread to drop out of the
+  /// unread cluster after [_stickyMoveDelay]. While the timer is live the
+  /// thread keeps its (read) sticky overlay entry, so it holds its pre-read
+  /// position; when the timer fires the entry is dropped and the feed
+  /// rebuilds so the thread animates to its natural section. No-op when the
+  /// thread has no live sticky entry. The timer re-checks that the entry is
+  /// still sticky before dropping it, so a thread that was meanwhile
+  /// archived / dropped / reordered (which overwrites the overlay entry) is
+  /// left for that path to manage.
+  void _scheduleStickyRemoval(ThreadId id) {
+    final overlay = _overlay[id];
+    if (overlay == null || !overlay.sticky) return;
+    _stickyRemovalTimers[id]?.cancel();
+    _stickyRemovalTimers[id] = Timer(_stickyMoveDelay, () {
+      _stickyRemovalTimers.remove(id);
+      if (isClosed) return;
+      final current = _overlay[id];
+      if (current == null || !current.sticky) return;
+      _overlay.remove(id);
+      if (_activeTabSubscriptionTab == ActivityTab.catchUp) {
+        _rebuildActiveTabSection();
+      }
+    });
   }
 
   /// Resets the draft to a new empty thread for the current priority.

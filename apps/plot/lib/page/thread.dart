@@ -193,14 +193,18 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     super.dispose();
   }
 
-  /// Schedules marking the thread as read after 750ms.
-  /// Cancels any previously scheduled mark-as-read operation.
+  /// Marks the thread read as soon as it is opened. Deferred to the next
+  /// macrotask (not 750ms) so the unread indicator clears on open rather
+  /// than lingering until the thread is unfocused. The zero-delay timer
+  /// also runs after the post-frame `setThread` that creates the
+  /// sticky-unread overlay, so the read row is still pinned at its
+  /// pre-read position (the dot just clears). Cancelled in [dispose] so an
+  /// instantaneous open-and-close (sub-frame) doesn't mark it read.
   void _scheduleMarkAsRead() {
     // Cancel any existing timer
     _markReadTimer?.cancel();
 
-    // Start new timer for 750ms delay
-    _markReadTimer = Timer(const Duration(milliseconds: 750), () {
+    _markReadTimer = Timer(Duration.zero, () {
       final thread = context.read<ThreadBloc>().state.thread;
       if (thread.unread) {
         thread
