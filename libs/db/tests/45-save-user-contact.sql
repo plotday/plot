@@ -1,6 +1,6 @@
 BEGIN;
 SET LOCAL search_path = public, extensions;
-SELECT plan(8);
+SELECT plan(10);
 
 CREATE TEMP TABLE _ids (k text PRIMARY KEY, v uuid);
 
@@ -9,13 +9,14 @@ DECLARE
     v_user uuid := gen_random_uuid();
     v_user2 uuid := gen_random_uuid();
     v_new_contact uuid := gen_random_uuid();
+    v_owner_self uuid;
 BEGIN
     INSERT INTO "public"."user" (id, email) VALUES (v_user, 'owner-45@example.test');
     INSERT INTO "public"."user" (id, email) VALUES (v_user2, 'other-45@example.test');
-    PERFORM public.upsert_user_contact(v_user, 'owner-45@example.test', 'Owner', NULL);
+    v_owner_self := public.upsert_user_contact(v_user, 'owner-45@example.test', 'Owner', NULL);
     PERFORM public.upsert_user_contact(v_user2, 'other-45@example.test', 'Other', NULL);
 
-    INSERT INTO _ids VALUES ('user', v_user), ('user2', v_user2), ('new_contact', v_new_contact);
+    INSERT INTO _ids VALUES ('user', v_user), ('user2', v_user2), ('new_contact', v_new_contact), ('owner_self', v_owner_self);
 END $$;
 
 -- 1. ADD: brand-new email uses the client-provided id.
@@ -80,14 +81,18 @@ SELECT is(
     'ADD with an existing email resolves to the existing contact id'
 );
 
--- 6. RENAME (p_email NULL) sets the per-user override.
-SELECT lives_ok(
-    $$ SELECT "user".save_user_contact(
-         (SELECT v FROM _ids WHERE k='user'),
-         (SELECT v FROM _ids WHERE k='existing'),
-         NULL,
-         'Renamed' ) $$,
-    'RENAME with NULL email succeeds'
+-- 6. RENAME (p_email NULL) returns the row with the new per-user name.
+SELECT is(
+    (SELECT (save_user_contact).name
+     FROM "user".save_user_contact(
+        (SELECT v FROM _ids WHERE k='user'),
+        (SELECT v FROM _ids WHERE k='existing'),
+        NULL,
+        'Renamed'
+     ) AS save_user_contact
+     LIMIT 1),
+    'Renamed',
+    'RENAME with NULL email returns the updated name'
 );
 
 -- 7. RENAME updated the per-user name.
@@ -111,6 +116,23 @@ SELECT is(
        AND id = (SELECT v FROM _ids WHERE k='existing')),
     'Renamed',
     'A connector longest-wins write does not override source=user'
+);
+
+-- 9. A rename targeting the user's own linked identity row is a no-op.
+SELECT lives_ok(
+    $$ SELECT "user".save_user_contact(
+         (SELECT v FROM _ids WHERE k='user'),
+         (SELECT v FROM _ids WHERE k='owner_self'),
+         NULL,
+         'Hacked' ) $$,
+    'RENAME on own identity does not error'
+);
+SELECT is(
+    (SELECT name FROM "user".actor
+     WHERE user_id = (SELECT v FROM _ids WHERE k='user')
+       AND id = (SELECT v FROM _ids WHERE k='owner_self')),
+    'Owner',
+    'RENAME on own linked identity is a no-op (name unchanged)'
 );
 
 SELECT * FROM finish();

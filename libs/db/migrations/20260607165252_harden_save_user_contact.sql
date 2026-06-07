@@ -1,32 +1,5 @@
--- Add or rename a contact in the calling user's address book. Offline-queued
--- via POST /sync/actors.
---
--- Modes:
---   * p_email NOT NULL -> ADD: resolve-or-create the global contact by email.
---     The client-provided p_contact_id is used as the new contact's id when the
---     email is brand new (so the optimistic client row keeps its id and needs no
---     reconciliation); on an existing email the existing contact id wins. The
---     global contact.name is NEVER written here -- user-entered names are a
---     per-user override only, so one user can't rename a contact for everyone.
---   * p_email NULL     -> RENAME: target the existing p_contact_id.
---
--- In both modes the per-user display name is written to user_contact.name with
--- source = 'user' -- the explicit, sticky override that bypasses the connector
--- longest-wins path (see public.upsert_user_contact_name). Inserting the
--- user_contact row is also what makes a brand-new external contact appear in
--- user.actor for this user.
---
--- Returns the resulting user.actor row for this user so the API can hand the
--- canonical contact id back to the client.
-CREATE OR REPLACE FUNCTION "user".save_user_contact (
-    user_id uuid,
-    p_contact_id uuid,
-    p_email text,
-    p_name text
-)
-    RETURNS SETOF "user"."actor"
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "save_user_contact" function
+CREATE OR REPLACE FUNCTION "user"."save_user_contact" ("user_id" uuid, "p_contact_id" uuid, "p_email" text, "p_name" text) RETURNS SETOF "user"."actor" LANGUAGE plpgsql AS $$
 -- The bare `user_id` in `ON CONFLICT (user_id, contact_id)` would otherwise be
 -- ambiguous between the (conventionally named) `user_id` parameter and the
 -- user_contact.user_id column. Prefer the column there; every other reference
@@ -86,4 +59,4 @@ BEGIN
     WHERE a.user_id = save_user_contact.user_id
       AND a.id = v_contact_id;
 END;
-$function$;
+$$;
