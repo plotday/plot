@@ -1024,6 +1024,13 @@ export class Slack extends Connector<Slack> {
         threadTs: ts,
         syncableId: channelId,
       },
+      // Bind the opening note to this Slack message so reactions/edits on it
+      // route back. `key` is the bare ts (same convention sync-in uses);
+      // externalContent matches what onNoteCreated returns for replies.
+      originatingNote: {
+        key: ts,
+        externalContent: formatSlackText(result.text ?? body),
+      },
     };
   }
 
@@ -1080,6 +1087,11 @@ export class Slack extends Connector<Slack> {
         // enabled.
         tokenChannelId: draft.channelId,
         syncableId: draft.channelId,
+      },
+      // Bind the opening note to this Slack message (see createChannelPost).
+      originatingNote: {
+        key: ts,
+        externalContent: formatSlackText(result.text ?? body),
       },
     };
   }

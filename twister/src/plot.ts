@@ -1109,6 +1109,25 @@ export type NewLinkWithNotes = NewLink & {
   schedules?: Array<Omit<NewSchedule, "threadId">>;
   /** Schedule occurrence overrides */
   scheduleOccurrences?: NewScheduleOccurrence[];
+  /**
+   * For `onCreateLink` only: binds the thread's opening note (the message the
+   * user composed in Plot, which this hook just posted to the external system)
+   * to its external counterpart. Mirrors the `NoteWriteBackResult` a reply
+   * returns from `onNoteCreated` — `key` is the external message id and
+   * `externalContent` is the post-write content baseline. Without this the
+   * opening note stays keyless, so reactions and edits on it can't be routed
+   * back to the external system. Ignored outside `onCreateLink`.
+   */
+  originatingNote?: {
+    /** External message id; set as the opening note's `key`. */
+    key?: string;
+    /**
+     * Content as the external system stored it post-write, for the sync
+     * baseline. Must equal what your sync-in path emits as this note's
+     * `content` on re-ingest (same contract as `NoteWriteBackResult.externalContent`).
+     */
+    externalContent?: string;
+  };
 };
 
 /**
