@@ -112,6 +112,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
 
   static const Duration _searchDebounce = Duration(milliseconds: 180);
 
+  /// Subscription to the bloc's reactive emissions. [ComposeTargetsBloc]
+  /// refreshes (and re-emits) when the underlying connections/channels change —
+  /// a connection added or archived mid-session. The sectioned data we render
+  /// is derived from those same stores, so we re-run the current load/search on
+  /// every emission. Without this the Channels list only reflected connection
+  /// changes after an app restart (the view loaded once in [initState]).
+  StreamSubscription<ComposeTargetsState>? _blocSub;
+
   bool _isDisposed = false;
 
   /// Key for the [PillGrid]; drives [PillGridState.moveHighlight] /
@@ -131,12 +139,19 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     } else {
       _loadSections();
     }
+    // Reload whenever connections/channels change (the bloc re-emits on its
+    // reactive refresh) so newly-added or archived channels appear/disappear
+    // without an app restart.
+    _blocSub = context.read<ComposeTargetsBloc>().stream.listen((_) {
+      if (!_isDisposed) _reload();
+    });
   }
 
   @override
   void dispose() {
     _isDisposed = true;
     _debounce?.cancel();
+    _blocSub?.cancel();
     super.dispose();
   }
 
