@@ -71,7 +71,7 @@ class ScheduleFocusBlock extends Command {
          title: existingRow == null
              ? 'Schedule focus block'
              : 'Update focus block',
-         icon: PlotIcon.priority,
+         icon: PlotIcon.save,
          eventObject: EventObject.priority,
          eventAction: existingRow == null
              ? EventAction.scheduled
@@ -178,7 +178,7 @@ class _ScheduleFocusBlockPlaceholder extends Command {
   _ScheduleFocusBlockPlaceholder({required bool isEdit})
     : super(
         title: isEdit ? 'Update focus block' : 'Schedule focus block',
-        icon: PlotIcon.priority,
+        icon: PlotIcon.save,
         eventObject: EventObject.priority,
         eventAction: EventAction.opened,
       );

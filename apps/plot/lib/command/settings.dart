@@ -1113,6 +1113,7 @@ class _SaveAiProvider extends Command {
     this.orgId,
   }) : super(
          title: 'Save',
+         icon: PlotIcon.save,
          eventObject: EventObject.settings,
          eventAction: EventAction.updated,
        );

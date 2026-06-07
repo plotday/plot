@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/value.dart';
+import 'icon.dart';
 import 'modal.dart';
 
 /// Result from the link modal
@@ -149,12 +150,23 @@ class _EditorLinkModalContentState extends State<_EditorLinkModalContent> {
                   color: theme.colors.primary,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text(
-                  'Apply',
-                  style: theme.typography.sm.copyWith(
-                    color: theme.colors.primaryForeground,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      PlotIcon.save,
+                      size: 13,
+                      color: theme.colors.primaryForeground,
+                    ),
+                    SizedBox(width: spacing.xs),
+                    Text(
+                      'Apply',
+                      style: theme.typography.sm.copyWith(
+                        color: theme.colors.primaryForeground,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

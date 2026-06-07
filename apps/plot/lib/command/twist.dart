@@ -3519,7 +3519,7 @@ class _ActivateNoProviderSource extends Command {
     this.teamId,
     this.accountLabel,
   }) : super(
-         title: 'Add connection',
+         title: 'Save connection',
          icon: PlotIcon.save,
          eventObject: EventObject.twist,
          eventAction: EventAction.added,
