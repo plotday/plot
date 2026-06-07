@@ -304,11 +304,13 @@ class AddNoteReaction extends NoteCommand {
       // for the next hover-toolbar render.
       await prefs.recordReactionUsage(emoji);
 
-      // Reuse the existing toggle path. If the user already has this
-      // reaction it'll remove it; otherwise it adds. Matches the chip
-      // behaviour on _NoteReactionsRow.
-      if (!context.mounted) return const CommandDone();
-      return await ToggleNoteReaction(note, emoji).run(context);
+      // Apply the toggle via the context-free path. Do NOT gate this on
+      // `context.mounted`: opening the emoji picker disposes the hover
+      // toolbar that hosted this button, so `context` is routinely unmounted
+      // by the time the user picks — gating here silently dropped the
+      // reaction. `apply()` uses `Store.get`, not the BuildContext, so it's
+      // safe to run regardless.
+      return await ToggleNoteReaction(note, emoji).apply();
     } catch (e, stackTrace) {
       log.severe('Error in AddNoteReaction: $e', e, stackTrace);
       Tracker.captureException(e, stackTrace);
@@ -328,7 +330,13 @@ class ToggleNoteReaction extends NoteCommand {
   final Reaction emoji;
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
+  Future<CommandReturn> run(BuildContext context) => apply();
+
+  /// Toggles the current user's reaction. Pure local-Drift + sync work that
+  /// takes no [BuildContext], so it can be invoked after the emoji picker
+  /// closes — by which point the hover toolbar that hosted the trigger
+  /// button (and its context) is typically already disposed.
+  Future<CommandReturn> apply() async {
     try {
       final selfActorId = Base.actorId;
       final canonical = Actor.canonicalId(selfActorId);
