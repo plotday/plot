@@ -6332,6 +6332,7 @@ export type Database = {
         Returns: boolean
       }
       root_priority_id: { Args: { p_user_id: string }; Returns: string }
+      save_group: { Args: { p_group: Json; user_id: string }; Returns: string }
       save_user_contact: {
         Args: {
           p_contact_id: string
