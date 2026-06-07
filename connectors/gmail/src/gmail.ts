@@ -435,19 +435,25 @@ export class Gmail extends Connector<Gmail> {
 
     await this.addEnabledChannel(channel.id);
 
-    const initialState: InitialSyncState = {
-      lastSyncTime: syncHistoryMin ?? undefined,
-    };
-    await this.set(`initial_state_${channel.id}`, initialState);
+    // observeOnly: the channel is being auto-observed because a user composed
+    // a Plot thread into it, not explicitly enabled. We still register the
+    // mailbox watch below so inbound events sync back, but skip the historical
+    // backfill — the user didn't ask to import this mailbox's history.
+    if (!context?.observeOnly) {
+      const initialState: InitialSyncState = {
+        lastSyncTime: syncHistoryMin ?? undefined,
+      };
+      await this.set(`initial_state_${channel.id}`, initialState);
 
-    // Queue per-channel initial backfill (label-scoped paginated thread list)
-    // as a separate task so onChannelEnabled returns quickly.
-    const initialCallback = await this.callback(
-      this.initialSyncBatch,
-      channel.id,
-      1
-    );
-    await this.runTask(initialCallback);
+      // Queue per-channel initial backfill (label-scoped paginated thread list)
+      // as a separate task so onChannelEnabled returns quickly.
+      const initialCallback = await this.callback(
+        this.initialSyncBatch,
+        channel.id,
+        1
+      );
+      await this.runTask(initialCallback);
+    }
 
     // Queue mailbox-wide webhook setup as a separate task to avoid blocking
     // the HTTP response. ensureMailboxWebhook is idempotent: if the watch

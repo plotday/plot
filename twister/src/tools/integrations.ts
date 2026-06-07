@@ -297,6 +297,22 @@ export type SyncContext = {
    * overwrites stored state rather than appending to it.
    */
   recovering?: boolean;
+
+  /**
+   * True when the channel is being observed because the user composed a Plot
+   * thread INTO it (via `onCreateLink`), not because they explicitly enabled
+   * it. The connector should register webhooks / mark the channel observed so
+   * inbound events (replies, reactions) on the composed thread sync back —
+   * but must NOT backfill history. Only go-forward events matter; pulling the
+   * channel's existing content would be surprising for a channel the user
+   * only posted one thread into.
+   *
+   * Connectors whose `onChannelEnabled` already skips historical backfill can
+   * ignore this flag. Connectors that initial-sync on enable MUST short-
+   * circuit that backfill when `observeOnly` is true (still set up webhooks
+   * and any go-forward state).
+   */
+  observeOnly?: boolean;
 };
 
 /**

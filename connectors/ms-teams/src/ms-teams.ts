@@ -11,6 +11,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -178,17 +179,35 @@ export class MsTeams extends Connector<MsTeams> {
 
   // ---- Channel lifecycle ----
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(
+    channel: Channel,
+    context?: SyncContext
+  ): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
+    // When the channel is auto-observed because the user composed a Plot
+    // thread into it (observeOnly), still register the change-notification
+    // subscription so inbound replies/reactions sync back, but skip the
+    // historical/initial message backfill.
+    const observeOnly = context?.observeOnly ?? false;
+
     if (channel.id === DM_CHANNEL_ID) {
-      const syncCallback = await this.callback(this.syncDmSpaces, true);
-      await this.runTask(syncCallback);
+      // The DM path is purely historical backfill (no Graph subscription is
+      // registered here), so it is skipped entirely under observeOnly.
+      if (!observeOnly) {
+        const syncCallback = await this.callback(this.syncDmSpaces, true);
+        await this.runTask(syncCallback);
+      }
     } else {
       // Queue all initialization as a task so the HTTP response returns
       // quickly. initChannel resolves the team ID (Graph API call),
-      // kicks off the first sync batch, and registers the webhook.
-      const initCallback = await this.callback(this.initChannel, channel.id);
+      // registers the webhook subscription, and — unless observeOnly —
+      // kicks off the first historical sync batch.
+      const initCallback = await this.callback(
+        this.initChannel,
+        channel.id,
+        observeOnly
+      );
       await this.runTask(initCallback);
     }
 
@@ -203,7 +222,10 @@ export class MsTeams extends Connector<MsTeams> {
    * Initializes a channel: resolves team ID, starts sync, sets up webhook.
    * Runs as a task so the HTTP response from onChannelEnabled stays fast.
    */
-  async initChannel(channelId: string): Promise<void> {
+  async initChannel(
+    channelId: string,
+    observeOnly?: boolean
+  ): Promise<void> {
     const teamId = await this.findTeamForChannel(channelId);
     if (!teamId) {
       console.error(`Could not find team for channel ${channelId}`);
@@ -211,17 +233,22 @@ export class MsTeams extends Connector<MsTeams> {
     }
     await this.set(`team_for_channel_${channelId}`, teamId);
 
-    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const initialState: SyncState = {
-      channelId,
-      oldest: timeMin.toISOString(),
-      initialSync: true,
-    };
-    await this.set(`sync_state_${channelId}`, initialState);
+    // Skip the historical/initial message backfill when the channel was
+    // auto-observed (observeOnly). Webhook/subscription registration below
+    // still runs so go-forward replies/reactions sync back.
+    if (!observeOnly) {
+      const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const initialState: SyncState = {
+        channelId,
+        oldest: timeMin.toISOString(),
+        initialSync: true,
+      };
+      await this.set(`sync_state_${channelId}`, initialState);
 
-    // Run first sync batch inline (already in task context), then queue
-    // webhook setup as a separate task.
-    await this.syncBatch(1, "full", channelId, true);
+      // Run first sync batch inline (already in task context), then queue
+      // webhook setup as a separate task.
+      await this.syncBatch(1, "full", channelId, true);
+    }
 
     const webhookCallback = await this.callback(
       this.setupChannelWebhook,

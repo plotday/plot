@@ -242,7 +242,13 @@ export class Linear extends Connector<Linear> {
     );
     await this.runTask(webhookCallback);
 
-    await this.startBatchSync(channel.id, syncHistoryMin ? { timeMin: syncHistoryMin } : undefined);
+    // Skip the historical/initial issue backfill when the channel is only
+    // being auto-observed (the user composed a single issue into this team).
+    // Pulling the team's existing issues would be surprising. The webhook
+    // above still registers, so go-forward events sync back.
+    if (!context?.observeOnly) {
+      await this.startBatchSync(channel.id, syncHistoryMin ? { timeMin: syncHistoryMin } : undefined);
+    }
   }
 
   /**

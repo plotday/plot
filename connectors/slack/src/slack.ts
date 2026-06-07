@@ -12,6 +12,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Files } from "@plotday/twister/tools/files";
@@ -183,7 +184,7 @@ export class Slack extends Connector<Slack> {
     return filtered.map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Pin the forward-sync floor to enable-time so the first webhook-driven
@@ -209,12 +210,18 @@ export class Slack extends Connector<Slack> {
     );
     await this.runTask(webhookCallback);
 
-    const backfillCallback = await this.callback(
-      this.backfillStars,
-      channel.id,
-      null
-    );
-    await this.runTask(backfillCallback);
+    // observeOnly = the channel was auto-observed because a Plot thread was
+    // composed into it. Register the webhook (above) for go-forward events but
+    // skip the starred-items backfill — the user didn't opt to sync this
+    // channel's history.
+    if (!context?.observeOnly) {
+      const backfillCallback = await this.callback(
+        this.backfillStars,
+        channel.id,
+        null
+      );
+      await this.runTask(backfillCallback);
+    }
 
     // Sync workspace members so the DM recipient picker can filter to
     // reachable Slack contacts. Gated inside syncMembers to once per day,

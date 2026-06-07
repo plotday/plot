@@ -266,24 +266,35 @@ export class GoogleChat extends Connector<GoogleChat> {
     const membersCallback = await this.callback(this.syncMembers, channel.id);
     await this.runTask(membersCallback);
 
+    // observeOnly = the channel was auto-observed because a Plot thread was
+    // composed into it. Still register the realtime watch (below) so inbound
+    // replies/reactions sync back, but skip the historical message backfill —
+    // the user didn't opt to sync this channel's existing history.
+    const observeOnly = context?.observeOnly === true;
+
     if (channel.id === DM_CHANNEL_ID) {
       // For DMs, list all DM spaces and sync each (batch only, no realtime)
-      const syncCallback = await this.callback(this.syncDmSpaces, true);
-      await this.runTask(syncCallback);
+      if (!observeOnly) {
+        const syncCallback = await this.callback(this.syncDmSpaces, true);
+        await this.runTask(syncCallback);
+      }
     } else {
       // For named spaces, sync directly and setup realtime via Workspace Events
-      const syncCallback = await this.callback(
-        this.syncBatch,
-        1,
-        "full",
-        channel.id,
-        true
-      );
-      await this.runTask(syncCallback);
+      if (!observeOnly) {
+        const syncCallback = await this.callback(
+          this.syncBatch,
+          1,
+          "full",
+          channel.id,
+          true
+        );
+        await this.runTask(syncCallback);
+      }
 
       // Setup realtime incremental sync via Workspace Events API + Pub/Sub
       // Must run as a separate task — setupRealtimeSync makes multiple GCP/Google
       // API calls that can exceed the CPU time limit if run inline in onChannelEnabled.
+      // Registered unconditionally (even for observeOnly) so go-forward events sync.
       const realtimeCallback = await this.callback(
         this.setupRealtimeSync,
         channel.id
