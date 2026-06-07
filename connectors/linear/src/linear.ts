@@ -727,6 +727,14 @@ export class Linear extends Connector<Linear> {
       },
       actions: threadActions.length > 0 ? threadActions : undefined,
       sourceUrl: issue.url ?? null,
+      // Bind the opening note to the issue description (the same "description"
+      // key sync-in emits) so edits to it round-trip via onNoteUpdated.
+      // externalContent is the description as Linear stored it, matching
+      // convertIssueToLink so the baseline hash lines up.
+      originatingNote: {
+        key: "description",
+        externalContent: issue.description ?? undefined,
+      },
     };
   }
 
@@ -822,17 +830,27 @@ export class Linear extends Connector<Linear> {
    */
   async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     if (!note.key) return;
-    const commentMatch = note.key.match(/^comment-(.+)$/);
-    if (!commentMatch) return;
-    const commentId = commentMatch[1];
 
     const projectId = thread.meta?.projectId as string | undefined;
     if (!projectId) {
       throw new Error("Project ID not found in thread meta");
     }
-
     const body = note.content ?? "";
     const client = await this.getClient(projectId);
+
+    // The opening note maps to the issue description (key "description"),
+    // which is part of the issue body, not a comment.
+    if (note.key === "description") {
+      const issueId = thread.meta?.linearId as string | undefined;
+      if (!issueId) return;
+      const payload = await client.updateIssue(issueId, { description: body });
+      const issue = await payload.issue;
+      return { externalContent: issue?.description ?? body };
+    }
+
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (!commentMatch) return;
+    const commentId = commentMatch[1];
 
     const payload = await client.updateComment(commentId, { body });
     const comment = await payload.comment;
