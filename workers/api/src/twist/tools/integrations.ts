@@ -1,4 +1,4 @@
-import { type Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 
 import type { NoteWriteBackResult } from "@plotday/twister";
 import type { ResolvedRecipient } from "@plotday/twister/connector";
@@ -1667,22 +1667,28 @@ export class Integrations extends Tool implements IAuth {
       if (item.created_by === this.twistInstanceId) return [];
 
       const isMentioned = (item.mentions ?? []).includes(this.twistInstanceId);
+      if (!isMentioned) return [];
 
-      if (isMentioned && threadCreatedByThis) {
-        const { note, thread } = await this.buildNoteAndThread(item);
+      // Dispatch the reply to onNoteCreated when this connector owns the
+      // thread's external counterpart — either it created the thread (synced
+      // messages) or it created a link on the thread (a Plot-initiated thread
+      // composed to this connector via onCreateLink, where Plot — not the
+      // connector — is the thread's created_by). buildNoteAndThread resolves
+      // this connector's own link on the thread and populates meta.channelId
+      // from it, so a non-null channelId proves link ownership for the
+      // Plot-initiated case.
+      const { note, thread } = await this.buildNoteAndThread(item);
+      if (!threadCreatedByThis && thread.meta?.channelId == null) return [];
 
-        return [{
-          sourceMethod: "onNoteCreated",
-          args: [note, thread],
-          deferredTagRemoval: {
-            noteId: item.id as string,
-            actorId: (item.author_id ?? item.created_by) as string,
-          },
-          deferredNoteKeyUpdate: { noteId: item.id as string },
-        }];
-      }
-
-      return [];
+      return [{
+        sourceMethod: "onNoteCreated",
+        args: [note, thread],
+        deferredTagRemoval: {
+          noteId: item.id as string,
+          actorId: (item.author_id ?? item.created_by) as string,
+        },
+        deferredNoteKeyUpdate: { noteId: item.id as string },
+      }];
     }
 
     // Handle channel_note dispatch — route to source's onNoteCreated
@@ -1699,11 +1705,13 @@ export class Integrations extends Tool implements IAuth {
       // notes created by other connectors during sync.
       if (typeof item.updated_by === "number" && item.updated_by <= 0) return [];
 
-      // Skip notes that mention this twist on threads it created —
-      // these are already dispatched via the "note" (mention) path
+      // Skip notes that mention this connector — those are dispatched via the
+      // "note" (mention) path, which now handles both connector-created and
+      // Plot-initiated threads. Without this, a thread composed to a channel
+      // that is ALSO an enabled synced channel would dispatch onNoteCreated
+      // twice (here and via the mention path), double-posting to the service.
       const isMentioned = (item.mentions ?? []).includes(this.twistInstanceId);
-      const threadCreatedByThis = item.thread_created_by === this.twistInstanceId;
-      if (isMentioned && threadCreatedByThis) return [];
+      if (isMentioned) return [];
 
       const note: Note = {
         id: item.id,
@@ -4852,9 +4860,24 @@ export class Integrations extends Tool implements IAuth {
   async updateNoteKey(noteId: string, key: string): Promise<void> {
     await this.db
       .updateTable("note")
-      .set({ key })
+      // Stamp updated_by with this connector's marker so the note-create /
+      // note-update dispatch views (which exclude `updated_by_uuid(pt.id)`)
+      // skip it on the next poll. Without this, the seq bump from this UPDATE
+      // re-qualifies the note for onNoteCreated and it re-posts in a loop.
+      .set({ key, updated_by: this.connectorUpdatedBy() })
       .where("id", "=", noteId)
       .execute();
+  }
+
+  /**
+   * This connector instance's `updated_by` marker, computed by the same
+   * `updated_by_uuid()` the dispatch views check, so a note stamped with it
+   * is recognised as "last written by this connector" and excluded from
+   * re-dispatch. Computed in SQL (not the TS `truncateUuidForUpdatedBy`
+   * helper) to guarantee it matches the view's value exactly.
+   */
+  private connectorUpdatedBy() {
+    return sql<number>`updated_by_uuid(${this.twistInstanceId}::uuid)::int`;
   }
 
   /**
@@ -4864,9 +4887,12 @@ export class Integrations extends Tool implements IAuth {
    * hash of `externalContent` so the next sync-in can recognize the
    * round-tripped content and preserve Plot's stored version.
    *
-   * Uses a bypass-only UPDATE (doesn't touch other columns) so it won't
-   * wake the `sync_twist_for_note` trigger unless the hash or key actually
-   * changes. We intentionally skip the `updated_at`/`updated_by` refresh.
+   * Stamps `updated_by` with this connector's marker so the note-create /
+   * note-update dispatch views skip the note on the next poll. The UPDATE
+   * bumps the note's seq regardless, so without this stamp the note would
+   * re-qualify for onNoteCreated and re-post to the external system in a
+   * loop (the views exclude only `updated_by_uuid(pt.id)`, not arbitrary
+   * client writes).
    */
   async updateNoteBaseline(
     noteId: string,
@@ -4884,7 +4910,7 @@ export class Integrations extends Tool implements IAuth {
     if (Object.keys(patch).length === 0) return;
     await this.db
       .updateTable("note")
-      .set(patch)
+      .set({ ...patch, updated_by: this.connectorUpdatedBy() })
       .where("id", "=", noteId)
       .execute();
   }
