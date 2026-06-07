@@ -248,6 +248,7 @@ class CommandModal {
         };
       },
       showFilter: showFilter,
+      clearSearchOnRefresh: _commands.clearSearchOnRun,
       onSecondaryAxis: (command, delta) async {
         await _cycleSecondaryAxis(command, delta);
         return true;

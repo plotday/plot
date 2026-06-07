@@ -152,6 +152,13 @@ class ShareCandidatesCache {
 
   final Map<String, List<ShareCandidate>> _byQuery = {};
 
+  /// The thread scans (MRU/frequency tallies) the ranking is built on. They're
+  /// independent of the search term and only depend on [priority] — constant
+  /// for the modal's lifetime — so we compute them once and reuse them on every
+  /// keystroke instead of re-scanning ~200 threads each time, which is what
+  /// made typing in the picker take seconds.
+  ShareScans? _scans;
+
   Future<List<ShareCandidate>> get({
     required String? search,
     required Priority? priority,
@@ -159,10 +166,12 @@ class ShareCandidatesCache {
     final key = (search ?? '').toLowerCase();
     final cached = _byQuery[key];
     if (cached != null) return cached;
+    final scans = _scans ??= await Actor.computeShareScans(priority: priority);
     final fresh = await Actor.getSortedShareCandidates(
       search: search,
       priority: priority,
       includeGroupIds: includeGroupIds,
+      scans: scans,
     );
     _byQuery[key] = fresh;
     return fresh;
@@ -260,6 +269,8 @@ Future<Commands> buildSharedSelectionCommands({
   return Commands(
     prompt: prompt,
     emptyMessage: 'Enter an email address to invite someone',
+    // Toggling a match clears the filter so all current selections reappear.
+    clearSearchOnRun: true,
     groups: [
       if (sharedActors.isNotEmpty ||
           sharedGroups.isNotEmpty ||

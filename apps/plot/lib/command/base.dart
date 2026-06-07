@@ -472,12 +472,19 @@ class Commands {
     required this.groups,
     this.secondaryCommand,
     this.emptyMessage,
+    this.clearSearchOnRun = false,
   });
 
   final String? prompt;
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
   final String? emptyMessage;
+
+  /// When true, the host modal clears its search field each time a command is
+  /// run (and the list refreshes). Used by multi-select pickers (e.g. the share
+  /// picker) so that after toggling a filtered match, the filter resets and all
+  /// current selections become visible again.
+  final bool clearSearchOnRun;
 
   Future<CommandReturn> show(BuildContext context, {bool? showFilter}) async {
     try {

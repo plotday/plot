@@ -1165,7 +1165,18 @@ class NewThreadPageState extends State<NewThreadPage> {
       rootContext: context,
       constraints: const BoxConstraints(maxHeight: 520, maxWidth: 460),
     ).run(context);
-    return result is CommandDone;
+    if (result is! CommandDone) return false;
+    // The modal has closed. Surface the new topic in the local store before the
+    // caller reloads the Channels list. Kept off CreateTopic's critical path so
+    // a slow or failing sync can't block the modal close; a sync failure here is
+    // non-fatal (the topic still arrives on the next regular sync).
+    try {
+      await Topic.pull();
+    } catch (e, t) {
+      log.warning('Topic.pull after create failed', e, t);
+      Tracker.captureException(e, t);
+    }
+    return true;
   }
 
   /// Step 2 ✕/Esc -> step 1, restoring the stashed filter text.

@@ -2606,6 +2606,11 @@ class PickDraftThreadShared extends ShowCommands {
 class _ShareCandidatesCache {
   final Map<String, List<ShareCandidate>> _byQuery = {};
 
+  /// Cached, search-independent thread scans (see [ShareCandidatesCache] in
+  /// `share.dart`): computed once per modal so typing doesn't re-scan ~200
+  /// threads on every keystroke.
+  ShareScans? _scans;
+
   Future<List<ShareCandidate>> get({
     required String? search,
     required Priority? priority,
@@ -2613,9 +2618,11 @@ class _ShareCandidatesCache {
     final key = (search ?? '').toLowerCase();
     final cached = _byQuery[key];
     if (cached != null) return cached;
+    final scans = _scans ??= await Actor.computeShareScans(priority: priority);
     final fresh = await Actor.getSortedShareCandidates(
       search: search,
       priority: priority,
+      scans: scans,
     );
     _byQuery[key] = fresh;
     return fresh;

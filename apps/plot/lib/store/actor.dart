@@ -462,18 +462,15 @@ class Actor extends ActorRow {
   /// channel-only frequent, then the tail (cross-priority MRU when
   /// [priority] is set, else alphabetical). Ties resolve alphabetically
   /// against [Actor.nameOrEmail] / [GroupRow.name].
-  static Future<List<ShareCandidate>> getSortedShareCandidates({
-    String? search,
+  /// Runs the (search-independent) thread scans the share picker ranks on.
+  /// Exposed so a picker can compute them once and pass the result back into
+  /// [getSortedShareCandidates] via `scans`, rather than re-scanning ~200
+  /// threads on every keystroke.
+  static Future<ShareScans> computeShareScans({
     Priority? priority,
-    int mruSize = 5,
     int threadWindow = 200,
-    int searchLimit = 50,
-    List<String> includeGroupIds = const [],
   }) async {
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-
-    // Run thread scans first — drives MRU ranking, and in the empty-search
-    // path also gates which candidates we materialize at all.
     final scoped = await _scanThreadsForSharing(
       selfIds: selfIds,
       priorityPath: priority?.path,
@@ -486,6 +483,27 @@ class Actor extends ActorRow {
             priorityPath: null,
             limit: threadWindow,
           );
+    return ShareScans(scoped: scoped, global: global);
+  }
+
+  static Future<List<ShareCandidate>> getSortedShareCandidates({
+    String? search,
+    Priority? priority,
+    int mruSize = 5,
+    int threadWindow = 200,
+    int searchLimit = 50,
+    List<String> includeGroupIds = const [],
+    ShareScans? scans,
+  }) async {
+    final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+
+    // Thread scans drive MRU ranking, and in the empty-search path also gate
+    // which candidates we materialize at all. They don't depend on [search],
+    // so a picker passes a cached [scans] to skip the rescan on every keystroke.
+    final resolvedScans = scans ??
+        await computeShareScans(priority: priority, threadWindow: threadWindow);
+    final scoped = resolvedScans.scoped;
+    final global = resolvedScans.global;
 
     // Candidate sourcing splits on whether the user is searching. With no
     // search we only materialize people who appear in the recent thread
@@ -1216,6 +1234,19 @@ class ThreadScanResult {
   final Map<Uuid, int> groupExplicitCounts;
   final Map<Uuid, int> groupAuthoredFirstSeenIndex;
   final Map<Uuid, int> groupAuthoredCounts;
+}
+
+/// The pair of thread scans [Actor.getSortedShareCandidates] needs: [scoped]
+/// (the selected priority subtree, or all threads when no priority) and
+/// [global] (cross-priority, used only for the tail fallback). The scans are
+/// independent of the search term, so a share picker computes them once via
+/// [Actor.computeShareScans] and reuses them across keystrokes instead of
+/// re-scanning ~200 threads on every character typed.
+class ShareScans {
+  const ShareScans({required this.scoped, required this.global});
+
+  final ThreadScanResult scoped;
+  final ThreadScanResult global;
 }
 
 /// Drift converter for ActorId
