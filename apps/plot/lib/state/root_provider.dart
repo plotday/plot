@@ -59,7 +59,7 @@ class RootProviderState extends State<RootProvider> {
     Bloc.observer = BlocLogger();
 
     // Create router and expose its navigator key globally for deep link handling
-    router = AppRouter();
+    router = AppRouter(userBloc: userBloc);
     setNavigatorKey(router.navigatorKey);
 
     routerConfig = router.config(

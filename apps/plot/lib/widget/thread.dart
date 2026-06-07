@@ -23,6 +23,25 @@ import 'package:plot/util/hooks.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Whether a thread row should reserve the participant-name header slot.
+///
+/// The slot is reserved on the *stable* contact-id set while the Actor cache is
+/// still warming ([actorsLoaded] is false), so it doesn't shift as names settle
+/// in. Once loading completes it is kept only if a name actually resolved
+/// ([hasResolvedLabel]) — a thread whose only "contact" is an unresolvable id
+/// (e.g. a twist instance that isn't synced to this client) collapses the slot
+/// rather than leaving a permanent empty header band. Channel threads never use
+/// this slot (they show the channel breadcrumb instead).
+bool reserveContactsLabel({
+  required bool isChannelThread,
+  required bool hasContactIds,
+  required bool actorsLoaded,
+  required bool hasResolvedLabel,
+}) =>
+    !isChannelThread &&
+    hasContactIds &&
+    (!actorsLoaded || hasResolvedLabel);
+
 class ThreadWidget extends StatefulWidget {
   const ThreadWidget({
     required this.activity,
@@ -97,6 +116,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   Map<Uuid, Actor> _otherActors = const {};
   String? _otherContactsKey;
 
+  /// True once [_loadOtherActors] has finished resolving the current id set.
+  /// While false the name slot is reserved on the stable id set (so it doesn't
+  /// shift as names warm in); once true, the slot is only kept if at least one
+  /// name actually resolved — otherwise it collapses rather than leaving a
+  /// permanent empty header band (e.g. a thread whose only contact is a twist
+  /// instance that isn't synced to this client).
+  bool _otherActorsLoaded = false;
+
   /// True while a block-level drag is in progress anywhere in the agenda.
   /// Threads are not drop targets for block drags — suppressing the hover
   /// effect prevents the row from looking like one.
@@ -129,6 +156,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final key = ids.map((u) => u.toString()).join('|');
     if (key == _otherContactsKey) return;
     _otherContactsKey = key;
+    _otherActorsLoaded = false;
     () async {
       final resolved = <Uuid, Actor>{};
       for (final id in ids) {
@@ -139,7 +167,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         }
       }
       if (!mounted) return;
-      setState(() => _otherActors = resolved);
+      setState(() {
+        _otherActors = resolved;
+        _otherActorsLoaded = true;
+      });
     }();
   }
 
@@ -342,12 +373,20 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final channelLabel = _channelLabel();
     final hasChannelLabel = channelLabel != null;
 
-    // Participant names in the header. `hasContactsLabel` is gated on the
-    // *stable* id set (not the resolved names) so the label slot — and
-    // `hasTopLabel`/`labelOffset` — never shifts as the Actor cache warms; the
-    // names text settles into the reserved slot.
-    final hasContactsLabel = !_isChannelThread && _otherContactIds().isNotEmpty;
-    final contactsLabel = hasContactsLabel ? _contactsLabel() : null;
+    // Participant names in the header. While the Actor cache is still warming
+    // (`!_otherActorsLoaded`), the slot is reserved on the *stable* id set (not
+    // the resolved names) so `hasTopLabel`/`labelOffset` don't shift as names
+    // settle in. Once loading completes, the slot is only kept if a name
+    // actually resolved — a thread whose only "contact" is an unresolvable id
+    // (e.g. a twist instance not synced to this client) collapses the slot
+    // instead of leaving a permanent empty header band.
+    final contactsLabel = _isChannelThread ? null : _contactsLabel();
+    final hasContactsLabel = reserveContactsLabel(
+      isChannelThread: _isChannelThread,
+      hasContactIds: _otherContactIds().isNotEmpty,
+      actorsLoaded: _otherActorsLoaded,
+      hasResolvedLabel: contactsLabel != null,
+    );
 
     final hasBodyLabel =
         hasChannelLabel || hasContactsLabel || hasSubPriorityLabel;

@@ -81,13 +81,21 @@ bool _appFirstFrameRendered = false;
 
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
-  AppRouter() {
+  AppRouter({this.userBloc}) {
     if (!_appFirstFrameRendered) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _appFirstFrameRendered = true;
       });
     }
   }
+
+  /// The app's stable [UserBloc] instance, handed to every [AuthGuard] so the
+  /// guard can read auth state from it directly instead of resolving it from
+  /// the navigation context. During sign-out the router re-evaluates guards,
+  /// and the `resolver.context` it passes can already be deactivated — reading
+  /// a provider off it then throws "Looking up a deactivated widget's ancestor
+  /// is unsafe". The bloc reference is stable, so it sidesteps that lookup.
+  final UserBloc? userBloc;
 
   // Default to zero-duration on every platform. Shell routes
   // (AppShell, PrioritiesShellRoute, AgendaShell, ActivityShell, the
@@ -152,12 +160,12 @@ class AppRouter extends RootStackRouter {
         AutoRoute(
           page: SignInRoute.page,
           path: 'login',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
         ),
         AutoRoute(
           page: EmailSignInRoute.page,
           path: 'login/email',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
         ),
         AutoRoute(
           page: PasswordSetupRoute.page,
@@ -166,16 +174,16 @@ class AppRouter extends RootStackRouter {
         AutoRoute(
           page: InviteRoute.page,
           path: 'invite/:token',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
         ),
         AutoRoute(
           page: RootRoute.page,
           path: '',
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
         ),
         AutoRoute(
           page: PrioritiesShellRoute.page,
-          guards: [AuthGuard()],
+          guards: [AuthGuard(userBloc)],
           path: '',
           children: [
             // Tab 0: Priorities list
@@ -189,7 +197,7 @@ class AppRouter extends RootStackRouter {
                 AutoRoute(
                   page: AgendaRoute.page,
                   path: '',
-                  guards: [AuthGuard()],
+                  guards: [AuthGuard(userBloc)],
                 ),
               ],
             ),
@@ -352,11 +360,16 @@ extension FocusedRouterExtension on BuildContext {
 }
 
 class AuthGuard extends AutoRouteGuard {
-  AuthGuard();
+  AuthGuard([this._userBloc]);
+
+  /// Stable bloc reference, preferred over a context read so guard
+  /// re-evaluation during sign-out doesn't touch a deactivated context.
+  final UserBloc? _userBloc;
 
   @override
   void onNavigation(NavigationResolver resolver, StackRouter router) async {
-    final userState = resolver.context.read<UserBloc>().state;
+    final userState =
+        (_userBloc ?? resolver.context.read<UserBloc>()).state;
     _logger.fine(
       'AuthGuard checking user state: $userState, ${resolver.route.name}',
     );

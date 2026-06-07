@@ -75,10 +75,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
   // underline grows from the centre on open, reversing on close. Decoupled
   // from [_searchExpanded] (the logical "search mode" flag) so the field stays
   // mounted through the closing animation before it's removed.
-  late final AnimationController _searchAnim = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-  );
+  //
+  // Constructed eagerly in initState (not via a lazy `late` initializer): if it
+  // were lazy and the widget were disposed before the field was ever accessed,
+  // `_searchAnim.dispose()` would trigger first-time construction during
+  // unmount, and `AnimationController`'s `createTicker` does a TickerMode
+  // ancestor lookup on the now-deactivated element, which throws.
+  late final AnimationController _searchAnim;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -106,6 +109,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader>
   @override
   void initState() {
     super.initState();
+    _searchAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
     _searchController.addListener(_onSearchChanged);
   }
 
