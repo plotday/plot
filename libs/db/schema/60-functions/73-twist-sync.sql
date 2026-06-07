@@ -368,8 +368,13 @@ $function$;
 -- Per-actor emoji reactions on notes. Routes to the reactor's own connector
 -- instance (via twist_instance_for_actor) so the dispatch reaches the
 -- instance with the user's OAuth token — not the note creator's instance.
--- Mirrors sync_twist_for_thread_tag but with actor-based routing rather
--- than created_by routing.
+-- The connector-type reference is the note's own creator when that is a
+-- connector (synced notes — nti), else the creator of a connector link on
+-- the thread (src). The link fallback is what lets reactions on
+-- Plot-initiated threads dispatch: there the note is authored by the user,
+-- so nt.created_by is a user_id for which twist_instance_for_actor returns
+-- NULL. Mirrors the twist_instance_note_reaction_change view exactly so the
+-- enqueue and the dispatch query agree on routing.
 CREATE OR REPLACE FUNCTION public.sync_twist_for_note_reaction ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -396,15 +401,28 @@ BEGIN
         v_max_seq := pg_current_xact_id();
     END IF;
     FOR v_twist_instance_id IN SELECT DISTINCT
-        public.twist_instance_for_actor (nr.actor_id, nt.created_by)
+        public.twist_instance_for_actor (nr.actor_id, COALESCE(nti.id, src.created_by))
     FROM
         new_table nr
         JOIN note nt ON nt.id = nr.note_id
         JOIN thread a ON a.id = nt.thread_id
+        LEFT JOIN twist_instance nti ON nti.id = nt.created_by
+        LEFT JOIN LATERAL (
+            SELECT
+                l.created_by
+            FROM
+                link l
+                JOIN twist_instance lti ON lti.id = l.created_by
+            WHERE
+                l.thread_id = nt.thread_id
+            ORDER BY
+                l.created_at ASC
+            LIMIT 1
+        ) src ON TRUE
     WHERE
         nt.draft = FALSE
         AND a.draft = FALSE
-        AND public.twist_instance_for_actor (nr.actor_id, nt.created_by) IS NOT NULL
+        AND public.twist_instance_for_actor (nr.actor_id, COALESCE(nti.id, src.created_by)) IS NOT NULL
     ORDER BY
         1 LOOP
             INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
