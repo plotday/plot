@@ -33,7 +33,17 @@ class GroupsBase extends BaseTable {
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
-    throw UnsupportedError('Group is read-only');
+    // Minimal payload save_group consumes. Computed columns (isAdmin, canPost,
+    // ...) are server-derived and not sent.
+    final group = row as GroupRow;
+    return {
+      'id': group.id.toString(),
+      'name': group.name,
+      'privacy': group.privacy,
+      'member_contact_ids':
+          group.memberContactIds?.map((u) => u.toString()).toList() ??
+          <String>[],
+    };
   }
 
   @override
@@ -49,6 +59,10 @@ class Group {
   // handful per user) so we keep the full set in memory and refresh after
   // each pull.
   static final Map<Uuid, GroupRow> _cache = {};
+
+  static Future<bool> push() async {
+    return Store.get.push(table, GroupsBase());
+  }
 
   static Future<void> pull() async {
     await Store.get.pull(table, GroupsBase(), initial: true);

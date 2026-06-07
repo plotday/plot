@@ -50,10 +50,11 @@ class SyncOrchestrator {
   );
 
   /// Group entity (read-only, no dependencies)
+  /// Group entity (writable: create / rename / membership).
   static final group = SyncEntity(
     debugName: 'group',
-    dependsOn: [],
-    pushFn: () async => true, // Read-only, skip push
+    dependsOn: [actor],
+    pushFn: Group.push,
     pullFn: Group.pull,
   );
 
