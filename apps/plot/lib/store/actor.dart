@@ -43,6 +43,14 @@ class ActorsBase extends BaseTable {
     // rejects any other type. We send the minimal payload save_user_contact
     // consumes; everything else on the row is server-derived.
     final actor = row as ActorRow;
+    // Only contacts are writable from the client. A non-contact actor should
+    // never carry a pending flag; guard so we never silently push one to the
+    // server masked as a contact.
+    if (actor.type != ActorType.contact) {
+      throw StateError(
+        'Only contact actors are pushable; got ${actor.type}',
+      );
+    }
     return {
       'id': actor.id.toUuid().toString(),
       'type': 'contact',
