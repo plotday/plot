@@ -1,27 +1,5 @@
--- Create or update a group from a single client row. Offline-queued via
--- POST /sync/groups. One upsert that diffs the incoming row against the DB:
---   * new id      -> CREATE (client-provided UUID; creator becomes admin; seed
---                    members from member_contact_ids). type defaults to private.
---   * existing id -> apply deltas:
---       - rename (admin-only),
---       - membership diff (only when the caller can see the full roster -- admins
---         always, open-group members otherwise -- because a private-group
---         non-admin's local roster is an empty array and would otherwise look
---         like "remove everyone"). The UPDATE diff path reuses
---         public.add_group_members / public.remove_group_members so its
---         join-policy authz is identical to those helpers. (The CREATE path
---         below does NOT use those helpers -- it seeds members with a raw
---         INSERT, like public.create_group, since the creator is admin by
---         construction.)
---   privacy/type changes on update are ignored.
--- Rejects auto_maintained groups. Returns the group id.
-CREATE OR REPLACE FUNCTION "user".save_group (
-    user_id uuid,
-    p_group jsonb
-)
-    RETURNS uuid
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "save_group" function
+CREATE OR REPLACE FUNCTION "user"."save_group" ("user_id" uuid, "p_group" jsonb) RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE
     v_group_id uuid := (p_group ->> 'id')::uuid;
     v_name text := p_group ->> 'name';
@@ -116,4 +94,4 @@ BEGIN
 
     RETURN v_group_id;
 END;
-$function$;
+$$;
