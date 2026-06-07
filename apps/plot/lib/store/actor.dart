@@ -39,13 +39,45 @@ class ActorsBase extends BaseTable {
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
-    // Actor is read-only (synced from user_actor view), so we don't need to convert to base format
-    throw UnsupportedError('Actor is read-only');
+    // Only contacts are writable from the client (add/rename). The server
+    // rejects any other type. We send the minimal payload save_user_contact
+    // consumes; everything else on the row is server-derived.
+    final actor = row as ActorRow;
+    return {
+      'id': actor.id.toUuid().toString(),
+      'type': 'contact',
+      'email': actor.email,
+      'name': actor.name,
+    };
   }
 
   @override
   Insertable<ActorRow> fromBase(Map<String, dynamic> json) {
     return ActorRow.fromJson(json);
+  }
+
+  @override
+  Future<List<Insertable<DataClass>>> processPulledRows(
+    Store store,
+    Iterable<Insertable<DataClass>> rows,
+  ) async {
+    // Contact id is server-owned (keyed on the globally-unique email). When the
+    // server resolved an added email to an EXISTING contact, the optimistic row
+    // AddContact inserted has a different id than the canonical row arriving
+    // here. Email is unique server-side, so any LOCAL contact row with the same
+    // email but a different id is a stale optimistic duplicate -- delete it
+    // before this batch upserts the canonical row.
+    final list = rows.toList();
+    final tableName = store.actors.actualTableName;
+    for (final r in list) {
+      if (r is! ActorRow) continue;
+      if (r.type != ActorType.contact || r.email == null) continue;
+      await store.customStatement(
+        'DELETE FROM $tableName WHERE lower(email) = lower(?) AND id != ?',
+        [r.email, r.id.toBytes()],
+      );
+    }
+    return list;
   }
 }
 
@@ -119,6 +151,10 @@ class Actor extends ActorRow {
       if (seen.add(canonical)) out.add(canonical);
     }
     return out;
+  }
+
+  static Future<bool> push() async {
+    return Store.get.push(table, ActorsBase());
   }
 
   static Future<void> pull() async {

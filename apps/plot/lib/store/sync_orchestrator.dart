@@ -40,11 +40,12 @@ class SyncOrchestrator {
   // STATIC ENTITY DEFINITIONS (type-safe!)
   // ============================================================================
 
-  /// Actor entity (read-only, no dependencies)
+  /// Actor entity. Contacts are writable (add/rename); other actor types are
+  /// read-only and never get a pending flag, so push is a no-op for them.
   static final actor = SyncEntity(
     debugName: 'actor',
     dependsOn: [],
-    pushFn: () async => true, // Read-only, skip push
+    pushFn: Actor.push,
     pullFn: Actor.pull,
   );
 
