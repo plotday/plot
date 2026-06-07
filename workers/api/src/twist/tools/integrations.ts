@@ -257,7 +257,7 @@ export class Integrations extends Tool implements IAuth {
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
-  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string } | null = null;
+  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean } | null = null;
   /** Cached sync history min date (undefined = not computed yet, null = no limit). */
   private _syncHistoryMin: Date | null | undefined = undefined;
   /**
@@ -302,7 +302,7 @@ export class Integrations extends Tool implements IAuth {
     path: string[];
     integrationOptions?: IntegrationOptions;
     /** Source metadata (provider, scopes, linkTypes, auth model) from the Source class. Set by factory for sources. */
-    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string } | null;
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string; handleReplies?: boolean } | null;
   }) {
     super();
     this.store = options.store;
@@ -702,7 +702,8 @@ export class Integrations extends Tool implements IAuth {
     provider: AuthProvider,
     actorId: ActorId,
     channel: Channel,
-    syncContext: SyncContext
+    syncContext: SyncContext,
+    observeOnly = false
   ): Promise<any | null> {
     const title = channel.title ?? channel.id;
     const linkTypes = channel.linkTypes ?? null;
@@ -740,8 +741,12 @@ export class Integrations extends Tool implements IAuth {
     // Mark the connection as initially-syncing so the Flutter app shows
     // a spinner. Recovery dispatches re-stamp `started_at` to now (instead
     // of coalescing to a possibly-ancient prior timestamp) so the
-    // "syncing since" indicator reflects the current sync.
-    await this.markChannelSyncStarted(provider, channel.id);
+    // "syncing since" indicator reflects the current sync. Skipped for
+    // observe-only enables (composed-channel observation) — there's no
+    // backfill, so a spinner would be misleading.
+    if (!observeOnly) {
+      await this.markChannelSyncStarted(provider, channel.id);
+    }
 
     const channelArg = { id: channel.id, title };
     // Failure dispatch: when onChannelEnabled throws, entrypoint.ts routes
@@ -2191,14 +2196,51 @@ export class Integrations extends Tool implements IAuth {
       // to echo channelId/type on every onCreateLink return — status label
       // resolution and other channel-scoped rendering would silently fail
       // otherwise.
-      return [{
+      const createEntries: any[] = [{
         sourceMethod: "onCreateLink",
         args: [draft],
         forwardTo: {
           functionName: "saveCreatedLink",
           prependArgs: [threadId, draft.channelId, draft.type],
         },
-      } as any];
+      }];
+
+      // Observe the composed channel so inbound events (replies/reactions) on
+      // this thread sync back. Only for bidirectional connectors
+      // (handleReplies) and only when the channel isn't already enabled.
+      // Dispatched observeOnly so the connector registers webhooks but skips
+      // historical backfill — the user posted one thread, they didn't opt to
+      // sync the whole channel's history.
+      if (
+        this.sourceProvider.handleReplies &&
+        this.sourceProvider.provider &&
+        draft.channelId
+      ) {
+        const alreadyEnabled = await this.db
+          .selectFrom("channel")
+          .select("channel_id")
+          .where("twist_instance_id", "=", this.twistInstanceId)
+          .where("channel_id", "=", draft.channelId)
+          .where("enabled", "=", true)
+          .executeTakeFirst();
+        if (!alreadyEnabled) {
+          const observeContext = await this.buildSyncContext();
+          observeContext.observeOnly = true;
+          const enablerActorId = (await this.getPlot().getUserId()) as ActorId;
+          const observeEntry = await this.applyChannelEnabled(
+            this.sourceProvider.provider as AuthProvider,
+            enablerActorId,
+            // Title defaults to the channel id; the connector's getChannels /
+            // setChannels refreshes it with the real name on next sync.
+            { id: draft.channelId, title: draft.channelId },
+            observeContext,
+            true
+          );
+          if (observeEntry) createEntries.push(observeEntry);
+        }
+      }
+
+      return createEntries as any;
     }
 
     if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];
