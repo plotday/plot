@@ -1258,6 +1258,29 @@ export class Integrations extends Tool implements IAuth {
         .execute();
     }
 
+    // Bind the thread's opening note to the external message this hook just
+    // created, so reactions/edits on the first message route back (the same
+    // binding onNoteCreated gives replies). Generic across connectors: we
+    // just apply the key/baseline the connector returned to the earliest
+    // note on the thread. updateNoteBaseline also stamps updated_by with the
+    // connector marker so the keyed note doesn't re-enter the create dispatch.
+    const originatingNote = (link as any).originatingNote as
+      | { key?: string; externalContent?: string }
+      | undefined;
+    if (originatingNote?.key || originatingNote?.externalContent) {
+      const openingNote = await this.db
+        .selectFrom("note")
+        .select("id")
+        .where("thread_id", "=", threadId as string)
+        .where("draft", "=", false)
+        .orderBy("created_at", "asc")
+        .limit(1)
+        .executeTakeFirst();
+      if (openingNote) {
+        await this.updateNoteBaseline(openingNote.id, originatingNote);
+      }
+    }
+
     // Create task schedule for assignee, and notify.
     await this.createTaskScheduleForLink(threadId);
 
