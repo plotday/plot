@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { mapPgError, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { rpcUser } from "../../rpc";
 import {
   parseReadParams,
   readSafeHorizon,
@@ -9,6 +10,7 @@ import {
   seqSinceCursor,
   updatedSinceCursor,
 } from "./helpers";
+import { notifyUserSync } from "./notify";
 
 const actors = new Hono<{ Bindings: Bindings }>();
 
@@ -62,6 +64,45 @@ actors.get("/sync/actors", async (c) => {
     return c.json(seqEnvelope(rows as any, limit, horizon) as any);
   }
   return c.json(rows as any);
+});
+
+// POST /sync/actors - Add or rename a contact in the user's address book.
+// Only type==="contact" rows are writable (twist-instance actors are read-only).
+// Body: { id, type, email?, name? }. Returns the canonical user.actor row so the
+// client can reconcile its optimistic id with the server-owned (email-keyed) id.
+actors.post("/sync/actors", async (c) => {
+  const userId = c.var.user.id;
+  const body = await c.req.json();
+
+  if (body.type !== "contact") {
+    return c.json({ error: "Only contacts can be saved" }, 400);
+  }
+  if (!body.id) {
+    return c.json({ error: "id is required" }, 400);
+  }
+
+  try {
+    const result = await withUserDb(c.var.db, userId, async (trx) => {
+      return rpcUser(trx, "save_user_contact", {
+        user_id: userId,
+        p_contact_id: body.id,
+        p_email: body.email ?? null,
+        p_name: body.name ?? null,
+      });
+    });
+
+    notifyUserSync(c, userId);
+    return c.json(result as any);
+  } catch (e) {
+    // A RAISE EXCEPTION from the function surfaces as a Postgres error. Treat
+    // these as client errors so the offline queue reverts the optimistic row
+    // instead of retrying forever.
+    const mapped = mapPgError(e);
+    if (mapped) {
+      return c.json({ error: mapped.message }, mapped.status as 400 | 403 | 409 | 422);
+    }
+    throw e;
+  }
 });
 
 export default actors;

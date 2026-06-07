@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { mapPgError, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { rpcUser } from "../../rpc";
 import {
   parseReadParams,
   readSafeHorizon,
@@ -9,6 +10,7 @@ import {
   seqSinceCursor,
   updatedSinceCursor,
 } from "./helpers";
+import { notifyUserSync } from "./notify";
 
 const groups = new Hono<{ Bindings: Bindings }>();
 
@@ -60,6 +62,42 @@ groups.get("/sync/groups", async (c) => {
     return c.json(seqEnvelope(rows as any, limit, horizon) as any);
   }
   return c.json(rows as any);
+});
+
+// POST /sync/groups - Create or update a group from a single client row.
+// Body: { id, name?, privacy?, member_contact_ids? }. The server diffs the row
+// (create on a new id; rename admin-only; membership diff for roster-visible
+// callers). Returns { id }.
+groups.post("/sync/groups", async (c) => {
+  const userId = c.var.user.id;
+  const body = await c.req.json();
+
+  if (!body.id) {
+    return c.json({ error: "id is required" }, 400);
+  }
+
+  try {
+    const groupId = await withUserDb(c.var.db, userId, async (trx) => {
+      return rpcUser(trx, "save_group", {
+        user_id: userId,
+        p_group: {
+          id: body.id,
+          name: body.name ?? null,
+          privacy: body.privacy ?? null,
+          member_contact_ids: body.member_contact_ids ?? [],
+        },
+      });
+    });
+
+    notifyUserSync(c, userId);
+    return c.json({ id: groupId } as any);
+  } catch (e) {
+    const mapped = mapPgError(e);
+    if (mapped) {
+      return c.json({ error: mapped.message }, mapped.status as 400 | 403 | 409 | 422);
+    }
+    throw e;
+  }
 });
 
 export default groups;
