@@ -1396,6 +1396,17 @@ export class GoogleChat extends Connector<GoogleChat> {
         threadName: result.thread.name,
         threadKey,
       },
+      // Bind the opening note to this Chat message so reactions/edits on it
+      // route back. key + externalContent match what onNoteCreated returns
+      // for a reply (and what sync-in emits).
+      originatingNote: {
+        key: msgId,
+        externalContent:
+          typeof result.formattedText === "string" &&
+          result.formattedText.length > 0
+            ? result.formattedText
+            : (result.text ?? body),
+      },
     };
   }
 
@@ -1497,6 +1508,15 @@ export class GoogleChat extends Connector<GoogleChat> {
         spaceName: dmSpaceName,
         threadName: result.thread.name,
         threadKey,
+      },
+      // Bind the opening note to this Chat message (see createSpacePost).
+      originatingNote: {
+        key: msgId,
+        externalContent:
+          typeof result.formattedText === "string" &&
+          result.formattedText.length > 0
+            ? result.formattedText
+            : (result.text ?? body),
       },
     };
   }

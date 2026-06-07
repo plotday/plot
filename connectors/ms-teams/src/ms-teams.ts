@@ -722,6 +722,9 @@ export class MsTeams extends Connector<MsTeams> {
         channelId,
         messageId: result.id,
       },
+      // Bind the opening note to this Teams message so reactions/edits on it
+      // route back (same key/baseline a reply gets from onNoteCreated).
+      originatingNote: this.buildWriteBackResult(result, body),
     };
   }
 
@@ -791,6 +794,8 @@ export class MsTeams extends Connector<MsTeams> {
         syncableId: DM_CHANNEL_ID,
         chatId,
       },
+      // Bind the opening note to this Teams message (see createChannelPost).
+      originatingNote: this.buildWriteBackResult(result, body),
     };
   }
 

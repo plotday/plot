@@ -1817,7 +1817,12 @@ export class Gmail extends Connector<Gmail> {
     // uses (same as onNoteCreated dedup).
     await this.set(`sent:${gmailMessageId}`, true);
 
-    return linkFor(gmailThreadId);
+    // Bind the opening note to this sent message — the bare message id, same
+    // key onNoteCreated returns for a reply and sync-in uses. No
+    // externalContent: Gmail's send doesn't return the stored body (same
+    // tradeoff as onNoteCreated), and the sent message is echo-suppressed
+    // above, so no baseline round-trip is needed.
+    return { ...linkFor(gmailThreadId), originatingNote: { key: gmailMessageId } };
   }
 
   /**
