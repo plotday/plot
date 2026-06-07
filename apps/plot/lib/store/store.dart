@@ -2410,7 +2410,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 358;
+  int get schemaVersion => 359;
 
   @override
   MigrationStrategy get migration {
@@ -3857,6 +3857,11 @@ class Store extends _$Store {
       await m.addColumn(groups, groups.privacy);
       await m.addColumn(groups, groups.canAddress);
       await m.addColumn(threads, threads.topicId);
+    }
+
+    if (from < 359) {
+      // Local-only intent flag; never synced. See Groups.membersDirty.
+      await m.addColumn(groups, groups.membersDirty);
     }
   }
 

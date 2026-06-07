@@ -71,6 +71,9 @@ class CreateGroup extends Command {
       joinPolicy: 'member',
       privacy: Value(privacy),
       memberContactIds: Value(memberContactIds),
+      // Send the initial member set only when there are members; a brand-new
+      // empty group has nothing for the server diff to remove.
+      membersDirty: Value(memberContactIds.isNotEmpty),
       isAdmin: const Value(true), // optimistic: creator is admin; reconciled on next pull
       canPost: const Value(true),
       canAddress: const Value(true),
@@ -130,6 +133,7 @@ class AddGroupMembers extends Command {
     final merged = {...current, ...toAdd}.toList();
     final updated = existing.copyWith(
       memberContactIds: Value(merged),
+      membersDirty: const Value(true),
       pending: const Value(2),
     );
     await Store.get.save(Store.get.groups, updated, GroupsBase());
@@ -162,6 +166,7 @@ class RemoveGroupMembers extends Command {
     final remaining = current.where((u) => !removing.contains(u)).toList();
     final updated = existing.copyWith(
       memberContactIds: Value(remaining),
+      membersDirty: const Value(true),
       pending: const Value(2),
     );
     await Store.get.save(Store.get.groups, updated, GroupsBase());

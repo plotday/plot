@@ -26,6 +26,15 @@ class Groups extends Table with SyncableTable, UuidTable, DeletableTable {
 
   TextColumn get memberContactIds =>
       text().nullable().map(const UuidListConverter())();
+
+  /// LOCAL-ONLY intent flag (not part of the server `user.group` view, never
+  /// synced down). Marks that a genuine membership change is pending for this
+  /// row, so [GroupsBase.toBase] should send `member_contact_ids` (triggering
+  /// the server's full-set diff). Nullable so [GroupRow.fromJson] tolerates the
+  /// key being absent from a pulled server payload — a pulled row therefore
+  /// lands with `membersDirty == null` (not dirty), resetting the flag. Treat
+  /// null as "not dirty".
+  BoolColumn get membersDirty => boolean().nullable()();
 }
 
 class GroupsBase extends BaseTable {
@@ -36,14 +45,21 @@ class GroupsBase extends BaseTable {
     // Minimal payload save_group consumes. Computed columns (isAdmin, canPost,
     // ...) are server-derived and not sent.
     final group = row as GroupRow;
-    return {
+    final payload = <String, dynamic>{
       'id': group.id.toString(),
       'name': group.name,
       'privacy': group.privacy,
-      'member_contact_ids':
-          group.memberContactIds?.map((u) => u.toString()).toList() ??
-          <String>[],
     };
+    // Only send the membership set for genuine membership operations. Omitting
+    // the key makes the server skip its full-set diff (its `p_group ?
+    // 'member_contact_ids'` guard), so a plain rename can't remove members that
+    // another device added but we haven't pulled yet.
+    if (group.membersDirty == true) {
+      payload['member_contact_ids'] =
+          group.memberContactIds?.map((u) => u.toString()).toList() ??
+          <String>[];
+    }
+    return payload;
   }
 
   @override
