@@ -6332,6 +6332,37 @@ export type Database = {
         Returns: boolean
       }
       root_priority_id: { Args: { p_user_id: string }; Returns: string }
+      save_user_contact: {
+        Args: {
+          p_contact_id: string
+          p_email: string
+          p_name: string
+          user_id: string
+        }
+        Returns: {
+          archived_at: string | null
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          external_accounts: Json | null
+          id: string | null
+          inviteable: boolean | null
+          linked_user_id: string | null
+          name: string | null
+          primary: boolean | null
+          self: boolean | null
+          seq: unknown
+          type: string | null
+          updated_at: string | null
+          user_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "actor"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       sibling_contact_ids: { Args: { p_contact_id: string }; Returns: string[] }
       update_note_reactions: {
         Args: {
