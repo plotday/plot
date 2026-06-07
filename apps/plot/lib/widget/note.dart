@@ -146,7 +146,14 @@ class _NoteWidgetState extends State<NoteWidget> {
   @override
   Widget build(BuildContext context) {
     final noteContent = widget.note.content ?? '';
-    final noteLinks = widget.note.actions ?? [];
+    // Exclude actions that render nothing in the read view. `createLink` is
+    // only surfaced inline by the composer's attachment row (see
+    // NoteActionWidget), so keeping it here would reserve the empty
+    // actions-row padding below the content and add a phantom gap above the
+    // footer on the note that owns the connector link.
+    final noteLinks = (widget.note.actions ?? [])
+        .where((a) => a.type != UserActionType.createLink)
+        .toList();
     final activityBloc = context.read<ThreadBloc>();
 
     final hasFocus = widget.focusNode?.hasFocus ?? false;
@@ -924,6 +931,16 @@ class NoteCommands extends StatelessWidget {
           if (tag == Tag.private) {
             return !note.matchesThreadContacts(threadContacts);
           }
+          // Connector sync should be transparent: hide the twist ("Twisting")
+          // tag when it belongs to a connection (source) twist. Keep it for
+          // non-connection twists so their processing stays visible. If a
+          // twist isn't in cache, err on the side of showing the tag.
+          if (tag == Tag.twist) {
+            return !actors.every((id) {
+              final twist = TwistInstance.fromCache(id.toUuid());
+              return twist != null && twist.isSource;
+            });
+          }
           return true;
         })
         .map((tag) async {
@@ -1119,6 +1136,14 @@ class NoteCommands extends StatelessWidget {
                         if (tag == Tag.reply) return actors.contains(actorId);
                         if (tag == Tag.private) {
                           return !note.matchesThreadContacts(threadContacts);
+                        }
+                        // Hide the twist tag for connection (source) twists so
+                        // connector sync stays transparent; keep it for others.
+                        if (tag == Tag.twist) {
+                          return !actors.every((id) {
+                            final twist = TwistInstance.fromCache(id.toUuid());
+                            return twist != null && twist.isSource;
+                          });
                         }
                         return true;
                       })
