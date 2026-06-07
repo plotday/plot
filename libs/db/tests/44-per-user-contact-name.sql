@@ -66,13 +66,14 @@ SELECT is(
     'A1 Name', 'a1 override is untouched by a2 write'
 ) FROM _ids LIMIT 1;
 
--- 7: upsert_contacts is first-touch-only — a later observation must not
--- overwrite an already-populated global contact.name.
+-- 7: upsert_contacts is longest-wins — a shorter later observation must not
+-- overwrite a longer already-populated global contact.name. ("Churned" is
+-- shorter than "Global Name".)
 SELECT is(
     (WITH x AS (
         SELECT public.upsert_contacts('[{"email":"shared@t.l","name":"Churned"}]'::jsonb)
-    ) SELECT name FROM public.contact WHERE email = 'shared@t.l'),
-    'Global Name', 'upsert_contacts does not overwrite an existing global name'
+    ) SELECT name FROM public.contact c, x WHERE email = 'shared@t.l' LIMIT 1),
+    'Global Name', 'upsert_contacts does not overwrite with a shorter name'
 );
 
 -- 8: upsert_user_contact_name must NOT override a user's own linked identity.

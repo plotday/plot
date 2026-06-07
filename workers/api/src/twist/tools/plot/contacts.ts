@@ -53,6 +53,20 @@ function normalizeName(name: string | undefined | null): string | undefined {
   return name || undefined;
 }
 
+/**
+ * Longest-wins name merge for the connector import path: returns true iff
+ * `incoming` is a non-empty name strictly longer than `existing`. A null/empty
+ * `existing` counts as length 0, so any non-empty incoming name is a first-fill.
+ * Mirrors the SQL longest-wins rule in upsert_contacts / upsert_user_contact_name.
+ */
+export function isNameUpgrade(
+  existing: string | null | undefined,
+  incoming: string | null | undefined
+): boolean {
+  if (!incoming) return false;
+  return incoming.length > (existing?.length ?? 0);
+}
+
 export async function addContacts(
   plot: Plot,
   contacts: Array<NewContact>
@@ -236,19 +250,21 @@ export async function addContacts(
           .executeTakeFirst();
 
         if (existingContact) {
-          // Update name/avatar if currently null and new values provided (COALESCE pattern)
+          // Longest-wins for the name (upgrade to a strictly longer observed
+          // name, never downgrade); fill-when-null for the avatar.
           const normalizedName = normalizeName(contact.name);
+          const nameUpgrades = isNameUpgrade(
+            existingContact.name,
+            normalizedName
+          );
           const needsUpdate =
-            (!existingContact.name && normalizedName) ||
-            (!existingContact.avatar_url && contact.avatar);
+            nameUpgrades || (!existingContact.avatar_url && contact.avatar);
 
           if (needsUpdate) {
             await plot.db
               .updateTable("contact")
               .set({
-                ...((!existingContact.name && normalizedName)
-                  ? { name: normalizedName }
-                  : {}),
+                ...(nameUpgrades ? { name: normalizedName } : {}),
                 ...((!existingContact.avatar_url && contact.avatar)
                   ? { avatar_url: contact.avatar }
                   : {}),
