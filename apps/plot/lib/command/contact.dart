@@ -63,6 +63,9 @@ class RenameContact extends Command {
     } catch (_) {
       return const CommandMessage('Contact not found', isError: true);
     }
+    if (existing.type != ActorType.contact) {
+      return const CommandMessage('Not a contact', isError: true);
+    }
     final updated = existing.copyWith(
       name: Value(name),
       pending: const Value(2),

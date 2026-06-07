@@ -19,6 +19,7 @@ export 'provider.dart';
 export 'settings.dart';
 export 'debug.dart';
 export 'share.dart';
+export 'contact.dart';
 export 'group.dart';
 export 'topic.dart';
 export 'package:plot/util/value.dart';
