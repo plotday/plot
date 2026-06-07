@@ -75,6 +75,12 @@ groups.post("/sync/groups", async (c) => {
   if (!body.id) {
     return c.json({ error: "id is required" }, 400);
   }
+  if (
+    body.member_contact_ids !== undefined &&
+    !Array.isArray(body.member_contact_ids)
+  ) {
+    return c.json({ error: "member_contact_ids must be an array" }, 400);
+  }
 
   try {
     const groupId = await withUserDb(c.var.db, userId, async (trx) => {

@@ -53,12 +53,13 @@ describe.skipIf(!DATABASE_URL)("save_user_contact via rpcUser", () => {
 
 describe.skipIf(!DATABASE_URL)("save_group via rpcUser", () => {
   it("creates a group with the client id and returns it", async () => {
+    const clientGroupId = randomUUID();
     const groupId = await withUser(async (trx, userId) => {
       return rpcUser(trx, "save_group", {
         user_id: userId,
-        p_group: { id: randomUUID(), name: "Test Group", privacy: "open", member_contact_ids: [] },
+        p_group: { id: clientGroupId, name: "Test Group", privacy: "open", member_contact_ids: [] },
       });
     });
-    expect(typeof groupId).toBe("string");
+    expect(groupId).toBe(clientGroupId);
   });
 });

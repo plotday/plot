@@ -94,9 +94,9 @@ actors.post("/sync/actors", async (c) => {
     notifyUserSync(c, userId);
     return c.json(result as any);
   } catch (e) {
-    // A RAISE EXCEPTION from the function surfaces as a Postgres error. Treat
-    // these as client errors so the offline queue reverts the optimistic row
-    // instead of retrying forever.
+    // Use mapPgError (from ../../db) to map a DB RAISE EXCEPTION (P0001) to a
+    // 4xx, so the offline queue reverts the optimistic row instead of retrying
+    // forever.
     const mapped = mapPgError(e);
     if (mapped) {
       return c.json({ error: mapped.message }, mapped.status as 400 | 403 | 409 | 422);
