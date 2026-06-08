@@ -12,7 +12,7 @@ import 'package:plot/widget/widget.dart';
 /// id is reused when the email is new; the rare same-email/different-id case
 /// is collapsed by [ActorsBase.processPulledRows] on the next pull.
 class AddContact extends Command {
-  AddContact({required this.name, required this.email})
+  AddContact({this.name, required this.email})
     : super(
         title: 'Add contact',
         // No EventObject.contact exists; reuse `activity` like the group
@@ -21,7 +21,7 @@ class AddContact extends Command {
         eventAction: EventAction.added,
       );
 
-  final String name;
+  final String? name;
   final String email;
 
   @override
@@ -72,5 +72,107 @@ class RenameContact extends Command {
     );
     await Store.get.save(Store.get.actors, updated, ActorsBase());
     return const CommandDone(message: 'Contact renamed');
+  }
+}
+
+/// Edit a contact from the new-thread picker: rename only (per-user override).
+/// The email is shown read-only as the form-group subtitle for context.
+class EditContact extends Command {
+  EditContact({
+    required this.contactId,
+    required this.currentName,
+    this.email,
+  }) : super(
+          title: 'Edit contact',
+          eventObject: EventObject.activity,
+          eventAction: EventAction.updated,
+        );
+
+  final ActorId contactId;
+  final String currentName;
+  final String? email;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final items = <FormItem>[
+      FormTextInput(
+        key: 'name',
+        label: 'Name',
+        initialValue: currentName,
+        placeholder: 'Name',
+      ),
+      FormButton(
+        key: 'save',
+        isPrimary: true,
+        buildCommand: (values) {
+          final name = (values['name'] as String?)?.trim() ?? '';
+          return RenameContact(contactId: contactId, name: name);
+        },
+      ),
+    ];
+    final form = FormData(
+      title: 'Edit contact',
+      dismissable: true,
+      groups: [
+        StaticFormGroup(subtitle: email, items: items),
+      ],
+    );
+    final groups = await form.list();
+    if (!context.mounted) return const CommandSkipped();
+    return FormModal(
+      form,
+      groups: groups,
+      rootContext: context,
+      constraints: const BoxConstraints(maxHeight: 360, maxWidth: 460),
+    ).run(context);
+  }
+}
+
+/// Add a new contact (name optional, email required) from the picker header.
+class NewContact extends Command {
+  NewContact()
+    : super(
+        title: 'Add contact',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.added,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final items = <FormItem>[
+      FormTextInput(
+        key: 'name',
+        label: 'Name',
+        placeholder: 'Optional',
+      ),
+      FormTextInput(
+        key: 'email',
+        label: 'Email',
+        required: true,
+        placeholder: 'name@example.com',
+      ),
+      FormButton(
+        key: 'add',
+        isPrimary: true,
+        buildCommand: (values) {
+          final name = (values['name'] as String?)?.trim() ?? '';
+          final email = (values['email'] as String?)?.trim() ?? '';
+          return AddContact(name: name.isEmpty ? null : name, email: email);
+        },
+      ),
+    ];
+    final form = FormData(
+      title: 'Add contact',
+      dismissable: true,
+      groups: [StaticFormGroup(items: items)],
+    );
+    final groups = await form.list();
+    if (!context.mounted) return const CommandSkipped();
+    return FormModal(
+      form,
+      groups: groups,
+      rootContext: context,
+      constraints: const BoxConstraints(maxHeight: 420, maxWidth: 460),
+    ).run(context);
   }
 }
