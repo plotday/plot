@@ -28,6 +28,12 @@ CREATE TABLE "public"."twist" (
     -- the twist is not offered as a chat target.
     "thread_type" text,
     "description" text,
+    -- Connector classification used to group connectors in the UI (e.g. the
+    -- onboarding "Connect your tools" step). Known values: 'messaging',
+    -- 'calendar'. Open-ended for future categories (e.g. 'tasks',
+    -- 'read_later'); null/unknown is treated as a generic app. Set at deploy
+    -- time from the connector's package.json `category` field.
+    "category" text,
     "version" text NOT NULL,
     "permissions" jsonb,
     "options_schema" jsonb,
