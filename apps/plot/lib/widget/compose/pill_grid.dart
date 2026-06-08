@@ -274,8 +274,14 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
                   child: Row(
                     children: [
                       Expanded(child: ComposePill(data: item.data)),
-                      if (item.onMore != null && index == _highlighted)
-                        _moreButton(context, item.onMore!),
+                      if (item.onMore != null)
+                        Opacity(
+                          opacity: index == _highlighted ? 1.0 : 0.0,
+                          child: IgnorePointer(
+                            ignoring: index != _highlighted,
+                            child: _moreButton(context, item.onMore!),
+                          ),
+                        ),
                     ],
                   ),
                 ),
