@@ -24,6 +24,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -185,9 +186,9 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       logo: "https://api.iconify.design/logos/google-calendar.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",
       statuses: [
-        { status: "Confirmed", label: "Confirmed" },
-        { status: "Tentative", label: "Tentative" },
-        { status: "Cancelled", label: "Cancelled" },
+        { status: "Confirmed", label: "Confirmed", icon: "confirmed" as StatusIcon, hiddenDefault: true },
+        { status: "Tentative", label: "Tentative", icon: "tentative" as StatusIcon },
+        { status: "Cancelled", label: "Cancelled", icon: "cancelled" as StatusIcon },
       ],
       // Attendee participation. Organizer membership is tracked separately
       // on schedule_contact.role and isn't exposed as a thread-level role.
@@ -1168,6 +1169,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               title: activityData.title || undefined,
               status: "Cancelled",
               preview: "Cancelled",
+              // The calendar that OWNS the event (user is the organizer) outranks a
+              // subscribed/secondary copy, so its link is the displayed primary.
+              priority: event.organizer?.self
+                ? 100
+                : event.attendees?.some((a) => a.self)
+                  ? 50
+                  : 0,
               meta: activityData.meta ?? null,
               notes: [cancelNote],
               schedules: [
@@ -1340,6 +1348,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                 ? "Tentative"
                 : undefined,
             title: activityData.title || "",
+            // The calendar that OWNS the event (user is the organizer) outranks a
+            // subscribed/secondary copy, so its link is the displayed primary.
+            priority: event.organizer?.self
+              ? 100
+              : event.attendees?.some((a) => a.self)
+                ? 50
+                : 0,
             access: "private",
             accessContacts: attendeeMentions,
             author: authorContact,
