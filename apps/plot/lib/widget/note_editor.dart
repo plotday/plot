@@ -1595,10 +1595,10 @@ class NoteEditorState extends State<NoteEditor> {
           ),
           style: ButtonStyle.primary,
           loading: _saving,
-          // Body-less submit is allowed only when there's an external link
-          // (handled below by AddThreadWithLink). Other action types
-          // (file attachments, connector create-actions) still need a body
-          // because they piggyback on the saved Note.
+          // Body-less submit is allowed only when there's an external link —
+          // the link stays on the note (via AddThreadWithNote). Other action
+          // types (file attachments, connector create-actions) still need a
+          // body because they piggyback on the saved Note.
           enabled:
               !_saving &&
               (!_isEmpty ||
@@ -1748,31 +1748,6 @@ class NoteEditorState extends State<NoteEditor> {
     _finalized = true;
     await _pendingDraftSave;
     if (!mounted) return;
-
-    // Empty body + a link → create a thread *about* the link: title and
-    // favicon come from the link, no Note is saved, the link is stored as a
-    // thread-level LinkRow (matches how thread.dart renders link rows).
-    if (body.trim().isEmpty) {
-      final firstExternal = widget.draft.actions
-          ?.whereType<ExternalUserAction>()
-          .firstOrNull;
-      if (firstExternal != null) {
-        setState(() => _saving = true);
-        widget.onSubmitted?.call();
-        try {
-          await context.run(
-            AddThreadWithLink(
-              linkUrl: firstExternal.url,
-              linkTitle: firstExternal.title,
-              linkFavicon: firstExternal.favicon,
-            ),
-          );
-        } finally {
-          if (mounted) setState(() => _saving = false);
-        }
-        return;
-      }
-    }
 
     final data = await finalizeThreadDraft(
       body,
@@ -1989,9 +1964,14 @@ class NoteEditorState extends State<NoteEditor> {
           ? Value(DateTimeRange(Time.now(), Time.now().add(Duration(hours: 1))))
           : const Value.absent(),
     );
-    // Create note from draft note or create new one if content is provided
+    // Create note from draft note when there is body content OR when the draft
+    // carries link actions (so the link chip is preserved on the note even
+    // when the body is empty — mirrors the send-button predicate).
     Note? note;
-    if (body.trim().isNotEmpty) {
+    final hasLinkAction =
+        widget.draft.actions?.whereType<ExternalUserAction>().isNotEmpty ??
+        false;
+    if (body.trim().isNotEmpty || hasLinkAction) {
       note = widget.draft.copyWith(content: body);
     }
 
