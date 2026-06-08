@@ -1070,11 +1070,29 @@ class NewThreadPageState extends State<NewThreadPage> {
     });
   }
 
-  /// Step 1 people pill -> step 2. Stash the step-1 query, clear the shared
-  /// field for "Select a connection", remember the recipient.
-  void _pickRecipient(ComposePeopleEntry entry) {
+  /// Step 1 people pill -> step 2, or straight to compose when the user has
+  /// messaged this **exact** roster before. In that skip case we default to the
+  /// connection last used with these recipients ([ComposeTargetsBloc.
+  /// lastUsedTargetForRoster]) and jump to compose, but still set
+  /// [_selectedRecipient] so the compose connection field can navigate "back"
+  /// to the connection step (see [_backFromCompose]). Otherwise we stash the
+  /// step-1 query, clear the shared field for "Select a connection", and show
+  /// step 2.
+  Future<void> _pickRecipient(ComposePeopleEntry entry) async {
+    final remembered =
+        await context.read<ComposeTargetsBloc>().lastUsedTargetForRoster(
+              contacts: entry.contacts,
+              groups: entry.groups,
+              inviteEmails: entry.inviteEmails,
+            );
+    if (!mounted) return;
     _stashedSectionsQuery = _pickerSearchController.text;
     _pickerSearchController.clear();
+    if (remembered != null) {
+      setState(() => _selectedRecipient = entry);
+      await _applyTarget(remembered);
+      return;
+    }
     setState(() {
       _selectedRecipient = entry;
       _step = _ComposeStep.connection;
@@ -1730,7 +1748,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // thread" hint need the level-holding boost. Single-panel never dims, so
       // pass null (no boost) — boosting an un-faded hint would over-darken it.
       activeListenable: multiPanel ? _active : null,
-      onPickRecipient: _pickRecipient,
+      onPickRecipient: (e) => unawaited(_pickRecipient(e)),
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
       onCreateTopic: _createTopic,
       // Single-panel mode drops the global header back button; the picker's

@@ -1155,6 +1155,187 @@ void main() {
       expect(slackConnector, isNotEmpty,
           reason: 'a connection added mid-session must appear automatically');
     });
+
+    test(
+        'lastUsedTargetForRoster returns the connection last used with an '
+        'exact roster', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final priorityId = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      // One authored Plot chat to Greg.
+      final chatThread = Uuid.generate();
+      await _insertThread(store, chatThread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, chatThread, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final target = await bloc.lastUsedTargetForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+      expect(target, isNotNull);
+      expect(target!.signature, composeChatSignature(null, contacts: [greg]));
+    });
+
+    test(
+        'lastUsedTargetForRoster returns the most-recently-used connection when '
+        'a roster has several', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final priorityId = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      final gmail = await _insertConnector(store,
+          name: 'Gmail (kris@plot.day)',
+          linkType: 'email',
+          targets: 'addresses');
+
+      // Older: Gmail DM to Greg.
+      final dmThread = Uuid.generate();
+      await _insertThread(store, dmThread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, dmThread, author: self);
+      await _insertLink(store, dmThread,
+          createdBy: gmail, type: 'email', channelId: null);
+
+      // Newer: Plot chat to Greg.
+      final chatThread = Uuid.generate();
+      await _insertThread(store, chatThread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 2));
+      await _insertNote(store, chatThread, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final target = await bloc.lastUsedTargetForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+      expect(target!.signature, composeChatSignature(null, contacts: [greg]),
+          reason: 'the newer Plot chat wins over the older Gmail DM');
+    });
+
+    test(
+        'lastUsedTargetForRoster returns null for a sub-roster of a past thread',
+        () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final bob = Uuid.generate();
+      final priorityId = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await _insertActor(store, bob, name: 'Bob Jones');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      // Only a {Greg, Bob} thread exists.
+      final t = Uuid.generate();
+      await _insertThread(store, t,
+          priorityId: priorityId,
+          contacts: [self, greg, bob],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, t, author: self);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      // Picking just {Greg} must not borrow the {Greg, Bob} connection.
+      final target = await bloc.lastUsedTargetForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+      expect(target, isNull);
+    });
+
+    test('lastUsedTargetForRoster returns null when the roster has no history',
+        () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final target = await bloc.lastUsedTargetForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+      expect(target, isNull);
+    });
+
+    test(
+        'lastUsedTargetForRoster returns null when the remembered connection is '
+        'no longer available', () async {
+      final self = Uuid.generate();
+      final greg = Uuid.generate();
+      final priorityId = Uuid.generate();
+      await _insertActor(store, self, name: 'Me', self: true);
+      await _insertActor(store, greg, name: 'Greg Smith');
+      await Actor.get(self: true);
+      await Actor.get();
+
+      // A Gmail DM thread to Greg, but the Gmail connection itself is gone
+      // (no twist_instance/channel registered), so no live template resolves
+      // for the combo — the realistic "connection removed" case.
+      final goneInstance = Uuid.generate();
+      final dmThread = Uuid.generate();
+      await _insertThread(store, dmThread,
+          priorityId: priorityId,
+          contacts: [self, greg],
+          createdAt: DateTime(2026, 5, 1));
+      await _insertNote(store, dmThread, author: self);
+      await _insertLink(store, dmThread,
+          createdBy: goneInstance, type: 'email', channelId: null);
+
+      final prefs = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      final bloc = ComposeTargetsBloc(prefs);
+      addTearDown(bloc.close);
+      await bloc.refresh();
+
+      final target = await bloc.lastUsedTargetForRoster(
+        contacts: [greg],
+        groups: const [],
+        inviteEmails: const [],
+      );
+      expect(target, isNull,
+          reason: 'a removed connection must fall back to the connection step');
+    });
   });
 }
 

@@ -959,6 +959,50 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     return [for (final s in ranked) if (bySig[s] != null) bySig[s]!];
   }
 
+  /// The connection [ComposeTarget] the user last used with this **exact**
+  /// roster ([contacts]/[groups]/[inviteEmails]), or null when they've never
+  /// authored a thread to exactly that roster — or when the connection they
+  /// used is no longer available (its connector was removed or its channel
+  /// disabled, so [_composeTargetForScanThread] can't resolve a live target).
+  ///
+  /// Lets the step-1 picker skip the connection step (step 2) and default to
+  /// the remembered connection when the user picks a roster they've messaged
+  /// before. Derived from the same MRU-ranked used-combo scan as
+  /// [loadSections], so the first exact-roster match in MRU order is the
+  /// last-used connection. Matching is order-insensitive via [_rosterKey].
+  Future<ComposeTarget?> lastUsedTargetForRoster({
+    required List<Uuid> contacts,
+    required List<Uuid> groups,
+    required List<String> inviteEmails,
+  }) async {
+    final wantKey = _rosterKey(contacts, groups, inviteEmails);
+    final ctx = await _searchContextFor();
+    final scan = ctx.scan;
+    final rankedUsed = _prefs.rankSignaturesByMru(
+      signatures: buildUsedTargetSignatures(scan.threads),
+    );
+    for (final sig in rankedUsed) {
+      final st = scan.bySignature[sig];
+      if (st == null) continue;
+      final target = _composeTargetForScanThread(
+        st,
+        templateBySignature: ctx.templateBySignature,
+        connectionCount: ctx.connectionCount,
+        hasTeams: ctx.hasTeams,
+        teamNames: ctx.teamNames,
+      );
+      // A null target means the combo's connection is gone (template
+      // unresolvable) — skip it; a later, still-available combo for the same
+      // roster may still win, otherwise we fall through to null (→ step 2).
+      if (target == null) continue;
+      if (_rosterKey(target.contacts, target.groups, target.inviteEmails) ==
+          wantKey) {
+        return target;
+      }
+    }
+    return null;
+  }
+
   /// Resolve a [ComposeTarget] for a used-combo scan thread, or null when its
   /// connector template is no longer available (connection removed, channel
   /// disabled).
