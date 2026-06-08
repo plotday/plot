@@ -1205,19 +1205,36 @@ class Store extends _$Store {
   /// - Tables with a `draft` column: exclude rows where draft = true
   /// - Tables with a `thread_id` column: exclude rows whose thread is draft
   /// - Tag tables (note_tags, thread_tags): exclude rows whose parent is draft
+  ///
+  /// `notes` has BOTH a `draft` column and a `thread_id`: a published note
+  /// (draft = 0) can sit on a thread that is still a local draft (draft = 1)
+  /// if a late draft-save flips the thread back after publish. Such a note
+  /// must NOT be pushed ahead of its thread — the thread (and its
+  /// `thread_priority` row) doesn't exist server-side yet, so `/sync/notes`
+  /// hard-fails `assertThreadAccess` with a 403, reverts to `absentOnServer`,
+  /// and the note loops forever. So we combine both filters rather than
+  /// returning on the first match: a note is pushable only when it is
+  /// published AND its thread is not a local draft.
   static String _buildDraftFilter(TableInfo<Table, DataClass> table) {
     final columns = table.$columns;
     final name = table.actualTableName;
 
+    final clauses = <String>[];
+
     // Tables with their own draft column (threads, notes)
     if (columns.any((c) => c.$name == 'draft')) {
-      return ' AND draft = 0';
+      clauses.add('draft = 0');
     }
 
-    // Tables with thread_id FK (schedules, links, etc.)
+    // Tables with thread_id FK (notes, schedules, links, etc.) — don't push a
+    // row whose parent thread is still a local draft (and thus unpushed).
     if (columns.any((c) => c.$name == 'thread_id')) {
-      return ' AND (thread_id IS NULL OR thread_id NOT IN'
-          ' (SELECT id FROM threads WHERE draft = 1))';
+      clauses.add('(thread_id IS NULL OR thread_id NOT IN'
+          ' (SELECT id FROM threads WHERE draft = 1))');
+    }
+
+    if (clauses.isNotEmpty) {
+      return ' AND ${clauses.join(' AND ')}';
     }
 
     // Tag tables that share id with their parent

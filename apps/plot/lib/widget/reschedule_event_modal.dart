@@ -114,6 +114,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
     } else {
       buttonText = 'Close';
     }
+    final buttonIcon = _hasChanged ? PlotIcon.save : PlotIcon.close;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 370),
@@ -160,6 +161,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
           const SizedBox(height: 16),
           FButton(
             variant: FButtonVariant.secondary,
+            prefix: Icon(buttonIcon, size: 16),
             child: Text(buttonText),
             onPress: () async {
               if (_hasChanged) {

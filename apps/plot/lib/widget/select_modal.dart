@@ -66,6 +66,7 @@ class SelectModal<T> extends Modal {
     this.onAdd,
     this.addTooltip,
     this.filter,
+    this.clearSearchOnRefresh = false,
     this.gridColumns,
     this.gridCellSize = 36,
     this.gridCellSpacing = 4,
@@ -89,6 +90,7 @@ class SelectModal<T> extends Modal {
            onAdd: onAdd,
            addTooltip: addTooltip,
            filter: filter,
+           clearSearchOnRefresh: clearSearchOnRefresh,
            gridColumns: gridColumns,
            gridCellSize: gridCellSize,
            gridCellSpacing: gridCellSpacing,
@@ -156,6 +158,11 @@ class SelectModal<T> extends Modal {
   /// only re-issued when the search text is cleared.
   final bool Function(T item, String search)? filter;
 
+  /// When true, the search field is cleared every time the list is refreshed
+  /// (e.g. after running a command). Multi-select pickers use this so that
+  /// toggling a filtered match resets the filter and reveals all selections.
+  final bool clearSearchOnRefresh;
+
   /// When non-null, items render in a grid with this many columns instead of
   /// the default list. Group headers and infoBuilder rows stay full-width.
   /// Arrow up/down move ±[gridColumns] in the flat highlight index; left/right
@@ -194,6 +201,7 @@ class SelectModal<T> extends Modal {
     Future<T?> Function(BuildContext context)? onAdd,
     String? addTooltip,
     bool Function(T item, String search)? filter,
+    bool clearSearchOnRefresh = false,
     int? gridColumns,
     double gridCellSize = 36,
     double gridCellSpacing = 4,
@@ -231,6 +239,7 @@ class SelectModal<T> extends Modal {
       onAdd: onAdd,
       addTooltip: addTooltip,
       filter: filter,
+      clearSearchOnRefresh: clearSearchOnRefresh,
       gridColumns: gridColumns,
       gridCellSize: gridCellSize,
       gridCellSpacing: gridCellSpacing,
@@ -259,6 +268,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.onAdd,
     this.addTooltip,
     this.filter,
+    this.clearSearchOnRefresh = false,
     this.gridColumns,
     this.gridCellSize = 36,
     this.gridCellSpacing = 4,
@@ -280,6 +290,7 @@ class _SelectModal<T> extends StatefulWidget {
   final Future<T?> Function(BuildContext context)? onAdd;
   final String? addTooltip;
   final bool Function(T item, String search)? filter;
+  final bool clearSearchOnRefresh;
   final int? gridColumns;
   final double gridCellSize;
   final double gridCellSpacing;
@@ -311,6 +322,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       false; // Prevents double-fire between Shortcuts and onSubmit
   int? _loadingIndex;
   Timer? _spinnerDelay;
+  // In-field activity indicator shown while a data-source fetch is in flight
+  // even when prior results are still displayed (deferred via [_fetchIndicatorDelay]
+  // so fast fetches don't flash a spinner). Distinct from [_isLoading], which
+  // is the cold-load state that replaces the whole list.
+  bool _isFetching = false;
+  Timer? _fetchIndicatorDelay;
   Future<void>? _lastFetch;
   // Trimmed search text whose results are currently displayed. Used to flush
   // any in-flight fetch on Enter so we activate against fresh results.
@@ -351,6 +368,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
   /// Refresh items while preserving search text and highlighted index
   Future<void> _refreshItems() async {
+    // Multi-select pickers reset the filter on each run so the freshly toggled
+    // selection — and all existing ones — become visible again. Clearing the
+    // text here makes the re-fetch below take the empty-search path.
+    if (widget.clearSearchOnRefresh && _controller.text.isNotEmpty) {
+      _controller.clear();
+    }
     // Clear cache to force re-fetch on refresh
     _emptySearchCache = null;
     _isRefreshing = true;
@@ -361,6 +384,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   void dispose() {
     _isDisposed = true;
     _spinnerDelay?.cancel();
+    _fetchIndicatorDelay?.cancel();
     _listFocusNode.dispose();
     _scrollController.dispose();
     _controller.dispose();
@@ -465,6 +489,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   void _applyLocalFilter(String search) {
     // Local filtering supersedes any in-flight fetch.
     _spinnerDelay?.cancel();
+    _fetchIndicatorDelay?.cancel();
     ++_requestId;
 
     final lower = search.toLowerCase();
@@ -487,6 +512,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
     setState(() {
       _isLoading = false;
+      _isFetching = false;
       _error = null;
       _groups = filtered;
       _appliedSearch = search;
@@ -515,9 +541,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       // Use cached results for empty search if available (instant, no spinner)
       if (searchText == null && _emptySearchCache != null) {
         _spinnerDelay?.cancel();
+        _fetchIndicatorDelay?.cancel();
         setState(() {
           _error = null;
           _isLoading = false;
+          _isFetching = false;
           _groups = _emptySearchCache!;
           _appliedSearch = '';
           final totalItems = _groups.fold<int>(
@@ -547,20 +575,33 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         });
       }
 
+      // In-field activity indicator: surfaces in-flight fetches even when prior
+      // results are still on screen (so the list isn't cleared mid-type).
+      // Deferred so fast fetches don't flash. Each keystroke cancels the prior
+      // timer and restarts it; stale fetches leave the flag for the newest one.
+      _fetchIndicatorDelay?.cancel();
+      _fetchIndicatorDelay = Timer(_spinnerDelayDuration, () {
+        if (_isDisposed) return;
+        setState(() => _isFetching = true);
+      });
+
       final currentRequestId = ++_requestId;
 
       final groupsList = await widget.items(searchText);
 
       if (_isDisposed) return;
 
-      // Discard stale results
+      // Discard stale results — a newer fetch is in flight and owns the
+      // in-field indicator, so don't clear it here.
       if (currentRequestId != _requestId) return;
 
       _spinnerDelay?.cancel();
+      _fetchIndicatorDelay?.cancel();
 
       setState(() {
         _error = null;
         _isLoading = false;
+        _isFetching = false;
         // Filter out groups with no items and no visible info content
         _groups = groupsList.where((group) {
           if (group.items.isNotEmpty) return true;
@@ -603,9 +644,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       }
       if (!_isDisposed) {
         _spinnerDelay?.cancel();
+        _fetchIndicatorDelay?.cancel();
         setState(() {
           _error = 'Loading failed.';
           _isLoading = false;
+          _isFetching = false;
         });
       }
     }
@@ -1358,6 +1401,21 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                         onSubmitted: (_) => _handleEnter(),
                                       ),
                                     ),
+                                    // In-field activity indicator while a fetch
+                                    // is in flight — keeps the displayed list
+                                    // visible and signals that filtering is
+                                    // still working.
+                                    if (_isFetching)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 8),
+                                        child: Spinner(
+                                          size: context.theme.iconSizes.sm,
+                                          color: context
+                                              .theme
+                                              .colors
+                                              .mutedForeground,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),

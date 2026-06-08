@@ -2,10 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:forui/forui.dart';
-import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/state/theme.dart' show ThemeBloc;
-import 'package:plot/style/colors.dart' show ColourSchemeExtension;
 import 'package:plot/store/store.dart' show Actor, GroupRow, Priority;
 import 'package:plot/widget/avatar.dart';
 import 'package:plot/widget/compose/compose_target.dart';
@@ -159,7 +157,7 @@ class ComposePill extends StatelessWidget {
 
       GroupPillData(:final group, :final members) => Row(
           children: [
-            _gutter(_countBadge(context, members.length)),
+            _gutter(CountAvatar(count: members.length)),
             const SizedBox(width: composePillIconGap),
             Expanded(
               child: _nameMetaLine(
@@ -184,7 +182,7 @@ class ComposePill extends StatelessWidget {
               actors.map((a) => a.email).whereType<String>().join(', ');
           return Row(
             children: [
-              _gutter(_countBadge(context, total)),
+              _gutter(CountAvatar(count: total)),
               const SizedBox(width: composePillIconGap),
               Expanded(
                 child: _nameMetaLine(
@@ -383,39 +381,6 @@ class ComposePill extends StatelessWidget {
         height: composePillGutter,
         child: Center(child: glyph),
       );
-
-  /// A 24px circular count badge: a filled chip that sits just off the page
-  /// surface, with the count in the full `foreground` for a strong read.
-  Widget _countBadge(BuildContext context, int count) {
-    final scheme = context.colour;
-    final isDark = scheme.brightness == Brightness.dark;
-    // Chip fill steps gently off the page surface — a touch lighter than the
-    // dark page in dark mode, a touch darker than the near-white page in light
-    // mode — keeping the surface's faint warm tint either way. Deriving from
-    // `background` (rather than the old `muted @ 0.2α`) fixes both: the dark
-    // chip no longer over-brightens against the page, and the light chip is
-    // actually visible. The number uses `foreground` so it stays high-contrast
-    // against the chip (the old muted-on-muted pairing was too soft).
-    final badgeBackground = scheme.colours.background
-        .withLightness(isDark ? 0.33 : 0.93)
-        .toColor();
-    return Container(
-      width: 24,
-      height: 24,
-      decoration: BoxDecoration(
-        color: badgeBackground,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          '$count',
-          style: context.theme.typography.xs.copyWith(
-            color: scheme.foreground,
-          ),
-        ),
-      ),
-    );
-  }
 
   /// A single-line name + optional inline meta (e.g. "Greg  greg@acme.com").
   ///

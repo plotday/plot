@@ -104,7 +104,9 @@ FROM
 WHERE
     c."primary" = false
 UNION ALL
--- Twist instances owned by each user
+-- Twist instances owned by each user. The synthetic global sender (the
+-- "Plot Team" instance) is excluded here and surfaced to ALL users by the
+-- branch below instead, so its owner doesn't receive a duplicate row.
 SELECT
     u.id AS user_id,
     a.id,
@@ -124,4 +126,36 @@ SELECT
 FROM
     "public"."user" u
     JOIN twist_instance pt ON pt.owner_id = u.id
-    JOIN actor a ON a.id = pt.id;
+    JOIN actor a ON a.id = pt.id
+WHERE
+    a.id <> '0199b6f4-ae64-7718-0000-000000000001'::uuid
+UNION ALL
+-- Synthetic global sender. The "Plot Team" actor authors the shared
+-- onboarding / Plot Updates threads, which every user can see via the Plot
+-- Updates topic but no user owns. Surface this ONE explicitly-listed system
+-- actor to every user so those threads resolve a sender name instead of an
+-- unresolvable id. This is deliberately NOT general "surface any thread
+-- author" support. inviteable = false keeps it out of share/mention pickers
+-- (it is display-only). Its id is the c_system_instance_id constant used
+-- across the onboarding seed migrations.
+SELECT
+    u.id AS user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.seq,
+    a.archived_at,
+    a.type,
+    a.name,
+    a.email,
+    a.avatar_url,
+    false AS self,
+    false AS inviteable,
+    true AS "primary",
+    NULL::uuid AS linked_user_id,
+    '[]'::json AS external_accounts
+FROM
+    "public"."user" u
+    CROSS JOIN actor a
+WHERE
+    a.id = '0199b6f4-ae64-7718-0000-000000000001'::uuid;

@@ -3,15 +3,18 @@ import 'package:plot/analytics/conventions.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
-import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 
-/// Create a Plot topic (a Plot-only channel) and pull it into the local store.
+/// Create a Plot topic (a Plot-only channel).
 ///
 /// Mirrors the group-create commands in `group.dart`: posts to `POST /topic`
 /// with the topic's name, optional team scope, and initial members (contacts +
-/// groups), then **awaits** a topic sync so the new topic is locally available
-/// (and surfaces in the new-thread Channels section) before this returns.
+/// groups). Returns as soon as the POST succeeds so the host modal can close
+/// immediately — the topic sync that surfaces it in the Channels list runs
+/// *after* the modal is dismissed (see `_createTopic` in `new_thread.dart`),
+/// not on this command's critical path. Awaiting the sync here would block the
+/// modal close on two network round-trips (and leave it stuck open if the sync
+/// threw), which is the bug this split fixes.
 class CreateTopic extends Command {
   CreateTopic({
     required this.name,
@@ -20,6 +23,7 @@ class CreateTopic extends Command {
     this.groupIds = const [],
   }) : super(
           title: 'Create topic',
+          icon: PlotIcon.save,
           eventObject: EventObject.activity,
           eventAction: EventAction.added,
         );
@@ -45,9 +49,9 @@ class CreateTopic extends Command {
           if (groupIds.isNotEmpty) 'groupIds': groupIds,
         },
       );
-      // Await the pull so the created topic is in the local store before the
-      // caller refreshes the Channels list.
-      await Topic.pull();
+      // Don't await the topic sync here — the caller pulls after the modal
+      // closes so the new topic surfaces in the Channels list without keeping
+      // the modal open during the network round-trips.
       return const CommandDone(message: 'Topic created');
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);

@@ -244,15 +244,16 @@ class ComposeConfig extends Equatable {
   final String targets;
   /// Status to assign newly-created links. Should match an entry in the
   /// parent linkType's `statuses[]`, OR a symbolic id the connector
-  /// resolves itself (e.g. Linear's per-team UUIDs).
-  final String status;
+  /// resolves itself (e.g. Linear's per-team UUIDs). Null when the
+  /// connector declares no compose status (e.g. Slack, Gmail).
+  final String? status;
   /// Picker chip / "Create new …" override. Null falls back to
   /// [LinkTypeConfig.label].
   final String? label;
 
   const ComposeConfig({
     this.targets = 'channels',
-    required this.status,
+    this.status,
     this.label,
   });
 
@@ -263,7 +264,7 @@ class ComposeConfig extends Equatable {
     if (raw is! Map<String, dynamic>) return null;
     return ComposeConfig(
       targets: raw['targets'] as String? ?? 'channels',
-      status: raw['status'] as String,
+      status: raw['status'] as String?,
       label: raw['label'] as String?,
     );
   }

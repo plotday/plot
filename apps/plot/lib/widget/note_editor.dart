@@ -1263,7 +1263,7 @@ class NoteEditorState extends State<NoteEditor> {
             .where((s) => s.status == action.status)
             .firstOrNull
             ?.label ??
-        action.status;
+        action.status ?? '';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),

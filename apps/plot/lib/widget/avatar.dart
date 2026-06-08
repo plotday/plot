@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
+import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
@@ -865,4 +866,91 @@ int _seedFromString(String s) {
     hash = (hash * 31 + code) & 0x7FFFFFFF;
   }
   return hash;
+}
+
+/// A circular count badge that stands in for an avatar where a group of people
+/// is represented by a single glyph — the member count on a contact-group pill
+/// in the new-thread composer, or the number of people a thread is shared with
+/// in its header — so "N people" reads the same wherever it appears.
+///
+/// Two looks:
+/// - [clickable] false (default): a flat filled chip, for a list row like the
+///   composer's group pill.
+/// - [clickable] true: the [AvatarGroup] look — an avatar-style fill inside the
+///   silhouette outline that brightens on hover — so the badge matches the real
+///   avatars it sits beside (e.g. the thread header, next to the assignee).
+class CountAvatar extends StatelessWidget {
+  const CountAvatar({
+    required this.count,
+    this.size = 24,
+    this.clickable = false,
+    super.key,
+  });
+
+  final int count;
+  final double size;
+  final bool clickable;
+
+  @override
+  Widget build(BuildContext context) {
+    // Cap the display at two digits so a small circle never has to fit more
+    // than "99": anything larger reads as "99+" at a reduced font size.
+    final overflow = count > 99;
+    final text = overflow ? '99+' : '$count';
+    final baseFontSize = context.theme.typography.xs.fontSize ?? 12.0;
+    final fontSize = overflow ? baseFontSize * 0.72 : baseFontSize;
+
+    if (clickable) {
+      // Mirror an AvatarGroup slot exactly: the same FAvatar fill, baseline-
+      // anchored digits (via _CenteredInitials), the background ring, and the
+      // single-circle silhouette outline that brightens on hover.
+      final badge = _Ring(
+        size: size,
+        color: context.colour.background,
+        child: FAvatar.raw(
+          size: size,
+          style: FAvatarStyleDelta.delta(
+            backgroundColor: context.colour.editableBackground,
+            textStyle: TextStyleDelta.delta(fontSize: fontSize),
+          ),
+          child: _CenteredInitials(text: text, diameter: size),
+        ),
+      );
+      return _GroupOutline(
+        slots: 1,
+        step: size,
+        size: size,
+        restColor: context.colour.border,
+        hoverColor: context.colour.muted,
+        clickable: true,
+        child: badge,
+      );
+    }
+
+    // Flat chip: a filled circle that steps gently off the page surface — a
+    // touch lighter than the dark page in dark mode, a touch darker than the
+    // near-white page in light mode — with the number in the full `foreground`.
+    final scheme = context.colour;
+    final isDark = scheme.brightness == Brightness.dark;
+    final badgeBackground = scheme.colours.background
+        .withLightness(isDark ? 0.33 : 0.93)
+        .toColor();
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: badgeBackground,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          text,
+          style: context.theme.typography.xs.copyWith(
+            color: scheme.foreground,
+            fontSize: fontSize,
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -311,8 +311,8 @@ class PickCurrentPriority extends ShowCommands {
 class AddPriority extends Command {
   AddPriority(this._priority)
     : super(
-        title: 'Add',
-        icon: PlotIcon.add,
+        title: 'Create focus',
+        icon: PlotIcon.save,
         eventObject: EventObject.priority,
         eventAction: EventAction.added,
       );
@@ -464,8 +464,8 @@ class NewPriority extends ShowForm {
 class _SaveAndReturnPriority extends Command {
   _SaveAndReturnPriority(this._priority, {required this.onSaved})
     : super(
-        title: 'Add',
-        icon: PlotIcon.add,
+        title: 'Create focus',
+        icon: PlotIcon.save,
         eventObject: EventObject.priority,
         eventAction: EventAction.added,
       );
@@ -840,7 +840,7 @@ class _CreateFocusWithThreads extends Command {
     required this.selections,
   }) : super(
          title: 'Create focus',
-         icon: PlotIcon.add,
+         icon: PlotIcon.save,
          eventObject: EventObject.priority,
          eventAction: EventAction.added,
        );
