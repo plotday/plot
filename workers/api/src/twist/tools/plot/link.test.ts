@@ -73,3 +73,27 @@ describe.skipIf(!DATABASE_URL)("upsert_link priority + note_scoped", () => {
     expect((result as any).priority).toBe(5);
   });
 });
+
+describe.skipIf(!DATABASE_URL)("cross-connector source co-location", () => {
+  it("finds a thread by sources overlap regardless of twist_id", async () => {
+    const found = await withThread(async (trx, { userId, threadId }) => {
+      const uid = `icaluid:${randomUUID()}`;
+      // Connector A's link (note_scoped — e.g. Granola) carrying the shared alias.
+      await rpcUser(trx, "upsert_link", {
+        user_id: userId,
+        p_link: { source: `granola:${randomUUID()}`, sources: [`granola:${uid}`, uid] },
+        p_defaults: { thread_id: threadId, created_by: userId, note_scoped: true },
+      });
+      // The GLOBAL lookup createLink will run for connector B (no twist filter):
+      const row = await trx
+        .selectFrom("link")
+        .select("link.thread_id")
+        .where(sql<boolean>`link.sources && ${sql.val([uid])}::text[]`)
+        .where("link.archived_at", "is", null)
+        .limit(1)
+        .executeTakeFirst();
+      return row?.thread_id ?? null;
+    });
+    expect(found).not.toBeNull();
+  });
+});
