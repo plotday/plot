@@ -41,6 +41,7 @@ import {
   transformSlackThread,
 } from "./slack-api";
 import { unicodeToSlackName } from "./slack-emoji";
+import { slackFacets } from "./slack-facets";
 
 /**
  * Slack integration source.
@@ -503,6 +504,7 @@ export class Slack extends Connector<Slack> {
           syncProvider: "slack",
           syncableId: channelId,
         };
+        if (thread[0]) activityThread.facets = slackFacets(thread[0], channelId);
 
         // Save link directly via integrations
         await this.tools.integrations.saveLink(activityThread);
@@ -686,6 +688,7 @@ export class Slack extends Connector<Slack> {
       syncProvider: "slack",
       syncableId: channelId,
     };
+    if (messages[0]) link.facets = slackFacets(messages[0], channelId);
     await this.tools.integrations.saveLink(link);
   }
 
@@ -913,6 +916,7 @@ export class Slack extends Connector<Slack> {
       syncProvider: "slack",
       syncableId: channelId,
     };
+    if (messages[0]) link.facets = slackFacets(messages[0], channelId);
 
     // Suppress the onThreadToDo echo Plot will fire from this write;
     // handleStarEvent / backfillStars is already the source of truth.
