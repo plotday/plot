@@ -123,3 +123,115 @@ describe("setupChannelWebhook", () => {
     expect(createWebhook).not.toHaveBeenCalled();
   });
 });
+
+describe("syncCustomEmoji", () => {
+  /** Build a Slack with the tool set needed by syncCustomEmoji. */
+  function makeEmojiSlack(opts: {
+    store: ReturnType<typeof makeStore>;
+    integrationsGet: ReturnType<typeof vi.fn>;
+    saveCustomEmoji: ReturnType<typeof vi.fn>;
+  }) {
+    const create = vi.fn(async () => ({ token: "cb" }) as never);
+    const runTask = vi.fn(async () => "task-token");
+    const tools = {
+      store: opts.store,
+      integrations: {
+        get: opts.integrationsGet,
+        saveCustomEmoji: opts.saveCustomEmoji,
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+      callbacks: { create },
+      tasks: { runTask },
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { slack, create, runTask };
+  }
+
+  /** Mock global.fetch to answer one `emoji.list` call with `emoji`. */
+  function mockEmojiListFetch(emoji: Record<string, string>) {
+    return vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ ok: true, emoji }),
+      }) as never
+    );
+  }
+
+  it("saves refs with alias resolution and caches the name set", async () => {
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["emoji:read"],
+      provider: { team_id: "T0" },
+    });
+    const saveCustomEmoji = vi.fn().mockResolvedValue(undefined);
+    const { slack } = makeEmojiSlack({ store, integrationsGet, saveCustomEmoji });
+
+    const fetchMock = mockEmojiListFetch({
+      party_parrot: "https://e/pp.gif",
+      pp2: "alias:party_parrot",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        syncCustomEmoji: (c: string) => Promise<void>;
+      }).syncCustomEmoji("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(saveCustomEmoji).toHaveBeenCalledTimes(1);
+    const saved = saveCustomEmoji.mock.calls[0][0] as Array<{
+      id: string;
+      imageUrl: string | null;
+      aliasOf: string | null;
+      name: string;
+      workspace: string;
+      provider: string;
+    }>;
+    const parrot = saved.find((e) => e.id === "slack:T0/party_parrot")!;
+    expect(parrot).toBeDefined();
+    expect(parrot.imageUrl).toBe("https://e/pp.gif");
+    expect(parrot.aliasOf).toBeNull();
+    expect(parrot.provider).toBe("slack");
+    expect(parrot.workspace).toBe("T0");
+    const alias = saved.find((e) => e.id === "slack:T0/pp2")!;
+    expect(alias).toBeDefined();
+    expect(alias.imageUrl).toBeNull();
+    expect(alias.aliasOf).toBe("slack:T0/party_parrot");
+
+    // Name set cached for the inbound transform.
+    expect(store.map.get("custom_emoji_T0")).toEqual(["party_parrot", "pp2"]);
+  });
+
+  it("no-ops when emoji:read is not granted", async () => {
+    const store = makeStore({});
+    const integrationsGet = vi.fn().mockResolvedValue({
+      token: "xoxp-test",
+      scopes: ["channels:history"], // no emoji:read
+      provider: { team_id: "T0" },
+    });
+    const saveCustomEmoji = vi.fn().mockResolvedValue(undefined);
+    const { slack } = makeEmojiSlack({ store, integrationsGet, saveCustomEmoji });
+
+    const fetchMock = mockEmojiListFetch({ party_parrot: "https://e/pp.gif" });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await (slack as unknown as {
+        syncCustomEmoji: (c: string) => Promise<void>;
+      }).syncCustomEmoji("C1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(saveCustomEmoji).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(store.map.has("custom_emoji_T0")).toBe(false);
+  });
+});

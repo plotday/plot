@@ -236,6 +236,12 @@ export class Slack extends Connector<Slack> {
     // only hit users.list once.
     const membersCallback = await this.callback(this.syncMembers, channel.id);
     await this.runTask(membersCallback);
+
+    // Sync the workspace's custom emoji into the shared cache so they render
+    // and round-trip. Gated inside syncCustomEmoji to once per day, and
+    // harmless when the optional `emoji:read` scope wasn't granted (no-op).
+    const emojiCallback = await this.callback(this.syncCustomEmoji, channel.id);
+    await this.runTask(emojiCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -1249,6 +1255,93 @@ export class Slack extends Connector<Slack> {
       if (scheduleDaily) {
         await this.runTask(dailyCallback, { runAt: nextRunAt });
       }
+    }
+  }
+
+  // ---- Workspace custom emoji sync ----
+
+  /**
+   * Fetches the workspace's custom emoji via `emoji.list`, resolves Slack
+   * `alias:` chains, and upserts them into Plot's shared custom-emoji cache as
+   * `slack:<teamId>/<name>` refs so they render as images and round-trip as
+   * reactions. Also caches the workspace's emoji *name set* (`custom_emoji_<teamId>`)
+   * so the inbound transform can recognise custom reactions.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection), then
+   * reschedules itself for the next daily refresh — mirrors {@link syncMembers}.
+   * `emoji:read` is an optional scope; when it is not granted this no-ops.
+   */
+  async syncCustomEmoji(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const last = await this.get<number>("customEmojiSyncedAt");
+    if (last && now - last < ONE_DAY_MS) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) return;
+    if (!token.scopes?.includes("emoji:read")) return; // optional scope not granted
+    const teamId = token.provider?.team_id;
+    if (!teamId) return;
+
+    const api = new SlackApi(token.token);
+    const raw: Record<string, string> = {};
+    let cursor: string | undefined;
+    try {
+      do {
+        const { emoji, nextCursor } = await api.listEmoji(cursor);
+        Object.assign(raw, emoji);
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const retry = await this.callback(this.syncCustomEmoji, channelId);
+        await this.rescheduleAt(
+          retry,
+          new Date(now + error.retryAfterMs),
+          `syncCustomEmoji ${channelId}`
+        );
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `syncCustomEmoji stopped: ${error.method} → ${error.slackError}`
+        );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.warn("[slack] emoji.list failed", error);
+      return;
+    }
+
+    const refFor = (name: string) => `slack:${teamId}/${name}`;
+    const toSave = Object.entries(raw).map(([name, value]) => {
+      const isAlias = value.startsWith("alias:");
+      return {
+        id: refFor(name),
+        provider: "slack",
+        workspace: teamId,
+        name,
+        imageUrl: isAlias ? null : value,
+        aliasOf: isAlias ? refFor(value.slice("alias:".length)) : null,
+        archived: false,
+      };
+    });
+    await this.tools.integrations.saveCustomEmoji(toSave);
+
+    // Cache the name set so the inbound transform can recognise custom
+    // reactions (Slack reaction events carry the bare name, not the ref).
+    await this.set(`custom_emoji_${teamId}`, Object.keys(raw));
+    await this.set("customEmojiSyncedAt", now);
+
+    // Schedule the next daily refresh.
+    const next = await this.callback(this.syncCustomEmoji, channelId);
+    const taskToken = await this.runTask(next, {
+      runAt: new Date(now + ONE_DAY_MS),
+    });
+    if (taskToken) {
+      await this.set(`syncCustomEmoji_task_${channelId}`, taskToken);
     }
   }
 
