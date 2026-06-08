@@ -100,6 +100,7 @@ class EditContact extends Command {
         label: 'Name',
         initialValue: currentName,
         placeholder: 'Name',
+        required: true,
       ),
       FormButton(
         key: 'save',
