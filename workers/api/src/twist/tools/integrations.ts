@@ -9,6 +9,7 @@ import {
   type Link,
   type NewContact,
   type NewLinkWithNotes,
+  type NewNote,
   type Note,
   type Thread,
   type ThreadMeta,
@@ -17,6 +18,7 @@ import { type Callback } from "@plotday/twister/tools/callbacks";
 import { Tag } from "@plotday/twister/tag";
 import type {
   ArchiveLinkFilter,
+  ArchiveNotesFilter,
   AuthProvider,
   AuthToken,
   Authorization,
@@ -1137,6 +1139,56 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Save a single note attached to an existing thread. See {@link saveNotes}.
+   */
+  async saveNote(note: NewNote): Promise<Uuid | null> {
+    const [id] = await this.saveNotes([note]);
+    return id ?? null;
+  }
+
+  /**
+   * Save one or more notes that attach to an EXISTING thread (addressed by
+   * `note.thread: { id }` or `{ source }`), each optionally carrying its own
+   * note-attached (note_scoped) link via `note.link`. When `{ source }`
+   * resolves to no thread, the runtime find-or-creates the thread by that
+   * source. Used for augmenter content (e.g. Granola meeting notes attached to
+   * a calendar event's thread).
+   *
+   * Unlike {@link saveLink}, this does NOT inject the connector's account
+   * contact: a note attaches to a thread the owner is already a participant on
+   * (created by `upsert_thread`, which files the owner's contact, or it is the
+   * calendar event's existing thread), so the redaction case `injectAccountContact`
+   * guards against does not arise here. The injection is also link-shaped
+   * (it edits `link.accessContacts` and per-note `accessContacts`) and does
+   * not translate cleanly to the standalone-note model.
+   *
+   * Returns one entry per input note, in order. A note that failed to save
+   * (e.g. empty content, or its thread couldn't be resolved) lands as `null`
+   * in its OWN slot — matching the per-slot alignment contract of
+   * {@link saveLinks}.
+   */
+  async saveNotes(notes: NewNote[]): Promise<(Uuid | null)[]> {
+    if (notes.length === 0) return [];
+    const plot = this.getPlot();
+    // `createNotes` collapses its result — failed/empty notes are dropped
+    // rather than returned as null in-slot, so calling it once with the whole
+    // batch loses positional alignment on a partial failure. Resolve each note
+    // independently so the returned array is precisely per-slot aligned: the id
+    // for a succeeded note, or `null` in the failed note's own slot.
+    const results = await Promise.all(
+      notes.map(async (note) => {
+        try {
+          const [id] = await plot.createNotes([note]);
+          return (id as Uuid) ?? null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    return results;
+  }
+
+  /**
    * Batch version of {@link saveLink}. Runs the saves concurrently inside the
    * worker (in bounded chunks) so the caller pays one cross-runtime round-trip
    * for N links instead of N. Order of the returned array matches the input.
@@ -1416,6 +1468,90 @@ export class Integrations extends Tool implements IAuth {
     });
 
     if (affectedPriorityIds && affectedPriorityIds.length > 0) {
+      const plot = this.getPlot();
+      await plot.notifySyncDOs(new Set(affectedPriorityIds));
+    }
+  }
+
+  /**
+   * Archives every NOTE this connector created (and the note-attached,
+   * note_scoped links those notes carry), optionally scoped to a channel.
+   * Mirror of {@link archiveLinks} for the note-attached content model — used
+   * by augmenters in `onChannelDisabled`.
+   *
+   * Both rows are retired with `archived_at = now()` (NEVER a bare DELETE —
+   * `note` and `link` are synced tables, so a delete would strand client
+   * copies). When `filter.channelId` is set, the notes are scoped via their
+   * `link_id` → the note-attached link's `channel_id`, and only links on that
+   * channel are archived; without a channelId every note/link this connector
+   * created is archived. Sync DOs for affected priorities are notified so
+   * clients re-pull and apply the archive locally.
+   */
+  async archiveNotes(filter: ArchiveNotesFilter): Promise<void> {
+    const twistInstanceId = this.twistInstanceId;
+    const channelId = filter.channelId;
+
+    // Behavioral analog of archiveLinks (NOT an implementation mirror): it
+    // always soft-archives and deliberately leaves the (other-connector-owned)
+    // canonical thread + its filing intact, only retiring this connector's own
+    // note + note-attached link rows.
+    //
+    // We operate on `this.db` directly (no inner transaction) — matching
+    // applyThreadToDoForUser — so the real method is exercisable by the
+    // rollback-harness tests. The two UPDATEs no longer share an explicit
+    // transaction; that's acceptable because this is idempotent cleanup (a
+    // re-run completes any partially-applied archive).
+
+    // Archive this connector's note-attached (note_scoped) links first so
+    // the set of "links on this channel" is captured before any note
+    // scoping subquery runs against the same set.
+    await sql`
+      UPDATE public.link
+      SET archived_at = now()
+      WHERE created_by = ${twistInstanceId}::uuid
+        AND note_scoped = true
+        AND archived_at IS NULL
+        ${channelId !== undefined ? sql`AND channel_id = ${channelId}` : sql``}
+    `.execute(this.db);
+
+    // Archive this connector's notes. When scoped to a channel, restrict to
+    // notes whose note-attached link is on that channel (via link_id →
+    // link.channel_id); the link rows were just archived above, so match on
+    // identity, not on archived state. A channel-scoped archive therefore only
+    // sweeps notes WITH a link_id — linkless notes have no channel association.
+    // RETURNING the touched thread_ids so we only notify priorities for threads
+    // this call actually changed.
+    const archivedNotes = await sql<{ thread_id: string }>`
+      UPDATE public.note
+      SET archived_at = now()
+      WHERE created_by = ${twistInstanceId}::uuid
+        AND archived_at IS NULL
+        ${
+          channelId !== undefined
+            ? sql`AND link_id IN (
+                SELECT l.id FROM public.link l
+                WHERE l.created_by = ${twistInstanceId}::uuid
+                  AND l.note_scoped = true
+                  AND l.channel_id = ${channelId}
+              )`
+            : sql``
+        }
+      RETURNING thread_id
+    `.execute(this.db);
+
+    const threadIds = [...new Set(archivedNotes.rows.map((r) => r.thread_id))];
+    if (threadIds.length === 0) return;
+
+    // Collect the priorities filing the affected threads so sync DOs
+    // re-pull and apply the archive locally.
+    const rows = await sql<{ priority_id: string }>`
+      SELECT DISTINCT tp.priority_id
+      FROM public.thread_priority tp
+      WHERE tp.thread_id IN (${sql.join(threadIds.map((id) => sql`${id}::uuid`))})
+    `.execute(this.db);
+    const affectedPriorityIds = rows.rows.map((r) => r.priority_id);
+
+    if (affectedPriorityIds.length > 0) {
       const plot = this.getPlot();
       await plot.notifySyncDOs(new Set(affectedPriorityIds));
     }
