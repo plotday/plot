@@ -96,6 +96,44 @@ List<RosterKey> dedupePeopleByRoster(List<ComposeTarget> targets) {
   return out;
 }
 
+/// Transforms at-rest [sections] for **link mode** (a URL is in the picker):
+/// drops People & twists, keeps only link-supporting channels (Plot topics
+/// always qualify; connector channels qualify when their
+/// [LinkTypeConfig.supportsLinks] is true), and orders both the channels and
+/// focuses by [rankByLinkMru] (most-recently-used link destination first).
+/// [perSection] caps each surviving list.
+ComposeSections linkModeSections(
+  ComposeSections sections,
+  List<String> Function(List<String> signatures) rankByLinkMru, {
+  required int perSection,
+}) {
+  final linkChannels = sections.channels
+      .where((t) =>
+          t.kind == ComposeTargetKind.topic ||
+          (t.linkType?.supportsLinks ?? false))
+      .toList();
+  return ComposeSections(
+    people: const [],
+    twists: const [],
+    channels: _orderBySignature(linkChannels, rankByLinkMru).take(perSection).toList(),
+    focuses: _orderBySignature(sections.focuses, rankByLinkMru).take(perSection).toList(),
+  );
+}
+
+/// Reorders [items] so their [ComposeTarget.signature]s follow the order
+/// [rankByLinkMru] returns. Stable for signatures the ranking leaves in place.
+List<ComposeTarget> _orderBySignature(
+  List<ComposeTarget> items,
+  List<String> Function(List<String> signatures) rankByLinkMru,
+) {
+  final ranked = rankByLinkMru(items.map((t) => t.signature).toList());
+  final pos = {for (var i = 0; i < ranked.length; i++) ranked[i]: i};
+  final out = [...items];
+  out.sort((a, b) =>
+      (pos[a.signature] ?? 1 << 30).compareTo(pos[b.signature] ?? 1 << 30));
+  return out;
+}
+
 /// Materializes and caches the step-1 **target picker** list: a globally
 /// MRU-ranked list of "ways to create a thread" (a focus-note per
 /// recently-used focus, chat-capable twists, every connector
@@ -673,7 +711,10 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
   /// Step-1 at-rest sections. People = MRU rosters (deduped) classified into
   /// contact/group/ad-hoc pills; twists/channels/focuses reuse existing
   /// builders.
-  Future<ComposeSections> loadSections({int perSection = 8}) async {
+  Future<ComposeSections> loadSections({
+    int perSection = 8,
+    bool linkMode = false,
+  }) async {
     final ctx = await _searchContextFor();
     final scan = ctx.scan;
 
@@ -714,7 +755,7 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     // Plot topics (Plot-only channels) lead the Channels section, most-recently
     // active first, so a just-created topic surfaces at the top.
     final topicTargets = await _topicTargets();
-    final channels = <ComposeTarget>[
+    final allChannels = <ComposeTarget>[
       ...topicTargets,
       for (final t in ctx.createTargets)
         if (!t.isDmType)
@@ -725,8 +766,8 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
           ),
     ];
 
-    final focuses = <ComposeTarget>[
-      for (final f in ctx.focusNoteOrder.take(perSection))
+    final allFocuses = <ComposeTarget>[
+      for (final f in ctx.focusNoteOrder)
         ComposeTarget.focusNote(
           priorityId: f.priorityId,
           teamId: f.teamId,
@@ -734,11 +775,26 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
         ),
     ];
 
+    if (linkMode) {
+      // Link mode: only Private notes + link-supporting Channels, link-MRU
+      // ordered. People & twists are hidden (links-to-contacts is future work).
+      return linkModeSections(
+        ComposeSections(
+          people: const [],
+          twists: const [],
+          channels: allChannels,
+          focuses: allFocuses,
+        ),
+        (sigs) => _prefs.rankByLinkMru(signatures: sigs),
+        perSection: perSection,
+      );
+    }
+
     return ComposeSections(
       people: people,
       twists: twists.take(perSection).toList(),
-      channels: channels.take(perSection).toList(),
-      focuses: focuses,
+      channels: allChannels.take(perSection).toList(),
+      focuses: allFocuses.take(perSection).toList(),
     );
   }
 
