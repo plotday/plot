@@ -129,8 +129,10 @@ added.
   ```
   Dedicated column (cleaner than overloading the sparse `priority.config`).
 - `priority.description text` — persist the NL description the focus-creation
-  flow already produces (today it's sent to `find-matching-threads` and
-  discarded). Enables (re-)derivation of filters. No UI; backend-only.
+  flow already produces. **Today this description is sent to
+  `find-matching-threads` and then discarded — an oversight to fix.** The focus
+  create/update path must now write it to `priority.description` so it survives
+  for filter (re-)derivation and future use. No UI; backend-only.
 - `freemail_domain` reference table — seeded from the existing list in
   `apps/site/app/routes/upgrade.tsx` (`FREEMAIL_DOMAINS`). SQL-side source of
   truth for the org-domain check. The site's TS copy is a future consolidation,
@@ -256,12 +258,14 @@ each dimension, its values, and a human-readable description of each value. Both
 the LLM prompt and the gate read it, so the model's mental model and the
 enforcement never drift. Adding a value updates the prompt automatically.
 
-**When derived:**
+**When derived (new and updated focuses only — no backfill):**
 - **Creation** — alongside `find-matching-threads` (description in hand), derive
   filters and persist to `priority.facet_filters`.
 - **Update** — on title/`description` change, re-derive in a background task
   (`waitUntil`, fresh DB connection per the project's `waitUntil` rule).
-- **One-time existing-focus pass** — title-only derivation at rollout (low risk).
+
+Existing focuses are **not** backfilled: with no `facet_filters` they classify
+exactly as today (no gate). Filters appear the next time the focus is edited.
 
 **How:** Claude via the AI gateway, reusing the `generateObject` + zod + retry +
 ephemeral-cache pattern in `priority-match.ts`. Input = title + description +
@@ -279,9 +283,10 @@ blocks call `captureException`.
 `priority.facet_filters`, `priority.description`, `freemail_domain` (+ seed).
 Regenerate and commit `libs/db/src/types.ts`.
 
-**Rollout — going-forward only:** facets populate on newly-synced threads; the
-one-time pass seeds title-only filters on existing focuses. No thread-facet
-backfill (raw signals are gone). Nothing synced → no client impact.
+**Rollout — going-forward only:** facets populate on newly-synced threads;
+filters are configured on focuses created or edited after launch. No backfill of
+either thread facets (raw signals are gone) or existing-focus filters. Nothing
+synced → no client impact.
 
 **Tests:**
 - `@plotday/email-classifier` — pure unit tests over header fixtures (vitest).
