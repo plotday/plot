@@ -254,6 +254,18 @@ export class SlackApi {
     }
   }
 
+  /** Lists workspace custom emoji. Values are an image URL or `alias:<name>`. */
+  public async listEmoji(cursor?: string): Promise<{
+    emoji: Record<string, string>;
+    nextCursor?: string;
+  }> {
+    const data = await this.call("emoji.list", cursor ? { cursor } : {});
+    return {
+      emoji: (data.emoji as Record<string, string>) || {},
+      nextCursor: data.response_metadata?.next_cursor || undefined,
+    };
+  }
+
   public async getConversationHistory(
     channelId: string,
     cursor?: string,
