@@ -11,6 +11,12 @@ import 'package:plot/state/priorities.dart';
 
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/widget/compose/compose_sections_view.dart';
+import 'package:plot/widget/compose/compose_pill.dart'
+    show
+        ComposePillData,
+        ContactPillData,
+        GroupPillData,
+        AdHocGroupPillData;
 import 'package:plot/widget/compose/connection_picker_view.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
@@ -1168,6 +1174,52 @@ class NewThreadPageState extends State<NewThreadPage> {
     return result is CommandDone;
   }
 
+  /// Opens the "… More" (Edit) menu for an editable people row. Non-editable
+  /// pill kinds (twists, channels, topics, focuses, connections) are ignored.
+  Future<void> _rowMore(ComposePillData data) async {
+    final Command command;
+    switch (data) {
+      case ContactPillData(:final actor):
+        command = EditContact(
+          contactId: actor.id,
+          currentName: actor.name ?? '',
+          email: actor.email,
+        );
+      case GroupPillData(:final group, :final members):
+        command = EditGroup(
+          groupId: group.id,
+          initialName: group.name,
+          initialMemberContactIds: members.map((a) => a.id.toUuid()).toList(),
+        );
+      case AdHocGroupPillData(:final actors):
+        command = EditGroup(
+          groupId: null,
+          initialName: '',
+          initialMemberContactIds: actors.map((a) => a.id.toUuid()).toList(),
+        );
+      default:
+        return; // not editable
+    }
+    final commands = Commands(
+      groups: [
+        StaticCommandGroup(commands: [command]),
+      ],
+    );
+    await CommandModal(commands, rootContext: context).run(context);
+  }
+
+  /// "+ Contact" header button → add a contact. Returns true if added.
+  Future<bool> _addContact() async {
+    final result = await NewContact().run(context);
+    return result is CommandDone;
+  }
+
+  /// "+ Group" header button → create a group. Returns true if created.
+  Future<bool> _addGroup() async {
+    final result = await EditGroup().run(context);
+    return result is CommandDone;
+  }
+
   /// Step 2 ✕/Esc -> step 1, restoring the stashed filter text.
   void _returnToSectionsStep() {
     _pickerSearchController.text = _stashedSectionsQuery;
@@ -1722,6 +1774,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       onPickRecipient: _pickRecipient,
       onPickTarget: (t) => unawaited(_applyDirectTarget(t)),
       onCreateTopic: _createTopic,
+      onRowMore: _rowMore,
+      onAddContact: _addContact,
+      onAddGroup: _addGroup,
       // Single-panel mode drops the global header back button; the picker's
       // search-field leading slot carries the back affordance instead and
       // closes the new-thread page. Multi-panel keeps a plain search icon.
