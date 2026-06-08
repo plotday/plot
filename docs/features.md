@@ -38,6 +38,11 @@ Sessions, agenda, priorities, and tasks remain part of the product but are suppo
 - Membership = contacts + included groups, minus per-user opt-outs; posting a thread to a topic reaches the whole topic, so no per-thread recipients are picked
 - Topics appear alongside connector channels in the new-thread picker
 
+### Contacts & Groups
+- Add a contact (name + email) or create a named group directly from the new-thread picker's "People and twists" header ("+ Contact" / "+ Group")
+- Edit a contact (rename, per-user) or a group (rename, change members) via a "…" menu on its row (hover or ⌘Enter); naming an ad-hoc set of selected people turns them into a reusable group
+- All contact/group edits are local-first and sync across devices; contact renames are per-user overrides that never change the name other people see
+
 ### Thread Sharing
 - Threads are shared by adding contacts via the "With" field at creation
 - Globally shareable thread URLs (/t/{id}) — no priority context needed
