@@ -24,11 +24,34 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import { Files } from "@plotday/twister/tools/files";
+
+/**
+ * Map a Linear workflow-state `type` to a curated status icon.
+ * Linear state types: backlog | unstarted | started | completed | cancelled.
+ * Unknown types default to "todo".
+ */
+function stateTypeToIcon(type: string | null | undefined): StatusIcon {
+  switch (type) {
+    case "backlog":
+      return "backlog";
+    case "unstarted":
+      return "todo";
+    case "started":
+      return "inProgress";
+    case "completed":
+      return "done";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "todo";
+  }
+}
 
 type Project = {
   id: string;
@@ -84,11 +107,11 @@ export class Linear extends Connector<Linear> {
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
-        { status: "backlog", label: "Backlog" },
-        { status: "unstarted", label: "To Do" },
-        { status: "started", label: "In Progress" },
-        { status: "completed", label: "Done", done: true },
-        { status: "cancelled", label: "Cancelled", done: true },
+        { status: "backlog", label: "Backlog", icon: "backlog" as StatusIcon },
+        { status: "unstarted", label: "To Do", icon: "todo" as StatusIcon },
+        { status: "started", label: "In Progress", icon: "inProgress" as StatusIcon },
+        { status: "completed", label: "Done", done: true, icon: "done" as StatusIcon },
+        { status: "cancelled", label: "Cancelled", done: true, icon: "cancelled" as StatusIcon },
       ],
       supportsAssignee: true,
       compose: { status: "unstarted" },
@@ -182,6 +205,7 @@ export class Linear extends Connector<Linear> {
         const statuses = sortedStates.map((s) => ({
           status: s.id,
           label: s.name,
+          icon: stateTypeToIcon(s.type),
           ...(s.type === "completed" ? { done: true as const } : {}),
           ...(s.type === "cancelled" ? { done: true as const } : {}),
         }));

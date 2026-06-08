@@ -15,6 +15,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -59,8 +60,8 @@ export class Asana extends Connector<Asana> {
       logo: "https://api.iconify.design/logos/asana-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/asana.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "done", label: "Done", done: true },
+        { status: "open", label: "Open", icon: "todo" as StatusIcon },
+        { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
     },

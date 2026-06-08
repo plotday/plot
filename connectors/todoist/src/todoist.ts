@@ -18,6 +18,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -67,8 +68,8 @@ export class Todoist extends Connector<Todoist> {
       logo: "https://api.iconify.design/logos/todoist-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/todoist.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "done", label: "Done", done: true },
+        { status: "open", label: "Open", icon: "todo" as StatusIcon },
+        { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
     },

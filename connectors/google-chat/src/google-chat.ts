@@ -12,6 +12,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -110,7 +111,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       statuses: [
-        { status: "sent", label: "Sent" },
+        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
       ],
       compose: {
         targets: "channels" as const,
@@ -125,7 +126,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
       statuses: [
-        { status: "sent", label: "Sent" },
+        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
       ],
       compose: {
         targets: "contacts" as const,
