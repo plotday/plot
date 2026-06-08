@@ -297,6 +297,22 @@ export async function createNoteScopedLink(
   return inserted.id;
 }
 
+/**
+ * A note is empty only if it carries no meaningful payload at all: no content,
+ * no top-level actions, no mentions, AND no note-attached link. A note whose
+ * payload lives on its `link` (e.g. an augmenter like Granola emitting a note
+ * whose actions hang off `note.link.actions`, sometimes with empty `content`)
+ * is NOT empty — dropping it would lose the link and its thread co-location.
+ */
+export function isEmptyNote(note: NewNote): boolean {
+  return (
+    (!note.content || note.content.trim() === "") &&
+    (!note.actions || note.actions.length === 0) &&
+    (!note.mentions || note.mentions.length === 0) &&
+    !note.link
+  );
+}
+
 export async function createNote(
   plot: Plot,
   note: NewNote,
@@ -305,13 +321,8 @@ export async function createNote(
   skipNotify = false
 ): Promise<Uuid> {
   try {
-    // Skip fully empty notes (no content, no links, no mentions)
-    const isEmpty =
-      (!note.content || note.content.trim() === "") &&
-      (!note.actions || note.actions.length === 0) &&
-      (!note.mentions || note.mentions.length === 0);
-
-    if (isEmpty) {
+    // Skip fully empty notes (no content, links, actions, or mentions)
+    if (isEmptyNote(note)) {
       // Return a minimal Note object without database insertion
       // This maintains the function signature while avoiding empty note creation
       throw new Error(

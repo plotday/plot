@@ -6,7 +6,13 @@ import { describe, expect, it } from "vitest";
 import { createDb, type DB } from "../../../db";
 import type { Bindings } from "../../../env";
 import { rpcUser } from "../../../rpc";
-import { resolveOrCreateThreadBySource, createNoteScopedLink } from "./note";
+import type { NewNote } from "@plotday/twister/plot";
+
+import {
+  resolveOrCreateThreadBySource,
+  createNoteScopedLink,
+  isEmptyNote,
+} from "./note";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -310,5 +316,58 @@ describe.skipIf(!DATABASE_URL)("createNoteScopedLink", () => {
     expect(result.link!.note_scoped).toBe(true);
     expect(result.link!.source).toBeNull();
     expect(result.link!.type).toBe("doc");
+  });
+});
+
+describe("isEmptyNote (createNote empty-note guard)", () => {
+  const thread = { source: "granola:fixture" } as const;
+
+  it("treats a note carrying a link as NOT empty even with empty content", () => {
+    // Regression: a connector (Granola) emits notes whose meaningful payload is
+    // the LINK (its actions live on note.link.actions, not top-level), often
+    // with empty content. Such a note must survive the empty-note guard so the
+    // link and its thread co-location aren't silently dropped.
+    const note: NewNote = {
+      thread,
+      content: "",
+      link: {
+        source: "granola:fixture",
+        title: "Granola notes",
+        actions: [],
+      },
+    };
+
+    expect(isEmptyNote(note)).toBe(false);
+  });
+
+  it("treats a link-bearing note as NOT empty even when content is absent and whitespace-only", () => {
+    const undefinedContent: NewNote = {
+      thread,
+      link: { source: "granola:fixture", title: "Granola notes" },
+    };
+    const whitespaceContent: NewNote = {
+      thread,
+      content: "   \n  ",
+      link: { source: "granola:fixture", title: "Granola notes" },
+    };
+
+    expect(isEmptyNote(undefinedContent)).toBe(false);
+    expect(isEmptyNote(whitespaceContent)).toBe(false);
+  });
+
+  it("still rejects a note with no content, actions, mentions, or link", () => {
+    const note: NewNote = { thread, content: "   " };
+
+    expect(isEmptyNote(note)).toBe(true);
+  });
+
+  it("treats notes with content, actions, or mentions as NOT empty (link-independent)", () => {
+    expect(isEmptyNote({ thread, content: "hello" })).toBe(false);
+    expect(
+      isEmptyNote({ thread, actions: [{ type: "task" } as never] }),
+    ).toBe(false);
+    expect(
+      isEmptyNote({ thread, mentions: [{ id: "x" } as never] }),
+    ).toBe(false);
   });
 });
