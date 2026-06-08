@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
+    "gen-emoji-map": "tsx scripts/gen-emoji-map.ts",
     "deploy": "plot deploy",
     "lint": "plot lint",
     "test": "vitest run",
