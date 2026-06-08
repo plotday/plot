@@ -1257,6 +1257,7 @@ export class Integrations extends Tool implements IAuth {
       meta: (link.meta ?? null) as Json | null,
       source_url: link.sourceUrl ?? null,
       channel_id: link.channelId ?? null,
+      priority: link.priority ?? 0,
     };
 
     if (source) {
@@ -1273,6 +1274,7 @@ export class Integrations extends Tool implements IAuth {
       if (link.actions !== undefined) linkUpsert.actions = link.actions as Json | null;
       if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
       if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+      if (link.priority !== undefined) linkUpsert.priority = link.priority;
       if (link.relatedSource !== undefined) linkUpsert.related_source = link.relatedSource;
 
       const userId = await this.getPlot().getUserId();
