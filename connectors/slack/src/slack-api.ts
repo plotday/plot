@@ -575,7 +575,6 @@ export function formatSlackText(text: string): string {
   );
 }
 
-
 /**
  * Extract per-message Slack reactions as Plot reactions. Unmapped
  * shortcodes are skipped; deduplication is by source.accountId so
@@ -613,7 +612,6 @@ function extractSlackMessageReactions(
   }
   return out;
 }
-
 
 /**
  * Transforms a Slack message thread into a NewLinkWithNotes structure.
