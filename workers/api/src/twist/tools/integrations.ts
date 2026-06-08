@@ -1283,7 +1283,30 @@ export class Integrations extends Tool implements IAuth {
         .executeTakeFirst();
       if (openingNote) {
         await this.updateNoteBaseline(openingNote.id, originatingNote);
+        // Bind the opening note to the connector link AND the canonical_source
+        // the inbound sync uses for the same message. The note upsert dedups
+        // on (thread, link_id, key) / (thread, canonical_source, key) — without
+        // these the keyed opening note can't merge with a later re-import of
+        // the same message (e.g. when a reaction on it re-syncs the thread),
+        // and the message round-trips as a duplicate note.
+        const createdLink = await this.db
+          .selectFrom("link")
+          .select(["id", "source"])
+          .where("thread_id", "=", threadId as string)
+          .where("created_by", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        if (createdLink?.id) {
+          await this.db
+            .updateTable("note")
+            .set({
+              link_id: createdLink.id,
+              canonical_source: createdLink.source ?? null,
+            })
+            .where("id", "=", openingNote.id)
+            .execute();
+        }
       }
+    } else {
     }
 
     // Create task schedule for assignee, and notify.
@@ -1969,27 +1992,33 @@ export class Integrations extends Tool implements IAuth {
     // the write-back (`api.addReaction` etc.) is correctly attributed.
     if (dispatchItem?.itemType === "note_reaction" && this.sourceProvider) {
       const { item } = dispatchItem;
-      if (!item || !item.note_id || !item.emoji || !item.actor_id) return [];
+      if (!item || !item.note_id || !item.emoji || !item.actor_id) {
+        return [];
+      }
 
       const noteRow = await this.db
         .selectFrom("note")
         .select(["id", "thread_id", "key", "content", "created_by", "created_at", "updated_at"])
         .where("id", "=", item.note_id as string)
         .executeTakeFirst();
-      if (!noteRow?.thread_id) return [];
+      if (!noteRow?.thread_id) {
+        return [];
+      }
 
       const threadRow = await this.db
         .selectFrom("thread")
         .select(["id", "title", "archived_at"])
         .where("id", "=", noteRow.thread_id as string)
         .executeTakeFirst();
-      if (!threadRow) return [];
+      if (!threadRow) {
+        return [];
+      }
 
       // Resolve thread meta from a link this connector owns on this thread
       // (the same source we'd use for any other dispatch on this thread).
       const link = await this.db
         .selectFrom("link")
-        .select(["meta", "channel_id", "source"])
+        .select(["meta", "channel_id", "source", "created_by"])
         .where("thread_id", "=", noteRow.thread_id as string)
         .where("created_by", "=", this.twistInstanceId)
         .executeTakeFirst();
@@ -1999,6 +2028,7 @@ export class Integrations extends Tool implements IAuth {
         channelId: link?.channel_id ?? null,
         linkSource: link?.source ?? null,
       } as ThreadMeta;
+
 
       const thread: Partial<Thread> = {
         id: threadRow.id as Uuid,
@@ -4963,7 +4993,7 @@ export class Integrations extends Tool implements IAuth {
     noteId: string,
     result: NoteWriteBackResult
   ): Promise<void> {
-    const patch: { key?: string; external_content_hash?: string } = {};
+    const patch: { key?: string; external_content_hash?: string; link_id?: string } = {};
     if (typeof result.key === "string" && result.key.length > 0) {
       patch.key = result.key;
     }
@@ -4973,6 +5003,28 @@ export class Integrations extends Tool implements IAuth {
       );
     }
     if (Object.keys(patch).length === 0) return;
+    // Bind the written-back note to this connector's link on the thread. The
+    // note upsert dedups on (thread, link_id, key); without link_id a keyed
+    // Plot-authored note (a reply, or the opening message) can't merge with a
+    // later re-import of the same external message and round-trips as a
+    // duplicate. canonical_source is backfilled by the upsert's cross-index
+    // step on that merge.
+    if (patch.key) {
+      const note = await this.db
+        .selectFrom("note")
+        .select("thread_id")
+        .where("id", "=", noteId)
+        .executeTakeFirst();
+      if (note?.thread_id) {
+        const link = await this.db
+          .selectFrom("link")
+          .select("id")
+          .where("thread_id", "=", note.thread_id)
+          .where("created_by", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        if (link?.id) patch.link_id = link.id;
+      }
+    }
     await this.db
       .updateTable("note")
       .set({ ...patch, updated_by: this.connectorUpdatedBy() })
