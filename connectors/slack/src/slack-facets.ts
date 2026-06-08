@@ -1,8 +1,12 @@
 import type { ThreadFacets } from "@plotday/twister/facets";
 import type { SlackMessage } from "./slack-api";
 
-// Channel-id prefixes: C = public/private channel, G = group/MPIM, D = IM (DM).
-// Channels are broadcast contexts (reach=list); DMs/group-DMs are direct.
+// Reach is inferred from the channelId prefix (the channel object isn't in
+// scope at save time):
+//   C = public or modern private channel        → list (broadcast context)
+//   G = group/MPIM OR legacy (pre-2020) private  → treated as direct (best-effort;
+//       an old private channel is misread as direct, acceptable under fail-open)
+//   D = IM (DM)                                  → direct
 function reachForChannel(channelId: string): "direct" | "list" {
   return channelId.startsWith("C") ? "list" : "direct";
 }

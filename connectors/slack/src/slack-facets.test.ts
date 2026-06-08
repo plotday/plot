@@ -23,4 +23,10 @@ describe("slackFacets", () => {
   it("a long post becomes a message, not chat", () => {
     expect(slackFacets(m({ user: "U1", text: "x".repeat(1500) }), "C123").format).toBe("message");
   });
+  it("treats a group DM (G-prefix) as reach=direct", () => {
+    expect(slackFacets(m({ user: "U1" }), "G123").reach).toBe("direct");
+  });
+  it("treats a message with no user as automated", () => {
+    expect(slackFacets(m({ user: undefined }), "C123").automation).toBe("automated");
+  });
 });
