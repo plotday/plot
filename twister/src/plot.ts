@@ -1,3 +1,4 @@
+import type { ThreadFacets } from "./facets";
 import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
@@ -1053,6 +1054,12 @@ export type NewLink = Partial<
    * thread that includes `icaluid:<uid>` in its own `sources`.
    */
   sources?: string[];
+    /**
+     * Heuristic facets describing this item (format / automation / reach),
+     * used as internal classifier signal. Omit a dimension (or set null) when
+     * no heuristic is confident. See `@plotday/twister/facets`.
+     */
+    facets?: ThreadFacets;
     /** The person that created the item. By default, it will be the twist itself. */
     author?: NewActor;
     /** The person assigned to the item. */
