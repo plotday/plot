@@ -30,10 +30,14 @@ import {
 
 const TYPE_CONVERSATION = "conversation";
 const TYPE_GROUP = "group";
+// Only two statuses model real Instagram message-request state: `pending`
+// (an inbound message request awaiting the user's decision, shown as
+// "Request") and `inbox` (the resting accepted state). Moving a pending
+// link to Inbox accepts the request from inside Plot (see `onLinkUpdated`).
+// Archival/ignore statuses were removed — archiving a thread is a Plot
+// concept and no longer writes back to Instagram.
 const STATUS_PENDING = "pending";
 const STATUS_INBOX = "inbox";
-const STATUS_ARCHIVED = "archived";
-const STATUS_IGNORED = "ignored";
 const PROVIDER_KEY = "instagram";
 
 // Private connector — references the `"instagram"` auth provider value directly
@@ -72,10 +76,10 @@ export class Instagram extends Connector<Instagram> {
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",
       compose: { targets: "addresses" as const, status: STATUS_INBOX },
       statuses: [
-        { status: STATUS_PENDING, label: "Request", icon: "todo" as StatusIcon },
-        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
-        { status: STATUS_IGNORED, label: "Ignored", done: true, icon: "cancelled" as StatusIcon },
+        { status: STATUS_PENDING, label: "Request", icon: "tentative" as StatusIcon },
+        // "Inbox" is the resting accepted state — hide its glyph on the feed
+        // row so only message requests stand out.
+        { status: STATUS_INBOX, label: "Inbox", icon: "confirmed" as StatusIcon, hiddenDefault: true },
       ],
     },
     {
@@ -84,9 +88,10 @@ export class Instagram extends Connector<Instagram> {
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/instagram-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",
+      // Group chats are never message requests, so the only status is the
+      // resting accepted state — hidden on the feed row.
       statuses: [
-        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
+        { status: STATUS_INBOX, label: "Inbox", icon: "confirmed" as StatusIcon, hiddenDefault: true },
       ],
     },
   ];
@@ -264,16 +269,12 @@ export class Instagram extends Connector<Instagram> {
   }
 
   /**
-   * Accept/ignore an Instagram message request when the user moves a `pending`
-   * conversation link to another status in Plot. Mirrors LinkedIn's idempotent
-   * invitation write-back:
-   *   - `inbox`    → accept the request
-   *   - `ignored`  → ignore the request
-   *   - `archived` → ignore (user wants it off their plate; local status stays
-   *                  Archived to match what they clicked)
-   * A `request_writeback:<chatId>` flag guards against re-firing on unrelated
-   * edits (notes, title, etc.). Other statuses (e.g. still `pending`) leave the
-   * flag unset so a later real transition still writes back.
+   * Accept an Instagram message request when the user moves a `pending`
+   * conversation link to "Inbox" in Plot. Mirrors LinkedIn's idempotent
+   * invitation write-back: the only transition is accept. There is no
+   * ignore/archive status anymore, so other transitions are no-ops. A
+   * `request_writeback:<chatId>` flag guards against re-firing on unrelated
+   * edits (notes, title, etc.).
    */
   override async onLinkUpdated(link: Link): Promise<void> {
     if (link.type !== TYPE_CONVERSATION) return;
@@ -286,31 +287,30 @@ export class Instagram extends Connector<Instagram> {
     // Only write back links that originated as message requests.
     if (meta.isRequest !== true) return;
 
-    // Idempotency: each request is accepted/ignored at most once.
+    // Idempotency: each request is accepted at most once.
     const flagKey = `request_writeback:${chatId}`;
     if (await this.get<string>(flagKey)) return;
 
-    let accepted: boolean | null = null;
-    if (link.status === STATUS_INBOX) accepted = true;
-    else if (link.status === STATUS_IGNORED) accepted = false;
-    else if (link.status === STATUS_ARCHIVED) accepted = false;
-    if (accepted === null) return;
+    // The only write-back is accept: moving a pending request to "Inbox"
+    // accepts it. Other transitions leave the flag unset so a later accept
+    // still writes back.
+    if (link.status !== STATUS_INBOX) return;
 
     try {
       await this.tools.instagram.setMessageRequestAccepted({
         channelId,
         chatId,
-        accepted,
+        accepted: true,
       });
-      await this.set(flagKey, accepted ? "accept" : "ignore");
+      await this.set(flagKey, "accept");
     } catch (error) {
       // Request may have been resolved out-of-band; record the attempt so we
       // don't retry a stale request on every subsequent edit.
       console.warn(
-        `Instagram request write-back failed (${chatId}, accepted=${accepted})`,
+        `Instagram request write-back failed (${chatId}, accept)`,
         error
       );
-      await this.set(flagKey, accepted ? "accept" : "ignore");
+      await this.set(flagKey, "accept");
     }
   }
 

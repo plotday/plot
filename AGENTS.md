@@ -38,7 +38,7 @@ Atlas is used for schema diffing and migration management. Type generation uses 
   - The website (mostly marketing, plus some Twist management) is in "apps/site/".
   - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
     - The API also implements the twist runtime including built-in tools.
-  - Non-open-source twists and connectors are in "twists/".
+  - Non-open-source **connectors** are in "connectors/" (repo root — e.g. `linkedin`, `instagram`, `whatsapp`), and non-open-source **twists** are in "twists/". These are easy to overlook because the open-source connectors/twists live under the `public/` submodule — when changing connector behavior across the board (e.g. a connector-wide convention change), sweep BOTH `connectors/` (private, here) and `public/connectors/` (public, submodule).
 - There is a public monorepo mounted as a git submodule at `public/` containing:
   - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and connectors, but with a name that's friendly for non-developers.
     - Twister includes all type definitions for building twists and connectors, including type definitions for built-in tools (which are implemented in the api).
@@ -164,7 +164,10 @@ Only publish after testing locally:
 - **Built-in tools**: `workers/api/src/twist/tools/*.ts` — classes like `Plot`, `Integrations`, `Store`, `Network`, `Tasks`, `Callbacks`, `AI`. They all `extend Tool` (from `@plotday/twister`) and have privileged access to API worker internals (database, services). Twists and connectors consume them via `this.tools.<name>`.
 - **Public connectors**: `public/connectors/*` — open-source packages that each implement one type of connection (e.g. Google Calendar, Linear, Slack). They extend the `Connector` base class from `@plotday/twister`, save data via `integrations.saveLink()`, and run in isolation inside the twist runtime with access only to the tools they declare in `build()`.
 - **Public twists**: `public/twists/*` — open-source twists (orchestrators users install into a priority).
-- **Private twists/connectors**: `twists/*` — non-open-source packages that follow the same conventions as the public ones.
+- **Private connectors**: `connectors/*` (repo root, NOT under `public/`) — non-open-source connectors such as `linkedin`, `instagram`, `whatsapp`. Same `Connector` base class and conventions as the public ones; they just aren't open-sourced.
+- **Private twists**: `twists/*` — non-open-source twists.
+
+> ⚠️ **When making a change that spans connectors** (a convention change, an SDK-type migration, removing/adding a field), enumerate BOTH `public/connectors/*` (submodule) AND `connectors/*` (private, this repo). The private connectors are a frequent blind spot — a `grep` over only `public/connectors` will silently miss `linkedin`/`instagram`/`whatsapp`.
 
 **Terminology reminder**: "**connection**" is the user-facing term (a connected Google Calendar account, etc.); "**connector**" refers to the package that provides that type of connection.
 
