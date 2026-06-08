@@ -27,7 +27,6 @@ type MessageChannel = {
 
 import {
   SLACK_AUTH_ERRORS,
-  SLACK_UNICODE_TO_SHORTCODE,
   SlackApi,
   SlackPermanentError,
   SlackRateLimitedError,
@@ -41,6 +40,7 @@ import {
   syncSlackChannel,
   transformSlackThread,
 } from "./slack-api";
+import { unicodeToSlackName } from "./slack-emoji";
 
 /**
  * Slack integration source.
@@ -1406,7 +1406,7 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    const shortcode = SLACK_UNICODE_TO_SHORTCODE[emoji];
+    const shortcode = unicodeToSlackName(emoji);
     if (!channelId || !note.key) {
       return;
     }
