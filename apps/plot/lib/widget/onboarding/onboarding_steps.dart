@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart' show ThreadId;
 import 'package:plot/util/theme_color.dart';
-import 'package:plot/widget/onboarding/onboarding_calendars.dart';
 import 'package:plot/widget/onboarding/onboarding_roles.dart';
 import 'package:plot/widget/onboarding/onboarding_tools.dart';
 
@@ -153,22 +152,36 @@ class OnboardingSteps {
     const FullScreenStep(
       title: "Your best work\nevery day",
       body:
-          "Plot is your collaboration hub, unifying work across email, chat, meetings, apps and agents. Choose a focus and have everything you need to make progress.",
+          "Plot is your collaboration hub. All your messages, meetings, and apps — organized and prioritized.",
       background: ThemeColor(0), // Catalyst — opener
     ),
     FullScreenStep(
-      title: 'Connect your calendar',
-      body: 'Plot builds your day around your schedule.',
-      background: const ThemeColor(2), // Rising Action
-      contentBuilder: (context) => const OnboardingCalendars(),
-    ),
-    FullScreenStep(
-      title: 'Connect everything else',
+      title: 'Connect your tools',
       body:
-          'Email, chat, comments, meeting notes — bring the conversations from your other tools into Plot so you have everything you need when you choose a focus.',
-      background: const ThemeColor(3), // Momentum
+          'Add the message channels, calendars, and apps that hold your work.',
+      background: const ThemeColor(1),
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
+    ),
+    const HighlightStep(
+      title: 'Everything is a thread',
+      body:
+          "Threads you create in Plot alongside everything from your connections lands in a focus (or your Inbox). "
+          "Updates appear at the top, followed by threads you've marked Active (something that needs your attention or action). "
+          "You can \"snooze\" threads to clear them from today and make sure you get back to them later.",
+      target: PanelTarget.feed,
+      overlay: ThemeColor(6), // Climax
+    ),
+    const HighlightStep(
+      title: 'Everything is a thread',
+      body:
+          'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
+          'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
+      target: NamedThreadTarget(threadTitle: 'Everything in its place'),
+      overlay: ThemeColor(2), // Rising Action — back into the arc
+      // The cutout is the right panel; pull the text block toward it so the
+      // copy reads as belonging to the thread that's highlighted.
+      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     const HighlightStep(
       title: 'Choose your focus',
@@ -197,29 +210,10 @@ class OnboardingSteps {
       // mobile split layout handles placement.
       multiPanelAlignment: MultiPanelContentAlignment.center,
     ),
-    const HighlightStep(
-      title: 'Everything is a thread',
-      body:
-          "Threads you create in Plot alongside everything from your connections lands in a focus (or your Inbox). "
-          "Updates appear at the top, followed by threads you've marked Active (something that needs your attention or action). "
-          "You can \"snooze\" threads to clear them from today and make sure you get back to them later.",
-      target: PanelTarget.feed,
-      overlay: ThemeColor(6), // Climax
-    ),
-    const HighlightStep(
-      title: 'Everything is a thread',
-      body:
-          'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
-          'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
-      target: NamedThreadTarget(threadTitle: 'Everything in its place'),
-      overlay: ThemeColor(2), // Rising Action — back into the arc
-      // The cutout is the right panel; pull the text block toward it so the
-      // copy reads as belonging to the thread that's highlighted.
-      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
-    ),
     FullScreenStep(
-      title: 'Your best work\nevery day',
+      title: "You're all set!",
       body:
+          "We've put added a few threads"
           "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
           "\n\n"
           "Questions or stuck on something? Reply on the welcome thread in your Inbox — we read every one.",
