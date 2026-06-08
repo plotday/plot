@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
@@ -40,6 +41,9 @@ class ComposeSectionsView extends StatefulWidget {
     required this.onPickRecipient,
     required this.onPickTarget,
     this.onCreateTopic,
+    this.onRowMore,
+    this.onAddContact,
+    this.onAddGroup,
     this.onBack,
     this.autofocusSearch = true,
     this.activeListenable,
@@ -69,6 +73,18 @@ class ComposeSectionsView extends StatefulWidget {
   /// to create a new Plot topic. Returns true when a topic was created (so the
   /// section list is reloaded to surface it). Null hides the affordance.
   final Future<bool> Function()? onCreateTopic;
+
+  /// Opens the "… More" (Edit) menu for an editable people row. Null hides
+  /// the affordance.
+  final Future<void> Function(ComposePillData data)? onRowMore;
+
+  /// Opens the add-contact form (People & twists header "+ Contact"). Returns
+  /// true when a contact was added (so sections reload). Null hides the button.
+  final Future<bool> Function()? onAddContact;
+
+  /// Opens the add-group form (People & twists header "+ Group"). Returns true
+  /// when a group was created. Null hides the button.
+  final Future<bool> Function()? onAddGroup;
 
   /// Optional "go back" affordance. When provided, the search field's leading
   /// slot becomes a back button (in place of the search icon) that invokes
@@ -230,6 +246,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         PillGridItem(
           data: e.display,
           onActivate: () => widget.onPickRecipient(e),
+          onMore: _rowMoreFor(e.display),
         ),
     ];
     final twistItems = [
@@ -297,10 +314,79 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     return sections;
   }
 
+  /// Builds the "… More" callback for editable people rows (contact, group,
+  /// ad-hoc multi-contact); null for everything else.
+  VoidCallback? _rowMoreFor(ComposePillData data) {
+    final onRowMore = widget.onRowMore;
+    if (onRowMore == null) return null;
+    final editable = data is ContactPillData ||
+        data is GroupPillData ||
+        data is AdHocGroupPillData;
+    if (!editable) return null;
+    return () async {
+      await onRowMore(data);
+      if (!_isDisposed) _reload();
+    };
+  }
+
   // ─── Header widgets ────────────────────────────────────────────────────────
 
-  /// The "People and twists" section header.
-  Widget _peopleHeader() => _sectionHeader('People and twists');
+  /// The "People and twists" section header, with right-aligned "+ Contact"
+  /// and "+ Group" ghost buttons (each shown only when its callback is given).
+  Widget _peopleHeader() {
+    return Builder(
+      builder: (context) {
+        return Row(
+          children: [
+            Text('People and twists', style: _headingStyle(context)),
+            const Spacer(),
+            if (widget.onAddContact != null)
+              _headerGhostButton(
+                context,
+                label: 'Contact',
+                onPress: () => _onAddPressed(widget.onAddContact!),
+              ),
+            if (widget.onAddGroup != null) ...[
+              SizedBox(width: context.theme.spacing.xs),
+              _headerGhostButton(
+                context,
+                label: 'Group',
+                onPress: () => _onAddPressed(widget.onAddGroup!),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _headerGhostButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onPress,
+  }) {
+    return FButton(
+      onPress: onPress,
+      variant: FButtonVariant.ghost,
+      style: ghostSizedStyleDelta(
+        context,
+        textStyle: context.theme.typography.sm,
+        iconSize: context.theme.iconSizes.xs,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      ),
+      mainAxisSize: MainAxisSize.min,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [const Icon(PlotIcon.add), Text(label)],
+      ),
+    );
+  }
+
+  Future<void> _onAddPressed(Future<bool> Function() add) async {
+    final created = await add();
+    if (created && !_isDisposed) _reload();
+  }
 
   /// The "Channels" section header, with a right-aligned "+ Topic" ghost button
   /// (shown only when [ComposeSectionsView.onCreateTopic] is provided) for
@@ -405,34 +491,44 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           )
         : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ComposeSearchField(
-          controller: widget.searchController,
-          focusNode: widget.searchFocusNode,
-          hint: 'Start a thread',
-          hintDetail: 'with a name, email, channel, or focus',
-          autofocus: widget.autofocusSearch,
-          activeListenable: widget.activeListenable,
-          leading: leading,
-          onChanged: _onSearchChanged,
-          onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
-          onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
-          onSubmit: () => _gridKey.currentState?.activateHighlighted(),
-          onEscape: null,
-        ),
-        SizedBox(height: spacing.lg),
-        Expanded(
-          child: _sections == null
-              ? const SizedBox.shrink()
-              : PillGrid(
-                  key: _gridKey,
-                  sections: _buildSections(),
-                  scrollController: widget.scrollController,
-                ),
-        ),
-      ],
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
+          _gridKey.currentState?.moreHighlighted();
+        },
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+          _gridKey.currentState?.moreHighlighted();
+        },
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ComposeSearchField(
+            controller: widget.searchController,
+            focusNode: widget.searchFocusNode,
+            hint: 'Start a thread',
+            hintDetail: 'with a name, email, channel, or focus',
+            autofocus: widget.autofocusSearch,
+            activeListenable: widget.activeListenable,
+            leading: leading,
+            onChanged: _onSearchChanged,
+            onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
+            onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
+            onSubmit: () => _gridKey.currentState?.activateHighlighted(),
+            onEscape: null,
+          ),
+          SizedBox(height: spacing.lg),
+          Expanded(
+            child: _sections == null
+                ? const SizedBox.shrink()
+                : PillGrid(
+                    key: _gridKey,
+                    sections: _buildSections(),
+                    scrollController: widget.scrollController,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
