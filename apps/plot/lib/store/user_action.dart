@@ -411,7 +411,7 @@ class CreateLinkUserAction extends UserAction {
     required this.twistInstanceId,
     this.channelId,
     required this.linkType,
-    required this.status,
+    this.status,
     required this.connectorName,
     required this.linkTypeLabel,
     required this.channelName,
@@ -426,7 +426,7 @@ class CreateLinkUserAction extends UserAction {
   /// `"addresses"`), where the picker shows one chip per connection.
   final String? channelId;
   final String linkType;
-  final String status;
+  final String? status;
   /// Connector brand name (e.g. "Linear"), stripped of any " (account)"
   /// suffix carried on the twist instance name.
   final String connectorName;
@@ -514,7 +514,7 @@ class CreateLinkUserAction extends UserAction {
       twistInstanceId: json['twistInstanceId'] as String,
       channelId: json['channelId'] as String?,
       linkType: linkType,
-      status: json['status'] as String,
+      status: json['status'] as String?,
       connectorName: json['connectorName'] as String,
       linkTypeLabel: json['linkTypeLabel'] as String,
       channelName: json['channelName'] as String,
@@ -532,7 +532,7 @@ class CreateLinkUserAction extends UserAction {
       'twistInstanceId': twistInstanceId,
       if (channelId != null) 'channelId': channelId,
       'linkType': linkType,
-      'status': status,
+      if (status != null) 'status': status,
       'connectorName': connectorName,
       'linkTypeLabel': linkTypeLabel,
       'channelName': channelName,

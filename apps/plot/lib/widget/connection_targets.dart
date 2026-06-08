@@ -26,7 +26,7 @@ class CreateTarget {
   final Channel? channel;
   final LinkTypeConfig linkType;
   final ComposeConfig compose;
-  final LinkStatus defaultStatus;
+  final LinkStatus? defaultStatus;
   final String connectorName;
   final String? accountName;
 
@@ -86,7 +86,7 @@ class CreateTarget {
         twistInstanceId: twist.id.toString(),
         channelId: isDmType ? null : channel!.channelId,
         linkType: linkType.type,
-        status: defaultStatus.status,
+        status: defaultStatus?.status,
         connectorName: connectorName,
         linkTypeLabel: _displayLabel,
         channelName: isDmType ? subtitle : channel!.title,
@@ -241,23 +241,25 @@ Future<List<CreateTarget>> loadCreateTargets() async {
       // symbolic categories like "unstarted" that resolve per-team in
       // onCreateLink).
       final localStatuses = linkType.statuses ?? const <LinkStatus>[];
-      var defaultStatus = localStatuses
-          .where((s) => s.status == compose.status)
-          .firstOrNull;
-      defaultStatus ??= twistConfigs
-          ?.where((c) => c.type == linkType.type)
-          .firstOrNull
-          ?.statuses
-          ?.where((s) => s.status == compose.status)
-          .firstOrNull;
-      // Synthesize a passthrough status if neither level declares one — the
-      // connector still receives `draft.status = compose.status` and
-      // resolves it. Symbolic compose statuses (Linear's "unstarted",
-      // Airtable's STATUS_TODO before any base option is added) rely on this.
-      defaultStatus ??= LinkStatus(
-        status: compose.status,
-        label: compose.status,
-      );
+      LinkStatus? defaultStatus;
+      final composeStatus = compose.status;
+      if (composeStatus != null) {
+        defaultStatus = localStatuses
+            .where((s) => s.status == composeStatus)
+            .firstOrNull;
+        defaultStatus ??= twistConfigs
+            ?.where((c) => c.type == linkType.type)
+            .firstOrNull
+            ?.statuses
+            ?.where((s) => s.status == composeStatus)
+            .firstOrNull;
+        // Synthesize a passthrough for symbolic compose statuses (Linear's
+        // "unstarted", etc.) that no statuses[] entry declares.
+        defaultStatus ??= LinkStatus(
+          status: composeStatus,
+          label: composeStatus,
+        );
+      }
 
       if (compose.targets == 'contacts' || compose.targets == 'addresses') {
         // Connection-scoped: emit one target per twist instance (connection)

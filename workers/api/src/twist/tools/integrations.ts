@@ -1107,6 +1107,32 @@ export class Integrations extends Tool implements IAuth {
     // Create task schedule for assigned links
     await this.createTaskScheduleForLink(threadId);
 
+    // Atomically apply a create-time to-do flag for the connection owner.
+    // Connector save path does NOT run the status `active:true` propagation
+    // (that only fires on the client /sync/links route), so this is the
+    // supported way for a connector to create an owner to-do thread.
+    if (link.todo !== undefined && link.todo !== null) {
+      const owner = await this.db
+        .selectFrom("twist_instance")
+        .select("owner_id")
+        .where("id", "=", this.twistInstanceId)
+        .executeTakeFirst();
+      if (owner?.owner_id) {
+        const todoDate = link.todoDate;
+        await this.applyThreadToDoForUser(
+          threadId,
+          owner.owner_id,
+          link.todo,
+          todoDate ? { date: todoDate } : undefined
+        );
+      } else {
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.warn("saveLink: no owner_id for twist instance; skipping link.todo", {
+          twist_instance_id: this.twistInstanceId,
+        });
+      }
+    }
+
     return threadId;
   }
 
@@ -1283,7 +1309,30 @@ export class Integrations extends Tool implements IAuth {
         .executeTakeFirst();
       if (openingNote) {
         await this.updateNoteBaseline(openingNote.id, originatingNote);
+        // Bind the opening note to the connector link AND the canonical_source
+        // the inbound sync uses for the same message. The note upsert dedups
+        // on (thread, link_id, key) / (thread, canonical_source, key) — without
+        // these the keyed opening note can't merge with a later re-import of
+        // the same message (e.g. when a reaction on it re-syncs the thread),
+        // and the message round-trips as a duplicate note.
+        const createdLink = await this.db
+          .selectFrom("link")
+          .select(["id", "source"])
+          .where("thread_id", "=", threadId as string)
+          .where("created_by", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        if (createdLink?.id) {
+          await this.db
+            .updateTable("note")
+            .set({
+              link_id: createdLink.id,
+              canonical_source: createdLink.source ?? null,
+            })
+            .where("id", "=", openingNote.id)
+            .execute();
+        }
       }
+    } else {
     }
 
     // Create task schedule for assignee, and notify.
@@ -1371,6 +1420,86 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Apply or clear to-do (active) state for a specific user on a specific
+   * thread. Shared by setThreadToDo (which first resolves thread+user from a
+   * source URL + actor) and saveLink (which already has the threadId and uses
+   * the connection owner). Never throws on the notify step.
+   */
+  private async applyThreadToDoForUser(
+    threadId: string,
+    userId: string,
+    todo: boolean,
+    options?: { date?: Date | string }
+  ): Promise<void> {
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+
+    if (todo) {
+      let dateStr: string;
+      if (options?.date) {
+        dateStr = typeof options.date === "string"
+          ? options.date
+          : options.date.toISOString().slice(0, 10);
+      } else {
+        dateStr = "1970-01-01";
+      }
+
+      await rpcUser(this.db, "upsert_thread_state", {
+        user_id: userId,
+        p_thread_id: threadId,
+        p_active: true,
+        p_urgent: false,
+        p_importance: 50,
+        p_on: `[${dateStr},)`,
+        p_set_active: true,
+        p_set_urgent: false,
+        p_set_importance: false,
+        p_set_on: true,
+      });
+
+      await this.db
+        .updateTable("thread_priority")
+        .set({ archived_at: null })
+        .where("thread_id", "=", threadId)
+        .where("user_id", "=", userId)
+        .where("archived_at", "is not", null)
+        .execute();
+
+      try {
+        await unarchiveDoneLinksOnThread(this.db, threadId);
+      } catch (error) {
+        logger.warn("applyThreadToDoForUser: unarchiveDoneLinksOnThread failed", {
+          thread_id: threadId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } else {
+      await this.db
+        .updateTable("thread_state")
+        .set({ read_at: new Date() })
+        .where("thread_id", "=", threadId)
+        .where("user_id", "=", userId)
+        .where("read_at", "is", null)
+        .execute();
+    }
+
+    const tp = await this.db
+      .selectFrom("thread_priority")
+      .select("priority_id")
+      .where("thread_id", "=", threadId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
+    if (tp?.priority_id) {
+      try {
+        await this.getPlot().notifySyncDOs(new Set([tp.priority_id]));
+      } catch (error) {
+        logger.error("applyThreadToDoForUser: failed to notify sync DOs", error as Error, {
+          thread_id: threadId,
+        });
+      }
+    }
+  }
+
+  /**
    * Sets or clears todo status on a thread owned by this source.
    * Looks up the thread by source URL, then upserts or archives a per-user schedule.
    */
@@ -1407,82 +1536,7 @@ export class Integrations extends Tool implements IAuth {
       return;
     }
 
-    if (todo) {
-      // Upsert a per-user thread_state. With no explicit date, use the epoch
-      // "Now" sentinel (1970-01-01) so the thread lands in the current
-      // to-do bucket rather than being scheduled for a specific day.
-      let dateStr: string;
-      if (options?.date) {
-        dateStr = typeof options.date === "string"
-          ? options.date
-          : options.date.toISOString().slice(0, 10);
-      } else {
-        dateStr = "1970-01-01";
-      }
-
-      await rpcUser(this.db, "upsert_thread_state", {
-        user_id: contact.user_id,
-        p_thread_id: link.thread_id,
-        p_active: true,
-        p_urgent: false,
-        p_importance: 50,
-        p_on: `[${dateStr},)`,
-        p_set_active: true,
-        p_set_urgent: false,
-        p_set_importance: false,
-        p_set_on: true,
-      });
-
-      // Lift this user's per-user archive so the thread appears in their agenda.
-      await this.db
-        .updateTable("thread_priority")
-        .set({ archived_at: null })
-        .where("thread_id", "=", link.thread_id)
-        .where("user_id", "=", contact.user_id)
-        .where("archived_at", "is not", null)
-        .execute();
-
-      // Flip any done-status links (e.g. "archived") back to a non-done
-      // status so the link widget stops saying "Archived" and Tag.Done is
-      // cleared from the thread.
-      try {
-        await unarchiveDoneLinksOnThread(this.db, link.thread_id);
-      } catch (error) {
-        logger.warn("setThreadToDo: unarchiveDoneLinksOnThread failed", {
-          thread_id: link.thread_id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    } else {
-      // Mark the user's thread_state read so it falls out of the action tabs.
-      await this.db
-        .updateTable("thread_state")
-        .set({ read_at: new Date() })
-        .where("thread_id", "=", link.thread_id)
-        .where("user_id", "=", contact.user_id)
-        .where("read_at", "is", null)
-        .execute();
-    }
-
-    // Notify the user's sync DO so the Flutter client picks up the change
-    // in real time. setThreadToDo is called from the twist runtime (e.g.
-    // Gmail processing a star from its webhook); without this the user only
-    // sees the update on the next scheduled pull.
-    const tp = await this.db
-      .selectFrom("thread_priority")
-      .select("priority_id")
-      .where("thread_id", "=", link.thread_id)
-      .where("user_id", "=", contact.user_id)
-      .executeTakeFirst();
-    if (tp?.priority_id) {
-      try {
-        await this.getPlot().notifySyncDOs(new Set([tp.priority_id]));
-      } catch (error) {
-        logger.error("setThreadToDo: failed to notify sync DOs", error as Error, {
-          thread_id: link.thread_id,
-        });
-      }
-    }
+    await this.applyThreadToDoForUser(link.thread_id, contact.user_id, todo, options);
   }
 
   /**
@@ -1969,27 +2023,33 @@ export class Integrations extends Tool implements IAuth {
     // the write-back (`api.addReaction` etc.) is correctly attributed.
     if (dispatchItem?.itemType === "note_reaction" && this.sourceProvider) {
       const { item } = dispatchItem;
-      if (!item || !item.note_id || !item.emoji || !item.actor_id) return [];
+      if (!item || !item.note_id || !item.emoji || !item.actor_id) {
+        return [];
+      }
 
       const noteRow = await this.db
         .selectFrom("note")
         .select(["id", "thread_id", "key", "content", "created_by", "created_at", "updated_at"])
         .where("id", "=", item.note_id as string)
         .executeTakeFirst();
-      if (!noteRow?.thread_id) return [];
+      if (!noteRow?.thread_id) {
+        return [];
+      }
 
       const threadRow = await this.db
         .selectFrom("thread")
         .select(["id", "title", "archived_at"])
         .where("id", "=", noteRow.thread_id as string)
         .executeTakeFirst();
-      if (!threadRow) return [];
+      if (!threadRow) {
+        return [];
+      }
 
       // Resolve thread meta from a link this connector owns on this thread
       // (the same source we'd use for any other dispatch on this thread).
       const link = await this.db
         .selectFrom("link")
-        .select(["meta", "channel_id", "source"])
+        .select(["meta", "channel_id", "source", "created_by"])
         .where("thread_id", "=", noteRow.thread_id as string)
         .where("created_by", "=", this.twistInstanceId)
         .executeTakeFirst();
@@ -1999,6 +2059,7 @@ export class Integrations extends Tool implements IAuth {
         channelId: link?.channel_id ?? null,
         linkSource: link?.source ?? null,
       } as ThreadMeta;
+
 
       const thread: Partial<Thread> = {
         id: threadRow.id as Uuid,
@@ -4963,7 +5024,7 @@ export class Integrations extends Tool implements IAuth {
     noteId: string,
     result: NoteWriteBackResult
   ): Promise<void> {
-    const patch: { key?: string; external_content_hash?: string } = {};
+    const patch: { key?: string; external_content_hash?: string; link_id?: string } = {};
     if (typeof result.key === "string" && result.key.length > 0) {
       patch.key = result.key;
     }
@@ -4973,6 +5034,28 @@ export class Integrations extends Tool implements IAuth {
       );
     }
     if (Object.keys(patch).length === 0) return;
+    // Bind the written-back note to this connector's link on the thread. The
+    // note upsert dedups on (thread, link_id, key); without link_id a keyed
+    // Plot-authored note (a reply, or the opening message) can't merge with a
+    // later re-import of the same external message and round-trips as a
+    // duplicate. canonical_source is backfilled by the upsert's cross-index
+    // step on that merge.
+    if (patch.key) {
+      const note = await this.db
+        .selectFrom("note")
+        .select("thread_id")
+        .where("id", "=", noteId)
+        .executeTakeFirst();
+      if (note?.thread_id) {
+        const link = await this.db
+          .selectFrom("link")
+          .select("id")
+          .where("thread_id", "=", note.thread_id)
+          .where("created_by", "=", this.twistInstanceId)
+          .executeTakeFirst();
+        if (link?.id) patch.link_id = link.id;
+      }
+    }
     await this.db
       .updateTable("note")
       .set({ ...patch, updated_by: this.connectorUpdatedBy() })

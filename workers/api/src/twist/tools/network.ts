@@ -5,6 +5,7 @@ import {
 import { type Network as INetwork } from "@plotday/twister/tools/network";
 import type { Store as IStore } from "@plotday/twister/tools/store";
 
+import { createDb } from "../../db";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { CallbackError } from "../../errors";
 import type { CallbacksState } from "../../state/callbacks";
@@ -220,8 +221,7 @@ export class Network extends Tool implements INetwork {
     // (see workers/api/src/provider.ts). Slack's OAuth v2 response puts team
     // info under `team`, and `onAuth` persists the whole parsed response as
     // `StoredTokenData.providerData` — there is no top-level `team` field.
-    const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
-    const tokenData = await this.store.get<{
+    type SlackTokenData = {
       access_token: string;
       refresh_token?: string;
       scopes: string[];
@@ -231,7 +231,68 @@ export class Network extends Tool implements INetwork {
           name: string;
         };
       };
-    }>(tokenKey);
+    };
+    const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
+    let tokenData = await this.store.get<SlackTokenData>(tokenKey);
+
+    // The stored authorization's actor can go stale — e.g. after an
+    // archive+reconnect the connection's auth actor differs from the actor the
+    // live token now lives under (a sibling contact of the same user). Re-
+    // resolve the same way integrations.get()/getActorToken does: start from
+    // the channel's `enabledBy` actor (recorded against THIS connection's
+    // channel) and walk that actor's own linked contacts (same user_id). This
+    // is provably one principal / one workspace — it never scans for an
+    // arbitrary token that could belong to a different workspace.
+    if (!tokenData?.providerData?.team?.id && this.env) {
+      const channelId =
+        typeof extraArgs?.[0] === "string" ? extraArgs[0] : undefined;
+      if (channelId) {
+        const config = await this.store.get<{ enabledBy?: string }>(
+          `channel_config:${authorization.provider}:${channelId}`
+        );
+        const enabledBy = config?.enabledBy;
+        if (enabledBy) {
+          // Direct token under the enabledBy actor.
+          let scoped = await this.store.get<SlackTokenData>(
+            `auth_token:${authorization.provider}:${enabledBy}`
+          );
+          // Else a linked contact of enabledBy's user (same person).
+          if (!scoped?.providerData?.team?.id) {
+            const db = createDb(this.env);
+            try {
+              const contact = await db
+                .selectFrom("contact")
+                .select("user_id")
+                .where("id", "=", enabledBy)
+                .executeTakeFirst();
+              if (contact?.user_id) {
+                const siblings = await db
+                  .selectFrom("contact")
+                  .select("id")
+                  .where("user_id", "=", contact.user_id)
+                  .where("id", "!=", enabledBy)
+                  .execute();
+                for (const s of siblings) {
+                  const cand = await this.store.get<SlackTokenData>(
+                    `auth_token:${authorization.provider}:${s.id}`
+                  );
+                  if (cand?.providerData?.team?.id) {
+                    scoped = cand;
+                    break;
+                  }
+                }
+              }
+            } finally {
+              await db.destroy();
+            }
+          }
+          if (scoped?.providerData?.team?.id) {
+            tokenData = scoped;
+          }
+        }
+      }
+    }
+
 
     if (!tokenData) {
       throw new Error(
@@ -267,6 +328,7 @@ export class Network extends Tool implements INetwork {
         twistInstanceId: this.twistInstanceId, // Store for reference
       },
     });
+
 
     // Return encoded webhook identifier that includes team ID and callback token
     // Format: slack://{teamId}:{callbackToken}
