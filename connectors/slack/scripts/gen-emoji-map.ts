@@ -65,25 +65,32 @@ async function main(): Promise<void> {
     }
   }
 
+  const sortedJson = (m: Record<string, string>) =>
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(m).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      ),
+      null,
+      2
+    );
+
   const header =
     `// GENERATED FILE — do not edit by hand.\n` +
     `// Source: iamcal/emoji-data ${EMOJI_DATA_REF} (${SOURCE_URL})\n` +
     `// Regenerate via: pnpm --filter @plotday/connector-slack gen-emoji-map\n` +
+    `//\n` +
+    `// This file lives in src/ intentionally — it is imported at runtime and compiled by tsc.\n` +
     `//\n` +
     `// SLACK_SHORTCODE_TO_UNICODE: Slack reaction name (incl. ::skin-tone-N) -> grapheme.\n` +
     `// SLACK_UNICODE_TO_SHORTCODE: grapheme -> preferred Slack reaction name (first short_name wins).\n`;
 
   const body =
     header +
-    `\nexport const SLACK_SHORTCODE_TO_UNICODE: Record<string, string> = ${JSON.stringify(
-      shortcodeToUnicode,
-      null,
-      2
+    `\nexport const SLACK_SHORTCODE_TO_UNICODE: Record<string, string> = ${sortedJson(
+      shortcodeToUnicode
     )};\n\n` +
-    `export const SLACK_UNICODE_TO_SHORTCODE: Record<string, string> = ${JSON.stringify(
-      unicodeToShortcode,
-      null,
-      2
+    `export const SLACK_UNICODE_TO_SHORTCODE: Record<string, string> = ${sortedJson(
+      unicodeToShortcode
     )};\n`;
 
   const outPath = join(
