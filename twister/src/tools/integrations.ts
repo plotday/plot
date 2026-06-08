@@ -227,8 +227,11 @@ export type ComposeConfig = {
    * `onCreateLink` resolves itself (e.g. Linear's `"unstarted"` category is
    * resolved per-team to a state UUID inside the connector — see
    * `connectors/linear/src/linear.ts`).
+   *
+   * Omit for status-less link types (e.g. messaging connectors that don't
+   * model a status): composed links are created with no status.
    */
-  status: string;
+  status?: string;
   /**
    * Optional override for the picker chip / "Create new …" copy. Defaults
    * to the parent linkType's `label`. Use to disambiguate compose entries

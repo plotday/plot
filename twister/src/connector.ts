@@ -129,8 +129,12 @@ export type CreateLinkDraft = {
   channelId: string;
   /** Link type identifier, matches a `LinkTypeConfig.type`. */
   type: string;
-  /** Status the user selected. Matches a `statuses[].status` for `type`. */
-  status: string;
+  /**
+   * Status the user selected. Matches a `statuses[].status` for `type`,
+   * or null for status-less link types (the parent linkType declares no
+   * `statuses` and no `compose.status`).
+   */
+  status: string | null;
   /** Title of the originating Plot thread (post AI title generation). */
   title: string;
   /** Markdown content of the thread's first note, or null if none. */

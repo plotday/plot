@@ -688,9 +688,9 @@ export class Linear extends Connector<Linear> {
     // statuses from the static linkTypes fallback) we look up the team's
     // states directly.
     let stateId: string | null = null;
-    if (draft.status.length > 20) {
+    if (draft.status && draft.status.length > 20) {
       stateId = draft.status;
-    } else {
+    } else if (draft.status) {
       const team = await client.team(draft.channelId);
       if (team) {
         const states = await team.states();

@@ -5,7 +5,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
-import type { Actor, ActorId, NewLinkWithNotes, Note, Thread, Link } from "@plotday/twister/plot";
+import type { Actor, ActorId, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -210,12 +210,6 @@ export class Gmail extends Connector<Gmail> {
       supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
-      statuses: [
-        { status: "inbox", label: "Inbox" },
-        { status: "starred", label: "Starred", active: true },
-        { status: "sent", label: "Sent" },
-        { status: "archived", label: "Archived", done: true },
-      ],
       contactRoles: [
         { id: "to", label: "To", default: true },
         { id: "cc", label: "CC" },
@@ -229,7 +223,6 @@ export class Gmail extends Connector<Gmail> {
       // `contact.email` otherwise.
       compose: {
         targets: "addresses" as const,
-        status: "sent",
       },
     },
   ];
@@ -1357,32 +1350,10 @@ export class Gmail extends Connector<Gmail> {
           syncableId: channelId,
         };
 
-        // Star ↔ todo sync: detect star changes and update Plot todo status
+        // Star ↔ todo sync: detect star changes and sync to Plot todo status.
+        // Statuses have been removed; every thread (including archived) is saved
+        // with no status and treated like any other thread.
         const isStarred = GmailApi.isStarred(thread);
-        const isInInbox = thread.messages?.some((m) =>
-          m.labelIds?.includes("INBOX")
-        );
-        // "Sent" is meaningful only when the thread isn't ALSO in the inbox
-        // (e.g. self-CC, or recipient replied) — those should appear under
-        // "inbox" so the user actions them like any other incoming thread.
-        const isSentOnly = !isInInbox && thread.messages?.some((m) =>
-          m.labelIds?.includes("SENT")
-        );
-
-        // Set status based on labels
-        if (isStarred) {
-          plotThread.status = "starred";
-        } else if (isSentOnly) {
-          // Plot-composed thread that just sent, or organic Gmail-sent
-          // thread the user hasn't archived yet. Stays at "sent" until it
-          // returns to inbox (reply) or the user archives it.
-          plotThread.status = "sent";
-        } else if (!isInInbox) {
-          plotThread.status = "archived";
-        } else {
-          plotThread.status = "inbox";
-        }
-
         // Save link directly via integrations
         const savedThreadId = await this.tools.integrations.saveLink(plotThread);
         if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history) — skip star sync
@@ -1390,7 +1361,7 @@ export class Gmail extends Connector<Gmail> {
         const wasStarred = await this.get<boolean>(`starred:${thread.id}`);
 
         // Echo suppression relies entirely on the `starred` state: when
-        // Plot→Gmail writes STARRED, onThreadToDo/onLinkUpdated update this
+        // Plot→Gmail writes STARRED, onThreadToDo updates this
         // state *before* the API call. The resulting Gmail webhook sees
         // isStarred === wasStarred and this branch doesn't run.
         if (isStarred !== !!wasStarred) {
@@ -1645,38 +1616,6 @@ export class Gmail extends Connector<Gmail> {
     }
   }
 
-  async onLinkUpdated(link: Link): Promise<void> {
-    const threadId = link.meta?.threadId as string | undefined;
-    const channelId = (link.meta?.channelId ?? link.meta?.syncableId) as
-      | string
-      | undefined;
-    if (!threadId || !channelId) return;
-
-    // Loop prevention: skip if this change originated from Gmail star sync
-    if (await this.get(`skip_todo_writeback:${threadId}`)) {
-      await this.clear(`skip_todo_writeback:${threadId}`);
-      return;
-    }
-
-    const status = link.status;
-
-    // Update local state BEFORE calling Gmail, so the webhook fired by our
-    // own write sees isStarred === wasStarred and doesn't re-propagate.
-    await this.set(`starred:${threadId}`, status === "starred");
-
-    const api = await this.getApi(channelId);
-
-    if (status === "starred") {
-      await api.modifyThread(threadId, ["STARRED"]);
-    } else if (status === "archived") {
-      // Archive = remove from INBOX. Also unstar.
-      await api.modifyThread(threadId, undefined, ["INBOX", "STARRED"]);
-    } else if (status === "inbox") {
-      // Back to inbox, unstar.
-      await api.modifyThread(threadId, ["INBOX"], ["STARRED"]);
-    }
-  }
-
   /**
    * Creates a new outbound email from Plot.
    *
@@ -1761,7 +1700,7 @@ export class Gmail extends Connector<Gmail> {
         source: canonicalUrl,
         type: "email",
         title: subject || undefined,
-        status: draft.status,
+        status: null,
         created: new Date(),
         sourceUrl: canonicalUrl,
         channelId,
@@ -1782,7 +1721,6 @@ export class Gmail extends Connector<Gmail> {
     const dedupKey = `compose:${fnv1aHex(
       JSON.stringify([
         draft.type,
-        draft.status,
         subject,
         body,
         [...toEmails].sort(),

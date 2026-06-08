@@ -39,6 +39,39 @@ function makeSlack(opts: {
   return new Slack("twist-instance-1" as never, toolShed as never);
 }
 
+describe("saveStarredThread", () => {
+  it("saves the link with todo:true and no status", async () => {
+    const store = makeStore({ auth_actor_id: "actor-1" });
+    const saveLink = vi.fn().mockResolvedValue("thread-1");
+    const tools = {
+      store,
+      integrations: { get: vi.fn(), saveLink },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+
+    const api = {
+      getThread: vi.fn().mockResolvedValue([
+        { ts: "111.000", thread_ts: "111.000", user: "U1", text: "hello", reactions: [] },
+      ]),
+      getUser: vi.fn().mockResolvedValue(null),
+    };
+
+    await (slack as unknown as {
+      saveStarredThread: (a: unknown, c: string, t: string) => Promise<void>;
+    }).saveStarredThread(api, "C123", "111.000");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved.todo).toBe(true);
+    expect(saved.status).toBeUndefined();
+  });
+});
+
 describe("setupChannelWebhook", () => {
   const channelId = "C123";
   const auth: Authorization = {

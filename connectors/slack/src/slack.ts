@@ -5,7 +5,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
-import type { Action, Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
+import type { Action, Actor, ActorId, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -88,6 +88,12 @@ export class Slack extends Connector<Slack> {
     "mpim:write",
     "stars:read",
     "stars:write",
+    // Emoji reaction round-trip: reactions:write to add/remove reactions on
+    // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
+    // to read reactions during sync and receive reaction_added/reaction_removed
+    // events. Without reactions:write, write-back fails with `missing_scope`.
+    "reactions:write",
+    "reactions:read",
   ];
 
   readonly provider = AuthProvider.Slack;
@@ -107,14 +113,8 @@ export class Slack extends Connector<Slack> {
       supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
-      statuses: [
-        { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", active: true },
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -125,14 +125,8 @@ export class Slack extends Connector<Slack> {
       supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
-      statuses: [
-        { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", active: true },
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];
@@ -199,8 +193,8 @@ export class Slack extends Connector<Slack> {
     // and `conversations.replies` rate limits for non-Marketplace apps to
     // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes
     // bulk-importing a channel's history impractical. Instead we watch for
-    // new messages via the webhook and only backfill starred ("later")
-    // items so users keep their saved-for-later.
+    // new messages via the webhook and only backfill starred items
+    // so users keep their to-do (starred) threads.
 
     // Webhook registration is queued as a separate task so it doesn't block
     // the HTTP response from `onChannelEnabled`.
@@ -491,6 +485,15 @@ export class Slack extends Connector<Slack> {
           initialSync
         );
 
+        // Echo guard: drop notes for messages Plot itself sent (composed or
+        // replied). They come back through the channel webhook once the
+        // channel is observed and would otherwise round-trip as duplicate
+        // notes. Filter by note.key (the bare ts) rather than the raw
+        // messages so the link still upserts by source (thread identity is
+        // preserved). Clear the marker on first read so a later genuine
+        // edit/reaction on the same message still re-syncs.
+        activityThread.notes = await this.dropSentEchoNotes(activityThread.notes);
+
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
@@ -598,7 +601,10 @@ export class Slack extends Connector<Slack> {
     const messageTs = item.ts as string | undefined;
     if (!channelId || !messageTs) return;
 
-    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+    const syncEnabled = await this.get<boolean>(`sync_enabled_${channelId}`);
+    if (!syncEnabled) {
+      return;
+    }
 
     let api: SlackApi;
     try {
@@ -672,6 +678,7 @@ export class Slack extends Connector<Slack> {
     }
 
     const link = transformSlackThread(messages, channelId, userInfos, false);
+    link.notes = await this.dropSentEchoNotes(link.notes);
     if (!link.notes || link.notes.length === 0) return;
     link.channelId = channelId;
     link.meta = {
@@ -680,6 +687,31 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     await this.tools.integrations.saveLink(link);
+  }
+
+  /**
+   * Drops notes for Slack messages Plot itself sent (composed via onCreateLink
+   * or replied via onNoteCreated), marked with `sent:<ts>` at write-back time.
+   * Once a thread is composed into a channel the channel is observed, so those
+   * messages come back through the webhook and would round-trip as duplicate
+   * notes. Filtering by note.key (the bare ts) — not the raw messages — keeps
+   * the link/thread identity intact (it still upserts by source). Clears the
+   * marker on first read so a later genuine edit/reaction on the same message
+   * re-syncs.
+   */
+  private async dropSentEchoNotes<T>(notes: T[] | undefined): Promise<T[]> {
+    if (!notes) return [];
+    const kept: T[] = [];
+    for (const n of notes) {
+      const key = (n as { key?: string | null })?.key;
+      const marked = key ? await this.get<boolean>(`sent:${key}`) : false;
+      if (key && marked) {
+        await this.clear(`sent:${key}`);
+        continue;
+      }
+      kept.push(n);
+    }
+    return kept;
   }
 
   private async handleStarEvent(event: any, isStarred: boolean): Promise<void> {
@@ -712,8 +744,8 @@ export class Slack extends Connector<Slack> {
       if (isStarred) {
         // Since we no longer backfill history, the starred thread may not
         // exist in Plot yet. Fetching + saving is idempotent (saveLink
-        // upserts by source) and ensures status="later" regardless of prior
-        // state.
+        // upserts by source) and ensures the thread is saved and marked as
+        // the owner's to-do regardless of prior state.
         const api = await this.getApi(channelId);
         await this.saveStarredThread(api, channelId, parentTs);
       } else {
@@ -738,7 +770,7 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    // Block the onThreadToDo/onLinkUpdated callback that Plot will queue.
+    // Block the onThreadToDo callback that Plot will queue.
     await this.set(this.skipKey(channelId, parentTs), true);
 
     // Record the new state so subsequent duplicate events short-circuit.
@@ -836,9 +868,9 @@ export class Slack extends Connector<Slack> {
 
   /**
    * Fetch a Slack thread by its parent ts, resolve author identities, and
-   * save it as a Plot link with status="later" (i.e. saved-for-later /
-   * todo). `saveLink` upserts by `source`, so this is idempotent and safe
-   * to call on a thread we've already seen.
+   * save it as a Plot link marking the owner's thread as to-do via the
+   * `todo` flag. `saveLink` upserts by `source`, so this is idempotent and
+   * safe to call on a thread we've already seen.
    */
   private async saveStarredThread(
     api: SlackApi,
@@ -871,7 +903,10 @@ export class Slack extends Connector<Slack> {
     const link = transformSlackThread(messages, channelId, userInfos, true);
     if (!link.notes || link.notes.length === 0) return;
 
-    link.status = "later";
+    // Mark the thread as the owner's to-do atomically with the save. This
+    // replaces the old status="later" + active:true bridge — the connector
+    // save path does not run status `active` propagation.
+    link.todo = true;
     link.channelId = channelId;
     link.meta = {
       ...link.meta,
@@ -879,7 +914,7 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
 
-    // Suppress the onLinkUpdated echo Plot will fire from this write;
+    // Suppress the onThreadToDo echo Plot will fire from this write;
     // handleStarEvent / backfillStars is already the source of truth.
     await this.set(this.skipKey(channelId, threadTs), true);
     await this.tools.integrations.saveLink(link);
@@ -955,27 +990,6 @@ export class Slack extends Connector<Slack> {
     }
   }
 
-  async onLinkUpdated(link: Link): Promise<void> {
-    const channelId = link.meta?.channelId as string | undefined;
-    const threadTs = link.meta?.threadTs as string | undefined;
-    if (!channelId || !threadTs) return;
-
-    if (await this.get(this.skipKey(channelId, threadTs))) {
-      await this.clear(this.skipKey(channelId, threadTs));
-      return;
-    }
-
-    const isLater = link.status === "later";
-    await this.set(this.starredKey(channelId, threadTs), isLater);
-
-    const api = await this.getApi(channelId);
-    if (isLater) {
-      await api.addStar(channelId, threadTs);
-    } else {
-      await api.removeStar(channelId, threadTs);
-    }
-  }
-
   // ---- Compose new messages from Plot ----
 
   /**
@@ -1015,13 +1029,20 @@ export class Slack extends Connector<Slack> {
     if (!result?.ts) return null;
 
     const ts = result.ts;
+    // Echo guard (see onNoteCreated): skip re-importing this message when it
+    // comes back via the now-observed channel's webhook.
+    await this.set(`sent:${ts}`, true);
     const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${ts}`;
 
     return {
-      source: `slack:channel:${channelId}:ts:${ts}`,
+      // MUST match the source transformSlackThread emits on sync-in
+      // (canonicalUrl), so the composed thread dedups against its own inbound
+      // echo and against later Slack-side replies — otherwise each round-trips
+      // as a duplicate thread.
+      source: canonicalUrl,
       type: "thread",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(parseFloat(ts) * 1000),
       sourceUrl: canonicalUrl,
       channelId,
@@ -1067,13 +1088,18 @@ export class Slack extends Connector<Slack> {
     if (!result?.ts) return null;
 
     const ts = result.ts;
+    // Echo guard (see onNoteCreated): skip re-importing this message when it
+    // comes back via the now-observed channel's webhook.
+    await this.set(`sent:${ts}`, true);
     const canonicalUrl = `https://slack.com/app_redirect?channel=${dmChannelId}&message_ts=${ts}`;
 
     return {
-      source: `slack:channel:${dmChannelId}:ts:${ts}`,
+      // Match transformSlackThread's sync-in source (see createChannelPost) so
+      // the composed DM thread dedups against its inbound echo / replies.
+      source: canonicalUrl,
       type: "dm",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(parseFloat(ts) * 1000),
       sourceUrl: canonicalUrl,
       channelId: draft.channelId,
@@ -1247,6 +1273,12 @@ export class Slack extends Connector<Slack> {
     const result = await api.postMessage(channelId, body, threadTs);
     if (!result?.ts) return;
 
+    // Echo guard: skip re-importing this message when it comes back via the
+    // channel's webhook (the channel is observed once a thread is composed
+    // into it). Without this the reply round-trips as a duplicate note. See
+    // processMessageThreads / refreshSlackThread, which clear+skip on read.
+    await this.set(`sent:${result.ts}`, true);
+
     // Upload each file action and attach to the same thread
     const fileActions = (note.actions ?? []).filter(
       (a): a is Extract<Action, { type: typeof ActionType.file }> =>
@@ -1344,10 +1376,14 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    if (!channelId || !note.key) return;
-
     const shortcode = SLACK_UNICODE_TO_SHORTCODE[emoji];
-    if (!shortcode) return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+    if (!channelId || !note.key) {
+      return;
+    }
+
+    if (!shortcode) {
+      return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+    }
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
     const api = await this.getWorkspaceApi(tokenChannelId);

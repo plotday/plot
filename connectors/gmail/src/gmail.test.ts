@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { recipientsFor } from "./gmail";
+import { describe, expect, it, vi } from "vitest";
+import { Gmail, recipientsFor } from "./gmail";
 import {
   type GmailMessage,
   type GmailThread,
@@ -213,5 +213,96 @@ describe("transformGmailThread — mailing-list From rewrite", () => {
     });
 
     expect(accessContactFor(thread, "jane@example.com")?.name).toBe("Jane Doe");
+  });
+});
+
+describe("processEmailThreads — no status set", () => {
+  /**
+   * Build a minimal Gmail thread with the given labelIds on its single message.
+   * The payload provides headers required by transformGmailThread (From/To/Subject).
+   */
+  function makeGmailThread(labelIds: string[]): GmailThread {
+    const message: GmailMessage = {
+      id: "msg-archived",
+      threadId: "thread-archived",
+      labelIds,
+      snippet: "archived message",
+      historyId: "42",
+      internalDate: "1700000000000",
+      sizeEstimate: 100,
+      payload: {
+        mimeType: "text/plain",
+        headers: [
+          { name: "From", value: "sender@example.com" },
+          { name: "To", value: "me@example.com" },
+          { name: "Subject", value: "Test archived" },
+          { name: "Message-ID", value: "<msg-archived@example.com>" },
+          { name: "Date", value: "Mon, 01 Jan 2024 00:00:00 +0000" },
+        ],
+        body: { size: 16, data: btoa("archived message") },
+      },
+    };
+    return {
+      id: "thread-archived",
+      historyId: "42",
+      messages: [message],
+    };
+  }
+
+  function makeGmail(): { gmail: Gmail; saveLink: ReturnType<typeof vi.fn> } {
+    const storeMap = new Map<string, unknown>([
+      ["enabled_channels", ["INBOX"]],
+    ]);
+    const store = {
+      get: vi.fn(async (key: string) =>
+        storeMap.has(key) ? storeMap.get(key) : null
+      ),
+      set: vi.fn(async (key: string, value: unknown) => {
+        storeMap.set(key, value);
+      }),
+      clear: vi.fn(async (key: string) => {
+        storeMap.delete(key);
+      }),
+      list: vi.fn(async (prefix: string) =>
+        [...storeMap.keys()].filter((k) => k.startsWith(prefix))
+      ),
+    };
+
+    const saveLink = vi.fn().mockResolvedValue("thread-archived");
+    const tools = {
+      store,
+      integrations: {
+        get: vi.fn().mockResolvedValue({ token: "tok", scopes: [] }),
+        saveLink,
+        setThreadToDo: vi.fn().mockResolvedValue(undefined),
+      },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const gmail = new Gmail(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    return { gmail, saveLink };
+  }
+
+  it("saves an archived thread (IMPORTANT only, no INBOX) with no status", async () => {
+    // IMPORTANT only — not in INBOX, not STARRED, not SENT.
+    // Old code would have set status="archived"; new code must leave it unset.
+    const { gmail, saveLink } = makeGmail();
+    const thread = makeGmailThread(["IMPORTANT"]);
+
+    await (gmail as unknown as {
+      processEmailThreads: (
+        threads: GmailThread[],
+        initialSync: boolean,
+        forceChannelId?: string
+      ) => Promise<void>;
+    }).processEmailThreads([thread], false, "INBOX");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    // status must be absent (undefined) — not "archived", not any other value
+    expect(saved.status).toBeUndefined();
   });
 });
