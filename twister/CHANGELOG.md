@@ -1,5 +1,19 @@
 # @plotday/twister
 
+## 0.56.0
+
+### Added
+
+- `StatusIcon` vocabulary and a required `LinkStatus.icon` (plus optional `hiddenDefault`); `NewNote.link` for note-attached links; `NewLink.priority` and `Link.priority` for connector-supplied primary-link selection. ([#179](https://github.com/plotday/plot/pull/179) [`93c3f2c`](https://github.com/plotday/plot/commit/93c3f2c8babd77f3d7782cd85ee3314d7a694aa7))
+- `Integrations.saveCustomEmoji(emoji: NewCustomEmoji[])` — connectors can populate Plot's custom-emoji cache so workspace emoji (e.g. Slack `:party_parrot:`) render as images and round-trip as reactions. New `NewCustomEmoji` type exported. ([#180](https://github.com/plotday/plot/pull/180) [`a20f388`](https://github.com/plotday/plot/commit/a20f388169a70073ceb0af8aa5bbee1af672d939))
+- `SyncContext.observeOnly` — set when a channel is auto-observed because a user composed a Plot thread into it (rather than explicitly enabling it). Connectors should register webhooks/watches so inbound events sync back but skip historical backfill when this is true. ([`6c8c71e`](https://github.com/plotday/plot/commit/6c8c71e759dd7fa670d57f6d91a0cd942a2a1033))
+- `NewLinkWithNotes.originatingNote` ({ key, externalContent }) — `onCreateLink` can now bind the thread's opening note to the external message it created, so reactions and edits on the first message route back to the external system. Mirrors the `NoteWriteBackResult` a reply returns from `onNoteCreated`. ([`cc862ad`](https://github.com/plotday/plot/commit/cc862ad13db794328cdd0fb55e081edf070e18ab))
+
+### Changed
+
+- `Network.createWebhook` now selects a Google Pub/Sub push product via an explicit `pubsub: "gmail" | "workspace"` option (replacing the previous `pubsub: boolean`). Previously the Gmail Pub/Sub topic was chosen by auto-detecting Gmail scopes on stored Google auth tokens whenever no provider was passed, which misrouted a provider-less webhook for a sibling Google connector (Calendar, Drive) to a Gmail topic whenever the same user also had Gmail connected — `events.watch` / `files.watch` then rejected the non-HTTPS topic. Connectors now opt in explicitly: Gmail passes `pubsub: "gmail"`, Workspace Events (Chat) passes `pubsub: "workspace"`, and all other Google connectors receive a standard HTTPS webhook URL. Callers previously passing `pubsub: true` should pass `pubsub: "workspace"`. ([#174](https://github.com/plotday/plot/pull/174) [`1bdf29e`](https://github.com/plotday/plot/commit/1bdf29eea8ab30843b7cb0a8b4a57b8da4fd999b))
+- `ComposeConfig.status` and `CreateLinkDraft.status` are now optional/nullable so status-less link types can still compose. Added: `NewLink.todo` / `NewLink.todoDate` to mark a thread as the connection owner's to-do atomically at create time. ([#177](https://github.com/plotday/plot/pull/177) [`6699c8b`](https://github.com/plotday/plot/commit/6699c8b3c92e0166106ea256e1d9ca9e3716895d))
+
 ## 0.55.0
 
 ### Added

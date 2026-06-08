@@ -2,6 +2,7 @@ import {
   Connector,
   type CreateLinkDraft,
   type NoteWriteBackResult,
+  type ScopeConfig,
   type ToolBuilder,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
@@ -74,34 +75,48 @@ import { unicodeToSlackName } from "./slack-emoji";
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
   static readonly handleReplies = true;
-  static readonly SCOPES = [
-    "channels:history",
-    "channels:read",
-    "groups:history",
-    "groups:read",
-    "users:read",
-    "users:read.email",
-    "chat:write",
-    "im:history",
-    "im:write",
-    "mpim:history",
-    "mpim:write",
-    "stars:read",
-    "stars:write",
-    // Emoji reaction round-trip: reactions:write to add/remove reactions on
-    // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
-    // to read reactions during sync and receive reaction_added/reaction_removed
-    // events. Without reactions:write, write-back fails with `missing_scope`.
-    "reactions:write",
-    "reactions:read",
-  ];
+  static readonly SCOPES: ScopeConfig = {
+    required: [
+      "channels:history",
+      "channels:read",
+      "groups:history",
+      "groups:read",
+      "users:read",
+      "users:read.email",
+      "chat:write",
+      "im:history",
+      "im:write",
+      "mpim:history",
+      "mpim:write",
+      "stars:read",
+      "stars:write",
+      // Emoji reaction round-trip: reactions:write to add/remove reactions on
+      // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
+      // to read reactions during sync and receive reaction_added/reaction_removed
+      // events. Without reactions:write, write-back fails with `missing_scope`.
+      "reactions:write",
+      "reactions:read",
+    ],
+    optional: [
+      {
+        id: "emoji",
+        label: "Sync this workspace's custom emoji",
+        description:
+          "Show your workspace's custom emoji (like :party_parrot:) in Plot's reaction picker and round-trip them as reactions.",
+        scopes: ["emoji:read"],
+        default: true,
+      },
+    ],
+  };
 
   readonly provider = AuthProvider.Slack;
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
-    // Custom workspace emoji are skipped on both sync directions for
-    // v1; flip to "workspace" once the custom_emoji image cache lands.
-    customEmoji: "none" as const,
+    // Workspace custom emoji sync both ways: inbound reactions become
+    // `slack:<teamId>/<name>` refs (see extractSlackMessageReactions), the
+    // cache is populated by syncCustomEmoji, and onNoteReactionChanged
+    // unwraps refs back to the bare name for reactions.add/remove.
+    customEmoji: "workspace" as const,
   };
   readonly scopes = Slack.SCOPES;
   readonly linkTypes = [
@@ -223,6 +238,12 @@ export class Slack extends Connector<Slack> {
     // only hit users.list once.
     const membersCallback = await this.callback(this.syncMembers, channel.id);
     await this.runTask(membersCallback);
+
+    // Sync the workspace's custom emoji into the shared cache so they render
+    // and round-trip. Gated inside syncCustomEmoji to once per day, and
+    // harmless when the optional `emoji:read` scope wasn't granted (no-op).
+    const emojiCallback = await this.callback(this.syncCustomEmoji, channel.id);
+    await this.runTask(emojiCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -236,6 +257,27 @@ export class Slack extends Connector<Slack> {
       throw new Error("No Slack authentication token available");
     }
     return new SlackApi(token.token);
+  }
+
+  /**
+   * Resolves the workspace teamId and the cached set of custom-emoji names for
+   * a channel, so the inbound transform can recognise custom reactions and emit
+   * `slack:<teamId>/<name>` refs. The name set is populated by
+   * {@link syncCustomEmoji}; both are best-effort (a missing token or
+   * un-synced workspace just means no custom refs are emitted).
+   */
+  private async customEmojiContext(channelId: string): Promise<{
+    teamId?: string;
+    customEmojiNames?: ReadonlySet<string>;
+  }> {
+    const token = await this.tools.integrations.get(channelId);
+    const teamId = token?.provider?.team_id;
+    if (!teamId) return {};
+    const names = await this.get<string[]>(`custom_emoji_${teamId}`);
+    return {
+      teamId,
+      customEmojiNames: names ? new Set(names) : undefined,
+    };
   }
 
   /**
@@ -466,6 +508,9 @@ export class Slack extends Connector<Slack> {
       );
     }
 
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+
     for (const thread of threads) {
       try {
         // Cache file → channel so downloadAttachment can resolve the right API
@@ -482,7 +527,9 @@ export class Slack extends Connector<Slack> {
           thread,
           channelId,
           userInfos,
-          initialSync
+          initialSync,
+          teamId,
+          customEmojiNames
         );
 
         // Echo guard: drop notes for messages Plot itself sent (composed or
@@ -677,7 +724,16 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    const link = transformSlackThread(messages, channelId, userInfos, false);
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+    const link = transformSlackThread(
+      messages,
+      channelId,
+      userInfos,
+      false,
+      teamId,
+      customEmojiNames
+    );
     link.notes = await this.dropSentEchoNotes(link.notes);
     if (!link.notes || link.notes.length === 0) return;
     link.channelId = channelId;
@@ -900,7 +956,16 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    const link = transformSlackThread(messages, channelId, userInfos, true);
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+    const link = transformSlackThread(
+      messages,
+      channelId,
+      userInfos,
+      true,
+      teamId,
+      customEmojiNames
+    );
     if (!link.notes || link.notes.length === 0) return;
 
     // Mark the thread as the owner's to-do atomically with the save. This
@@ -1239,6 +1304,93 @@ export class Slack extends Connector<Slack> {
     }
   }
 
+  // ---- Workspace custom emoji sync ----
+
+  /**
+   * Fetches the workspace's custom emoji via `emoji.list`, resolves Slack
+   * `alias:` chains, and upserts them into Plot's shared custom-emoji cache as
+   * `slack:<teamId>/<name>` refs so they render as images and round-trip as
+   * reactions. Also caches the workspace's emoji *name set* (`custom_emoji_<teamId>`)
+   * so the inbound transform can recognise custom reactions.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection), then
+   * reschedules itself for the next daily refresh — mirrors {@link syncMembers}.
+   * `emoji:read` is an optional scope; when it is not granted this no-ops.
+   */
+  async syncCustomEmoji(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const last = await this.get<number>("customEmojiSyncedAt");
+    if (last && now - last < ONE_DAY_MS) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) return;
+    if (!token.scopes?.includes("emoji:read")) return; // optional scope not granted
+    const teamId = token.provider?.team_id;
+    if (!teamId) return;
+
+    const api = new SlackApi(token.token);
+    const raw: Record<string, string> = {};
+    let cursor: string | undefined;
+    try {
+      do {
+        const { emoji, nextCursor } = await api.listEmoji(cursor);
+        Object.assign(raw, emoji);
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const retry = await this.callback(this.syncCustomEmoji, channelId);
+        await this.rescheduleAt(
+          retry,
+          new Date(now + error.retryAfterMs),
+          `syncCustomEmoji ${channelId}`
+        );
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `syncCustomEmoji stopped: ${error.method} → ${error.slackError}`
+        );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.warn("[slack] emoji.list failed", error);
+      return;
+    }
+
+    const refFor = (name: string) => `slack:${teamId}/${name}`;
+    const toSave = Object.entries(raw).map(([name, value]) => {
+      const isAlias = value.startsWith("alias:");
+      return {
+        id: refFor(name),
+        provider: "slack",
+        workspace: teamId,
+        name,
+        imageUrl: isAlias ? null : value,
+        aliasOf: isAlias ? refFor(value.slice("alias:".length)) : null,
+        archived: false,
+      };
+    });
+    await this.tools.integrations.saveCustomEmoji(toSave);
+
+    // Cache the name set so the inbound transform can recognise custom
+    // reactions (Slack reaction events carry the bare name, not the ref).
+    await this.set(`custom_emoji_${teamId}`, Object.keys(raw));
+    await this.set("customEmojiSyncedAt", now);
+
+    // Schedule the next daily refresh.
+    const next = await this.callback(this.syncCustomEmoji, channelId);
+    const taskToken = await this.runTask(next, {
+      runAt: new Date(now + ONE_DAY_MS),
+    });
+    if (taskToken) {
+      await this.set(`syncCustomEmoji_task_${channelId}`, taskToken);
+    }
+  }
+
   // ---- Write-back: reply from Plot ----
 
   /**
@@ -1376,13 +1528,19 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    const shortcode = unicodeToSlackName(emoji);
+    let shortcode = unicodeToSlackName(emoji);
+    if (!shortcode && emoji.startsWith("slack:")) {
+      // Custom workspace emoji ref `slack:<teamId>/<name>` → bare name, which
+      // Slack's reactions.add/remove accepts directly.
+      const m = emoji.match(/^slack:[^/]+\/(.+)$/);
+      if (m) shortcode = m[1];
+    }
     if (!channelId || !note.key) {
       return;
     }
 
     if (!shortcode) {
-      return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+      return; // unmapped Unicode / unknown custom emoji — no Slack equivalent
     }
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;

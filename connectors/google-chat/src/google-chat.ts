@@ -1387,7 +1387,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       source: `google-chat:${channelId}:thread:${threadKey}`,
       type: "thread",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createTime),
       sourceUrl: `https://chat.google.com/room/${channelId}/${threadKey}`,
       channelId,
@@ -1497,7 +1497,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       source: `google-chat:${spaceId}:thread:${threadKey}`,
       type: "dm",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createTime),
       sourceUrl: `https://chat.google.com/dm/${spaceId}/${threadKey}`,
       // Route DM threads to the DM channel so onNoteCreated can resolve a token.
