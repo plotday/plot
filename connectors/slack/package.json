@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
+    "gen-emoji-map": "tsx scripts/gen-emoji-map.ts",
     "deploy": "plot deploy",
     "lint": "plot lint",
     "test": "vitest run",
@@ -32,6 +33,7 @@
     "@plotday/twister": "workspace:^"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.9.3",
     "vitest": "^2.1.8"
   },
