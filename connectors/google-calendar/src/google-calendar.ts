@@ -1169,6 +1169,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               title: activityData.title || undefined,
               status: "Cancelled",
               preview: "Cancelled",
+              // The calendar that OWNS the event (user is the organizer) outranks a
+              // subscribed/secondary copy, so its link is the displayed primary.
+              priority: event.organizer?.self
+                ? 100
+                : event.attendees?.some((a) => a.self)
+                  ? 50
+                  : 0,
               meta: activityData.meta ?? null,
               notes: [cancelNote],
               schedules: [
@@ -1341,6 +1348,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                 ? "Tentative"
                 : undefined,
             title: activityData.title || "",
+            // The calendar that OWNS the event (user is the organizer) outranks a
+            // subscribed/secondary copy, so its link is the displayed primary.
+            priority: event.organizer?.self
+              ? 100
+              : event.attendees?.some((a) => a.self)
+                ? 50
+                : 0,
             access: "private",
             accessContacts: attendeeMentions,
             author: authorContact,

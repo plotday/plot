@@ -3,6 +3,7 @@ import {
   type ActorId,
   type NewContact,
   type NewLinkWithNotes,
+  type NewNote,
   ITool,
 } from "..";
 import type { JSONValue } from "../utils/types";
@@ -453,6 +454,28 @@ export abstract class Integrations extends ITool {
   abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
 
   /**
+   * Save one or more notes. Unlike saveLink (which creates a thread-level
+   * canonical link), these notes attach to an EXISTING thread — addressed by
+   * `note.thread: { id }` or `{ source }` — and may carry their own
+   * note-attached link via `note.link` (a note-scoped link, NOT a thread-level
+   * canonical link). When `{ source }` resolves to no thread yet, the runtime
+   * find-or-creates the thread by that source. Use for augmenter content
+   * (e.g. meeting notes attached to a calendar event).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveNotes(notes: NewNote[]): Promise<(Uuid | null)[]>;
+  /** Save a single note. See {@link saveNotes}. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveNote(note: NewNote): Promise<Uuid | null>;
+  /**
+   * Archive every note this connector created (optionally scoped to a channel),
+   * plus their note-attached links. Mirror of {@link archiveLinks} for the
+   * note-attached content model. Use in `onChannelDisabled`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract archiveNotes(filter: ArchiveNotesFilter): Promise<void>;
+
+  /**
    * Upserts contacts into the connector's focus without requiring a Link.
    *
    * Use this for messaging connectors to bulk-sync workspace members so the
@@ -565,6 +588,15 @@ export type ArchiveLinkFilter = {
   status?: string;
   /** Filter by metadata fields (uses containment matching) */
   meta?: Record<string, JSONValue>;
+};
+
+/**
+ * Filter criteria for archiving notes (and their note-attached links).
+ * All fields are optional; only provided fields are used for matching.
+ */
+export type ArchiveNotesFilter = {
+  /** Restrict to notes whose note-attached link is on this channel. */
+  channelId?: string;
 };
 
 /**
