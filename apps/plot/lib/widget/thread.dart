@@ -729,25 +729,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               ),
                               TextSpan(
                                 children: [
-                                  // Broom indicator for threads swept up by
-                                  // a "Skip active for threads like this"
-                                  // mute rule. Surfaced on any muted thread
-                                  // so the user can identify rule-anchored
-                                  // rows in the unified feed.
-                                  if (activity.muteByThreadId != null)
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: Padding(
-                                        padding: EdgeInsets.only(
-                                          right: buildContext.theme.spacing.xs,
-                                        ),
-                                        child: Icon(
-                                          PlotIcon.broom,
-                                          size: 12,
-                                          color: buildContext.colour.muted,
-                                        ),
-                                      ),
-                                    ),
                                   TextSpan(
                                     text: activity.displayTitle,
                                     style: now

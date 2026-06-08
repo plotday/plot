@@ -3683,10 +3683,13 @@ List<Command> threadCommands(
     // none mode has no sharing UI. In all three the thread-level share roster
     // isn't editable, so the menu entry is dropped.
     if (sharingModel == SharingModel.thread) PickThreadShared(thread),
-    // Leaving a thread lives here (not in the share modal, which no longer
-    // lists self). Only meaningful when the thread is actually shared with
-    // someone else under thread-level sharing.
-    if (sharingModel == SharingModel.thread && isThreadShared(thread))
+    // Leaving a thread lives in the more-commands menu (not on hover and not
+    // in the share modal, which no longer lists self). Only meaningful when
+    // the thread is actually shared with someone else under thread-level
+    // sharing.
+    if (!skipInfrequent &&
+        sharingModel == SharingModel.thread &&
+        isThreadShared(thread))
       LeaveThread(thread),
     AssignThread(thread),
     // Merge is only offered on Plot threads. Connector-created threads
