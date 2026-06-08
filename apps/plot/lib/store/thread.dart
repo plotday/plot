@@ -6187,7 +6187,16 @@ SELECT
         if (at.present) tsStateAt = Value(at.value?.start);
         if (on.present) tsStateOn = Value(on.value?.start);
         if (order != null) tsStateOrder = Value(order);
-        if (!_thread.active) {
+        // Distinguish "set a date" (scheduling intent) from "clear the date"
+        // (the supplied values resolve to null). Only setting a date promotes
+        // an inactive thread to active. Passing `on: Value(null)` /
+        // `at: Value(null)` to wipe scheduling — as the new-thread reset path
+        // does — must NOT flip an inactive draft to active "To do"; that bug
+        // silently marked freshly composed threads as tasks.
+        final settingDate =
+            (at.present && at.value?.start != null) ||
+            (on.present && on.value?.start != null);
+        if (settingDate && !_thread.active) {
           tsActive = true;
           // Promoting an inactive thread to active — populate state_order
           // when the caller didn't pass one and no prior order exists, so
@@ -6198,7 +6207,13 @@ SELECT
             tsStateOrder = Value(Order.first());
           }
         }
-        stateDirty = true;
+        // A pure clear on an inactive thread has no per-user state to write,
+        // so don't dirty it (which would push a spurious active=false row and
+        // strand the draft as state-dirty). Setting a date, a reorder, or a
+        // clear on an already-active thread all still need the state push.
+        if (settingDate || order != null || _thread.active) {
+          stateDirty = true;
+        }
       } else if (order != null) {
         // Pure reorder on existing per-user state.
         tsStateOrder = Value(order);
