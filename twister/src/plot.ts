@@ -788,6 +788,16 @@ export type NewNote = Partial<
      * - `undefined` (omitted): not a reply
      */
     reNote?: { id: Uuid } | { key: string } | null;
+
+    /**
+     * A link carried by this note (note-attached, NOT a thread-level canonical
+     * link). Use for augmenter content (e.g. Granola meeting notes) that should
+     * attach to an existing canonical thread without becoming its primary link.
+     * The runtime creates the link note-scoped, binds `note.link_id` to it, and
+     * — when `thread: { source }` resolves to no existing thread — find-or-creates
+     * the thread by that source so a later canonical sync can fill the primary.
+     */
+    link?: NewLink;
   };
 
 /**
@@ -1025,6 +1035,12 @@ export type Link = {
    * meeting-notes connector can bundle by setting the same alias.
    */
   sources: string[];
+  /**
+   * Connector-supplied ranking used by clients to choose the single displayed
+   * (primary) canonical link when a thread has more than one. Higher wins;
+   * ties break on earliest creation. Default 0.
+   */
+  priority: number;
 };
 
 /**
@@ -1106,6 +1122,12 @@ export type NewLink = Partial<
      * server classifies the thread using the user's focus rules.
      */
     focus?: Pick<Focus, "id">;
+    /**
+     * Primary-link ranking for this canonical link (default 0). Set higher on
+     * the connection that "owns" the external item (e.g. the calendar that owns
+     * an event vs a subscribed copy) so clients display it as the primary.
+     */
+    priority?: number;
   };
 
 /**

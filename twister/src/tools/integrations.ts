@@ -44,6 +44,21 @@ export type Channel = {
 };
 
 /**
+ * Curated status-icon vocabulary. Connectors map each declared status to the
+ * closest icon; clients render a single glyph per value. Required on every
+ * status so the UI always has something to show.
+ */
+export type StatusIcon =
+  | "backlog"
+  | "todo"
+  | "inProgress"
+  | "blocked"
+  | "done"
+  | "cancelled"
+  | "confirmed"
+  | "tentative";
+
+/**
  * Describes a link type that a connector creates.
  * Used for display in the UI (icons, labels).
  */
@@ -93,6 +108,14 @@ export type LinkTypeConfig = {
     status: string;
     /** Human-readable label (e.g., "Open", "Done") */
     label: string;
+    /** Curated icon for this status (required so the UI always has a glyph). */
+    icon: StatusIcon;
+    /**
+     * Suppress this status's icon on the feed row (ThreadWidget) while still
+     * showing it in the ThreadPage header. Use for a "resting" default state
+     * that would otherwise clutter the feed (e.g. calendar "Confirmed").
+     */
+    hiddenDefault?: boolean;
     /** Whether this status represents completion (done, closed, merged, cancelled, etc.) */
     done?: boolean;
     /**
