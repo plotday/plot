@@ -17,6 +17,20 @@ import 'package:plot/widget/compose/compose_target.dart';
 import 'package:plot/widget/compose/compose_search_field.dart';
 import 'package:plot/widget/compose/pill_grid.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/logo_image.dart';
+
+/// The link currently held in the step-1 picker (URL plus resolved metadata).
+/// When non-null the search field is replaced by a chip and the picker renders
+/// in link mode.
+class LinkChipData {
+  const LinkChipData({required this.url, this.title, this.favicon});
+  final String url;
+  final String? title;
+  final String? favicon;
+
+  /// What the chip shows: the resolved title, else the raw URL.
+  String get display => (title != null && title!.isNotEmpty) ? title! : url;
+}
 
 /// The step-1 "sections" view of the new-thread picker.
 ///
@@ -47,6 +61,8 @@ class ComposeSectionsView extends StatefulWidget {
     this.onBack,
     this.autofocusSearch = true,
     this.activeListenable,
+    this.pendingLink,
+    this.onClearLink,
   });
 
   /// Scroll controller for the pill grid (owned by the host page so it
@@ -104,11 +120,21 @@ class ComposeSectionsView extends StatefulWidget {
   /// (e.g. single-panel mode, where the panel never fades).
   final ValueListenable<bool>? activeListenable;
 
+  /// When non-null, the picker is in link mode: the search field is replaced
+  /// by a link chip and the sections show Private notes then link-supporting
+  /// Channels (People & twists hidden). Null = normal text-filter mode.
+  final LinkChipData? pendingLink;
+
+  /// Clears the pending link (the chip's ✕), returning to text-filter mode.
+  final VoidCallback? onClearLink;
+
   @override
   State<ComposeSectionsView> createState() => _ComposeSectionsViewState();
 }
 
 class _ComposeSectionsViewState extends State<ComposeSectionsView> {
+  bool get _linkMode => widget.pendingLink != null;
+
   // ─── State ─────────────────────────────────────────────────────────────────
 
   /// Most-recently-loaded sectioned data. Null while the initial load is in
@@ -148,7 +174,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   void initState() {
     super.initState();
     // Restore a pre-filled filter (returning from step 2) or load at rest.
-    if (widget.searchController.text.trim().isNotEmpty) {
+    if (!_linkMode && widget.searchController.text.trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_isDisposed) _runSearch(widget.searchController.text);
       });
@@ -171,6 +197,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant ComposeSectionsView old) {
+    super.didUpdateWidget(old);
+    if ((old.pendingLink == null) != (widget.pendingLink == null)) {
+      _loadSections();
+    }
+  }
+
   // ─── Data loading ──────────────────────────────────────────────────────────
 
   /// Loads sections at rest (no query) and populates [_priorityById].
@@ -178,7 +212,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     final requestId = ++_requestId;
     final bloc = context.read<ComposeTargetsBloc>();
     bloc
-        .loadSections()
+        .loadSections(linkMode: _linkMode)
         .then((sections) async {
           if (_isDisposed || requestId != _requestId) return;
           // Co-load priorities in parallel so focus-note pills can resolve.
@@ -238,9 +272,8 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   List<PillGridSection> _buildSections() {
     final s = _sections;
     if (s == null) return const [];
-    final sections = <PillGridSection>[];
 
-    // 1. People & twists
+    // People & twists (hidden in link mode, where s.people/s.twists are empty).
     final personItems = [
       for (final e in s.people)
         PillGridItem(
@@ -256,22 +289,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           onActivate: () => widget.onPickTarget(t),
         ),
     ];
-    // At rest, recently-used people lead. Under an active query, twists go first
-    // so an explicit name search (e.g. "Plot") surfaces the matching twist at the
-    // top instead of being buried below contacts that incidentally match (e.g.
-    // anyone with an @plot.day email).
     final hasQuery = widget.searchController.text.trim().isNotEmpty;
-    final peopleItems = hasQuery
-        ? [...twistItems, ...personItems]
-        : [...personItems, ...twistItems];
-    if (peopleItems.isNotEmpty) {
-      sections.add(
-        PillGridSection(header: _peopleHeader(), items: peopleItems),
-      );
-    }
+    final peopleItems =
+        hasQuery ? [...twistItems, ...personItems] : [...personItems, ...twistItems];
+    final PillGridSection? peopleSection = peopleItems.isEmpty
+        ? null
+        : PillGridSection(header: _peopleHeader(), items: peopleItems);
 
-    // 2. Channels (Plot topics + connector channels). Always rendered so the
-    // "+ Topic" affordance in the header is reachable even with no channels.
+    // Channels (Plot topics + connector channels).
     final channelItems = [
       for (final t in s.channels)
         PillGridItem(
@@ -281,14 +306,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           onActivate: () => widget.onPickTarget(t),
         ),
     ];
-    sections.add(
-      PillGridSection(
-        header: _channelsHeader(),
-        items: channelItems,
-      ),
-    );
+    // In normal mode the Channels section is always shown (for the "+ Topic"
+    // affordance); in link mode it's shown only when it has link-capable items.
+    final PillGridSection? channelSection =
+        (_linkMode && channelItems.isEmpty)
+            ? null
+            : PillGridSection(header: _channelsHeader(), items: channelItems);
 
-    // 3. Private notes (focuses)
+    // Private notes (focuses).
     final focusItems = <PillGridItem>[];
     for (final t in s.focuses) {
       final pid = t.priorityId;
@@ -302,16 +327,16 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         ),
       );
     }
-    if (focusItems.isNotEmpty) {
-      sections.add(
-        PillGridSection(
-          header: _sectionHeader('Private note'),
-          items: focusItems,
-        ),
-      );
-    }
+    final PillGridSection? focusSection = focusItems.isEmpty
+        ? null
+        : PillGridSection(header: _sectionHeader('Private note'), items: focusItems);
 
-    return sections;
+    // Order: link mode → Private notes, then Channels (people hidden).
+    // Normal mode → People, Channels, Private notes (unchanged).
+    final ordered = _linkMode
+        ? <PillGridSection?>[focusSection, channelSection]
+        : <PillGridSection?>[peopleSection, channelSection, focusSection];
+    return [for (final sec in ordered) ?sec];
   }
 
   /// Builds the "… More" callback for editable people rows (contact, group,
@@ -454,6 +479,52 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     );
   }
 
+  /// The link chip shown in place of the search field while in link mode:
+  /// favicon (or link icon) + title/url + a ✕ to clear and return to the input.
+  Widget _buildLinkChip(BuildContext context) {
+    final link = widget.pendingLink;
+    final colors = context.theme.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background,
+        border: Border.all(color: colors.border, width: 0.5),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            if (link?.favicon != null)
+              LogoImage(
+                url: link!.favicon!,
+                size: 16,
+                fallback: const Icon(PlotIcon.link, size: 16),
+              )
+            else
+              const Icon(PlotIcon.link, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                link?.display ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.theme.typography.sm,
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onClearLink,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(PlotIcon.close, size: 16, color: colors.mutedForeground),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Section-heading text style: a calm step up in size from the body and
   /// muted so each group reads as a clear divider. Matches the colour
   /// (`muted`) and weight (`w500`) of the thread-list section headings.
@@ -507,19 +578,27 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ComposeSearchField(
-            controller: widget.searchController,
-            focusNode: widget.searchFocusNode,
-            hint: 'Start a thread',
-            hintDetail: 'with a name, email, channel, or focus',
-            autofocus: widget.autofocusSearch,
-            activeListenable: widget.activeListenable,
-            leading: leading,
-            onChanged: _onSearchChanged,
-            onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
-            onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
-            onSubmit: () => _gridKey.currentState?.activateHighlighted(),
-            onEscape: null,
+          IndexedStack(
+            alignment: Alignment.centerLeft,
+            sizing: StackFit.loose,
+            index: _linkMode ? 1 : 0,
+            children: [
+              ComposeSearchField(
+                controller: widget.searchController,
+                focusNode: widget.searchFocusNode,
+                hint: 'Start a thread',
+                hintDetail: 'with a name, email, channel, or focus',
+                autofocus: widget.autofocusSearch && !_linkMode,
+                activeListenable: widget.activeListenable,
+                leading: leading,
+                onChanged: _onSearchChanged,
+                onArrowDown: () => _gridKey.currentState?.moveHighlight(1),
+                onArrowUp: () => _gridKey.currentState?.moveHighlight(-1),
+                onSubmit: () => _gridKey.currentState?.activateHighlighted(),
+                onEscape: null,
+              ),
+              _buildLinkChip(context),
+            ],
           ),
           // Match the inter-section gap (PillGrid uses spacing.xl) so the input
           // sits the same distance above the first header as each section does
