@@ -35,6 +35,7 @@ import {
   syncGmailMailboxIncremental,
   transformGmailThread,
 } from "./gmail-api";
+import { gmailFacets } from "./gmail-facets";
 
 /**
  * Persisted mailbox-wide watch state. Gmail allows one watch per (mailbox,
@@ -1349,6 +1350,12 @@ export class Gmail extends Connector<Gmail> {
           syncProvider: "google",
           syncableId: channelId,
         };
+
+        // Compute classifier facets from the parent message's headers + body.
+        const facetParent = thread.messages.find((m) => !m.labelIds?.includes("DRAFT"));
+        if (facetParent) {
+          plotThread.facets = gmailFacets(facetParent, plotThread.preview ?? "");
+        }
 
         // Star ↔ todo sync: detect star changes and sync to Plot todo status.
         // Statuses have been removed; every thread (including archived) is saved
