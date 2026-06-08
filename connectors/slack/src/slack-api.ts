@@ -5,6 +5,7 @@ import type {
   NewActor,
   NewReactions,
 } from "@plotday/twister/plot";
+import { slackNameToUnicode } from "./slack-emoji";
 
 export type SlackChannel = {
   id: string;
@@ -574,69 +575,6 @@ export function formatSlackText(text: string): string {
   );
 }
 
-/**
- * Maps common Slack reaction shortcodes to Unicode emoji. Curated subset
- * of the CLDR mapping covering the long-tail of frequently-used reactions.
- * Unmapped shortcodes (incl. workspace custom emoji) are skipped on
- * sync for v1; a follow-up will route them via the custom_emoji image
- * cache as `slack:<teamId>/<name>` refs.
- */
-export const SLACK_SHORTCODE_TO_UNICODE: Record<string, string> = {
-  "+1": "👍", thumbsup: "👍",
-  "-1": "👎", thumbsdown: "👎",
-  tada: "🎉", party: "🎉",
-  fire: "🔥",
-  heart: "❤️", heart_eyes: "😍", heartpulse: "💗",
-  rocket: "🚀",
-  sparkles: "✨", star2: "🌟",
-  pray: "🙏", folded_hands: "🙏",
-  raised_hands: "🙌",
-  smile: "😄", grinning: "😀", grin: "😁", smiley: "😃",
-  joy: "😂", rofl: "🤣", laughing: "😆",
-  wave: "👋",
-  clap: "👏",
-  sunglasses: "😎",
-  cry: "😢", sob: "😭",
-  eyes: "👀",
-  "100": "💯",
-  star: "⭐",
-  bulb: "💡", light_bulb: "💡",
-  ok_hand: "👌",
-  muscle: "💪",
-  rolling_on_the_floor_laughing: "🤣",
-  white_check_mark: "✅", heavy_check_mark: "✔️", check: "✔️",
-  x: "❌", negative_squared_cross_mark: "❎",
-  warning: "⚠️",
-  question: "❓", grey_question: "❔",
-  exclamation: "❗",
-  thinking_face: "🤔",
-  raised_hand: "✋",
-  raised_back_of_hand: "🤚",
-  point_up: "☝️", point_down: "👇", point_left: "👈", point_right: "👉",
-  facepalm: "🤦", person_facepalming: "🤦",
-  shrug: "🤷", person_shrugging: "🤷",
-  see_no_evil: "🙈",
-  speech_balloon: "💬",
-  bell: "🔔", no_bell: "🔕",
-  zap: "⚡",
-  bug: "🐛",
-  hammer: "🔨", hammer_and_wrench: "🛠️",
-  art: "🎨",
-  lock: "🔒", unlock: "🔓",
-  key: "🔑",
-  rotating_light: "🚨",
-  hourglass: "⌛", hourglass_flowing_sand: "⏳",
-  alarm_clock: "⏰",
-  chart_with_upwards_trend: "📈", chart_with_downwards_trend: "📉",
-  bar_chart: "📊",
-  bookmark: "🔖",
-  pushpin: "📌",
-  link: "🔗",
-  package: "📦",
-  email: "📧", mailbox: "📬",
-  calendar: "📅",
-  pencil: "📝", memo: "📝",
-};
 
 /**
  * Extract per-message Slack reactions as Plot reactions. Unmapped
@@ -651,7 +589,7 @@ function extractSlackMessageReactions(
   const byEmoji = new Map<string, NewActor[]>();
 
   for (const reaction of msg.reactions) {
-    const unicode = SLACK_SHORTCODE_TO_UNICODE[reaction.name];
+    const unicode = slackNameToUnicode(reaction.name);
     if (!unicode) continue;
 
     const actors = reaction.users.map((userId) =>
@@ -676,17 +614,6 @@ function extractSlackMessageReactions(
   return out;
 }
 
-/**
- * Reverse mapping for write-back: Unicode → preferred Slack shortcode.
- * Built from SLACK_SHORTCODE_TO_UNICODE; first shortcode wins on
- * collisions (e.g. `thumbsup` over `+1`).
- */
-export const SLACK_UNICODE_TO_SHORTCODE: Record<string, string> = {};
-for (const [shortcode, unicode] of Object.entries(SLACK_SHORTCODE_TO_UNICODE)) {
-  if (!SLACK_UNICODE_TO_SHORTCODE[unicode]) {
-    SLACK_UNICODE_TO_SHORTCODE[unicode] = shortcode;
-  }
-}
 
 /**
  * Transforms a Slack message thread into a NewLinkWithNotes structure.
