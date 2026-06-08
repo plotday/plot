@@ -1347,9 +1347,19 @@ In `apps/plot/lib/page/thread.dart` (~543), the page menu builds commands with `
 
 - [ ] **Step 7: Pass the primary link at the row-menu call site**
 
-In `apps/plot/lib/widget/thread.dart`, the row context menu calls `threadCommands(...)` (~891). `ThreadCommands.build` already has `primaryLink` from Task 8. Pass it through. Locate the `threadCommands(` call inside the `items: (close) =>` builder (~891) and add `openInLink: primaryLink,` to its arguments.
+In `apps/plot/lib/widget/thread.dart`, the row context menu calls `threadCommands(...)` inside the `ContextMenu`'s `items: (close) =>` builder (~891). That call site is in the row-state's `build` path, which already holds the live `_links` field (kept current by `_linksSub = Link.watchForThread(activity.id).listen((links) => _links = links)` at ~line 145 — and after Task 5 `_links` is the canonical, primary-ordered list). It already passes `Thread.isPlotThread(_links)` / `Thread.resolveSharingModel(_links)`. Add the primary link the same way:
 
-> If that menu builder is in a different method/scope than `build` (where `primaryLink` is defined), compute the primary there from `Link.cachedForThread(activity.id)` (synchronous cache, already warmed) or a local `useStream`, mirroring how the surrounding code accesses links. Prefer reusing the `primaryLink` local if it is in scope.
+```dart
+      items: (close) => threadCommands(
+              activity,
+              isPlotThread: Thread.isPlotThread(_links),
+              sharingModel: Thread.resolveSharingModel(_links),
+              openInLink: Thread.primaryLink(_links),
+              priorityBloc: priorityBloc,
+            )
+```
+
+(`primaryLink` in `ThreadCommands.build` from Task 8 is a *different* widget — the hover-command pool — and is not in scope here; use `_links` as shown.)
 
 - [ ] **Step 8: Analyze the whole app**
 
