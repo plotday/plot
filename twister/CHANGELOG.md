@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.57.0
+
+### Added
+
+- `Integrations.saveNotes`/`saveNote` (attach note-attached links to a thread by id or source) and `Integrations.archiveNotes` (mirror of archiveLinks for the note model). ([#181](https://github.com/plotday/plot/pull/181) [`3c2b130`](https://github.com/plotday/plot/commit/3c2b13090e2e8d8af035bebaf598fd4d959f2fa8))
+
 ## 0.56.0
 
 ### Added
