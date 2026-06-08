@@ -26,6 +26,17 @@ class TwistInstances extends Table
   BoolColumn get userConnected => boolean().withDefault(const Constant(false))();
   BoolColumn get isBuiltin => boolean().withDefault(const Constant(false))();
   BoolColumn get multipleInstances => boolean().withDefault(const Constant(false))();
+  // What reactions this connector's source platform supports, e.g.
+  // {"mode":"open-unicode"} or {"mode":"fixed","allowed":[...]}. Nullable
+  // because the value may be absent (Plot-native / unknown → open).
+  TextColumn get reactionCapabilities =>
+      text().nullable().map(const JsonConverter())();
+  // Opaque per-connection token (e.g. `slack:T0123ABC`) stamped server-side by
+  // `saveCustomEmoji`. The client matches `custom_emoji.id` with the prefix
+  // `<scope>/` to offer "this connection's custom emoji" in the reaction
+  // picker — treated as an opaque key, never parsed for workspace/provider.
+  // Nullable: connectors without workspace emoji leave it NULL.
+  TextColumn get customEmojiScope => text().nullable()();
 }
 
 class TwistInstancesBase extends BaseTable {
@@ -300,6 +311,8 @@ class TwistInstance extends TwistInstanceRow {
         userConnected: row.userConnected,
         isBuiltin: row.isBuiltin,
         multipleInstances: row.multipleInstances,
+        reactionCapabilities: row.reactionCapabilities,
+        customEmojiScope: row.customEmojiScope,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,

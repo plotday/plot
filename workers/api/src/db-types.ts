@@ -1034,6 +1034,7 @@ export interface Twist {
   permissions: Json | null;
   premium: Generated<boolean>;
   publisher_id: Int8 | null;
+  reaction_capabilities: Json | null;
   seq: Generated<string>;
   shared: Generated<boolean>;
   thread_type: string | null;
@@ -1047,6 +1048,7 @@ export interface TwistInstance {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  custom_emoji_scope: string | null;
   draft: Generated<boolean>;
   id: Generated<string>;
   name: string;
@@ -1183,6 +1185,7 @@ export interface TwistInstanceDetails {
   author_name: string | null;
   author_url: string | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   draft: boolean | null;
   id: string | null;
   is_source: boolean | null;
@@ -1878,6 +1881,7 @@ export interface UserTwist {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
   handle: string | null;
@@ -1892,6 +1896,7 @@ export interface UserTwist {
   name: string | null;
   options: Json | null;
   owner_id: string | null;
+  reaction_capabilities: Json | null;
   seq: string | null;
   shared: boolean | null;
   team_id: Int8 | null;

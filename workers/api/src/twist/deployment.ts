@@ -51,6 +51,19 @@ export interface DeployTwistResult {
 }
 
 /**
+ * Maps a connector's `reactionCapabilities` metadata (collected by the deploy
+ * factory pipe) onto the value written to the `twist.reaction_capabilities`
+ * jsonb column. Serializes a declared value to JSON; null/undefined become a
+ * SQL NULL. Shared by the INSERT and UPDATE branches so the mapping stays
+ * identical.
+ */
+export function reactionCapabilitiesCell(
+  reactionCapabilities: unknown
+): string | null {
+  return reactionCapabilities ? JSON.stringify(reactionCapabilities) : null;
+}
+
+/**
  * Common implementation for deploying twists, used by both the API endpoint
  * and the Twists tool.
  *
@@ -143,6 +156,7 @@ export async function deployTwist({
   let optionsSchema: Record<string, unknown> | undefined;
   let isNoProviderConnector = false;
   let multipleInstances = false;
+  let reactionCapabilities: unknown = null;
   let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
   try {
     if (dryRun) {
@@ -166,6 +180,7 @@ export async function deployTwist({
     optionsSchema = storeResult.optionsSchema;
     const { aiRequired } = storeResult;
     multipleInstances = storeResult.multipleInstances;
+    reactionCapabilities = storeResult.reactionCapabilities;
 
     // Store _ai_required in permissions for Flutter app access
     if (aiRequired) {
@@ -274,6 +289,7 @@ export async function deployTwist({
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
         multiple_instances: multipleInstances,
+        reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
       })
       .where("id", "=", existingTwist.id)
       .returningAll()
@@ -306,6 +322,7 @@ export async function deployTwist({
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
         multiple_instances: multipleInstances,
+        reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -433,6 +450,7 @@ export async function deployTwist({
           logo_url: logoUrl ?? null,
           logo_url_dark: logoUrlDark ?? null,
           multiple_instances: multipleInstances,
+          reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
         })
         .onConflict((oc) =>
           oc
@@ -453,6 +471,7 @@ export async function deployTwist({
               logo_url: logoUrl ?? null,
               logo_url_dark: logoUrlDark ?? null,
               multiple_instances: multipleInstances,
+              reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
             })
         )
         .returningAll()

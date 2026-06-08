@@ -145,6 +145,67 @@ void main() {
     });
   });
 
+  group('LocalPreferencesBloc link MRU', () {
+    test('ranks most-recently-used link destination first, unseen last',
+        () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      await bloc.recordLinkUsage('A');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await bloc.recordLinkUsage('B');
+
+      // B used most recently → first; A next; C never used → keeps input order last.
+      final ranked = bloc.rankByLinkMru(signatures: ['A', 'B', 'C']);
+      expect(ranked, ['B', 'A', 'C']);
+    });
+
+    test('is independent of the connection MRU', () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      await bloc.recordConnectionUsage(channelKey: 'A');
+      // Link MRU has no record of A, so rank leaves input order untouched.
+      expect(bloc.rankByLinkMru(signatures: ['A', 'B']), ['A', 'B']);
+    });
+
+    test('persists across instances', () async {
+      final bloc1 = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      await bloc1.recordLinkUsage('A');
+
+      final bloc2 = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc2.rankByLinkMru(signatures: ['B', 'A']), ['A', 'B']);
+    });
+
+    test('caps at 100 entries, evicting the oldest', () async {
+      final bloc = LocalPreferencesBloc();
+      await Future<void>.delayed(Duration.zero);
+
+      // Record 105 distinct signatures in order sig0..sig104.
+      // Each is awaited and separated by 1 ms so timestamps are strictly
+      // increasing — sig0 is oldest, sig104 is newest.
+      for (var i = 0; i < 105; i++) {
+        await bloc.recordLinkUsage('sig$i');
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+
+      // The map must have been capped at 100 entries.
+      expect(bloc.state.linkMru.length, 100);
+
+      // The oldest entry (sig0) must have been evicted.
+      expect(bloc.state.linkMru.containsKey('sig0'), isFalse);
+
+      // The newest entry (sig104) must still be present.
+      expect(bloc.state.linkMru.containsKey('sig104'), isTrue);
+
+      // rankByLinkMru: sig104 is seen, sig0 is unseen → sig104 ranked first.
+      final ranked = bloc.rankByLinkMru(signatures: ['sig0', 'sig104']);
+      expect(ranked, ['sig104', 'sig0']);
+    });
+  });
+
   group('lastUsedConnectionKey', () {
     test('prefers a use in the current priority over a more-recent global use',
         () async {

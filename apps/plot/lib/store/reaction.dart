@@ -70,25 +70,31 @@ class _FixedReactions extends ReactionCapabilities {
 
 const ReactionCapabilities _kOpen = _OpenReactions();
 
-/// LinkedIn Messaging's fixed reaction set. Kept here (not on the
-/// connector) so the picker can enforce it before LinkedIn lands as a
-/// linked connector — and after, without a round-trip to the SDK.
-const ReactionCapabilities _kLinkedInReactions = _FixedReactions([
-  '👍', '❤️', '👏', '💡', '😂', '😮', '😢',
-]);
-
-/// Returns the reaction capabilities for a given link `source`. Recognizes
-/// the source-prefix conventions used by the existing connectors
-/// (`google-chat:`, `ms-teams:`, `slack.com/app_redirect`, `linkedin:`).
-/// Unknown sources and `null` (Plot-native threads) return open Unicode.
-ReactionCapabilities reactionCapabilitiesForLinkSource(String? source) {
-  if (source == null) return _kOpen;
-  if (source.startsWith('linkedin:')) return _kLinkedInReactions;
-  // Slack, Teams, Google Chat all accept open Unicode. Even if the
-  // source prefix is unrecognised, default to open — the picker stays
-  // permissive; outbound dispatch on the server already drops emoji
-  // the platform can't accept.
-  return _kOpen;
+/// Maps a synced `twist.reaction_capabilities` JSON blob (or null) to the
+/// client capability type. Unknown/absent → open-unicode (today's default).
+///
+/// Capabilities now arrive via sync on the owning twist instance
+/// (`TwistInstance.reactionCapabilities`) rather than being inferred from a
+/// link source prefix, so each connector declares its own set (e.g. a
+/// `fixed` LinkedIn Messaging reaction set, `open-unicode` for Slack).
+ReactionCapabilities reactionCapabilitiesFromJson(Map<String, dynamic>? json) {
+  if (json == null) return _kOpen;
+  final mode = json['mode'] as String?;
+  switch (mode) {
+    case 'fixed':
+      final allowed = (json['allowed'] as List?)?.cast<String>();
+      return allowed == null || allowed.isEmpty
+          ? _kOpen
+          : _FixedReactions(allowed);
+    case 'unicode-subset':
+      final subset = (json['subset'] as List?)?.cast<String>();
+      return subset == null || subset.isEmpty
+          ? _kOpen
+          : _FixedReactions(subset);
+    case 'open-unicode':
+    default:
+      return _kOpen;
+  }
 }
 
 /// JSON ↔ SQLite converter for `{ <emoji>: [actorId, ...] }` shaped reactions.

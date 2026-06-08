@@ -24,6 +24,7 @@ import type {
   Authorization,
   Channel,
   LinkTypeConfig,
+  NewCustomEmoji,
   SyncContext,
   Integrations as IAuth,
 } from "@plotday/twister/tools/integrations";
@@ -1555,6 +1556,61 @@ export class Integrations extends Tool implements IAuth {
       const plot = this.getPlot();
       await plot.notifySyncDOs(new Set(affectedPriorityIds));
     }
+  }
+
+  /**
+   * Upsert workspace custom emoji into Plot's shared cache so reactions using
+   * `provider:workspace/name` refs render as images and round-trip. Idempotent;
+   * keyed on `id`. Pass `archived: true` to mark an emoji removed. Workspace-
+   * scoped (shared across all users of that workspace).
+   *
+   * Also stamps this connector's opaque custom-emoji scope
+   * (`provider:workspace`) on its twist_instance so the client can offer "this
+   * connection's custom emoji" via a prefix match against `custom_emoji.id`,
+   * with no workspace/provider logic client-side.
+   */
+  async saveCustomEmoji(emoji: NewCustomEmoji[]): Promise<void> {
+    if (emoji.length === 0) return;
+    const now = new Date().toISOString();
+    const rows = emoji.map((e) => ({
+      id: e.id,
+      provider: e.provider,
+      workspace_id: e.workspace,
+      name: e.name,
+      // Alias rows have no own image; the renderer follows alias_of to the
+      // canonical image, so store the empty string (image_url is NOT NULL).
+      image_url: e.imageUrl ?? "",
+      alias_of: e.aliasOf,
+      archived_at: e.archived ? now : null,
+    }));
+    await this.db
+      .insertInto("custom_emoji")
+      .values(rows)
+      .onConflict((oc) =>
+        oc.column("id").doUpdateSet((eb) => ({
+          provider: eb.ref("excluded.provider"),
+          workspace_id: eb.ref("excluded.workspace_id"),
+          name: eb.ref("excluded.name"),
+          image_url: eb.ref("excluded.image_url"),
+          alias_of: eb.ref("excluded.alias_of"),
+          archived_at: eb.ref("excluded.archived_at"),
+        }))
+      )
+      .execute();
+
+    // All rows in one call share a workspace; use the first.
+    const scope = `${emoji[0].provider}:${emoji[0].workspace}`;
+    await this.db
+      .updateTable("twist_instance")
+      .set({ custom_emoji_scope: scope })
+      .where("id", "=", this.twistInstanceId)
+      .where((eb) =>
+        eb.or([
+          eb("custom_emoji_scope", "is", null),
+          eb("custom_emoji_scope", "!=", scope),
+        ])
+      )
+      .execute();
   }
 
   /**

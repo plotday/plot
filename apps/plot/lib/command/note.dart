@@ -289,14 +289,36 @@ class AddNoteReaction extends NoteCommand {
       // Use the store's Link (the data row), not widget/link.dart (the
       // URL widget) — both names exist in the imports above.
       final links = activityBloc?.state.links ?? const [];
-      final source = links.isEmpty ? null : links.first.source;
-      final allowed = reactionCapabilitiesForLinkSource(source).allowed;
+      // Resolve the thread's connector via its first link's owning
+      // twist_instance, then read that instance's synced reaction
+      // capabilities. Plot-native threads (no link) → open.
+      final connectionId = links.isEmpty ? null : links.first.createdBy;
+      final instance =
+          connectionId == null ? null : TwistInstance.fromCache(connectionId);
+      final caps = reactionCapabilitiesFromJson(instance?.reactionCapabilities);
+      final allowed = caps.allowed;
+
+      // Offer this connection's workspace custom emoji (e.g. Slack
+      // `:party_parrot:`). The scope is an opaque token stamped server-side;
+      // we never parse it for workspace/provider — just prefix-match the cache.
+      var workspaceCustom = const <Reaction>[];
+      final scope = instance?.customEmojiScope;
+      if (scope != null) {
+        final rows = await CustomEmoji.forScope(scope);
+        workspaceCustom = rows.map((r) => r.id).toList(growable: false);
+      }
+
+      // Guard against the `await` above: opening the picker disposes the hover
+      // toolbar that hosts this button, but we still need a live context to
+      // open the modal. If it's already gone, bail without reacting.
+      if (!context.mounted) return const CommandDone();
 
       final prefs = context.read<LocalPreferencesBloc>();
       final emoji = await EmojiPicker.pick(
         context,
         allowed: allowed?.toSet(),
         mru: prefs.state.reactionMru,
+        workspaceCustom: workspaceCustom,
       );
       if (emoji == null) return const CommandDone();
 

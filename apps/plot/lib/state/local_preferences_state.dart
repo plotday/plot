@@ -46,6 +46,7 @@ class LocalPreferencesState extends Equatable {
     this.showAllPriorities = false,
     this.connectionMru = const {},
     this.reactionMru = const [],
+    this.linkMru = const {},
   });
 
   /// Most-recently-used mention IDs (TwistInstance IDs), ordered with most recent first
@@ -63,22 +64,30 @@ class LocalPreferencesState extends Equatable {
   /// ref). Seeds the hover-toolbar quick row and the picker's "Recent" group.
   final List<Reaction> reactionMru;
 
+  /// MRU of link destinations, keyed by target signature
+  /// ([ComposeTarget.signature]) → last-used epoch ms. Independent of
+  /// [connectionMru]: it ranks where the user last *attached a link*, which
+  /// drives the link-mode order of the new-thread step-1 picker.
+  final Map<String, int> linkMru;
+
   /// Create a copy with updated properties
   LocalPreferencesState copyWith({
     List<String>? mentionMruIds,
     bool? showAllPriorities,
     Map<String, ConnectionMruEntry>? connectionMru,
     List<Reaction>? reactionMru,
+    Map<String, int>? linkMru,
   }) {
     return LocalPreferencesState(
       mentionMruIds: mentionMruIds ?? this.mentionMruIds,
       showAllPriorities: showAllPriorities ?? this.showAllPriorities,
       connectionMru: connectionMru ?? this.connectionMru,
       reactionMru: reactionMru ?? this.reactionMru,
+      linkMru: linkMru ?? this.linkMru,
     );
   }
 
   @override
   List<Object?> get props =>
-      [mentionMruIds, showAllPriorities, connectionMru, reactionMru];
+      [mentionMruIds, showAllPriorities, connectionMru, reactionMru, linkMru];
 }

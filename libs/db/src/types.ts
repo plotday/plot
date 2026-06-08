@@ -2766,6 +2766,7 @@ export type Database = {
           permissions: Json | null
           premium: boolean
           publisher_id: number | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean
           thread_type: string | null
@@ -2793,6 +2794,7 @@ export type Database = {
           permissions?: Json | null
           premium?: boolean
           publisher_id?: number | null
+          reaction_capabilities?: Json | null
           seq?: unknown
           shared?: boolean
           thread_type?: string | null
@@ -2820,6 +2822,7 @@ export type Database = {
           permissions?: Json | null
           premium?: boolean
           publisher_id?: number | null
+          reaction_capabilities?: Json | null
           seq?: unknown
           shared?: boolean
           thread_type?: string | null
@@ -2848,6 +2851,7 @@ export type Database = {
           account_label: string | null
           archived_at: string | null
           created_at: string
+          custom_emoji_scope: string | null
           draft: boolean
           id: string
           name: string
@@ -2864,6 +2868,7 @@ export type Database = {
           account_label?: string | null
           archived_at?: string | null
           created_at?: string
+          custom_emoji_scope?: string | null
           draft?: boolean
           id?: string
           name: string
@@ -2880,6 +2885,7 @@ export type Database = {
           account_label?: string | null
           archived_at?: string | null
           created_at?: string
+          custom_emoji_scope?: string | null
           draft?: boolean
           id?: string
           name?: string
@@ -4126,6 +4132,7 @@ export type Database = {
           author_name: string | null
           author_url: string | null
           created_at: string | null
+          custom_emoji_scope: string | null
           draft: boolean | null
           id: string | null
           is_source: boolean | null
@@ -4797,6 +4804,7 @@ export type Database = {
           permissions: Json | null
           premium: boolean
           publisher_id: number | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean
           thread_type: string | null
@@ -6176,6 +6184,7 @@ export type Database = {
           account_label: string | null
           archived_at: string | null
           created_at: string | null
+          custom_emoji_scope: string | null
           default_mention_created: boolean | null
           default_mention_mentioned: boolean | null
           handle: string | null
@@ -6190,6 +6199,7 @@ export type Database = {
           name: string | null
           options: Json | null
           owner_id: string | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean | null
           team_id: number | null

@@ -43,6 +43,7 @@ CREATE TABLE "public"."twist" (
     "logo_url_dark" text,
     "execution_limit" integer,
     "multiple_instances" boolean NOT NULL DEFAULT false,
+    "reaction_capabilities" jsonb,
     "auto_approve" boolean NOT NULL DEFAULT FALSE,
     -- Bumped on every UPDATE by `update_seq_and_updated_at` so that changes
     -- to `permissions` (link_types, defaults) and other twist-level metadata
