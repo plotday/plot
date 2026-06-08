@@ -1032,6 +1032,7 @@ export interface Twist {
   permissions: Json | null;
   premium: Generated<boolean>;
   publisher_id: Int8 | null;
+  reaction_capabilities: Json | null;
   seq: Generated<string>;
   shared: Generated<boolean>;
   thread_type: string | null;
@@ -1886,6 +1887,7 @@ export interface UserTwist {
   name: string | null;
   options: Json | null;
   owner_id: string | null;
+  reaction_capabilities: Json | null;
   seq: string | null;
   shared: boolean | null;
   team_id: Int8 | null;
