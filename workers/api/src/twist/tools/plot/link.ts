@@ -488,6 +488,7 @@ export async function getLinks(
       "link.thread_id",
       "link.source",
       "link.sources",
+      "link.priority",
       "link.source_created_at",
       "link.created_at",
       "link.title",
@@ -610,6 +611,7 @@ export async function getLinks(
       channelId: row.channel_id ?? null,
       relatedSource: null,
       sources: row.sources ?? [],
+      priority: row.priority ?? 0,
     };
 
     const noteRows = (row.thread_id ? notesByThread.get(row.thread_id) : null) ?? [];

@@ -387,7 +387,9 @@ export interface Link {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: Generated<boolean>;
   preview: string | null;
+  priority: Generated<number>;
   priority_id: string | null;
   /**
    * Cross-connector thread bundling key. Links whose source matches another link's related_source share a thread, regardless of creation order.
@@ -1475,7 +1477,9 @@ export interface UserLink {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: boolean | null;
   preview: string | null;
+  priority: number | null;
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;
@@ -1505,7 +1509,9 @@ export interface UserLinkRedacted {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: boolean | null;
   preview: string | null;
+  priority: number | null;
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;

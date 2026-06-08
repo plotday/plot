@@ -84,6 +84,7 @@ export function fromDbLink(
     author_id: string | null;
     assignee_id: string | null;
     sources?: string[] | null;
+    priority?: number | null;
   } & {
     author?: {
       id: string | null;
@@ -147,6 +148,7 @@ export function fromDbLink(
     channelId: dbLink.channel_id ?? null,
     relatedSource: (dbLink as any).related_source ?? null,
     sources: dbLink.sources ?? [],
+    priority: dbLink.priority ?? 0,
   };
 }
 
