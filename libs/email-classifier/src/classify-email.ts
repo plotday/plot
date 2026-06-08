@@ -14,7 +14,11 @@ export type EmailSignals = {
   precedence: string | null;
   /** Auto-Submitted header (e.g. "auto-generated"), or null. */
   autoSubmitted: string | null;
-  /** Return-Path header; "<>" / "" indicates a bounce/auto sender. */
+  /**
+   * Return-Path header; "<>" / "" indicates a bounce/auto sender. (Connectors
+   * whose header getter coerces an empty value to null will pass null here, so
+   * the empty-string bounce signal only fires when the value is literally "<>".)
+   */
   returnPath: string | null;
   /** Importance / X-Priority header, or null. Carried by connectors; reserved for future heuristics. */
   importance: string | null;

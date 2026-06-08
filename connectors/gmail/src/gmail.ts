@@ -1354,7 +1354,13 @@ export class Gmail extends Connector<Gmail> {
         // Compute classifier facets from the parent message's headers + body.
         const facetParent = thread.messages.find((m) => !m.labelIds?.includes("DRAFT"));
         if (facetParent) {
-          plotThread.facets = gmailFacets(facetParent, plotThread.preview ?? "");
+          // Use the parent message's full note body (not the short preview snippet)
+          // so the classifier's reading-vs-notification length split can fire.
+          const facetNote = plotThread.notes?.find(
+            (n) => "key" in n && (n as { key: string }).key === facetParent.id
+          );
+          const facetBody = facetNote?.content ?? plotThread.preview ?? "";
+          plotThread.facets = gmailFacets(facetParent, facetBody);
         }
 
         // Star ↔ todo sync: detect star changes and sync to Plot todo status.

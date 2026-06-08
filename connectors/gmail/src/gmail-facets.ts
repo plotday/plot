@@ -1,6 +1,6 @@
 import { classifyEmail, type EmailSignals } from "@plotday/email-classifier";
 import type { ThreadFacets } from "@plotday/twister/facets";
-import { getHeader, type GmailMessage } from "./gmail-api";
+import { getHeader, parseEmailAddress, parseEmailAddresses, type GmailMessage } from "./gmail-api";
 
 const GMAIL_CATEGORY_LABELS = new Set([
   "CATEGORY_PROMOTIONS",
@@ -9,19 +9,6 @@ const GMAIL_CATEGORY_LABELS = new Set([
   "CATEGORY_FORUMS",
   "CATEGORY_PERSONAL",
 ]);
-
-// Count comma-separated addresses in a header value (To/Cc). Empty → 0.
-function addressCount(value: string | null): number {
-  if (!value) return 0;
-  return value.split(",").map((s) => s.trim()).filter((s) => s.length > 0).length;
-}
-
-function parseAddress(from: string | null): string | null {
-  if (!from) return null;
-  const angle = from.match(/<([^>]+)>/);
-  const addr = (angle ? angle[1] : from).trim().toLowerCase();
-  return addr.includes("@") ? addr : null;
-}
 
 /**
  * Compute facets for a Gmail message. `bodyText` is the extracted body used
@@ -35,8 +22,10 @@ export function gmailFacets(message: GmailMessage, bodyText: string): ThreadFace
     autoSubmitted: getHeader(message, "Auto-Submitted"),
     returnPath: getHeader(message, "Return-Path"),
     importance: getHeader(message, "Importance") ?? getHeader(message, "X-Priority"),
-    fromAddress: parseAddress(getHeader(message, "From")),
-    recipientCount: addressCount(getHeader(message, "To")) + addressCount(getHeader(message, "Cc")),
+    fromAddress: parseEmailAddress(getHeader(message, "From") ?? "")?.email.toLowerCase() ?? null,
+    recipientCount:
+      parseEmailAddresses(getHeader(message, "To")).length +
+      parseEmailAddresses(getHeader(message, "Cc")).length,
     isReply: getHeader(message, "In-Reply-To") !== null || getHeader(message, "References") !== null,
     subject: getHeader(message, "Subject"),
     bodyLength: bodyText.length,

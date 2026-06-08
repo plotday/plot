@@ -5,7 +5,6 @@ import type { GmailMessage } from "./gmail-api";
 function msg(opts: {
   headers: Array<[string, string]>;
   labelIds?: string[];
-  body?: string;
 }): GmailMessage {
   return {
     id: "m1",
@@ -18,7 +17,6 @@ function msg(opts: {
     payload: {
       mimeType: "text/plain",
       headers: opts.headers.map(([name, value]) => ({ name, value })),
-      body: opts.body !== undefined ? { size: opts.body.length } : undefined,
     },
   };
 }
