@@ -29,7 +29,10 @@ class LinkChipData {
   final String? favicon;
 
   /// What the chip shows: the resolved title, else the raw URL.
-  String get display => (title != null && title!.isNotEmpty) ? title! : url;
+  String get display {
+    final t = title;
+    return (t != null && t.isNotEmpty) ? t : url;
+  }
 }
 
 /// The step-1 "sections" view of the new-thread picker.
@@ -200,7 +203,16 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   @override
   void didUpdateWidget(covariant ComposeSectionsView old) {
     super.didUpdateWidget(old);
-    if ((old.pendingLink == null) != (widget.pendingLink == null)) {
+    final enteringLinkMode =
+        old.pendingLink == null && widget.pendingLink != null;
+    final exitingLinkMode =
+        old.pendingLink != null && widget.pendingLink == null;
+    if (enteringLinkMode) {
+      // The IndexedStack keeps the (now-hidden) search field in the tree; drop
+      // its focus so typing can't land in an invisible field.
+      widget.searchFocusNode.unfocus();
+    }
+    if (enteringLinkMode || exitingLinkMode) {
       _loadSections();
     }
   }
@@ -464,6 +476,10 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   /// Reloads the current view — re-running the active search, or the at-rest
   /// load when the filter is empty.
   void _reload() {
+    if (_linkMode) {
+      _loadSections();
+      return;
+    }
     final query = widget.searchController.text.trim();
     if (query.isEmpty) {
       _loadSections();
@@ -482,7 +498,7 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
   /// The link chip shown in place of the search field while in link mode:
   /// favicon (or link icon) + title/url + a ✕ to clear and return to the input.
   Widget _buildLinkChip(BuildContext context) {
-    final link = widget.pendingLink;
+    final link = widget.pendingLink!;
     final colors = context.theme.colors;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -494,9 +510,9 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            if (link?.favicon != null)
+            if (link.favicon != null)
               LogoImage(
-                url: link!.favicon!,
+                url: link.favicon!,
                 size: 16,
                 fallback: const Icon(PlotIcon.link, size: 16),
               )
@@ -505,18 +521,23 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                link?.display ?? '',
+                link.display,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: context.theme.typography.sm,
               ),
             ),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onClearLink,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Icon(PlotIcon.close, size: 16, color: colors.mutedForeground),
+            Semantics(
+              label: 'Clear link',
+              button: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onClearLink,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 8, bottom: 8),
+                  child: Icon(PlotIcon.close,
+                      size: 16, color: colors.mutedForeground),
+                ),
               ),
             ),
           ],
@@ -597,7 +618,10 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
                 onSubmit: () => _gridKey.currentState?.activateHighlighted(),
                 onEscape: null,
               ),
-              _buildLinkChip(context),
+              if (widget.pendingLink != null)
+                _buildLinkChip(context)
+              else
+                const SizedBox.shrink(),
             ],
           ),
           // Match the inter-section gap (PillGrid uses spacing.xl) so the input
