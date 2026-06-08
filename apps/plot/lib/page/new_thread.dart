@@ -176,11 +176,16 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// The target chosen in step 1, retained so submit can record it.
   ComposeTarget? _selectedTarget;
 
-  /// The link held in the step-1 picker (typed/pasted/shared URL + metadata).
+  /// The link held in the step-1 picker (pasted or shared URL + metadata).
   /// Non-null ⇒ link mode: the filter input shows a chip and the sections are
   /// Private notes + link-supporting Channels. Added to the draft note only
   /// when a destination is chosen (see [_applyTarget]).
   LinkChipData? _pendingLink;
+
+  /// Previous filter text, tracked so [_maybeEnterLinkModeFromField] can tell a
+  /// paste (multi-char jump) from char-by-char typing — only a pasted/shared URL
+  /// enters link mode, never an incrementally typed one.
+  String _lastFilterText = '';
 
   /// The recipient chosen in step 1 (a people pill), retained to drive the
   /// step-2 connection picker and the compose-step back-nav. Null on
@@ -290,15 +295,21 @@ class NewThreadPageState extends State<NewThreadPage> {
     _maybeEnterLinkModeFromField();
   }
 
-  /// If the filter text is (or contains) an http(s) URL, switch to link mode:
-  /// stash the URL as the pending link, clear the field (so it doesn't double
-  /// as a filter), and resolve metadata. No-op when already in link mode.
+  /// When the filter text gains an http(s) URL via paste (a multi-character
+  /// jump — not char-by-char typing), switch to link mode: stash the URL as the
+  /// pending link and clear the field so it doesn't double as a filter. No-op
+  /// when already in link mode. The share-intent path enters link mode directly
+  /// via [_enterLinkMode], bypassing this paste gate.
   void _maybeEnterLinkModeFromField() {
+    final text = _pickerSearchController.text;
+    final prev = _lastFilterText;
+    _lastFilterText = text;
     if (_pendingLink != null) return;
-    final url = extractHttpUrl(_pickerSearchController.text);
+    // Only a paste/share (a multi-character jump) enters link mode — typing a
+    // URL one character at a time leaves it as ordinary filter text.
+    if (text.length - prev.length < 2) return;
+    final url = extractHttpUrl(text);
     if (url == null) return;
-    // Set the pending link BEFORE clearing the field: clear() fires this
-    // listener again, and the guard above makes that re-entry a no-op.
     _enterLinkMode(url);
     _pickerSearchController.clear();
   }
@@ -799,6 +810,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       final current = _pendingLink;
       if (current == null || current.url != url) return;
       if (meta.title == null && meta.favicon == null) return;
+      // The chip is display-only (no user title edit), so overwriting the
+      // placeholder URL/title with fetched metadata is always correct here.
       setState(() {
         _pendingLink = LinkChipData(
           url: url,
@@ -1800,7 +1813,7 @@ class NewThreadPageState extends State<NewThreadPage> {
           note?.actions?.whereType<ExternalUserAction>().isNotEmpty ?? false;
       if (hasLink) {
         unawaited(
-          Future(() => prefs.recordLinkUsage(target.signature)).catchError((
+          prefs.recordLinkUsage(target.signature).catchError((
             Object e,
             StackTrace s,
           ) {
