@@ -24,6 +24,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -43,10 +44,14 @@ import {
 // chats are `conversation` links whose `accessContacts` has >1 entry.
 const TYPE_CONVERSATION = "conversation";
 
-const STATUS_PENDING  = "pending";
+// Only two statuses model real LinkedIn invitation state: `pending` (an
+// inbound connection request awaiting the user's decision) and `inbox`
+// ("Connected", the resting accepted state). Moving a pending link to
+// Connected accepts the invitation from inside Plot (see `onLinkUpdated`).
+// Authorship/archival statuses were removed — archiving a thread is a Plot
+// concept and no longer writes back to LinkedIn.
+const STATUS_PENDING = "pending";
 const STATUS_INBOX    = "inbox";
-const STATUS_ARCHIVED = "archived";
-const STATUS_IGNORED  = "ignored";
 
 const PROVIDER_KEY = "linkedin";
 
@@ -108,10 +113,10 @@ export class LinkedIn extends Connector<LinkedIn> {
       // free-form addresses.
       compose: { targets: "contacts" as const, status: STATUS_INBOX },
       statuses: [
-        { status: STATUS_PENDING,  label: "Pending" },
-        { status: STATUS_INBOX,    label: "Connected" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-        { status: STATUS_IGNORED,  label: "Ignored",  done: true },
+        { status: STATUS_PENDING, label: "Pending", icon: "tentative" as StatusIcon },
+        // "Connected" is the resting accepted state — hide its glyph on the
+        // feed row so only pending requests stand out.
+        { status: STATUS_INBOX, label: "Connected", icon: "confirmed" as StatusIcon, hiddenDefault: true },
       ],
     },
   ];
@@ -549,43 +554,31 @@ export class LinkedIn extends Connector<LinkedIn> {
     if (!channelId) return;
     if (!invitationId || !sharedSecret) return; // chat-only link — nothing to write back
 
-    // Idempotency: each invitation can only be accepted/ignored once.
-    // Plot may re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
+    // Idempotency: each invitation can only be accepted once. Plot may
+    // re-fire onLinkUpdated on unrelated edits (notes, title, etc.).
     const flagKey = `invitation_writeback:${invitationId}`;
     if (await this.get<string>(flagKey)) return;
 
-    // Map Plot status to LinkedIn action. Archived from Pending is treated
-    // as Ignore on LinkedIn (user wants this off their plate); the local
-    // status stays Archived to match what they clicked.
-    let action: "accept" | "ignore" | null = null;
-    if (link.status === STATUS_INBOX) action = "accept";
-    else if (link.status === STATUS_IGNORED) action = "ignore";
-    else if (link.status === STATUS_ARCHIVED) action = "ignore";
-    if (!action) return;
+    // The only write-back is accept: moving a pending invitation to
+    // "Connected" (inbox) in Plot accepts it on LinkedIn. There is no
+    // ignore/archive status anymore, so other transitions are no-ops.
+    if (link.status !== STATUS_INBOX) return;
 
     try {
-      if (action === "accept") {
-        await this.tools.linkedin.acceptInvitation({
-          channelId,
-          invitationId,
-          sharedSecret,
-        });
-      } else {
-        await this.tools.linkedin.ignoreInvitation({
-          channelId,
-          invitationId,
-          sharedSecret,
-        });
-      }
-      await this.set(flagKey, action);
+      await this.tools.linkedin.acceptInvitation({
+        channelId,
+        invitationId,
+        sharedSecret,
+      });
+      await this.set(flagKey, "accept");
     } catch (error) {
       // Invitation may have been resolved out-of-band; record the attempt so
       // we don't retry a stale invitation on every subsequent edit.
       console.warn(
-        `LinkedIn invitation write-back failed (${invitationId}, ${action})`,
+        `LinkedIn invitation write-back failed (${invitationId}, accept)`,
         error
       );
-      await this.set(flagKey, action);
+      await this.set(flagKey, "accept");
     }
   }
 

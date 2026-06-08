@@ -28,8 +28,6 @@ import {
 
 const TYPE_CONVERSATION = "conversation";
 const TYPE_GROUP = "group";
-const STATUS_INBOX = "inbox";
-const STATUS_ARCHIVED = "archived";
 const PROVIDER_KEY = "whatsapp";
 
 // Private connector — references the `"whatsapp"` auth provider value directly
@@ -56,11 +54,7 @@ export class WhatsApp extends Connector<WhatsApp> {
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",
-      compose: { targets: "addresses" as const, status: STATUS_INBOX },
-      statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-      ],
+      compose: { targets: "addresses" as const },
     },
     {
       type: TYPE_GROUP,
@@ -68,10 +62,6 @@ export class WhatsApp extends Connector<WhatsApp> {
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",
-      statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-      ],
     },
   ];
 
@@ -209,7 +199,7 @@ export class WhatsApp extends Connector<WhatsApp> {
         ? [`whatsapp:chat:${chatId}`]
         : [`whatsapp:person:${ids[0]}`, `whatsapp:chat:${chatId}`],
       type: TYPE_CONVERSATION,
-      status: STATUS_INBOX,
+      status: null,
       title: draft.title,
       created: message.sentAt,
       channelId: draft.channelId,
