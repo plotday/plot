@@ -1,10 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/layout.dart' show tileBorderRadius;
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/compose/compose_pill.dart';
+import 'package:plot/widget/icon.dart';
 
 // ─── Data model ──────────────────────────────────────────────────────────────
 
@@ -13,10 +16,15 @@ class PillGridItem {
   PillGridItem({
     required this.data,
     required this.onActivate,
+    this.onMore,
   });
 
   final ComposePillData data;
   final VoidCallback onActivate;
+
+  /// Optional "… More" action (Edit). When non-null, the row shows a trailing
+  /// "…" button while highlighted and Cmd+Enter on the highlighted row fires it.
+  final VoidCallback? onMore;
 }
 
 /// A labeled group of [PillGridItem]s rendered as a section inside [PillGrid].
@@ -137,6 +145,16 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
     _flat[_highlighted].onActivate();
   }
 
+  /// Fires the "… More" action of the highlighted row, if it has one.
+  /// Returns true if an action fired (so the host can swallow the key event).
+  bool moreHighlighted() {
+    if (_highlighted < 0 || _highlighted >= _flat.length) return false;
+    final onMore = _flat[_highlighted].onMore;
+    if (onMore == null) return false;
+    onMore();
+    return true;
+  }
+
   // ─── Internal helpers ──────────────────────────────────────────────────────
 
   /// Rebuild [_flat], [_keys], and [_rects] from [widget.sections].
@@ -253,7 +271,13 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
                 child: _rowChrome(
                   context,
                   highlighted: index == _highlighted,
-                  child: ComposePill(data: item.data),
+                  child: Row(
+                    children: [
+                      Expanded(child: ComposePill(data: item.data)),
+                      if (item.onMore != null && index == _highlighted)
+                        _moreButton(context, item.onMore!),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -312,6 +336,28 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: composePillGutter),
         child: child,
+      ),
+    );
+  }
+
+  /// The trailing "…" More button shown on the highlighted row when its item
+  /// carries an [PillGridItem.onMore]. Wrapped in a tap-absorbing
+  /// [GestureDetector] so a tap on the button fires only [onMore] and never
+  /// also triggers the row's [PillGridItem.onActivate].
+  Widget _moreButton(BuildContext context, VoidCallback onMore) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: FButton(
+        onPress: onMore,
+        variant: FButtonVariant.ghost,
+        style: ghostSizedStyleDelta(
+          context,
+          iconSize: context.theme.iconSizes.sm,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        ),
+        mainAxisSize: MainAxisSize.min,
+        child: const Icon(PlotIcon.more),
       ),
     );
   }
