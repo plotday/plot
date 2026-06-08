@@ -33,6 +33,7 @@ SELECT
     pt.team_id,
     pt.name,
     pt.account_label,
+    t.reaction_capabilities,
     pt.options,
     t.logo_url,
     t.logo_url_dark,

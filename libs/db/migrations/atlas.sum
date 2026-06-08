@@ -1,4 +1,4 @@
-h1:6w80piBc81RAken7lkAhBGUA5+mv4y1TnHzoxgu9XsI=
+h1:Z1kp3/qSOzRGsgL+ynjIUX81GG07iqap05GTBuv/w+k=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -491,3 +491,5 @@ h1:6w80piBc81RAken7lkAhBGUA5+mv4y1TnHzoxgu9XsI=
 20260607042546_fix_note_reaction_trigger_plot_initiated.sql h1:6kX828+GTKCpvsNZOSBZuKtsy+lbBuqTsDJQ16eNOYU=
 20260608032521_plot_team_synthetic_sender.sql h1:v5eevf5m3M7kz+r2+GjdVvdsB6nO6MvBPPvGTo8VZ5k=
 20260608160504_contacts_groups_apis.sql h1:3xKC4fe1FUxeq3KW6zNTAgxXe88FyPTZ2uUv2NdtDTs=
+20260608163244_add_twist_reaction_capabilities.sql h1:vkoCyfl/s2dzK+Ja5ZTX5K14Xj0TMmLRZIJXm872Pfs=
+20260608163440_expose_reaction_capabilities_in_user_twist.sql h1:ijoeOxoeAHVHxBbLMfmnwO1sPTO4EsVDjXUs5O6rNnY=

@@ -2760,6 +2760,7 @@ export type Database = {
           permissions: Json | null
           premium: boolean
           publisher_id: number | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean
           thread_type: string | null
@@ -2787,6 +2788,7 @@ export type Database = {
           permissions?: Json | null
           premium?: boolean
           publisher_id?: number | null
+          reaction_capabilities?: Json | null
           seq?: unknown
           shared?: boolean
           thread_type?: string | null
@@ -2814,6 +2816,7 @@ export type Database = {
           permissions?: Json | null
           premium?: boolean
           publisher_id?: number | null
+          reaction_capabilities?: Json | null
           seq?: unknown
           shared?: boolean
           thread_type?: string | null
@@ -4791,6 +4794,7 @@ export type Database = {
           permissions: Json | null
           premium: boolean
           publisher_id: number | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean
           thread_type: string | null
@@ -6180,6 +6184,7 @@ export type Database = {
           name: string | null
           options: Json | null
           owner_id: string | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean | null
           team_id: number | null

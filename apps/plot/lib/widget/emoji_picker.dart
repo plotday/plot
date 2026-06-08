@@ -11,7 +11,7 @@ import 'package:plot/widget/select_modal.dart';
 /// Replaces the bespoke `ReactionPicker`: gets full keyboard navigation
 /// (arrow keys move 2-D across the grid, Enter selects, Escape closes,
 /// type-to-search), MRU "Recent" group when provided, and the same
-/// `allowed`-set filtering used by `reactionCapabilitiesForLinkSource`.
+/// `allowed`-set filtering used by `reactionCapabilitiesFromJson`.
 ///
 /// Open via [EmojiPicker.pick] which resolves to the chosen emoji string
 /// (Unicode grapheme cluster), or `null` if the user dismissed.
