@@ -11,6 +11,13 @@ import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/logging.dart';
 import 'package:plot/widget/onboarding/onboarding_hoverable.dart';
 
+/// `Twist.category` values that get their own onboarding section. Every other
+/// (or null) category falls through to the catch-all "Apps" section. These
+/// must match the strings connectors declare in their `package.json` and that
+/// the API persists to `twist.category`.
+const _messagingCategory = 'messaging';
+const _calendarCategory = 'calendar';
+
 /// Renders the content of the "Connect your other tools" onboarding step.
 ///
 /// Lists every source connector available to the user (Gmail, Slack, Linear,
@@ -137,6 +144,21 @@ class _OnboardingToolsState extends State<OnboardingTools> {
             .toList()
           ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+    // Bucket the available connectors into the three onboarding sections.
+    // Anything without a recognized category (including null) falls through
+    // to "Apps" so a new or uncategorized connector is never dropped.
+    final messaging =
+        tools.where((t) => t.category == _messagingCategory).toList();
+    final calendars =
+        tools.where((t) => t.category == _calendarCategory).toList();
+    final apps = tools
+        .where(
+          (t) =>
+              t.category != _messagingCategory &&
+              t.category != _calendarCategory,
+        )
+        .toList();
+
     // Exclude drafts and partially-set-up sources (OAuth completed but
     // EditSource closed without picking channels). They linger in
     // /sources/summary but aren't real connections from the user's
@@ -165,14 +187,6 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               minTile,
               280.0,
             );
-
-        final messaging =
-            tools.where((t) => t.category == 'messaging').toList();
-        final calendars =
-            tools.where((t) => t.category == 'calendar').toList();
-        final apps = tools
-            .where((t) => t.category != 'messaging' && t.category != 'calendar')
-            .toList();
 
         return Column(
           mainAxisSize: MainAxisSize.min,
