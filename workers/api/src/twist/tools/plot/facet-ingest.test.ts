@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import type { DB } from "@plotday/db";
+import type { DB } from "../../../db";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const d = DATABASE_URL ? describe : describe.skip;
