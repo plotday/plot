@@ -28,19 +28,10 @@ function parseAddress(from: string | null): string | null {
  * for the length heuristic (pass the same string the note will carry).
  */
 export function gmailFacets(message: GmailMessage, bodyText: string): ThreadFacets {
-  const listId = getHeader(message, "List-Id");
-  const listUnsubscribe = getHeader(message, "List-Unsubscribe");
-  const explicitPrecedence = getHeader(message, "Precedence");
-  // List-Id / List-Unsubscribe are definitive automation signals (RFC 2369/2919
-  // mailing-list headers only appear on automated bulk mail). Synthesise a
-  // "bulk" precedence when the explicit header is absent so the classifier's
-  // computeAutomation() path fires correctly.
-  const precedence = explicitPrecedence ?? (listId || listUnsubscribe ? "bulk" : null);
-
   const signals: EmailSignals = {
-    listId,
-    listUnsubscribe,
-    precedence,
+    listId: getHeader(message, "List-Id"),
+    listUnsubscribe: getHeader(message, "List-Unsubscribe"),
+    precedence: getHeader(message, "Precedence"),
     autoSubmitted: getHeader(message, "Auto-Submitted"),
     returnPath: getHeader(message, "Return-Path"),
     importance: getHeader(message, "Importance") ?? getHeader(message, "X-Priority"),

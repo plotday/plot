@@ -59,6 +59,10 @@ function computeAutomation(s: EmailSignals): Automation {
   const auto = (s.autoSubmitted ?? "").toLowerCase();
   if (auto && auto !== "no") return "automated";
   if (s.returnPath !== null && (s.returnPath === "" || s.returnPath === "<>")) return "automated";
+  // Mailing-list headers (List-Id / List-Unsubscribe) indicate bulk/automated
+  // mail — newsletters, announcements, notifications. (A human posting to a
+  // discussion list is the rare exception we accept under best-effort.)
+  if (s.listId || s.listUnsubscribe) return "automated";
   if (NOREPLY_LOCALPART.test(localPart(s.fromAddress))) return "automated";
   return "human";
 }

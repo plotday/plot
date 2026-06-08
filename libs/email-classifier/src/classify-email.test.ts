@@ -29,6 +29,9 @@ describe("classifyEmail — automation", () => {
   it("flags Auto-Submitted automated", () => {
     expect(classifyEmail(signals({ autoSubmitted: "auto-generated" })).automation).toBe("automated");
   });
+  it("flags mailing-list mail automated", () => {
+    expect(classifyEmail(signals({ listId: "<news.acme.com>" })).automation).toBe("automated");
+  });
   it("treats a plain person email as human", () => {
     expect(classifyEmail(signals()).automation).toBe("human");
   });
