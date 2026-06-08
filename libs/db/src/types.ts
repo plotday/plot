@@ -4727,6 +4727,10 @@ export type Database = {
         Args: { p_created_by: string; p_filter?: Json; p_hard?: boolean }
         Returns: string[]
       }
+      author_matches_org_domain: {
+        Args: { p_author_id: string; p_user_id: string }
+        Returns: boolean
+      }
       channel_default_marker: {
         Args: { p_priority_id: string; p_thread_id: string; p_user_id: string }
         Returns: number
@@ -4870,12 +4874,20 @@ export type Database = {
         Returns: undefined
       }
       insert_domain: { Args: { email: string }; Returns: number }
+      intrinsic_facets_violate: {
+        Args: { p_facets: Json; p_filters: Json }
+        Returns: boolean
+      }
       is_accessible_twist: {
         Args: { p_twist_id: number; p_user_id: string }
         Returns: boolean
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
       is_lower: { Args: { "": string }; Returns: boolean }
+      is_trusted_for_focus: {
+        Args: { p_author_id: string; p_priority_id: string; p_user_id: string }
+        Returns: boolean
+      }
       join_topic: {
         Args: { p_topic_id: string; p_user_id: string }
         Returns: undefined
@@ -4996,6 +5008,15 @@ export type Database = {
       }
       sync_user_on_connect: { Args: { p_user_id: string }; Returns: undefined }
       text2ltree: { Args: { "": string }; Returns: unknown }
+      thread_facets_gated: {
+        Args: {
+          p_author_id: string
+          p_facets: Json
+          p_priority_id: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       tstzrange_to_daterange: {
         Args: { p_range: unknown; p_timezone?: string }
         Returns: unknown
