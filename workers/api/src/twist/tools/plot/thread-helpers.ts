@@ -1340,6 +1340,10 @@ export async function prepareThreadForDb(
         : {}),
     // Store content embedding for future priority rule matching
     ...(embeddingJson ? { embedding: embeddingJson } : {}),
+    // Intrinsic facets supplied by the connector (format/automation/reach).
+    // Goes into p_defaults so upsert_thread writes it on INSERT and preserves
+    // it on UPDATE (never churned). Server-only classifier signal.
+    ...((activity as any).facets !== undefined ? { facets: (activity as any).facets } : {}),
   };
 
   // Source-based threads use upsert, non-source use insert

@@ -106,6 +106,7 @@ export async function createLink(
       ...(link.author ? { author: link.author } : {}),
       ...(link.assignee !== undefined ? { assignee: link.assignee } : {}),
       ...(link.meta !== undefined ? { meta: link.meta } : {}),
+      ...(link.facets !== undefined ? { facets: link.facets } : {}),
       ...(link.actions !== undefined ? { actions: link.actions } : {}),
       ...(link.created ? { created: link.created } : {}),
       ...(link.access !== undefined ? { access: link.access } : {}),
