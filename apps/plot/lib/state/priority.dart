@@ -3424,9 +3424,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Convert draft note to published if provided. Tags on the note (including
     // self-assignment via Tag.todo) come from explicit user toggles in the
     // editor — never auto-applied here.
-    if (note != null &&
-        note.content != null &&
-        note.content!.trim().isNotEmpty) {
+    // Publish the draft note when it has body content OR carries an external
+    // link action (an empty-body "thread about a link" keeps the link on the
+    // note — it is no longer promoted to a thread-level LinkRow). Mirrors the
+    // new-thread send-button predicate and the finalizeThreadDraft guard.
+    final hasNoteContent =
+        note?.content != null && note!.content!.trim().isNotEmpty;
+    final hasNoteLink =
+        note?.actions?.whereType<ExternalUserAction>().isNotEmpty ?? false;
+    if (note != null && (hasNoteContent || hasNoteLink)) {
       final publishedNote = note.copyWith(
         threadId: savedThread.id,
         draft: false,
