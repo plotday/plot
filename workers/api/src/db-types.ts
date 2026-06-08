@@ -1046,6 +1046,7 @@ export interface TwistInstance {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  custom_emoji_scope: string | null;
   draft: Generated<boolean>;
   id: Generated<string>;
   name: string;
@@ -1182,6 +1183,7 @@ export interface TwistInstanceDetails {
   author_name: string | null;
   author_url: string | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   draft: boolean | null;
   id: string | null;
   is_source: boolean | null;
@@ -1873,6 +1875,7 @@ export interface UserTwist {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
   handle: string | null;

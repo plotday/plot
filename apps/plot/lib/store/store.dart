@@ -2427,7 +2427,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 360;
+  int get schemaVersion => 361;
 
   @override
   MigrationStrategy get migration {
@@ -3888,6 +3888,17 @@ class Store extends _$Store {
         m,
         twistInstances,
         twistInstances.reactionCapabilities,
+      );
+    }
+
+    if (from < 361) {
+      // Sync twist_instance.custom_emoji_scope: an opaque per-connection
+      // token (e.g. `slack:T0123ABC`) used to offer "this connection's custom
+      // emoji" in the reaction picker (prefix-match against custom_emoji.id).
+      await _safeAddColumn(
+        m,
+        twistInstances,
+        twistInstances.customEmojiScope,
       );
     }
   }

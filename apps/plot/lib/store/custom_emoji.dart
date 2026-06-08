@@ -39,3 +39,19 @@ class CustomEmojisBase extends BaseTable {
     return CustomEmojiRow.fromJson(json);
   }
 }
+
+/// Query helpers for the [CustomEmojis] cache.
+class CustomEmoji {
+  CustomEmoji._();
+
+  /// Non-archived custom emoji belonging to a connection's opaque scope token
+  /// (their `id` is `<scope>/<name>`). The scope is treated as an opaque
+  /// prefix — no provider/workspace parsing. Used by the reaction picker to
+  /// offer "this connection's custom emoji".
+  static Future<List<CustomEmojiRow>> forScope(String scope) async {
+    if (!Store.isAvailable) return const [];
+    return (Store.get.select(Store.get.customEmojis)
+          ..where((t) => t.id.like('$scope/%') & t.archivedAt.isNull()))
+        .get();
+  }
+}
