@@ -11,6 +11,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -86,7 +87,7 @@ export class MsTeams extends Connector<MsTeams> {
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
       statuses: [
-        { status: "sent", label: "Sent" },
+        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
       ],
       compose: {
         targets: "channels" as const,
@@ -102,7 +103,7 @@ export class MsTeams extends Connector<MsTeams> {
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
       statuses: [
-        { status: "sent", label: "Sent" },
+        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
       ],
       compose: {
         targets: "contacts" as const,

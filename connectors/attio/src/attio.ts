@@ -13,6 +13,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -120,6 +121,7 @@ export class Attio extends Connector<Attio> {
     let dealStatuses: Array<{
       status: string;
       label: string;
+      icon: StatusIcon;
       done?: true;
       todo?: true;
     }> = [];
@@ -129,6 +131,13 @@ export class Attio extends Connector<Attio> {
       dealStatuses = nonArchived.map((stage) => ({
         status: stage.title,
         label: stage.title,
+        // Won → done, lost → cancelled, all other pipeline stages → inProgress
+        // (a deal sitting in any open stage is actively being worked).
+        icon: (isWonStage(stage.title)
+          ? "done"
+          : isLostStage(stage.title)
+            ? "cancelled"
+            : "inProgress") as StatusIcon,
         ...(isWonStage(stage.title) ? { done: true as const } : {}),
         ...(isLostStage(stage.title) ? { done: true as const } : {}),
       }));

@@ -15,6 +15,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
@@ -70,8 +71,8 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       logo: "https://plot.day/assets/logo-google-tasks.svg",
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "done", label: "Done", done: true },
+        { status: "open", label: "Open", icon: "todo" as StatusIcon },
+        { status: "done", label: "Done", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: false,
       compose: { status: "open" },

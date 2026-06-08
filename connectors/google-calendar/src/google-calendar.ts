@@ -24,6 +24,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -185,9 +186,9 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       logo: "https://api.iconify.design/logos/google-calendar.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",
       statuses: [
-        { status: "Confirmed", label: "Confirmed" },
-        { status: "Tentative", label: "Tentative" },
-        { status: "Cancelled", label: "Cancelled" },
+        { status: "Confirmed", label: "Confirmed", icon: "confirmed" as StatusIcon, hiddenDefault: true },
+        { status: "Tentative", label: "Tentative", icon: "tentative" as StatusIcon },
+        { status: "Cancelled", label: "Cancelled", icon: "cancelled" as StatusIcon },
       ],
       // Attendee participation. Organizer membership is tracked separately
       // on schedule_contact.role and isn't exposed as a thread-level role.

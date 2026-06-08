@@ -15,6 +15,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -128,9 +129,9 @@ export class GitHub extends Connector<GitHub> {
       logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "closed", label: "Closed", done: true },
-        { status: "merged", label: "Merged", done: true },
+        { status: "open", label: "Open", icon: "todo" as StatusIcon },
+        { status: "closed", label: "Closed", done: true, icon: "cancelled" as StatusIcon },
+        { status: "merged", label: "Merged", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
     },
@@ -143,8 +144,8 @@ export class GitHub extends Connector<GitHub> {
       logoDark: "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "closed", label: "Closed", done: true },
+        { status: "open", label: "Open", icon: "todo" as StatusIcon },
+        { status: "closed", label: "Closed", done: true, icon: "done" as StatusIcon },
       ],
       supportsAssignee: true,
     },
