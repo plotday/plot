@@ -112,9 +112,11 @@ export class Slack extends Connector<Slack> {
   readonly provider = AuthProvider.Slack;
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
-    // Custom workspace emoji are skipped on both sync directions for
-    // v1; flip to "workspace" once the custom_emoji image cache lands.
-    customEmoji: "none" as const,
+    // Workspace custom emoji sync both ways: inbound reactions become
+    // `slack:<teamId>/<name>` refs (see extractSlackMessageReactions), the
+    // cache is populated by syncCustomEmoji, and onNoteReactionChanged
+    // unwraps refs back to the bare name for reactions.add/remove.
+    customEmoji: "workspace" as const,
   };
   readonly scopes = Slack.SCOPES;
   readonly linkTypes = [
@@ -1526,13 +1528,19 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    const shortcode = unicodeToSlackName(emoji);
+    let shortcode = unicodeToSlackName(emoji);
+    if (!shortcode && emoji.startsWith("slack:")) {
+      // Custom workspace emoji ref `slack:<teamId>/<name>` → bare name, which
+      // Slack's reactions.add/remove accepts directly.
+      const m = emoji.match(/^slack:[^/]+\/(.+)$/);
+      if (m) shortcode = m[1];
+    }
     if (!channelId || !note.key) {
       return;
     }
 
     if (!shortcode) {
-      return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+      return; // unmapped Unicode / unknown custom emoji — no Slack equivalent
     }
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;

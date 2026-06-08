@@ -308,3 +308,83 @@ describe("extractSlackMessageReactions (custom emoji)", () => {
     expect(Object.keys(result!)[0]?.startsWith("slack:")).toBe(false);
   });
 });
+
+describe("onNoteReactionChanged (custom emoji outbound)", () => {
+  it("unwraps a slack: ref to the bare name for reactions.add", async () => {
+    const store = makeStore({ sync_enabled_C1: true });
+    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const tools = {
+      store,
+      integrations: { get: integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+
+    const calls: Array<{ method: string; params: URLSearchParams }> = [];
+    const fetchMock = vi.fn(async (url: string, init: { body: string }) => {
+      calls.push({
+        method: String(url).split("/api/")[1] ?? String(url),
+        params: new URLSearchParams(init.body),
+      });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ ok: true }),
+      } as never;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await slack.onNoteReactionChanged(
+        { key: "111.000" } as never,
+        { meta: { channelId: "C1" } } as never,
+        { id: "actor-1" } as never,
+        "slack:T0/party_parrot",
+        true
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const add = calls.find((c) => c.method.startsWith("reactions.add"));
+    expect(add).toBeDefined();
+    expect(add!.params.get("name")).toBe("party_parrot");
+    expect(add!.params.get("channel")).toBe("C1");
+    expect(add!.params.get("timestamp")).toBe("111.000");
+  });
+
+  it("drops an unknown custom emoji ref with no Slack equivalent", async () => {
+    const store = makeStore({ sync_enabled_C1: true });
+    const integrationsGet = vi.fn().mockResolvedValue({ token: "xoxp-test" });
+    const tools = {
+      store,
+      integrations: { get: integrationsGet },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await slack.onNoteReactionChanged(
+        { key: "111.000" } as never,
+        { meta: { channelId: "C1" } } as never,
+        { id: "actor-1" } as never,
+        "not-a-mappable-emoji",
+        true
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
