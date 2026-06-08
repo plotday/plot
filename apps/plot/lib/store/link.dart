@@ -230,6 +230,19 @@ enum StatusIcon {
         'tentative' => StatusIcon.tentative,
         _ => null,
       };
+
+  /// The glyph rendered for this status. Total over all values so the UI
+  /// always has something to show (the SDK marks `icon` required).
+  IconData get glyph => switch (this) {
+        StatusIcon.backlog => FontAwesomeIcons.circleDashed,
+        StatusIcon.todo => FontAwesomeIcons.circle,
+        StatusIcon.inProgress => FontAwesomeIcons.circleHalfStroke,
+        StatusIcon.blocked => FontAwesomeIcons.octagonXmark,
+        StatusIcon.done => FontAwesomeIcons.circleCheck,
+        StatusIcon.cancelled => FontAwesomeIcons.circleXmark,
+        StatusIcon.confirmed => FontAwesomeIcons.calendarCheck,
+        StatusIcon.tentative => FontAwesomeIcons.circleQuestion,
+      };
 }
 
 /// A possible status value within a LinkTypeConfig.

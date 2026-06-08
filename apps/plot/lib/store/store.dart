@@ -39,6 +39,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
