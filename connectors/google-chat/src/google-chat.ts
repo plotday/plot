@@ -109,12 +109,8 @@ export class GoogleChat extends Connector<GoogleChat> {
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
-      statuses: [
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -124,12 +120,8 @@ export class GoogleChat extends Connector<GoogleChat> {
       sharingModel: "thread" as const,
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
-      statuses: [
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];

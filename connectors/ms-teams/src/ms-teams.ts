@@ -85,12 +85,8 @@ export class MsTeams extends Connector<MsTeams> {
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-      statuses: [
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -101,12 +97,8 @@ export class MsTeams extends Connector<MsTeams> {
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-      statuses: [
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];
