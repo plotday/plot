@@ -162,6 +162,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Controllers for the inline step-1 picker. Recreated for the step-2 modal
   // re-open so the two mounts don't share scroll/highlight state.
   final ScrollController _pickerScrollController = ScrollController();
+
   /// Focus node for the inline step-1 search field. Owned here (not by the
   /// picker) so [_resetToFreshStart] can re-focus the filter when the
   /// already-mounted page is reset to step 1 — AutoRoute reuses the same
@@ -237,7 +238,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       _active.value = false;
       return;
     }
-    _active.value = _mouseInside ||
+    _active.value =
+        _mouseInside ||
         _engaged ||
         _pickerSearchController.text.trim().isNotEmpty;
   }
@@ -963,7 +965,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// existing [_applyConnectionChoice] / [_selectTwist] paths), and the
   /// target's pre-filled roster (contacts/groups). Then suggests an MRU focus
   /// and focuses the editor.
-  Future<void> _applyTarget(ComposeTarget target, {bool feedback = false}) async {
+  Future<void> _applyTarget(
+    ComposeTarget target, {
+    bool feedback = false,
+  }) async {
     final bloc = _priorityBloc;
     if (bloc == null) return;
 
@@ -991,7 +996,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     final draft = bloc.state.draft;
     // Pending invite emails count as a roster: a Chat-with-email is a shared
     // thread even before the invitee resolves to a contact.
-    final hasRoster = target.contacts.isNotEmpty ||
+    final hasRoster =
+        target.contacts.isNotEmpty ||
         target.groups.isNotEmpty ||
         target.inviteEmails.isNotEmpty;
     // A no-roster target (a Note, or a connector with SharingModel.none such as
@@ -1007,21 +1013,21 @@ class NewThreadPageState extends State<NewThreadPage> {
       contacts: noRoster
           ? const Value(null)
           : target.contacts.isEmpty
-              ? const Value.absent()
-              : Value(target.contacts),
+          ? const Value.absent()
+          : Value(target.contacts),
       groups: noRoster
           ? const Value(null)
           : target.groups.isEmpty
-              ? const Value.absent()
-              : Value(target.groups),
+          ? const Value.absent()
+          : Value(target.groups),
       // Clear invite emails when switching to a no-roster target; otherwise
       // carry the target's (or leave absent when it has none, so a prior
       // address typed this session survives a roster-bearing reselect).
       inviteEmails: noRoster
           ? const Value(null)
           : target.inviteEmails.isEmpty
-              ? const Value.absent()
-              : Value(target.inviteEmails),
+          ? const Value.absent()
+          : Value(target.inviteEmails),
       // Topic targets file the thread into a Plot topic (sets thread.topic_id);
       // every other target clears it so switching away from a topic doesn't
       // strand the previous filing.
@@ -1079,12 +1085,13 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// step-1 query, clear the shared field for "Select a connection", and show
   /// step 2.
   Future<void> _pickRecipient(ComposePeopleEntry entry) async {
-    final remembered =
-        await context.read<ComposeTargetsBloc>().lastUsedTargetForRoster(
-              contacts: entry.contacts,
-              groups: entry.groups,
-              inviteEmails: entry.inviteEmails,
-            );
+    final remembered = await context
+        .read<ComposeTargetsBloc>()
+        .lastUsedTargetForRoster(
+          contacts: entry.contacts,
+          groups: entry.groups,
+          inviteEmails: entry.inviteEmails,
+        );
     if (!mounted) return;
     _stashedSectionsQuery = _pickerSearchController.text;
     _pickerSearchController.clear();
@@ -1212,8 +1219,10 @@ class NewThreadPageState extends State<NewThreadPage> {
         if (!mounted || _step != _ComposeStep.sections) return;
         final text = _pickerSearchController.text;
         if (text.isNotEmpty) {
-          _pickerSearchController.selection =
-              TextSelection(baseOffset: 0, extentOffset: text.length);
+          _pickerSearchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: text.length,
+          );
         }
       });
     }
@@ -1247,8 +1256,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (target.priorityId != null) {
       final priorities = await Priority.get(order: PriorityOrder.nested);
       if (!mounted) return;
-      final p =
-          priorities.where((x) => x.id == target.priorityId).firstOrNull;
+      final p = priorities.where((x) => x.id == target.priorityId).firstOrNull;
       if (p != null) {
         setState(() => _focusSuggestionOrder = [p]);
         await _switchToPriority(p);
@@ -1421,15 +1429,20 @@ class NewThreadPageState extends State<NewThreadPage> {
     BuildContext context,
     CreateTarget active,
   ) async {
-    final options = _allConnectionTargets
-        .where((t) =>
-            !t.isDmType &&
-            t.twist.id == active.twist.id &&
-            t.linkType.type == active.linkType.type)
-        .toList()
-      ..sort((a, b) => (a.channel?.title ?? '')
-          .toLowerCase()
-          .compareTo((b.channel?.title ?? '').toLowerCase()));
+    final options =
+        _allConnectionTargets
+            .where(
+              (t) =>
+                  !t.isDmType &&
+                  t.twist.id == active.twist.id &&
+                  t.linkType.type == active.linkType.type,
+            )
+            .toList()
+          ..sort(
+            (a, b) => (a.channel?.title ?? '').toLowerCase().compareTo(
+              (b.channel?.title ?? '').toLowerCase(),
+            ),
+          );
     final selected = options
         .where((t) => t.channel?.channelId == active.channel?.channelId)
         .firstOrNull;
@@ -1440,9 +1453,11 @@ class NewThreadPageState extends State<NewThreadPage> {
         final filtered = query.isEmpty
             ? options
             : options
-                .where((t) =>
-                    (t.channel?.title ?? '').toLowerCase().contains(query))
-                .toList();
+                  .where(
+                    (t) =>
+                        (t.channel?.title ?? '').toLowerCase().contains(query),
+                  )
+                  .toList();
         return [SelectGroup<CreateTarget>(title: null, items: filtered)];
       },
       itemBuilder: (t, _) => ListTile(body: Text(t.channel?.title ?? '')),
@@ -1754,9 +1769,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Single-panel mode drops the global header back button; the picker's
       // search-field leading slot carries the back affordance instead and
       // closes the new-thread page. Multi-panel keeps a plain search icon.
-      onBack: multiPanel
-          ? null
-          : () => context.run(ChangeCurrentThread(null)),
+      onBack: multiPanel ? null : () => context.run(ChangeCurrentThread(null)),
     );
 
     if (!multiPanel) {
@@ -1773,7 +1786,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         children: [
           // Calm breathing room above the prompt; the picker then fills the
           // remaining height so the list runs to the bottom of the panel.
-          const SizedBox(height: 48),
+          SizedBox(height: context.theme.spacing.lg),
           Expanded(child: picker),
         ],
       ),
@@ -1813,7 +1826,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         children: [
           // Calm breathing room above the prompt; the picker then fills the
           // remaining height so the list runs to the bottom of the panel.
-          const SizedBox(height: 48),
+          SizedBox(height: context.theme.spacing.lg),
           Expanded(child: view),
         ],
       ),
@@ -1831,7 +1844,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     // A channel-sharing connection (Slack, Linear) shows a channel field in
     // place of the contacts field: the audience is the channel's membership,
     // and tapping the field switches which channel the thread targets.
-    final channelTarget = activeChoice is TargetConnectionChoice &&
+    final channelTarget =
+        activeChoice is TargetConnectionChoice &&
             activeChoice.target.linkType.sharingModel == SharingModel.channel
         ? activeChoice.target
         : null;
@@ -1894,241 +1908,257 @@ class NewThreadPageState extends State<NewThreadPage> {
         // narrow layouts). OR-ed into the body opacity at render time.
         _singlePanel = !layoutState.multiPanel;
         return BlocBuilder<PriorityBloc, PriorityState>(
-            // During initial load PriorityBloc emits 6-10 times (agenda,
-            // activity feed, tags, icon counts, twists, actors). Only the
-            // fields below actually affect this page's chrome — rebuilding
-            // for the rest forces a fresh NoteEditor widget each emit and
-            // is the primary cause of the on-open editor flicker.
-            //
-            // `twists` and `actors` are deliberately excluded: in production
-            // with many contacts the Drift `Actor.watch` stream emits many
-            // times during initial sync, and rebuilding the chip row +
-            // scaffold on each emit makes the page visibly flicker until
-            // the stream settles. NoteEditor subscribes to those fields
-            // internally via its own BlocBuilder so the inner Editor still
-            // sees fresh @-mention candidates.
-            buildWhen: (prev, curr) =>
-                prev.draft != curr.draft ||
-                prev.draftNote != curr.draftNote ||
-                prev.context != curr.context,
-            builder: (context, state) {
-              return PopScope(
-                canPop: false,
-                onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) {
-                    if (ModalProvider.tryDismissTopModal(context)) return;
-                    final provider = ActivityPanelControllerProvider.maybeOf(
-                      context,
-                    );
-                    if (provider != null && provider.tryCloseSearch()) return;
-                    if (!context.isMultiPanel) {
-                      context.run(ChangeCurrentThread(null));
-                    }
+          // During initial load PriorityBloc emits 6-10 times (agenda,
+          // activity feed, tags, icon counts, twists, actors). Only the
+          // fields below actually affect this page's chrome — rebuilding
+          // for the rest forces a fresh NoteEditor widget each emit and
+          // is the primary cause of the on-open editor flicker.
+          //
+          // `twists` and `actors` are deliberately excluded: in production
+          // with many contacts the Drift `Actor.watch` stream emits many
+          // times during initial sync, and rebuilding the chip row +
+          // scaffold on each emit makes the page visibly flicker until
+          // the stream settles. NoteEditor subscribes to those fields
+          // internally via its own BlocBuilder so the inner Editor still
+          // sees fresh @-mention candidates.
+          buildWhen: (prev, curr) =>
+              prev.draft != curr.draft ||
+              prev.draftNote != curr.draftNote ||
+              prev.context != curr.context,
+          builder: (context, state) {
+            return PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, result) {
+                if (!didPop) {
+                  if (ModalProvider.tryDismissTopModal(context)) return;
+                  final provider = ActivityPanelControllerProvider.maybeOf(
+                    context,
+                  );
+                  if (provider != null && provider.tryCloseSearch()) return;
+                  if (!context.isMultiPanel) {
+                    context.run(ChangeCurrentThread(null));
                   }
-                },
-                child: CallbackShortcuts(
-                  bindings: _buildThreadShortcuts(context, state),
-                  child: Scaffold(
-                    translucent: true,
-                    scrollable: false,
-                    childPad: false,
-                    // Active/inactive styling: the body fades between full
-                    // strength and a muted resting state so it doesn't catch
-                    // the eye when idle. The MouseRegion/Focus drive [_active]
-                    // (via the notifier only — never setState — so the editor
-                    // subtree isn't rebuilt on hover/focus), and the
-                    // ValueListenableBuilder animates just the opacity layer.
-                    body: MouseRegion(
-                      opaque: false,
-                      onEnter: (_) {
-                        _mouseInside = true;
-                        _dismissed = false;
-                        _recomputeActive();
-                      },
-                      onExit: (_) {
-                        _mouseInside = false;
-                        _engaged = false;
-                        _dismissed = false;
-                        _recomputeActive();
-                      },
-                      child: Focus(
-                        canRequestFocus: false,
-                        skipTraversal: true,
-                        // Track focus only to gate the key handler. Do NOT
-                        // deactivate on focus-loss: the app drops/re-grabs focus
-                        // internally (e.g. on reset), which would wipe a
-                        // just-applied engagement. Mouse-leave / Esc deactivate.
-                        onFocusChange: (hasFocus) => _pageFocused = hasFocus,
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: _active,
-                          builder: (context, active, child) => AnimatedOpacity(
-                            // Only the sections picker (step 1) dims when idle.
-                            // The connection and compose steps are always full
-                            // strength — like [_singlePanel], the step is OR-ed
-                            // in here at render time (never folded into [_active])
-                            // so a step change can't strand a stale value.
-                            opacity: (active ||
-                                    _singlePanel ||
-                                    _step != _ComposeStep.sections)
-                                ? 1.0
-                                : kNewThreadInactiveOpacity,
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
-                            child: child,
-                          ),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                        // Step 1: the inline sections picker. Shown on a fresh
-                        // mount (and after the New-thread command remounts) in
-                        // place of the compose surface + editor.
-                        if (_step == _ComposeStep.sections) {
-                          return _buildTargetPickerStep(
-                            context,
-                            multiPanel: layoutState.multiPanel,
-                          );
-                        }
+                }
+              },
+              child: CallbackShortcuts(
+                bindings: _buildThreadShortcuts(context, state),
+                child: Scaffold(
+                  translucent: true,
+                  scrollable: false,
+                  childPad: false,
+                  // Active/inactive styling: the body fades between full
+                  // strength and a muted resting state so it doesn't catch
+                  // the eye when idle. The MouseRegion/Focus drive [_active]
+                  // (via the notifier only — never setState — so the editor
+                  // subtree isn't rebuilt on hover/focus), and the
+                  // ValueListenableBuilder animates just the opacity layer.
+                  body: MouseRegion(
+                    opaque: false,
+                    onEnter: (_) {
+                      _mouseInside = true;
+                      _dismissed = false;
+                      _recomputeActive();
+                    },
+                    onExit: (_) {
+                      _mouseInside = false;
+                      _engaged = false;
+                      _dismissed = false;
+                      _recomputeActive();
+                    },
+                    child: Focus(
+                      canRequestFocus: false,
+                      skipTraversal: true,
+                      // Track focus only to gate the key handler. Do NOT
+                      // deactivate on focus-loss: the app drops/re-grabs focus
+                      // internally (e.g. on reset), which would wipe a
+                      // just-applied engagement. Mouse-leave / Esc deactivate.
+                      onFocusChange: (hasFocus) => _pageFocused = hasFocus,
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _active,
+                        builder: (context, active, child) => AnimatedOpacity(
+                          // Only the sections picker (step 1) dims when idle.
+                          // The connection and compose steps are always full
+                          // strength — like [_singlePanel], the step is OR-ed
+                          // in here at render time (never folded into [_active])
+                          // so a step change can't strand a stale value.
+                          opacity:
+                              (active ||
+                                  _singlePanel ||
+                                  _step != _ComposeStep.sections)
+                              ? 1.0
+                              : kNewThreadInactiveOpacity,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          child: child,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // Step 1: the inline sections picker. Shown on a fresh
+                            // mount (and after the New-thread command remounts) in
+                            // place of the compose surface + editor.
+                            if (_step == _ComposeStep.sections) {
+                              return _buildTargetPickerStep(
+                                context,
+                                multiPanel: layoutState.multiPanel,
+                              );
+                            }
 
-                        // Step 2: the connection picker, reached by choosing a
-                        // recipient in step 1.
-                        if (_step == _ComposeStep.connection) {
-                          return _buildConnectionStep(
-                            context,
-                            multiPanel: layoutState.multiPanel,
-                          );
-                        }
+                            // Step 2: the connection picker, reached by choosing a
+                            // recipient in step 1.
+                            if (_step == _ComposeStep.connection) {
+                              return _buildConnectionStep(
+                                context,
+                                multiPanel: layoutState.multiPanel,
+                              );
+                            }
 
-                        // Single panel mode: editor at bottom, edge-to-edge.
-                        // The compose fields keep their horizontal inset, but
-                        // the editor itself runs full-bleed (no horizontal
-                        // padding) so the note surface reaches both edges.
-                        if (!layoutState.multiPanel) {
-                          return FocusTraversalGroup(
-                            policy: WidgetOrderTraversalPolicy(),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.contentPaddingH,
-                                  ),
-                                  child: _buildComposeSurface(context, state),
-                                ),
-                                SizedBox(height: context.theme.spacing.md),
-                                Flexible(
-                                  child: EditableArea(
-                                    padding: false,
-                                    position: EditableAreaPosition.bottom,
-                                    flushToBottom: true,
-                                    builder: (context, _) => Focus(
-                                      canRequestFocus: false,
-                                      skipTraversal: true,
-                                      onKeyEvent: _handleEditorKeys,
-                                      child: NoteEditor(
-                                        key: _threadEditorKey,
-                                        bodyOnly: true,
-                                        draft: state.draftNote,
-                                        thread: state.draft,
-                                        onDraftChanged: _handleDraftChanged,
+                            // Single panel mode: editor at bottom, edge-to-edge.
+                            // The compose fields keep their horizontal inset, but
+                            // the editor itself runs full-bleed (no horizontal
+                            // padding) so the note surface reaches both edges.
+                            if (!layoutState.multiPanel) {
+                              return FocusTraversalGroup(
+                                policy: WidgetOrderTraversalPolicy(),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: context.contentPaddingH,
+                                      ),
+                                      child: _buildComposeSurface(
+                                        context,
+                                        state,
+                                      ),
+                                    ),
+                                    SizedBox(height: context.theme.spacing.md),
+                                    Flexible(
+                                      child: EditableArea(
+                                        padding: false,
+                                        position: EditableAreaPosition.bottom,
                                         flushToBottom: true,
-                                        showScheduleActions: false,
-                                        hint: _computeEditorHint(state),
-                                        sendLabel: _computeSendLabel(state),
-                                        additionalMentions: _twistMentions,
-                                        onSubmitted: _onChatSubmitted,
-                                        submitValidator: _validateDmSubmit,
-                                        selectedTwist: _selectedTwist,
-                                        onTwistSelected: _selectTwist,
-                                        onTwistMentioned: _onTwistMentioned,
+                                        builder: (context, _) => Focus(
+                                          canRequestFocus: false,
+                                          skipTraversal: true,
+                                          onKeyEvent: _handleEditorKeys,
+                                          child: NoteEditor(
+                                            key: _threadEditorKey,
+                                            bodyOnly: true,
+                                            draft: state.draftNote,
+                                            thread: state.draft,
+                                            onDraftChanged: _handleDraftChanged,
+                                            flushToBottom: true,
+                                            showScheduleActions: false,
+                                            hint: _computeEditorHint(state),
+                                            sendLabel: _computeSendLabel(state),
+                                            additionalMentions: _twistMentions,
+                                            onSubmitted: _onChatSubmitted,
+                                            submitValidator: _validateDmSubmit,
+                                            selectedTwist: _selectedTwist,
+                                            onTwistSelected: _selectTwist,
+                                            onTwistMentioned: _onTwistMentioned,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            // Multi-panel mode: centered layout
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                children: [
+                                  Flexible(
+                                    child: SizedBox(
+                                      height: constraints.maxHeight * 0.25,
+                                    ),
+                                  ),
+                                  Flexible(
+                                    flex: 2,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxHeight: constraints.maxHeight * 0.6,
+                                      ),
+                                      child: FocusTraversalGroup(
+                                        policy: WidgetOrderTraversalPolicy(),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _buildComposeSurface(
+                                              context,
+                                              state,
+                                            ),
+                                            SizedBox(
+                                              height: context.theme.spacing.md,
+                                            ),
+                                            Flexible(
+                                              child: EditableArea(
+                                                padding: false,
+                                                position:
+                                                    EditableAreaPosition.bottom,
+                                                flushToBottom: false,
+                                                builder: (context, _) => Focus(
+                                                  canRequestFocus: false,
+                                                  skipTraversal: true,
+                                                  onKeyEvent: _handleEditorKeys,
+                                                  child: NoteEditor(
+                                                    key: _threadEditorKey,
+                                                    bodyOnly: true,
+                                                    draft: state.draftNote,
+                                                    thread: state.draft,
+                                                    onDraftChanged:
+                                                        _handleDraftChanged,
+                                                    flushToBottom: false,
+                                                    showScheduleActions: false,
+                                                    hint: _computeEditorHint(
+                                                      state,
+                                                    ),
+                                                    sendLabel:
+                                                        _computeSendLabel(
+                                                          state,
+                                                        ),
+                                                    additionalMentions:
+                                                        _twistMentions,
+                                                    onSubmitted:
+                                                        _onChatSubmitted,
+                                                    submitValidator:
+                                                        _validateDmSubmit,
+                                                    selectedTwist:
+                                                        _selectedTwist,
+                                                    onTwistSelected:
+                                                        _selectTwist,
+                                                    onTwistMentioned:
+                                                        _onTwistMentioned,
+                                                    autofocus:
+                                                        !isMobilePlatform(),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        // Multi-panel mode: centered layout
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: [
-                              Flexible(
-                                child: SizedBox(
-                                  height: constraints.maxHeight * 0.25,
-                                ),
+                                ],
                               ),
-                              Flexible(
-                                flex: 2,
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxHeight: constraints.maxHeight * 0.6,
-                                  ),
-                                  child: FocusTraversalGroup(
-                                    policy: WidgetOrderTraversalPolicy(),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _buildComposeSurface(context, state),
-                                        SizedBox(
-                                          height: context.theme.spacing.md,
-                                        ),
-                                        Flexible(
-                                          child: EditableArea(
-                                            padding: false,
-                                            position:
-                                                EditableAreaPosition.bottom,
-                                            flushToBottom: false,
-                                            builder: (context, _) => Focus(
-                                              canRequestFocus: false,
-                                              skipTraversal: true,
-                                              onKeyEvent: _handleEditorKeys,
-                                              child: NoteEditor(
-                                                key: _threadEditorKey,
-                                                bodyOnly: true,
-                                                draft: state.draftNote,
-                                                thread: state.draft,
-                                                onDraftChanged:
-                                                    _handleDraftChanged,
-                                                flushToBottom: false,
-                                                showScheduleActions: false,
-                                                hint: _computeEditorHint(state),
-                                                sendLabel: _computeSendLabel(
-                                                  state,
-                                                ),
-                                                additionalMentions:
-                                                    _twistMentions,
-                                                onSubmitted: _onChatSubmitted,
-                                                submitValidator:
-                                                    _validateDmSubmit,
-                                                selectedTwist: _selectedTwist,
-                                                onTwistSelected: _selectTwist,
-                                                onTwistMentioned:
-                                                    _onTwistMentioned,
-                                                autofocus: !isMobilePlatform(),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                            },
-                          ),
+                            );
+                          },
                         ),
                       ),
                     ),
                   ),
                 ),
-              );
-            },
+              ),
+            );
+          },
         );
       },
     );

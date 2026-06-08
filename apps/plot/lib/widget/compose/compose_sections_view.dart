@@ -422,7 +422,10 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
           onSubmit: () => _gridKey.currentState?.activateHighlighted(),
           onEscape: null,
         ),
-        SizedBox(height: spacing.lg),
+        // Match the inter-section gap (PillGrid uses spacing.xl) so the input
+        // sits the same distance above the first header as each section does
+        // above the next.
+        SizedBox(height: spacing.xl),
         Expanded(
           child: _sections == null
               ? const SizedBox.shrink()
