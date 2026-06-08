@@ -18,10 +18,9 @@ String emojiDisplayName(Reaction emoji) {
 /// (e.g. `"👍"`) or a provider-scoped custom-emoji ref (e.g.
 /// `"slack:T01/party_parrot"`).
 ///
-/// Unicode emoji render via the bundled Noto Emoji (monochrome line-art)
-/// font for cross-OS visual consistency. The color variant
-/// (`NotoColorEmoji`) is ~24MB and intentionally not bundled — line-art
-/// reads well at reaction-chip sizes and avoids the bloat.
+/// Unicode emoji render via the bundled Noto Color Emoji font for cross-OS
+/// visual consistency — the same colorful glyphs appear on every platform
+/// instead of each OS's native emoji set.
 ///
 /// Custom-emoji refs are rendered via [Image.network] against the cached
 /// `image_url` from `custom_emoji`. When the cache misses, the raw emoji
@@ -41,20 +40,18 @@ class EmojiText extends StatelessWidget {
   final double size;
 
   /// Font family registered in pubspec.yaml. See class doc for rationale.
-  static const String _fontFamily = 'NotoEmoji';
+  static const String _fontFamily = 'NotoColorEmoji';
 
   @override
   Widget build(BuildContext context) {
     if (isCustomEmojiRef(emoji)) {
       return _CustomEmojiImage(refId: emoji, size: size);
     }
-    // No fontFamilyFallback. On macOS/iOS, listing AppleColorEmoji as a
-    // fallback causes Flutter's text engine to substitute color emoji
-    // glyphs for codepoints the primary font *does* contain — defeating
-    // the whole point of bundling a monochrome font. Noto Emoji covers
-    // the entire Unicode 15.1 spec, so missing glyphs are rare; for
-    // them, Flutter's default platform chain still picks up the system
-    // emoji font as a last resort.
+    // No fontFamilyFallback: keep rendering pinned to the bundled font so
+    // reactions look the same on every OS. Noto Color Emoji covers the
+    // entire Unicode 15.1 spec, so missing glyphs are rare; for them,
+    // Flutter's default platform chain still picks up the system emoji
+    // font as a last resort.
     return Text(
       emoji,
       style: TextStyle(
@@ -136,13 +133,11 @@ class _CustomEmojiImage extends StatelessWidget {
   }
 }
 
-/// Square emoji icon sized to the theme's `iconSizes.base` and inheriting
-/// the surrounding foreground color. NotoEmoji glyphs paint smaller than
-/// their line box, so the emoji is rendered at a slightly larger fontSize
-/// inside an [OverflowBox] — keeps it visually equivalent in size to a
-/// neighboring icon without the larger line box pushing the parent taller
-/// or getting clipped. Use this anywhere a [Command.icon] would normally
-/// sit (filter rows, hover toolbar, picker chips).
+/// Square emoji icon sized to the theme's `iconSizes.base`. Color emoji
+/// paint within their line box, so the glyph sits at the icon size with no
+/// scaling — visually equivalent to a neighboring icon. Use this anywhere a
+/// [Command.icon] would normally sit (filter rows, hover toolbar, picker
+/// chips).
 class EmojiCommandIcon extends StatelessWidget {
   const EmojiCommandIcon(this.emoji, {super.key});
 
@@ -151,21 +146,11 @@ class EmojiCommandIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconSize = context.theme.iconSizes.base;
-    final color =
-        IconTheme.of(context).color ?? DefaultTextStyle.of(context).style.color;
     return SizedBox(
       width: iconSize,
       height: iconSize,
       child: Center(
-        child: OverflowBox(
-          maxWidth: double.infinity,
-          maxHeight: double.infinity,
-          alignment: Alignment.center,
-          child: DefaultTextStyle.merge(
-            style: TextStyle(color: color),
-            child: EmojiText(emoji, size: iconSize * 1.1),
-          ),
-        ),
+        child: EmojiText(emoji, size: iconSize),
       ),
     );
   }
