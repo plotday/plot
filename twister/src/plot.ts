@@ -1083,6 +1083,24 @@ export type NewLink = Partial<
      */
     archived?: boolean;
     /**
+     * Mark the thread as the connection owner's to-do at create time.
+     * - true: the thread is added to the owner's to-do (active) bucket and
+     *   their per-user archive is lifted, atomically with the save — no
+     *   separate `integrations.setThreadToDo()` round-trip needed.
+     * - false: the owner's thread_state is marked read (cleared from to-do).
+     * - undefined (omitted, default): leave to-do state untouched.
+     *
+     * Use for messaging-style "saved for later" flags (e.g. a starred Slack
+     * thread). This is the first-class replacement for overloading a
+     * `statuses[]` entry with `active: true`.
+     */
+    todo?: boolean;
+    /**
+     * The to-do date used when `todo` is true. Defaults to the "Now"
+     * sentinel (today's bucket) when omitted. Ignored when `todo` is not true.
+     */
+    todoDate?: Date | string;
+    /**
      * Explicit focus (disables automatic focus matching).
      * Only used when the link creates a new thread. When omitted, the
      * server classifies the thread using the user's focus rules.
