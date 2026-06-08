@@ -661,6 +661,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  public/libs/email-classifier:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)(jsdom@24.1.3(bufferutil@4.0.8)(utf-8-validate@6.0.4))(sugarss@5.0.1(postcss@8.5.9))(terser@5.37.0)
+
   public/twister:
     dependencies:
       chalk:
@@ -12153,7 +12166,7 @@ snapshots:
   '@eslint/eslintrc@2.1.0':
     dependencies:
       ajv: 6.12.6
-      debug: 4.3.4
+      debug: 4.4.1
       espree: 9.6.1
       globals: 13.20.0
       ignore: 5.2.4
@@ -12252,7 +12265,7 @@ snapshots:
   '@humanwhocodes/config-array@0.11.10':
     dependencies:
       '@humanwhocodes/object-schema': 1.2.1
-      debug: 4.3.4
+      debug: 4.4.1
       minimatch: 3.1.2
     transitivePeerDependencies:
       - supports-color
@@ -19829,7 +19842,7 @@ snapshots:
   vite@4.5.1(@types/node@20.19.13)(sugarss@5.0.1(postcss@8.5.9))(terser@5.37.0):
     dependencies:
       esbuild: 0.18.20
-      postcss: 8.5.6
+      postcss: 8.5.9
       rollup: 3.29.4
     optionalDependencies:
       '@types/node': 20.19.13
