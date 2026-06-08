@@ -1977,6 +1977,7 @@ export type Database = {
           dropped_contacts: string[] | null
           embedding: unknown
           external_contacts: string[]
+          facets: Json | null
           groups: string[]
           icon: string | null
           id: string
@@ -2009,6 +2010,7 @@ export type Database = {
           dropped_contacts?: string[] | null
           embedding?: unknown
           external_contacts?: string[]
+          facets?: Json | null
           groups?: string[]
           icon?: string | null
           id?: string
@@ -2041,6 +2043,7 @@ export type Database = {
           dropped_contacts?: string[] | null
           embedding?: unknown
           external_contacts?: string[]
+          facets?: Json | null
           groups?: string[]
           icon?: string | null
           id?: string
@@ -3704,6 +3707,7 @@ export type Database = {
           dropped_contacts: string[] | null
           embedding: unknown
           external_contacts: string[] | null
+          facets: Json | null
           groups: string[] | null
           icon: string | null
           id: string | null
@@ -3736,6 +3740,7 @@ export type Database = {
           dropped_contacts?: string[] | null
           embedding?: unknown
           external_contacts?: string[] | null
+          facets?: Json | null
           groups?: string[] | null
           icon?: string | null
           id?: string | null
@@ -3768,6 +3773,7 @@ export type Database = {
           dropped_contacts?: string[] | null
           embedding?: unknown
           external_contacts?: string[] | null
+          facets?: Json | null
           groups?: string[] | null
           icon?: string | null
           id?: string | null

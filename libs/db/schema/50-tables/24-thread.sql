@@ -65,6 +65,7 @@ CREATE TABLE "public"."thread" (
     -- Does not affect access control — thread.contacts remains the source
     -- of truth for visibility.
     "contact_meta" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "facets" jsonb,
     -- Monotonic sync cursor (writing transaction's xid8). Maintained by the
     -- update_seq_and_updated_at BEFORE INSERT/UPDATE trigger. Sync queries
     -- gate on `seq < pg_snapshot_xmin(pg_current_snapshot())` to skip rows
