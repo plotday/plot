@@ -11,7 +11,6 @@ import {
   type Authorization,
   Integrations,
   type Channel,
-  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -86,12 +85,8 @@ export class MsTeams extends Connector<MsTeams> {
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-      statuses: [
-        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -102,12 +97,8 @@ export class MsTeams extends Connector<MsTeams> {
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoDark: "https://api.iconify.design/logos/microsoft-teams.svg",
       logoMono: "https://api.iconify.design/simple-icons/microsoftteams.svg",
-      statuses: [
-        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];
@@ -740,7 +731,7 @@ export class MsTeams extends Connector<MsTeams> {
       source: `ms-teams:channel:${channelId}:message:${result.id}`,
       type: "thread",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createdDateTime),
       channelId,
       meta: {
@@ -812,7 +803,7 @@ export class MsTeams extends Connector<MsTeams> {
       source: `ms-teams:dm:${chatId}:message:${result.id}`,
       type: "dm",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createdDateTime),
       // Store under the DM synthetic channel so token resolution works
       // for future replies via onNoteCreated.

@@ -12,7 +12,6 @@ import {
   type Authorization,
   Integrations,
   type Channel,
-  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -110,12 +109,8 @@ export class GoogleChat extends Connector<GoogleChat> {
       // logoMono: monochrome version from simple-icons (works fine on iconify)
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
-      statuses: [
-        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -125,12 +120,8 @@ export class GoogleChat extends Connector<GoogleChat> {
       sharingModel: "thread" as const,
       logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
-      statuses: [
-        { status: "sent", label: "Sent", icon: "done" as StatusIcon },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];
@@ -1396,7 +1387,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       source: `google-chat:${channelId}:thread:${threadKey}`,
       type: "thread",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createTime),
       sourceUrl: `https://chat.google.com/room/${channelId}/${threadKey}`,
       channelId,
@@ -1506,7 +1497,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       source: `google-chat:${spaceId}:thread:${threadKey}`,
       type: "dm",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(result.createTime),
       sourceUrl: `https://chat.google.com/dm/${spaceId}/${threadKey}`,
       // Route DM threads to the DM channel so onNoteCreated can resolve a token.
