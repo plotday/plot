@@ -204,11 +204,41 @@ class ContactRoleConfig extends Equatable {
   List<Object?> get props => [id, label, isDefault, hidden];
 }
 
+/// Curated status-icon vocabulary. Mirrors `StatusIcon` in
+/// `public/twister/src/tools/integrations.ts`. Connectors map each status to
+/// one of these; the client renders a single glyph per value.
+enum StatusIcon {
+  backlog,
+  todo,
+  inProgress,
+  blocked,
+  done,
+  cancelled,
+  confirmed,
+  tentative;
+
+  /// Parse the SDK string form, or null for absent/unknown values (so an
+  /// older cached config or a future icon never crashes the client).
+  static StatusIcon? fromJson(String? value) => switch (value) {
+        'backlog' => StatusIcon.backlog,
+        'todo' => StatusIcon.todo,
+        'inProgress' => StatusIcon.inProgress,
+        'blocked' => StatusIcon.blocked,
+        'done' => StatusIcon.done,
+        'cancelled' => StatusIcon.cancelled,
+        'confirmed' => StatusIcon.confirmed,
+        'tentative' => StatusIcon.tentative,
+        _ => null,
+      };
+}
+
 /// A possible status value within a LinkTypeConfig.
 class LinkStatus {
   final String status;
   final String label;
   final int? tag;
+  final StatusIcon? icon;
+  final bool hiddenDefault;
   final bool done;
   final bool todo;
 
@@ -216,6 +246,8 @@ class LinkStatus {
     required this.status,
     required this.label,
     this.tag,
+    this.icon,
+    this.hiddenDefault = false,
     this.done = false,
     this.todo = false,
   });
@@ -225,6 +257,10 @@ class LinkStatus {
       status: json['status'] as String,
       label: json['label'] as String,
       tag: json['tag'] as int?,
+      icon: StatusIcon.fromJson(json['icon'] as String?),
+      hiddenDefault: json['hiddenDefault'] as bool? ??
+          json['hidden_default'] as bool? ??
+          false,
       done: json['done'] as bool? ?? false,
       todo: json['todo'] as bool? ?? false,
     );
