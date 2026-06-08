@@ -1,3 +1,4 @@
+- Slack reactions now sync both ways for the full standard emoji set, including skin tones.
 - Onboarding and Plot Updates messages now clearly show they come from **Plot Team**, and replies to them reach the Plot team. The blank gap that sometimes appeared above these threads is gone.
 - Connected apps now sync quietly in the background. The "Twisting" badge that used to appear on threads while a connection (like Slack) was catching up is gone — connector sync happens transparently. The badge still shows for Plot's own assistants and twists when they're working on a thread.
 - Connecting a second account no longer shortens a contact's name. If one app knows someone as "Beth Round" and another only as "Beth", Plot now keeps the fuller name instead of overwriting it with the shorter one — and fills in a name when it was missing. New connections can only add detail, never take it away.
