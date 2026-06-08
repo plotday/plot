@@ -5,7 +5,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
-import type { Action, Actor, ActorId, Link, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
+import type { Action, Actor, ActorId, NewContact, NewLinkWithNotes, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -113,14 +113,8 @@ export class Slack extends Connector<Slack> {
       supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
-      statuses: [
-        { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", active: true },
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "channels" as const,
-        status: "sent",
       },
     },
     {
@@ -131,14 +125,8 @@ export class Slack extends Connector<Slack> {
       supportsFileAttachments: true,
       logo: "https://api.iconify.design/logos/slack-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/slack.svg",
-      statuses: [
-        { status: "inbox", label: "Inbox" },
-        { status: "later", label: "Later", active: true },
-        { status: "sent", label: "Sent" },
-      ],
       compose: {
         targets: "contacts" as const,
-        status: "sent",
       },
     },
   ];
@@ -205,8 +193,8 @@ export class Slack extends Connector<Slack> {
     // and `conversations.replies` rate limits for non-Marketplace apps to
     // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes
     // bulk-importing a channel's history impractical. Instead we watch for
-    // new messages via the webhook and only backfill starred ("later")
-    // items so users keep their saved-for-later.
+    // new messages via the webhook and only backfill starred items
+    // so users keep their to-do (starred) threads.
 
     // Webhook registration is queued as a separate task so it doesn't block
     // the HTTP response from `onChannelEnabled`.
@@ -756,8 +744,8 @@ export class Slack extends Connector<Slack> {
       if (isStarred) {
         // Since we no longer backfill history, the starred thread may not
         // exist in Plot yet. Fetching + saving is idempotent (saveLink
-        // upserts by source) and ensures status="later" regardless of prior
-        // state.
+        // upserts by source) and ensures the thread is saved and marked as
+        // the owner's to-do regardless of prior state.
         const api = await this.getApi(channelId);
         await this.saveStarredThread(api, channelId, parentTs);
       } else {
@@ -782,7 +770,7 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    // Block the onThreadToDo/onLinkUpdated callback that Plot will queue.
+    // Block the onThreadToDo callback that Plot will queue.
     await this.set(this.skipKey(channelId, parentTs), true);
 
     // Record the new state so subsequent duplicate events short-circuit.
@@ -880,9 +868,9 @@ export class Slack extends Connector<Slack> {
 
   /**
    * Fetch a Slack thread by its parent ts, resolve author identities, and
-   * save it as a Plot link with status="later" (i.e. saved-for-later /
-   * todo). `saveLink` upserts by `source`, so this is idempotent and safe
-   * to call on a thread we've already seen.
+   * save it as a Plot link marking the owner's thread as to-do via the
+   * `todo` flag. `saveLink` upserts by `source`, so this is idempotent and
+   * safe to call on a thread we've already seen.
    */
   private async saveStarredThread(
     api: SlackApi,
@@ -915,7 +903,10 @@ export class Slack extends Connector<Slack> {
     const link = transformSlackThread(messages, channelId, userInfos, true);
     if (!link.notes || link.notes.length === 0) return;
 
-    link.status = "later";
+    // Mark the thread as the owner's to-do atomically with the save. This
+    // replaces the old status="later" + active:true bridge — the connector
+    // save path does not run status `active` propagation.
+    link.todo = true;
     link.channelId = channelId;
     link.meta = {
       ...link.meta,
@@ -923,7 +914,7 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
 
-    // Suppress the onLinkUpdated echo Plot will fire from this write;
+    // Suppress the onThreadToDo echo Plot will fire from this write;
     // handleStarEvent / backfillStars is already the source of truth.
     await this.set(this.skipKey(channelId, threadTs), true);
     await this.tools.integrations.saveLink(link);
@@ -999,27 +990,6 @@ export class Slack extends Connector<Slack> {
     }
   }
 
-  async onLinkUpdated(link: Link): Promise<void> {
-    const channelId = link.meta?.channelId as string | undefined;
-    const threadTs = link.meta?.threadTs as string | undefined;
-    if (!channelId || !threadTs) return;
-
-    if (await this.get(this.skipKey(channelId, threadTs))) {
-      await this.clear(this.skipKey(channelId, threadTs));
-      return;
-    }
-
-    const isLater = link.status === "later";
-    await this.set(this.starredKey(channelId, threadTs), isLater);
-
-    const api = await this.getApi(channelId);
-    if (isLater) {
-      await api.addStar(channelId, threadTs);
-    } else {
-      await api.removeStar(channelId, threadTs);
-    }
-  }
-
   // ---- Compose new messages from Plot ----
 
   /**
@@ -1072,7 +1042,7 @@ export class Slack extends Connector<Slack> {
       source: canonicalUrl,
       type: "thread",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(parseFloat(ts) * 1000),
       sourceUrl: canonicalUrl,
       channelId,
@@ -1129,7 +1099,7 @@ export class Slack extends Connector<Slack> {
       source: canonicalUrl,
       type: "dm",
       title: draft.title,
-      status: draft.status,
+      status: null,
       created: new Date(parseFloat(ts) * 1000),
       sourceUrl: canonicalUrl,
       channelId: draft.channelId,
