@@ -35,8 +35,13 @@ class EmojiPicker {
     BuildContext context, {
     Set<Reaction>? allowed,
     List<Reaction>? mru,
+    List<Reaction> workspaceCustom = const [],
   }) async {
     bool isAllowed(Reaction e) => allowed == null || allowed.contains(e);
+
+    // The bare emoji name of a custom ref (`slack:T0/party_parrot` →
+    // `party_parrot`), used both for tooltips and search matching.
+    String customName(Reaction ref) => ref.substring(ref.lastIndexOf('/') + 1);
 
     // Fall back to the curated default set when the user hasn't reacted
     // yet — the top group is never empty.
@@ -75,6 +80,22 @@ class EmojiPicker {
         if (filtered.isEmpty) continue;
         groups.add(SelectGroup<Reaction>(title: entry.key, items: filtered));
       }
+
+      // Workspace custom emoji (refs like `slack:T0/party_parrot`). Always
+      // allowed for their own workspace regardless of `allowed` (which only
+      // constrains unicode emoji on fixed-set platforms). Match search against
+      // the bare name segment after the last `/`.
+      if (workspaceCustom.isNotEmpty) {
+        final customItems = workspaceCustom
+            .where((e) =>
+                query.isEmpty || customName(e).toLowerCase().contains(query))
+            .toList(growable: false);
+        if (customItems.isNotEmpty) {
+          groups.add(
+            SelectGroup<Reaction>(title: 'Workspace custom', items: customItems),
+          );
+        }
+      }
       return groups;
     }
 
@@ -82,8 +103,11 @@ class EmojiPicker {
       context,
       items: (search) async => buildGroups(search),
       itemBuilder: (emoji, _) {
+        final label = isCustomEmojiRef(emoji)
+            ? ':${customName(emoji)}:'
+            : emojiDisplayName(emoji);
         return FTooltip(
-          tipBuilder: (ctx, _) => Text(emojiDisplayName(emoji)),
+          tipBuilder: (ctx, _) => Text(label),
           child: EmojiText(emoji, size: 22),
         );
       },
