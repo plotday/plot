@@ -541,6 +541,15 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract markNeedsReauth(channelId: string): Promise<void>;
 
+  /**
+   * Upsert workspace custom emoji into Plot's shared cache so reactions using
+   * `provider:workspace/name` refs render as images and round-trip. Idempotent;
+   * keyed on `id`. Pass `archived: true` to mark an emoji removed. Workspace-
+   * scoped (shared across all users of that workspace).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveCustomEmoji(emoji: NewCustomEmoji[]): Promise<void>;
+
 }
 
 /**
@@ -556,6 +565,28 @@ export type ArchiveLinkFilter = {
   status?: string;
   /** Filter by metadata fields (uses containment matching) */
   meta?: Record<string, JSONValue>;
+};
+
+/**
+ * A workspace custom emoji to cache so Plot can render and round-trip it as a
+ * reaction. `id` is the provider-scoped ref stored on reactions, of the form
+ * `<provider>:<workspace>/<name>` (e.g. `slack:T0123ABC/party_parrot`).
+ */
+export type NewCustomEmoji = {
+  /** Provider-scoped ref: `<provider>:<workspace>/<name>`. The reaction value. */
+  id: string;
+  /** e.g. "slack". */
+  provider: string;
+  /** Provider workspace/team id (e.g. Slack team id `T0123ABC`). */
+  workspace: string;
+  /** Bare emoji name without colons (e.g. "party_parrot"). */
+  name: string;
+  /** Image URL to render, or null for an alias (see `aliasOf`). */
+  imageUrl: string | null;
+  /** When this emoji aliases another, the target ref (`id` of the canonical emoji); else null. */
+  aliasOf: string | null;
+  /** True to mark the emoji removed (archive it) rather than upsert it. */
+  archived: boolean;
 };
 
 /**
