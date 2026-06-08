@@ -17,6 +17,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -71,10 +72,10 @@ export class Instagram extends Connector<Instagram> {
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",
       compose: { targets: "addresses" as const, status: STATUS_INBOX },
       statuses: [
-        { status: STATUS_PENDING, label: "Request" },
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-        { status: STATUS_IGNORED, label: "Ignored", done: true },
+        { status: STATUS_PENDING, label: "Request", icon: "todo" as StatusIcon },
+        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
+        { status: STATUS_IGNORED, label: "Ignored", done: true, icon: "cancelled" as StatusIcon },
       ],
     },
     {
@@ -84,8 +85,8 @@ export class Instagram extends Connector<Instagram> {
       logo: "https://api.iconify.design/logos/instagram-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/instagram.svg",
       statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
+        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
       ],
     },
   ];

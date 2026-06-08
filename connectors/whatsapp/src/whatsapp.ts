@@ -16,6 +16,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -58,8 +59,8 @@ export class WhatsApp extends Connector<WhatsApp> {
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",
       compose: { targets: "addresses" as const, status: STATUS_INBOX },
       statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
+        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
       ],
     },
     {
@@ -69,8 +70,8 @@ export class WhatsApp extends Connector<WhatsApp> {
       logo: "https://api.iconify.design/logos/whatsapp-icon.svg",
       logoMono: "https://api.iconify.design/simple-icons/whatsapp.svg",
       statuses: [
-        { status: STATUS_INBOX, label: "Inbox" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
+        { status: STATUS_INBOX, label: "Inbox", icon: "todo" as StatusIcon },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
       ],
     },
   ];

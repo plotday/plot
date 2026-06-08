@@ -24,6 +24,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type StatusIcon,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -108,10 +109,10 @@ export class LinkedIn extends Connector<LinkedIn> {
       // free-form addresses.
       compose: { targets: "contacts" as const, status: STATUS_INBOX },
       statuses: [
-        { status: STATUS_PENDING,  label: "Pending" },
-        { status: STATUS_INBOX,    label: "Connected" },
-        { status: STATUS_ARCHIVED, label: "Archived", done: true },
-        { status: STATUS_IGNORED,  label: "Ignored",  done: true },
+        { status: STATUS_PENDING,  label: "Pending",  icon: "todo" as StatusIcon },
+        { status: STATUS_INBOX,    label: "Connected", icon: "todo" as StatusIcon },
+        { status: STATUS_ARCHIVED, label: "Archived", done: true, icon: "done" as StatusIcon },
+        { status: STATUS_IGNORED,  label: "Ignored",  done: true, icon: "cancelled" as StatusIcon },
       ],
     },
   ];
