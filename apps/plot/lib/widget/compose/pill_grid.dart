@@ -265,25 +265,27 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
             key: _keys[index],
             child: MouseRegion(
               onEnter: (_) => _setHighlight(index),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: item.onActivate,
-                child: _rowChrome(
-                  context,
-                  highlighted: index == _highlighted,
-                  child: Row(
-                    children: [
-                      Expanded(child: ComposePill(data: item.data)),
-                      if (item.onMore != null)
-                        Opacity(
-                          opacity: index == _highlighted ? 1.0 : 0.0,
-                          child: IgnorePointer(
-                            ignoring: index != _highlighted,
-                            child: _moreButton(context, item.onMore!),
-                          ),
+              child: _rowChrome(
+                context,
+                highlighted: index == _highlighted,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: item.onActivate,
+                        child: ComposePill(data: item.data),
+                      ),
+                    ),
+                    if (item.onMore != null)
+                      Opacity(
+                        opacity: index == _highlighted ? 1.0 : 0.0,
+                        child: IgnorePointer(
+                          ignoring: index != _highlighted,
+                          child: _moreButton(context, item.onMore!),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -347,24 +349,20 @@ class PillGridState extends State<PillGrid> with WidgetsBindingObserver {
   }
 
   /// The trailing "…" More button shown on the highlighted row when its item
-  /// carries an [PillGridItem.onMore]. Wrapped in a tap-absorbing
-  /// [GestureDetector] so a tap on the button fires only [onMore] and never
-  /// also triggers the row's [PillGridItem.onActivate].
+  /// carries an [PillGridItem.onMore]. It's a plain sibling of the pill's
+  /// gesture detector (which now wraps only the pill), so a tap on the button
+  /// fires only [onMore] and can't reach the row's [PillGridItem.onActivate].
   Widget _moreButton(BuildContext context, VoidCallback onMore) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      child: FButton(
-        onPress: onMore,
-        variant: FButtonVariant.ghost,
-        style: ghostSizedStyleDelta(
-          context,
-          iconSize: context.theme.iconSizes.sm,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        child: const Icon(PlotIcon.more),
+    return FButton(
+      onPress: onMore,
+      variant: FButtonVariant.ghost,
+      style: ghostSizedStyleDelta(
+        context,
+        iconSize: context.theme.iconSizes.sm,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       ),
+      mainAxisSize: MainAxisSize.min,
+      child: const Icon(PlotIcon.more),
     );
   }
 }

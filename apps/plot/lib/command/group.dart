@@ -304,7 +304,7 @@ class EditGroup extends Command {
       ),
     ];
     final form = FormData(
-      title: groupId == null ? 'New group' : 'Edit group',
+      title: groupId == null ? 'Create group' : 'Edit group',
       dismissable: true,
       groups: [StaticFormGroup(items: items)],
     );

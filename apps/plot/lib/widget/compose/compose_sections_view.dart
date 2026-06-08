@@ -494,10 +494,14 @@ class _ComposeSectionsViewState extends State<ComposeSectionsView> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
-          _gridKey.currentState?.moreHighlighted();
+          final grid = _gridKey.currentState;
+          if (grid == null) return;
+          if (!grid.moreHighlighted()) grid.activateHighlighted();
         },
         const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
-          _gridKey.currentState?.moreHighlighted();
+          final grid = _gridKey.currentState;
+          if (grid == null) return;
+          if (!grid.moreHighlighted()) grid.activateHighlighted();
         },
       },
       child: Column(
