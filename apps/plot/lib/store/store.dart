@@ -2427,7 +2427,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 359;
+  int get schemaVersion => 360;
 
   @override
   MigrationStrategy get migration {
@@ -3879,6 +3879,16 @@ class Store extends _$Store {
     if (from < 359) {
       // Local-only intent flag; never synced. See Groups.membersDirty.
       await m.addColumn(groups, groups.membersDirty);
+    }
+
+    if (from < 360) {
+      // Sync twist.reaction_capabilities (what reactions a connector's
+      // source platform supports). Drives the data-driven reaction picker.
+      await _safeAddColumn(
+        m,
+        twistInstances,
+        twistInstances.reactionCapabilities,
+      );
     }
   }
 

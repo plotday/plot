@@ -26,6 +26,11 @@ class TwistInstances extends Table
   BoolColumn get userConnected => boolean().withDefault(const Constant(false))();
   BoolColumn get isBuiltin => boolean().withDefault(const Constant(false))();
   BoolColumn get multipleInstances => boolean().withDefault(const Constant(false))();
+  // What reactions this connector's source platform supports, e.g.
+  // {"mode":"open-unicode"} or {"mode":"fixed","allowed":[...]}. Nullable
+  // because the value may be absent (Plot-native / unknown → open).
+  TextColumn get reactionCapabilities =>
+      text().nullable().map(const JsonConverter())();
 }
 
 class TwistInstancesBase extends BaseTable {
@@ -300,6 +305,7 @@ class TwistInstance extends TwistInstanceRow {
         userConnected: row.userConnected,
         isBuiltin: row.isBuiltin,
         multipleInstances: row.multipleInstances,
+        reactionCapabilities: row.reactionCapabilities,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,
