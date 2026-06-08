@@ -6184,6 +6184,7 @@ export type Database = {
           name: string | null
           options: Json | null
           owner_id: string | null
+          reaction_capabilities: Json | null
           seq: unknown
           shared: boolean | null
           team_id: number | null
