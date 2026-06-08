@@ -133,11 +133,12 @@ class _CustomEmojiImage extends StatelessWidget {
   }
 }
 
-/// Square emoji icon sized to the theme's `iconSizes.base`. Color emoji
-/// paint within their line box, so the glyph sits at the icon size with no
-/// scaling — visually equivalent to a neighboring icon. Use this anywhere a
-/// [Command.icon] would normally sit (filter rows, hover toolbar, picker
-/// chips).
+/// Square emoji icon sized to the theme's `iconSizes.base`. The glyph is
+/// rendered at the icon size — visually equivalent to a neighboring icon —
+/// inside an [OverflowBox] so the color-emoji glyph, whose ink extends past
+/// its `height: 1.0` line box, can paint without being clipped or pushing
+/// the parent taller. Use this anywhere a [Command.icon] would normally sit
+/// (filter rows, hover toolbar, picker chips).
 class EmojiCommandIcon extends StatelessWidget {
   const EmojiCommandIcon(this.emoji, {super.key});
 
@@ -150,7 +151,12 @@ class EmojiCommandIcon extends StatelessWidget {
       width: iconSize,
       height: iconSize,
       child: Center(
-        child: EmojiText(emoji, size: iconSize),
+        child: OverflowBox(
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          alignment: Alignment.center,
+          child: EmojiText(emoji, size: iconSize),
+        ),
       ),
     );
   }

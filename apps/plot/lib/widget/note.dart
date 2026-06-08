@@ -1023,10 +1023,29 @@ class NoteCommands extends StatelessWidget {
             final reactionNames = snapshot.data?.$3 ?? const <String>[];
             final doneNames = snapshot.data?.$4 ?? '';
 
-            // Active reactions render with the same accent-color "selected"
-            // treatment as count-tags — no border, no background. The actors
-            // who reacted are shown as a subtitle under the emoji name (empty
-            // until the names resolve).
+            // Active reactions render as subtle neutral pills grouping the
+            // emoji with its count. A pill tints accent (at the same opacity)
+            // when the current user is among the reactors, and boosts
+            // contrast on hover/focus. The reactor names show as a tooltip
+            // subtitle (empty until they resolve). Canonicalize the user's
+            // linked actor ids once so the "mine" check matches what
+            // ToggleNoteReaction writes.
+            final selfActorIds = {
+              for (final id in Actor.getCurrentUserActorIds())
+                Actor.canonicalId(id),
+            };
+            // The command row is translated left by `6 - ghostIconPadding` so
+            // borderless icon glyphs align with the content's left edge. When
+            // a reaction pill is the leftmost element (no leading task tags),
+            // give it that padding back so its border — not the emoji inside —
+            // lands on the content's left edge.
+            final hasLeadingTaskTags =
+                selfTodo || othersTodo.isNotEmpty || totalDone >= 1;
+            final pillLeadingInset = hasLeadingTaskTags
+                ? 0.0
+                : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                      .resolve(TextDirection.ltr)
+                      .left;
             final activeReactionButtons = <Widget>[
               for (var i = 0; i < activeEntries.length; i++)
                 () {
@@ -1034,18 +1053,20 @@ class NoteCommands extends StatelessWidget {
                   final names = i < reactionNames.length
                       ? reactionNames[i]
                       : '';
-                  Command cmd = ActiveNoteReaction(note, entry.key);
-                  if (names.isNotEmpty) {
-                    cmd = CommandWrapper(cmd, subtitle: Value(names));
-                  }
-                  final btn = Button.icon(
-                    cmd,
-                    key: ValueKey(Object.hash(note.id, entry.key)),
-                    selected: true,
+                  final mine = entry.value.any(
+                    (id) => selfActorIds.contains(Actor.canonicalId(id)),
                   );
-                  return entry.value.length > 1
-                      ? CountBadge(count: entry.value.length, child: btn)
-                      : btn;
+                  return ReactionPill(
+                    key: ValueKey(Object.hash(note.id, entry.key)),
+                    emoji: entry.key,
+                    count: entry.value.length,
+                    mine: mine,
+                    tooltip: emojiDisplayName(entry.key),
+                    subtitle: names.isEmpty ? null : names,
+                    leadingInset: i == 0 ? pillLeadingInset : 0,
+                    onPressed: () =>
+                        context.run(ActiveNoteReaction(note, entry.key)),
+                  );
                 }(),
             ];
 
