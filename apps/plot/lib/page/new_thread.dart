@@ -1962,7 +1962,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                         child: ValueListenableBuilder<bool>(
                           valueListenable: _active,
                           builder: (context, active, child) => AnimatedOpacity(
-                            opacity: (active || _singlePanel)
+                            // Only the sections picker (step 1) dims when idle.
+                            // The connection and compose steps are always full
+                            // strength — like [_singlePanel], the step is OR-ed
+                            // in here at render time (never folded into [_active])
+                            // so a step change can't strand a stale value.
+                            opacity: (active ||
+                                    _singlePanel ||
+                                    _step != _ComposeStep.sections)
                                 ? 1.0
                                 : kNewThreadInactiveOpacity,
                             duration: const Duration(milliseconds: 250),
