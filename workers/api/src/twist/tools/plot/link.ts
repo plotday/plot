@@ -224,6 +224,7 @@ export async function createLink(
         ? { related_source: link.relatedSource }
         : {}),
       ...(hasSource ? { sources: sourcesArray } : {}),
+      priority: link.priority ?? 0,
     };
 
     let linkId: string;
@@ -249,6 +250,7 @@ export async function createLink(
       if (assigneeId !== undefined) linkUpsert.assignee_id = assigneeId;
       if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
       if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+      if (link.priority !== undefined) linkUpsert.priority = link.priority;
       if (link.relatedSource !== undefined)
         linkUpsert.related_source = link.relatedSource;
 
