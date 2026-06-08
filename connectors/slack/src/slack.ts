@@ -2,6 +2,7 @@ import {
   Connector,
   type CreateLinkDraft,
   type NoteWriteBackResult,
+  type ScopeConfig,
   type ToolBuilder,
 } from "@plotday/twister";
 import { ActionType } from "@plotday/twister/plot";
@@ -74,27 +75,39 @@ import { unicodeToSlackName } from "./slack-emoji";
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
   static readonly handleReplies = true;
-  static readonly SCOPES = [
-    "channels:history",
-    "channels:read",
-    "groups:history",
-    "groups:read",
-    "users:read",
-    "users:read.email",
-    "chat:write",
-    "im:history",
-    "im:write",
-    "mpim:history",
-    "mpim:write",
-    "stars:read",
-    "stars:write",
-    // Emoji reaction round-trip: reactions:write to add/remove reactions on
-    // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
-    // to read reactions during sync and receive reaction_added/reaction_removed
-    // events. Without reactions:write, write-back fails with `missing_scope`.
-    "reactions:write",
-    "reactions:read",
-  ];
+  static readonly SCOPES: ScopeConfig = {
+    required: [
+      "channels:history",
+      "channels:read",
+      "groups:history",
+      "groups:read",
+      "users:read",
+      "users:read.email",
+      "chat:write",
+      "im:history",
+      "im:write",
+      "mpim:history",
+      "mpim:write",
+      "stars:read",
+      "stars:write",
+      // Emoji reaction round-trip: reactions:write to add/remove reactions on
+      // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
+      // to read reactions during sync and receive reaction_added/reaction_removed
+      // events. Without reactions:write, write-back fails with `missing_scope`.
+      "reactions:write",
+      "reactions:read",
+    ],
+    optional: [
+      {
+        id: "emoji",
+        label: "Sync this workspace's custom emoji",
+        description:
+          "Show your workspace's custom emoji (like :party_parrot:) in Plot's reaction picker and round-trip them as reactions.",
+        scopes: ["emoji:read"],
+        default: true,
+      },
+    ],
+  };
 
   readonly provider = AuthProvider.Slack;
   readonly reactionCapabilities = {
