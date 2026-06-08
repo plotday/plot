@@ -88,6 +88,12 @@ export class Slack extends Connector<Slack> {
     "mpim:write",
     "stars:read",
     "stars:write",
+    // Emoji reaction round-trip: reactions:write to add/remove reactions on
+    // write-back (onNoteReactionChanged → reactions.add/remove), reactions:read
+    // to read reactions during sync and receive reaction_added/reaction_removed
+    // events. Without reactions:write, write-back fails with `missing_scope`.
+    "reactions:write",
+    "reactions:read",
   ];
 
   readonly provider = AuthProvider.Slack;
@@ -491,6 +497,15 @@ export class Slack extends Connector<Slack> {
           initialSync
         );
 
+        // Echo guard: drop notes for messages Plot itself sent (composed or
+        // replied). They come back through the channel webhook once the
+        // channel is observed and would otherwise round-trip as duplicate
+        // notes. Filter by note.key (the bare ts) rather than the raw
+        // messages so the link still upserts by source (thread identity is
+        // preserved). Clear the marker on first read so a later genuine
+        // edit/reaction on the same message still re-syncs.
+        activityThread.notes = await this.dropSentEchoNotes(activityThread.notes);
+
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
         // Inject sync metadata for the parent to identify the source
@@ -598,7 +613,10 @@ export class Slack extends Connector<Slack> {
     const messageTs = item.ts as string | undefined;
     if (!channelId || !messageTs) return;
 
-    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+    const syncEnabled = await this.get<boolean>(`sync_enabled_${channelId}`);
+    if (!syncEnabled) {
+      return;
+    }
 
     let api: SlackApi;
     try {
@@ -672,6 +690,7 @@ export class Slack extends Connector<Slack> {
     }
 
     const link = transformSlackThread(messages, channelId, userInfos, false);
+    link.notes = await this.dropSentEchoNotes(link.notes);
     if (!link.notes || link.notes.length === 0) return;
     link.channelId = channelId;
     link.meta = {
@@ -680,6 +699,31 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     await this.tools.integrations.saveLink(link);
+  }
+
+  /**
+   * Drops notes for Slack messages Plot itself sent (composed via onCreateLink
+   * or replied via onNoteCreated), marked with `sent:<ts>` at write-back time.
+   * Once a thread is composed into a channel the channel is observed, so those
+   * messages come back through the webhook and would round-trip as duplicate
+   * notes. Filtering by note.key (the bare ts) — not the raw messages — keeps
+   * the link/thread identity intact (it still upserts by source). Clears the
+   * marker on first read so a later genuine edit/reaction on the same message
+   * re-syncs.
+   */
+  private async dropSentEchoNotes<T>(notes: T[] | undefined): Promise<T[]> {
+    if (!notes) return [];
+    const kept: T[] = [];
+    for (const n of notes) {
+      const key = (n as { key?: string | null })?.key;
+      const marked = key ? await this.get<boolean>(`sent:${key}`) : false;
+      if (key && marked) {
+        await this.clear(`sent:${key}`);
+        continue;
+      }
+      kept.push(n);
+    }
+    return kept;
   }
 
   private async handleStarEvent(event: any, isStarred: boolean): Promise<void> {
@@ -1015,10 +1059,17 @@ export class Slack extends Connector<Slack> {
     if (!result?.ts) return null;
 
     const ts = result.ts;
+    // Echo guard (see onNoteCreated): skip re-importing this message when it
+    // comes back via the now-observed channel's webhook.
+    await this.set(`sent:${ts}`, true);
     const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${ts}`;
 
     return {
-      source: `slack:channel:${channelId}:ts:${ts}`,
+      // MUST match the source transformSlackThread emits on sync-in
+      // (canonicalUrl), so the composed thread dedups against its own inbound
+      // echo and against later Slack-side replies — otherwise each round-trips
+      // as a duplicate thread.
+      source: canonicalUrl,
       type: "thread",
       title: draft.title,
       status: draft.status,
@@ -1067,10 +1118,15 @@ export class Slack extends Connector<Slack> {
     if (!result?.ts) return null;
 
     const ts = result.ts;
+    // Echo guard (see onNoteCreated): skip re-importing this message when it
+    // comes back via the now-observed channel's webhook.
+    await this.set(`sent:${ts}`, true);
     const canonicalUrl = `https://slack.com/app_redirect?channel=${dmChannelId}&message_ts=${ts}`;
 
     return {
-      source: `slack:channel:${dmChannelId}:ts:${ts}`,
+      // Match transformSlackThread's sync-in source (see createChannelPost) so
+      // the composed DM thread dedups against its inbound echo / replies.
+      source: canonicalUrl,
       type: "dm",
       title: draft.title,
       status: draft.status,
@@ -1247,6 +1303,12 @@ export class Slack extends Connector<Slack> {
     const result = await api.postMessage(channelId, body, threadTs);
     if (!result?.ts) return;
 
+    // Echo guard: skip re-importing this message when it comes back via the
+    // channel's webhook (the channel is observed once a thread is composed
+    // into it). Without this the reply round-trips as a duplicate note. See
+    // processMessageThreads / refreshSlackThread, which clear+skip on read.
+    await this.set(`sent:${result.ts}`, true);
+
     // Upload each file action and attach to the same thread
     const fileActions = (note.actions ?? []).filter(
       (a): a is Extract<Action, { type: typeof ActionType.file }> =>
@@ -1344,10 +1406,14 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    if (!channelId || !note.key) return;
-
     const shortcode = SLACK_UNICODE_TO_SHORTCODE[emoji];
-    if (!shortcode) return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+    if (!channelId || !note.key) {
+      return;
+    }
+
+    if (!shortcode) {
+      return; // unmapped Unicode / custom emoji — no Slack equivalent yet
+    }
 
     const tokenChannelId = (meta.tokenChannelId as string | undefined) ?? channelId;
     const api = await this.getWorkspaceApi(tokenChannelId);
