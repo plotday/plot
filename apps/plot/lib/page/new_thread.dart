@@ -475,13 +475,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     final bloc = _priorityBloc ?? context.read<PriorityBloc>();
 
     // Clear the draft fully: schedule/title (resetDraft's scope) plus the
-    // connection action, roster, team scope, and twist icon that step 2 may
-    // have applied. Reuse the existing draft id to avoid stranding archived
-    // drafts.
+    // connection action, external link action, roster, team scope, and twist
+    // icon that step 2 may have applied. Reuse the existing draft id to avoid
+    // stranding archived drafts.
     final draft = bloc.state.draft;
     final note = bloc.state.draftNote;
     final clearedActions = (note.actions ?? const <UserAction>[])
-        .where((a) => a is! CreateLinkUserAction)
+        .where((a) => a is! CreateLinkUserAction && a is! ExternalUserAction)
         .toList();
     final clearedDraft = draft.copyWith(
       title: const Value(null),
