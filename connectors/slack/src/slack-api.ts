@@ -588,26 +588,38 @@ export function formatSlackText(text: string): string {
 }
 
 /**
- * Extract per-message Slack reactions as Plot reactions. Unmapped
- * shortcodes are skipped; deduplication is by source.accountId so
- * repeated reactors don't double-count.
+ * Extract per-message Slack reactions as Plot reactions. Standard shortcodes
+ * map to their Unicode emoji. A shortcode that isn't standard but IS a known
+ * workspace custom emoji (passed via `teamId` + `customEmojiNames`) becomes a
+ * `slack:<teamId>/<name>` ref so Plot can render and round-trip it. Truly
+ * unknown names are dropped. Deduplication is by source.accountId so repeated
+ * reactors don't double-count.
  */
-function extractSlackMessageReactions(
+export function extractSlackMessageReactions(
   msg: SlackMessage,
-  userInfos?: SlackUserInfoMap
+  userInfos?: SlackUserInfoMap,
+  teamId?: string,
+  customEmojiNames?: ReadonlySet<string>
 ): NewReactions | undefined {
   if (!msg.reactions || msg.reactions.length === 0) return undefined;
   const byEmoji = new Map<string, NewActor[]>();
 
   for (const reaction of msg.reactions) {
-    const unicode = slackNameToUnicode(reaction.name);
-    if (!unicode) continue;
+    let key = slackNameToUnicode(reaction.name);
+    if (!key) {
+      // Strip any ::skin-tone suffix Slack can't apply to custom emoji.
+      const base = reaction.name.split("::")[0];
+      if (teamId && customEmojiNames?.has(base)) {
+        key = `slack:${teamId}/${base}`;
+      }
+    }
+    if (!key) continue; // truly unknown — drop
 
     const actors = reaction.users.map((userId) =>
       slackUserToNewActor(userId, userInfos?.get(userId))
     );
-    const existing = byEmoji.get(unicode) ?? [];
-    byEmoji.set(unicode, [...existing, ...actors]);
+    const existing = byEmoji.get(key) ?? [];
+    byEmoji.set(key, [...existing, ...actors]);
   }
 
   if (byEmoji.size === 0) return undefined;
@@ -633,7 +645,9 @@ export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string,
   userInfos?: SlackUserInfoMap,
-  initialSync?: boolean
+  initialSync?: boolean,
+  teamId?: string,
+  customEmojiNames?: ReadonlySet<string>
 ): NewLinkWithNotes {
   const parentMessage = messages[0];
 
@@ -676,7 +690,12 @@ export function transformSlackThread(
     if (!userId) continue; // Skip messages without user
 
     const text = formatSlackText(message.text);
-    const reactions = extractSlackMessageReactions(message, userInfos);
+    const reactions = extractSlackMessageReactions(
+      message,
+      userInfos,
+      teamId,
+      customEmojiNames
+    );
 
     // Build fileRef actions for any files attached to this message
     const actions: Action[] = (message.files ?? []).map((f) => ({

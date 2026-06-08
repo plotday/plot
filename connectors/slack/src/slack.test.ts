@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthProvider, type Authorization } from "@plotday/twister/tools/integrations";
 import { Slack } from "./slack";
+import {
+  extractSlackMessageReactions,
+  type SlackMessage,
+} from "./slack-api";
 
 /**
  * In-memory store backing `this.get` / `this.set` (which delegate to
@@ -233,5 +237,74 @@ describe("syncCustomEmoji", () => {
     expect(saveCustomEmoji).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(store.map.has("custom_emoji_T0")).toBe(false);
+  });
+});
+
+describe("extractSlackMessageReactions (custom emoji)", () => {
+  it("emits a slack: ref for a known workspace custom emoji", () => {
+    const msg = {
+      ts: "1.0",
+      user: "U1",
+      reactions: [{ name: "party_parrot", users: ["U1", "U2"], count: 2 }],
+    } as unknown as SlackMessage;
+
+    const result = extractSlackMessageReactions(
+      msg,
+      undefined,
+      "T0",
+      new Set(["party_parrot"])
+    );
+
+    expect(result).toBeDefined();
+    expect(Object.keys(result!)).toEqual(["slack:T0/party_parrot"]);
+    expect(result!["slack:T0/party_parrot"]).toHaveLength(2);
+  });
+
+  it("strips a ::skin-tone suffix before matching the custom set", () => {
+    const msg = {
+      ts: "1.0",
+      user: "U1",
+      reactions: [{ name: "party_parrot::skin-tone-3", users: ["U1"], count: 1 }],
+    } as unknown as SlackMessage;
+
+    const result = extractSlackMessageReactions(
+      msg,
+      undefined,
+      "T0",
+      new Set(["party_parrot"])
+    );
+
+    expect(result).toBeDefined();
+    expect(Object.keys(result!)).toEqual(["slack:T0/party_parrot"]);
+  });
+
+  it("still drops a truly-unknown name (not standard, not custom)", () => {
+    const msg = {
+      ts: "1.0",
+      user: "U1",
+      reactions: [{ name: "not_a_real_emoji_xyz", users: ["U1"], count: 1 }],
+    } as unknown as SlackMessage;
+
+    const result = extractSlackMessageReactions(
+      msg,
+      undefined,
+      "T0",
+      new Set(["party_parrot"])
+    );
+
+    expect(result).toBeUndefined();
+  });
+
+  it("maps a standard unicode reaction without a custom set", () => {
+    const msg = {
+      ts: "1.0",
+      user: "U1",
+      reactions: [{ name: "thumbsup", users: ["U1"], count: 1 }],
+    } as unknown as SlackMessage;
+
+    const result = extractSlackMessageReactions(msg);
+    expect(result).toBeDefined();
+    // Standard mapping resolves to a unicode key (not a slack: ref).
+    expect(Object.keys(result!)[0]?.startsWith("slack:")).toBe(false);
   });
 });

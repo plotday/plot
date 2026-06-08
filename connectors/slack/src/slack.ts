@@ -258,6 +258,27 @@ export class Slack extends Connector<Slack> {
   }
 
   /**
+   * Resolves the workspace teamId and the cached set of custom-emoji names for
+   * a channel, so the inbound transform can recognise custom reactions and emit
+   * `slack:<teamId>/<name>` refs. The name set is populated by
+   * {@link syncCustomEmoji}; both are best-effort (a missing token or
+   * un-synced workspace just means no custom refs are emitted).
+   */
+  private async customEmojiContext(channelId: string): Promise<{
+    teamId?: string;
+    customEmojiNames?: ReadonlySet<string>;
+  }> {
+    const token = await this.tools.integrations.get(channelId);
+    const teamId = token?.provider?.team_id;
+    if (!teamId) return {};
+    const names = await this.get<string[]>(`custom_emoji_${teamId}`);
+    return {
+      teamId,
+      customEmojiNames: names ? new Set(names) : undefined,
+    };
+  }
+
+  /**
    * Resolves a workspace-scoped Slack API client, falling back to any other
    * currently-enabled channel's token if the preferred one is unavailable.
    *
@@ -485,6 +506,9 @@ export class Slack extends Connector<Slack> {
       );
     }
 
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+
     for (const thread of threads) {
       try {
         // Cache file → channel so downloadAttachment can resolve the right API
@@ -501,7 +525,9 @@ export class Slack extends Connector<Slack> {
           thread,
           channelId,
           userInfos,
-          initialSync
+          initialSync,
+          teamId,
+          customEmojiNames
         );
 
         // Echo guard: drop notes for messages Plot itself sent (composed or
@@ -696,7 +722,16 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    const link = transformSlackThread(messages, channelId, userInfos, false);
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+    const link = transformSlackThread(
+      messages,
+      channelId,
+      userInfos,
+      false,
+      teamId,
+      customEmojiNames
+    );
     link.notes = await this.dropSentEchoNotes(link.notes);
     if (!link.notes || link.notes.length === 0) return;
     link.channelId = channelId;
@@ -919,7 +954,16 @@ export class Slack extends Connector<Slack> {
       );
     }
 
-    const link = transformSlackThread(messages, channelId, userInfos, true);
+    const { teamId, customEmojiNames } =
+      await this.customEmojiContext(channelId);
+    const link = transformSlackThread(
+      messages,
+      channelId,
+      userInfos,
+      true,
+      teamId,
+      customEmojiNames
+    );
     if (!link.notes || link.notes.length === 0) return;
 
     // Mark the thread as the owner's to-do atomically with the save. This
