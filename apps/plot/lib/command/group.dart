@@ -173,3 +173,148 @@ class RemoveGroupMembers extends Command {
     return const CommandDone(message: 'Members removed');
   }
 }
+
+/// The membership delta between a group's previous and next member sets.
+class GroupMembershipDiff {
+  const GroupMembershipDiff({required this.added, required this.removed});
+  final List<Uuid> added;
+  final List<Uuid> removed;
+}
+
+/// Computes which contacts were added/removed between [prev] and [next].
+/// Order-independent; dedupe relies on Uuid value equality.
+GroupMembershipDiff groupMembershipDiff(List<Uuid> prev, List<Uuid> next) {
+  final prevSet = prev.toSet();
+  final nextSet = next.toSet();
+  return GroupMembershipDiff(
+    added: next.where((u) => !prevSet.contains(u)).toList(),
+    removed: prev.where((u) => !nextSet.contains(u)).toList(),
+  );
+}
+
+/// Performs the save side of [EditGroup]: create a new group, or rename +
+/// apply a membership diff on an existing one. Reuses the headless write
+/// commands so offline/sync behavior is identical.
+class _SaveGroupEdit extends Command {
+  _SaveGroupEdit({
+    required this.groupId,
+    required this.name,
+    required this.originalName,
+    required this.members,
+    required this.originalMembers,
+  }) : super(
+          title: 'Save group',
+          eventObject: EventObject.activity,
+          eventAction: EventAction.updated,
+        );
+
+  final Uuid? groupId;
+  final String name;
+  final String originalName;
+  final List<Uuid> members;
+  final List<Uuid> originalMembers;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (groupId == null) {
+      return CreateGroup(name: name, memberContactIds: members).run(context);
+    }
+    final gid = groupId!;
+    var changed = false;
+    if (name != originalName && name.isNotEmpty) {
+      final r = await RenameGroup(groupId: gid, name: name).run(context);
+      if (r is CommandMessage && r.isError) return r;
+      changed = true;
+    }
+    if (!context.mounted) return const CommandSkipped();
+    final diff = groupMembershipDiff(originalMembers, members);
+    if (diff.added.isNotEmpty) {
+      final r = await AddGroupMembers(
+        groupId: gid.toString(),
+        contactIds: diff.added.map((u) => u.toString()).toList(),
+      ).run(context);
+      if (r is CommandMessage && r.isError) return r;
+      changed = true;
+    }
+    if (!context.mounted) return const CommandSkipped();
+    if (diff.removed.isNotEmpty) {
+      final r = await RemoveGroupMembers(
+        groupId: gid.toString(),
+        contactIds: diff.removed.map((u) => u.toString()).toList(),
+      ).run(context);
+      if (r is CommandMessage && r.isError) return r;
+      changed = true;
+    }
+    return changed
+        ? const CommandDone(message: 'Group updated')
+        : const CommandSkipped();
+  }
+}
+
+/// Edit a group, create a new group, or name an ad-hoc set of contacts as a
+/// group. groupId == null => create (used by the ad-hoc row menu and the
+/// "+ Group" header button); groupId != null => rename + membership diff.
+class EditGroup extends Command {
+  EditGroup({
+    this.groupId,
+    this.initialName = '',
+    this.initialMemberContactIds = const [],
+  }) : super(
+          title: groupId == null ? 'Create group' : 'Edit group',
+          eventObject: EventObject.activity,
+          eventAction:
+              groupId == null ? EventAction.added : EventAction.updated,
+        );
+
+  final Uuid? groupId;
+  final String initialName;
+  final List<Uuid> initialMemberContactIds;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final items = <FormItem>[
+      FormTextInput(
+        key: 'name',
+        label: 'Name',
+        required: true,
+        initialValue: initialName,
+        placeholder: 'e.g. Marketing',
+      ),
+      FormShareSelect(
+        key: 'members',
+        label: 'Members',
+        placeholder: 'Add people and groups',
+        initialValue: SharedSelection(contacts: initialMemberContactIds),
+      ),
+      FormButton(
+        key: 'save',
+        isPrimary: true,
+        buildCommand: (values) {
+          final name = (values['name'] as String?)?.trim() ?? '';
+          final sel = values['members'] as SharedSelection?;
+          final members = sel?.contacts ?? const <Uuid>[];
+          return _SaveGroupEdit(
+            groupId: groupId,
+            name: name,
+            originalName: initialName,
+            members: members,
+            originalMembers: initialMemberContactIds,
+          );
+        },
+      ),
+    ];
+    final form = FormData(
+      title: groupId == null ? 'New group' : 'Edit group',
+      dismissable: true,
+      groups: [StaticFormGroup(items: items)],
+    );
+    final groups = await form.list();
+    if (!context.mounted) return const CommandSkipped();
+    return FormModal(
+      form,
+      groups: groups,
+      rootContext: context,
+      constraints: const BoxConstraints(maxHeight: 520, maxWidth: 460),
+    ).run(context);
+  }
+}
