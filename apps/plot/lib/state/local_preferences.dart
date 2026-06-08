@@ -162,7 +162,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   }
 
   /// Record that the user just attached a link to a thread filed at
-  /// [signature] (a [ComposeTarget.signature]). Bumps its link-MRU timestamp.
+  /// [signature] (a target **signature** (`ComposeTarget.signature`)). Bumps its link-MRU timestamp.
   Future<void> recordLinkUsage(String signature) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final next = Map<String, int>.from(state.linkMru);
