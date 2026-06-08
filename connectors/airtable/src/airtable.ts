@@ -14,6 +14,7 @@ import {
   Integrations,
   type Channel,
   type LinkTypeConfig,
+  type StatusIcon,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -112,11 +113,13 @@ export class Airtable extends Connector<Airtable> {
         {
           status: STATUS_TODO,
           label: "To Do",
+          icon: "todo" as StatusIcon,
         },
         {
           status: STATUS_DONE,
           label: "Done",
           done: true as const,
+          icon: "done" as StatusIcon,
         },
       ],
       supportsAssignee: true,
@@ -223,9 +226,9 @@ export class Airtable extends Connector<Airtable> {
     const pushStatus = (status: string, label: string) => {
       const isDone = DONE_OPTION_MATCHERS.test(status);
       if (isDone) {
-        statuses.push({ status, label, done: true });
+        statuses.push({ status, label, done: true, icon: "done" as StatusIcon });
       } else {
-        statuses.push({ status, label });
+        statuses.push({ status, label, icon: "todo" as StatusIcon });
       }
     };
 
