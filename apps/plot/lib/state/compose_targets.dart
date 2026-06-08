@@ -121,17 +121,23 @@ ComposeSections linkModeSections(
 }
 
 /// Reorders [items] so their [ComposeTarget.signature]s follow the order
-/// [rankByLinkMru] returns. Stable for signatures the ranking leaves in place.
+/// [rankByLinkMru] returns. Items the ranking doesn't place keep their original
+/// relative order (explicit index tiebreak — Dart's sort isn't guaranteed
+/// stable on all targets).
 List<ComposeTarget> _orderBySignature(
   List<ComposeTarget> items,
   List<String> Function(List<String> signatures) rankByLinkMru,
 ) {
   final ranked = rankByLinkMru(items.map((t) => t.signature).toList());
   final pos = {for (var i = 0; i < ranked.length; i++) ranked[i]: i};
-  final out = [...items];
-  out.sort((a, b) =>
-      (pos[a.signature] ?? 1 << 30).compareTo(pos[b.signature] ?? 1 << 30));
-  return out;
+  final indexed = [for (var i = 0; i < items.length; i++) (i, items[i])];
+  indexed.sort((a, b) {
+    final pa = pos[a.$2.signature] ?? 1 << 30;
+    final pb = pos[b.$2.signature] ?? 1 << 30;
+    if (pa != pb) return pa.compareTo(pb);
+    return a.$1.compareTo(b.$1); // tie → preserve original index
+  });
+  return [for (final e in indexed) e.$2];
 }
 
 /// Materializes and caches the step-1 **target picker** list: a globally
@@ -718,36 +724,38 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     final ctx = await _searchContextFor();
     final scan = ctx.scan;
 
-    final usedSignatures = buildUsedTargetSignatures(scan.threads);
-    final rankedUsed = _prefs.rankSignaturesByMru(signatures: usedSignatures);
-    final rosterTargets = <ComposeTarget>[];
-    for (final sig in rankedUsed) {
-      final st = scan.bySignature[sig];
-      if (st == null) continue;
-      final t = _composeTargetForScanThread(
-        st,
-        templateBySignature: ctx.templateBySignature,
-        connectionCount: ctx.connectionCount,
-        hasTeams: ctx.hasTeams,
-        teamNames: ctx.teamNames,
-      );
-      if (t != null) rosterTargets.add(t);
-    }
     final people = <ComposePeopleEntry>[];
-    // Dropping non-inviteable contacts in [_peopleEntryFor] can collapse two
-    // distinct rosters (e.g. {Greg} and {Greg, mailer-daemon}) to the same
-    // filtered set, so dedupe again on the resolved roster to avoid duplicate
-    // pills.
-    final seenRosters = <String>{};
-    for (final r in dedupePeopleByRoster(rosterTargets)) {
-      final entry = _peopleEntryFor(r);
-      if (entry == null) continue;
-      if (!seenRosters
-          .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
-        continue;
+    if (!linkMode) {
+      final usedSignatures = buildUsedTargetSignatures(scan.threads);
+      final rankedUsed = _prefs.rankSignaturesByMru(signatures: usedSignatures);
+      final rosterTargets = <ComposeTarget>[];
+      for (final sig in rankedUsed) {
+        final st = scan.bySignature[sig];
+        if (st == null) continue;
+        final t = _composeTargetForScanThread(
+          st,
+          templateBySignature: ctx.templateBySignature,
+          connectionCount: ctx.connectionCount,
+          hasTeams: ctx.hasTeams,
+          teamNames: ctx.teamNames,
+        );
+        if (t != null) rosterTargets.add(t);
       }
-      people.add(entry);
-      if (people.length >= perSection) break;
+      // Dropping non-inviteable contacts in [_peopleEntryFor] can collapse two
+      // distinct rosters (e.g. {Greg} and {Greg, mailer-daemon}) to the same
+      // filtered set, so dedupe again on the resolved roster to avoid duplicate
+      // pills.
+      final seenRosters = <String>{};
+      for (final r in dedupePeopleByRoster(rosterTargets)) {
+        final entry = _peopleEntryFor(r);
+        if (entry == null) continue;
+        if (!seenRosters
+            .add(_rosterKey(entry.contacts, entry.groups, entry.inviteEmails))) {
+          continue;
+        }
+        people.add(entry);
+        if (people.length >= perSection) break;
+      }
     }
 
     final twists = await _twistTargets(ctx);
