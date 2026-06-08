@@ -770,7 +770,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean
           preview: string | null
+          priority: number
           priority_id: string | null
           related_source: string | null
           seq: unknown
@@ -801,7 +803,9 @@ export type Database = {
           logo?: string | null
           merged_from_thread_id?: string | null
           meta?: Json | null
+          note_scoped?: boolean
           preview?: string | null
+          priority?: number
           priority_id?: string | null
           related_source?: string | null
           seq?: unknown
@@ -832,7 +836,9 @@ export type Database = {
           logo?: string | null
           merged_from_thread_id?: string | null
           meta?: Json | null
+          note_scoped?: boolean
           preview?: string | null
+          priority?: number
           priority_id?: string | null
           related_source?: string | null
           seq?: unknown
@@ -5136,7 +5142,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean | null
           preview: string | null
+          priority: number | null
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
@@ -5217,7 +5225,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean | null
           preview: string | null
+          priority: number | null
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
