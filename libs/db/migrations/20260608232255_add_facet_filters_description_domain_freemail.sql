@@ -1,4 +1,8 @@
--- Personal email providers (freemail). Flagged freemail=true so the classifier's org-domain trust check excludes them; also prevents team auto-creation.
+-- Modify "domain" table
+ALTER TABLE "public"."domain" ADD COLUMN "freemail" boolean NOT NULL DEFAULT false;
+-- Modify "priority" table
+ALTER TABLE "public"."priority" ADD COLUMN "facet_filters" jsonb NULL, ADD COLUMN "description" text NULL;
+-- Flag existing freemail/personal email providers so the classifier's org-domain trust check excludes them
 INSERT INTO "public"."domain" ("name", "freemail")
     VALUES ('gmail.com', true),
     ('yahoo.com', true),
@@ -102,5 +106,4 @@ INSERT INTO "public"."domain" ("name", "freemail")
     ('bigpond.net.au', true),
     ('icloud.com', true),
     ('proton.me', true)
-
 ON CONFLICT ("name") DO UPDATE SET "freemail" = true;

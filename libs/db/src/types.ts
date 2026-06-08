@@ -489,6 +489,7 @@ export type Database = {
         Row: {
           auto_join: boolean
           created_at: string
+          freemail: boolean
           id: number
           name: string
           team_id: number | null
@@ -496,6 +497,7 @@ export type Database = {
         Insert: {
           auto_join?: boolean
           created_at?: string
+          freemail?: boolean
           id?: never
           name: string
           team_id?: number | null
@@ -503,6 +505,7 @@ export type Database = {
         Update: {
           auto_join?: boolean
           created_at?: string
+          freemail?: boolean
           id?: never
           name?: string
           team_id?: number | null
@@ -1213,6 +1216,8 @@ export type Database = {
           created_at: string
           created_by: string
           default_thread_icon: string | null
+          description: string | null
+          facet_filters: Json | null
           icon: string | null
           id: string
           inherit_members: boolean
@@ -1232,6 +1237,8 @@ export type Database = {
           created_at?: string
           created_by: string
           default_thread_icon?: string | null
+          description?: string | null
+          facet_filters?: Json | null
           icon?: string | null
           id?: string
           inherit_members?: boolean
@@ -1251,6 +1258,8 @@ export type Database = {
           created_at?: string
           created_by?: string
           default_thread_icon?: string | null
+          description?: string | null
+          facet_filters?: Json | null
           icon?: string | null
           id?: string
           inherit_members?: boolean

@@ -31,6 +31,8 @@ CREATE TABLE "public"."priority" (
     -- the DB. Recognized keys: topic (string, default thread.topic),
     -- view ('activity' to hide the agenda tab on the priority page).
     "config" jsonb,
+    "facet_filters" jsonb,
+    "description" text,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 

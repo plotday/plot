@@ -3,7 +3,8 @@ CREATE TABLE "public"."domain" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "name" text UNIQUE NOT NULL CHECK ("name" = lower("name")),
     "team_id" bigint REFERENCES team ON DELETE SET NULL,
-    "auto_join" boolean NOT NULL DEFAULT false
+    "auto_join" boolean NOT NULL DEFAULT false,
+    "freemail" boolean NOT NULL DEFAULT false
 );
 
 CREATE INDEX "name" ON "public"."domain" USING btree ("name");
