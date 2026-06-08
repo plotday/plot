@@ -2404,7 +2404,6 @@ class PickThreadShared extends ShowCommands {
         return _buildSharedCommands(
           threadRef[0],
           onUpdate: onUpdate,
-          isDraft: false,
           candidates: candidatesCache,
           notes: notes,
           sharingModel: sharingModel,
@@ -2446,8 +2445,10 @@ class PickThreadShared extends ShowCommands {
   Future<List<Actor>> loadSharedDisplayActors() =>
       _loadSharedDisplayActors(thread);
 
-  /// Total number of shared targets on the thread (self + other contacts +
-  /// groups + pending email invites), used for the overflow counter.
+  /// Number of *other* people the thread is shared with, used for the badge
+  /// counter: contacts named directly plus the members of any shared group
+  /// (deduped), plus pending email invites. The current user is excluded —
+  /// every visible thread is implicitly shared with them.
   int get sharedTotalCount => _sharedCount(thread);
 }
 
@@ -2464,9 +2465,16 @@ class PickThreadParticipants extends ShowCommands {
           final meta = thread.contactMeta;
           final rows = <Command>[];
           final seen = <ActorId>{};
+          // Exclude the current user: every thread they can see is implicitly
+          // shared with them, so the roster only lists other participants.
+          final selfUuids = Actor.getCurrentUserActorIds()
+              .map((a) => a.toUuid())
+              .toSet();
           for (final contactId in thread.contacts) {
+            if (selfUuids.contains(contactId)) continue;
             try {
               final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+              if (actor.self) continue;
               if (!seen.add(actor.id)) continue;
               final role =
                   (meta[contactId.toString()] as Map<String, dynamic>?)?['role']
@@ -2565,7 +2573,6 @@ class PickDraftThreadShared extends ShowCommands {
       commandsBuilder: (context) => _buildSharedCommands(
         threadRef[0],
         onUpdate: wrappedOnUpdate,
-        isDraft: true,
         candidates: candidatesCache,
         dmTwistInstanceId: dmTwistInstanceId,
         isAddressMode: isAddressMode,
@@ -2686,15 +2693,31 @@ int _sharedCount(Thread thread) {
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
       .toSet();
-  final others = thread.contacts
-      .where((id) => !selfUuids.contains(id) && !_isTwistContact(id))
-      .length;
-  final groupsCount = thread.groups.where((id) => !_isSystemGroup(id)).length;
-  // When a group is on the thread, it implicitly represents the current user
-  // (either directly or because the user is a member). Don't also add the
-  // separate +1 for self in that case.
-  final selfCount = groupsCount > 0 ? 0 : 1;
-  return selfCount + others + groupsCount + thread.inviteEmails.length;
+
+  // Distinct *other* people on the thread: contacts named directly plus the
+  // members of every non-system group it's shared into. Deduping by contact id
+  // means someone who is both named directly and a member of a shared group is
+  // counted once, and overlapping groups don't double-count. Self and twist
+  // contacts are always excluded — every visible thread is implicitly the
+  // user's, so the badge only conveys how many others are on it.
+  bool isOther(Uuid id) => !selfUuids.contains(id) && !_isTwistContact(id);
+  final people = thread.contacts.where(isOther).toSet();
+
+  // Groups whose membership hasn't synced into the local cache yet: we can't
+  // expand them, so count the group itself as one shared target rather than
+  // dropping it (a clearly-shared thread should never read as unshared).
+  var unexpandedGroups = 0;
+  for (final groupId in thread.groups) {
+    if (_isSystemGroup(groupId)) continue;
+    final members = Group.fromCache(groupId)?.memberContactIds;
+    if (members == null || members.isEmpty) {
+      unexpandedGroups++;
+      continue;
+    }
+    people.addAll(members.where(isOther));
+  }
+
+  return people.length + unexpandedGroups + thread.inviteEmails.length;
 }
 
 /// Resolves the actors to display in the Avatar group for a shared thread,
@@ -2770,7 +2793,6 @@ List<Actor> _dedupePerPerson(Iterable<Actor> actors) {
 Future<Commands> _buildSharedCommands(
   Thread thread, {
   required Future<void> Function(Thread) onUpdate,
-  required bool isDraft,
   required _ShareCandidatesCache candidates,
   Uuid? dmTwistInstanceId,
   bool isAddressMode = false,
@@ -2794,44 +2816,24 @@ Future<Commands> _buildSharedCommands(
   final activeContactIds = sharingModel == SharingModel.message
       ? thread.activeContacts
       : thread.contacts;
+  // The current user is never listed in the share modal: every thread they can
+  // see is implicitly shared with them, so the "Shared" list only shows others.
+  // (Leaving a thread now lives in the thread's More menu, via [LeaveThread].)
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
   final resolved = <Actor>[];
   for (final contactId in activeContactIds) {
+    if (selfUuids.contains(contactId)) continue;
     try {
-      resolved.add(await Actor.getOne(ActorId.fromUuid(contactId)));
+      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+      if (actor.self) continue;
+      resolved.add(actor);
     } catch (_) {
       // Skip contacts whose actors can't be resolved
     }
   }
   final sharedActors = _dedupePerPerson(resolved);
-
-  // Inject the current user into the shared list on draft threads (the
-  // NewThreadPage flow, where self gets saved into thread.contacts), or on
-  // existing threads that have no group filed — in which case self isn't
-  // implicitly represented.
-  //
-  // When a group is already on an existing thread, skip injection: the
-  // group stands in for its members (including the viewer). If the viewer
-  // later removes the group, ShareThreadGroup adds their contact back into
-  // thread.contacts so they retain access.
-  final shouldInjectSelf = isDraft || sharedGroups.isEmpty;
-  if (shouldInjectSelf) {
-    final selfIndex = sharedActors.indexWhere((a) => a.self);
-    if (selfIndex < 0) {
-      final primarySelfId = Base.actorIdOrNull;
-      if (primarySelfId != null) {
-        try {
-          final selfActor = await Actor.getOne(primarySelfId);
-          sharedActors.insert(0, selfActor);
-        } catch (_) {
-          // No self actor available, skip
-        }
-      }
-    } else if (selfIndex > 0) {
-      // Move self to the top so the current user is always listed first.
-      final self = sharedActors.removeAt(selfIndex);
-      sharedActors.insert(0, self);
-    }
-  }
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
@@ -3047,6 +3049,40 @@ List<Uuid> _contactsWithoutSelf(Thread thread) {
       .map((a) => a.toUuid())
       .toSet();
   return thread.contacts.where((id) => !selfUuids.contains(id)).toList();
+}
+
+/// Removes the current user from a shared thread ("leave thread").
+///
+/// The share modal no longer lists the current user, so this is the home for
+/// the leave affordance. Only offered in the thread's More menu when the
+/// thread uses thread-level sharing and is shared with someone else (see the
+/// gating in [threadCommands]); [_checkSelfRemoval] re-checks and confirms.
+class LeaveThread extends Command {
+  LeaveThread(this.thread)
+    : super(
+        title: 'Leave thread',
+        icon: PlotIcon.signOut,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final blocker = await _checkSelfRemoval(context, thread);
+    if (blocker != null) return blocker;
+    try {
+      await thread
+          .copyWith(contacts: Value(_contactsWithoutSelf(thread)))
+          .save();
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error leaving thread: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to leave thread', isError: true);
+    }
+  }
 }
 
 /// Whether [actor] is currently effectively shared on [thread]. Self is
@@ -3647,6 +3683,11 @@ List<Command> threadCommands(
     // none mode has no sharing UI. In all three the thread-level share roster
     // isn't editable, so the menu entry is dropped.
     if (sharingModel == SharingModel.thread) PickThreadShared(thread),
+    // Leaving a thread lives here (not in the share modal, which no longer
+    // lists self). Only meaningful when the thread is actually shared with
+    // someone else under thread-level sharing.
+    if (sharingModel == SharingModel.thread && isThreadShared(thread))
+      LeaveThread(thread),
     AssignThread(thread),
     // Merge is only offered on Plot threads. Connector-created threads
     // (Gmail, Calendar, …) mirror an external source, so folding another
