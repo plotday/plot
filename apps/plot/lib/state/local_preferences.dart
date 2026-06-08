@@ -21,7 +21,9 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
   static const String _kConnectionMruKey = 'connection_mru';
   static const String _kReactionMruKey = 'reaction_mru';
+  static const String _kLinkMruKey = 'link_mru';
   static const int _maxMruItems = 50;
+  static const int _maxLinkMruItems = 100;
   static const int _maxReactionMruItems = 40;
 
   /// Record usage of a mention, moving it to the front of the MRU list
@@ -159,6 +161,43 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     return state.connectionMru.containsKey(top) ? top : null;
   }
 
+  /// Record that the user just attached a link to a thread filed at
+  /// [signature] (a [ComposeTarget.signature]). Bumps its link-MRU timestamp.
+  Future<void> recordLinkUsage(String signature) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final next = Map<String, int>.from(state.linkMru);
+    next[signature] = now;
+    // Cap: drop the oldest entries beyond the limit so the map can't grow
+    // unbounded across a long-lived profile.
+    if (next.length > _maxLinkMruItems) {
+      final ordered = next.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      next
+        ..clear()
+        ..addEntries(ordered.take(_maxLinkMruItems));
+    }
+    emit(state.copyWith(linkMru: next));
+    await _persistLinkMru();
+  }
+
+  /// Reorder [signatures] by link-MRU recency: signatures with a recorded link
+  /// use sorted by timestamp descending, then signatures with no recorded use
+  /// preserving their input order. Mirrors [rankSignaturesByMru].
+  List<String> rankByLinkMru({required List<String> signatures}) {
+    final mru = state.linkMru;
+    final seen = <String>[];
+    final unseen = <String>[];
+    for (final sig in signatures) {
+      if (mru.containsKey(sig)) {
+        seen.add(sig);
+      } else {
+        unseen.add(sig);
+      }
+    }
+    seen.sort((a, b) => mru[b]!.compareTo(mru[a]!));
+    return [...seen, ...unseen];
+  }
+
   /// Sort a list of items by mention MRU order
   /// Items not in the MRU list will be placed after MRU items in their original order.
   /// Low-priority items (e.g. contacts) sort after other non-MRU items.
@@ -282,6 +321,17 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       }
     }
 
+    final linkMruJson = prefs.getString(_kLinkMruKey);
+    Map<String, int> linkMru = const {};
+    if (linkMruJson != null && linkMruJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(linkMruJson) as Map<String, dynamic>;
+        linkMru = decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+      } catch (_) {
+        linkMru = const {};
+      }
+    }
+
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
@@ -289,6 +339,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       showAllPriorities: showAllPriorities,
       connectionMru: connectionMru,
       reactionMru: reactionMru,
+      linkMru: linkMru,
     ));
   }
 
@@ -312,5 +363,10 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   Future<void> _persistReactionMru() async {
     final prefs = ProfilePreferences.instance;
     await prefs.setString(_kReactionMruKey, jsonEncode(state.reactionMru));
+  }
+
+  Future<void> _persistLinkMru() async {
+    final prefs = ProfilePreferences.instance;
+    await prefs.setString(_kLinkMruKey, jsonEncode(state.linkMru));
   }
 }
