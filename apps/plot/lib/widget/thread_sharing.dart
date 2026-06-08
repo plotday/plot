@@ -10,7 +10,9 @@ import 'package:plot/widget/widget.dart' hide Link;
 /// Compact thread sharing control for the thread-page header.
 /// - Not shared: `userPlus` icon. - Shared: `users` icon + recipient count.
 /// Tap → editable share modal (thread model) or read-only participants
-/// (message/channel). Hidden entirely for the `none` sharing model.
+/// (message). Hidden entirely for the `none` and `channel` sharing models
+/// (channel-sharing threads, e.g. Slack links or Linear issues, manage
+/// membership in their source system, not in Plot).
 class ThreadSharing extends HookWidget {
   const ThreadSharing(
       {required this.thread, this.tooltipBelow = false, super.key});
@@ -25,7 +27,10 @@ class ThreadSharing extends HookWidget {
     );
     final links = linksSnapshot.data ?? const <Link>[];
     final sharingModel = Thread.resolveSharingModel(links);
-    if (sharingModel == SharingModel.none) return const SizedBox.shrink();
+    if (sharingModel == SharingModel.none ||
+        sharingModel == SharingModel.channel) {
+      return const SizedBox.shrink();
+    }
 
     final command = PickThreadShared(thread);
     final count = command.sharedTotalCount;

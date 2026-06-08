@@ -543,8 +543,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                       ...threadCommandGroupsSync(
                         state.thread,
                         isPlotThread: Thread.isPlotThread(state.links),
-                        sharingModel:
-                            Thread.resolveSharingModel(state.links),
+                        sharingModel: Thread.resolveSharingModel(state.links),
                         priorityBloc: priorityBloc,
                       ),
                     ];
@@ -691,9 +690,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         selected: false, // No selection on ThreadPage
         dimmed: state.editingNote?.id == note.id,
         focusNode: focusNode,
-        key: _scrollTargetIndex == index
-            ? _scrollTargetKey
-            : ValueKey(note.id),
+        key: _scrollTargetIndex == index ? _scrollTargetKey : ValueKey(note.id),
         reorderableIndex: reorderableIndex,
         showAuthor: state.hasOtherAuthors,
         searchHighlight: state.search.isNotEmpty ? state.search : null,
@@ -1003,7 +1000,6 @@ class _LinkAssigneeBadge extends StatelessWidget {
       return 'Unassigned';
     }
   }
-
 }
 
 /// Small badge showing the link's status label.
@@ -1376,16 +1372,16 @@ class _ThreadActionsRow extends StatelessWidget {
     final startGroup = <Widget>[
       todoButton,
       scheduleButton,
-    ];
-
-    final endGroup = <Widget>[
-      if (!readOnly) ThreadSharing(thread: thread, tooltipBelow: true),
       if (!readOnly)
         ThreadAssignee(
           thread: thread,
           showWhenUnassigned: true,
           tooltipBelow: true,
         ),
+    ];
+
+    final endGroup = <Widget>[
+      if (!readOnly) ThreadSharing(thread: thread, tooltipBelow: true),
       Button.icon(_buildThreadMenuCommand(thread), tooltipBelow: true),
     ];
 
@@ -1398,7 +1394,7 @@ class _ThreadActionsRow extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
+          horizontal: context.theme.spacing.md,
           vertical: context.theme.spacing.sm,
         ),
         child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
