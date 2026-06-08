@@ -2427,7 +2427,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 361;
+  int get schemaVersion => 362;
 
   @override
   MigrationStrategy get migration {
@@ -3900,6 +3900,10 @@ class Store extends _$Store {
         twistInstances,
         twistInstances.customEmojiScope,
       );
+    }
+    if (from < 362) {
+      await _safeAddColumn(m, links, links.priority);
+      await _safeAddColumn(m, links, links.noteScoped);
     }
   }
 

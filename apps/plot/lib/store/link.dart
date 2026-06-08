@@ -297,6 +297,17 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
   BlobColumn get mergedFromThreadId =>
       blob().nullable().map(const UuidConverter())();
 
+  /// Connector-supplied primary-link ranking. The thread's single external
+  /// link is the highest-priority non-archived canonical (note_scoped=false)
+  /// link; ties break on earliest created_at. Mirrors `link.priority`.
+  IntColumn get priority => integer().withDefault(const Constant(0))();
+
+  /// TRUE when this link is attached to a note (note.link_id), not the thread.
+  /// Note-scoped links are excluded from thread-level surfacing and
+  /// primary-link selection. Mirrors `link.note_scoped`.
+  BoolColumn get noteScoped =>
+      boolean().withDefault(const Constant(false))();
+
   /// Server access-loss tombstone marker. TRUE when the row arrived from
   /// user.link_redacted (a per-item connector removal with no bulk signal).
   /// The sync layer hard-deletes these locally (link + its schedules).
@@ -513,6 +524,8 @@ class Link extends Equatable {
   String? get preview => _link.preview;
   String? get type => _link.type;
   String? get status => _link.status;
+  int get priority => _link.priority;
+  bool get noteScoped => _link.noteScoped;
   List<UserAction>? get actions => _link.actions;
   Map<String, dynamic>? get meta => _link.meta;
   String? get sourceUrl => _link.sourceUrl;
