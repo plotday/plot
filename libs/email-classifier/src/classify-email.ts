@@ -16,13 +16,13 @@ export type EmailSignals = {
   autoSubmitted: string | null;
   /** Return-Path header; "<>" / "" indicates a bounce/auto sender. */
   returnPath: string | null;
-  /** Importance / X-Priority header, or null. */
+  /** Importance / X-Priority header, or null. Carried by connectors; reserved for future heuristics. */
   importance: string | null;
   /** Sender email address, lowercased, or null. */
   fromAddress: string | null;
   /** Count of To + Cc recipients. */
   recipientCount: number;
-  /** Whether In-Reply-To / References was present. */
+  /** Whether In-Reply-To / References was present. Carried by connectors; reserved for future heuristics. */
   isReply: boolean;
   /** Subject line, or null. */
   subject: string | null;
@@ -45,7 +45,7 @@ const NOREPLY_LOCALPART =
 const INVOICE_RE = /\b(invoice|amount due|payment due|past due|statement|bill)\b/i;
 const RECEIPT_RE =
   /\b(receipt|order (confirmation|#|number)|your order|payment (received|confirmation)|thanks for your (order|purchase)|purchase confirmation)\b/i;
-const PROMO_RE = /\b(sale|% off|\d+% ?off|deal|offer|discount|coupon|save \$|limited time)\b/i;
+const PROMO_RE = /\b(sale|% off|\d+% ?off|deal|special offer|discount|coupon|save \$|limited time)\b/i;
 
 function localPart(address: string | null): string {
   if (!address) return "";

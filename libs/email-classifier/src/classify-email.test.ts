@@ -72,9 +72,14 @@ describe("classifyEmail — format", () => {
   it("message for a normal human email", () => {
     expect(classifyEmail(signals({ bodyLength: 800 })).format).toBe("message");
   });
-  it("leaves format null when nothing is confident", () => {
-    // automated, short, no category, no list → still notification; this asserts
-    // the automated+short notification path:
+  it("classifies a short automated email as a notification", () => {
     expect(classifyEmail(signals({ fromAddress: "no-reply@x.com", bodyLength: 0, subject: null })).format).toBe("notification");
+  });
+  it("leaves format null when no heuristic is confident", () => {
+    // automated (auto_reply) but long body, direct, no categories, neutral subject →
+    // none of the format branches fire → null.
+    expect(
+      classifyEmail(signals({ precedence: "auto_reply", bodyLength: 900, subject: "Re: status" })).format
+    ).toBeNull();
   });
 });
