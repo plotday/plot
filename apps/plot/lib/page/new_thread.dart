@@ -31,6 +31,7 @@ import 'package:plot/util/link_type_copy.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
+import 'package:plot/share_intent.dart' show extractHttpUrl;
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
@@ -38,6 +39,30 @@ import 'logging.dart';
 /// muted by one step so it doesn't catch the eye when not in use. 1.0 is the
 /// "active" state. Tunable; "one step" is subjective. See [NewThreadPageState].
 const double kNewThreadInactiveOpacity = 0.55;
+
+/// Returns [note] with an [ExternalUserAction] for [url] appended (deduped by
+/// url). When an action for [url] already exists it is replaced with the
+/// upgraded title/favicon. Pure — used by the new-thread URL/link flow.
+Note appendExternalLink(
+  Note note, {
+  required String url,
+  String? title,
+  String? favicon,
+}) {
+  final actions = [...(note.actions ?? const <UserAction>[])];
+  final action = ExternalUserAction(
+    title: (title != null && title.isNotEmpty) ? title : url,
+    url: url,
+    favicon: favicon,
+  );
+  final idx = actions.indexWhere((a) => a is ExternalUserAction && a.url == url);
+  if (idx >= 0) {
+    actions[idx] = action;
+  } else {
+    actions.add(action);
+  }
+  return note.copyWith(actions: actions);
+}
 
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
@@ -151,6 +176,12 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// The target chosen in step 1, retained so submit can record it.
   ComposeTarget? _selectedTarget;
 
+  /// The link held in the step-1 picker (typed/pasted/shared URL + metadata).
+  /// Non-null ⇒ link mode: the filter input shows a chip and the sections are
+  /// Private notes + link-supporting Channels. Added to the draft note only
+  /// when a destination is chosen (see [_applyTarget]).
+  LinkChipData? _pendingLink;
+
   /// The recipient chosen in step 1 (a people pill), retained to drive the
   /// step-2 connection picker and the compose-step back-nav. Null on
   /// twist/channel/private-note paths (which skip step 2).
@@ -256,6 +287,32 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _onFilterChanged() {
     if (_pickerSearchController.text.trim().isNotEmpty) _dismissed = false;
     _recomputeActive();
+    _maybeEnterLinkModeFromField();
+  }
+
+  /// If the filter text is (or contains) an http(s) URL, switch to link mode:
+  /// stash the URL as the pending link, clear the field (so it doesn't double
+  /// as a filter), and resolve metadata. No-op when already in link mode.
+  void _maybeEnterLinkModeFromField() {
+    if (_pendingLink != null) return;
+    final url = extractHttpUrl(_pickerSearchController.text);
+    if (url == null) return;
+    // Set the pending link BEFORE clearing the field: clear() fires this
+    // listener again, and the guard above makes that re-entry a no-op.
+    _enterLinkMode(url);
+    _pickerSearchController.clear();
+  }
+
+  /// Enters link mode for [url] and kicks off a metadata fetch.
+  void _enterLinkMode(String url) {
+    setState(() => _pendingLink = LinkChipData(url: url));
+    unawaited(_resolvePendingLinkMetadata(url));
+  }
+
+  /// Clears the pending link (chip ✕) and returns to the text filter input.
+  void _clearPendingLink() {
+    setState(() => _pendingLink = null);
+    _focusPickerSearch(_ComposeStep.sections);
   }
 
   /// Global key handler. Two jobs, both gated on the panel being focused:
@@ -441,6 +498,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     setState(() {
       _step = _ComposeStep.sections;
       _selectedTarget = null;
+      _pendingLink = null;
       _selectedRecipient = null;
       _stashedSectionsQuery = '';
       _selectedTwist = null;
@@ -724,66 +782,33 @@ class NewThreadPageState extends State<NewThreadPage> {
     // [_applyFeedbackMode], dispatched from [_initializeDraft]); it needs the
     // chat target + step-2 transition, not just a group pre-share.
 
-    // Share intent: add the shared URL as a link action on the draft note.
+    // Share intent: enter link mode with the shared URL prefilled. The link is
+    // added to the note only when the user picks a destination (see
+    // [_applyTarget]); until then it lives as the pending link / chip.
     if (widget.sharedUrl != null && mounted) {
-      final currentNote = bloc.state.draftNote;
-      final existingActions = currentNote.actions ?? const <UserAction>[];
-      final alreadyPresent = existingActions.any(
-        (a) => a is ExternalUserAction && a.url == widget.sharedUrl,
-      );
-      if (!alreadyPresent) {
-        log.info('[NewThreadPage] Adding shared URL as ExternalUserAction');
-        final updatedNote = currentNote.copyWith(
-          actions: [
-            ...existingActions,
-            ExternalUserAction(
-              title: widget.sharedUrl!,
-              url: widget.sharedUrl!,
-            ),
-          ],
-        );
-        await bloc.updateDraft(bloc.state.draft, note: updatedNote);
-        // Fire-and-forget metadata fetch — when it returns we replace the
-        // action so the link chip shows the page title and the thread
-        // (created via AddThreadWithLink on submit) gets the favicon.
-        unawaited(_resolveSharedUrlMetadata(widget.sharedUrl!));
-      }
+      _enterLinkMode(widget.sharedUrl!);
     }
   }
 
-  /// Looks up `<title>` and favicon for [url] and updates the matching
-  /// `ExternalUserAction` in the draft. Matches by URL — the draft note may
-  /// have been mutated while the request was in flight, so identity isn't
-  /// safe.
-  Future<void> _resolveSharedUrlMetadata(String url) async {
-    final meta = await fetchUrlMetadata(url);
-    if (!mounted) return;
-    if (meta.title == null && meta.favicon == null) return;
-    final bloc = _priorityBloc;
-    if (bloc == null) return;
-    final note = bloc.state.draftNote;
-    final actions = note.actions ?? const <UserAction>[];
-    final idx = actions.indexWhere(
-      (a) => a is ExternalUserAction && a.url == url,
-    );
-    if (idx < 0) return;
-    final existing = actions[idx] as ExternalUserAction;
-    // If the user already typed a custom title or the metadata didn't
-    // upgrade either field, don't overwrite.
-    final shouldUpdateTitle = meta.title != null && existing.title == url;
-    final shouldUpdateFavicon =
-        meta.favicon != null && existing.favicon == null;
-    if (!shouldUpdateTitle && !shouldUpdateFavicon) return;
-    final replacement = ExternalUserAction(
-      title: shouldUpdateTitle ? meta.title! : existing.title,
-      url: existing.url,
-      favicon: shouldUpdateFavicon ? meta.favicon : existing.favicon,
-    );
-    final next = [...actions]..[idx] = replacement;
-    await bloc.updateDraft(
-      bloc.state.draft,
-      note: note.copyWith(actions: next),
-    );
+  /// Fetches `<title>` + favicon for [url] and folds them into [_pendingLink]
+  /// (so the chip shows them). No-op if link mode was cleared or changed.
+  Future<void> _resolvePendingLinkMetadata(String url) async {
+    try {
+      final meta = await fetchUrlMetadata(url);
+      if (!mounted) return;
+      final current = _pendingLink;
+      if (current == null || current.url != url) return;
+      if (meta.title == null && meta.favicon == null) return;
+      setState(() {
+        _pendingLink = LinkChipData(
+          url: url,
+          title: meta.title ?? current.title,
+          favicon: meta.favicon ?? current.favicon,
+        );
+      });
+    } catch (e, s) {
+      Tracker.captureException(e, s);
+    }
   }
 
   @override
@@ -1042,6 +1067,29 @@ class NewThreadPageState extends State<NewThreadPage> {
     await bloc.updateDraft(updated);
     if (!mounted) return;
     if (hasRoster) _markContactsAdded();
+
+    // Link mode: attach the pending link to the draft NOTE (never the thread),
+    // deriving the thread title/icon from it when the user hasn't set one.
+    final link = _pendingLink;
+    if (link != null) {
+      final latest = bloc.state.draft;
+      final note = appendExternalLink(
+        bloc.state.draftNote,
+        url: link.url,
+        title: link.title,
+        favicon: link.favicon,
+      );
+      final hasUserTitle = latest.title?.isNotEmpty ?? false;
+      final hasUserIcon = latest.icon?.isNotEmpty ?? false;
+      final titledDraft = latest.copyWith(
+        title: hasUserTitle ? const Value.absent() : Value(link.display),
+        icon: hasUserIcon
+            ? const Value.absent()
+            : Value(link.favicon ?? 'link'),
+      );
+      await bloc.updateDraft(titledDraft, note: note);
+      if (!mounted) return;
+    }
 
     // 3. Advance to step 2 immediately and focus the editor. The focus
     //    suggestion below runs asynchronously and updates the focus field /
@@ -1743,6 +1791,24 @@ class NewThreadPageState extends State<NewThreadPage> {
         }),
       );
     }
+    // Link mode: remember this destination as a recent *link* destination so it
+    // floats to the top of the next link-mode picker. Independent of the
+    // connection MRU recorded above.
+    if (target != null) {
+      final note = _priorityBloc?.state.draftNote;
+      final hasLink =
+          note?.actions?.whereType<ExternalUserAction>().isNotEmpty ?? false;
+      if (hasLink) {
+        unawaited(
+          Future(() => prefs.recordLinkUsage(target.signature)).catchError((
+            Object e,
+            StackTrace s,
+          ) {
+            Tracker.captureException(e, s);
+          }),
+        );
+      }
+    }
     // Clear global search so the new thread is visible in the list
     _provider?.tryCloseSearch();
   }
@@ -1825,6 +1891,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       // search-field leading slot carries the back affordance instead and
       // closes the new-thread page. Multi-panel keeps a plain search icon.
       onBack: multiPanel ? null : () => context.run(ChangeCurrentThread(null)),
+      pendingLink: _pendingLink,
+      onClearLink: _clearPendingLink,
     );
 
     if (!multiPanel) {
