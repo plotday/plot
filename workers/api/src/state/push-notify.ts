@@ -94,16 +94,16 @@ export class PushNotify extends DurableObject<Bindings> {
       const result = await withDb(this.env, async (db) => {
         const stateResult = await sql<{
           any_urgent: boolean;
-          latest_updated_at: string;
         }>`
           SELECT
-            BOOL_OR(ts.urgent) AS any_urgent,
-            MAX(ts.updated_at)::text AS latest_updated_at
+            BOOL_OR(ts.urgent) AS any_urgent
           FROM thread_state ts
           JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
+          JOIN priority p ON p.id = tp.priority_id
           WHERE ts.user_id = ${userId}::uuid AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
+            AND (p.notification_cleared_at IS NULL OR ts.updated_at > p.notification_cleared_at)
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
             AND (
@@ -113,13 +113,12 @@ export class PushNotify extends DurableObject<Bindings> {
         `.execute(db);
 
         const row = stateResult.rows[0];
-        if (!row || !row.latest_updated_at) return null;
-        return { urgent: row.any_urgent, latestUnreadAt: row.latest_updated_at };
+        if (!row || row.any_urgent === null) return null;
+        return { urgent: row.any_urgent };
       });
 
       if (result) {
         hasUrgent = result.urgent;
-        latestUnreadAt = result.latestUnreadAt;
         hadCandidates = true;
       }
     } catch (error) {
@@ -137,16 +136,6 @@ export class PushNotify extends DurableObject<Bindings> {
       await this.ctx.storage.delete("hasUrgent");
       await this.ctx.storage.delete("firstNotifyTime");
       return;
-    }
-
-    // Skip if we already notified about these exact unreads (no new activity)
-    if (latestUnreadAt) {
-      const lastNotifiedUnreadAt =
-        await this.ctx.storage.get<string>("lastNotifiedUnreadAt");
-      if (lastNotifiedUnreadAt && latestUnreadAt <= lastNotifiedUnreadAt) {
-        // No new unread activity since last push — don't re-notify
-        return;
-      }
     }
 
     const wasUrgent = this.hasUrgent;
@@ -237,26 +226,29 @@ export class PushNotify extends DurableObject<Bindings> {
       // Re-check that we still have a notify-worthy unread (importance >= 50
       // OR urgent). The user may have read everything since the alarm was
       // scheduled.
-      let latestUnreadAt: string | null = null;
+      let hasCandidates = false;
       await withDb(this.env, async (db) => {
-        const result = await sql<{ latest: string }>`
-          SELECT MAX(ts.updated_at)::text AS latest
+        const result = await sql<{ has_candidates: boolean }>`
+          SELECT true AS has_candidates
           FROM thread_state ts
           JOIN thread t ON t.id = ts.thread_id
           JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
+          JOIN priority p ON p.id = tp.priority_id
           WHERE ts.user_id = ${this.userId!}::uuid
             AND ts.read_at IS NULL
             AND (ts.importance >= ${IMPORTANCE_NOTIFY_THRESHOLD} OR ts.urgent = TRUE)
+            AND (p.notification_cleared_at IS NULL OR ts.updated_at > p.notification_cleared_at)
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (
               t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
               OR t.groups && "user".user_group_ids(${this.userId!}::uuid)
             )
+          LIMIT 1
         `.execute(db);
-        latestUnreadAt = result.rows[0]?.latest ?? null;
+        hasCandidates = result.rows.length > 0;
 
-        if (latestUnreadAt) {
+        if (hasCandidates) {
           // Send data-only FCM wake signal
           await sendDataNotificationToUser(this.env, db, this.userId!, {
             type: "sync_wake",
@@ -264,7 +256,7 @@ export class PushNotify extends DurableObject<Bindings> {
         }
       });
 
-      if (!latestUnreadAt) {
+      if (!hasCandidates) {
         // No notify-worthy unreads — user read everything since alarm was scheduled
         logger.info("Skipping push — no notify-worthy unreads remaining", {
           user_id: this.userId,
@@ -273,9 +265,6 @@ export class PushNotify extends DurableObject<Bindings> {
       }
 
       await this.ctx.storage.put("lastNotificationSentAt", now);
-
-      // Record what we notified about so we don't re-notify for the same unreads
-      await this.ctx.storage.put("lastNotifiedUnreadAt", latestUnreadAt);
 
       // Trigger email digest check — if user doesn't open the app within 18h,
       // they'll receive an email with all unread notifications

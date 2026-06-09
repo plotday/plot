@@ -1,21 +1,47 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/store/store.dart';
 
 part 'now_state.dart';
 
-class NowBloc extends Cubit<NowState> {
-  NowBloc() : super(const NowLoading());
+class NowBloc extends Cubit<NowState> with WidgetsBindingObserver, WindowListener {
+  NowBloc() : super(const NowLoading()) {
+    WidgetsBinding.instance.addObserver(this);
+    windowManager.addListener(this);
+  }
 
   bool get loading => super.state is NowLoading;
   NowLoaded get loadedState => super.state as NowLoaded;
 
   /// Whether the user is currently viewing the synthetic "Everything" feed.
   bool get everything => state is NowLoaded && loadedState.everything;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && this.state is NowLoaded) {
+      _clearWatermarkIfLoaded();
+    }
+  }
+
+  @override
+  void onWindowFocus() {
+    if (this.state is NowLoaded) {
+      _clearWatermarkIfLoaded();
+    }
+  }
+
+  void _clearWatermarkIfLoaded() {
+    final ctx = loadedState.context;
+    if (ctx != null && !loadedState.everything) {
+      Store.get.updateNotificationWatermark(ctx.id);
+    }
+  }
 
   StreamSubscription<void>? _subscription;
   Timer? _trackTick;
@@ -50,6 +76,8 @@ class NowBloc extends Cubit<NowState> {
 
   @override
   Future<void> close() {
+    WidgetsBinding.instance.removeObserver(this);
+    windowManager.removeListener(this);
     stop();
     return super.close();
   }
@@ -403,6 +431,10 @@ class NowBloc extends Cubit<NowState> {
     // while commands set it explicitly: Everything = true, any ordinary
     // priority navigation = false.
     final newEverything = everything ?? prior.everything;
+
+    if (priority != null && !newEverything) {
+      Store.get.updateNotificationWatermark(priority.id);
+    }
 
     if (samePriority) {
       // No real navigation — only the agenda selection or the Everything

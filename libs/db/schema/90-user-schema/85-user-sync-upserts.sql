@@ -564,12 +564,12 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by, description)
+        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by, description, notification_cleared_at)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.icon, _input.path, _input.created_by, _input.updated_by, p_priority ->> 'description')
+                END, _input.icon, _input.path, _input.created_by, _input.updated_by, p_priority ->> 'description', _input.notification_cleared_at)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -587,7 +587,8 @@ BEGIN
                 -- caller actually sent it; preserve it otherwise. facet_filters
                 -- is owned by the server-side derivation, never set here.
                 description = CASE WHEN p_priority ? 'description'
-                    THEN p_priority ->> 'description' ELSE priority.description END
+                    THEN p_priority ->> 'description' ELSE priority.description END,
+                notification_cleared_at = GREATEST(priority.notification_cleared_at, _input.notification_cleared_at)
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -603,7 +604,8 @@ BEGIN
                 priority.color
             END,
             icon = COALESCE(_input.icon, priority.icon),
-            updated_by = _input.updated_by
+            updated_by = _input.updated_by,
+            notification_cleared_at = GREATEST(priority.notification_cleared_at, _input.notification_cleared_at)
         WHERE
             id = _input.id
         RETURNING

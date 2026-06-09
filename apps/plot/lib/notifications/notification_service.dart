@@ -811,6 +811,12 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       final priority = priorityById[priorityIdStr];
       if (priority == null) continue;
 
+      // Filter out stale threads that were already cleared
+      final clearedAt = priority.notificationClearedAt;
+      if (clearedAt != null && !thread.updatedAt.isAfter(clearedAt)) {
+        continue;
+      }
+
       // Find the first-level priority (direct child of root)
       final firstLevel = _findFirstLevelPriority(
         priority.path.value, rootPath, allPriorities,
@@ -829,6 +835,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
           notifyWindow: firstLevel.notifyWindow != null
               ? AttentionWindow.fromJsonString(firstLevel.notifyWindow)
               : null,
+          targetPriorityId: firstLevelIdStr, // Always route directly to the focus
         ),
       );
 
@@ -844,14 +851,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       if (isUrgent) batch.highestUrgent = true;
     }
 
-    // For each batch, compute the target priority (lowest common ancestor)
-    for (final batch in batchMap.values) {
-      batch.targetPriorityId = _computeTargetPriority(
-        batch.threads.map((t) => t.priorityId).toSet(),
-        priorityById,
-        batch.firstLevelPriorityId,
-      );
-    }
+    // Clean up empty batches (e.g. if all threads were filtered out)
+    batchMap.removeWhere((_, batch) => batch.threads.isEmpty);
 
     return batchMap.values.toList();
   }
@@ -875,46 +876,6 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     return allPriorities
         .where((p) => p.path.value == firstLevelPath)
         .firstOrNull;
-  }
-
-  /// Compute the lowest common ancestor priority that contains all thread priorities.
-  String _computeTargetPriority(
-    Set<String> priorityIds,
-    Map<String, PriorityRow> priorityById,
-    String fallbackId,
-  ) {
-    if (priorityIds.length == 1) return priorityIds.first;
-
-    // Get paths for all priorities
-    final paths = priorityIds
-        .map((id) => priorityById[id]?.path.value)
-        .whereType<String>()
-        .toList();
-
-    if (paths.isEmpty) return fallbackId;
-
-    // Find common prefix of all paths
-    final segments = paths.map((p) => p.split('.')).toList();
-    final minLength = segments.map((s) => s.length).reduce((a, b) => a < b ? a : b);
-
-    int commonLength = 0;
-    for (int i = 0; i < minLength; i++) {
-      final segment = segments[0][i];
-      if (segments.every((s) => s[i] == segment)) {
-        commonLength = i + 1;
-      } else {
-        break;
-      }
-    }
-
-    if (commonLength == 0) return fallbackId;
-
-    final commonPath = segments[0].sublist(0, commonLength).join('.');
-    final match = priorityById.values
-        .where((p) => p.path.value == commonPath)
-        .firstOrNull;
-
-    return match?.id.value.toString() ?? fallbackId;
   }
 
   /// Fetch AI-generated summaries from the API.

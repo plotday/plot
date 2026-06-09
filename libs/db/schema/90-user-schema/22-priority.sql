@@ -99,7 +99,8 @@ SELECT
     p.config,
     -- New columns appended at the END so CREATE OR REPLACE VIEW works without
     -- dropping dependents. Order is irrelevant: clients map by column name.
-    p.icon
+    p.icon,
+    p.notification_cleared_at
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id

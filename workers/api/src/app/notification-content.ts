@@ -21,6 +21,7 @@ notificationContent.get("/notification-content", async (c) => {
     const threadsResult = await sql<{
       urgent: boolean;
       importance: number;
+      ts_updated_at: Date;
       thread_id: string;
       thread_title: string | null;
       thread_preview: string | null;
@@ -31,6 +32,7 @@ notificationContent.get("/notification-content", async (c) => {
       SELECT
         tu.urgent,
         tu.importance,
+        tu.updated_at AS ts_updated_at,
         t.id::text AS thread_id,
         t.title AS thread_title,
         t.preview AS thread_preview,
@@ -44,6 +46,7 @@ notificationContent.get("/notification-content", async (c) => {
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND (tu.importance >= 50 OR tu.urgent = TRUE)
+        AND (p.notification_cleared_at IS NULL OR tu.updated_at > p.notification_cleared_at)
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
         AND (
@@ -92,7 +95,7 @@ notificationContent.get("/notification-content", async (c) => {
         preview: string | null;
       }>;
       urgent: boolean;
-      priorityPaths: string[];
+      maxUpdatedAt: Date;
     };
 
     // Group threads by first-level priority
@@ -111,9 +114,11 @@ notificationContent.get("/notification-content", async (c) => {
           priorityTitle: firstLevelInfo.title,
           threads: [],
           urgent: false,
-          priorityPaths: [],
+          maxUpdatedAt: row.ts_updated_at,
         };
         batchMap.set(firstLevelPath, batch);
+      } else if (row.ts_updated_at > batch.maxUpdatedAt) {
+        batch.maxUpdatedAt = row.ts_updated_at;
       }
 
       batch.threads.push({
@@ -121,7 +126,6 @@ notificationContent.get("/notification-content", async (c) => {
         title: row.thread_title,
         preview: row.thread_preview,
       });
-      batch.priorityPaths.push(row.priority_path);
 
       if (row.urgent) batch.urgent = true;
     }
@@ -130,37 +134,12 @@ notificationContent.get("/notification-content", async (c) => {
       return c.json({ summaries: [] });
     }
 
-    // Compute LCA paths and look up their priority IDs
-    const lcaPathSet = new Set<string>();
-    for (const [firstLevelPath, batch] of batchMap) {
-      lcaPathSet.add(computeLcaPath(batch.priorityPaths, firstLevelPath));
-    }
-
-    const lcaResult = await sql<{ id: string; path: string }>`
-      SELECT id::text AS id, path::text AS path
-      FROM priority
-      WHERE path::text = ANY(${[...lcaPathSet]})
-    `.execute(db);
-
-    const priorityIdByPath = new Map<string, string>();
-    for (const row of lcaResult.rows) {
-      priorityIdByPath.set(row.path, row.id);
-    }
-    // Ensure first-level paths are also in the map as fallbacks
-    for (const [path, info] of firstLevelByPath) {
-      if (!priorityIdByPath.has(path)) {
-        priorityIdByPath.set(path, info.id);
-      }
-    }
-
     // Check AI usage limit
     const aiAllowed = await checkAiLimit(c.env, db, userId, "note_processing");
 
     const summaries = await Promise.all(
-      [...batchMap.entries()].map(async ([firstLevelPath, batch]) => {
-        const lcaPath = computeLcaPath(batch.priorityPaths, firstLevelPath);
-        const targetPriorityId =
-          priorityIdByPath.get(lcaPath) ?? batch.firstLevelPriorityId;
+      [...batchMap.values()].map(async (batch) => {
+        const targetPriorityId = batch.firstLevelPriorityId;
         const threadList = batch.threads.slice(0, 10);
 
         const body = aiAllowed.allowed
@@ -182,6 +161,17 @@ notificationContent.get("/notification-content", async (c) => {
       recordAiUsage(c.env, userId, "note_processing");
     }
 
+    // Advance the notification_cleared_at high-water mark for these focuses
+    // so we don't re-notify for the same threads.
+    for (const batch of batchMap.values()) {
+      await sql`
+        UPDATE priority
+        SET notification_cleared_at = GREATEST(notification_cleared_at, ${batch.maxUpdatedAt.toISOString()})
+        WHERE id = ${batch.firstLevelPriorityId}::uuid
+          AND user_id = ${userId}::uuid
+      `.execute(db);
+    }
+
     return c.json({ summaries });
   } catch (error) {
     return captureServerError(
@@ -191,27 +181,5 @@ notificationContent.get("/notification-content", async (c) => {
     );
   }
 });
-
-/** Compute lowest common ancestor path for a set of ltree paths. */
-export function computeLcaPath(paths: string[], fallback: string): string {
-  if (paths.length === 0) return fallback;
-  if (paths.length === 1) return paths[0];
-
-  const segments = paths.map((p) => p.split("."));
-  const minLength = Math.min(...segments.map((s) => s.length));
-
-  let commonLength = 0;
-  for (let i = 0; i < minLength; i++) {
-    const seg = segments[0][i];
-    if (segments.every((s) => s[i] === seg)) {
-      commonLength = i + 1;
-    } else {
-      break;
-    }
-  }
-
-  if (commonLength === 0) return fallback;
-  return segments[0].slice(0, commonLength).join(".");
-}
 
 export default notificationContent;

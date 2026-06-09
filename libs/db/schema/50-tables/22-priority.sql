@@ -33,6 +33,7 @@ CREATE TABLE "public"."priority" (
     "config" jsonb,
     "facet_filters" jsonb,
     "description" text,
+    "notification_cleared_at" timestamp with time zone,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 

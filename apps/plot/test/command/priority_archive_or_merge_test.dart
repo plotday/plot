@@ -23,14 +23,14 @@ PriorityRow _row({DateTime? archivedAt}) => PriorityRow(
 void main() {
   test('active focus with threads → Merge into…', () {
     final p = Priority.fromStore(_row(), draft: true, hasThreads: true);
-    final cmd = archiveOrMergeCommand(p);
+    final cmd = archiveOrMergeCommands(p).first;
     expect(cmd, isA<MergeFocusInto>());
     expect(cmd.title, 'Merge into…');
   });
 
   test('active focus without threads → Archive', () {
     final p = Priority.fromStore(_row(), draft: true, hasThreads: false);
-    final cmd = archiveOrMergeCommand(p);
+    final cmd = archiveOrMergeCommands(p).first;
     expect(cmd, isA<TogglePriorityArchived>());
     expect(cmd.title, 'Archive');
   });
@@ -41,7 +41,7 @@ void main() {
       draft: true,
       hasThreads: true,
     );
-    final cmd = archiveOrMergeCommand(p);
+    final cmd = archiveOrMergeCommands(p).first;
     expect(cmd, isA<TogglePriorityArchived>());
     expect(cmd.title, 'Un-archive');
   });

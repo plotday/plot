@@ -60,6 +60,10 @@ class Priorities extends Table
   /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
   /// string. See `PriorityConfig` for recognized keys.
   TextColumn get config => text().nullable()();
+
+  /// The high-water mark for notifications in this focus. Updated by the
+  /// server when sending summaries, and by the client when opening the focus.
+  DateTimeColumn get notificationClearedAt => dateTime().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -1265,6 +1269,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? notifyWindowSet,
     Value<String?> config = const Value.absent(),
     bool? draft,
+    Value<DateTime?> notificationClearedAt = const Value.absent(),
   }) {
     final newDraft = draft ?? this.draft;
     final currentParent = parent ?? this.parent;
@@ -1307,6 +1312,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         earlyNotificationsEnabledSet: earlyNotificationsEnabledSet,
         notifyWindowSet: notifyWindowSet,
         config: config,
+        notificationClearedAt: notificationClearedAt,
       ),
       parent: currentParent,
       children: children,

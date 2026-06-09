@@ -2482,7 +2482,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 365;
+  int get schemaVersion => 366;
 
   @override
   MigrationStrategy get migration {
@@ -2628,6 +2628,26 @@ class Store extends _$Store {
 
   /// Performs a full re-sync from the server without losing local data.
   ///
+  /// Advance the notification high-water mark for a given focus. This prevents
+  /// stale notifications from being shown locally or fetched from the server.
+  Future<void> updateNotificationWatermark(Uuid priorityId) async {
+    final priority = await (select(priorities)
+          ..where((p) => p.id.equals(priorityId.toBytes())))
+        .getSingleOrNull();
+
+    if (priority == null) return;
+
+    final now = DateTime.now();
+    final current = priority.notificationClearedAt;
+
+    // Only advance the timestamp (handles offline/sync edge cases).
+    if (current == null || now.isAfter(current)) {
+      await (update(priorities)
+            ..where((p) => p.id.equals(priorityId.toBytes())))
+          .write(PrioritiesCompanion(notificationClearedAt: Value(now)));
+    }
+  }
+
   /// Marks all existing rows with a sentinel updatedAt (epoch), clears sync
   /// state, re-pulls everything from the server (which overwrites the sentinel
   /// on items that still exist), then deletes orphaned rows that still have
@@ -4008,6 +4028,10 @@ class Store extends _$Store {
         userSettings,
         userSettings.dismissedFocusSuggestions,
       );
+    }
+
+    if (from < 366) {
+      await _safeAddColumn(m, priorities, priorities.notificationClearedAt);
     }
   }
 

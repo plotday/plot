@@ -1228,6 +1228,7 @@ export type Database = {
           id: string
           inherit_members: boolean
           key: string | null
+          notification_cleared_at: string | null
           path: unknown
           seq: unknown
           sync_depth: number | null
@@ -1249,6 +1250,7 @@ export type Database = {
           id?: string
           inherit_members?: boolean
           key?: string | null
+          notification_cleared_at?: string | null
           path: unknown
           seq?: unknown
           sync_depth?: number | null
@@ -1270,6 +1272,7 @@ export type Database = {
           id?: string
           inherit_members?: boolean
           key?: string | null
+          notification_cleared_at?: string | null
           path?: unknown
           seq?: unknown
           sync_depth?: number | null
@@ -5627,6 +5630,7 @@ export type Database = {
           id: string | null
           inherit_members: boolean | null
           key: string | null
+          notification_cleared_at: string | null
           notify_window: Json | null
           notify_window_set: boolean | null
           order: number | null
@@ -6568,6 +6572,7 @@ export type Database = {
           id: string | null
           inherit_members: boolean | null
           key: string | null
+          notification_cleared_at: string | null
           notify_window: Json | null
           notify_window_set: boolean | null
           order: number | null
