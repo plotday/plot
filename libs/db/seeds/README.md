@@ -52,6 +52,21 @@ worker's Cloudflare account) before running this.
 
 - **Local Testing**: For local development, users are created with their email as the password for convenience
 
+### Connectors and a fresh database
+
+When a source's name matches a deployed **public** connector twist (Slack, Gmail,
+Google Calendar, …), the seed binds the connection to that public twist and uses
+its link-type config. When no public twist exists (e.g. right after a DB reset,
+before `plot deploy`), the seed creates a **personal-fallback** twist from the
+YAML's own `link_types`.
+
+For the agenda to appear, the user needs a live calendar connection whose link
+type declares `includes_schedules`. The seed sets this on its Google Calendar
+source, so the agenda works **either way** — deployed connector or personal
+fallback. If you reset the DB, you can seed before or after deploying connectors
+and the calendar/agenda will still light up. (Other connector niceties — real
+logos, channel routing — do benefit from deploying connectors first.)
+
 ## Features
 
 - **Reproducible**: Same YAML + base date = identical SQL output

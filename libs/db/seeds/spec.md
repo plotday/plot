@@ -163,6 +163,7 @@ Sources define external services that provide link logos. Each source creates th
 - `label` (required): Display label (e.g., "Message", "Email", "Issue")
 - `logo` (required): Logo URL for this link type
 - `logo_dark` (optional): Dark mode logo URL
+- `includes_schedules` (optional): Marks this link type as producing calendar events. Set on calendar sources (e.g. Google Calendar) so the app's agenda is enabled. The agenda is hidden unless the user has a live calendar connection whose link type declares this. The seed carries the flag on its personal-fallback connection, so the agenda works even when the real connector hasn't been deployed (see the deploy note in README).
 
 ```yaml
 sources:

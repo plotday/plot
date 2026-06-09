@@ -88,6 +88,12 @@ export interface SeedLinkType {
   label: string; // e.g., "Message", "Email", "Issue"
   logo: string; // Logo URL for this link type
   logo_dark?: string; // Dark mode logo URL
+  // Marks this link type as producing time-anchored calendar events. Drives
+  // whether the app shows the agenda (TwistInstance.watchHasCalendarConnection
+  // → LinkTypeConfig.includesSchedules). Set on calendar sources so the agenda
+  // works even when the real connector hasn't been deployed (the seed's
+  // personal-fallback twist carries the flag).
+  includes_schedules?: boolean;
 }
 
 export interface SeedChannel {
@@ -162,6 +168,9 @@ export interface Thread {
   // row: active/scheduled → active=true (read); unread → active=true (unread);
   // omitted/done → no thread_state row (thread reads as Done).
   state?: "active" | "scheduled" | "unread" | "done";
+  // Per-user "do on this date" to-do intent (thread_state.on), date-only (no
+  // time). Use for prep to-dos dated before an event. Implies an active state.
+  do_on?: string;
   icon?: string; // Thread icon: "notes", "idea", "goal", "decision", "discussion", "announcement", "ask"
   twist_ref?: string; // Reference to a twist (sets icon to twist logo)
   shared_with?: string[]; // Contact refs the thread is shared with (in addition to refs auto-derived from author_ref / note authors / mentions)
@@ -338,6 +347,7 @@ export interface GeneratedThreadState {
   read_at: string | null; // ISO timestamp; NULL = unread
   bumped_at: string | null; // ISO timestamp (feed ordering for Doing/Done)
   importance: number;
+  on: string | null; // daterange literal for a per-user "do on" date, or null
 }
 
 export interface GeneratedUserContact {

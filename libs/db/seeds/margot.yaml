@@ -57,11 +57,6 @@ priorities:
         icon: rocket
         settings:
           color: 2
-      - ref: commercial
-        title: Commercial & partnerships
-        icon: handshake
-        settings:
-          color: 2
       - ref: mens_team
         title: Men's team
         icon: dumbbell
@@ -72,6 +67,11 @@ priorities:
         icon: building
         settings:
           color: 1
+      - ref: commercial
+        title: Commercial & partnerships
+        icon: handshake
+        settings:
+          color: 2
       - ref: community
         title: Community & supporters
         icon: bullhorn
@@ -117,6 +117,10 @@ sources:
       - type: event
         label: Event
         logo: "https://api.iconify.design/logos/google-calendar.svg"
+        # Drives the agenda's visibility gate. Set so the seeded calendar
+        # connection enables the agenda even if the real connector hasn't
+        # been deployed (personal-fallback twist carries the flag).
+        includes_schedules: true
   - ref: notion
     name: Notion
     priority_ref: everything
@@ -125,14 +129,6 @@ sources:
       - type: document
         label: Document
         logo: "https://api.iconify.design/logos/notion-icon.svg"
-  - ref: whatsapp
-    name: WhatsApp
-    priority_ref: everything
-    logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
-    link_types:
-      - type: message
-        label: Message
-        logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
   - ref: sheets
     name: Google Sheets
     priority_ref: everything
@@ -141,18 +137,30 @@ sources:
       - type: spreadsheet
         label: Spreadsheet
         logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
+  - ref: slides
+    name: Google Slides
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/google-slides.svg"
+    link_types:
+      - type: presentation
+        label: Presentation
+        logo: "https://api.iconify.design/logos/google-slides.svg"
+  - ref: whatsapp
+    name: WhatsApp
+    priority_ref: everything
+    logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
+    link_types:
+      - type: message
+        label: Message
+        logo: "https://api.iconify.design/logos/whatsapp-icon.svg"
 
 twists:
-  - ref: claude
-    name: Claude
+  # Matches the public "Plot" twist (Plot AI chat). Threads referencing this
+  # show the Plot icon; the instance also populates the new-thread "twists"
+  # section as a "Plot AI chat" chat target.
+  - ref: plot_ai
+    name: Plot
     priority_ref: everything
-    logo: "https://api.iconify.design/simple-icons/claude.svg"
-    logo_dark: "https://api.iconify.design/simple-icons/claude.svg?color=%23D4A574"
-  - ref: chatgpt
-    name: ChatGPT
-    priority_ref: everything
-    logo: "https://api.iconify.design/simple-icons/openai.svg"
-    logo_dark: "https://api.iconify.design/simple-icons/openai.svg?color=%2374AA9C"
 
 groups:
   - ref: coaching_staff_grp
@@ -170,10 +178,10 @@ groups:
 
 threads:
   # ════════════════════════════════════════════════════════════════════
-  # FOCUS: Launch women's team  (the headline initiative — fully built)
+  # FOCUS: Launch women's team  (headline initiative — fully built)
   # ════════════════════════════════════════════════════════════════════
 
-  # ---- Active (Doing now) -------------------------------------------------
+  # ---- Active (Doing now) — connector-backed, varied sources --------------
   - priority_ref: womens_team
     title: "Women's team proposal — vision and viability"
     created: "-1d"
@@ -214,9 +222,7 @@ threads:
           - Men's team stable enough to absorb the investment focus
           - Facility expansion already planned for 2026
 
-          This isn't about capitalizing on a trend. This is about what Marlow is.
-
-          Hank built a club that believes in people. A women's team isn't a departure from that. It's a continuation.
+          This isn't about capitalizing on a trend. This is about what Marlow is. Hank built a club that believes in people. A women's team isn't a departure from that. It's a continuation.
 
           ---
 
@@ -226,8 +232,6 @@ threads:
           **Revenue (Year 1):** £800K — match day £200K, sponsorship £400K, merchandise £150K, league £50K.
           **Year 1 net:** −£1.7M investment. **Year 3:** break-even target. **Year 5:** self-sustaining.
 
-          Treat this as a long-term investment in club culture and community, not a short-term profit centre.
-
           ---
 
           ### League & timeline
@@ -236,15 +240,11 @@ threads:
           - **2026–27:** launch in FA Women's Championship (Tier 2)
           - **2028–29 target:** promotion push to WSL
 
-          Championship, not lower — the Marlow brand deserves a competitive level, and recruitment is easier there.
-
           ---
 
           ### Cultural integration
 
-          This isn't "men's team + women's team." This is AFC Marlow, full stop. Shared badge, shared values, shared community.
-
-          Not: "Marlow launches women's team." Instead: "Marlow completes its club."
+          This isn't "men's team + women's team." This is AFC Marlow, full stop. Shared badge, shared values, shared community. Not: "Marlow launches women's team." Instead: "Marlow completes its club."
 
           ---
 
@@ -272,29 +272,12 @@ threads:
           2. **Facility conflicts** — scheduling tension with the men's team
           3. **Brand positioning** — bolted on rather than integrated into club identity
           4. **Talent recruitment** — competition for quality players at lower tiers
-          5. **Commercial development** — securing women's-team-specific sponsorship
-          6. **Supporter transfer** — existing fans don't automatically follow
+          5. **Supporter transfer** — existing fans don't automatically follow
 
-          Clubs that succeed make multi-year commitments upfront, integrate the team into the core identity from day one, and set realistic timelines.
-
-          Marlow's advantage: an established culture of belief and community that translates well if applied authentically.
+          Clubs that succeed make multi-year commitments upfront and integrate the team into the core identity from day one. Marlow's advantage: an established culture of belief and community that translates well if applied authentically.
       - created: "-1d 08:45"
         content: |
-          Good summary. Marlow has the culture advantage.
-
-          Now I just need to convince the board this is strategic, not sentimental. Both can be true.
-
-  - priority_ref: womens_team
-    title: "Board presentation talking points"
-    created: "-1d"
-    state: active
-    twist_ref: claude
-    tags:
-      todo: [user]
-    notes:
-      - created: "-1d 08:40"
-        content: |
-          **Claude** helped me frame the board pitch. The line that lands: *"This is what stable clubs do."* Lead with the benchmarking data, acknowledge the timing head-on, close with values — never open with them. Don't lead with Hank; earn the emotional close by winning the analytical argument first.
+          Good summary. Marlow has the culture advantage. Now I just need to convince the board this is strategic, not sentimental. Both can be true.
 
   - priority_ref: womens_team
     title: "Marlow Trust pre-brief — women's team announcement"
@@ -310,14 +293,12 @@ threads:
         source_url: "https://notion.so/afcmarlow/marlow-trust-prebrief"
       - source_ref: slack
         type: message
-        title: "DM with Posy — Trust briefing tone"
-        source_url: "https://afcmarlow.slack.com/archives/D04posy"
+        title: "#womens-team-launch — Trust briefing tone"
+        source_url: "https://afcmarlow.slack.com/archives/C04womens/p1802"
     notes:
       - created: "-1d 10:35"
         content: |
-          Drafting the pre-brief for the Supporters Trust before the formal announcement. They've earned hearing it first.
-
-          Tone: not "we're doing you a favour" — "we trust you with this before anyone else." Three paragraphs. Posy to land the language, then a 30-minute sit-down with the Trust chair.
+          Drafting the pre-brief for the Supporters Trust before the formal announcement. They've earned hearing it first. Tone: not "we're doing you a favour" — "we trust you with this before anyone else." Three paragraphs. Posy to land the language, then a 30-minute sit-down with the Trust chair.
         mentions:
           - supporters_trust
           - posy
@@ -341,9 +322,7 @@ threads:
     notes:
       - created: "-1d 10:55"
         content: |
-          Hire for culture, then tactics. In order: believes in player development as the point; coaches the players, not "women's football"; wants to be here, not running through here; Championship-level tactical literacy (non-negotiable, but third).
-
-          One name keeps surfacing on the back-channel. Not naming her yet, even to myself. Earn the conversation first.
+          Hire for culture, then tactics. In order: believes in player development as the point; coaches the players, not "women's football"; wants to be here, not running through here; Championship-level tactical literacy. One name keeps surfacing on the back-channel. Not naming her yet, even to myself. Earn the conversation first.
 
   - priority_ref: womens_team
     title: "Founding-partner shortlist"
@@ -356,6 +335,10 @@ threads:
         type: spreadsheet
         title: "Founding-partner shortlist — Q2 2026"
         source_url: "https://docs.google.com/spreadsheets/d/short1/edit"
+      - source_ref: gmail
+        type: email
+        title: "Intro — local manufacturer"
+        source_url: "mailto:partners@afcmarlow.com"
     notes:
       - created: "-1d 16:00"
         content: |
@@ -363,7 +346,42 @@ threads:
         mentions:
           - posy
 
-  # ---- Scheduled (upcoming) ----------------------------------------------
+  - priority_ref: womens_team
+    title: "Board deck — women's team launch"
+    created: "-1d"
+    state: active
+    icon: notes
+    tags:
+      todo: [user]
+    links:
+      - source_ref: slides
+        type: presentation
+        title: "Women's team — board deck v2"
+        source_url: "https://docs.google.com/presentation/d/wtdeck/edit"
+    notes:
+      - created: "-1d 13:30"
+        content: |
+          Building the board deck. Lead with the benchmarking numbers, then the model, then the culture. Twelve slides, no more. Let the data carry the emotion — the values slide lands last, once they've already agreed with the maths.
+
+  # ---- A dated prep to-do (no time) — preparing for an event --------------
+  - priority_ref: womens_team
+    title: "Prep pack for Supporters' Trust sit-down"
+    created: "-1d"
+    do_on: "+1d"
+    icon: notes
+    links:
+      - source_ref: notion
+        type: document
+        title: "Trust sit-down — briefing pack"
+        source_url: "https://notion.so/afcmarlow/trust-briefing-pack"
+    notes:
+      - created: "-1d 14:00"
+        content: |
+          Assemble the pack the day before the sit-down: the one-page vision, the founding-scarf render, and the three asks. Keep it warm, not corporate. They're the first people outside the board to hear this.
+        mentions:
+          - supporters_trust
+
+  # ---- Scheduled (upcoming) — Google Calendar events (have times) ---------
   - ref: event_focus
     priority_ref: womens_team
     title: "Focus: Launch women's team"
@@ -379,13 +397,7 @@ threads:
     notes:
       - created: "-1d 21:45"
         content: |
-          Tomorrow morning, before anyone arrives:
-
-          1. **Scarf design** — confirm the order with the Manchester supplier before Posy's deadline.
-          2. **Revenue model** — run the Year 1–5 assumptions through ChatGPT before Embry reviews.
-          3. **Board talking points** — get Claude to help me frame it right.
-
-          Three things. One hour. Let's go.
+          Tomorrow morning, before anyone arrives: confirm the scarf order with Manchester, lock the revenue model, and draft the board talking points. Three things. One hour. Let's go.
 
   - ref: event_embry
     priority_ref: womens_team
@@ -399,10 +411,6 @@ threads:
         type: event
         title: "Women's team board strategy"
         source_url: "https://calendar.google.com/calendar/event?eid=maurice1on1"
-      - source_ref: slack
-        type: message
-        title: "DM with Embry"
-        source_url: "https://afcmarlow.slack.com/archives/D04maurice"
     schedule:
       at: "+0d 11:15 / +0d 12:00"
     notes:
@@ -424,10 +432,6 @@ threads:
         type: event
         title: "FA Women's Championship call"
         source_url: "https://calendar.google.com/calendar/event?eid=facall"
-      - source_ref: notion
-        type: document
-        title: "FA application requirements"
-        source_url: "https://notion.so/afcmarlow/fa-application-checklist"
     schedule:
       at: "+0d 14:00 / +0d 14:30"
     notes:
@@ -448,7 +452,7 @@ threads:
       at: "+1d 09:00 / +1d 10:00"
     notes:
       - created: "+0d 17:00"
-        content: "Final pass on the three-scenario model before it goes to the full board. Conservative, base, optimistic. Show the working."
+        content: "Final pass on the three-scenario model before the full board sees it. Conservative, base, optimistic. Show the working."
 
   - priority_ref: womens_team
     title: "Board pre-brief dry run"
@@ -484,21 +488,6 @@ threads:
         mentions:
           - supporters_trust
 
-  - priority_ref: womens_team
-    title: "Scarf supplier sign-off call"
-    created: "-1d"
-    state: scheduled
-    links:
-      - source_ref: gcal
-        type: event
-        title: "Scarf supplier sign-off"
-        source_url: "https://calendar.google.com/calendar/event?eid=scarfsignoff"
-    schedule:
-      at: "+2d 14:00 / +2d 14:30"
-    notes:
-      - created: "+0d 17:15"
-        content: "Confirm the founding-season run with Manchester. Order extra for the Trust event."
-
   # ---- Done (history tail) -----------------------------------------------
   - priority_ref: womens_team
     title: "Founding-season scarf design"
@@ -530,33 +519,40 @@ threads:
   - priority_ref: womens_team
     title: "Revenue model assumptions"
     created: "-1d"
-    twist_ref: chatgpt
+    twist_ref: plot_ai
     notes:
       - created: "-1d 08:20"
         content: |
-          **@chatgpt, help me stress-test the revenue assumptions for a women's football team launching in the FA Women's Championship. Year 1 startup ~£2.5M, projected revenue £800K. I have benchmarking data from three comparable clubs. What are the most important assumptions to validate?**
+          **@plot, stress-test the revenue assumptions for a women's team launching in the FA Women's Championship. Year 1 startup ~£2.5M, projected revenue £800K. I have benchmarking from three comparable clubs. Which assumptions matter most?**
         ai_query: true
       - created: "-1d 08:20"
         content: |
-          **ChatGPT:**
+          **Plot AI:**
 
           The assumptions most likely to make or break a Year 1 model:
 
-          **Attendance (highest variance):**
-          - First-season crossover from the men's fanbase typically runs 8–15%
-          - Full brand integration outperforms standalone by ~40%
-          - Conservative: 800–1,200 per match. Optimistic: 1,500–2,000
+          **Attendance (highest variance):** first-season crossover from the men's fanbase runs 8–15%; full brand integration outperforms standalone by ~40%. Conservative 800–1,200 per match, optimistic 1,500–2,000.
 
-          **Sponsorship (most sensitive to positioning):**
-          - Women's football sponsorship growing ~25% YoY
-          - Clubs that announced as "completing the club" secured deals 30–50% larger
-          - £400K is achievable if you leverage existing shirt-sponsor relationships first
+          **Sponsorship (most sensitive to positioning):** the women's football sponsorship market is growing ~25% YoY; clubs that announced as "completing the club" secured deals 30–50% larger.
 
-          **Year 3 break-even sensitivity:**
-          - Primary driver is whether attendance compounds — a viral launch moment helps enormously
-          - A founders' season scarf or community unveiling is exactly that kind of moment
+          **Year 3 break-even:** primary driver is whether attendance compounds — a viral launch moment (a founders' scarf, a community unveiling) is exactly that kind of catalyst.
 
-          **Recommendation:** model three scenarios — conservative, base (15% YoY), optimistic (25% + sponsorship uplift). Present all three; it shows rigour and sets honest expectations.
+          Model three scenarios — conservative, base (15% YoY), optimistic (25% + sponsorship uplift) — and present all three. It shows rigour and sets honest expectations.
+
+  - priority_ref: womens_team
+    title: "Board presentation talking points"
+    created: "-1d"
+    twist_ref: plot_ai
+    notes:
+      - created: "-1d 08:40"
+        content: |
+          **@plot, help me frame a board presentation for launching the women's team. The board will worry about timing — the men's team is in a slump. I want this to read as strategic long-term investment, not a feel-good project.**
+        ai_query: true
+      - created: "-1d 08:40"
+        content: |
+          **Plot AI:**
+
+          The frame that lands with a skeptical board: **"This is what stable clubs do."** Don't defend the timing — own it: "The men's run is precisely why now shows the board's long-term conviction." Lead with the benchmarking data, not the vision. Acknowledge the risks before anyone raises them. Close with values, never open with them — and don't lead with Hank; earn the emotional close by winning the analytical argument first.
 
   - priority_ref: womens_team
     title: "Finalize women's team financial model"
@@ -570,13 +566,7 @@ threads:
       - author_ref: maurice
         created: "-2d 09:00"
         content: |
-          Margot — data from three Championship clubs that launched women's teams 2022–2024:
-
-          - **Club A** (2022): Year 1 £620K → Year 3 £1.4M. Broke even mid-Year 2.
-          - **Club B** (2023): Year 1 £480K, still growing. Attendance up 340% from launch.
-          - **Club C** (2024): early but promising. Sponsorship beat projections by 25%.
-
-          Clubs that integrated the women's team into the main brand consistently outperformed those that treated it as separate. Full spreadsheet attached.
+          Margot — data from three Championship clubs that launched women's teams 2022–2024. Club A (2022): Year 1 £620K → Year 3 £1.4M, broke even mid-Year 2. Club B (2023): Year 1 £480K, attendance up 340% from launch. Club C (2024): sponsorship beat projections by 25%. The ones that integrated into the main brand consistently outperformed. Full spreadsheet attached.
         mentions:
           - maurice
       - created: "-2d 09:10"
@@ -598,9 +588,7 @@ threads:
     notes:
       - created: "-2d 17:00"
         content: |
-          The thought that won't leave me alone: what if Marlow had a women's team? Not a "nice to have." A continuation of what Hank built.
-
-          Financial viability? Facility requirements? League structure? Timeline? This isn't impulse. It's vision — but it needs to be sustainable.
+          The thought that won't leave me alone: what if Marlow had a women's team? Not a "nice to have." A continuation of what Hank built. Financial viability? Facility requirements? League structure? This isn't impulse. It's vision — but it needs to be sustainable.
 
   - priority_ref: womens_team
     title: "Potential coaching candidates — preliminary research"
@@ -616,9 +604,7 @@ threads:
     notes:
       - created: "-2d 20:00"
         content: |
-          Who could coach a Marlow women's team? Understands women's football; believes in development over winning; gets the culture; respects the community connection; Championship-level tactically.
-
-          Not: a big name building their own empire, or someone treating this as a stepping stone. Hire for culture first, résumé second.
+          Who could coach a Marlow women's team? Understands women's football; believes in development over winning; gets the culture; Championship-level tactically. Not a big name building their own empire, not someone treating this as a stepping stone. Hire for culture first, résumé second.
 
   - priority_ref: womens_team
     title: "Gus Vellum — potential feature story"
@@ -641,6 +627,11 @@ threads:
   - priority_ref: womens_team
     title: "Board dinner — informal soundings"
     created: "-2d"
+    links:
+      - source_ref: notion
+        type: document
+        title: "Board dinner — read of the room"
+        source_url: "https://notion.so/afcmarlow/board-dinner-notes"
     notes:
       - created: "-2d 21:45"
         content: |
@@ -652,12 +643,15 @@ threads:
     title: "Reflection — what Hank built here"
     created: "-2d"
     icon: idea
+    links:
+      - source_ref: notion
+        type: document
+        title: "Weekly journal"
+        source_url: "https://notion.so/afcmarlow/weekly-journal"
     notes:
       - created: "-2d 22:00"
         content: |
-          A women's team isn't about fixing the men's team slump. It's about showing that Marlow's values aren't situational — they're foundational. When things are hard, you don't abandon who you are. You lean into it.
-
-          Build the future without losing the present. Make room for what won't arrive on its own.
+          A women's team isn't about fixing the men's team slump. It's about showing that Marlow's values aren't situational — they're foundational. When things are hard, you don't abandon who you are. You lean into it. Build the future without losing the present.
 
   - priority_ref: womens_team
     title: "League application fee approved"
@@ -687,25 +681,13 @@ threads:
     title: "Founding-season badge artwork"
     created: "-4d"
     links:
-      - source_ref: notion
-        type: document
+      - source_ref: slides
+        type: presentation
         title: "Founding-season badge — artwork v3"
-        source_url: "https://notion.so/afcmarlow/founding-badge"
+        source_url: "https://docs.google.com/presentation/d/badge/edit"
     notes:
       - created: "-4d 10:00"
         content: "Approved v3. Same crest, founding year beneath. Restrained. Right."
-
-  - priority_ref: womens_team
-    title: "Year-5 financial model sign-off"
-    created: "-4d"
-    links:
-      - source_ref: sheets
-        type: spreadsheet
-        title: "Five-year model — final"
-        source_url: "https://docs.google.com/spreadsheets/d/year5model/edit"
-    notes:
-      - created: "-4d 15:30"
-        content: "Five-year projection locked. Self-sustaining by Year 5 in the base case. Bulletproof enough for the board."
 
   - priority_ref: womens_team
     title: "Sponsor NDA template ready"
@@ -761,19 +743,19 @@ threads:
     title: "Brand guidelines pack"
     created: "-1w"
     links:
-      - source_ref: notion
-        type: document
+      - source_ref: slides
+        type: presentation
         title: "Women's team — brand guidelines"
-        source_url: "https://notion.so/afcmarlow/womens-brand-guidelines"
+        source_url: "https://docs.google.com/presentation/d/brandpack/edit"
     notes:
       - created: "-1w 15:00"
         content: "Shared badge, shared palette, shared voice. One club, two teams. Signed off."
 
   # ════════════════════════════════════════════════════════════════════
-  # FOCUS: Men's team  (the second fully-built focus)
+  # FOCUS: Men's team  (second fully-built focus)
   # ════════════════════════════════════════════════════════════════════
 
-  # ---- Active (Doing now) -------------------------------------------------
+  # ---- Active (Doing now) — connector-backed, varied sources --------------
   - priority_ref: mens_team
     title: "Review coaching strategy with Wes and Murph"
     created: "-1d"
@@ -809,6 +791,45 @@ threads:
           Acknowledge the slump without panic. Honest, not defensive. Confident, not arrogant. The worst thing is silence; the second worst is empty platitudes. Find the middle. Say something real.
 
   - priority_ref: mens_team
+    title: "Squad fitness & availability report"
+    created: "-1d"
+    state: active
+    tags:
+      todo: [user]
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Medical — squad availability"
+        source_url: "mailto:medical@afcmarlow.com"
+    notes:
+      - author_ref: perflab
+        created: "-1d 08:30"
+        content: |
+          Squad available bar the two long-term knocks. Loads green across the board after the lighter week. No fresh flags ahead of Saturday.
+        mentions:
+          - perflab
+
+  - priority_ref: mens_team
+    title: "Chelsea analysis deck"
+    created: "-1d"
+    state: active
+    icon: notes
+    tags:
+      todo: [user]
+    links:
+      - source_ref: slides
+        type: presentation
+        title: "Chelsea (A) — analysis deck"
+        source_url: "https://docs.google.com/presentation/d/chelseadeck/edit"
+    notes:
+      - author_ref: wes
+        created: "-1d 17:45"
+        content: |
+          Deck's ready for the prep meeting — shape, press triggers, set-piece book. Twelve slides. The lads only need three of them; the rest is for us.
+        mentions:
+          - wes
+
+  - priority_ref: mens_team
     title: "Confirm Chelsea travel roster"
     created: "-1d"
     state: active
@@ -827,47 +848,30 @@ threads:
         mentions:
           - murph
 
+  # ---- A dated prep to-do (no time) — preparing for the match -------------
   - priority_ref: mens_team
-    title: "Approve sports-science block for next cycle"
+    title: "Match-day prep — Chelsea notes"
     created: "-1d"
-    state: active
-    tags:
-      todo: [user]
+    do_on: "+0d"
+    icon: notes
     links:
-      - source_ref: sheets
-        type: spreadsheet
-        title: "Sports-science — next cycle plan"
-        source_url: "https://docs.google.com/spreadsheets/d/sportsci/edit"
+      - source_ref: notion
+        type: document
+        title: "Chelsea — my match-day notes"
+        source_url: "https://notion.so/afcmarlow/chelsea-matchday-notes"
     notes:
-      - created: "-1d 11:30"
-        content: "Sign off the load-management plan for the next six weeks. Finishing confidence is a fitness story as much as a tactical one."
-
-  - priority_ref: mens_team
-    title: "Decide on Eli's role vs Chelsea"
-    created: "-1d"
-    state: active
-    icon: idea
-    tags:
-      idea: [user]
-    links:
-      - source_ref: slack
-        type: message
-        title: "#coaching-staff — Eli role"
-        source_url: "https://afcmarlow.slack.com/archives/C04coaching/p1720"
-    notes:
-      - created: "-1d 12:00"
-        content: "Wes wants Eli inside-left to pull their right back. Tuesday's training said it works. Back the coach, then watch."
+      - created: "-1d 18:30"
+        content: |
+          Day before the match: read the perflab pack one last time, then close the laptop. My job isn't tactics — it's knowing enough to ask Wes the right question if he wants to talk. Trust the process.
         mentions:
           - wes
-          - eli
 
-  # ---- Scheduled (upcoming) ----------------------------------------------
+  # ---- Scheduled (upcoming) — Google Calendar events (have times) ---------
   - ref: event_tactics
     priority_ref: mens_team
     title: "Chelsea match tactics"
     created: "-1d"
     state: scheduled
-    icon: discussion
     links:
       - source_ref: gcal
         type: event
@@ -975,6 +979,18 @@ threads:
 
   # ---- Done (history tail) -----------------------------------------------
   - priority_ref: mens_team
+    title: "Approve sports-science block for next cycle"
+    created: "-2d"
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Sports-science — next cycle plan"
+        source_url: "https://docs.google.com/spreadsheets/d/sportsci/edit"
+    notes:
+      - created: "-2d 11:30"
+        content: "Signed off the load-management plan for the next six weeks. Finishing confidence is a fitness story as much as a tactical one."
+
+  - priority_ref: mens_team
     title: "Match review — Bournemouth loss (1-2)"
     created: "-2d"
     icon: discussion
@@ -986,11 +1002,10 @@ threads:
         title: "Post-match analysis"
         source_url: "mailto:performance@afcmarlow.com"
     notes:
-      - created: "-2d 09:00"
+      - author_ref: perflab
+        created: "-2d 09:00"
         content: |
-          **Performance Lab — Marlow 1-2 Bournemouth (Home)**
-
-          Possession 58%, shots 14 to 8, xG 1.8 to 1.2. Dominated chances, lacked clinical finishing. Fourth time this pattern has repeated. Last 6: 2W-1D-3L. Not collapsing. Just not winning when we should.
+          **Marlow 1-2 Bournemouth (Home).** Possession 58%, shots 14 to 8, xG 1.8 to 1.2. Dominated chances, lacked clinical finishing. Fourth time this pattern has repeated. Last 6: 2W-1D-3L. Not collapsing. Just not winning when we should.
         mentions:
           - perflab
 
@@ -1026,11 +1041,12 @@ threads:
         title: "Match preview"
         source_url: "mailto:performance@afcmarlow.com"
     notes:
-      - created: "-2d 12:00"
+      - author_ref: perflab
+        created: "-2d 12:00"
         content: |
-          **Performance Lab — Chelsea (A)**
-
-          Chelsea 4W-1D, Marlow 2W-1D-3L. Strong opponent, difficult venue. But Marlow performs better as underdog. Key: clinical finishing. We create chances. We need to take them.
+          **Chelsea (A).** Chelsea 4W-1D, Marlow 2W-1D-3L. Strong opponent, difficult venue. But Marlow performs better as underdog. Key: clinical finishing. We create chances. We need to take them.
+        mentions:
+          - perflab
 
   - priority_ref: mens_team
     title: "Wes' formation notes — Chelsea (A)"
@@ -1078,6 +1094,22 @@ threads:
         content: "Indexed the seven moments worth re-watching from the home tie. Same shape, same press triggers. The ones that worked then can work again."
 
   - priority_ref: mens_team
+    title: "Decide on Eli's role vs Chelsea"
+    created: "-2d"
+    icon: idea
+    links:
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff — Eli role"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching/p1720"
+    notes:
+      - created: "-2d 12:00"
+        content: "Wes wants Eli inside-left to pull their right back. Tuesday's training said it works. Back the coach, then watch."
+        mentions:
+          - wes
+          - eli
+
+  - priority_ref: mens_team
     title: "Perflab pack — Chelsea final pass"
     created: "-1d"
     links:
@@ -1090,26 +1122,11 @@ threads:
         title: "Chelsea set-piece patterns"
         source_url: "https://docs.google.com/spreadsheets/d/8h9i0j1k/edit"
     notes:
-      - created: "-1d 19:05"
-        content: "Set-pieces to exploit, their press triggers, sub timings (their bench drops off after 70). Actionable for Wes, not me. My job: know enough to ask the right question."
+      - author_ref: perflab
+        created: "-1d 19:05"
+        content: "Set-pieces to exploit, their press triggers, sub timings (their bench drops off after 70). Actionable for Wes. Margot — you only need the headline: possession up, shots up, xG up."
         mentions:
           - perflab
-          - wes
-
-  - priority_ref: mens_team
-    title: "Pre-match call brief for Wes"
-    created: "-1d"
-    icon: notes
-    links:
-      - source_ref: whatsapp
-        type: message
-        title: "Wes on WhatsApp"
-        source_url: "https://wa.me/447700900003"
-    notes:
-      - created: "-1d 19:35"
-        content: |
-          The call isn't about tactics. It's about his head. What I want him to leave with: the owner trusts him; the plan is the plan; tomorrow is just football. Listen more than talk.
-        mentions:
           - wes
 
   - priority_ref: mens_team
@@ -1120,10 +1137,6 @@ threads:
         type: spreadsheet
         title: "Last 6 — underlying performance"
         source_url: "https://docs.google.com/spreadsheets/d/6f7g8h9i/edit"
-      - source_ref: gmail
-        type: email
-        title: "Six-match summary"
-        source_url: "mailto:performance@afcmarlow.com"
     notes:
       - created: "-1d 09:55"
         content: "xG over the last six: outperforming results by ~0.4 per match. Chances are there. Finishing isn't. Possession up, shots up, xG up."
@@ -1249,61 +1262,13 @@ threads:
   # SIDEBAR FOCUSES (light — feed the agenda, not screenshotted deeply)
   # ════════════════════════════════════════════════════════════════════
 
-  # ---- Commercial & partnerships ----------------------------------------
-  - ref: event_lunch
-    priority_ref: commercial
-    title: "Lunch with Avenir sponsorship rep"
-    created: "-1d"
-    state: scheduled
-    links:
-      - source_ref: gcal
-        type: event
-        title: "Lunch — Avenir sponsorship"
-        source_url: "https://calendar.google.com/calendar/event?eid=avenirlunch"
-    schedule:
-      at: "+0d 12:30 / +0d 13:30"
-    notes:
-      - created: "+0d 09:20"
-        content: "Routine check-in on the shirt sponsorship, but I want to gauge their appetite for a women's-team partnership. Not pitching. Just listening."
-
-  - ref: event_sponsor
-    priority_ref: commercial
-    title: "Launch sponsorship strategy"
-    created: "-1d"
-    state: scheduled
-    links:
-      - source_ref: gcal
-        type: event
-        title: "Launch sponsorship strategy"
-        source_url: "https://calendar.google.com/calendar/event?eid=sponsorstrategy"
-      - source_ref: slack
-        type: message
-        title: "#commercial-partnerships"
-        source_url: "https://afcmarlow.slack.com/archives/C04commercial"
-    schedule:
-      at: "+0d 10:00 / +0d 10:30"
-    notes:
-      - created: "+0d 08:00"
-        content: "Align with Posy on partners who want to be part of the founding story."
-        mentions:
-          - posy
-
-  - priority_ref: commercial
-    title: "Avenir post-lunch follow-up"
-    created: "-1d"
-    links:
-      - source_ref: gmail
-        type: email
-        title: "Draft: Sarah @ Avenir — thanks + next steps"
-        source_url: "mailto:sarah@avenir.co.uk"
-    notes:
-      - created: "-1d 15:35"
-        content: "Sarah was warmer about the women's team than expected — she asked 'when', not 'if'. Soft thank-you, public timeline, model under NDA when ready. Don't push."
-
   # ---- Facilities --------------------------------------------------------
   - priority_ref: facilities
     title: "Q2 facilities CapEx sign-off"
     created: "-1d"
+    state: active
+    tags:
+      todo: [user]
     links:
       - source_ref: sheets
         type: spreadsheet
@@ -1342,6 +1307,52 @@ threads:
       - created: "+0d 17:40"
         content: "Walk the stand with operations — capacity, access, where select women's fixtures could land in Year 1."
 
+  # ---- Commercial & partnerships ----------------------------------------
+  - ref: event_lunch
+    priority_ref: commercial
+    title: "Lunch with Avenir sponsorship rep"
+    created: "-1d"
+    state: scheduled
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Lunch — Avenir sponsorship"
+        source_url: "https://calendar.google.com/calendar/event?eid=avenirlunch"
+    schedule:
+      at: "+0d 12:30 / +0d 13:30"
+    notes:
+      - created: "+0d 09:20"
+        content: "Routine check-in on the shirt sponsorship, but I want to gauge their appetite for a women's-team partnership. Not pitching. Just listening."
+
+  - priority_ref: commercial
+    title: "Launch sponsorship strategy"
+    created: "-1d"
+    state: active
+    tags:
+      todo: [user]
+    links:
+      - source_ref: slack
+        type: message
+        title: "#commercial-partnerships"
+        source_url: "https://afcmarlow.slack.com/archives/C04commercial"
+    notes:
+      - created: "+0d 08:00"
+        content: "Align with Posy on partners who want to be part of the founding story."
+        mentions:
+          - posy
+
+  - priority_ref: commercial
+    title: "Avenir post-lunch follow-up"
+    created: "-1d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Draft: Sarah @ Avenir — thanks + next steps"
+        source_url: "mailto:sarah@avenir.co.uk"
+    notes:
+      - created: "-1d 15:35"
+        content: "Sarah was warmer about the women's team than expected — she asked 'when', not 'if'. Soft thank-you, public timeline, model under NDA when ready. Don't push."
+
   # ---- Community & supporters -------------------------------------------
   - ref: event_sky
     priority_ref: community
@@ -1353,10 +1364,6 @@ threads:
         type: event
         title: "Sky Sports pre-match interview"
         source_url: "https://calendar.google.com/calendar/event?eid=skysportsinterview"
-      - source_ref: gmail
-        type: email
-        title: "Sky Sports interview confirmation"
-        source_url: "mailto:production@skysports.com"
     schedule:
       at: "+0d 15:00 / +0d 15:30"
     notes:
@@ -1392,7 +1399,10 @@ threads:
   - priority_ref: community
     title: "Schools partnership — 4 new requests"
     created: "-1d"
+    state: active
     icon: idea
+    tags:
+      todo: [user]
     links:
       - source_ref: gmail
         type: email
@@ -1403,17 +1413,17 @@ threads:
         content: |
           Four new schools want into the borough programme. Capacity for two without straining the coaching staff — both with female PE leads, ideally, so the women's launch lands well. Two yes, two "shortly, with intent." Honest beats hopeful.
 
-  # ---- Personal ----------------------------------------------------------
+  # ---- Personal (social events are Google Calendar events with times) ----
   - priority_ref: personal
-    title: "Coffee with Pen — weekly catchup"
+    title: "Coffee with Pen"
     created: "-2d"
     tags:
       star: [user]
     links:
-      - source_ref: whatsapp
-        type: message
-        title: "Pen chat"
-        source_url: "https://wa.me/447700900001"
+      - source_ref: gcal
+        type: event
+        title: "Coffee with Pen"
+        source_url: "https://calendar.google.com/calendar/event?eid=coffeepen"
     schedule:
       at: "-2d 10:00 / -2d 11:00"
     notes:
@@ -1444,10 +1454,10 @@ threads:
     tags:
       star: [user]
     links:
-      - source_ref: whatsapp
-        type: message
-        title: "Posy chat"
-        source_url: "https://wa.me/447700900002"
+      - source_ref: gcal
+        type: event
+        title: "Drinks with Posy"
+        source_url: "https://calendar.google.com/calendar/event?eid=drinksposy"
     schedule:
       at: "-1d 21:30 / -1d 23:00"
     notes:

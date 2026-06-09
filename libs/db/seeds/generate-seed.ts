@@ -1297,8 +1297,14 @@ function generateSQL(
   // We archive (not DELETE) because thread/link.created_by still references
   // the prior twist_instance UUIDs from rows the seed itself just deleted —
   // and because twist/twist_instance are synced to clients via user.twist.
+  // Archive ALL of the user's prior twist_instances (connections + chat
+  // twists), not only personal-twist ones. Sources/twists bound to PUBLIC
+  // twists (Slack, Gmail, Plot AI, …) are not personal, so a personal-only
+  // sweep let a fresh live instance accumulate on every reseed (duplicate
+  // connections in the picker). The new run recreates the instances it needs
+  // as live rows after this cleanup.
   lines.push(
-    `UPDATE twist_instance SET archived_at = now() WHERE archived_at IS NULL AND twist_id IN (SELECT id FROM twist WHERE user_id = ${sqlString(userId)} AND environment = 'personal');`
+    `UPDATE twist_instance SET archived_at = now() WHERE owner_id = ${sqlString(userId)} AND archived_at IS NULL;`
   );
   lines.push(
     `UPDATE twist SET archived_at = now() WHERE user_id = ${sqlString(userId)} AND environment = 'personal' AND archived_at IS NULL;`
@@ -1371,10 +1377,11 @@ function generateSQL(
 
   // Process priorities (recursive)
   if (data.priorities) {
-    for (const priority of data.priorities) {
+    for (let i = 0; i < data.priorities.length; i++) {
       processPriority(
-        priority,
+        data.priorities[i],
         null,
+        i,
         userId,
         baseDate,
         priorityIdMap,
@@ -1728,14 +1735,15 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
   if (threadStates.length > 0) {
     lines.push("-- Thread state (feed sectioning)");
     lines.push(
-      'INSERT INTO thread_state (user_id, thread_id, active, read_at, bumped_at, importance, updated_at)'
+      'INSERT INTO thread_state (user_id, thread_id, active, read_at, bumped_at, importance, "on", updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < threadStates.length; i++) {
       const ts = threadStates[i];
       const comma = i < threadStates.length - 1 ? "," : ";";
+      const onSql = ts.on ? `${sqlString(ts.on)}::daterange` : "NULL";
       lines.push(
-        `  (${sqlString(ts.user_id)}, ${sqlString(ts.thread_id)}, ${ts.active}, ${sqlString(ts.read_at)}, ${sqlString(ts.bumped_at)}, ${ts.importance}, NOW())${comma}`
+        `  (${sqlString(ts.user_id)}, ${sqlString(ts.thread_id)}, ${ts.active}, ${sqlString(ts.read_at)}, ${sqlString(ts.bumped_at)}, ${ts.importance}, ${onSql}, NOW())${comma}`
       );
     }
     lines.push("");
@@ -1908,6 +1916,7 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
 function processPriority(
   priority: Priority,
   parentPath: string | null,
+  siblingIndex: number,
   userId: string,
   baseDate: string,
   idMap: RefMap<string>,
@@ -1919,8 +1928,13 @@ function processPriority(
   const id = generateUUID();
   idMap[priority.ref] = id;
 
+  // The sidebar orders focuses by ltree path (PriorityOrder.nested →
+  // ORDER BY path). Encode the YAML sibling index as a zero-padded prefix on
+  // the child path segment so display order matches YAML order deterministically
+  // (a bare random segment sorted randomly).
+  const orderPrefix = String(siblingIndex).padStart(2, "0");
   const path = parentPath
-    ? `${parentPath}.${generateRandomPath(4)}`
+    ? `${parentPath}.${orderPrefix}${generateRandomPath(4)}`
     : generateRandomPath(12);
 
   outPriorities.push({
@@ -1945,10 +1959,11 @@ function processPriority(
 
   // Handle priorities (recursive)
   if (priority.children) {
-    for (const child of priority.children) {
+    for (let i = 0; i < priority.children.length; i++) {
       processPriority(
-        child,
+        priority.children[i],
         path,
+        i,
         userId,
         baseDate,
         idMap,
@@ -1982,6 +1997,7 @@ function processSource(
           label: lt.label,
           logo: lt.logo,
           ...(lt.logo_dark ? { logoDark: lt.logo_dark } : {}),
+          ...(lt.includes_schedules ? { includesSchedules: true } : {}),
         })),
       },
     ],
@@ -2000,13 +2016,16 @@ function processSource(
   // reference its twist_instance as `created_by`. Without this, every source the
   // seed file lists that has no matching public twist (e.g. Notion, Google Sheets)
   // would surface as a "Personal" connector that the user can't actually use.
-  // A channel-bearing source (e.g. Slack) is created as a LIVE connection
-  // (archived_at = NULL) so it appears in the user's connection list and its
-  // channels surface in the new-thread Channels section. Channel-less sources
-  // keep the archived personal-fallback behavior (kept out of the connector
-  // list; see the long comment above).
+  // Keep a source's personal-fallback twist LIVE (archived_at = NULL) — so it
+  // appears in the user's connection list and drives feature gates — when it
+  // either (a) bears channels (Slack: the new-thread Channels section) or
+  // (b) declares includesSchedules (a calendar: the agenda visibility gate
+  // reads a LIVE source twist's link types). Otherwise keep the archived
+  // fallback behavior (kept out of the connector list; see the long comment
+  // above). When a matching PUBLIC twist exists this whole branch is skipped.
   const hasChannels = !!(source.channels && source.channels.length > 0);
-  const archiveLiteral = hasChannels ? "NULL" : "now()";
+  const isCalendar = source.link_types.some((lt) => lt.includes_schedules);
+  const archiveLiteral = hasChannels || isCalendar ? "NULL" : "now()";
 
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
@@ -2182,13 +2201,21 @@ function processThread(
     }
   }
 
+  // Preview = one-line plain-text summary from the first note (the placeholder
+  // shown under the title in the feed). The server normally computes this; the
+  // seed bypasses upsert_thread so we derive it here.
+  const firstNoteContent =
+    thread.notes && thread.notes.length > 0
+      ? thread.notes[0].content ?? thread.notes[0].note ?? null
+      : null;
+
   outThreads.push({
     id,
     created_by: userId,
     priority_id: priorityId,
     draft: thread.draft ?? false,
     title: thread.title ?? null,
-    preview: null,
+    preview: derivePreview(firstNoteContent),
     icon: thread.icon ?? null,
     archived_at: thread.archived_at
       ? parseDateOffset(baseDate, thread.archived_at).toISOString()
@@ -2203,12 +2230,21 @@ function processThread(
   if (
     thread.state === "active" ||
     thread.state === "scheduled" ||
-    thread.state === "unread"
+    thread.state === "unread" ||
+    thread.do_on
   ) {
     const stateAt = thread.created
       ? parseDateOffset(baseDate, thread.created).toISOString()
       : parseDateOffset(baseDate, "+0d").toISOString();
     const isUnread = thread.state === "unread";
+    // do_on → a per-user date-only "do on this date" to-do (no time).
+    let onRange: string | null = null;
+    if (thread.do_on) {
+      const d = parseDateOffset(baseDate, thread.do_on)
+        .toISOString()
+        .split("T")[0];
+      onRange = `[${d},${d}]`; // Postgres canonicalizes to [d, d+1)
+    }
     outThreadStates.push({
       user_id: userId,
       thread_id: id,
@@ -2216,6 +2252,7 @@ function processThread(
       read_at: isUnread ? null : stateAt,
       bumped_at: stateAt,
       importance: isUnread ? 70 : 60,
+      on: onRange,
     });
   }
 
@@ -2556,6 +2593,37 @@ function generateRandomPath(length: number): string {
     result += chars[Math.floor(Math.random() * chars.length)];
   }
   return result;
+}
+
+/**
+ * Derive a one-line plain-text preview from a thread's first note, mirroring
+ * the server's thread.preview (the placeholder under the title). Strips
+ * Markdown chrome (headings, bold/italic, links, blockquotes, bullets) and
+ * collapses whitespace, then truncates.
+ */
+function derivePreview(content: string | null): string | null {
+  if (!content) return null;
+  // First non-empty line after stripping leading markdown markers.
+  let line = "";
+  for (const raw of content.split("\n")) {
+    const stripped = raw
+      .replace(/^[#>\-*\s]+/, "") // leading heading/quote/bullet markers
+      .trim();
+    if (stripped) {
+      line = stripped;
+      break;
+    }
+  }
+  if (!line) return null;
+  const plain = line
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+    .replace(/\*([^*]+)\*/g, "$1") // italic
+    .replace(/`([^`]+)`/g, "$1") // code
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → text
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain) return null;
+  return plain.length > 140 ? `${plain.slice(0, 139)}…` : plain;
 }
 
 function sqlString(value: string | number | null): string {
