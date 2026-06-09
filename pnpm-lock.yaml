@@ -502,6 +502,9 @@ importers:
       '@plotday/connector-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
+      '@plotday/email-classifier':
+        specifier: workspace:^
+        version: link:../../libs/email-classifier
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
