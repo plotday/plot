@@ -32,6 +32,9 @@ if (existsSync(envPath)) {
 
 import type {
   GeneratedContact,
+  GeneratedGroup,
+  GeneratedGroupAdmin,
+  GeneratedGroupMember,
   GeneratedLink,
   GeneratedNote,
   GeneratedNoteTag,
@@ -52,7 +55,7 @@ import type {
   Thread,
   ValidationError,
 } from "./types.js";
-import { ALL_TAGS, TAG_IDS } from "./types.js";
+import { ALL_TAGS, FOCUS_ICONS, TAG_IDS } from "./types.js";
 
 // ============================================================================
 // User Management
@@ -477,6 +480,10 @@ async function applySQL(
         }
         if (twistCount > 0) {
           console.error(`  ${twistCount} twist(s)`);
+        }
+        const groupCount = data.groups?.length || 0;
+        if (groupCount > 0) {
+          console.error(`  ${groupCount} group(s)`);
         }
         if (threadCount > 0) {
           console.error(`  ${threadCount} thread(s)`);
@@ -930,6 +937,42 @@ function validate(
     }
   }
 
+  // Validate groups
+  if (data.groups) {
+    const groupRefs = new Set<string>();
+    for (let i = 0; i < data.groups.length; i++) {
+      const group = data.groups[i];
+      const path = `groups[${i}]`;
+      if (!group.ref) {
+        addError(`${path}.ref`, "Missing ref");
+      } else if (groupRefs.has(group.ref)) {
+        addError(`${path}.ref`, `Duplicate ref: ${group.ref}`);
+      } else {
+        groupRefs.add(group.ref);
+      }
+      if (!group.name) addError(`${path}.name`, "Missing name");
+      if (!group.members || group.members.length === 0) {
+        addError(`${path}.members`, "Group must have at least one member");
+      } else {
+        for (const ref of group.members) {
+          if (ref !== "user" && !contactRefs.has(ref)) {
+            addError(`${path}.members`, `Unknown contact ref: ${ref}`);
+          }
+        }
+      }
+      if (
+        group.privacy &&
+        group.privacy !== "open" &&
+        group.privacy !== "private"
+      ) {
+        addError(
+          `${path}.privacy`,
+          `Invalid privacy: ${group.privacy} (open|private)`
+        );
+      }
+    }
+  }
+
   return errors;
 }
 
@@ -949,6 +992,15 @@ function validatePriority(
 
   if (!priority.title) {
     addError(`${path}.title`, "Missing title");
+  }
+
+  if (
+    priority.icon &&
+    !FOCUS_ICONS.includes(priority.icon as (typeof FOCUS_ICONS)[number])
+  ) {
+    console.error(
+      `⚠ ${path}.icon: "${priority.icon}" is not a known kFocusIcons key (continuing; the app may render a default).`
+    );
   }
 
   if (priority.children) {
@@ -1239,6 +1291,12 @@ function generateSQL(
   lines.push(
     `UPDATE twist SET archived_at = now() WHERE user_id = ${sqlString(userId)} AND environment = 'personal' AND archived_at IS NULL;`
   );
+  // Groups created by prior seed runs (cascades group_member/group_admin).
+  lines.push(`DELETE FROM "group" WHERE created_by = ${sqlString(userId)};`);
+  // Channels from prior seed runs (point at to-be-archived twist_instances).
+  lines.push(
+    `DELETE FROM channel WHERE twist_instance_id IN (SELECT id FROM twist_instance WHERE owner_id = ${sqlString(userId)});`
+  );
   lines.push("");
 
   // Build reference maps
@@ -1270,6 +1328,9 @@ function generateSQL(
   }[] = [];
   const threadAssociations: GeneratedThreadAssociation[] = [];
   const priorityBlocks: GeneratedPriorityBlock[] = [];
+  const groups: GeneratedGroup[] = [];
+  const groupMembers: GeneratedGroupMember[] = [];
+  const groupAdmins: GeneratedGroupAdmin[] = [];
 
   // Source SQL is generated inline (due to bigint IDENTITY sequencing)
   const sourceSQLLines: string[] = [];
@@ -1310,6 +1371,26 @@ function generateSQL(
     }
   }
 
+
+  // Process groups (reusable contact sets for the new-thread picker).
+  // Runs after contacts/priorities so member refs resolve via contactIdMap.
+  if (data.groups) {
+    for (const group of data.groups) {
+      const groupId = generateUUID();
+      groups.push({
+        id: groupId,
+        name: group.name,
+        privacy: group.privacy ?? "open",
+        created_by: userId,
+      });
+      // Seed user is always an admin so user.group surfaces a private group.
+      groupAdmins.push({ group_id: groupId, user_id: userId });
+      for (const ref of group.members) {
+        const cid = contactIdMap[ref];
+        if (cid) groupMembers.push({ group_id: groupId, contact_id: cid });
+      }
+    }
+  }
 
   // Process sources
   if (data.sources) {
@@ -1474,7 +1555,7 @@ function generateSQL(
   if (priorities.length > 0) {
     lines.push("-- Priorities");
     lines.push(
-      "INSERT INTO priority (id, created_by, title, path, archived_at, created_at, updated_at)"
+      "INSERT INTO priority (id, created_by, title, icon, path, archived_at, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < priorities.length; i++) {
@@ -1483,7 +1564,7 @@ function generateSQL(
       lines.push(
         `  (${sqlString(p.id)}, ${sqlString(p.created_by)}, ${sqlString(
           p.title
-        )}, ${sqlString(p.path)}, ${sqlString(
+        )}, ${sqlString(p.icon)}, ${sqlString(p.path)}, ${sqlString(
           p.archived_at
         )}, NOW(), NOW())${comma}`
       );
@@ -1512,6 +1593,49 @@ function generateSQL(
       }
     }
     lines.push(settingRows.join(",\n") + ";");
+    lines.push("");
+  }
+
+  // Groups
+  if (groups.length > 0) {
+    lines.push("-- Groups");
+    lines.push(
+      'INSERT INTO "group" (id, name, type, privacy, created_by, created_at, updated_at)'
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const comma = i < groups.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(g.id)}, ${sqlString(g.name)}, 'private', ${sqlString(g.privacy)}, ${sqlString(g.created_by)}, NOW(), NOW())${comma}`
+      );
+    }
+    lines.push("");
+
+    if (groupMembers.length > 0) {
+      lines.push("-- Group members");
+      lines.push(
+        "INSERT INTO group_member (group_id, contact_id, created_at, updated_at) VALUES"
+      );
+      for (let i = 0; i < groupMembers.length; i++) {
+        const gm = groupMembers[i];
+        const comma = i < groupMembers.length - 1 ? "," : ";";
+        lines.push(
+          `  (${sqlString(gm.group_id)}, ${sqlString(gm.contact_id)}, NOW(), NOW())${comma}`
+        );
+      }
+      lines.push("");
+    }
+
+    lines.push("-- Group admins (seed user)");
+    lines.push("INSERT INTO group_admin (group_id, user_id, created_at) VALUES");
+    for (let i = 0; i < groupAdmins.length; i++) {
+      const ga = groupAdmins[i];
+      const comma = i < groupAdmins.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(ga.group_id)}, ${sqlString(ga.user_id)}, NOW())${comma}`
+      );
+    }
     lines.push("");
   }
 
@@ -1768,6 +1892,7 @@ function processPriority(
     id,
     created_by: userId,
     title: priority.title,
+    icon: priority.icon ?? null,
     path,
     archived_at: priority.archived_at
       ? parseDateOffset(baseDate, priority.archived_at).toISOString()
@@ -1840,6 +1965,14 @@ function processSource(
   // reference its twist_instance as `created_by`. Without this, every source the
   // seed file lists that has no matching public twist (e.g. Notion, Google Sheets)
   // would surface as a "Personal" connector that the user can't actually use.
+  // A channel-bearing source (e.g. Slack) is created as a LIVE connection
+  // (archived_at = NULL) so it appears in the user's connection list and its
+  // channels surface in the new-thread Channels section. Channel-less sources
+  // keep the archived personal-fallback behavior (kept out of the connector
+  // list; see the long comment above).
+  const hasChannels = !!(source.channels && source.channels.length > 0);
+  const archiveLiteral = hasChannels ? "NULL" : "now()";
+
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
   outLines.push(`  v_twist_id bigint;`);
@@ -1852,7 +1985,7 @@ function processSource(
     `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
   );
   outLines.push(
-    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)}, now())`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)}, ${archiveLiteral})`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
@@ -1869,6 +2002,36 @@ function processSource(
     `  VALUES (${sqlString(twistInstanceId)}, ${sqlString(userId)}, 'seed', ${sqlString(userId)});`
   );
   outLines.push(`END $$;`);
+
+  // Channels: enabled connection channels (e.g. Slack channels) that surface
+  // in the new-thread picker's Channels section. Each carries a
+  // compose-capable link_types JSON (modeled on the real Slack connector) —
+  // the `compose` block is required for connection_targets.dart to treat the
+  // channel as a compose target.
+  if (source.channels && source.channels.length > 0) {
+    const defaultLinkTypes = JSON.stringify([
+      {
+        type: "thread",
+        label: "Thread",
+        noteLabel: "Message",
+        sharingModel: "channel",
+        logo: source.logo ?? "https://api.iconify.design/logos/slack-icon.svg",
+        compose: { targets: "channels" },
+      },
+    ]);
+    outLines.push(
+      "INSERT INTO channel (twist_instance_id, channel_id, title, enabled, link_types, created_at, updated_at) VALUES"
+    );
+    const rows: string[] = [];
+    for (const ch of source.channels) {
+      const lt = ch.link_types ? JSON.stringify(ch.link_types) : defaultLinkTypes;
+      rows.push(
+        `  (${sqlString(twistInstanceId)}, ${sqlString(ch.channel_id)}, ${sqlString(ch.title)}, ${ch.enabled ?? true}, ${sqlString(lt)}::jsonb, NOW(), NOW())`
+      );
+    }
+    outLines.push(rows.join(",\n") + ";");
+  }
+
   // Silence the unused-warning so the priority_ref still validates as required.
   void priorityId;
 }
