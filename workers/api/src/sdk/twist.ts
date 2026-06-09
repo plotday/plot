@@ -79,6 +79,7 @@ const TwistDeploymentSchema = z
     description: z.string().optional(),
     logoUrl: z.string().url().optional(),
     logoUrlDark: z.string().url().optional(),
+    category: z.string().optional(),
     publisherId: z.coerce.number().optional(),
     environment: z
       .enum(["personal", "private", "review", "public"])
@@ -351,6 +352,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     description,
     logoUrl,
     logoUrlDark,
+    category,
     publisherId,
     environment,
     generatedFromSpec,
@@ -513,6 +515,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           description,
           logoUrl,
           logoUrlDark,
+          category,
           userName: user?.name || user?.email?.split("@")[0],
           userEmail: user?.email,
           dryRun,
@@ -622,6 +625,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         description,
         logoUrl,
         logoUrlDark,
+        category,
         userName: user?.name || user?.email?.split("@")[0],
         userEmail: user?.email,
         dryRun,

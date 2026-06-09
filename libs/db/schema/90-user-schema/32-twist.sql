@@ -33,6 +33,7 @@ SELECT
     pt.team_id,
     pt.name,
     pt.account_label,
+    pt.custom_emoji_scope,
     t.reaction_capabilities,
     pt.options,
     t.logo_url,

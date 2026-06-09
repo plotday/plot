@@ -34,6 +34,9 @@ export interface DeployTwistOptions {
   description?: string;
   logoUrl?: string;
   logoUrlDark?: string;
+  /** Connector classification from package.json (e.g. "messaging",
+   * "calendar"). Persisted to twist.category; null when unset. */
+  category?: string;
   userName?: string;
   userEmail?: string;
   dryRun?: boolean;
@@ -89,6 +92,7 @@ export async function deployTwist({
   description,
   logoUrl,
   logoUrlDark,
+  category,
   dryRun = false,
   onProgress,
   source: deployedFrom = "code",
@@ -288,6 +292,7 @@ export async function deployTwist({
         premium: isPremiumTwistPackage(twistPackageId),
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
+        category: category ?? null,
         multiple_instances: multipleInstances,
         reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
       })
@@ -321,6 +326,7 @@ export async function deployTwist({
         premium: isPremiumTwistPackage(twistPackageId),
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
+        category: category ?? null,
         multiple_instances: multipleInstances,
         reaction_capabilities: reactionCapabilitiesCell(reactionCapabilities),
       })

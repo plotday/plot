@@ -233,11 +233,17 @@ class ComposePill extends StatelessWidget {
           final logo =
               lt == null ? null : (isDark ? (lt.logoDark ?? lt.logo) : lt.logo);
           // The channel is the primary distinguishing element, so it leads
-          // (after the connection label, when there is one) and the connector
-          // name trails muted: "{connection} › {channel}  {connector}".
+          // (after the connection label, when there is one) and the connector +
+          // link type trails muted: "{connection} › {channel}  {Slack thread}".
           final ct = target.target;
           final connectionLabel = ct?.accountName;
           final connectorName = ct?.connectorName;
+          final linkTypeLabel = lt?.label;
+          final typeMeta = (connectorName != null && connectorName.isNotEmpty)
+              ? (linkTypeLabel != null && linkTypeLabel.isNotEmpty
+                  ? '$connectorName ${linkTypeLabel.toLowerCase()}'
+                  : connectorName)
+              : (linkTypeLabel ?? '');
           final channelTitle = target.channel?.title ?? target.label;
           return Row(
             children: [
@@ -277,10 +283,10 @@ class ComposePill extends StatelessWidget {
                         style: nameStyle,
                       ),
                     ),
-                    if (connectorName != null && connectorName.isNotEmpty) ...[
+                    if (typeMeta.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Text(
-                        connectorName,
+                        typeMeta,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: metaStyle,

@@ -19,6 +19,7 @@ import 'package:plot/state/priority.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/channel_breadcrumb.dart';
+import 'package:plot/widget/status_icon_button.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -207,15 +208,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   }
 
   /// The channel breadcrumb for this thread, or null when the primary
-  /// (earliest-created) link is not channel-sharing — the same "primary" link
-  /// that [Thread.resolveSharingModel] keys on. Resolved from the in-memory
-  /// [TwistInstance]/[Channel] caches, falling back to whichever part resolves.
+  /// (primary canonical) link is not channel-sharing — the same primary link
+  /// that [Thread.resolveSharingModel] keys on (see [Thread.primaryLink]).
+  /// Resolved from the in-memory [TwistInstance]/[Channel] caches, falling
+  /// back to whichever part resolves.
   String? _channelLabel() {
-    if (_links.isEmpty) return null;
     if (Thread.resolveSharingModel(_links) != SharingModel.channel) return null;
-    final primary = ([
-      ..._links,
-    ]..sort((a, b) => a.createdAt.compareTo(b.createdAt))).first;
+    final primary = Thread.primaryLink(_links);
+    if (primary == null) return null;
     final ptId = primary.createdBy;
     if (ptId == null) return null;
     // Prefer the per-connection account label (e.g. "Acme Co") over the
@@ -729,25 +729,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               ),
                               TextSpan(
                                 children: [
-                                  // Broom indicator for threads swept up by
-                                  // a "Skip active for threads like this"
-                                  // mute rule. Surfaced on any muted thread
-                                  // so the user can identify rule-anchored
-                                  // rows in the unified feed.
-                                  if (activity.muteByThreadId != null)
-                                    WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: Padding(
-                                        padding: EdgeInsets.only(
-                                          right: buildContext.theme.spacing.xs,
-                                        ),
-                                        child: Icon(
-                                          PlotIcon.broom,
-                                          size: 12,
-                                          color: buildContext.colour.muted,
-                                        ),
-                                      ),
-                                    ),
                                   TextSpan(
                                     text: activity.displayTitle,
                                     style: now
@@ -892,6 +873,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               activity,
               isPlotThread: Thread.isPlotThread(_links),
               sharingModel: Thread.resolveSharingModel(_links),
+              openInLink: Thread.primaryLink(_links),
               priorityBloc: priorityBloc,
             )
             .map(
@@ -1008,6 +990,7 @@ class ThreadCommands extends HookWidget {
     final linksSnapshot = useStream<List<Link>>(
       useMemoized(() => Link.watchForThread(activity.id), [activity.id]),
     );
+    final primaryLink = Thread.primaryLink(linksSnapshot.data ?? const []);
     final conferencingActions = showEventButtons
         ? (linksSnapshot.data ?? [])
               .expand((link) => link.actions ?? <UserAction>[])
@@ -1089,6 +1072,8 @@ class ThreadCommands extends HookWidget {
         ...allButtons,
         for (final action in conferencingActions)
           _ConferencingIconButton(action: action),
+        if (primaryLink != null)
+          StatusIconButton(link: primaryLink),
         ?rsvpChip,
         // Persistent thread-level assignee avatar (any assigned thread).
         if (activity.assigneeId != null) ThreadAssignee(thread: activity),

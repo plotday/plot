@@ -39,6 +39,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
@@ -2427,7 +2428,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 361;
+  int get schemaVersion => 363;
 
   @override
   MigrationStrategy get migration {
@@ -3892,6 +3893,20 @@ class Store extends _$Store {
     }
 
     if (from < 361) {
+      // Sync twist_instance.custom_emoji_scope: an opaque per-connection
+      // token (e.g. `slack:T0123ABC`) used to offer "this connection's custom
+      // emoji" in the reaction picker (prefix-match against custom_emoji.id).
+      await _safeAddColumn(
+        m,
+        twistInstances,
+        twistInstances.customEmojiScope,
+      );
+    }
+    if (from < 362) {
+      await _safeAddColumn(m, links, links.priority);
+      await _safeAddColumn(m, links, links.noteScoped);
+    }
+    if (from < 363) {
       // Classifier description stored on the focus so it flows to the
       // /sync/priorities upsert payload. Nullable; existing rows get NULL.
       await _safeAddColumn(m, priorities, priorities.description);

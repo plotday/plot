@@ -38,6 +38,15 @@ CREATE TABLE "public"."link" (
     -- Set by upsert_link; used by the mirror trigger to identify
     -- assignment-capable links (only such connectors ever set an assignee).
     "supports_assignee" boolean NOT NULL DEFAULT false,
+    -- Connector-supplied primary-link ranking. Clients display the highest-
+    -- priority non-archived canonical (note_scoped = false) link as the thread's
+    -- single external link; ties break on earliest created_at. Default 0.
+    "priority" integer NOT NULL DEFAULT 0,
+    -- When true, this link is attached to a note (note.link_id), not the thread.
+    -- Note-scoped links still participate in source->thread co-location
+    -- (sources overlap) but are excluded from thread-level surfacing and
+    -- primary-link selection. Set for augmenter content (e.g. Granola).
+    "note_scoped" boolean NOT NULL DEFAULT false,
     -- Source-defined type and status (free text)
     "type" text,
     "status" text,

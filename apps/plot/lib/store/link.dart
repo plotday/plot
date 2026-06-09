@@ -204,11 +204,54 @@ class ContactRoleConfig extends Equatable {
   List<Object?> get props => [id, label, isDefault, hidden];
 }
 
+/// Curated status-icon vocabulary. Mirrors `StatusIcon` in
+/// `public/twister/src/tools/integrations.ts`. Connectors map each status to
+/// one of these; the client renders a single glyph per value.
+enum StatusIcon {
+  backlog,
+  todo,
+  inProgress,
+  blocked,
+  done,
+  cancelled,
+  confirmed,
+  tentative;
+
+  /// Parse the SDK string form, or null for absent/unknown values (so an
+  /// older cached config or a future icon never crashes the client).
+  static StatusIcon? fromJson(String? value) => switch (value) {
+        'backlog' => StatusIcon.backlog,
+        'todo' => StatusIcon.todo,
+        'inProgress' => StatusIcon.inProgress,
+        'blocked' => StatusIcon.blocked,
+        'done' => StatusIcon.done,
+        'cancelled' => StatusIcon.cancelled,
+        'confirmed' => StatusIcon.confirmed,
+        'tentative' => StatusIcon.tentative,
+        _ => null,
+      };
+
+  /// The glyph rendered for this status. Total over all values so the UI
+  /// always has something to show (the SDK marks `icon` required).
+  IconData get glyph => switch (this) {
+        StatusIcon.backlog => FontAwesomeIcons.circleDashed,
+        StatusIcon.todo => FontAwesomeIcons.circle,
+        StatusIcon.inProgress => FontAwesomeIcons.circleHalfStroke,
+        StatusIcon.blocked => FontAwesomeIcons.octagonXmark,
+        StatusIcon.done => FontAwesomeIcons.circleCheck,
+        StatusIcon.cancelled => FontAwesomeIcons.circleXmark,
+        StatusIcon.confirmed => FontAwesomeIcons.calendarCheck,
+        StatusIcon.tentative => FontAwesomeIcons.circleQuestion,
+      };
+}
+
 /// A possible status value within a LinkTypeConfig.
 class LinkStatus {
   final String status;
   final String label;
   final int? tag;
+  final StatusIcon? icon;
+  final bool hiddenDefault;
   final bool done;
   final bool todo;
 
@@ -216,6 +259,8 @@ class LinkStatus {
     required this.status,
     required this.label,
     this.tag,
+    this.icon,
+    this.hiddenDefault = false,
     this.done = false,
     this.todo = false,
   });
@@ -225,6 +270,10 @@ class LinkStatus {
       status: json['status'] as String,
       label: json['label'] as String,
       tag: json['tag'] as int?,
+      icon: StatusIcon.fromJson(json['icon'] as String?),
+      hiddenDefault: json['hiddenDefault'] as bool? ??
+          json['hidden_default'] as bool? ??
+          false,
       done: json['done'] as bool? ?? false,
       todo: json['todo'] as bool? ?? false,
     );
@@ -296,6 +345,17 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
   TextColumn get logo => text().nullable()();
   BlobColumn get mergedFromThreadId =>
       blob().nullable().map(const UuidConverter())();
+
+  /// Connector-supplied primary-link ranking. The thread's single external
+  /// link is the highest-priority non-archived canonical (note_scoped=false)
+  /// link; ties break on earliest created_at. Mirrors `link.priority`.
+  IntColumn get priority => integer().withDefault(const Constant(0))();
+
+  /// TRUE when this link is attached to a note (note.link_id), not the thread.
+  /// Note-scoped links are excluded from thread-level surfacing and
+  /// primary-link selection. Mirrors `link.note_scoped`.
+  BoolColumn get noteScoped =>
+      boolean().withDefault(const Constant(false))();
 
   /// Server access-loss tombstone marker. TRUE when the row arrived from
   /// user.link_redacted (a per-item connector removal with no bulk signal).
@@ -513,6 +573,8 @@ class Link extends Equatable {
   String? get preview => _link.preview;
   String? get type => _link.type;
   String? get status => _link.status;
+  int get priority => _link.priority;
+  bool get noteScoped => _link.noteScoped;
   List<UserAction>? get actions => _link.actions;
   Map<String, dynamic>? get meta => _link.meta;
   String? get sourceUrl => _link.sourceUrl;
@@ -675,17 +737,32 @@ class Link extends Equatable {
     return rows.map((row) => Link(row)).toList();
   }
 
-  /// Watch links for a given thread.
+  /// Watch canonical (thread-level) links for a given thread.
   ///
-  /// Returns every link the user can see on this thread. Per-user link
-  /// visibility lives server-side in `user.link`: each user only receives
-  /// links from connector instances they own (plus user-authored links),
-  /// so two users' connections of the same external resource no longer
+  /// Returns only non-note-scoped links (`noteScoped == false`), ordered
+  /// primary-first: priority DESC, createdAt ASC, id ASC — matching
+  /// [Thread.primaryLink] so `.first` here IS the primary link.
+  ///
+  /// Note-scoped links (attached to a note via `note.link_id`) are excluded;
+  /// use [getForThread] when you need ALL links regardless of scope.
+  ///
+  /// Per-user link visibility lives server-side in `user.link`: each user
+  /// only receives links from connector instances they own (plus user-authored
+  /// links), so two users' connections of the same external resource no longer
   /// produce duplicate rows here.
   static Stream<List<Link>> watchForThread(ThreadId threadId) {
     final db = Store.get;
     return (db.select(db.links)
-          ..where((l) => l.threadId.equals(threadId.toBytes())))
+          ..where((l) =>
+              l.threadId.equals(threadId.toBytes()) &
+              l.noteScoped.equals(false))
+          ..orderBy([
+            // Primary-first: highest priority, then earliest created, then id
+            // — matches [Thread.primaryLink] so `.first` here IS the primary.
+            (l) => OrderingTerm.desc(l.priority),
+            (l) => OrderingTerm.asc(l.createdAt),
+            (l) => OrderingTerm.asc(l.id),
+          ]))
         .watch()
         .map((rows) {
           final links = rows.map(Link.new).toList();

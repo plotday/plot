@@ -5,6 +5,7 @@ packages:
   - twists/*
   - connectors/*
   - public/twister
+  - public/libs/*
   - public/connectors/*
   - public/twists/*
   - public/libs/*

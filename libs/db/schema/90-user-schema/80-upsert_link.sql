@@ -159,7 +159,7 @@ BEGIN
     INSERT INTO link (id, thread_id, source, sources, source_created_at, author_id, twist_id,
         created_by, updated_by, sync_depth, title, preview, assignee_id, type, status,
         actions, meta, source_url, merged_from_thread_id, related_source,
-        channel_id, supports_assignee)
+        channel_id, supports_assignee, priority, note_scoped)
         VALUES (v_id, v_thread_id, v_source, v_sources,
             COALESCE((p_link ->> 'source_created_at')::timestamptz, (p_defaults ->> 'source_created_at')::timestamptz, now()),
             v_author_id, v_twist_id, v_created_by,
@@ -176,7 +176,9 @@ BEGIN
             COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid),
             COALESCE(p_link ->> 'related_source', p_defaults ->> 'related_source'),
             COALESCE(p_link ->> 'channel_id', p_defaults ->> 'channel_id'),
-            (v_assignee_id IS NOT NULL))
+            (v_assignee_id IS NOT NULL)
+        , COALESCE((p_link ->> 'priority')::integer, (p_defaults ->> 'priority')::integer, 0)
+        , COALESCE((p_link ->> 'note_scoped')::boolean, (p_defaults ->> 'note_scoped')::boolean, false))
     ON CONFLICT (source, source_priority_root) WHERE archived_at IS NULL
         DO UPDATE SET
             title = CASE WHEN p_link ? 'title' THEN
@@ -266,6 +268,12 @@ BEGIN
                     ELSE
                         COALESCE(v_assignee_id, link.assignee_id)
                     END) IS NOT NULL
+            ,
+            priority = CASE WHEN p_link ? 'priority' THEN
+                (p_link ->> 'priority')::integer
+            ELSE
+                link.priority
+            END
         RETURNING
             * INTO v_result;
     RETURN v_result;

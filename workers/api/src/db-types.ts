@@ -387,7 +387,9 @@ export interface Link {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: Generated<boolean>;
   preview: string | null;
+  priority: Generated<number>;
   priority_id: string | null;
   /**
    * Cross-connector thread bundling key. Links whose source matches another link's related_source share a thread, regardless of creation order.
@@ -1018,6 +1020,7 @@ export interface TopicMemberOptout {
 export interface Twist {
   archived_at: Timestamp | null;
   auto_approve: Generated<boolean>;
+  category: string | null;
   created_at: Generated<Timestamp>;
   description: string | null;
   environment: Generated<TwistEnvironment>;
@@ -1048,6 +1051,7 @@ export interface TwistInstance {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
+  custom_emoji_scope: string | null;
   draft: Generated<boolean>;
   id: Generated<string>;
   name: string;
@@ -1184,6 +1188,7 @@ export interface TwistInstanceDetails {
   author_name: string | null;
   author_url: string | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   draft: boolean | null;
   id: string | null;
   is_source: boolean | null;
@@ -1478,7 +1483,9 @@ export interface UserLink {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: boolean | null;
   preview: string | null;
+  priority: number | null;
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;
@@ -1508,7 +1515,9 @@ export interface UserLinkRedacted {
   logo: string | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
+  note_scoped: boolean | null;
   preview: string | null;
+  priority: number | null;
   priority_id: string | null;
   priority_path: string | null;
   revoked: boolean | null;
@@ -1875,6 +1884,7 @@ export interface UserTwist {
   account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
+  custom_emoji_scope: string | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
   handle: string | null;

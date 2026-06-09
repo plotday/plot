@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import 'package:plot/store/store.dart' show ThreadId;
 import 'package:plot/util/theme_color.dart';
-import 'package:plot/widget/onboarding/onboarding_calendars.dart';
 import 'package:plot/widget/onboarding/onboarding_roles.dart';
 import 'package:plot/widget/onboarding/onboarding_tools.dart';
 
@@ -153,83 +152,60 @@ class OnboardingSteps {
     const FullScreenStep(
       title: "Your best work\nevery day",
       body:
-          "Plot is your collaboration hub, unifying work across email, chat, meetings, apps and agents. Choose a focus and have everything you need to make progress.",
-      background: ThemeColor(0), // Catalyst — opener
+          "Plot is your collaboration hub. Make real progress without the churn.",
+      background: ThemeColor(0),
     ),
     FullScreenStep(
-      title: 'Connect your calendar',
-      body: 'Plot builds your day around your schedule.',
-      background: const ThemeColor(2), // Rising Action
-      contentBuilder: (context) => const OnboardingCalendars(),
-    ),
-    FullScreenStep(
-      title: 'Connect everything else',
-      body:
-          'Email, chat, comments, meeting notes — bring the conversations from your other tools into Plot so you have everything you need when you choose a focus.',
-      background: const ThemeColor(3), // Momentum
+      title: 'Connect your tools',
+      body: "All your work in one place, organized and prioritized.",
+      background: const ThemeColor(1),
       contentMaxWidth: 640,
       contentBuilder: (context) => const OnboardingTools(),
     ),
     const HighlightStep(
-      title: 'Choose your focus',
+      title: 'Built for action',
       body:
-          "In Plot, a focus is a separate inbox with everything related to a role, activity, or project. Focuses are great for concentrating on your top priorities. They're also helpful for collecting low-urgency work to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
+          "Updates land at the top of Active. Read them and they'll move to Done.\n"
+          'Mark threads "To do" to keep them in Active until done.\n'
+          "Prioritize threads by dragging them, or snooze them for another day.",
+      target: PanelTarget.feed,
+      overlay: ThemeColor(2),
+    ),
+    const HighlightStep(
+      title: 'Make something happen',
+      body:
+          'Start with the people you want to reach, then pick how to send your message.\n'
+          'Or create a post or app item using a channel.\n'
+          'Plot threads also hold private notes and tasks alongside the rest of your work.',
+      target: PanelTarget.newThread,
+      overlay: ThemeColor(3),
+      // The cutout is the right panel (the new-thread compose page); pull the
+      // text block toward it so the copy reads as belonging to it.
+      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
+    ),
+    const HighlightStep(
+      title: 'Focus on what matters',
+      body:
+          "Everything in one place can be a bit much. Create a focus to gather everything related to a role, activity, or project.\n"
+          "Creating focuses for low-urgency work is a great way to keep it from interrupting your day, allowing you to tackle it efficiently when you have time.",
       target: PanelTarget.priorities,
-      overlay: ThemeColor(4), // Turning Point
+      overlay: ThemeColor(4),
       // In multi-panel the left panel stacks agenda on top of the focuses, so
       // anchor this step's text to the bottom — visually next to the focuses
       // list it describes.
       multiPanelAlignment: MultiPanelContentAlignment.top,
       // Sample-focus chips let the user spin up their first focuses right
       // here, beside the highlighted focuses panel they'll appear in.
-      contentBuilder: _buildRoles,
-    ),
-    const HighlightStep(
-      title: 'Your day',
-      body:
-          "See your day at glance. Easily add focus blocks to ensure you make progress on what matter most.",
-      target: PanelTarget.agenda,
-      overlay: ThemeColor(5), // Breakthrough
-      // Multi-panel: the agenda occupies the bottom half of the left panel
-      // (leftBottom), starting around the vertical midpoint. Center the text
-      // so it sits beside where the agenda begins rather than hugging the
-      // bottom edge. Single-panel: the overlay routes to /agenda and the
-      // mobile split layout handles placement.
-      multiPanelAlignment: MultiPanelContentAlignment.center,
-    ),
-    const HighlightStep(
-      title: 'Everything is a thread',
-      body:
-          "Threads you create in Plot alongside everything from your connections lands in a focus (or your Inbox). "
-          "Updates appear at the top, followed by threads you've marked Active (something that needs your attention or action). "
-          "You can \"snooze\" threads to clear them from today and make sure you get back to them later.",
-      target: PanelTarget.feed,
-      overlay: ThemeColor(6), // Climax
-    ),
-    const HighlightStep(
-      title: 'Everything is a thread',
-      body:
-          'Anything you work on with other people — a message, a doc, an event, an issue — is a thread with notes for context, decisions, and next steps. '
-          'Threads are synced both ways so you see new messages in Plot and messages you add in Plot appear in your connection.',
-      target: NamedThreadTarget(threadTitle: 'Everything in its place'),
-      overlay: ThemeColor(2), // Rising Action — back into the arc
-      // The cutout is the right panel; pull the text block toward it so the
-      // copy reads as belonging to the thread that's highlighted.
-      multiPanelAlignment: MultiPanelContentAlignment.nearCutout,
     ),
     FullScreenStep(
-      title: 'Your best work\nevery day',
+      title: "You're all set",
       body:
-          "You're set up with your initial focuses and connections. Start simple — focus on one or two areas you most want to invest in."
-          "\n\n"
-          "Questions or stuck on something? Reply on the welcome thread in your Inbox — we read every one.",
-      background: const ThemeColor(0), // Catalyst — bookend the opener
+          "We're eager to see what you'll do! Share your hopes, wins, and feedback with us any time.",
+      background: const ThemeColor(0),
       contentBuilder: _buildClosingQuote,
     ),
   ];
 }
-
-Widget _buildRoles(BuildContext context) => const OnboardingRoles();
 
 Widget _buildClosingQuote(BuildContext context) => const Padding(
   padding: EdgeInsets.only(top: 8),

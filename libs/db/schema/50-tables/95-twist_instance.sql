@@ -12,6 +12,13 @@ CREATE TABLE "public"."twist_instance" (
     -- name (`ConnectorName (account_label)`). Populated per-provider at auth
     -- time; user-editable in EditSource. NULL for non-source twists.
     "account_label" text,
+    -- Opaque per-connection custom-emoji scope token (e.g. `slack:T0123ABC`),
+    -- stamped by Integrations.saveCustomEmoji from the saved emoji rows'
+    -- `provider:workspace`. The client prefix-matches `custom_emoji.id` against
+    -- `<scope>/` to offer "this connection's custom emoji" in the reaction
+    -- picker — treated as opaque (no provider/workspace parsing client-side).
+    -- NULL for connections without workspace custom emoji.
+    "custom_emoji_scope" text,
     "options" jsonb NOT NULL DEFAULT '{}' ::jsonb,
     -- true while the user is configuring the twist (pre-activation). Drafts
     -- are excluded from most views and are hard-deleted if abandoned.

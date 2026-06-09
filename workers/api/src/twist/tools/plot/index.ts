@@ -964,6 +964,8 @@ export class Plot extends Tool implements IPlot {
       channelId: item.link_channel_id ?? null,
       relatedSource: null,
       sources: item.link_source ? [item.link_source] : [],
+      // Channel note view has no link priority; placeholder Link.
+      priority: 0,
     };
   }
 

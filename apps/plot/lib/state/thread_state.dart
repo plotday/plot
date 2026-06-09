@@ -63,11 +63,11 @@ class ThreadState extends Equatable {
   final NoteId? threadNoteId;
   final bool hasOtherAuthors;
 
-  /// LinkTypeConfig of the thread's primary link (first link by sync order),
-  /// used to adapt composer copy ("Add a comment" on Linear, "Add a message"
-  /// on Slack). Null when the thread has no links or no resolvable type.
+  /// LinkTypeConfig of the thread's primary canonical link (see
+  /// [Thread.primaryLink]), used to adapt composer copy. Null when the thread
+  /// has no canonical link or no resolvable type.
   LinkTypeConfig? get primaryLinkTypeConfig =>
-      links.isEmpty ? null : links.first.getTypeConfig();
+      Thread.primaryLink(links)?.getTypeConfig();
 
   /// Twists associated with this thread: those mentioned on any note, plus
   /// those that created a link (source connectors). Including link creators

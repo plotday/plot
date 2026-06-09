@@ -773,7 +773,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean
           preview: string | null
+          priority: number
           priority_id: string | null
           related_source: string | null
           seq: unknown
@@ -804,7 +806,9 @@ export type Database = {
           logo?: string | null
           merged_from_thread_id?: string | null
           meta?: Json | null
+          note_scoped?: boolean
           preview?: string | null
+          priority?: number
           priority_id?: string | null
           related_source?: string | null
           seq?: unknown
@@ -835,7 +839,9 @@ export type Database = {
           logo?: string | null
           merged_from_thread_id?: string | null
           meta?: Json | null
+          note_scoped?: boolean
           preview?: string | null
+          priority?: number
           priority_id?: string | null
           related_source?: string | null
           seq?: unknown
@@ -2756,6 +2762,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_approve: boolean
+          category: string | null
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
@@ -2784,6 +2791,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           auto_approve?: boolean
+          category?: string | null
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -2812,6 +2820,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           auto_approve?: boolean
+          category?: string | null
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -2857,6 +2866,7 @@ export type Database = {
           account_label: string | null
           archived_at: string | null
           created_at: string
+          custom_emoji_scope: string | null
           draft: boolean
           id: string
           name: string
@@ -2873,6 +2883,7 @@ export type Database = {
           account_label?: string | null
           archived_at?: string | null
           created_at?: string
+          custom_emoji_scope?: string | null
           draft?: boolean
           id?: string
           name: string
@@ -2889,6 +2900,7 @@ export type Database = {
           account_label?: string | null
           archived_at?: string | null
           created_at?: string
+          custom_emoji_scope?: string | null
           draft?: boolean
           id?: string
           name?: string
@@ -4138,6 +4150,7 @@ export type Database = {
           author_name: string | null
           author_url: string | null
           created_at: string | null
+          custom_emoji_scope: string | null
           draft: boolean | null
           id: string | null
           is_source: boolean | null
@@ -4797,6 +4810,7 @@ export type Database = {
         Returns: {
           archived_at: string | null
           auto_approve: boolean
+          category: string | null
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
@@ -5176,7 +5190,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean | null
           preview: string | null
+          priority: number | null
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
@@ -5257,7 +5273,9 @@ export type Database = {
           logo: string | null
           merged_from_thread_id: string | null
           meta: Json | null
+          note_scoped: boolean | null
           preview: string | null
+          priority: number | null
           priority_id: string | null
           priority_path: unknown
           revoked: boolean | null
@@ -6206,6 +6224,7 @@ export type Database = {
           account_label: string | null
           archived_at: string | null
           created_at: string | null
+          custom_emoji_scope: string | null
           default_mention_created: boolean | null
           default_mention_mentioned: boolean | null
           handle: string | null

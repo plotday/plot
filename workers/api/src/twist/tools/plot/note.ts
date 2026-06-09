@@ -1,9 +1,10 @@
-import type { Database } from "@plotday/db";
-import { sql } from "kysely";
+import type { Database, Json } from "@plotday/db";
+import { sql, type Kysely } from "kysely";
 import {
   type Action,
   type ActorId,
   type ActorType,
+  type NewLink,
   type NewNote,
   type Note,
   type NoteUpdate,
@@ -15,8 +16,9 @@ import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 import { PostHog } from "posthog-node";
 
+import type { DB } from "../../../db-types";
 import { detectTasks } from "../../../queue/note-analysis";
-import { rpc } from "../../../rpc";
+import { rpc, rpcUser } from "../../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../../utils/ai-limits";
 import { hashExternalContent } from "../hash-external-content";
 import { getLinkTypesForLink } from "../../../app/sync/link-tags";
@@ -107,6 +109,210 @@ export async function resolveLinkIdForConnectorNote(
   );
 }
 
+/**
+ * Resolves the thread a note-attached link should bind to when the note
+ * addresses its thread by `{ source }`, finding-or-CREATING the thread.
+ *
+ * Lookup mirrors production's existing `{ source }` resolution in createNote:
+ * any link whose `source` column or `sources` array contains `source`, scoped
+ * to the user via `source_priority_root` (the ltree root of the user's
+ * priority tree). The root is derived from the passed `priorityRootId` exactly
+ * as upsert_link does (`subpath(path, 0, 1)`), so test and production scope
+ * identically. Note-scoped links participate in the lookup — an augmenter that
+ * already created the anchor must be found by a later canonical sync.
+ *
+ * If no link matches, a bare thread is created and filed under the user's root
+ * priority. This is the only path allowed to create a thread for a `{ source }`
+ * miss; it fires solely when a note carries its own link (an augmenter creating
+ * the anchor before any canonical link exists).
+ *
+ * @returns the resolved (existing or freshly created) thread id.
+ */
+export async function resolveOrCreateThreadBySource(
+  trx: Kysely<DB>,
+  userId: string,
+  priorityRootId: string,
+  source: string,
+  fallbackTitle?: string | null
+): Promise<string> {
+  // Derive the ltree root for this user's priority tree from the root
+  // priority's path — identical to how upsert_link scopes source_priority_root.
+  const rootRow = await sql<{ root: string }>`
+    SELECT subpath(path, 0, 1)::text AS root
+    FROM priority
+    WHERE id = ${priorityRootId}
+  `.execute(trx);
+  const priorityRoot = rootRow.rows[0]?.root;
+  if (!priorityRoot) {
+    throw new Error(`Priority root not found for priority ${priorityRootId}`);
+  }
+
+  // Find an existing thread by source overlap, scoped to the user's tree.
+  // Note-scoped links are NOT filtered out — they must anchor canonical syncs.
+  const existingLink = await trx
+    .selectFrom("link")
+    .select("thread_id")
+    .where("source_priority_root", "=", priorityRoot)
+    .where(
+      sql<boolean>`(link.source = ${source} OR link.sources @> ARRAY[${source}]::text[])`
+    )
+    .where("thread_id", "is not", null)
+    .executeTakeFirst();
+
+  if (existingLink?.thread_id) {
+    return existingLink.thread_id;
+  }
+
+  // No match — create the anchor thread via the canonical thread-creation RPC
+  // user.upsert_thread. This (a) appends the caller's primary linked contact to
+  // thread.contacts and (b) files the thread_priority row, so the row passes the
+  // user.thread visibility filter (which requires a thread_priority filing AND a
+  // contacts/groups/topic match). A raw INSERT leaves thread.contacts = [] and
+  // the row — plus any note on it — is invisible to its own owner.
+  //
+  // The anchor must stay canonical-link-free: we pass NO key, NO twist_id, and
+  // NO icon. Because created_by = userId (not a twist_instance), upsert_thread
+  // derives twist_id = NULL, and key/icon are left unset. That keeps the
+  // thread-level canonical slot empty so a later calendar createLink can claim
+  // it via its global sources-overlap lookup.
+  //
+  // thread_title_required_when_not_draft requires a non-null title.
+  const title =
+    fallbackTitle && fallbackTitle.trim().length > 0 ? fallbackTitle : "Note";
+  const created = await rpcUser(trx, "upsert_thread", {
+    user_id: userId,
+    p_thread: { title, created_by: userId } as Json,
+    p_defaults: { priority_id: priorityRootId } as Json,
+  });
+
+  return created.id;
+}
+
+/**
+ * Creates a NOTE-SCOPED link (link.note_scoped = true) on `threadId` from a
+ * NewLink the note carried. The link is bound to the note via note.link_id by
+ * the caller; it must NOT become the thread's thread-level canonical link
+ * (note_scoped excludes it from canonical/primary selection).
+ *
+ * When the link has a source, it upserts via user.upsert_link (so a later
+ * canonical sync of the same source lands on the same row). Otherwise it falls
+ * back to a plain insert, mirroring createLink's no-source branch.
+ *
+ * @param createdBy - the twist instance id when available, else the user id
+ *   (used for link.created_by; upsert_link validates it is the user or an
+ *   owned twist instance).
+ * @returns the created link id.
+ */
+export async function createNoteScopedLink(
+  trx: Kysely<DB>,
+  userId: string,
+  threadId: string,
+  link: NewLink,
+  createdBy?: string
+): Promise<string> {
+  const owner = createdBy ?? userId;
+
+  // Normalize identifiers, mirroring createLink: prefer explicit `sources`,
+  // else fall back to the legacy `source` + `relatedSource` pair.
+  const sourcesArray: string[] = Array.from(
+    new Set(
+      [
+        ...((link.sources as string[] | undefined) ?? []),
+        ...(link.source ? [link.source] : []),
+        ...(link.relatedSource ? [link.relatedSource] : []),
+      ].filter((s): s is string => Boolean(s))
+    )
+  );
+  const primarySource: string | null =
+    sourcesArray.length > 0 ? [...sourcesArray].sort()[0] : null;
+  const hasSource = sourcesArray.length > 0;
+
+  const sourceCreatedAt =
+    link.created instanceof Date
+      ? link.created.toISOString()
+      : typeof link.created === "string"
+        ? link.created
+        : new Date().toISOString();
+
+  if (hasSource) {
+    const linkDefaults: Record<string, unknown> = {
+      thread_id: threadId,
+      created_by: owner,
+      note_scoped: true,
+      source_created_at: sourceCreatedAt,
+      ...(link.title !== undefined ? { title: link.title } : {}),
+      ...(link.type !== undefined ? { type: link.type } : {}),
+      ...(link.status !== undefined ? { status: link.status } : {}),
+      ...(link.sourceUrl !== undefined ? { source_url: link.sourceUrl } : {}),
+      ...(link.meta !== undefined ? { meta: link.meta as Json | null } : {}),
+      ...(link.actions !== undefined
+        ? { actions: link.actions as Json | null }
+        : {}),
+      ...(link.priority !== undefined ? { priority: link.priority } : {}),
+    };
+
+    const linkUpsert: Record<string, unknown> = {
+      source: primarySource,
+      sources: sourcesArray,
+      thread_id: threadId,
+    };
+    if (link.title !== undefined) linkUpsert.title = link.title;
+    if (link.type !== undefined) linkUpsert.type = link.type;
+    if (link.status !== undefined) linkUpsert.status = link.status;
+    if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
+    if (link.meta !== undefined) linkUpsert.meta = link.meta as Json | null;
+    if (link.actions !== undefined)
+      linkUpsert.actions = link.actions as Json | null;
+    if (link.priority !== undefined) linkUpsert.priority = link.priority;
+    if (link.relatedSource !== undefined)
+      linkUpsert.related_source = link.relatedSource;
+
+    const linkResult = await rpcUser(trx, "upsert_link", {
+      user_id: userId,
+      p_link: linkUpsert as Json,
+      p_defaults: linkDefaults as Json,
+    });
+    return linkResult.id;
+  }
+
+  // No source: plain insert with note_scoped = true.
+  const inserted = await trx
+    .insertInto("link")
+    // @ts-ignore - Type mismatch between builder and actual values
+    .values({
+      thread_id: threadId,
+      created_by: owner,
+      author_id: owner,
+      note_scoped: true,
+      source_created_at: sourceCreatedAt,
+      title: link.title ?? null,
+      type: link.type ?? null,
+      status: link.status ?? null,
+      actions: (link.actions ?? null) as Json | null,
+      meta: (link.meta ?? null) as Json | null,
+      source_url: link.sourceUrl ?? null,
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  return inserted.id;
+}
+
+/**
+ * A note is empty only if it carries no meaningful payload at all: no content,
+ * no top-level actions, no mentions, AND no note-attached link. A note whose
+ * payload lives on its `link` (e.g. an augmenter like Granola emitting a note
+ * whose actions hang off `note.link.actions`, sometimes with empty `content`)
+ * is NOT empty — dropping it would lose the link and its thread co-location.
+ */
+export function isEmptyNote(note: NewNote): boolean {
+  return (
+    (!note.content || note.content.trim() === "") &&
+    (!note.actions || note.actions.length === 0) &&
+    (!note.mentions || note.mentions.length === 0) &&
+    !note.link
+  );
+}
+
 export async function createNote(
   plot: Plot,
   note: NewNote,
@@ -115,19 +321,20 @@ export async function createNote(
   skipNotify = false
 ): Promise<Uuid> {
   try {
-    // Skip fully empty notes (no content, no links, no mentions)
-    const isEmpty =
-      (!note.content || note.content.trim() === "") &&
-      (!note.actions || note.actions.length === 0) &&
-      (!note.mentions || note.mentions.length === 0);
-
-    if (isEmpty) {
+    // Skip fully empty notes (no content, links, actions, or mentions)
+    if (isEmptyNote(note)) {
       // Return a minimal Note object without database insertion
       // This maintains the function signature while avoiding empty note creation
       throw new Error(
         "Cannot create fully empty note (no content, links, or mentions)"
       );
     }
+
+    // A note may carry its own link (note.link): the runtime creates a
+    // NOTE-SCOPED link bound to this note, without it becoming the thread's
+    // canonical link. This is how augmenters (e.g. Granola) attach content to
+    // a thread another connector owns.
+    const noteLink: NewLink | undefined = note.link;
 
     // Resolve activity ID - either provided directly or looked up by source
     let activityId: string;
@@ -141,25 +348,57 @@ export async function createNote(
       // so a connector can attach a note to a calendar event by any of its
       // canonical aliases (e.g. `icaluid:<UID>`).
       const sourceValue = note.thread.source;
-      const priorityRoot = await plot.getPriorityRoot();
-      const existingLink = await plot.db
-        .selectFrom("link")
-        .select("thread_id")
-        .where("source_priority_root", "=", priorityRoot)
-        .where(
-          sql<boolean>`(link.source = ${sourceValue} OR link.sources @> ARRAY[${sourceValue}]::text[])`
-        )
-        .executeTakeFirst();
 
-      if (!existingLink || !existingLink.thread_id) {
-        throw new Error(
-          `Activity not found with source "${sourceValue}": Not found`
+      if (noteLink) {
+        // The note carries its own link: find-or-CREATE the thread by source
+        // so an augmenter can create the anchor before any canonical link
+        // exists. Only the with-link case may create a thread.
+        const userId = await plot.getUserId();
+        const priorityRootId = await plot.getRootPriorityId();
+        activityId = await resolveOrCreateThreadBySource(
+          plot.db,
+          userId,
+          priorityRootId,
+          sourceValue,
+          noteLink.title ?? note.content ?? null
         );
-      }
+      } else {
+        // No carried link: preserve the existing contract — a source miss
+        // throws rather than creating a thread.
+        const priorityRoot = await plot.getPriorityRoot();
+        const existingLink = await plot.db
+          .selectFrom("link")
+          .select("thread_id")
+          .where("source_priority_root", "=", priorityRoot)
+          .where(
+            sql<boolean>`(link.source = ${sourceValue} OR link.sources @> ARRAY[${sourceValue}]::text[])`
+          )
+          .executeTakeFirst();
 
-      activityId = existingLink.thread_id;
+        if (!existingLink || !existingLink.thread_id) {
+          throw new Error(
+            `Activity not found with source "${sourceValue}": Not found`
+          );
+        }
+
+        activityId = existingLink.thread_id;
+      }
     } else {
       throw new Error("Note activity must provide either id or source");
+    }
+
+    // If the note carries its own link, create the note-scoped link now (after
+    // the thread is resolved) so its id can be bound to the note below.
+    let noteScopedLinkId: string | null = null;
+    if (noteLink) {
+      const userId = await plot.getUserId();
+      noteScopedLinkId = await createNoteScopedLink(
+        plot.db,
+        userId,
+        activityId,
+        noteLink,
+        plot.twistInstanceId
+      );
     }
 
     // Use provided context or fetch activity data from the database.
@@ -327,7 +566,12 @@ export async function createNote(
     // the thread's links for this connector instance. Only resolve keyed
     // notes — unkeyed notes can't collide on the partial unique index.
     // User-authored notes have no twistInstanceId and leave link_id NULL.
-    if (activityContext?.link_id) {
+    //
+    // A note-scoped link the note itself carried (note.link) wins over both:
+    // the note is explicitly bound to the link the runtime just created.
+    if (noteScopedLinkId) {
+      dbNote.link_id = noteScopedLinkId;
+    } else if (activityContext?.link_id) {
       dbNote.link_id = activityContext.link_id;
     } else if (plot.twistInstanceId && dbNote.key) {
       dbNote.link_id = await resolveLinkIdForConnectorNote(
