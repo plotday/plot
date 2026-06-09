@@ -1770,9 +1770,12 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
 
   // Schedules
   if (schedules.length > 0) {
+    // Per-user "todo" scheduling intent now lives on thread_state (state_on /
+    // state_at / order), so the schedule table holds only shared / link
+    // schedules — no user_id / order columns.
     lines.push("-- Schedules");
     lines.push(
-      'INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", duration, recurrence_rule, created_at, updated_at)'
+      'INSERT INTO schedule (id, thread_id, link_id, at, "on", duration, recurrence_rule, created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < schedules.length; i++) {
@@ -1781,9 +1784,7 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
       lines.push(
         `  (${sqlString(s.id)}, ${sqlString(s.thread_id)}, ${sqlString(
           s.link_id
-        )}, ${sqlString(s.user_id)}, ${
-          s.order !== null ? s.order : "NULL"
-        }, ${s.at ? sqlString(s.at) : "NULL"}, ${
+        )}, ${s.at ? sqlString(s.at) : "NULL"}, ${
           s.on ? sqlString(s.on) : "NULL"
         }, ${s.duration ? sqlString(s.duration) : "NULL"}, ${sqlString(
           s.recurrence_rule
@@ -2016,10 +2017,10 @@ function processSource(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, handle, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
   );
   outLines.push(
-    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)}, ${archiveLiteral})`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)}, ${archiveLiteral})`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
@@ -2095,10 +2096,10 @@ function processTwist(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, handle, version, is_source, permissions, logo_url, logo_url_dark, archived_at)`
   );
   outLines.push(
-    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)}, now())`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(twist.name)}, ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)}, now())`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
