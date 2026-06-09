@@ -3830,6 +3830,13 @@ class PriorityBloc extends Cubit<PriorityState> {
                                 ':${t.occurrence ?? ''}'
                                 ':${t.isLinkScheduleInstance ? 1 : 0}'
                                 ':${t.priority.path.value}'
+                                // Include the priority's display colour so a
+                                // focus colour edit (which doesn't bump the
+                                // thread row's `updatedAt` or change its path)
+                                // produces a distinct signature and isn't
+                                // dropped by [.distinct] below — otherwise the
+                                // agenda's event blocks keep their stale colour.
+                                ':${t.priority.displayColor.index}'
                                 ':${t.todo ? 1 : 0}'
                                 ':${t.archivedAt?.microsecondsSinceEpoch ?? 0}'
                                 ':${t.agendaAt.microsecondsSinceEpoch}'

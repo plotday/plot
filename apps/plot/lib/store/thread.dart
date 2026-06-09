@@ -1871,6 +1871,19 @@ class Thread extends Equatable implements Comparable<Thread> {
           p.id.equalsExp(a.priorityId) & pathCondition;
 
       query = query.join([innerJoin(p, joinCondition)]);
+    } else {
+      // No priority/path filter (e.g. the agenda's universal events stream
+      // or [watchOne]). Still LEFT JOIN the priorities table so Drift's
+      // `.watch()` tracks it as a read source and re-fires when a priority
+      // changes. Without this, editing a focus's colour/title never re-runs
+      // the query, so the `Priority` embedded in each emitted `Thread`
+      // (hydrated by [_mapResultsToThreads] via [Priority.getRaw]) stays
+      // frozen at its old colour — the agenda's current event and the open
+      // thread's panel background would keep rendering the previous colour.
+      // The join is 1:1 on `priorityId`, so the result set is unchanged and
+      // [_mapResultsToThreads] ignores the joined row (it re-hydrates the
+      // priority itself).
+      query = query.join([leftOuterJoin(p, p.id.equalsExp(a.priorityId))]);
     }
 
     if (doTodo) {
