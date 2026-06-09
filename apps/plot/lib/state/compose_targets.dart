@@ -1320,13 +1320,12 @@ class ComposeTargetsBloc extends Cubit<ComposeTargetsState> {
     return _ComposeScan(scanThreads);
   }
 
-  /// The earliest-created link mapped to a [ComposeScanLink], or null when the
+  /// The primary canonical link mapped to a [ComposeScanLink], or null when the
   /// thread is a native (link-less) Plot thread or the link can't be resolved.
+  /// Uses [Thread.primaryLink] so this agrees with [Thread.resolveSharingModel].
   static ComposeScanLink? _primaryScanLink(List<Link> links) {
-    if (links.isEmpty) return null;
-    final primary = [...links]
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final link = primary.first;
+    final link = Thread.primaryLink(links);
+    if (link == null) return null;
     final instanceId = link.createdBy;
     final linkType = link.type;
     if (instanceId == null || linkType == null) return null;

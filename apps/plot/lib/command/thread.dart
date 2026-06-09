@@ -2400,9 +2400,8 @@ class PickThreadShared extends ShowCommands {
         final notes = sharingModel == SharingModel.message
             ? await Note.getForThread(thread.id)
             : null;
-        final roleConfigs = links.isEmpty
-            ? null
-            : links.first.getTypeConfig()?.contactRoles;
+        final roleConfigs =
+            Thread.primaryLink(links)?.getTypeConfig()?.contactRoles;
         return _buildSharedCommands(
           threadRef[0],
           onUpdate: onUpdate,

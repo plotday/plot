@@ -207,15 +207,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   }
 
   /// The channel breadcrumb for this thread, or null when the primary
-  /// (earliest-created) link is not channel-sharing — the same "primary" link
-  /// that [Thread.resolveSharingModel] keys on. Resolved from the in-memory
-  /// [TwistInstance]/[Channel] caches, falling back to whichever part resolves.
+  /// (primary canonical) link is not channel-sharing — the same primary link
+  /// that [Thread.resolveSharingModel] keys on (see [Thread.primaryLink]).
+  /// Resolved from the in-memory [TwistInstance]/[Channel] caches, falling
+  /// back to whichever part resolves.
   String? _channelLabel() {
-    if (_links.isEmpty) return null;
     if (Thread.resolveSharingModel(_links) != SharingModel.channel) return null;
-    final primary = ([
-      ..._links,
-    ]..sort((a, b) => a.createdAt.compareTo(b.createdAt))).first;
+    final primary = Thread.primaryLink(_links);
+    if (primary == null) return null;
     final ptId = primary.createdBy;
     if (ptId == null) return null;
     // Prefer the per-connection account label (e.g. "Acme Co") over the

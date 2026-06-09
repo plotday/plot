@@ -289,10 +289,10 @@ class AddNoteReaction extends NoteCommand {
       // Use the store's Link (the data row), not widget/link.dart (the
       // URL widget) — both names exist in the imports above.
       final links = activityBloc?.state.links ?? const [];
-      // Resolve the thread's connector via its first link's owning
+      // Resolve the thread's connector via its primary canonical link's owning
       // twist_instance, then read that instance's synced reaction
       // capabilities. Plot-native threads (no link) → open.
-      final connectionId = links.isEmpty ? null : links.first.createdBy;
+      final connectionId = Thread.primaryLink(links)?.createdBy;
       final instance =
           connectionId == null ? null : TwistInstance.fromCache(connectionId);
       final caps = reactionCapabilitiesFromJson(instance?.reactionCapabilities);
