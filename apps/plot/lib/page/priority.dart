@@ -1547,7 +1547,7 @@ class _SectionHeaderWithRescheduleAll extends StatelessWidget {
   Widget build(BuildContext context) {
     final spacing = context.theme.spacing;
     final button = Padding(
-      padding: EdgeInsets.symmetric(horizontal: spacing.sm),
+      padding: EdgeInsets.symmetric(horizontal: spacing.lg),
       child: Button.icon(
         RescheduleAllInBlock(threads, sectionLabel: sectionLabel),
       ),

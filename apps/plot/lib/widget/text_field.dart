@@ -284,19 +284,28 @@ class EditableAreaState extends State<EditableArea> {
     // Read viewInsets to establish dependency - causes rebuild when keyboard state changes
     MediaQuery.of(context).viewInsets.bottom;
 
+    // Rounded only when not flush-to-bottom and not top-positioned; the
+    // flush/top variants use square corners with a single edge border.
+    final borderRadius = widget.flushToBottom
+        ? null
+        : (widget.position == EditableAreaPosition.top
+              ? null
+              : editorBorderRadius);
+
     return GestureDetector(
       onTap: () {
         _focusNode.requestFocus();
       },
       child: Container(
         padding: widget.padding ? context.theme.spacing.padding : EdgeInsets.zero,
+        // Clip children to the rounded shape so the note editor's top bar
+        // (a full-width Container with its own solid background) doesn't paint
+        // square corners over the rounded EditableArea border. A bare Container
+        // rounds its own decoration but never clips its child, hence the clip.
+        clipBehavior: borderRadius != null ? Clip.antiAlias : Clip.none,
         decoration: BoxDecoration(
           color: context.theme.plotColors.editableBackground,
-          borderRadius: widget.flushToBottom
-              ? null
-              : (widget.position == EditableAreaPosition.top
-                  ? null
-                  : editorBorderRadius),
+          borderRadius: borderRadius,
           border: widget.flushToBottom
               ? Border(
                   top: BorderSide(

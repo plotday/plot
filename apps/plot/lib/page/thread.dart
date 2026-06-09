@@ -942,14 +942,14 @@ class _ThreadActionsRow extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colour.pageHeaderBackground,
+        color: context.colour.sectionHeaderBackground,
         border: Border(
           bottom: BorderSide(color: context.theme.colors.border, width: 1),
         ),
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.xl,
+          horizontal: context.theme.spacing.lg,
           vertical: context.theme.spacing.xs,
         ),
         child: Row(children: [...startGroup, const Spacer(), ...endGroup]),

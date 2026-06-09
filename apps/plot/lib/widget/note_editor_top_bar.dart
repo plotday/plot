@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:plot/style/colors.dart';
+
 // ---------------------------------------------------------------------------
 // State hierarchy
 // ---------------------------------------------------------------------------
@@ -143,7 +145,7 @@ class _PillRow extends StatelessWidget {
       height: _topBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
-        color: colors.mutedForeground.withValues(alpha: 0.05),
+        color: context.colour.sectionHeaderBackground,
         border: Border(bottom: BorderSide(color: colors.border)),
       ),
       child: Row(
@@ -262,8 +264,9 @@ class _EditAffordanceState extends State<_EditAffordance> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: colors.mutedForeground
-                  .withValues(alpha: _hovering ? 0.18 : 0.12),
+              color: colors.mutedForeground.withValues(
+                alpha: _hovering ? 0.18 : 0.12,
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
