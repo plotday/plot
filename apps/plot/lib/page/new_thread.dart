@@ -12,11 +12,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/state/compose_targets.dart';
 import 'package:plot/widget/compose/compose_sections_view.dart';
 import 'package:plot/widget/compose/compose_pill.dart'
-    show
-        ComposePillData,
-        ContactPillData,
-        GroupPillData,
-        AdHocGroupPillData;
+    show ComposePillData, ContactPillData, GroupPillData, AdHocGroupPillData;
 import 'package:plot/widget/compose/connection_picker_view.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
@@ -55,7 +51,9 @@ Note appendExternalLink(
     url: url,
     favicon: favicon,
   );
-  final idx = actions.indexWhere((a) => a is ExternalUserAction && a.url == url);
+  final idx = actions.indexWhere(
+    (a) => a is ExternalUserAction && a.url == url,
+  );
   if (idx >= 0) {
     actions[idx] = action;
   } else {
@@ -1190,6 +1188,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return false;
 
     final items = <FormItem>[
+      FormInfo(
+        key: 'about',
+        text:
+            'Topics share Plot threads. When someone is added, they see all the '
+            'threads and can choose a focus to put them in.',
+        divider: true,
+      ),
       FormTextInput(
         key: 'name',
         label: 'Name',
