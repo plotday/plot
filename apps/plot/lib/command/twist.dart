@@ -16,7 +16,6 @@ import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
-import 'package:plot/widget/pro_badge.dart';
 import 'package:plot/widget/setup_link_channels.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
