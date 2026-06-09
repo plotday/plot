@@ -236,7 +236,10 @@ files.get("/files/ref/:noteId/:actionIndex", async (c) => {
       /['()]/g,
       (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
     );
-    return new Response(res.body as ReadableStream | Uint8Array | null, {
+    // Cast to BodyInit: res.body is a ReadableStream or an ArrayBuffer-backed
+    // Uint8Array at runtime, but TS's generic Uint8Array<ArrayBufferLike>
+    // (which admits SharedArrayBuffer) isn't assignable to BodyInit directly.
+    return new Response(res.body as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": res.mimeType,

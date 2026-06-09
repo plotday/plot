@@ -220,7 +220,10 @@ export class UnipileClient {
     for (const att of input.attachments) {
       form.append(
         "files[]",
-        new Blob([att.buffer], { type: att.mimeType }),
+        // att.buffer is ArrayBuffer-backed at runtime; the cast satisfies
+        // BlobPart, which TS's generic Uint8Array<ArrayBufferLike> (admitting
+        // SharedArrayBuffer) doesn't match directly.
+        new Blob([att.buffer as BlobPart], { type: att.mimeType }),
         att.filename
       );
     }
