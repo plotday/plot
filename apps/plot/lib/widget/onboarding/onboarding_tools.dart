@@ -78,6 +78,7 @@ class _OnboardingToolsState extends State<OnboardingTools> {
     if (usage != null) {
       final gate = premiumOnboardingGate(usage: usage, isPremium: twist.premium);
       if (gate != null) {
+        if (!mounted) return;
         await gate.run(context);
         if (mounted) await _load(); // refresh so an upgraded user can proceed
         return;
