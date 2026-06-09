@@ -233,7 +233,7 @@ class _FocusSwitchGroup extends CommandGroup {
 }
 
 class ChangeCurrentPriorityCommands extends Commands {
-  ChangeCurrentPriorityCommands({Priority? initialPriority})
+  ChangeCurrentPriorityCommands()
     : super(
         groups: [_FocusSwitchGroup()],
         secondaryCommand: (prompt) => AddFocus(),
