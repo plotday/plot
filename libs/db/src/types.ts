@@ -4779,6 +4779,10 @@ export type Database = {
         }[]
       }
       classify_visibility_window: { Args: never; Returns: string }
+      connection_org_key: {
+        Args: { p_twist_instance_id: string }
+        Returns: string
+      }
       count_not_null: { Args: { val: unknown }; Returns: number }
       create_group: {
         Args: {
