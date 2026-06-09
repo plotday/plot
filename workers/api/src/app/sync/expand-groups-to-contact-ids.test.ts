@@ -93,7 +93,7 @@ describe.skipIf(!DATABASE_URL)("expandGroupsToContactIds", () => {
 
   it("skips a group the user cannot address without throwing", async () => {
     const errors: unknown[] = [];
-    const out = await withGroup(async (trx, ids) => {
+    const result = await withGroup(async (trx, ids) => {
       const otherUser = randomUUID();
       const foreignGroup = randomUUID();
       await sql`SET LOCAL session_replication_role = replica`.execute(trx);
@@ -101,15 +101,16 @@ describe.skipIf(!DATABASE_URL)("expandGroupsToContactIds", () => {
       await sql`INSERT INTO "group" (id, name, type, privacy, created_by)
         VALUES (${foreignGroup}::uuid, 'Private', 'private', 'private', ${otherUser}::uuid)`.execute(trx);
       await sql`SET LOCAL session_replication_role = DEFAULT`.execute(trx);
-      return expandGroupsToContactIds(
+      const out = await expandGroupsToContactIds(
         trx,
         ids.userId,
         [ids.memberA],
         [foreignGroup],
         (e) => errors.push(e),
       );
+      return { out, memberA: ids.memberA };
     });
-    expect(out).toEqual([out[0]]); // only the direct contact survives
+    expect(result.out).toEqual([result.memberA]); // only the direct contact survives
     expect(errors).toHaveLength(0); // permission RAISE (P0001) is expected, not reported
   });
 });

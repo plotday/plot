@@ -354,7 +354,7 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
       }
     }
 
-    if (search != null && isValidShareEmail(search)) {
+    if (!requireEmail && search != null && isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
       final emailExists = sorted.any(
         (c) =>
