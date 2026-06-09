@@ -312,7 +312,7 @@ class PickCurrentPriority extends ShowCommands {
 }
 
 class AddPriority extends Command {
-  AddPriority(this._priority)
+  AddPriority(this._priority, {this.suggestionKey})
     : super(
         title: 'Create focus',
         icon: PlotIcon.save,
@@ -322,10 +322,17 @@ class AddPriority extends Command {
 
   final Future<Priority> _priority;
 
+  /// When this focus was created from a curated suggestion, its key — recorded
+  /// as dismissed once the save succeeds so the suggestion stops appearing.
+  final String? suggestionKey;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final priority = await _priority;
     final savedPriority = await priority.save();
+    if (suggestionKey != null) {
+      await DismissedFocusSuggestions.add(suggestionKey!);
+    }
     final multi = context.mounted ? context.isMultiPanel : false;
     if (context.mounted) {
       final tabsRouter = _tabsRouterOrNull(context);
@@ -613,6 +620,7 @@ Future<FormData> _buildFocusDetailsForm(
   required bool skipMatching,
   FocusPrefill? prefill,
 }) async {
+  final suggestionKey = prefill?.suggestionKey;
   return FormData(
     title: 'Add a focus',
     groups: [
@@ -654,8 +662,10 @@ Future<FormData> _buildFocusDetailsForm(
             FormButton(
               key: 'create',
               isPrimary: true,
-              buildCommand: (values) =>
-                  AddPriority(Future.value(_priorityFromValues(values, root))),
+              buildCommand: (values) => AddPriority(
+                Future.value(_priorityFromValues(values, root)),
+                suggestionKey: suggestionKey,
+              ),
             )
           else ...[
             FormInfo(
@@ -666,8 +676,11 @@ Future<FormData> _buildFocusDetailsForm(
             FormButton(
               key: 'find',
               isPrimary: true,
-              buildCommand: (values) =>
-                  _FindMatchingThreads(values: values, root: root),
+              buildCommand: (values) => _FindMatchingThreads(
+                values: values,
+                root: root,
+                suggestionKey: suggestionKey,
+              ),
             ),
             FormButton(
               key: 'create',
@@ -677,6 +690,7 @@ Future<FormData> _buildFocusDetailsForm(
                 root: root,
                 matches: const [],
                 selections: const {},
+                suggestionKey: suggestionKey,
               ),
             ),
           ],
@@ -693,16 +707,20 @@ Future<FormData> _buildFocusDetailsForm(
 /// the review step is nested, its Back button / Esc returns to this step-1 form
 /// with the description intact so the user can edit and try again.
 class _FindMatchingThreads extends Command {
-  _FindMatchingThreads({required this.values, required this.root})
-    : super(
-        title: 'Find matching threads',
-        icon: PlotIcon.search,
-        eventObject: EventObject.modal,
-        eventAction: EventAction.opened,
-      );
+  _FindMatchingThreads({
+    required this.values,
+    required this.root,
+    this.suggestionKey,
+  }) : super(
+         title: 'Find matching threads',
+         icon: PlotIcon.search,
+         eventObject: EventObject.modal,
+         eventAction: EventAction.opened,
+       );
 
   final Map<String, dynamic> values;
   final Priority root;
+  final String? suggestionKey;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -736,6 +754,7 @@ class _FindMatchingThreads extends Command {
       values: values,
       root: root,
       matches: matches,
+      suggestionKey: suggestionKey,
     ).run(context);
   }
 }
@@ -755,6 +774,7 @@ class _ShowFocusMatches extends ShowForm {
     required Map<String, dynamic> values,
     required Priority root,
     required List<_FocusMatch> matches,
+    String? suggestionKey,
   }) : super(
          title: 'Add a focus',
          icon: PlotIcon.add,
@@ -763,6 +783,7 @@ class _ShowFocusMatches extends ShowForm {
            values: values,
            root: root,
            matches: matches,
+           suggestionKey: suggestionKey,
          ),
        );
 }
@@ -772,6 +793,7 @@ Future<FormData> _buildFocusMatchesForm(
   required Map<String, dynamic> values,
   required Priority root,
   required List<_FocusMatch> matches,
+  String? suggestionKey,
 }) async {
   return FormData(
     title: 'Add a focus',
@@ -807,6 +829,7 @@ Future<FormData> _buildFocusMatchesForm(
               root: root,
               matches: matches,
               selections: selections,
+              suggestionKey: suggestionKey,
             ),
           ),
         ],
@@ -823,6 +846,7 @@ class _CreateFocusWithThreads extends Command {
     required this.root,
     required this.matches,
     required this.selections,
+    this.suggestionKey,
   }) : super(
          title: 'Create focus',
          icon: PlotIcon.save,
@@ -834,10 +858,15 @@ class _CreateFocusWithThreads extends Command {
   final Priority root;
   final List<_FocusMatch> matches;
   final Map<String, dynamic> selections;
+  final String? suggestionKey;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     final focus = await _priorityFromValues(values, root).save();
+
+    if (suggestionKey != null) {
+      await DismissedFocusSuggestions.add(suggestionKey!);
+    }
 
     final selected = <String>[];
     final deselected = <String>[];
