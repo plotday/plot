@@ -88,6 +88,32 @@ describe("preprocessEmailHtml", () => {
     expect(out).toContain("<h6>Caption</h6>");
   });
 
+  it("strips HTML comments so adjacent text keeps its whitespace boundary", async () => {
+    // React/JSX-rendered emails insert empty `<!-- -->` comments between
+    // dynamic and static text segments (e.g. `Hi {name},`). ai.toMarkdown
+    // treats a comment as a node boundary and collapses the surrounding
+    // whitespace, gluing "Hi" to "Kris Braun". Removing the comment in
+    // preprocessing leaves the real whitespace between the words intact.
+    const html = `<p>
+      Hi
+      <!-- -->Kris Braun<!-- -->,
+    </p>`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).not.toContain("<!--");
+    expect(out).not.toContain("-->");
+    // The space (newline) between "Hi" and "Kris Braun" survives.
+    expect(out).toMatch(/Hi\s+Kris Braun/);
+  });
+
+  it("strips Outlook conditional comments (which contain '>')", async () => {
+    const html = `<p>Before</p><!--[if mso]><table><tr><td>Outlook only</td></tr></table><![endif]--><p>After</p>`;
+    const out = await preprocessEmailHtml(html);
+    expect(out).not.toContain("Outlook only");
+    expect(out).not.toContain("[if mso]");
+    expect(out).toContain("Before");
+    expect(out).toContain("After");
+  });
+
   it("rewrites td/tr/th to div", async () => {
     const html = `
       <table><tbody>

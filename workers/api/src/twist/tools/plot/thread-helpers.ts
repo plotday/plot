@@ -161,6 +161,13 @@ function stripHtmlToText(html: string): string {
   // line-by-line cleanup in cleanConvertedMarkdown) only sees \n, so an
   // unnormalized `\r\n\r\n\r\n` run survives as multiple blank paragraphs.
   let text = html.replace(/\r\n?/g, "\n");
+  // Remove HTML comments first. The generic `<[^>]+>` strip below mishandles
+  // comments that contain `>` (e.g. Outlook conditional `<!--[if mso]>…
+  // <![endif]-->`), leaving their inner markup behind. Empty React `<!-- -->`
+  // separators are also dropped here — the surrounding whitespace that gives
+  // `Hi <!-- -->Kris` its word boundary survives because only the comment node
+  // is removed.
+  text = text.replace(/<!--[\s\S]*?-->/g, "");
   // Remove doctype, head, style, script blocks entirely
   text = text.replace(/<!DOCTYPE[^>]*>/gi, "");
   text = text.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "");
@@ -495,6 +502,13 @@ export async function preprocessEmailHtml(html: string): Promise<string> {
   const unwrap = { element: (el: Element) => { el.removeAndKeepContent(); } };
   const toDiv = { element: (el: Element) => { el.tagName = "div"; } };
   const rewriter = new HTMLRewriter()
+    // Drop HTML comments. React/JSX-rendered emails insert empty `<!-- -->`
+    // comments between adjacent text segments (e.g. `Hi {name},`); Outlook
+    // emits conditional `<!--[if mso]>…<![endif]-->` blocks. ai.toMarkdown
+    // treats a comment as a node boundary and collapses the surrounding
+    // whitespace, gluing "Hi" to the following word. Removing the comment
+    // node leaves the real whitespace between the words intact.
+    .onDocument({ comments: (c: Comment) => { c.remove(); } })
     .on("style", remove)
     .on("script", remove)
     .on("head", remove)
