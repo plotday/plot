@@ -2,6 +2,7 @@ packages:
   - twister
   - connectors/*
   - twists/*
+  - libs/*
 
 onlyBuiltDependencies:
   - esbuild

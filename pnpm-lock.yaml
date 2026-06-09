@@ -98,6 +98,9 @@ importers:
       '@plotday/connector-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
+      '@plotday/email-classifier':
+        specifier: workspace:^
+        version: link:../../libs/email-classifier
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -256,6 +259,19 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+
+  libs/email-classifier:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)
 
   twister:
     dependencies:
