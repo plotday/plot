@@ -99,7 +99,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
       ),
       StaticCommandGroup(
         title: 'Focuses',
-        commands: [PickCurrentPriority(), NewFocus()],
+        commands: [PickCurrentPriority(), AddFocus()],
       ),
       ...settingsCommandsFromState(
         prioritiesState,

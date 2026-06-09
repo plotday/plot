@@ -115,7 +115,7 @@ class PrioritiesList extends StatelessWidget {
                 // the focuses, not pinned with Inbox/Everything below.
                 ListTile(
                   command: CommandWrapper(
-                    NewFocus(),
+                    AddFocus(),
                     icon: Value(null),
                     title: 'Add a focus',
                   ),

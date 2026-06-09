@@ -236,7 +236,7 @@ class ChangeCurrentPriorityCommands extends Commands {
   ChangeCurrentPriorityCommands({Priority? initialPriority})
     : super(
         groups: [_FocusSwitchGroup()],
-        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
+        secondaryCommand: (prompt) => AddFocus(),
       );
 }
 
@@ -603,6 +603,82 @@ class NewFocus extends Command {
       ),
     ).run(context);
   }
+}
+
+/// Entry point for "Add a focus". Loads the user's dismissed-suggestion set,
+/// then either opens a picker (custom focus + remaining curated suggestions) or,
+/// when no suggestions remain, opens the create form directly. Picking a
+/// suggestion prefills the same two-step [NewFocus] form; creating from it
+/// records the dismissal (see [DismissedFocusSuggestions]).
+class AddFocus extends Command {
+  AddFocus()
+    : super(
+        title: 'Add a focus',
+        icon: PlotIcon.add,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.added,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final dismissed = await DismissedFocusSuggestions.get();
+    final suggestions = visibleFocusSuggestions(dismissed);
+    if (!context.mounted) return const CommandSkipped();
+
+    // Nothing left to suggest — the picker would show only "Create a custom
+    // focus", so skip straight to the create form.
+    if (suggestions.isEmpty) {
+      return NewFocus().run(context);
+    }
+
+    return ShowCommands(
+      title: 'Add a focus',
+      icon: PlotIcon.add,
+      commands: Commands(
+        groups: [
+          StaticCommandGroup(commands: [_CreateCustomFocus()]),
+          StaticCommandGroup(
+            title: 'Suggestions',
+            commands: [
+              for (final s in suggestions) _CreateSuggestedFocus(s),
+            ],
+          ),
+        ],
+      ),
+    ).run(context);
+  }
+}
+
+/// "Create a custom focus" row — opens the empty two-step create form.
+class _CreateCustomFocus extends Command {
+  _CreateCustomFocus()
+    : super(
+        title: 'Create a custom focus',
+        icon: PlotIcon.add,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.added,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) => NewFocus().run(context);
+}
+
+/// A curated-suggestion row — opens the two-step create form prefilled.
+class _CreateSuggestedFocus extends Command {
+  _CreateSuggestedFocus(this.suggestion)
+    : super(
+        title: suggestion.title,
+        subtitle: suggestion.description,
+        icon: PlotIcon.focusIcon(suggestion.iconKey),
+        eventObject: EventObject.priority,
+        eventAction: EventAction.added,
+      );
+
+  final FocusPrefill suggestion;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) =>
+      NewFocus(prefill: suggestion).run(context);
 }
 
 /// Step 1 form for [NewFocus]. The description feeds the matching step; it is
