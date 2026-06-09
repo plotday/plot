@@ -1,0 +1,117 @@
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:injector/injector.dart';
+import 'package:plot/store/store.dart';
+
+void main() {
+  late Store store;
+
+  setUp(() {
+    store = Store.forTesting(NativeDatabase.memory());
+    Injector.appInstance.registerSingleton<Store>(() => store, override: true);
+  });
+
+  tearDown(() async {
+    Injector.appInstance.removeByKey<Store>();
+    await store.close();
+  });
+
+  Future<void> insertPriority({
+    required Uuid id,
+    required String path,
+    required bool root,
+    DateTime? archivedAt,
+  }) async {
+    await store.into(store.priorities).insert(
+          PrioritiesCompanion(
+            id: Value(id),
+            title: Value(path.split('.').last),
+            createdBy: Value(Uuid.generate()),
+            path: Value(Path(path)),
+            order: const Value(Order(0)),
+            root: Value(root),
+            unread: const Value(false),
+            role: const Value('member'),
+            archivedAt: Value(archivedAt),
+          ),
+        );
+  }
+
+  test('resolves focus successfully with single active root', () async {
+    final rootId = Uuid.generate();
+    await insertPriority(id: rootId, path: 'inbox', root: true);
+
+    final focusId = Uuid.generate();
+    await insertPriority(id: focusId, path: 'inbox.focus1', root: false);
+
+    // Call the watermark update which internally invokes _firstLevelFocusFor.
+    await store.updateNotificationWatermark(focusId);
+
+    // Verify focus notificationClearedAt was updated.
+    final updated = await (store.select(store.priorities)
+          ..where((p) => p.id.equals(focusId.toBytes())))
+        .getSingle();
+    expect(updated.notificationClearedAt, isNotNull);
+  });
+
+  test('does not crash when an archived duplicate root exists', () async {
+    final rootId = Uuid.generate();
+    await insertPriority(id: rootId, path: 'inbox', root: true);
+
+    // Insert an archived root priority row
+    final archivedRootId = Uuid.generate();
+    await insertPriority(
+      id: archivedRootId,
+      path: 'inbox-old',
+      root: true,
+      archivedAt: DateTime(2026, 1, 1),
+    );
+
+    final focusId = Uuid.generate();
+    await insertPriority(id: focusId, path: 'inbox.focus1', root: false);
+
+    // This would crash with 'Bad state: Too many elements' without the fix
+    await store.updateNotificationWatermark(focusId);
+
+    // Verify focus notificationClearedAt was updated.
+    final updated = await (store.select(store.priorities)
+          ..where((p) => p.id.equals(focusId.toBytes())))
+        .getSingle();
+    expect(updated.notificationClearedAt, isNotNull);
+  });
+
+  test('resolves active focus even when an archived focus exists with same path', () async {
+    final rootId = Uuid.generate();
+    await insertPriority(id: rootId, path: 'inbox', root: true);
+
+    // Insert an archived focus with same path
+    final archivedFocusId = Uuid.generate();
+    await insertPriority(
+      id: archivedFocusId,
+      path: 'inbox.focus1',
+      root: false,
+      archivedAt: DateTime(2026, 1, 1),
+    );
+
+    // Insert an active focus
+    final activeFocusId = Uuid.generate();
+    await insertPriority(id: activeFocusId, path: 'inbox.focus1', root: false);
+
+    // Insert a subpriority under the focus
+    final subpriorityId = Uuid.generate();
+    await insertPriority(id: subpriorityId, path: 'inbox.focus1.sub', root: false);
+
+    // Resolve watermark for subpriority, which should update the active focus, not archived
+    await store.updateNotificationWatermark(subpriorityId);
+
+    final activeFocus = await (store.select(store.priorities)
+          ..where((p) => p.id.equals(activeFocusId.toBytes())))
+        .getSingle();
+    expect(activeFocus.notificationClearedAt, isNotNull);
+
+    final archivedFocus = await (store.select(store.priorities)
+          ..where((p) => p.id.equals(archivedFocusId.toBytes())))
+        .getSingle();
+    expect(archivedFocus.notificationClearedAt, isNull);
+  });
+}

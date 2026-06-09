@@ -2661,7 +2661,7 @@ class Store extends _$Store {
   /// or `null` when it is the root (or above) and has no enclosing focus.
   Future<PriorityRow?> _firstLevelFocusFor(PriorityRow priority) async {
     final root = await (select(priorities)
-          ..where((p) => p.root.equals(true)))
+          ..where((p) => p.root.equals(true) & p.archivedAt.isNull()))
         .getSingleOrNull();
     if (root == null) return null;
 
@@ -2674,7 +2674,7 @@ class Store extends _$Store {
     if (firstLevelPath == priority.path.value) return priority;
 
     return (select(priorities)
-          ..where((p) => p.path.equalsValue(Path(firstLevelPath))))
+          ..where((p) => p.path.equalsValue(Path(firstLevelPath)) & p.archivedAt.isNull()))
         .getSingleOrNull();
   }
 
