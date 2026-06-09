@@ -72,30 +72,36 @@ SELECT ok((SELECT public.author_matches_org_domain(u, a)
 SELECT ok(NOT (SELECT public.is_trusted_for_focus(u, a, f)
                FROM (SELECT id u FROM "user" WHERE email='me@acme.com') uu,
                     (SELECT id a FROM contact WHERE email='sender@acme.com') aa,
-                    (SELECT id f FROM priority WHERE title='Reading') ff),
+                    (SELECT id f FROM priority WHERE title='Reading'
+                                                AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')) ff),
           'A not yet trusted for the focus');
 
 -- (5) thread_facets_gated: notification from A is gated out of the focus.
 SELECT ok((SELECT public.thread_facets_gated(u, '{"format":"notification"}'::jsonb, a, f)
            FROM (SELECT id u FROM "user" WHERE email='me@acme.com') uu,
                 (SELECT id a FROM contact WHERE email='sender@acme.com') aa,
-                (SELECT id f FROM priority WHERE title='Reading') ff),
+                (SELECT id f FROM priority WHERE title='Reading'
+                                            AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')) ff),
           'notification gated out of the focus');
 
 -- (6) end-to-end: classify the notification candidate → NOT the focus (gated).
 SELECT isnt(
     (SELECT priority_id FROM public.classify_thread_for_user_explain(
         (SELECT id FROM "user" WHERE email='me@acme.com'),
-        (SELECT id FROM thread WHERE title='New notif'))),
-    (SELECT id FROM priority WHERE title='Reading'),
+        (SELECT id FROM thread WHERE title='New notif'
+                                 AND created_by = (SELECT id FROM "user" WHERE email='me@acme.com')))),
+    (SELECT id FROM priority WHERE title='Reading'
+                               AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')),
     'gated notification does not classify into the focus');
 
 -- (7) end-to-end: the non-excluded message candidate DOES classify into focus.
 SELECT is(
     (SELECT priority_id FROM public.classify_thread_for_user_explain(
         (SELECT id FROM "user" WHERE email='me@acme.com'),
-        (SELECT id FROM thread WHERE title='New msg'))),
-    (SELECT id FROM priority WHERE title='Reading'),
+        (SELECT id FROM thread WHERE title='New msg'
+                                 AND created_by = (SELECT id FROM "user" WHERE email='me@acme.com')))),
+    (SELECT id FROM priority WHERE title='Reading'
+                               AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')),
     'non-excluded message classifies into the focus');
 
 -- (8) sender exception: move a thread authored by A into the focus, making A
@@ -109,14 +115,17 @@ BEGIN
             (SELECT id FROM contact WHERE email='sender@acme.com'));
     INSERT INTO thread_priority (thread_id, user_id, priority_id, user_moved)
     VALUES (v_x, (SELECT id FROM "user" WHERE email='me@acme.com'),
-            (SELECT id FROM priority WHERE title='Reading'), TRUE);
+            (SELECT id FROM priority WHERE title='Reading'
+                                       AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')), TRUE);
 END $$;
 
 SELECT is(
     (SELECT priority_id FROM public.classify_thread_for_user_explain(
         (SELECT id FROM "user" WHERE email='me@acme.com'),
-        (SELECT id FROM thread WHERE title='New notif'))),
-    (SELECT id FROM priority WHERE title='Reading'),
+        (SELECT id FROM thread WHERE title='New notif'
+                                 AND created_by = (SELECT id FROM "user" WHERE email='me@acme.com')))),
+    (SELECT id FROM priority WHERE title='Reading'
+                               AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')),
     'sender exception: trusted-for-focus author bypasses the gate');
 
 -- (9) trustedSendersOnly: thread_facets_gated admits A via org-domain even with
@@ -124,7 +133,8 @@ SELECT is(
 SELECT ok(NOT (SELECT public.thread_facets_gated(u, '{"format":"message"}'::jsonb, a, t)
                FROM (SELECT id u FROM "user" WHERE email='me@acme.com') uu,
                     (SELECT id a FROM contact WHERE email='sender@acme.com') aa,
-                    (SELECT id t FROM priority WHERE title='People') tt),
+                    (SELECT id t FROM priority WHERE title='People'
+                                                AND user_id = (SELECT id FROM "user" WHERE email='me@acme.com')) tt),
           'trustedSendersOnly admits an org-domain author');
 
 -- (10) freemail exclusion: a user and author sharing a FREEMAIL domain
