@@ -103,6 +103,20 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   // provider in the app, so it cannot supply one.)
   final ScrollController _scrollController = ScrollController();
 
+  // Hide the note list until the initial scroll target is first revealed, so
+  // the pre-scroll bottom frame never flashes past on open. Only gated when a
+  // scroll target exists; a null target keeps the natural bottom position
+  // (offset 0), which needs no repositioning and so no gating.
+  bool _initialScrollSettled = false;
+
+  // While true, the scroll target is re-pinned to the viewport top whenever
+  // the list's scroll metrics change — e.g. async network images below the
+  // target finish loading and grow their notes, which would otherwise push
+  // the target off the top. Disarmed on the first user scroll or after a
+  // short settle window. See _finishInitialScroll / _pinScrollTargetToTop.
+  bool _repinScrollTarget = false;
+  Timer? _repinTimer;
+
   // Flag to ensure setActivity is only called once on initial load
   bool _hasSetInitialActivity = false;
 
@@ -173,6 +187,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   void dispose() {
     // Cancel the mark-as-read timer if still pending
     _markReadTimer?.cancel();
+    _repinTimer?.cancel();
     _scrollController.dispose();
     // Unregister from the focus coordination provider
     // Use saved reference instead of looking up during dispose()
@@ -214,48 +229,91 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   /// Scrolls the (reverse) note list so the scroll-target note's top aligns
   /// to the viewport top. The target may not be laid out yet (it sits above
   /// the initial bottom view), so we nudge toward older notes a page at a
-  /// time until it builds, then reveal it precisely. Bounded retries.
+  /// time until it builds, then reveal it precisely. Bounded retries. Every
+  /// terminal branch calls [_finishInitialScroll], so the list is always
+  /// revealed — even when the target never builds — and never stays blank.
   void _revealScrollTarget({required int attempt}) {
     final controller = _scrollController;
     if (!controller.hasClients) {
-      if (attempt >= 10) return;
+      if (attempt >= 10) {
+        _finishInitialScroll(success: false);
+        return;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _revealScrollTarget(attempt: attempt + 1);
       });
       return;
     }
 
-    final renderObject = _scrollTargetKey.currentContext?.findRenderObject();
-    if (renderObject != null && renderObject.attached) {
-      final viewport = RenderAbstractViewport.of(renderObject);
-      // alignment 1.0: in the reverse (AxisDirection.up) list the note's top
-      // edge (its trailing edge) aligns to the viewport's trailing edge —
-      // i.e. the note's top sits at the visual top of the viewport.
-      final reveal = viewport
-          .getOffsetToReveal(renderObject, 1.0)
-          .offset
-          .clamp(
-            controller.position.minScrollExtent,
-            controller.position.maxScrollExtent,
-          )
-          .toDouble();
-      controller.jumpTo(reveal);
+    if (_pinScrollTargetToTop()) {
+      _finishInitialScroll(success: true);
       return;
     }
 
     // Target not built yet: scroll toward older notes (up, increasing offset
     // in a reverse list) by a page and retry.
-    if (attempt >= 10) return;
+    if (attempt >= 10) {
+      _finishInitialScroll(success: false);
+      return;
+    }
     final next = (controller.offset + controller.position.viewportDimension)
         .clamp(
           controller.position.minScrollExtent,
           controller.position.maxScrollExtent,
         )
         .toDouble();
-    if (next <= controller.offset) return; // already at the top; cannot reveal
+    if (next <= controller.offset) {
+      _finishInitialScroll(success: false); // already at top; cannot reveal
+      return;
+    }
     controller.jumpTo(next);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _revealScrollTarget(attempt: attempt + 1);
+    });
+  }
+
+  /// Aligns the scroll-target note's top edge to the viewport top, if that
+  /// note is currently laid out. Returns true when the target was found (and
+  /// pinned), false otherwise. Safe to call repeatedly: it no-ops when the
+  /// offset is already correct, so re-pinning on layout changes cannot loop.
+  bool _pinScrollTargetToTop() {
+    final controller = _scrollController;
+    if (!controller.hasClients) return false;
+    final renderObject = _scrollTargetKey.currentContext?.findRenderObject();
+    if (renderObject == null || !renderObject.attached) return false;
+    final viewport = RenderAbstractViewport.of(renderObject);
+    // alignment 1.0: in the reverse (AxisDirection.up) list the note's top
+    // edge (its trailing edge) aligns to the viewport's trailing edge — i.e.
+    // the note's top sits at the visual top of the viewport.
+    final reveal = viewport
+        .getOffsetToReveal(renderObject, 1.0)
+        .offset
+        .clamp(
+          controller.position.minScrollExtent,
+          controller.position.maxScrollExtent,
+        )
+        .toDouble();
+    if ((reveal - controller.offset).abs() > 0.5) {
+      controller.jumpTo(reveal);
+    }
+    return true;
+  }
+
+  /// Terminates the initial-scroll sequence: reveals the list (hidden until
+  /// now to mask the pre-scroll frame) and, on success, arms re-pinning so the
+  /// target stays at the top while async images below it load and grow. The
+  /// re-pin window is disarmed on the first user scroll (see the
+  /// [UserScrollNotification] listener in [_buildThreadList]) or after a short
+  /// timeout.
+  void _finishInitialScroll({required bool success}) {
+    if (!_initialScrollSettled && mounted) {
+      setState(() => _initialScrollSettled = true);
+    }
+    if (!success) return;
+    _repinScrollTarget = true;
+    _repinTimer?.cancel();
+    _repinTimer = Timer(const Duration(seconds: 4), () {
+      _repinScrollTarget = false;
     });
   }
 
@@ -645,7 +703,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   ) {
     final totalItems = _getTotalItemCount(state);
 
-    return InfiniteList(
+    final list = InfiniteList(
       controller: listController,
       scrollController: _scrollController,
       count: totalItems,
@@ -667,6 +725,40 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         );
       },
     );
+
+    // Keep the initial scroll target pinned to the top while async content
+    // settles. ScrollMetricsNotification fires when the list's content size
+    // changes (e.g. a network image below the target finishes loading), which
+    // in a bottom-anchored reverse list would otherwise push the target off
+    // the top. UserScrollNotification means the user took over, so we stop.
+    final gated = NotificationListener<ScrollMetricsNotification>(
+      onNotification: (notification) {
+        if (_repinScrollTarget) {
+          // Defer to after layout so getOffsetToReveal sees the new metrics.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _repinScrollTarget) _pinScrollTargetToTop();
+          });
+        }
+        return false;
+      },
+      child: NotificationListener<UserScrollNotification>(
+        onNotification: (notification) {
+          if (notification.direction != ScrollDirection.idle) {
+            _repinScrollTarget = false;
+            _repinTimer?.cancel();
+          }
+          return false;
+        },
+        child: list,
+      ),
+    );
+
+    // Hide the list until the target is first revealed so the pre-scroll
+    // bottom frame never flashes. Only gate when there is a target to reveal.
+    final gateOpacity = _scrollTargetIndex != null && !_initialScrollSettled
+        ? 0.0
+        : 1.0;
+    return Opacity(opacity: gateOpacity, child: gated);
   }
 
   Widget _buildItemAtIndex(
@@ -774,7 +866,6 @@ class _ThreadFilterBar extends StatelessWidget {
   }
 }
 
-
 /// Pinned action row inside the thread squircle (multi-panel only).
 ///
 /// In multi-panel mode the unified header carries no thread-specific
@@ -858,8 +949,8 @@ class _ThreadActionsRow extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.md,
-          vertical: context.theme.spacing.sm,
+          horizontal: context.theme.spacing.xl,
+          vertical: context.theme.spacing.xs,
         ),
         child: Row(children: [...startGroup, const Spacer(), ...endGroup]),
       ),
