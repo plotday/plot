@@ -63,6 +63,8 @@ userSettings.post("/sync/user-settings", async (c) => {
       // function's CASE handles the sentinel; here we just forward null
       // when the client didn't send the field.
       p_tracking_paused_at: body.tracking_paused_at ?? null,
+      // Union-merged server-side; null = no change.
+      p_dismissed_focus_suggestions: body.dismissed_focus_suggestions ?? null,
     });
   });
 

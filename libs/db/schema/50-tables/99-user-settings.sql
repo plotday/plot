@@ -11,6 +11,11 @@ CREATE TABLE "public"."user_settings" (
     -- the first time a notification email is sent.
     "email_token" uuid,
     "onboarding_completed" boolean,
+    -- Stable keys of the curated focus suggestions the user has already acted
+    -- on (created a focus from). Drives hiding those suggestions in the
+    -- "Add a focus" picker. jsonb array of text keys; merged as a monotonic
+    -- union in upsert_user_settings so a stale device never un-dismisses.
+    "dismissed_focus_suggestions" jsonb DEFAULT '[]'::jsonb,
     -- When non-null, the user has paused time tracking since this instant.
     -- Drives:
     --   * the client's foreground tracker (skip Session.resume while paused),

@@ -3336,6 +3336,7 @@ export type Database = {
       user_settings: {
         Row: {
           ai_enabled: boolean | null
+          dismissed_focus_suggestions: Json | null
           email_frequency: Database["public"]["Enums"]["email_frequency"] | null
           email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
@@ -3348,6 +3349,7 @@ export type Database = {
         }
         Insert: {
           ai_enabled?: boolean | null
+          dismissed_focus_suggestions?: Json | null
           email_frequency?:
             | Database["public"]["Enums"]["email_frequency"]
             | null
@@ -3362,6 +3364,7 @@ export type Database = {
         }
         Update: {
           ai_enabled?: boolean | null
+          dismissed_focus_suggestions?: Json | null
           email_frequency?:
             | Database["public"]["Enums"]["email_frequency"]
             | null
@@ -6790,6 +6793,7 @@ export type Database = {
       upsert_user_settings: {
         Args: {
           p_ai_enabled?: boolean
+          p_dismissed_focus_suggestions?: Json
           p_enter_behavior: Database["public"]["Enums"]["enter_behavior"]
           p_onboarding_completed?: boolean
           p_tracking_paused_at?: string
