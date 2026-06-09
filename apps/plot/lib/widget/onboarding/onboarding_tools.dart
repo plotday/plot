@@ -194,13 +194,6 @@ class _OnboardingToolsState extends State<OnboardingTools> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (connected.isNotEmpty)
-              _ConnectedSection(
-                sources: connected,
-                tileWidth: connectedTileWidth,
-                spacing: spacing,
-                onTap: _editConnection,
-              ),
             _ToolSection(
               title: 'Messaging',
               twists: messaging,
@@ -222,6 +215,13 @@ class _OnboardingToolsState extends State<OnboardingTools> {
               spacing: spacing,
               onTap: _openSetup,
             ),
+            if (connected.isNotEmpty)
+              _ConnectedSection(
+                sources: connected,
+                tileWidth: connectedTileWidth,
+                spacing: spacing,
+                onTap: _editConnection,
+              ),
             const SizedBox(height: 20),
             const _UpgradeCopy(),
           ],
