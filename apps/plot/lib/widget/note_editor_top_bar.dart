@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/layout.dart';
 
 // ---------------------------------------------------------------------------
 // State hierarchy
@@ -93,12 +94,20 @@ class TopBarPill {
 /// No Bloc reads, no DB calls — just renders what it's given.
 class NoteEditorTopBar extends StatelessWidget {
   final TopBarState state;
+
+  /// Whether the editor below has rounded top corners (bottom-positioned
+  /// EditableArea). When true the bar's top corners are clipped to match so
+  /// its solid background doesn't paint square corners over the rounded
+  /// editor border. False in bodyOnly / flushToBottom (square-topped) modes.
+  final bool roundTop;
+
   final VoidCallback onClearReply;
   final VoidCallback onCancelEdit;
 
   const NoteEditorTopBar({
     super.key,
     required this.state,
+    required this.roundTop,
     required this.onClearReply,
     required this.onCancelEdit,
   });
@@ -106,12 +115,13 @@ class NoteEditorTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (state) {
-      final PillRowState s => _PillRow(state: s),
+      final PillRowState s => _PillRow(state: s, roundTop: roundTop),
       final ReplyingState s => _TakeoverBar(
         icon: FontAwesomeIcons.reply,
         label: 'Replying',
         quotePreview: s.quotePreview,
         onClear: onClearReply,
+        roundTop: roundTop,
         context: context,
       ),
       final EditingState s => _TakeoverBar(
@@ -119,10 +129,25 @@ class NoteEditorTopBar extends StatelessWidget {
         label: 'Editing',
         quotePreview: s.quotePreview,
         onClear: onCancelEdit,
+        roundTop: roundTop,
         context: context,
       ),
     };
   }
+}
+
+/// Clips [child] so its top-left/top-right corners match the editor's rounded
+/// border. Used by the pill row and takeover bar — both paint a full-width
+/// solid background that would otherwise square off the editor's top corners.
+/// A no-op (returns [child] unchanged) when [round] is false.
+Widget _roundTopCorners({required bool round, required Widget child}) {
+  if (!round) return child;
+  return ClipRRect(
+    borderRadius: const BorderRadius.vertical(
+      top: Radius.circular(borderRadiusMd),
+    ),
+    child: child,
+  );
 }
 
 // Shared height for the pill row and takeover bar so the chrome doesn't shift
@@ -135,24 +160,28 @@ const double _topBarHeight = 32;
 
 class _PillRow extends StatelessWidget {
   final PillRowState state;
+  final bool roundTop;
 
-  const _PillRow({required this.state});
+  const _PillRow({required this.state, required this.roundTop});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    return Container(
-      height: _topBarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        color: context.colour.sectionHeaderBackground,
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
-      child: Row(
-        children: [
-          for (final pill in state.pills)
-            _Pill(pill: pill, isActive: pill.id == state.activeId),
-        ],
+    return _roundTopCorners(
+      round: roundTop,
+      child: Container(
+        height: _topBarHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: context.colour.sectionHeaderBackground,
+          border: Border(bottom: BorderSide(color: colors.border)),
+        ),
+        child: Row(
+          children: [
+            for (final pill in state.pills)
+              _Pill(pill: pill, isActive: pill.id == state.activeId),
+          ],
+        ),
       ),
     );
   }
@@ -311,6 +340,7 @@ class _TakeoverBar extends StatelessWidget {
   final String label;
   final String quotePreview;
   final VoidCallback onClear;
+  final bool roundTop;
   // ignore: unused_field
   final BuildContext context;
 
@@ -319,6 +349,7 @@ class _TakeoverBar extends StatelessWidget {
     required this.label,
     required this.quotePreview,
     required this.onClear,
+    required this.roundTop,
     required this.context,
   });
 
@@ -328,7 +359,7 @@ class _TakeoverBar extends StatelessWidget {
     final accent = colors.primary;
     final muted = colors.mutedForeground;
 
-    return Container(
+    final bar = Container(
       height: _topBarHeight,
       padding: const EdgeInsets.only(left: 12, right: 4),
       decoration: BoxDecoration(
@@ -369,5 +400,7 @@ class _TakeoverBar extends StatelessWidget {
         ],
       ),
     );
+
+    return _roundTopCorners(round: roundTop, child: bar);
   }
 }

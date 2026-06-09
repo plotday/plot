@@ -703,8 +703,14 @@ class NoteEditorState extends State<NoteEditor> {
           return const SizedBox.shrink();
         }
         final threadBloc = context.read<ThreadBloc>();
+        // The editor only has rounded top corners when it renders inside the
+        // bottom-positioned EditableArea (multi-panel). In bodyOnly mode there
+        // is no rounded container, and in flushToBottom (single-panel) the
+        // editor's top edge is square — round the bar only when the editor is.
+        final roundTop = !widget.bodyOnly && !widget.flushToBottom;
         return NoteEditorTopBar(
           state: topBarState,
+          roundTop: roundTop,
           onClearReply: () => threadBloc.setReplyTo(null),
           onCancelEdit: () => threadBloc.setEditingNote(null),
         );
