@@ -564,12 +564,12 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by)
+        INSERT INTO priority (id, user_id, archived_at, title, color, icon, path, created_by, updated_by, description)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.icon, _input.path, _input.created_by, _input.updated_by)
+                END, _input.icon, _input.path, _input.created_by, _input.updated_by, p_priority ->> 'description')
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -582,7 +582,12 @@ BEGIN
                 -- COALESCE: old (nested) clients don't send icon; preserve the
                 -- existing value rather than wiping it on every edit.
                 icon = COALESCE(_input.icon, priority.icon),
-                updated_by = _input.updated_by
+                updated_by = _input.updated_by,
+                -- Present-key semantics: only overwrite description when the
+                -- caller actually sent it; preserve it otherwise. facet_filters
+                -- is owned by the server-side derivation, never set here.
+                description = CASE WHEN p_priority ? 'description'
+                    THEN p_priority ->> 'description' ELSE priority.description END
             RETURNING
                 id INTO _priority_id;
     ELSE
